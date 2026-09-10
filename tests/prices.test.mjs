@@ -48,6 +48,25 @@ test('parsePrice accepts exactly one amount in common separator styles and fails
   assert.equal(parsePrice('1,200', 'USD'), 1200);
 });
 
+test('parsePrice never joins two numbers: marks only at the ends, one separator throughout, distinct decimal separator', () => {
+  const valid = [
+    ['1,200', 1200], ["1'200", 1200], ['1 200', 1200], ['1\u00a0200', 1200], ['1\u202f200', 1200],
+    ['12,345.67', 12345.67], ['1.234.567', 1234567], ['1.200,50', 1200.5], ['$ 1,200.50', 1200.5],
+    ['12.5', 12.5], ['950', 950], ['1200 USD', 1200], ['US$ 900', 900],
+  ];
+  for (const [text, value] of valid) assert.equal(parsePrice(text), value, text);
+  assert.equal(parsePrice('Fr. 450', 'CHF'), 450);
+  assert.equal(parsePrice('450 CHF', 'CHF'), 450);
+  assert.equal(parsePrice('€1.250', 'EUR'), 1250);
+  assert.equal(parsePrice('£ 700', 'GBP'), 700);
+  for (const bad of ['$200 $150', '200$ 150$', '€200 €150', '1,200 500', '1.200.50', '1,2345', '-5',
+    '200 USD (estimate 150 USD)', '3000 CHF (3300 USD)', '1,200,50']) {
+    assert.equal(parsePrice(bad), null, bad);
+  }
+  assert.equal(parsePrice('€200 €150', 'EUR'), null);
+  assert.equal(parsePrice('1200EUR', 'USD'), null);
+});
+
 test('defaultTerm builds the acsearch term from the guided reference', () => {
   assert.equal(defaultTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
   assert.equal(defaultTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');

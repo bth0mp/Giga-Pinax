@@ -39,7 +39,11 @@ export function extractLots(html) {
 }
 
 const CURRENCY_MARKS = [['USD', /US\$|\$|\bUSD\b/i], ['EUR', /€|\bEUR\b/i], ['GBP', /£|\bGBP\b/i], ['CHF', /\bCHF\b|\bFr\./i]];
-const AMOUNT = /^(?:\d{1,3}(?:[ '’.,\u00a0\u202f]\d{3})+|\d+)(?:[.,]\d{1,2})?$/;
+// Only one mark at the very start and one at the very end are stripped; a mark anywhere else fails AMOUNT, so "$200 $150" never becomes 200150.
+const MARK = String.raw`(?:US\$|[$€£]|\b(?:USD|EUR|GBP|CHF)\b|\bFr\.)`;
+const STRIP = new RegExp(`^${MARK}\\s*|\\s*${MARK}$`, 'gi');
+// Every thousands group uses the first group's separator (\1); a decimal separator, if any, must differ from it (checked below).
+const AMOUNT = /^(?:\d{1,3}([ '’.,\u00a0\u202f])\d{3}(?:\1\d{3})*|\d+)(?:([.,])\d{1,2})?$/;
 
 // ponytail: acsearch's logged-in price format is unconfirmed; accept exactly one amount and fail closed on anything else.
 export function parsePrice(text, currency) {
@@ -48,8 +52,9 @@ export function parsePrice(text, currency) {
   const marks = CURRENCY_MARKS.filter(([, pattern]) => pattern.test(raw)).map(([code]) => code);
   if (marks.length > 1) return null;
   if (currency && marks.length === 1 && marks[0] !== String(currency).toUpperCase()) return null;
-  const amount = raw.replace(/US\$|[$€£]|\b(?:USD|EUR|GBP|CHF)\b|\bFr\./gi, '').trim();
-  if (!AMOUNT.test(amount)) return null;
+  const amount = raw.replace(STRIP, '').trim();
+  const grammar = AMOUNT.exec(amount);
+  if (!grammar || (grammar[1] && grammar[2] && grammar[1] === grammar[2])) return null;
   const decimals = amount.match(/[.,](\d{1,2})$/);
   const whole = (decimals ? amount.slice(0, -decimals[0].length) : amount).replace(/\D/g, '');
   const value = Number(decimals ? `${whole}.${decimals[1]}` : whole);

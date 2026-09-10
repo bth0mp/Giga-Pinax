@@ -130,7 +130,7 @@ function renderPrices(summary, currency, term) {
   const { count } = summary;
   let period = `${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) period += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  if (summary.total > count) period += ` · ${summary.total - count} without a price`;
+  if (summary.total > count) period += ` · ${summary.total - count} not counted`;
   $('sale-period').textContent = period;
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   const span = summary.max - summary.min;
@@ -214,7 +214,10 @@ function requestHostAccess(origins) {
   if (!api?.permissions?.request) return Promise.resolve(true);
   let pending;
   try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
-  return Promise.resolve(pending).catch(() => api.permissions.contains({ origins }).catch(() => true));
+  return Promise.resolve(pending).catch(() => {
+    try { return Promise.resolve(api.permissions.contains({ origins })).catch(() => true); }
+    catch { return true; }
+  });
 }
 
 $('catalogue').value = preferences.catalogue;
@@ -259,6 +262,10 @@ $('prices-form').addEventListener('submit', async (event) => {
   const currency = $('currency').value;
   const access = requestHostAccess([ACSEARCH_ORIGIN]);
   setPricesBusy(true);
-  if (!(await access)) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
+  // Every change that bumps priceRequestId goes through clearPrices(), which also resets the button, so returning here never leaves it disabled.
+  const ticket = priceRequestId;
+  const allowed = await access;
+  if (ticket !== priceRequestId) return;
+  if (!allowed) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
   runPrices(term, currency);
 });
