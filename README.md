@@ -1,39 +1,31 @@
 # Giga Pinax
 
-An ancient-coin reference extension for desktop Brave and Firefox. Version **0.1.1** is an installable **sample-data test build** of the approved layout. It fixes the toolbar popup collapsing into a narrow strip.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference. Version **0.2.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License.
 
-## Install the test build
+Auction prices are not connected. acsearch's terms do not permit automated retrieval, and a permission request describing this extension's one-lookup-per-collector workflow is pending. Each result links to the type page and to a manual acsearch search you run with your own account.
 
-Run `python scripts/build.py` to create `dist/brave`, `dist/firefox`, and the two corresponding ZIP files. Follow [the installation guide](docs/INSTALL.md) for Brave's unpacked install or Firefox's temporary install. The Firefox ZIP is unsigned and is removed on browser restart.
+## Install
 
-The local `install/index.html` page provides downloads and step-by-step instructions when served from the project root. No web server is needed once an extension is installed.
+Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the matching ZIPs, then follow [the installation guide](docs/INSTALL.md). The local `install/index.html` page provides downloads and step-by-step instructions when the project root is served with `python -m http.server 8765 --bind 127.0.0.1`.
 
-## Original layout preview
+## What it does
 
-Open `prototype/index.html` directly in a browser, or serve the project with:
-
-```powershell
-python -m http.server 8765 --bind 127.0.0.1
-```
-
-Then visit `http://127.0.0.1:8765/prototype/`.
-
-Use the controls beside the popup to switch between first use and lookup, or system/light/dark appearance. Try the Price/RIC selector, currency selector and expandable sample sales.
-
-## Scope
-
-All sales and prices are fictional. Supported preview references are Price 23 and RIC I (2nd edition), Nero 306. Currency switching demonstrates formatting, not conversion. Signing in opens acsearch's official page; the preview does not handle credentials or verify account access.
-
-The `prototype/` folder preserves the original design preview. The installable `extension/` code remembers sample-mode entry, currency and reference fields locally. Live acsearch retrieval, account integration, Mozilla signing and extension-store publication remain future work. No acsearch content is scraped or bundled.
-
-Design decisions are recorded in `docs/superpowers/specs/2026-09-10-popup-design.md`.
+- Guided entry for Price numbers, or RIC volume/edition, ruler section and number.
+- Exact-title matching against the ANS search API; near matches are offered as a short list.
+- Ruler, denomination, mint, material, date range, obverse and reverse legends and descriptions.
+- Remembers your last reference and currency choice locally. Currency affects nothing yet.
+- Contacts only `numismatics.org` and `nomisma.org`. Nothing about you leaves the browser.
 
 ## Checks
 
 ```powershell
-node --test tests/sample-data.test.mjs
+node --test tests/lookup.test.mjs tests/preferences.test.mjs
 python -m unittest discover -s tests -p 'test_*.py' -v
 npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 ```
 
-The runtime has no dependencies. Building uses Python's standard library. The optional `scripts/render-icons.ps1` regenerates the included toolbar PNGs on Windows. Mozilla's `web-ext` tool is used only for validation.
+The runtime has no dependencies. Building uses Python's standard library. `web-ext` is used only for validation. Fixtures under `tests/fixtures/` are real API responses captured on 2026-09-10.
+
+## History
+
+`prototype/` preserves the original layout preview, including the median-price design that returns once pricing is arranged. Design decisions are recorded in `docs/superpowers/specs/`.
