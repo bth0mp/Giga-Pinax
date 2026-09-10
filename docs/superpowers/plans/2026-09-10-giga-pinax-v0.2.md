@@ -1246,7 +1246,19 @@ git push
 
 ## Verification results
 
-To be filled in by the implementer after Task 6 Step 5 and Task 7 Step 4. Record exactly what was checked in a served tab versus a native toolbar popup; do not infer toolbar behaviour from the tab.
+Task 6 Step 5, performed by the controller on 2026-09-10 in the in-app Chromium browser against `dist/brave/popup.html` served by `python -m http.server 8777` (a plain tab, not a native toolbar popup; `chrome.permissions` was absent so the permission branch was not exercised):
+
+1. Price 23: card `Price 23`, summary `Alexander III of Macedon · Tetradrachm · Silver · 336–323 BC`, obverse description present with legend hidden, reverse legend `ΑΛΕΞΑΝΔΡΟΥ`, Type link `https://numismatics.org/pella/id/price.23`, acsearch link `…search.html?term=Price%2023`. Pass.
+2. RIC I (2nd edition) Nero 306: card `RIC I (second edition) Nero 306`, summary `Nero · As · Rome · Bronze · AD 62–68`, both legends and descriptions, Type link `https://numismatics.org/ocre/id/ric.1(2).ner.306`. Button read `Looking up…` and was disabled while pending. Pass.
+3. RIC Nero 9999999: exact not-found message, `aria-invalid="true"`, no card. Pass.
+4. Candidates: `Price 2` is a real PELLA record and resolved directly (correct). The real candidate case is omitting the edition — volume `I`, Nero 306 — which returns one non-exact title; the "Did you mean" list showed `RIC I (second edition) Nero 306` and choosing it rendered the card. Pass. One earlier attempt at this same query produced the network-error message after the 10 s timeout; the same query then completed in 6 s in the browser and 1.9 s via curl, so OCRE cold queries can approach the budget.
+5. Reload: catalogue RIC, volume/section/number and currency restored; `giga-pinax-labels-v1` held `alexander_iii, tetradrachm, ar, nero, as, rome, ae, drachma`. Pass.
+6. Console: no messages of any level across all runs. Pass.
+7. At a 400×600 viewport, `document.body.scrollWidth` and `documentElement.scrollWidth` were 400 with a full card rendered. Pass.
+
+Task 7 Step 4 served-page check, same session: `http://localhost:8777/install/` rendered with title `Install Giga Pinax`; `HEAD` on both download links returned 200 (`giga-pinax-brave-0.2.0.zip`, `giga-pinax-firefox-0.2.0.zip`); no link to a standalone popup preview; no console messages. Pass.
+
+Native Brave toolbar rendering and the Firefox host-permission prompt remain for the user (see below).
 
 ## Remaining for the user
 
