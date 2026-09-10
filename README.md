@@ -1,4 +1,4 @@
-# Ancient Coin Lookup
+# Giga Pinax
 
 An ancient-coin reference extension for desktop Brave and Firefox. Version **0.1.1** is an installable **sample-data test build** of the approved layout. It fixes the toolbar popup collapsing into a narrow strip.
 
