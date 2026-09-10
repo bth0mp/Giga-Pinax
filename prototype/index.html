@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Coin Lookup · Popup preview</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <main class="preview-layout">
+    <section class="preview-notes" aria-labelledby="preview-title">
+      <p class="eyebrow">BRAVE + FIREFOX / FIRST LAYOUT</p>
+      <h1 id="preview-title">A little context<br>before you bid.</h1>
+      <p class="intro">A reference, a price range, and the sales behind it. Your coin lookup, one toolbar click away.</p>
+      <div class="preview-controls">
+        <label for="preview-state">Preview screen</label>
+        <select id="preview-state">
+          <option value="lookup">Reference lookup</option>
+          <option value="welcome">First use</option>
+        </select>
+        <label for="preview-theme">Appearance</label>
+        <select id="preview-theme">
+          <option value="system">Follow browser</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <p class="preview-explainer">This is an interactive layout preview. All nine sales and prices are fictional. Currency switching previews formatting, not exchange-rate conversion.</p>
+      <p class="preview-explainer">Try Price <strong>23</strong> or RIC <strong>I (2nd edition), Nero 306</strong>. Live lookups and account verification are not connected.</p>
+      <div class="approved-details"><span>Guided entry</span><span>USD by default</span><span>400px popup</span></div>
+    </section>
+
+    <section class="preview-stage" aria-label="Extension popup preview">
+      <div class="stage-label"><span class="toolbar-icon" aria-hidden="true">◈</span><span>Coin Lookup</span><span class="stage-size">TOOLBAR POPUP</span></div>
+      <div class="popup">
+        <header class="popup-header">
+          <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12.5"/><path d="M16 5v3M27 16h-3M16 27v-3M5 16h3M12 20V12h8M12 16h6"/></svg></div>
+          <div><h2>Coin Lookup</h2><p>Ancient auction research</p></div>
+          <a class="account-link" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" aria-label="Sign in on acsearch in a new tab">Sign in <span aria-hidden="true">↗</span></a>
+        </header>
+        <div class="preview-ribbon"><span class="ribbon-dot" aria-hidden="true"></span>Layout preview <span class="ribbon-divider">/</span> Sample data only</div>
+        <div class="popup-scroll">
+          <section id="welcome-screen" class="welcome-screen" hidden aria-labelledby="welcome-heading">
+            <div class="welcome-art" aria-hidden="true"><svg viewBox="0 0 120 100"><circle cx="48" cy="48" r="32"/><circle cx="48" cy="48" r="24"/><path d="M39 61V35h20M39 47h16"/><circle cx="80" cy="65" r="21"/><path d="m94 81 12 13"/></svg></div>
+            <p class="eyebrow">YOUR RESEARCH, CLOSE AT HAND</p>
+            <h3 id="welcome-heading">Know the sales<br>behind the reference.</h3>
+            <p>Look up an ancient coin type and review its auction history before deciding what to bid.</p>
+            <a class="primary-button" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer">Sign in to acsearch <span aria-hidden="true">↗</span></a>
+            <p class="welcome-note">Use your own account on acsearch’s website. This preview cannot verify sign-in or Premium access.</p>
+            <button id="try-sample" class="text-button" type="button">Explore a sample lookup <span aria-hidden="true">→</span></button>
+          </section>
+
+          <section id="lookup-screen" aria-label="Reference lookup">
+            <form id="reference-form" class="reference-form">
+              <div class="form-topline"><label for="catalogue">Catalogue</label><label for="currency">Currency</label></div>
+              <div class="catalogue-row">
+                <select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option></select>
+                <select id="currency" name="currency" aria-label="Result currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select>
+              </div>
+              <div id="ric-fields" class="ric-fields" hidden>
+                <div><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" value="I (2nd edition)" autocomplete="off"></div>
+                <div><label for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" value="Nero" autocomplete="off"></div>
+              </div>
+              <label id="reference-label" for="reference-number">Price number</label>
+              <div class="search-row"><input id="reference-number" name="reference" value="23" required autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>Preview results</button></div>
+              <p id="reference-help" class="field-hint">Example: Price 23 · Alexander III</p>
+              <p id="form-error" class="form-error" role="alert" hidden></p>
+            </form>
+
+            <section id="sample-results" class="sample-results" aria-labelledby="result-reference">
+              <div class="type-heading"><div><span class="catalogue-code" id="result-reference">PRICE 23</span><p id="result-type">Alexander III · Silver tetradrachm</p></div><a id="type-link" class="type-link" href="https://numismatics.org/pella/id/price.23" target="_blank" rel="noopener noreferrer" aria-label="View Price 23 type in PELLA, opens a new tab">Type <span aria-hidden="true">↗</span></a></div>
+              <div class="median-block"><p class="metric-label">Median hammer price</p><div class="median-line"><strong id="median-amount">$180</strong><span id="median-currency">USD</span><span class="sample-tag">Illustrative</span></div><p class="sample-period">9 sample sales <span aria-hidden="true">·</span> 2024–2026</p></div>
+              <div class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount">$135–$245</strong></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span class="range-box"></span><span class="range-median"></span></div></div>
+              <details id="sale-details" class="sale-details"><summary><span>Inspect sample sales</span><span class="sale-count">9 <span class="chevron" aria-hidden="true">⌄</span></span></summary><p class="sales-caption">Fictional examples for this layout.</p><ol id="sale-list" class="sale-list"></ol></details>
+              <p class="price-note">Hammer prices exclude buyer’s fees, tax and shipping. Compare condition and provenance before bidding.</p>
+            </section>
+          </section>
+        </div>
+        <footer class="popup-footer"><span class="account-dot" aria-hidden="true"></span>Account access not verified <span class="footer-separator">·</span> No live data</footer>
+      </div>
+      <p class="stage-note">Preview only · Not yet an installable extension</p>
+      <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>
