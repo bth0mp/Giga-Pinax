@@ -83,14 +83,17 @@ test('nomismaSlugs lists referenced concepts in display order; nomismaLabel read
 
 function fakeFetch(routes) {
   const calls = [];
+  const signals = [];
   const impl = async (url, { signal } = {}) => {
     calls.push(url);
+    signals.push(signal);
     if (signal?.aborted) throw new Error('aborted');
     const hit = Object.entries(routes).find(([needle]) => url.includes(needle));
     if (!hit) return { ok: false, status: 404, text: async () => '', json: async () => ({}) };
     return { ok: true, status: 200, text: async () => hit[1], json: async () => JSON.parse(hit[1]) };
   };
   impl.calls = calls;
+  impl.signals = signals;
   return impl;
 }
 
@@ -129,6 +132,25 @@ test('lookupType reports candidates, none, network and timeout outcomes', async 
 
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+
+  const search = fakeFetch({ 'pella/apis/search': fixture('pella-search-price-23.xml') });
+  const hangRecord = (url, init) => (url.includes('.jsonld') ? hang(url, init) : search(url, init));
+  assert.deepEqual(
+    await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hangRecord, cache: new Map(), timeoutMs: 20 }),
+    { status: 'network' },
+  );
+});
+
+test('lookupType shares one deadline between the search and record requests', async () => {
+  const fetchImpl = fakeFetch({
+    'ocre/apis/search': fixture('ocre-search-nero-306.xml'),
+    'ocre/id/ric.1(2).ner.306.jsonld': fixture('ocre-nero-306.jsonld'),
+  });
+  const result = await lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  const signals = fetchImpl.signals;
+  assert.ok(signals[0] instanceof AbortSignal);
+  assert.ok(signals.every((signal) => signal === signals[0]));
 });
 
 test('lookupById fetches one record directly', async () => {

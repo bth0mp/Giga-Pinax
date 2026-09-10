@@ -62,7 +62,7 @@ function setBusy(busy) {
 function renderCard(card) {
   $('result-reference').textContent = card.label;
   $('result-summary').textContent = [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
-  $('type-link').href = card.uri.replace(/^http:/, 'https:');
+  $('type-link').href = `https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`;
   $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
   for (const side of ['obverse', 'reverse']) {
     $(`${side}-legend`).textContent = card[side].legend ?? '';
@@ -103,11 +103,12 @@ async function run(perform) {
   else showError(NETWORK_MESSAGE);
 }
 
-// Firefox MV3 grants host permissions lazily; request() is a no-op where already granted.
+// Firefox MV3 grants host permissions lazily; Chromium grants them at install, so contains() short-circuits there.
 async function ensureHostAccess() {
   if (!api?.permissions?.request) return true;
-  try { return await api.permissions.request({ origins: [...HOST_ORIGINS] }); }
-  catch { return false; }
+  const origins = [...HOST_ORIGINS];
+  try { if (await api.permissions.contains({ origins })) return true; } catch { return true; }
+  try { return await api.permissions.request({ origins }); } catch { return false; }
 }
 
 $('catalogue').value = preferences.catalogue;

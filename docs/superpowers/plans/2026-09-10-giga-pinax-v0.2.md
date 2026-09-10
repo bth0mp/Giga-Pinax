@@ -18,7 +18,7 @@
 - Names: manifest `name` `Giga Pinax`; `version` `0.2.0`; gecko id `giga-pinax@local.invalid`; ZIPs `giga-pinax-{browser}-{version}.zip`; storage keys `giga-pinax-preferences-v1` and `giga-pinax-labels-v1`.
 - `host_permissions` exactly `["https://numismatics.org/*", "https://nomisma.org/*"]` in both manifests. No `permissions`, `content_scripts` or `background`.
 - Firefox `data_collection_permissions.required` stays `["none"]`.
-- Request timeout 10 s via `AbortController`.
+- One lookup deadline of 15 s via `AbortController`, shared by every request in the lookup.
 - Test fixtures in `tests/fixtures/` are real responses captured 2026-09-10; do not hand-edit them.
 - Commit after every task. Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Working directory is `Z:\Ancient Coin Browser extension` on Windows; the shell is Git Bash. Quote paths.

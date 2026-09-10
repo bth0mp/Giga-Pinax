@@ -37,7 +37,7 @@ Out: acsearch prices, sign-in detection, RRC/CRRO, images in the popup, Mozilla 
 4. Pick the entry whose title equals the query, case-insensitive after collapsing whitespace. If none matches exactly and there are 1–5 entries, show them as a pick-list. If there are 0 entries, show the not-found message. If more than 5 and none exact, show the not-found message with a hint to check the fields.
 5. `GET https://numismatics.org/{corpus}/id/{id}.jsonld`. From the `@graph`: `skos:prefLabel`, `nmo:hasAuthority`, `nmo:hasDenomination`, `nmo:hasMint`, `nmo:hasMaterial`, `nmo:hasStartDate`, `nmo:hasEndDate`, and the obverse/reverse nodes' `nmo:hasLegend` and `dcterms:description`. Any field may be absent; render what exists.
 6. Authority, denomination, mint and material are nomisma URIs. Resolve each to its English `skos:prefLabel` from `https://nomisma.org/id/{slug}.jsonld`, fetched in parallel and cached in `localStorage` under `giga-pinax-labels-v1`. A label that fails to resolve falls back to the slug.
-7. Render the result card. Requests use a 10-second `AbortController` timeout.
+7. Render the result card. A lookup uses one 15-second `AbortController` deadline shared by the search request, the record request and the label requests.
 
 All request logic lives in a new `extension/lookup.js` as pure functions (`buildQuery`, `pickMatch`, `parseFeed`, `toCard`) plus one `lookupType(reference, fetchImpl)` that composes them. `popup.js` only wires DOM to `lookupType`.
 

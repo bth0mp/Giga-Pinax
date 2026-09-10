@@ -1,5 +1,5 @@
 export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https://nomisma.org/*']);
-export const TIMEOUT_MS = 10000;
+export const TIMEOUT_MS = 15000;
 
 const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -131,10 +131,10 @@ export async function resolveLabels(slugs, { fetchImpl, cache, signal }) {
 }
 
 export async function lookupById(corpus, id, options = {}) {
-  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
-  const timer = withTimeout(timeoutMs);
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal } = options;
+  const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
   try {
-    const jsonld = await getJson(`${ORIGIN}/${corpus}/id/${id}.jsonld`, fetchImpl, timer.signal);
+    const jsonld = await getJson(`${ORIGIN}/${corpus}/id/${encodeURIComponent(id)}.jsonld`, fetchImpl, timer.signal);
     const labels = await resolveLabels(nomismaSlugs(jsonld), { fetchImpl, cache, signal: timer.signal });
     const card = toCard(jsonld, corpus, labels);
     return card ? { status: 'ok', card } : { status: 'network' };
@@ -149,15 +149,14 @@ export async function lookupType(reference, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
   const { corpus, query } = buildQuery(reference);
   const timer = withTimeout(timeoutMs);
-  let picked;
   try {
     const xml = await getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(query)}`, fetchImpl, timer.signal);
-    picked = pickMatch(parseFeed(xml), query);
+    const picked = pickMatch(parseFeed(xml), query);
+    if (picked.status !== 'ok') return { ...picked, corpus, query };
+    return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal });
   } catch {
     return { status: 'network' };
   } finally {
     timer.done();
   }
-  if (picked.status !== 'ok') return { ...picked, corpus, query };
-  return lookupById(corpus, picked.entry.id, options);
 }

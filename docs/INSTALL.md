@@ -43,7 +43,7 @@ Use Firefox 142 or later.
 4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.2.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
-The first time you select **Look up**, Firefox asks whether Giga Pinax may access `numismatics.org` and `nomisma.org`. Allow it; the lookup then runs. If you decline, the popup explains what it needs and you can select **Look up** again.
+The first time you select **Look up**, Firefox asks whether Giga Pinax may access `numismatics.org` and `nomisma.org`. Allow it. If the popup closes while the prompt is open, reopen it and select **Look up** again. If you decline, the popup explains what it needs and you can select **Look up** again.
 
 Firefox removes a temporary add-on when Firefox restarts. Permanent installation needs a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
 
