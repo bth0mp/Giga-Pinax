@@ -38,20 +38,21 @@ export function extractLots(html) {
   return null;
 }
 
-function normaliseNumber(digits) {
-  if (/^\d{1,3}(?:[.,]\d{3})+$/.test(digits)) return digits.replace(/[.,]/g, '');
-  const decimal = digits.lastIndexOf(',') > digits.lastIndexOf('.') ? ',' : '.';
-  const other = decimal === ',' ? '.' : ',';
-  return digits.split(other).join('').replace(decimal, '.');
-}
+const CURRENCY_MARKS = [['USD', /US\$|\$|\bUSD\b/i], ['EUR', /€|\bEUR\b/i], ['GBP', /£|\bGBP\b/i], ['CHF', /\bCHF\b|\bFr\./i]];
+const AMOUNT = /^(?:\d{1,3}(?:[ '’.,\u00a0\u202f]\d{3})+|\d+)(?:[.,]\d{1,2})?$/;
 
-// ponytail: acsearch's logged-in price format is unconfirmed; this accepts the usual separator styles and is checked on a real account.
-export function parsePrice(text) {
+// ponytail: acsearch's logged-in price format is unconfirmed; accept exactly one amount and fail closed on anything else.
+export function parsePrice(text, currency) {
   const raw = String(text ?? '').trim();
   if (!raw || raw === '*') return null;
-  const digits = raw.replace(/[^\d.,' ]/g, '').replace(/[' ]/g, '');
-  if (!/\d/.test(digits)) return null;
-  const value = Number(normaliseNumber(digits));
+  const marks = CURRENCY_MARKS.filter(([, pattern]) => pattern.test(raw)).map(([code]) => code);
+  if (marks.length > 1) return null;
+  if (currency && marks.length === 1 && marks[0] !== String(currency).toUpperCase()) return null;
+  const amount = raw.replace(/US\$|[$€£]|\b(?:USD|EUR|GBP|CHF)\b|\bFr\./gi, '').trim();
+  if (!AMOUNT.test(amount)) return null;
+  const decimals = amount.match(/[.,](\d{1,2})$/);
+  const whole = (decimals ? amount.slice(0, -decimals[0].length) : amount).replace(/\D/g, '');
+  const value = Number(decimals ? `${whole}.${decimals[1]}` : whole);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
@@ -61,8 +62,8 @@ export function defaultTerm({ catalogue, number, section }) {
 
 const PAGE_SIZE = 100;
 
-export function summarise(lots) {
-  const priced = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price) })).filter((entry) => entry.amount !== null);
+export function summarise(lots, currency) {
+  const priced = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price, currency) })).filter((entry) => entry.amount !== null);
   const amounts = priced.map((entry) => entry.amount).sort((a, b) => a - b);
   const at = (fraction) => {
     const position = fraction * (amounts.length - 1);
@@ -70,12 +71,15 @@ export function summarise(lots) {
     const high = Math.ceil(position);
     return amounts[low] + (amounts[high] - amounts[low]) * (position - low);
   };
-  const years = priced.map((entry) => Number.parseInt(entry.date.slice(-4), 10)).filter(Number.isFinite);
+  const years = priced.flatMap((entry) => {
+    const match = /\b(\d{4})\b/.exec(entry.date);
+    return match ? [Number(match[1])] : [];
+  });
   const has = amounts.length > 0;
   return {
     total: lots.length,
     count: amounts.length,
-    signedOut: lots.length > 0 && !has && lots.every((entry) => String(entry.price).trim() === '*'),
+    signedOut: amounts.length === 0 && lots.some((entry) => String(entry.price).trim() === '*'),
     capped: lots.length >= PAGE_SIZE,
     priced,
     median: has ? at(0.5) : null,
@@ -93,12 +97,14 @@ export async function fetchPrices({ term, currency }, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(buildSearchUrl({ term, currency }), { signal: controller.signal, credentials: 'include' });
+    const response = await fetchImpl(buildSearchUrl({ term, currency }), { signal: controller.signal, credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
     const lots = extractLots(await response.text());
     if (!lots) return { status: 'network' };
     if (lots.length === 0) return { status: 'empty', term };
-    const summary = summarise(lots);
+    // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds.
+    const page = lots.slice(0, PAGE_SIZE);
+    const summary = summarise(page, currency);
     if (summary.signedOut) return { status: 'signed-out' };
     if (summary.count === 0) return { status: 'unpriced', term };
     return { status: 'ok', summary };

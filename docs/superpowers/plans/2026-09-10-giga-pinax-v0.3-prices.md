@@ -984,4 +984,4 @@ Task 6 Step 4 served-page check: `http://localhost:8777/install/` shows `GIGA PI
 ## Remaining for the user
 
 - Reload in Brave, look up a type, select Get prices on your Premium account, and report whether numbers appear. If the panel reports no hammer prices although acsearch shows them, paste one lot's price text as acsearch displays it; the parser and a trimmed logged-in fixture get adjusted in a follow-up.
-- Firefox temporary install: confirm the acsearch permission prompt on the first Get prices.
+- Firefox temporary install: Get prices works without a prompt (access is granted at install); optionally turn acsearch access off in about:addons and confirm Get prices asks again.

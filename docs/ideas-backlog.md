@@ -14,7 +14,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 4. **Keyboard shortcut** to open the popup (`commands` in the manifest, e.g. Alt+Shift+G).
 5. **Copy summary** button: `RIC I² Nero 306 · median $180 (9 sales, 2019–2026)` to the clipboard.
 6. **Right-click lookup.** Select "RIC 306" or "Price 23" on any auction page → Giga Pinax opens on it. Needs `contextMenus` and a background worker; weigh the extra permission.
-7. **Deferred review minors:** candidate list accessible name; `aria-invalid` only for not-found; drop dead `--accent-soft` / `.try-it a` rules; read the label cache once per popup; `resolveLabels` option defaults.
+7. **Deferred review minors:** candidate list accessible name; `aria-invalid` only for not-found; drop dead `.try-it a` rules; read the label cache once per popup; `resolveLabels` option defaults.
 8. **Firefox permanent install** via Mozilla's unlisted (self-distributed) signing.
 9. **Giga-branded icon** set.
 

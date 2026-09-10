@@ -9,7 +9,8 @@ const NETWORK_MESSAGE = 'Couldn’t reach numismatics.org. Check your connection
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
-const SIGN_IN_MESSAGE = 'Sign in on acsearch with your own account, then select “Get prices” again.';
+const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.';
+const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -97,7 +98,8 @@ function renderCard(card) {
     $(`${side}-description`).textContent = card[side].description ?? '—';
   }
   currentCard = card;
-  $('price-term').value = preferences.terms[card.id] ?? defaultTerm(currentReference());
+  const saved = Object.hasOwn(preferences.terms, card.id) ? preferences.terms[card.id] : '';
+  $('price-term').value = saved || defaultTerm(currentReference());
   clearPrices();
   updateAcsearchLink();
   $('result').hidden = false;
@@ -119,19 +121,24 @@ function renderCandidates(candidates, corpus) {
   $('announcement').textContent = `${candidates.length} possible matches. Choose one.`;
 }
 
-function renderPrices(summary, currency) {
+function renderPrices(summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
-  $('median-amount').textContent = money.format(summary.median);
+  const median = money.format(summary.median);
+  $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
-  const years = summary.earliest === summary.latest ? String(summary.earliest) : `${summary.earliest}–${summary.latest}`;
-  $('sale-period').textContent = `${summary.count} ${summary.count === 1 ? 'sale' : 'sales'} · ${years}`;
+  $('median-currency').hidden = median.includes(currency);
+  const { count } = summary;
+  let period = `${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  if (summary.earliest !== null) period += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  if (summary.total > count) period += ` · ${summary.total - count} without a price`;
+  $('sale-period').textContent = period;
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   const span = summary.max - summary.min;
   const percent = (value) => (span > 0 ? ((value - summary.min) / span) * 100 : 50);
-  $('range-box').style.left = `${span > 0 ? percent(summary.lowerQuartile) : 0}%`;
-  $('range-box').style.width = `${span > 0 ? percent(summary.upperQuartile) - percent(summary.lowerQuartile) : 100}%`;
+  $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
+  $('range-box').style.width = `${span > 0 ? percent(summary.upperQuartile) - percent(summary.lowerQuartile) : 0}%`;
   $('range-median').style.left = `${percent(summary.median)}%`;
-  $('sale-count').textContent = String(summary.count);
+  $('sale-count').textContent = String(count);
   $('sale-list').replaceChildren(...summary.priced.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
@@ -151,13 +158,14 @@ function renderPrices(summary, currency) {
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   $('sale-details').open = false;
   $('prices-panel').hidden = false;
-  $('announcement').textContent = `Median ${money.format(summary.median)} ${currency} over ${summary.count} ${summary.count === 1 ? 'sale' : 'sales'}.`;
+  $('announcement').textContent = `Median ${median} ${currency} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
 }
 
 function showPricesNote(message, withSignIn) {
   $('prices-note-text').textContent = message;
   $('signin-link').hidden = !withSignIn;
   $('prices-note').hidden = false;
+  $('announcement').textContent = message;
 }
 
 function showPricesError(message) {
@@ -180,9 +188,8 @@ async function run(perform) {
   else showError(NETWORK_MESSAGE);
 }
 
-async function runPrices() {
+async function runPrices(term, currency) {
   if (!currentCard) return;
-  const term = $('price-term').value.trim();
   preferences = rememberTerm(preferences, currentCard.id, term);
   savePreferences();
   updateAcsearchLink();
@@ -190,22 +197,23 @@ async function runPrices() {
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
-  try { outcome = await fetchPrices({ term, currency: $('currency').value }); }
+  try { outcome = await fetchPrices({ term, currency }); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId) return;
-  if (outcome.status === 'ok') renderPrices(outcome.summary, $('currency').value);
+  if (outcome.status === 'ok') renderPrices(outcome.summary, currency, term);
   else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.`, false);
   else showPricesError(ACSEARCH_NETWORK_MESSAGE);
 }
 
-// Firefox MV3 grants host permissions lazily; Chromium grants them at install, so contains() short-circuits there.
-async function ensureHostAccess(origins) {
-  if (!api?.permissions?.request) return true;
-  try { if (await api.permissions.contains({ origins })) return true; } catch { return true; }
-  try { return await api.permissions.request({ origins }); } catch { return false; }
+// Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
+function requestHostAccess(origins) {
+  if (!api?.permissions?.request) return Promise.resolve(true);
+  let pending;
+  try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
+  return Promise.resolve(pending).catch(() => api.permissions.contains({ origins }).catch(() => true));
 }
 
 $('catalogue').value = preferences.catalogue;
@@ -236,13 +244,20 @@ $('reference-form').addEventListener('input', (event) => {
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const access = requestHostAccess([...HOST_ORIGINS]);
   savePreferences();
-  if (!(await ensureHostAccess([...HOST_ORIGINS]))) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
+  if (!(await access)) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
   run(() => lookupType(currentReference(), { cache: labelCache }));
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
 $('prices-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!(await ensureHostAccess([ACSEARCH_ORIGIN]))) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
-  runPrices();
+  if (!currentCard || $('prices-button').disabled) return;
+  const term = $('price-term').value.trim();
+  if (!term) { clearPrices(); showPricesError(EMPTY_TERM_MESSAGE); return; }
+  const currency = $('currency').value;
+  const access = requestHostAccess([ACSEARCH_ORIGIN]);
+  setPricesBusy(true);
+  if (!(await access)) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
+  runPrices(term, currency);
 });

@@ -18,9 +18,9 @@ Out: date-range filters, multiple pages, sign-in detection beyond the price chec
 
 1. Type lookup runs exactly as in v0.2 and renders the type card.
 2. Below the card, a **Prices** block shows a text field `acsearch search` pre-filled from the reference — RIC: `{section} {number}` (e.g. `Nero 306`); Price: `Price {number}` — and a **Get prices** button. The last term the collector used for that exact reference is restored instead of the default when one is stored.
-3. Get prices requests `https://www.acsearch.info/search.html?term={encoded term}&category=1&currency={usd|eur|gbp|chf}&order=1` with `credentials: 'include'`, a 15-second `AbortController` timeout, and no other headers.
+3. Get prices requests `https://www.acsearch.info/search.html?term={encoded term}&category=1&currency={usd|eur|gbp|chf}&order=1` with `credentials: 'include'` and `cache: 'no-store'`, a 15-second `AbortController` timeout, and no other headers.
 4. The response HTML is scanned for `acsearch.initSearchResults = ` followed by a JSON array terminated by `;`. The array is parsed with `JSON.parse`. Any failure to find or parse it is a network-class error (acsearch changed its page).
-5. Each lot's `price` is parsed: strip everything except digits, `.`, `,`, `'` and spaces; remove thousands separators (`'`, spaces, and `,` when followed by exactly three digits); the result must be a finite non-negative number. Lots whose `price` is `"*"`, empty, or unparseable are excluded. If at least one lot exists and every lot is `"*"`, the state is **not signed in**.
+5. Each lot's `price` is parsed: strip everything except digits, `.`, `,`, `'` and spaces; remove thousands separators (`'`, spaces, and `,` when followed by exactly three digits); the result must be a finite non-negative number. Lots whose `price` is `"*"`, empty, or unparseable are excluded. A price quoted in a currency other than the requested one, or containing more than one amount (for example a hammer plus an estimate or a converted figure), is also excluded rather than guessed at. If no lot is priced and at least one is `"*"`, the state is **not signed in**.
 6. Statistics over the included prices, sorted ascending: count; median; lower and upper quartile by linear interpolation at positions `0.25·(n−1)` and `0.75·(n−1)`; earliest and latest `date` (acsearch dates are `DD.MM.YYYY`).
 7. The panel renders. The term is saved with preferences under the key of the resolved type id.
 
@@ -47,7 +47,7 @@ Errors render in a `role="alert"` element inside the Prices block, not in the re
 
 ## Permissions
 
-`host_permissions` becomes `["https://numismatics.org/*", "https://nomisma.org/*", "https://www.acsearch.info/*"]`. Get prices requests the acsearch origin via `permissions.contains` then `permissions.request` from the click handler, mirroring v0.2. Firefox `data_collection_permissions.required` stays `["none"]`: the search term travels to acsearch under the collector's own session and nothing is retained or sent elsewhere.
+`host_permissions` becomes `["https://numismatics.org/*", "https://nomisma.org/*", "https://www.acsearch.info/*"]`. Both submit handlers call `permissions.request` synchronously as their first asynchronous step so the call keeps the user gesture; it resolves `true` without a prompt when access is already granted, and falls back to `permissions.contains` if the request itself throws. Firefox `data_collection_permissions.required` stays `["none"]`: the search term travels to acsearch under the collector's own session and nothing is retained or sent elsewhere.
 
 ## Code
 

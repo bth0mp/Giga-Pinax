@@ -29,6 +29,7 @@ export function restorePreferences(raw) {
 }
 
 export function rememberTerm(preferences, typeId, term) {
+  if (!String(term).trim()) return preferences;
   const terms = { ...preferences.terms };
   delete terms[typeId];
   terms[typeId] = String(term).slice(0, 120);

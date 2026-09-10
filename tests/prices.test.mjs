@@ -30,7 +30,7 @@ test('extractLots survives "];" inside descriptions and rejects pages without th
   assert.deepEqual(extractLots('acsearch.initSearchResults = [];'), []);
 });
 
-test('parsePrice tolerates common separators and rejects non-prices', () => {
+test('parsePrice accepts exactly one amount in common separator styles and fails closed on anything else', () => {
   assert.equal(parsePrice('1,200'), 1200);
   assert.equal(parsePrice("1'200"), 1200);
   assert.equal(parsePrice('1 200'), 1200);
@@ -40,6 +40,12 @@ test('parsePrice tolerates common separators and rejects non-prices', () => {
   assert.equal(parsePrice('12.5'), 12.5);
   assert.equal(parsePrice('950'), 950);
   for (const bad of ['*', '', ' ', 'abc', '0', '-', null, undefined]) assert.equal(parsePrice(bad), null);
+  for (const bad of ['200 USD (estimate 150 USD)', 'Hammer: 200 USD, estimate 150 USD', '3000 CHF (3300 USD)', '-5', '1,2345']) {
+    assert.equal(parsePrice(bad), null, bad);
+  }
+  assert.equal(parsePrice('200 EUR', 'EUR'), 200);
+  assert.equal(parsePrice('200 EUR', 'USD'), null);
+  assert.equal(parsePrice('1,200', 'USD'), 1200);
 });
 
 test('defaultTerm builds the acsearch term from the guided reference', () => {
@@ -84,6 +90,7 @@ test('summarise handles one, two and a hundred lots, and flags signed-out pages'
   assert.equal(out.signedOut, true);
   assert.equal(out.count, 0);
   assert.equal(out.median, null);
+  assert.equal(summarise([lot('*'), lot('')]).signedOut, true);
   const unsold = summarise([lot(''), lot('-')]);
   assert.equal(unsold.signedOut, false);
   assert.equal(unsold.count, 0);
@@ -93,6 +100,12 @@ test('summarise handles one, two and a hundred lots, and flags signed-out pages'
   assert.equal(empty.earliest, null);
 });
 
+test('summarise reads the year from either date style', () => {
+  const summary = summarise([lot('500', '2024-05-01'), lot('600', '28.07.2026 14:00')]);
+  assert.equal(summary.earliest, 2024);
+  assert.equal(summary.latest, 2026);
+});
+
 function fakeFetch(body, { ok = true, status = 200 } = {}) {
   const calls = [];
   const impl = async (url, init) => { calls.push({ url, init }); return { ok, status, text: async () => body }; };
@@ -100,9 +113,11 @@ function fakeFetch(body, { ok = true, status = 200 } = {}) {
   return impl;
 }
 
-test('fetchPrices sends credentials to acsearch and classifies outcomes', async () => {
+test('fetchPrices sends credentials to acsearch and classifies outcomes', { timeout: 5000 }, async () => {
   const signedOut = fakeFetch(fixture('acsearch-search-nero-306.html'));
   assert.deepEqual(await fetchPrices({ term: 'Nero 306', currency: 'USD' }, { fetchImpl: signedOut }), { status: 'signed-out' });
+  assert.equal(signedOut.calls.length, 1);
+  assert.equal(signedOut.calls[0].init.cache, 'no-store');
   assert.equal(signedOut.calls[0].url, 'https://www.acsearch.info/search.html?term=Nero+306&category=1&currency=usd&order=1');
   assert.equal(signedOut.calls[0].init.credentials, 'include');
   assert.ok(signedOut.calls[0].init.signal instanceof AbortSignal);
@@ -112,6 +127,10 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', async 
   assert.equal(ok.status, 'ok');
   assert.equal(ok.summary.median, 200);
   assert.equal(ok.summary.total, 3);
+  const many = await fetchPrices({ term: 'Nero', currency: 'USD' }, { fetchImpl: fakeFetch(page(Array.from({ length: 150 }, (_, index) => lot(String(index + 1), '01.01.2024', String(index))))) });
+  assert.equal(many.summary.priced.length, 100);
+  assert.equal(many.summary.capped, true);
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q' });
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });

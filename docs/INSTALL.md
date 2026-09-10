@@ -43,7 +43,7 @@ Use Firefox 142 or later.
 4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.3.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
-The first time you select **Look up**, Firefox asks whether Giga Pinax may access `numismatics.org` and `nomisma.org`; the first time you select **Get prices**, it asks about `www.acsearch.info`. Allow each. If the popup closes while a prompt is open, reopen it and select the button again. If you decline, the popup explains what it needs and you can select the button again.
+Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
 
 Firefox removes a temporary add-on when Firefox restarts. Permanent installation needs a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
 
@@ -52,7 +52,7 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 ## What to try
 
 - **Price 23**, then **RIC I (2nd edition), Nero 306**.
-- Select **Get prices**. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in on acsearch's own website, then select **Get prices** again.
+- Select **Get prices**. If acsearch doesn't show prices for your account, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices** again.
 - Edit the acsearch search term (for example add the denomination) and select **Get prices** again; the term is remembered for that type.
 - Expand **Inspect sales** to see each sale with a link to it on acsearch.
 - A number that doesn't exist, such as **RIC I (2nd edition), Nero 9999999**: the popup says it was not found rather than inventing a result.

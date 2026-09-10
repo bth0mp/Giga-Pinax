@@ -45,4 +45,7 @@ test('rememberTerm stores the newest term last and drops the oldest beyond 50', 
   assert.equal(Object.keys(preferences.terms).at(-1), 't10');
   assert.equal(preferences.terms.t10, 'updated');
   assert.equal(rememberTerm(preferences, 'k', 'v'.repeat(200)).terms.k.length, 120);
+  const blank = rememberTerm(preferences, 'k', '   ');
+  assert.deepEqual(blank.terms, preferences.terms);
+  assert.equal(Object.hasOwn(blank.terms, 'k'), false);
 });
