@@ -53,7 +53,7 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 
 - **Price 23**, then **RIC I (2nd edition), Nero 306**.
 - A number that doesn't exist, such as **RIC I (2nd edition), Nero 9999999**: the popup says it was not found rather than inventing a result.
-- **Price 2**: a short "Did you mean" list appears.
+- **RIC I, Nero 306** with the edition left out of the volume field: a short "Did you mean" list offers the full reference to choose.
 - Close and reopen the popup: your last reference and currency are remembered locally.
 - **Type ↗** opens the ANS type page with specimen photographs. **Search on acsearch ↗** opens acsearch with the reference pre-filled; prices there require your own acsearch account.
 
