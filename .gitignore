@@ -2,3 +2,4 @@ dist/
 .test-artifacts/
 __pycache__/
 node_modules/
+.superpowers/
