@@ -100,4 +100,6 @@ test('RRC is a remembered catalogue with its own default number', () => {
 
 ## Verification
 
-Controller, after Task 1, in a served tab: RRC 44/5 resolves to `RRC 44/5`, summary `Anonymous · Denarius · Rome · Silver · 211 BC`, reverse legend `ROMA`, type link `https://numismatics.org/crro/id/rrc-44.5`, acsearch term `Crawford 44/5`; switching catalogue fills `44/5` and hides the RIC fields; Price 23 and RIC Nero 306 still resolve; console clean.
+Result 2026-09-11 (in-app Chromium, `extension/popup.html` served from a fresh origin `http://127.0.0.1:8777` — the `localhost` origin held a stale cached `lookup.js` module from earlier sessions and queried PELLA): RRC option labelled `RRC (Crawford)`, label `Crawford number`, help `Example: RRC 44/5`, default `44/5`, RIC fields hidden; RRC 44/5 → `RRC 44/5`, `Anonymous · Denarius · Rome · Silver · 211 BC`, obverse description with no legend, reverse `ROMA` / `Dioscuri galloping right. Line border.`, type link `https://numismatics.org/crro/id/rrc-44.5`, term `Crawford 44/5`, acsearch link `term=Crawford+44%2F5`; `RRC 9999/9` → `No RRC 9999/9 found in CRRO. Check the number.`; RIC Nero 306 and Price 23 still resolve; 400 px; no errors. Pass.
+
+Planned check — controller, after Task 1, in a served tab: RRC 44/5 resolves to `RRC 44/5`, summary `Anonymous · Denarius · Rome · Silver · 211 BC`, reverse legend `ROMA`, type link `https://numismatics.org/crro/id/rrc-44.5`, acsearch term `Crawford 44/5`; switching catalogue fills `44/5` and hides the RIC fields; Price 23 and RIC Nero 306 still resolve; console clean.
