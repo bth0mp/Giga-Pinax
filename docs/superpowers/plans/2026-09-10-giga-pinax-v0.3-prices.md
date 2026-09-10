@@ -979,6 +979,8 @@ Task 5 Step 5, performed by the controller on 2026-09-10 in the in-app Chromium 
 6. Currency → CHF hid the panel and the link carried `currency=chf`; CHF persisted across reload. Pass.
 7. `body` and `documentElement` scrollWidth 400 with panel and open sales list; console clean apart from the expected CORS error in check 1. Pass.
 
+Task 6 Step 4 served-page check: `http://localhost:8777/install/` shows `GIGA PINAX · VERSION 0.3.0` and `Types and hammer prices, in your toolbar.`; `HEAD` on `giga-pinax-brave-0.3.0.zip` and `giga-pinax-firefox-0.3.0.zip` returned 200; no stale 0.2.0 or "not connected" text; no popup-preview link; every `target="_blank"` link has `noopener`; no console messages. Pass.
+
 ## Remaining for the user
 
 - Reload in Brave, look up a type, select Get prices on your Premium account, and report whether numbers appear. If the panel reports no hammer prices although acsearch shows them, paste one lot's price text as acsearch displays it; the parser and a trimmed logged-in fixture get adjusted in a follow-up.

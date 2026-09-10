@@ -22,8 +22,8 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ANS runs several type corpora on the same Numishare software as OCRE and PELLA, with the same Atom search and JSON-LD records, so each is mostly a catalogue option plus a URL:
 
-1. **CRRO** (Coinage of the Roman Republic Online) — Crawford RRC references. Biggest gap for Roman collectors.
-2. **SCO / Seleucid Coins Online** and **PCO / Ptolemaic Coins Online** — SC and Svoronos references.
+1. **CRRO** (Coinage of the Roman Republic Online) — Crawford RRC references. Biggest gap for Roman collectors. *Probed 2026-09-10:* `numismatics.org/crro/apis/search?q=RRC 44/5` returns title `RRC 44/5`, id `rrc-44.5`, CORS open — exact-title matching works as-is, so this is a third catalogue option plus a query rule (`RRC {number}`).
+2. **SCO / Seleucid Coins Online** and **PCO / Ptolemaic Coins Online**. *Probed:* both CORS open, but titles differ from the collector's shorthand — SCO `Seleucid Coins (part 1) 1266.2` (id `sc.1.1266.2`), PCO indexes CPE not Svoronos (`Coins of the Ptolemaic Empire Vol. I, Part II, no. B549`, id `cpe.1_2.B549`). Needs a per-corpus title builder, and PCO needs a Svoronos→CPE story before it helps.
 3. **HRC** (Hellenistic Royal Coinages) and **Coins of the Roman Empire** extensions as coverage grows.
 4. **RPC Online** (Oxford, Roman Provincial Coinage) — provincial references; separate site and API, check its terms.
 5. **Specimen thumbnails** from OCRE/PELLA example coins (IIIF images from ANS, BM, BnF) in the type card.
