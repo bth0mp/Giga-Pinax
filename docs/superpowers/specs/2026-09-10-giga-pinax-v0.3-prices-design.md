@@ -20,7 +20,7 @@ Out: date-range filters, multiple pages, sign-in detection beyond the price chec
 2. Below the card, a **Prices** block shows a text field `acsearch search` pre-filled from the reference — RIC: `{section} {number}` (e.g. `Nero 306`); Price: `Price {number}` — and a **Get prices** button. The last term the collector used for that exact reference is restored instead of the default when one is stored.
 3. Get prices requests `https://www.acsearch.info/search.html?term={encoded term}&category=1&currency={usd|eur|gbp|chf}&order=1` with `credentials: 'include'` and `cache: 'no-store'`, a 15-second `AbortController` timeout, and no other headers.
 4. The response HTML is scanned for `acsearch.initSearchResults = ` followed by a JSON array terminated by `;`. The array is parsed with `JSON.parse`. Any failure to find or parse it is a network-class error (acsearch changed its page).
-5. Each lot's `price` is parsed: strip everything except digits, `.`, `,`, `'` and spaces; remove thousands separators (`'`, spaces, and `,` when followed by exactly three digits); the result must be a finite non-negative number. Lots whose `price` is `"*"`, empty, or unparseable are excluded. A price quoted in a currency other than the requested one, or containing more than one amount (for example a hammer plus an estimate or a converted figure), is also excluded rather than guessed at. If no lot is priced and at least one is `"*"`, the state is **not signed in**.
+5. Each lot's `price` must be exactly one amount — digits grouped in threes with space, apostrophe, dot or comma separators, or plain digits, with at most two decimals — optionally with one currency code or symbol matching the requested currency; the value must be positive. Lots whose `price` is `"*"`, empty, or unparseable are excluded. A price quoted in a currency other than the requested one, or containing more than one amount (for example a hammer plus an estimate or a converted figure), is also excluded rather than guessed at. If no lot is priced and at least one is `"*"`, the state is **not signed in**.
 6. Statistics over the included prices, sorted ascending: count; median; lower and upper quartile by linear interpolation at positions `0.25·(n−1)` and `0.75·(n−1)`; earliest and latest `date` (acsearch dates are `DD.MM.YYYY`).
 7. The panel renders. The term is saved with preferences under the key of the resolved type id.
 
@@ -29,7 +29,7 @@ Out: date-range filters, multiple pages, sign-in detection beyond the price chec
 Replaces the v0.2 "Prices not connected yet" placeholder inside the result card, below the obverse/reverse rows.
 
 - Term row: label `acsearch search`, text input (max 120 chars, monospace like the reference field), primary button **Get prices** that reads **Fetching…** while pending and is disabled.
-- After success: `Median hammer price` label; the median large with the currency code beside it; `n sales · {earliest year}–{latest year}` (a single year when equal; `1 sale` singular); the middle-50% block with the range text and the whisker visual, whose box and median marker are positioned proportionally between the minimum and maximum price; an expandable **Inspect sales** list (`n` in the summary) of rows `date · title` with the hammer on the right, each row's title linking to `https://www.acsearch.info/search.html?id={id}` in a new tab; the note `Hammer prices exclude buyer's fees, tax and shipping. Only the 100 most recent sales are counted.` (the second sentence appears only when acsearch returned 100 lots).
+- After success: `Median hammer price` label; the median large with the currency code beside it; `n sales matching "{term}" · {earliest year}–{latest year}` (a single year when equal; `1 sale` singular; `· k without a price` when some lots had none); the middle-50% block with the range text and the whisker visual, whose box and median marker are positioned proportionally between the minimum and maximum price; an expandable **Inspect sales** list (`n` in the summary) of rows `date · title` with the hammer on the right, each row's title linking to `https://www.acsearch.info/search.html?id={id}` in a new tab; the note `Hammer prices exclude buyer's fees, tax and shipping. Only the 100 most recent sales are counted.` (the second sentence appears only when acsearch returned 100 lots).
 - **Search on acsearch ↗** link stays and carries the current term, currency and order.
 - Formatting: `Intl.NumberFormat('en-US', {style:'currency', currency, maximumFractionDigits:0})`.
 
@@ -37,7 +37,8 @@ Replaces the v0.2 "Prices not connected yet" placeholder inside the result card,
 
 | Condition | Presentation |
 |---|---|
-| Not signed in (all prices `*`) | Muted note, not an error: `Sign in on acsearch with your own account, then select Get prices again.` with a `Sign in ↗` link to `https://www.acsearch.info/login.html`. |
+| No priced lots and at least one price is `*` | Muted note, not an error: `acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.` with a `Sign in ↗` link to `https://www.acsearch.info/login.html`. |
+| Empty or whitespace-only search term | `Enter a search term for acsearch, such as “Nero 306”.` (No request is sent.) |
 | Zero lots | `acsearch returned no sales for "{term}". Try a broader term.` |
 | Lots but none priced (unsold only) | `No hammer prices among the sales acsearch returned for "{term}".` |
 | Network failure, non-2xx, timeout, page shape not recognised | `Couldn't reach acsearch. Check your connection and try again.` |
@@ -51,7 +52,7 @@ Errors render in a `role="alert"` element inside the Prices block, not in the re
 
 ## Code
 
-- New `extension/prices.js`: `buildSearchUrl({term, currency, order})`, `extractLots(html) → Lot[] | null`, `parsePrice(text) → number | null`, `summarise(lots) → {count, median, lowerQuartile, upperQuartile, min, max, earliest, latest, priced: Lot[], total, signedOut: boolean}`, `defaultTerm(reference, card)`, and `fetchPrices({term, currency}, {fetchImpl, timeoutMs}) → {status:'ok', summary} | {status:'signed-out'} | {status:'empty', term} | {status:'unpriced', term} | {status:'network'}`.
+- New `extension/prices.js`: `buildSearchUrl({term, currency, order})`, `extractLots(html) → Lot[] | null`, `parsePrice(text, currency) → number | null`, `summarise(lots, currency) → {count, median, lowerQuartile, upperQuartile, min, max, earliest, latest, priced: Lot[], total, signedOut: boolean, capped: boolean}`, `defaultTerm(reference, card)`, and `fetchPrices({term, currency}, {fetchImpl, timeoutMs}) → {status:'ok', summary} | {status:'signed-out'} | {status:'empty', term} | {status:'unpriced', term} | {status:'network'}`.
 - `extension/preferences.js`: currency list gains `CHF`; preferences gain `terms: {[typeId]: string}` capped at 50 entries, oldest dropped.
 - `extension/popup.{html,css,js}`: prices block, panel and states; the median/range/sale-list styles are ported from `prototype/styles.css`.
 - Manifests: version `0.3.0`, host permission added.

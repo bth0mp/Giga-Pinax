@@ -158,7 +158,8 @@ function renderPrices(summary, currency, term) {
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   $('sale-details').open = false;
   $('prices-panel').hidden = false;
-  $('announcement').textContent = `Median ${median} ${currency} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
+  const spoken = median.includes(currency) ? median : `${median} ${currency}`;
+  $('announcement').textContent = `Median ${spoken} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
 }
 
 function showPricesNote(message, withSignIn) {
