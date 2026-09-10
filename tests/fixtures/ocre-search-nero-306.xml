@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns="http://www.w3.org/2005/Atom">
+ <title>Online Coins of the Roman Empire</title>
+ <id>http://numismatics.org/ocre/</id>
+ <link rel="self" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=nero 306&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="http://numismatics.org/ocre/results?q=nero 306&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=nero 306&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=nero 306&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="http://numismatics.org/ocre/opensearch.xml"/>
+ <opensearch:totalResults>1</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="nero 306" startPage="0"/>
+ <entry>
+  <title>RIC I (second edition) Nero 306</title>
+  <link href="http://numismatics.org/ocre/id/ric.1(2).ner.306"/>
+  <id>ric.1(2).ner.306</id>
+  <relevance:score>8.149547</relevance:score>
+  <updated>2025-12-19T06:48:50Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.306.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.306.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.306.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.306.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">62</begin>
+   <end xmlns="">68</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

@@ -1,0 +1,293 @@
+{
+    "@context": {
+        "bio": "http://purl.org/vocab/bio/0.1/",
+        "crm": "http://www.cidoc-crm.org/cidoc-crm/",
+        "crmarchaeo": "http://www.cidoc-crm.org/cidoc-crm/CRMarchaeo/",
+        "crmdig": "http://www.ics.forth.gr/isl/CRMdig/",
+        "crmgeo": "http://www.ics.forth.gr/isl/CRMgeo/",
+        "crmsci": "http://www.ics.forth.gr/isl/CRMsci/",
+        "dcmitype": "http://purl.org/dc/dcmitype/",
+        "dcterms": "http://purl.org/dc/terms/",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+        "nm": "http://nomisma.org/id/",
+        "nmo": "http://nomisma.org/ontology#",
+        "org": "http://www.w3.org/ns/org#",
+        "osgeo": "http://data.ordnancesurvey.co.uk/ontology/geometry/",
+        "prov": "http://www.w3.org/ns/prov#",
+        "rdac": "http://www.rdaregistry.info/Elements/c/",
+        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+        "sd": "http://www.w3.org/TR/sparql11-service-description/",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "spatial": "http://jena.apache.org/spatial#",
+        "un": "http://www.owl-ontologies.com/Ontology1181490123.owl#",
+        "void": "http://rdfs.org/ns/void#",
+        "wordnet": "http://ontologi.es/WordNet/class/",
+        "xsd": "http://www.w3.org/2001/XMLSchema#"
+    },
+    "@graph": [
+        {
+            "@id": "http://nomisma.org/id/nero#death",
+            "@type": "bio:Death",
+            "dcterms:date": {
+                "@type": "xsd:date",
+                "@value": "0068-06-09"
+            }
+        },
+        {
+            "@id": "nm:nero",
+            "@type": [
+                "foaf:Person",
+                "skos:Concept"
+            ],
+            "bio:birth": {
+                "@id": "http://nomisma.org/id/nero#birth"
+            },
+            "bio:death": {
+                "@id": "http://nomisma.org/id/nero#death"
+            },
+            "dcterms:isPartOf": [
+                {
+                    "@id": "nm:roman_numismatics"
+                },
+                {
+                    "@id": "nm:greek_numismatics"
+                },
+                {
+                    "@id": "nm:roman_provincial_numismatics"
+                }
+            ],
+            "org:hasMembership": {
+                "@id": "http://nomisma.org/id/nero#membership_e6acaf0a1cab55cfcd08b3a9b977ff29"
+            },
+            "org:memberOf": {
+                "@id": "nm:julio-claudian_dynasty"
+            },
+            "skos:changeNote": {
+                "@id": "http://nomisma.org/id/nero#provenance"
+            },
+            "skos:definition": {
+                "@language": "en",
+                "@value": "Nero was Roman Emperor from 54 to 68, and the last in the Julio-Claudian dynasty. Nero was adopted by his great-uncle Claudius to become his heir and successor, and like him, became emperor with the consent of the praetorian guard."
+            },
+            "skos:exactMatch": [
+                {
+                    "@id": "http://dbpedia.org/resource/Nero"
+                },
+                {
+                    "@id": "http://viaf.org/viaf/84036175"
+                },
+                {
+                    "@id": "https://ikmk.smb.museum/ndp/person/1217"
+                }
+            ],
+            "skos:inScheme": {
+                "@id": "nm:"
+            },
+            "skos:prefLabel": [
+                {
+                    "@language": "en",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "de",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "fr",
+                    "@value": "Néron"
+                },
+                {
+                    "@language": "ro",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "ru",
+                    "@value": "Нерон"
+                },
+                {
+                    "@language": "nl",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "it",
+                    "@value": "Nerone"
+                },
+                {
+                    "@language": "el",
+                    "@value": "Νέρων"
+                },
+                {
+                    "@language": "uk",
+                    "@value": "Нерон"
+                },
+                {
+                    "@language": "ca",
+                    "@value": "Neró"
+                },
+                {
+                    "@language": "cs",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "zh",
+                    "@value": "尼禄"
+                },
+                {
+                    "@language": "vi",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "ja",
+                    "@value": "ネロ"
+                },
+                {
+                    "@language": "sv",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "es",
+                    "@value": "Nerón"
+                },
+                {
+                    "@language": "hu",
+                    "@value": "Nero római császár"
+                },
+                {
+                    "@language": "pt",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "fi",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "no",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "ko",
+                    "@value": "네로"
+                },
+                {
+                    "@language": "pl",
+                    "@value": "Neron"
+                },
+                {
+                    "@language": "bg",
+                    "@value": "Нерон"
+                },
+                {
+                    "@language": "da",
+                    "@value": "Nero"
+                },
+                {
+                    "@language": "tr",
+                    "@value": "Nero"
+                }
+            ]
+        },
+        {
+            "@id": "http://nomisma.org/id/nero#provenance",
+            "@type": "dcterms:ProvenanceStatement",
+            "foaf:topic": {
+                "@id": "nm:nero"
+            },
+            "prov:activity": [
+                {
+                    "@id": "_:Na875b27223bf4020b1f26fd2d579e505"
+                },
+                {
+                    "@id": "_:Na8149f35253c45e096d88629406e51c0"
+                }
+            ],
+            "prov:wasGeneratedBy": {
+                "@id": "_:N20b02f9a466749e9a5294e21bc91fb38"
+            }
+        },
+        {
+            "@id": "_:N20b02f9a466749e9a5294e21bc91fb38",
+            "@type": [
+                "prov:Activity",
+                "prov:Create"
+            ],
+            "dcterms:description": {
+                "@language": "en",
+                "@value": "This is among the original Nomisma XHTML+RDFa fragments, most likely created between 2010-2012 by Sebastian Heath and/or Andy Meadows."
+            },
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2012-10-28T21:43:36+00:00"
+            },
+            "prov:wasAssociatedWith": [
+                {
+                    "@id": "http://nomisma.org/editor/ameadows"
+                },
+                {
+                    "@id": "http://nomisma.org/editor/sfsheath"
+                }
+            ]
+        },
+        {
+            "@id": "_:Na875b27223bf4020b1f26fd2d579e505",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2017-04-28T19:10:55+00:00"
+            }
+        },
+        {
+            "@id": "_:Na8149f35253c45e096d88629406e51c0",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "spreadsheet",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2024-04-19T18:12:48.400000+00:00"
+            },
+            "prov:used": {
+                "@id": "https://docs.google.com/spreadsheets/d/1FR4b2FwhLr70McADQw76B3vCj7lMOoQISBJsgpDTTRU/pubhtml"
+            },
+            "prov:wasAssociatedWith": {
+                "@id": "http://nomisma.org/editor/egruber"
+            }
+        },
+        {
+            "@id": "http://nomisma.org/id/nero#birth",
+            "@type": "bio:Birth",
+            "dcterms:date": {
+                "@type": "xsd:date",
+                "@value": "0037-12-15"
+            }
+        },
+        {
+            "@id": "http://nomisma.org/id/nero#membership_e6acaf0a1cab55cfcd08b3a9b977ff29",
+            "@type": "org:Membership",
+            "foaf:topic": {
+                "@id": "nm:nero"
+            },
+            "nmo:hasEndDate": {
+                "@type": "xsd:gYear",
+                "@value": "0068"
+            },
+            "nmo:hasStartDate": {
+                "@type": "xsd:gYear",
+                "@value": "0054"
+            },
+            "org:organization": {
+                "@id": "nm:roman_empire"
+            },
+            "org:role": {
+                "@id": "nm:roman_emperor"
+            }
+        }
+    ]
+}

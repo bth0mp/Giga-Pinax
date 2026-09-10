@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns="http://www.w3.org/2005/Atom">
+ <title>PELLA</title>
+ <id>http://numismatics.org/pella/</id>
+ <link rel="self" type="application/atom+xml"
+       href="http://numismatics.org/pella/apis/search?q=price 23&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="http://numismatics.org/pella/results?q=price 23&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="http://numismatics.org/pella/apis/search?q=price 23&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="http://numismatics.org/pella/apis/search?q=price 23&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="http://numismatics.org/pella/opensearch.xml"/>
+ <opensearch:totalResults>2</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="price 23" startPage="0"/>
+ <entry>
+  <title>Price 1655</title>
+  <link href="http://numismatics.org/pella/id/price.1655"/>
+  <id>price.1655</id>
+  <relevance:score>5.3092103</relevance:score>
+  <updated>2025-12-15T07:24:32Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/pella/id/price.1655.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/pella/id/price.1655.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/pella/id/price.1655.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/pella/id/price.1655.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>38.840097 26.985537</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">-215</begin>
+   <end xmlns="">-190</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Price 23</title>
+  <link href="http://numismatics.org/pella/id/price.23"/>
+  <id>price.23</id>
+  <relevance:score>6.4029408</relevance:score>
+  <updated>2025-12-15T06:41:16Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/pella/id/price.23.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/pella/id/price.23.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/pella/id/price.23.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/pella/id/price.23.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.823597 23.846565</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">-336</begin>
+   <end xmlns="">-323</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

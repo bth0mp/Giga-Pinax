@@ -1,0 +1,281 @@
+{
+    "@context": {
+        "bio": "http://purl.org/vocab/bio/0.1/",
+        "crm": "http://www.cidoc-crm.org/cidoc-crm/",
+        "crmarchaeo": "http://www.cidoc-crm.org/cidoc-crm/CRMarchaeo/",
+        "crmdig": "http://www.ics.forth.gr/isl/CRMdig/",
+        "crmgeo": "http://www.ics.forth.gr/isl/CRMgeo/",
+        "crmsci": "http://www.ics.forth.gr/isl/CRMsci/",
+        "dcmitype": "http://purl.org/dc/dcmitype/",
+        "dcterms": "http://purl.org/dc/terms/",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+        "nm": "http://nomisma.org/id/",
+        "nmo": "http://nomisma.org/ontology#",
+        "org": "http://www.w3.org/ns/org#",
+        "osgeo": "http://data.ordnancesurvey.co.uk/ontology/geometry/",
+        "prov": "http://www.w3.org/ns/prov#",
+        "rdac": "http://www.rdaregistry.info/Elements/c/",
+        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+        "sd": "http://www.w3.org/TR/sparql11-service-description/",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "spatial": "http://jena.apache.org/spatial#",
+        "un": "http://www.owl-ontologies.com/Ontology1181490123.owl#",
+        "void": "http://rdfs.org/ns/void#",
+        "wordnet": "http://ontologi.es/WordNet/class/",
+        "xsd": "http://www.w3.org/2001/XMLSchema#"
+    },
+    "@graph": [
+        {
+            "@id": "http://nomisma.org/id/as#provenance",
+            "@type": "dcterms:ProvenanceStatement",
+            "foaf:topic": {
+                "@id": "nm:as"
+            },
+            "prov:activity": [
+                {
+                    "@id": "_:Nc6244fc93c044539b791de11b68f35b7"
+                },
+                {
+                    "@id": "_:N2cbab67148a846b2bbc24241a3e23d72"
+                }
+            ],
+            "prov:wasGeneratedBy": {
+                "@id": "_:N4791bc6aba0d4b379624ad85fa6d69ec"
+            }
+        },
+        {
+            "@id": "_:N4791bc6aba0d4b379624ad85fa6d69ec",
+            "@type": [
+                "prov:Activity",
+                "prov:Create"
+            ],
+            "dcterms:description": {
+                "@language": "en",
+                "@value": "This is among the original Nomisma XHTML+RDFa fragments, most likely created between 2010-2012 by Sebastian Heath and/or Andy Meadows."
+            },
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2012-10-28T21:43:36+00:00"
+            },
+            "prov:wasAssociatedWith": [
+                {
+                    "@id": "http://nomisma.org/editor/ameadows"
+                },
+                {
+                    "@id": "http://nomisma.org/editor/sfsheath"
+                }
+            ]
+        },
+        {
+            "@id": "_:Nc6244fc93c044539b791de11b68f35b7",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "spreadsheet",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2015-08-19T04:00:02+00:00"
+            },
+            "prov:used": {
+                "@id": "https://docs.google.com/spreadsheets/d/1vC7sRD5zbHcQKsCkMd3z6Zo-QH5PtX0Iq07xnKXGTGY/pubhtml"
+            },
+            "prov:wasAssociatedWith": {
+                "@id": "http://nomisma.org/editor/ameadows"
+            }
+        },
+        {
+            "@id": "_:N2cbab67148a846b2bbc24241a3e23d72",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2017-04-28T19:10:55+00:00"
+            }
+        },
+        {
+            "@id": "nm:as",
+            "@type": [
+                "nmo:Denomination",
+                "skos:Concept"
+            ],
+            "dcterms:isPartOf": [
+                {
+                    "@id": "nm:roman_numismatics"
+                },
+                {
+                    "@id": "nm:greek_numismatics"
+                }
+            ],
+            "nmo:hasMaterial": {
+                "@id": "nm:ae"
+            },
+            "skos:changeNote": {
+                "@id": "http://nomisma.org/id/as#provenance"
+            },
+            "skos:definition": [
+                {
+                    "@language": "en",
+                    "@value": "An ancient denomination with the value of 1 as"
+                },
+                {
+                    "@language": "fr",
+                    "@value": "1 as"
+                }
+            ],
+            "skos:exactMatch": [
+                {
+                    "@id": "http://dbpedia.org/resource/As_(Roman_coin)"
+                },
+                {
+                    "@id": "http://www.wikidata.org/entity/Q376895"
+                },
+                {
+                    "@id": "https://www.freebase.com/m/01qktg"
+                },
+                {
+                    "@id": "https://ikmk.smb.museum/ndp/nominal/666"
+                }
+            ],
+            "skos:inScheme": {
+                "@id": "nm:"
+            },
+            "skos:prefLabel": [
+                {
+                    "@language": "en",
+                    "@value": "As"
+                },
+                {
+                    "@language": "de",
+                    "@value": "As"
+                },
+                {
+                    "@language": "fr",
+                    "@value": "As"
+                },
+                {
+                    "@language": "ro",
+                    "@value": "As"
+                },
+                {
+                    "@language": "ru",
+                    "@value": "Ас"
+                },
+                {
+                    "@language": "nl",
+                    "@value": "As"
+                },
+                {
+                    "@language": "it",
+                    "@value": "Asse"
+                },
+                {
+                    "@language": "el",
+                    "@value": "Ασσάριον"
+                },
+                {
+                    "@language": "sv",
+                    "@value": "As (mynt)"
+                },
+                {
+                    "@language": "ja",
+                    "@value": "アス (青銅貨)"
+                },
+                {
+                    "@language": "pt",
+                    "@value": "Asse"
+                },
+                {
+                    "@language": "es",
+                    "@value": "As (moneda)"
+                },
+                {
+                    "@language": "hu",
+                    "@value": "As (rézpénz)"
+                },
+                {
+                    "@language": "pl",
+                    "@value": "As (moneta)"
+                },
+                {
+                    "@language": "fi",
+                    "@value": "As (raha)"
+                },
+                {
+                    "@language": "zh",
+                    "@value": "阿斯 (硬币)"
+                },
+                {
+                    "@language": "uk",
+                    "@value": "Ас (монета)"
+                },
+                {
+                    "@language": "ca",
+                    "@value": "As romà"
+                },
+                {
+                    "@language": "bg",
+                    "@value": "ас"
+                },
+                {
+                    "@language": "he",
+                    "@value": "אס"
+                },
+                {
+                    "@language": "gl",
+                    "@value": "Ás"
+                },
+                {
+                    "@language": "sh",
+                    "@value": "As"
+                },
+                {
+                    "@language": "tr",
+                    "@value": "As"
+                },
+                {
+                    "@language": "la",
+                    "@value": "As"
+                },
+                {
+                    "@language": "hr",
+                    "@value": "As"
+                },
+                {
+                    "@language": "lt",
+                    "@value": "Asas"
+                },
+                {
+                    "@language": "tl",
+                    "@value": "As"
+                },
+                {
+                    "@language": "cs",
+                    "@value": "As"
+                },
+                {
+                    "@language": "sl",
+                    "@value": "As"
+                },
+                {
+                    "@language": "ka",
+                    "@value": "ასი"
+                },
+                {
+                    "@language": "kk",
+                    "@value": "Асс"
+                },
+                {
+                    "@language": "da",
+                    "@value": "As"
+                }
+            ]
+        }
+    ]
+}
