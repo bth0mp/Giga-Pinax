@@ -969,7 +969,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Verification results
 
-Filled in by the controller after Task 5 Step 5 and Task 6 Step 4.
+Task 5 Step 5, performed by the controller on 2026-09-10 in the in-app Chromium browser at a 400×600 viewport, against `extension/popup.html` served by `python -m http.server 8777` (a plain tab; `chrome.permissions` absent, so permission branches were not exercised; acsearch responses stubbed by wrapping `window.fetch` for `https://www.acsearch.info/` only, all other requests real):
+
+1. Price 23 resolved; term pre-filled `Price 23`; acsearch link `…search.html?term=Price+23&category=1&currency=usd&order=1`. Real Get prices in a plain tab → CORS block → `Couldn’t reach acsearch. Check your connection and try again.`, button restored. Pass (the packaged extension's host permission lifts CORS; that path is for the user to confirm).
+2. Real logged-out fixture → sign-in note with visible `Sign in ↗` to `https://www.acsearch.info/login.html`, no error, no panel; exactly one request, `credentials: "include"`. Pass.
+3. Nine lots 90…450 across 2019–2021 plus one unsold → `$180`, `USD`, `9 sales · 2019–2021`, `$135–$245`, box left 12.5% width 30.56%, median marker 25%, 9 rows linking `search.html?id=…` with `noopener noreferrer`, fee note without the 100-sales sentence, announcement `Median $180 USD over 9 sales.` Pass.
+4. 100 lots → `100 sales · 2016–2025` and the `Only the 100 most recent sales are counted.` sentence. Pass.
+5. RIC I (2nd ed.) Nero 306 → term `Nero 306`; edited to `Nero 306 as`; one request with that term; stored `terms["ric.1(2).ner.306"] = "Nero 306 as"` alongside `price.23`; after reload and re-lookup the field restored `Nero 306 as`. Changing the reference hid the panel. Pass.
+6. Currency → CHF hid the panel and the link carried `currency=chf`; CHF persisted across reload. Pass.
+7. `body` and `documentElement` scrollWidth 400 with panel and open sales list; console clean apart from the expected CORS error in check 1. Pass.
 
 ## Remaining for the user
 
