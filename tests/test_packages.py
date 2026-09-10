@@ -17,13 +17,15 @@ ASSETS = {
     "popup.html",
     "popup.css",
     "popup.js",
-    "sample-data.js",
+    "lookup.js",
+    "preferences.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
     "icons/icon-48.png",
     "icons/icon-128.png",
 }
+HOST_PERMISSIONS = ["https://numismatics.org/*", "https://nomisma.org/*"]
 
 
 class ManifestTests(unittest.TestCase):
@@ -35,10 +37,11 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(browser=browser):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
-                self.assertEqual("Coin Lookup (Test Build)", manifest["name"])
-                self.assertEqual("0.1.1", manifest["version"])
+                self.assertEqual("Giga Pinax", manifest["name"])
+                self.assertEqual("0.2.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
-                self.assertIn("sample", manifest["description"].lower())
+                self.assertIn("RIC", manifest["description"])
+                self.assertNotIn("sample", manifest["description"].lower())
 
                 icon_paths = set(manifest["icons"].values())
                 action_icon_paths = set(manifest["action"]["default_icon"].values())
@@ -55,19 +58,18 @@ class ManifestTests(unittest.TestCase):
                 for relative_path in icon_paths | {manifest["action"]["default_popup"]}:
                     self.assertTrue((ROOT / "extension" / relative_path).is_file())
 
-    def test_manifests_request_no_browser_or_host_permissions(self) -> None:
+    def test_manifests_request_only_type_data_hosts(self) -> None:
         for browser in ("brave", "firefox"):
             with self.subTest(browser=browser):
                 manifest = self.load_manifest(browser)
-                self.assertNotIn("permissions", manifest)
-                self.assertNotIn("optional_permissions", manifest)
-                self.assertNotIn("host_permissions", manifest)
-                self.assertNotIn("optional_host_permissions", manifest)
-                self.assertNotIn("content_scripts", manifest)
+                self.assertEqual(HOST_PERMISSIONS, manifest["host_permissions"])
+                for key in ("permissions", "optional_permissions", "optional_host_permissions", "content_scripts", "background"):
+                    self.assertNotIn(key, manifest)
 
     def test_firefox_declares_identity_and_no_data_collection(self) -> None:
         gecko = self.load_manifest("firefox")["browser_specific_settings"]["gecko"]
         self.assertRegex(gecko["id"], r"^[^@\s]+@[^@\s]+$")
+        self.assertEqual("giga-pinax@local.invalid", gecko["id"])
         self.assertEqual(["none"], gecko["data_collection_permissions"]["required"])
 
 
@@ -94,7 +96,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"coin-lookup-{browser}-0.1.1.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.2.0.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}
@@ -128,14 +130,14 @@ class PackageBuildTests(unittest.TestCase):
     def test_builder_rejects_unknown_browser_without_changing_outputs(self) -> None:
         before = {
             path.name: self.digest(path)
-            for path in DIST.glob("coin-lookup-*.zip")
+            for path in DIST.glob("giga-pinax-*.zip")
         }
         result = self.run_builder("safari")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("unsupported browser", result.stderr.lower())
         after = {
             path.name: self.digest(path)
-            for path in DIST.glob("coin-lookup-*.zip")
+            for path in DIST.glob("giga-pinax-*.zip")
         }
         self.assertEqual(before, after)
 

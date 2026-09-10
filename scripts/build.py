@@ -24,7 +24,8 @@ ASSET_PATHS = (
     "popup.html",
     "popup.css",
     "popup.js",
-    "sample-data.js",
+    "lookup.js",
+    "preferences.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
@@ -106,7 +107,7 @@ def stage_browser(stage_root: Path, browser: str) -> tuple[Path, Path, str]:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
 
-    staged_zip = stage_root / f"coin-lookup-{browser}-{version}.zip"
+    staged_zip = stage_root / f"giga-pinax-{browser}-{version}.zip"
     write_deterministic_zip(staged_zip, inputs)
     return staged_directory, staged_zip, version
 
@@ -125,7 +126,7 @@ def replace_known_directory(staged: Path, destination: Path, output_root: Path) 
 
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
     output_root.mkdir(parents=True, exist_ok=True)
-    stage_root = Path(tempfile.mkdtemp(prefix=".coin-lookup-build-", dir=output_root))
+    stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     staged: list[tuple[str, Path, Path, str]] = []
     try:
         for browser in selected_browsers:
@@ -135,7 +136,7 @@ def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
         results: list[Path] = []
         for browser, staged_directory, staged_zip, version in staged:
             destination_directory = output_root / browser
-            destination_zip = output_root / f"coin-lookup-{browser}-{version}.zip"
+            destination_zip = output_root / f"giga-pinax-{browser}-{version}.zip"
             replace_known_directory(staged_directory, destination_directory, output_root)
             os.replace(staged_zip, destination_zip)
             results.extend((destination_directory, destination_zip))
