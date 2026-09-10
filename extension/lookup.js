@@ -96,3 +96,68 @@ export function toCard(jsonld, corpus, labels = {}) {
     reverse: side('reverse'),
   };
 }
+
+const ORIGIN = 'https://numismatics.org';
+
+async function getText(url, fetchImpl, signal) {
+  const response = await fetchImpl(url, { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
+}
+
+async function getJson(url, fetchImpl, signal) {
+  const response = await fetchImpl(url, { signal, headers: { Accept: 'application/ld+json' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+function withTimeout(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, done: () => clearTimeout(timer) };
+}
+
+export async function resolveLabels(slugs, { fetchImpl, cache, signal }) {
+  const labels = {};
+  await Promise.all(slugs.map(async (slug) => {
+    const cached = cache.get(slug);
+    if (cached) { labels[slug] = cached; return; }
+    try {
+      const label = nomismaLabel(await getJson(`${NOMISMA}${slug}.jsonld`, fetchImpl, signal), slug);
+      if (label) { labels[slug] = label; cache.set(slug, label); }
+    } catch { /* unlabelled concepts fall back to their slug */ }
+  }));
+  return labels;
+}
+
+export async function lookupById(corpus, id, options = {}) {
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
+  const timer = withTimeout(timeoutMs);
+  try {
+    const jsonld = await getJson(`${ORIGIN}/${corpus}/id/${id}.jsonld`, fetchImpl, timer.signal);
+    const labels = await resolveLabels(nomismaSlugs(jsonld), { fetchImpl, cache, signal: timer.signal });
+    const card = toCard(jsonld, corpus, labels);
+    return card ? { status: 'ok', card } : { status: 'network' };
+  } catch {
+    return { status: 'network' };
+  } finally {
+    timer.done();
+  }
+}
+
+export async function lookupType(reference, options = {}) {
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
+  const { corpus, query } = buildQuery(reference);
+  const timer = withTimeout(timeoutMs);
+  let picked;
+  try {
+    const xml = await getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(query)}`, fetchImpl, timer.signal);
+    picked = pickMatch(parseFeed(xml), query);
+  } catch {
+    return { status: 'network' };
+  } finally {
+    timer.done();
+  }
+  if (picked.status !== 'ok') return { ...picked, corpus, query };
+  return lookupById(corpus, picked.entry.id, options);
+}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -79,4 +79,63 @@ test('nomismaSlugs lists referenced concepts in display order; nomismaLabel read
   assert.equal(nomismaLabel(json('nomisma-nero.jsonld'), 'nero'), 'Nero');
   assert.equal(nomismaLabel(json('nomisma-as.jsonld'), 'as'), 'As');
   assert.equal(nomismaLabel({}, 'nero'), null);
+});
+
+function fakeFetch(routes) {
+  const calls = [];
+  const impl = async (url, { signal } = {}) => {
+    calls.push(url);
+    if (signal?.aborted) throw new Error('aborted');
+    const hit = Object.entries(routes).find(([needle]) => url.includes(needle));
+    if (!hit) return { ok: false, status: 404, text: async () => '', json: async () => ({}) };
+    return { ok: true, status: 200, text: async () => hit[1], json: async () => JSON.parse(hit[1]) };
+  };
+  impl.calls = calls;
+  return impl;
+}
+
+test('lookupType resolves an exact RIC match into a labelled card and caches labels', async () => {
+  const fetchImpl = fakeFetch({
+    'ocre/apis/search': fixture('ocre-search-nero-306.xml'),
+    'ocre/id/ric.1(2).ner.306.jsonld': fixture('ocre-nero-306.jsonld'),
+    'nomisma.org/id/nero.jsonld': fixture('nomisma-nero.jsonld'),
+    'nomisma.org/id/as.jsonld': fixture('nomisma-as.jsonld'),
+  });
+  const cache = new Map([['rome', 'Rome']]);
+  const result = await lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' }, { fetchImpl, cache });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.authority, 'Nero');
+  assert.equal(result.card.denomination, 'As');
+  assert.equal(result.card.mint, 'Rome');
+  assert.equal(result.card.material, 'ae');
+  assert.equal(cache.get('nero'), 'Nero');
+  assert.ok(fetchImpl.calls[0].endsWith('/ocre/apis/search?q=RIC%20I%20(second%20edition)%20Nero%20306'));
+  assert.ok(fetchImpl.calls[0].startsWith('https://numismatics.org/'));
+  assert.ok(!fetchImpl.calls.some((url) => url.includes('rome.jsonld')));
+});
+
+test('lookupType reports candidates, none, network and timeout outcomes', async () => {
+  const pella = fakeFetch({ 'pella/apis/search': fixture('pella-search-price-23.xml') });
+  const near = await lookupType({ catalogue: 'Price', number: '2' }, { fetchImpl: pella });
+  assert.equal(near.status, 'candidates');
+  assert.equal(near.corpus, 'pella');
+  assert.equal(near.query, 'Price 2');
+  assert.equal(near.candidates.length, 2);
+
+  const empty = fakeFetch({ 'pella/apis/search': '<feed></feed>' });
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23000' }, { fetchImpl: empty }), { status: 'none', corpus: 'pella', query: 'Price 23000' });
+
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: fakeFetch({}) }), { status: 'network' });
+
+  const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+});
+
+test('lookupById fetches one record directly', async () => {
+  const fetchImpl = fakeFetch({ 'pella/id/price.23.jsonld': fixture('pella-price-23.jsonld') });
+  const result = await lookupById('pella', 'price.23', { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.label, 'Price 23');
+  assert.equal(result.card.denomination, 'tetradrachm');
+  assert.deepEqual(await lookupById('pella', 'price.23', { fetchImpl: fakeFetch({}) }), { status: 'network' });
 });
