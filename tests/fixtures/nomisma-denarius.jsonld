@@ -1,0 +1,321 @@
+{
+    "@context": {
+        "bio": "http://purl.org/vocab/bio/0.1/",
+        "crm": "http://www.cidoc-crm.org/cidoc-crm/",
+        "crmarchaeo": "http://www.cidoc-crm.org/cidoc-crm/CRMarchaeo/",
+        "crmdig": "http://www.ics.forth.gr/isl/CRMdig/",
+        "crmgeo": "http://www.ics.forth.gr/isl/CRMgeo/",
+        "crmsci": "http://www.ics.forth.gr/isl/CRMsci/",
+        "dcmitype": "http://purl.org/dc/dcmitype/",
+        "dcterms": "http://purl.org/dc/terms/",
+        "foaf": "http://xmlns.com/foaf/0.1/",
+        "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+        "nm": "http://nomisma.org/id/",
+        "nmo": "http://nomisma.org/ontology#",
+        "org": "http://www.w3.org/ns/org#",
+        "osgeo": "http://data.ordnancesurvey.co.uk/ontology/geometry/",
+        "prov": "http://www.w3.org/ns/prov#",
+        "rdac": "http://www.rdaregistry.info/Elements/c/",
+        "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+        "sd": "http://www.w3.org/TR/sparql11-service-description/",
+        "skos": "http://www.w3.org/2004/02/skos/core#",
+        "spatial": "http://jena.apache.org/spatial#",
+        "un": "http://www.owl-ontologies.com/Ontology1181490123.owl#",
+        "void": "http://rdfs.org/ns/void#",
+        "wordnet": "http://ontologi.es/WordNet/class/",
+        "xsd": "http://www.w3.org/2001/XMLSchema#"
+    },
+    "@graph": [
+        {
+            "@id": "nm:denarius",
+            "@type": [
+                "nmo:Denomination",
+                "skos:Concept"
+            ],
+            "dcterms:isPartOf": {
+                "@id": "nm:roman_numismatics"
+            },
+            "nmo:hasMaterial": {
+                "@id": "nm:ar"
+            },
+            "skos:changeNote": {
+                "@id": "http://nomisma.org/id/denarius#provenance"
+            },
+            "skos:definition": {
+                "@language": "en",
+                "@value": "The most common usage is for the main silver coin of the Roman Republic and Empire. The term continued to be used in late imperial accounting and for subsequent coins. Nomisma does not exclude these uses of the term in context where these other senses are intended, though it may develop a more specific vocabulary in the future (see e.g. medieval_denarius)."
+            },
+            "skos:exactMatch": [
+                {
+                    "@id": "http://dbpedia.org/resource/Denarius"
+                },
+                {
+                    "@id": "http://collection.britishmuseum.org/id/thesauri/currency/denarius"
+                },
+                {
+                    "@id": "http://vocab.getty.edu/aat/300037266"
+                },
+                {
+                    "@id": "http://www.wikidata.org/entity/Q187776"
+                },
+                {
+                    "@id": "https://www.freebase.com/m/02b1d"
+                },
+                {
+                    "@id": "https://ikmk.smb.museum/ndp/nominal/729"
+                }
+            ],
+            "skos:inScheme": {
+                "@id": "nm:"
+            },
+            "skos:prefLabel": [
+                {
+                    "@language": "en",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "de",
+                    "@value": "Denar"
+                },
+                {
+                    "@language": "fr",
+                    "@value": "Denier"
+                },
+                {
+                    "@language": "ro",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "ru",
+                    "@value": "Денарий"
+                },
+                {
+                    "@language": "nl",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "it",
+                    "@value": "Denario"
+                },
+                {
+                    "@language": "el",
+                    "@value": "Δηνάριον"
+                },
+                {
+                    "@language": "cs",
+                    "@value": "Denár"
+                },
+                {
+                    "@language": "hu",
+                    "@value": "Dénár"
+                },
+                {
+                    "@language": "uk",
+                    "@value": "Денарій"
+                },
+                {
+                    "@language": "ja",
+                    "@value": "デナリウス"
+                },
+                {
+                    "@language": "pt",
+                    "@value": "Denário"
+                },
+                {
+                    "@language": "ko",
+                    "@value": "데나리우스"
+                },
+                {
+                    "@language": "fi",
+                    "@value": "Denaari"
+                },
+                {
+                    "@language": "ca",
+                    "@value": "Denari"
+                },
+                {
+                    "@language": "sv",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "es",
+                    "@value": "Denario"
+                },
+                {
+                    "@language": "zh",
+                    "@value": "迪纳厄斯"
+                },
+                {
+                    "@language": "pl",
+                    "@value": "Denar"
+                },
+                {
+                    "@language": "no",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "bg",
+                    "@value": "денар"
+                },
+                {
+                    "@language": "eu",
+                    "@value": "Denario"
+                },
+                {
+                    "@language": "he",
+                    "@value": "דנאריוס"
+                },
+                {
+                    "@language": "gl",
+                    "@value": "Denario"
+                },
+                {
+                    "@language": "br",
+                    "@value": "Diner"
+                },
+                {
+                    "@language": "sh",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "ar",
+                    "@value": "ديناريوس"
+                },
+                {
+                    "@language": "eo",
+                    "@value": "Denaro"
+                },
+                {
+                    "@language": "sk",
+                    "@value": "Denár"
+                },
+                {
+                    "@language": "tr",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "mk",
+                    "@value": "Денариј"
+                },
+                {
+                    "@language": "la",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "fa",
+                    "@value": "دناریوس"
+                },
+                {
+                    "@language": "hr",
+                    "@value": "Denar"
+                },
+                {
+                    "@language": "lt",
+                    "@value": "Denaras"
+                },
+                {
+                    "@language": "tl",
+                    "@value": "Denaryo"
+                },
+                {
+                    "@language": "an",
+                    "@value": "Denario"
+                },
+                {
+                    "@language": "da",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "sr",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "ur",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "nb",
+                    "@value": "Denarius"
+                },
+                {
+                    "@language": "sl",
+                    "@value": "Denarij"
+                },
+                {
+                    "@language": "be",
+                    "@value": "Дэнарый"
+                }
+            ]
+        },
+        {
+            "@id": "http://nomisma.org/id/denarius#provenance",
+            "@type": "dcterms:ProvenanceStatement",
+            "foaf:topic": {
+                "@id": "nm:denarius"
+            },
+            "prov:activity": [
+                {
+                    "@id": "_:Nd045f0be40a443a19df046470afcbd5c"
+                },
+                {
+                    "@id": "_:N2755021e52334497a035e554914e7f7c"
+                }
+            ],
+            "prov:wasGeneratedBy": {
+                "@id": "_:N21e9c826039c41a49fb9ea280266f59b"
+            }
+        },
+        {
+            "@id": "_:N21e9c826039c41a49fb9ea280266f59b",
+            "@type": [
+                "prov:Activity",
+                "prov:Create"
+            ],
+            "dcterms:description": {
+                "@language": "en",
+                "@value": "This is among the original Nomisma XHTML+RDFa fragments, most likely created between 2010-2012 by Sebastian Heath and/or Andy Meadows."
+            },
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2012-10-28T21:43:36+00:00"
+            },
+            "prov:wasAssociatedWith": [
+                {
+                    "@id": "http://nomisma.org/editor/ameadows"
+                },
+                {
+                    "@id": "http://nomisma.org/editor/sfsheath"
+                }
+            ]
+        },
+        {
+            "@id": "_:Nd045f0be40a443a19df046470afcbd5c",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2017-01-27T20:18:19+00:00"
+            }
+        },
+        {
+            "@id": "_:N2755021e52334497a035e554914e7f7c",
+            "@type": [
+                "prov:Activity",
+                "prov:Modify"
+            ],
+            "dcterms:type": "manual",
+            "prov:atTime": {
+                "@type": "xsd:dateTime",
+                "@value": "2023-12-19T10:23:59.940000+00:00"
+            },
+            "prov:wasAssociatedWith": {
+                "@id": "http://nomisma.org/editor/cweiss"
+            }
+        }
+    ]
+}

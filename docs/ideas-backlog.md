@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick picks the top unchecked item below; CRRO is the cheapest high-value one.
+- v0.4 CRRO / RRC references: `docs/superpowers/plans/2026-09-11-giga-pinax-v0.4-crro.md`.
 
 ## Streamlining the extension
 
