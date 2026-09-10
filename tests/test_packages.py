@@ -19,13 +19,14 @@ ASSETS = {
     "popup.js",
     "lookup.js",
     "preferences.js",
+    "prices.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
     "icons/icon-48.png",
     "icons/icon-128.png",
 }
-HOST_PERMISSIONS = ["https://numismatics.org/*", "https://nomisma.org/*"]
+HOST_PERMISSIONS = ["https://numismatics.org/*", "https://nomisma.org/*", "https://www.acsearch.info/*"]
 
 
 class ManifestTests(unittest.TestCase):
@@ -38,7 +39,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.2.0", manifest["version"])
+                self.assertEqual("0.3.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertIn("RIC", manifest["description"])
                 self.assertNotIn("sample", manifest["description"].lower())
@@ -96,7 +97,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.2.0.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.3.0.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}

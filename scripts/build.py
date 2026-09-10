@@ -26,6 +26,7 @@ ASSET_PATHS = (
     "popup.js",
     "lookup.js",
     "preferences.js",
+    "prices.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
