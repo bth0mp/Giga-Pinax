@@ -981,6 +981,8 @@ Task 5 Step 5, performed by the controller on 2026-09-10 in the in-app Chromium 
 
 Task 6 Step 4 served-page check: `http://localhost:8777/install/` shows `GIGA PINAX · VERSION 0.3.0` and `Types and hammer prices, in your toolbar.`; `HEAD` on `giga-pinax-brave-0.3.0.zip` and `giga-pinax-firefox-0.3.0.zip` returned 200; no stale 0.2.0 or "not connected" text; no popup-preview link; every `target="_blank"` link has `noopener`; no console messages. Pass.
 
+Re-verification after the final-review fixes (`d2e030c`, `d2c14ae`), same setup: a whitespace-only term shows `Enter a search term for acsearch, such as “Nero 306”.` and sends nothing, storing no term; five Get prices clicks made exactly five requests, every one with `credentials: "include"` and `cache: "no-store"`; nine `… USD` prices plus one unsold give `$180`, `$135–$245` and `9 sales matching “Price 23” · 2019–2021 · 1 without a price`; `200 EUR`/`300 EUR` with USD selected give the "No hammer prices" note, announced; CHF shows `CHF 180` with the separate code label hidden and announces `Median CHF 180 over 9 sales.`; a single price draws the box at 50% with zero width; the real logged-out fixture gives the new sign-in note with its link, announced once (`#prices-note` has no role); `#price-term` is described by the error and note; 400 px with no overflow. Pass.
+
 ## Remaining for the user
 
 - Reload in Brave, look up a type, select Get prices on your Premium account, and report whether numbers appear. If the panel reports no hammer prices although acsearch shows them, paste one lot's price text as acsearch displays it; the parser and a trimmed logged-in fixture get adjusted in a follow-up.

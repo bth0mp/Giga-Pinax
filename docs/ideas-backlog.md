@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- v0.3 acsearch prices: `docs/superpowers/plans/2026-09-10-giga-pinax-v0.3-prices.md`.
+- Nothing. Next loop tick picks the top unchecked item below; CRRO is the cheapest high-value one.
 
 ## Streamlining the extension
 
@@ -33,3 +33,4 @@ ANS runs several type corpora on the same Numishare software as OCRE and PELLA, 
 ## Done
 
 - v0.2 open-data type lookup (`fbb6ab8`).
+- v0.3 acsearch prices: median, middle 50%, sales list, editable remembered term, CHF, strict one-amount parser, gesture-safe permissions (`d2c14ae`). Awaiting the first real run on a Premium account to confirm the logged-in price format.
