@@ -157,3 +157,7 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
 });
+
+test('defaultTerm uses Crawford wording for RRC, which acsearch lists far more often', () => {
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: ' 44/5 ' }), 'Crawford 44/5');
+});

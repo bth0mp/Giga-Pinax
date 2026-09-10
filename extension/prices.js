@@ -62,7 +62,9 @@ export function parsePrice(text, currency) {
 }
 
 export function defaultTerm({ catalogue, number, section }) {
-  return catalogue === 'RIC' ? squash(`${squash(section)} ${squash(number)}`) : squash(`Price ${squash(number)}`);
+  if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
+  if (catalogue === 'RRC') return squash(`Crawford ${squash(number)}`);
+  return squash(`Price ${squash(number)}`);
 }
 
 const PAGE_SIZE = 100;

@@ -11,6 +11,10 @@ const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connecti
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
+const DEFAULT_NUMBER = { Price: '23', RIC: '306', RRC: '44/5' };
+const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
+const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: RRC 44/5' };
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -38,12 +42,13 @@ function savePreferences() {
 }
 
 function updateFields() {
-  const isRic = $('catalogue').value === 'RIC';
+  const catalogue = $('catalogue').value;
+  const isRic = catalogue === 'RIC';
   $('ric-fields').hidden = !isRic;
   $('ric-volume').required = isRic;
   $('ric-section').required = isRic;
-  $('reference-label').textContent = isRic ? 'RIC number (including any suffix)' : 'Price number';
-  $('reference-help').textContent = isRic ? 'Example: I (2nd edition), Nero 306' : 'Example: Price 23';
+  $('reference-label').textContent = REFERENCE_LABEL[catalogue];
+  $('reference-help').textContent = REFERENCE_HELP[catalogue];
 }
 
 function setPricesBusy(busy) {
@@ -185,7 +190,7 @@ async function run(perform) {
   if (id !== requestId) return;
   if (outcome.status === 'ok') renderCard(outcome.card);
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
-  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${outcome.corpus === 'ocre' ? 'OCRE' : 'PELLA'}. Check the volume, edition and number.`);
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. Check the volume, edition and number.`);
   else showError(NETWORK_MESSAGE);
 }
 
@@ -228,7 +233,7 @@ $('ric-section').value = preferences.section;
 updateFields();
 
 $('catalogue').addEventListener('change', () => {
-  $('reference-number').value = $('catalogue').value === 'RIC' ? '306' : '23';
+  $('reference-number').value = DEFAULT_NUMBER[$('catalogue').value];
   updateFields();
   savePreferences();
   clearOutput();

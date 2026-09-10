@@ -17,11 +17,11 @@ export function restorePreferences(raw) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const catalogue = saved.catalogue === 'RIC' ? 'RIC' : 'Price';
+  const catalogue = ['RIC', 'RRC'].includes(saved.catalogue) ? saved.catalogue : 'Price';
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,
-    number: text(saved.number, catalogue === 'RIC' ? '306' : '23'),
+    number: text(saved.number, { Price: '23', RIC: '306', RRC: '44/5' }[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),
     section: text(saved.section, 'Nero'),
     terms: restoreTerms(saved.terms),

@@ -49,3 +49,9 @@ test('rememberTerm stores the newest term last and drops the oldest beyond 50', 
   assert.deepEqual(blank.terms, preferences.terms);
   assert.equal(Object.hasOwn(blank.terms, 'k'), false);
 });
+
+test('RRC is a remembered catalogue with its own default number', () => {
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RRC' })).catalogue, 'RRC');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RRC' })).number, '44/5');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RPC' })).catalogue, 'Price');
+});

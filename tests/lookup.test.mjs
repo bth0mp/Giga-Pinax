@@ -161,3 +161,24 @@ test('lookupById fetches one record directly', async () => {
   assert.equal(result.card.denomination, 'tetradrachm');
   assert.deepEqual(await lookupById('pella', 'price.23', { fetchImpl: fakeFetch({}) }), { status: 'network' });
 });
+
+test('CRRO: RRC references build a CRRO query and fall back to the issuer as authority', () => {
+  assert.deepEqual(buildQuery({ catalogue: 'RRC', number: ' 44/5 ' }), { corpus: 'crro', query: 'RRC 44/5' });
+  assert.equal(pickMatch(parseFeed(fixture('crro-search-rrc-44-5.xml')), 'RRC 44/5').entry.id, 'rrc-44.5');
+  const jsonld = json('crro-rrc-44-5.jsonld');
+  assert.deepEqual(nomismaSlugs(jsonld), ['anonymous', 'denarius', 'rome', 'ar']);
+  const card = toCard(jsonld, 'crro', { anonymous: 'Anonymous', denarius: 'Denarius', rome: 'Rome', ar: 'Silver' });
+  assert.equal(card.id, 'rrc-44.5');
+  assert.equal(card.label, 'RRC 44/5');
+  assert.deepEqual([card.authority, card.denomination, card.mint, card.material, card.dates], ['Anonymous', 'Denarius', 'Rome', 'Silver', '211 BC']);
+  assert.deepEqual(card.obverse, { legend: null, description: 'Helmeted head of Roma, right. Border of dots.' });
+  assert.equal(card.reverse.legend, 'ROMA');
+  assert.equal(nomismaLabel(json('nomisma-denarius.jsonld'), 'denarius'), 'Denarius');
+});
+
+test('authority still wins over issuer when a record has both', () => {
+  const jsonld = { '@graph': [{ '@id': 'http://numismatics.org/crro/id/x', 'skos:prefLabel': [{ '@value': 'X' }],
+    'nmo:hasAuthority': [{ '@id': 'http://nomisma.org/id/nero' }], 'nmo:hasIssuer': [{ '@id': 'http://nomisma.org/id/anonymous' }] }] };
+  assert.deepEqual(nomismaSlugs(jsonld), ['nero']);
+  assert.equal(toCard(jsonld, 'crro', {}).authority, 'nero');
+});

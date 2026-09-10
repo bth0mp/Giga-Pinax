@@ -10,6 +10,7 @@ export function buildQuery({ catalogue, number, volume, section }) {
     const edition = squash(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
     return { corpus: 'ocre', query: squash(`RIC ${edition} ${squash(section)} ${squash(number)}`) };
   }
+  if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${squash(number)}`) };
   return { corpus: 'pella', query: squash(`Price ${squash(number)}`) };
 }
 
@@ -36,11 +37,13 @@ export function pickMatch(entries, query) {
 }
 
 const NOMISMA = 'https://nomisma.org/id/';
-const NAMED_FIELDS = ['nmo:hasAuthority', 'nmo:hasDenomination', 'nmo:hasMint', 'nmo:hasMaterial'];
+// Card slots in display order; each lists fallbacks (CRRO names the issuer where OCRE/PELLA name the authority).
+const NAMED_FIELDS = [['nmo:hasAuthority', 'nmo:hasIssuer'], ['nmo:hasDenomination'], ['nmo:hasMint'], ['nmo:hasMaterial']];
 
 const graphOf = (jsonld) => (Array.isArray(jsonld?.['@graph']) ? jsonld['@graph'] : []);
 const mainNode = (jsonld) => graphOf(jsonld).find((node) => typeof node['@id'] === 'string' && !node['@id'].includes('#')) ?? null;
 const slugOf = (node) => (typeof node?.['@id'] === 'string' ? node['@id'].split('/').pop() : null);
+const namedSlugs = (main) => NAMED_FIELDS.map((fields) => fields.map((field) => slugOf(main?.[field]?.[0])).find(Boolean) ?? null);
 
 function english(values) {
   const list = Array.isArray(values) ? values : values ? [values] : [];
@@ -61,7 +64,7 @@ export function formatDates(start, end) {
 
 export function nomismaSlugs(jsonld) {
   const main = mainNode(jsonld);
-  return NAMED_FIELDS.map((field) => slugOf(main?.[field]?.[0])).filter(Boolean);
+  return namedSlugs(main).filter(Boolean);
 }
 
 export function nomismaLabel(jsonld, slug) {
@@ -78,19 +81,16 @@ export function toCard(jsonld, corpus, labels = {}) {
     const node = graphOf(jsonld).find((entry) => entry['@id'] === `${uri}#${name}`) ?? {};
     return { legend: english(node['nmo:hasLegend']), description: english(node['dcterms:description']) };
   };
-  const named = (field) => {
-    const slug = slugOf(main[field]?.[0]);
-    return slug ? labels[slug] ?? slug : null;
-  };
+  const [authority, denomination, mint, material] = namedSlugs(main).map((slug) => (slug ? labels[slug] ?? slug : null));
   return {
     id,
     uri,
     corpus,
     label: english(main['skos:prefLabel']) ?? id,
-    authority: named('nmo:hasAuthority'),
-    denomination: named('nmo:hasDenomination'),
-    mint: named('nmo:hasMint'),
-    material: named('nmo:hasMaterial'),
+    authority,
+    denomination,
+    mint,
+    material,
     dates: formatDates(main['nmo:hasStartDate']?.[0]?.['@value'], main['nmo:hasEndDate']?.[0]?.['@value']),
     obverse: side('obverse'),
     reverse: side('reverse'),
