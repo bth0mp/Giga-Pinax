@@ -13,6 +13,7 @@ const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const DEFAULT_NUMBER = { Price: '23', RIC: '306', RRC: '44/5' };
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
+const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.' };
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number' };
 const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: RRC 44/5' };
 
@@ -190,7 +191,7 @@ async function run(perform) {
   if (id !== requestId) return;
   if (outcome.status === 'ok') renderCard(outcome.card);
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
-  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. Check the volume, edition and number.`);
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`);
   else showError(NETWORK_MESSAGE);
 }
 
