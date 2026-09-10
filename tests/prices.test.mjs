@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices } from '../extension/prices.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -45,4 +45,77 @@ test('parsePrice tolerates common separators and rejects non-prices', () => {
 test('defaultTerm builds the acsearch term from the guided reference', () => {
   assert.equal(defaultTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
   assert.equal(defaultTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');
+});
+
+const lot = (price, date = '01.01.2024', id = '1') => ({ id, title: `Lot ${id}`, date, price });
+
+test('summarise computes median and interpolated quartiles over priced lots only', () => {
+  const amounts = [90, 110, 135, 165, 180, 215, 245, 310, 450];
+  const lots = [
+    ...amounts.map((amount, index) => lot(String(amount), `01.0${index + 1}.${2019 + (index % 3)}`, String(index))),
+    lot('*', '01.01.2020', 'x'),
+    lot('', '01.01.2021', 'y'),
+  ];
+  const summary = summarise(lots);
+  assert.equal(summary.total, 11);
+  assert.equal(summary.count, 9);
+  assert.equal(summary.signedOut, false);
+  assert.equal(summary.median, 180);
+  assert.equal(summary.lowerQuartile, 135);
+  assert.equal(summary.upperQuartile, 245);
+  assert.equal(summary.min, 90);
+  assert.equal(summary.max, 450);
+  assert.equal(summary.earliest, 2019);
+  assert.equal(summary.latest, 2021);
+  assert.equal(summary.capped, false);
+  assert.deepEqual(summary.priced.map((entry) => entry.amount).slice(0, 3), [90, 110, 135]);
+});
+
+test('summarise handles one, two and a hundred lots, and flags signed-out pages', () => {
+  const one = summarise([lot('500')]);
+  assert.deepEqual([one.median, one.lowerQuartile, one.upperQuartile, one.min, one.max], [500, 500, 500, 500, 500]);
+  const two = summarise([lot('100'), lot('300')]);
+  assert.deepEqual([two.median, two.lowerQuartile, two.upperQuartile], [200, 150, 250]);
+  const hundred = summarise(Array.from({ length: 100 }, (_, index) => lot(String(index + 1), '01.01.2024', String(index))));
+  assert.equal(hundred.count, 100);
+  assert.equal(hundred.median, 50.5);
+  assert.equal(hundred.capped, true);
+  const out = summarise([lot('*'), lot('*')]);
+  assert.equal(out.signedOut, true);
+  assert.equal(out.count, 0);
+  assert.equal(out.median, null);
+  const unsold = summarise([lot(''), lot('-')]);
+  assert.equal(unsold.signedOut, false);
+  assert.equal(unsold.count, 0);
+  const empty = summarise([]);
+  assert.equal(empty.total, 0);
+  assert.equal(empty.signedOut, false);
+  assert.equal(empty.earliest, null);
+});
+
+function fakeFetch(body, { ok = true, status = 200 } = {}) {
+  const calls = [];
+  const impl = async (url, init) => { calls.push({ url, init }); return { ok, status, text: async () => body }; };
+  impl.calls = calls;
+  return impl;
+}
+
+test('fetchPrices sends credentials to acsearch and classifies outcomes', async () => {
+  const signedOut = fakeFetch(fixture('acsearch-search-nero-306.html'));
+  assert.deepEqual(await fetchPrices({ term: 'Nero 306', currency: 'USD' }, { fetchImpl: signedOut }), { status: 'signed-out' });
+  assert.equal(signedOut.calls[0].url, 'https://www.acsearch.info/search.html?term=Nero+306&category=1&currency=usd&order=1');
+  assert.equal(signedOut.calls[0].init.credentials, 'include');
+  assert.ok(signedOut.calls[0].init.signal instanceof AbortSignal);
+
+  const page = (lots) => `<script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script>`;
+  const ok = await fetchPrices({ term: 'Nero 306', currency: 'EUR' }, { fetchImpl: fakeFetch(page([lot('100'), lot('300'), lot('*')])) });
+  assert.equal(ok.status, 'ok');
+  assert.equal(ok.summary.median, 200);
+  assert.equal(ok.summary.total, 3);
+  assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'network' });
+  const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
 });

@@ -1,3 +1,5 @@
+import { TIMEOUT_MS } from './lookup.js';
+
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
 const MARKER = 'acsearch.initSearchResults = ';
@@ -55,4 +57,54 @@ export function parsePrice(text) {
 
 export function defaultTerm({ catalogue, number, section }) {
   return catalogue === 'RIC' ? squash(`${squash(section)} ${squash(number)}`) : squash(`Price ${squash(number)}`);
+}
+
+const PAGE_SIZE = 100;
+
+export function summarise(lots) {
+  const priced = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price) })).filter((entry) => entry.amount !== null);
+  const amounts = priced.map((entry) => entry.amount).sort((a, b) => a - b);
+  const at = (fraction) => {
+    const position = fraction * (amounts.length - 1);
+    const low = Math.floor(position);
+    const high = Math.ceil(position);
+    return amounts[low] + (amounts[high] - amounts[low]) * (position - low);
+  };
+  const years = priced.map((entry) => Number.parseInt(entry.date.slice(-4), 10)).filter(Number.isFinite);
+  const has = amounts.length > 0;
+  return {
+    total: lots.length,
+    count: amounts.length,
+    signedOut: lots.length > 0 && !has && lots.every((entry) => String(entry.price).trim() === '*'),
+    capped: lots.length >= PAGE_SIZE,
+    priced,
+    median: has ? at(0.5) : null,
+    lowerQuartile: has ? at(0.25) : null,
+    upperQuartile: has ? at(0.75) : null,
+    min: has ? amounts[0] : null,
+    max: has ? amounts[amounts.length - 1] : null,
+    earliest: years.length ? Math.min(...years) : null,
+    latest: years.length ? Math.max(...years) : null,
+  };
+}
+
+export async function fetchPrices({ term, currency }, options = {}) {
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(buildSearchUrl({ term, currency }), { signal: controller.signal, credentials: 'include' });
+    if (!response.ok) return { status: 'network' };
+    const lots = extractLots(await response.text());
+    if (!lots) return { status: 'network' };
+    if (lots.length === 0) return { status: 'empty', term };
+    const summary = summarise(lots);
+    if (summary.signedOut) return { status: 'signed-out' };
+    if (summary.count === 0) return { status: 'unpriced', term };
+    return { status: 'ok', summary };
+  } catch {
+    return { status: 'network' };
+  } finally {
+    clearTimeout(timer);
+  }
 }
