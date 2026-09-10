@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Coin Lookup</title>
+  <title>Giga Pinax</title>
   <link rel="icon" href="icons/icon-32.png">
   <link rel="stylesheet" href="popup.css">
   <script src="popup.js" type="module"></script>
@@ -13,50 +13,38 @@
   <main class="popup">
     <header class="popup-header">
       <img class="brand-icon" src="icons/icon-48.png" width="34" height="34" alt="">
-      <div><h1>Coin Lookup</h1><p>Ancient auction research</p></div>
-      <button id="help-button" class="text-button header-action" type="button" aria-label="Show account and test-build information">Help</button>
+      <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
     </header>
-    <div class="sample-ribbon"><span aria-hidden="true"></span>Test build <b aria-hidden="true">/</b> Sample prices only</div>
     <div class="popup-scroll">
-      <section id="welcome-screen" class="welcome-screen" aria-labelledby="welcome-heading">
-        <div class="welcome-art" aria-hidden="true"><svg viewBox="0 0 120 100"><circle cx="48" cy="48" r="32"/><circle cx="48" cy="48" r="24"/><path d="M59 36a17 17 0 1 0 0 24"/><circle cx="80" cy="65" r="21"/><path d="m94 81 12 13"/></svg></div>
-        <p class="eyebrow">YOUR RESEARCH, CLOSE AT HAND</p>
-        <h2 id="welcome-heading">Know the sales<br>behind the reference.</h2>
-        <p class="welcome-copy">Look up an ancient coin type and review the sales behind its price.</p>
-        <a id="welcome-signin" class="primary-button" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer">Sign in to acsearch <span aria-hidden="true">↗</span></a>
-        <p class="welcome-note">Sign in on acsearch with your own account. This test build cannot verify your login or retrieve live prices yet.</p>
-        <button id="try-sample" class="text-button explore-button" type="button">Explore sample prices <span aria-hidden="true">→</span></button>
-        <p class="sample-explanation">Fictional sales let you try the popup now. No acsearch account is needed for the samples.</p>
+      <form id="reference-form" class="reference-form">
+        <div class="catalogue-row">
+          <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option></select></div>
+          <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
+        </div>
+        <div id="ric-fields" class="ric-fields" hidden>
+          <div><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" maxlength="120" autocomplete="off"></div>
+          <div><label for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" maxlength="120" autocomplete="off"></div>
+        </div>
+        <label id="reference-label" for="reference-number">Price number</label>
+        <div class="search-row"><input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button id="lookup-button" class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><span id="lookup-label">Look up</span></button></div>
+        <p id="reference-help" class="field-hint">Example: Price 23</p>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <div id="candidates" class="candidates" hidden><p class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list"></ul></div>
+      </form>
+      <section id="result" class="result" aria-labelledby="result-reference" hidden>
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
+        <dl class="sides">
+          <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
+          <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
+        </dl>
+        <div class="range-block"><div><p class="metric-label">Prices</p><p class="price-pending">Prices not connected yet. Use “Search on acsearch” to view sales with your own account.</p></div></div>
+        <a id="acsearch-link" class="primary-button acsearch-button" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">Search on acsearch <span aria-hidden="true">↗</span></a>
       </section>
-
-      <section id="lookup-screen" hidden aria-label="Sample reference lookup">
-        <form id="reference-form" class="reference-form">
-          <div class="catalogue-row">
-            <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option></select></div>
-            <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
-          </div>
-          <div id="ric-fields" class="ric-fields" hidden>
-            <div><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" value="I (2nd edition)" maxlength="120" autocomplete="off"></div>
-            <div><label for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" value="Nero" maxlength="120" autocomplete="off"></div>
-          </div>
-          <label id="reference-label" for="reference-number">Price number</label>
-          <div class="search-row"><input id="reference-number" name="reference" value="23" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>Show sample</button></div>
-          <p id="reference-help" class="field-hint">Included example: Price 23</p>
-          <p id="form-error" class="form-error" role="alert" hidden></p>
-        </form>
-        <section id="sample-results" class="sample-results" aria-labelledby="result-reference" hidden>
-          <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-type"></p></div><a id="type-link" class="type-link" href="https://numismatics.org/pella/id/price.23" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
-          <div class="median-block"><p class="metric-label">Median sample hammer price</p><div class="median-line"><strong id="median-amount"></strong><span id="median-currency">USD</span><span class="sample-tag">Fictional</span></div><p class="sample-period">9 illustrative sales · Not a valuation</p></div>
-          <div class="range-block"><div><p class="metric-label">Middle 50% of sample</p><strong id="range-amount"></strong></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span class="range-box"></span><span class="range-median"></span></div></div>
-          <details id="sale-details" class="sale-details"><summary><span>Inspect sample sales</span><span class="sale-count">9 <span class="chevron" aria-hidden="true">⌄</span></span></summary><p class="sales-caption">Invented examples for testing this build.</p><ol id="sale-list" class="sale-list"></ol></details>
-          <p class="price-note">Fees, tax and shipping excluded. Currency changes show formatting, not conversion.</p>
-        </section>
-        <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Show sample” to check it.</p>
-      </section>
+      <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
-      <noscript><p class="storage-note">This extension needs JavaScript to show its sample lookup.</p></noscript>
+      <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
     </div>
-    <footer class="popup-footer"><span class="account-status">Account not verified</span><a id="footer-signin" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" aria-label="Sign in on acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
+    <footer class="popup-footer"><span>Type data: ANS OCRE &amp; PELLA (ODbL)</span><a href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="Open acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
     <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
   </main>
 </body>

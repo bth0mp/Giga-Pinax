@@ -1,11 +1,23 @@
-import { resolveSample, restorePreferences, sampleAmounts, sampleSummary } from './sample-data.js';
+import { HOST_ORIGINS, lookupById, lookupType } from './lookup.js';
+import { STORAGE_KEY, restorePreferences } from './preferences.js';
 
 const $ = (id) => document.getElementById(id);
-const storageKey = 'coin-lookup-test-preferences-v1';
+const api = globalThis.browser ?? globalThis.chrome;
+const LABELS_KEY = 'giga-pinax-labels-v1';
+const NETWORK_MESSAGE = 'Couldn’t reach numismatics.org. Check your connection and try again.';
+const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
+
 let rawPreferences = null;
-try { rawPreferences = localStorage.getItem(storageKey); }
+try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
 catch { $('storage-note').hidden = false; }
 let preferences = restorePreferences(rawPreferences);
+let requestId = 0;
+
+const labelCache = {
+  read() { try { return JSON.parse(localStorage.getItem(LABELS_KEY)) ?? {}; } catch { return {}; } },
+  get(slug) { return this.read()[slug]; },
+  set(slug, label) { try { localStorage.setItem(LABELS_KEY, JSON.stringify({ ...this.read(), [slug]: label })); } catch { /* cache is optional */ } },
+};
 
 function currentReference() {
   return { catalogue: $('catalogue').value, number: $('reference-number').value,
@@ -14,15 +26,8 @@ function currentReference() {
 
 function savePreferences() {
   preferences = { ...preferences, ...currentReference(), currency: $('currency').value };
-  try { localStorage.setItem(storageKey, JSON.stringify(preferences)); }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences)); }
   catch { $('storage-note').hidden = false; }
-}
-
-function setScreen(sampleMode) {
-  $('announcement').textContent = '';
-  $('welcome-screen').hidden = sampleMode;
-  $('lookup-screen').hidden = !sampleMode;
-  document.querySelector('.popup-scroll').scrollTop = 0;
 }
 
 function updateFields() {
@@ -31,46 +36,78 @@ function updateFields() {
   $('ric-volume').required = isRic;
   $('ric-section').required = isRic;
   $('reference-label').textContent = isRic ? 'RIC number (including any suffix)' : 'Price number';
-  $('reference-help').textContent = isRic ? 'Included example: I (2nd edition), Nero 306' : 'Included example: Price 23';
+  $('reference-help').textContent = isRic ? 'Example: I (2nd edition), Nero 306' : 'Example: Price 23';
 }
 
-function formatPrices() {
-  const currency = $('currency').value;
-  const money = new Intl.NumberFormat('en-US', {style:'currency', currency, maximumFractionDigits:0});
-  $('median-amount').textContent = money.format(sampleSummary.median);
-  $('median-currency').textContent = currency;
-  $('range-amount').textContent = `${money.format(sampleSummary.lowerQuartile)}–${money.format(sampleSummary.upperQuartile)}`;
-  $('sale-list').replaceChildren(...sampleAmounts.map((amount, index) => {
-    const row = document.createElement('li');
-    const label = document.createElement('span');
-    const price = document.createElement('strong');
-    label.textContent = `Fictional sale ${String(index + 1).padStart(2, '0')}`;
-    price.textContent = money.format(amount);
-    row.append(label, price);
-    return row;
-  }));
-}
-
-function showSample(announce = false) {
-  $('announcement').textContent = '';
-  const sample = resolveSample(currentReference());
+function clearOutput() {
+  $('form-error').hidden = true;
+  $('candidates').hidden = true;
+  $('result').hidden = true;
   $('lookup-prompt').hidden = true;
-  $('form-error').hidden = Boolean(sample);
-  $('sample-results').hidden = !sample;
   $('reference-number').removeAttribute('aria-invalid');
-  if (!sample) {
-    $('form-error').textContent = $('catalogue').value === 'RIC'
-      ? 'This test build includes only RIC I (2nd edition), Nero 306. Live lookups are not connected yet.'
-      : 'This test build includes only Price 23. Live lookups are not connected yet.';
-    $('reference-number').setAttribute('aria-invalid', 'true');
-    return;
+  $('announcement').textContent = '';
+}
+
+function showError(message) {
+  $('form-error').textContent = message;
+  $('form-error').hidden = false;
+  $('reference-number').setAttribute('aria-invalid', 'true');
+}
+
+function setBusy(busy) {
+  $('lookup-button').disabled = busy;
+  $('lookup-label').textContent = busy ? 'Looking up…' : 'Look up';
+}
+
+function renderCard(card) {
+  $('result-reference').textContent = card.label;
+  $('result-summary').textContent = [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  $('type-link').href = card.uri.replace(/^http:/, 'https:');
+  $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
+  for (const side of ['obverse', 'reverse']) {
+    $(`${side}-legend`).textContent = card[side].legend ?? '';
+    $(`${side}-legend`).hidden = !card[side].legend;
+    $(`${side}-description`).textContent = card[side].description ?? '—';
   }
-  $('result-reference').textContent = sample.label;
-  $('result-type').textContent = sample.description;
-  $('type-link').href = sample.typeUrl;
-  $('type-link').setAttribute('aria-label', `View ${sample.label} in ${sample.typeSource}, opens a new tab`);
-  formatPrices();
-  if (announce) $('announcement').textContent = `Showing nine fictional sales for the ${sample.label} layout. These are not actual auction results.`;
+  $('acsearch-link').href = `https://www.acsearch.info/search.html?term=${encodeURIComponent(card.label)}`;
+  $('result').hidden = false;
+  $('announcement').textContent = `Found ${card.label}.`;
+}
+
+function renderCandidates(candidates, corpus) {
+  $('candidate-list').replaceChildren(...candidates.map(({ id, title }) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'text-button';
+    button.textContent = title;
+    button.addEventListener('click', () => run(() => lookupById(corpus, id, { cache: labelCache })));
+    item.append(button);
+    return item;
+  }));
+  $('candidates').hidden = false;
+  $('announcement').textContent = `${candidates.length} possible matches. Choose one.`;
+}
+
+async function run(perform) {
+  const id = ++requestId;
+  clearOutput();
+  setBusy(true);
+  let outcome;
+  try { outcome = await perform(); }
+  finally { if (id === requestId) setBusy(false); }
+  if (id !== requestId) return;
+  if (outcome.status === 'ok') renderCard(outcome.card);
+  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${outcome.corpus === 'ocre' ? 'OCRE' : 'PELLA'}. Check the volume, edition and number.`);
+  else showError(NETWORK_MESSAGE);
+}
+
+// Firefox MV3 grants host permissions lazily; request() is a no-op where already granted.
+async function ensureHostAccess() {
+  if (!api?.permissions?.request) return true;
+  try { return await api.permissions.request({ origins: [...HOST_ORIGINS] }); }
+  catch { return false; }
 }
 
 $('catalogue').value = preferences.catalogue;
@@ -79,47 +116,27 @@ $('reference-number').value = preferences.number;
 $('ric-volume').value = preferences.volume;
 $('ric-section').value = preferences.section;
 updateFields();
-setScreen(preferences.sampleMode);
-if (preferences.sampleMode) showSample();
 
-$('try-sample').addEventListener('click', () => {
-  preferences.sampleMode = true;
-  savePreferences();
-  setScreen(true);
-  showSample();
-  $('reference-number').focus();
-});
-$('help-button').addEventListener('click', () => {
-  setScreen(false);
-  $('welcome-signin').focus();
-});
 $('catalogue').addEventListener('change', () => {
   $('reference-number').value = $('catalogue').value === 'RIC' ? '306' : '23';
-  $('sale-details').open = false;
   updateFields();
   savePreferences();
-  showSample(true);
+  clearOutput();
+  $('lookup-prompt').hidden = false;
 });
 $('currency').addEventListener('change', () => {
   savePreferences();
-  formatPrices();
-  $('announcement').textContent = $('sample-results').hidden
-    ? `Currency set to ${$('currency').value}.`
-    : `Sample amounts formatted in ${$('currency').value}. This is not a currency conversion.`;
+  $('announcement').textContent = `Currency set to ${$('currency').value}.`;
 });
 $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;
-  $('announcement').textContent = '';
-  $('sample-results').hidden = true;
-  $('form-error').hidden = true;
+  clearOutput();
   $('lookup-prompt').hidden = false;
-  $('reference-number').removeAttribute('aria-invalid');
   savePreferences();
 });
-$('reference-form').addEventListener('submit', (event) => {
+$('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   savePreferences();
-  showSample(true);
+  if (!(await ensureHostAccess())) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
+  run(() => lookupType(currentReference(), { cache: labelCache }));
 });
-
-// Sign-in is an ordinary external link. Never treat opening it as authentication.
