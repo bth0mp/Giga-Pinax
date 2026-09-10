@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 0 (RRC follow-ups), then item 1.
+- v0.4.1 reference-matching fixes (streamlining item 0): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.4.1-rrc-fixes.md`.
 
 ## Streamlining the extension
 
