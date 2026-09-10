@@ -4,10 +4,11 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- v0.4 CRRO / RRC references: `docs/superpowers/plans/2026-09-11-giga-pinax-v0.4-crro.md`.
+- Nothing. Next loop tick takes streamlining item 0 (RRC follow-ups), then item 1.
 
 ## Streamlining the extension
 
+0. **RRC follow-ups from the v0.4 review.** (a) `RRC 1/1` is falsely "not found": CRRO's search ranks it past the first 100 of 656 hits, but `crro/id/rrc-1.1.jsonld` exists — on a search miss, try the id built from the number (`rrc-{group}.{n}`, case-sensitive, only for `^\d+(-\d+[A-Z])?\/\d+[a-z]?$`) inside the same deadline; one extra numismatics.org request, never acsearch. (b) Strip a typed `RRC` / `Crawford` / `Cr.` prefix in `buildQuery` and `defaultTerm` (today `RRC 44/5` in the field becomes `RRC RRC 44/5` and the term `Crawford RRC 44/5`). (c) Only offer "Did you mean" candidates whose title starts with the typed group (`RRC 44/`), since CRRO also matches dates. (d) Export the default-number table from `preferences.js` instead of repeating it in `popup.js`.
 1. **One-box reference entry.** Accept `RIC I² Nero 306`, `RIC 1(2) Nero 306`, `Price 23` in a single field and fill the guided fields from it. Fewer fields, faster lookups; guided fields stay for when parsing fails.
 2. **Get prices in the same click.** After acsearch permission is granted, Look up runs the type lookup and then the price fetch for that one reference. Still one acsearch request per user click.
 3. **Recent lookups.** Last 10 resolved types as one-click chips under the form, stored locally.
@@ -22,7 +23,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ANS runs several type corpora on the same Numishare software as OCRE and PELLA, with the same Atom search and JSON-LD records, so each is mostly a catalogue option plus a URL:
 
-1. **CRRO** (Coinage of the Roman Republic Online) — Crawford RRC references. Biggest gap for Roman collectors. *Probed 2026-09-10:* `numismatics.org/crro/apis/search?q=RRC 44/5` returns title `RRC 44/5`, id `rrc-44.5`, CORS open — exact-title matching works as-is, so this is a third catalogue option plus a query rule (`RRC {number}`).
+1. ~~**CRRO**~~ — shipped in v0.4 (see Done). Crawford RRC references. *Probed 2026-09-10:* `numismatics.org/crro/apis/search?q=RRC 44/5` returns title `RRC 44/5`, id `rrc-44.5`, CORS open — exact-title matching works as-is, so this is a third catalogue option plus a query rule (`RRC {number}`).
 2. **SCO / Seleucid Coins Online** and **PCO / Ptolemaic Coins Online**. *Probed:* both CORS open, but titles differ from the collector's shorthand — SCO `Seleucid Coins (part 1) 1266.2` (id `sc.1.1266.2`), PCO indexes CPE not Svoronos (`Coins of the Ptolemaic Empire Vol. I, Part II, no. B549`, id `cpe.1_2.B549`). Needs a per-corpus title builder, and PCO needs a Svoronos→CPE story before it helps.
 3. **HRC** (Hellenistic Royal Coinages) and **Coins of the Roman Empire** extensions as coverage grows.
 4. **RPC Online** (Oxford, Roman Provincial Coinage) — provincial references; separate site and API, check its terms.
@@ -34,3 +35,4 @@ ANS runs several type corpora on the same Numishare software as OCRE and PELLA, 
 
 - v0.2 open-data type lookup (`fbb6ab8`).
 - v0.3 acsearch prices: median, middle 50%, sales list, editable remembered term, CHF, strict one-amount parser, gesture-safe permissions (`d2c14ae`). Awaiting the first real run on a Premium account to confirm the logged-in price format.
+- v0.4 Roman Republican (RRC/Crawford) references via ANS CRRO, issuer fallback for the ruler slot, acsearch term `Crawford {number}`, catalogue-aware not-found hint (`cfd6ce9`, `56d0143`).
