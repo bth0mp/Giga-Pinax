@@ -19,7 +19,7 @@
       <form id="reference-form" class="reference-form">
         <div class="catalogue-row">
           <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option></select></div>
-          <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
+          <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
         </div>
         <div id="ric-fields" class="ric-fields" hidden>
           <div><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" maxlength="120" autocomplete="off"></div>
@@ -37,7 +37,18 @@
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
         </dl>
-        <div class="range-block"><div><p class="metric-label">Prices</p><p class="price-pending">Prices not connected yet. Use “Search on acsearch” to view sales with your own account.</p></div></div>
+        <form id="prices-form" class="prices">
+          <label for="price-term">acsearch search</label>
+          <div class="search-row"><input id="price-term" name="term" required maxlength="120" autocomplete="off" spellcheck="false"><button id="prices-button" class="primary-button" type="submit"><span id="prices-label">Get prices</span></button></div>
+          <p id="prices-error" class="form-error" role="alert" hidden></p>
+          <p id="prices-note" class="prices-note" role="status" hidden><span id="prices-note-text"></span> <a id="signin-link" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" hidden>Sign in <span aria-hidden="true">↗</span></a></p>
+        </form>
+        <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
+          <div class="median-block"><p class="metric-label">Median hammer price</p><div class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-period" class="sale-period"></p></div>
+          <div class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span></div></div>
+          <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="sale-list" class="sale-list"></ol></details>
+          <p id="price-note" class="price-note"></p>
+        </section>
         <a id="acsearch-link" class="primary-button acsearch-button" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">Search on acsearch <span aria-hidden="true">↗</span></a>
       </section>
       <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
