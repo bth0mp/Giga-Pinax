@@ -1,9 +1,9 @@
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
-export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5' });
+export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2' });
 export const RECENT_LIMIT = 6;
 const TERM_LIMIT = 50;
-const CORPORA = Object.freeze(['ocre', 'pella', 'crro']);
+const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
 
@@ -35,7 +35,7 @@ export function restorePreferences(raw) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const catalogue = ['RIC', 'RRC'].includes(saved.catalogue) ? saved.catalogue : 'Price';
+  const catalogue = ['RIC', 'RRC', 'SC'].includes(saved.catalogue) ? saved.catalogue : 'Price';
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,

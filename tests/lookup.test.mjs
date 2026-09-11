@@ -303,3 +303,32 @@ test('parseReference strips curly quotes, rejects a digit where the section shou
   for (const text of ['RIC I 2 Nero 306', 'RIC II 3 Hadrian 12', `RIC I Nero ${'1'.repeat(120)}`]) assert.equal(parseReference(text), null, text);
   assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: '“I (2nd edition)”', section: 'Nero', number: '306' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
 });
+
+test('SC references build the SCO record id and parse from one box', () => {
+  assert.deepEqual(buildQuery({ catalogue: 'SC', number: 'SC 1266.2' }), { corpus: 'sco', query: 'SC 1266.2', id: 'sc.1.1266.2' });
+  assert.equal(referenceNumber('SC', 'Seleucid Coins 1630.2b'), '1630.2b');
+  assert.deepEqual(parseReference('SC 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('sc1630.2b'), { catalogue: 'SC', number: '1630.2b', volume: '', section: '' });
+  assert.equal(parseReference('SC'), null);
+});
+
+test('an SC lookup fetches the SCO record directly, without a search', async () => {
+  const fetchImpl = fakeFetch({ 'sco/id/sc.1.1266.2.jsonld': fixture('sco-sc-1-1266-2.jsonld') });
+  const result = await lookupType({ catalogue: 'SC', number: '1266.2' }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.label, 'Seleucid Coins (part 1) 1266.2');
+  assert.deepEqual([result.card.authority, result.card.denomination, result.card.mint, result.card.material, result.card.dates],
+    ['demetrius_ii_nicator', 'tetradrachm', 'antiocheia_syria', 'ar', '129–128 BC']);
+  assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 0);
+});
+
+test('a missing SC number suggests types with the same base number, and other failures are network errors', async () => {
+  const near = await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: fakeFetch({ 'sco/apis/search?q=': fixture('sco-search-sc-1266.xml') }) });
+  assert.equal(near.status, 'candidates');
+  assert.equal(near.query, 'SC 1266.9');
+  assert.deepEqual(near.candidates.map((entry) => entry.id), ['sc.1.1266']);
+  const unrelated = fakeFetch({ 'sco/apis/search?q=': '<feed><entry><title>Seleucid Coins (part 2) 1630.2b</title><id>sc.1.1630.2b</id></entry></feed>' });
+  assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: unrelated }), { status: 'none', corpus: 'sco', query: 'SC 1266.9' });
+  const failing = async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) });
+  assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.2' }, { fetchImpl: failing }), { status: 'network' });
+});

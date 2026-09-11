@@ -202,3 +202,15 @@ test('summaryText collapses whitespace inside a quoted raw price so a copied lin
   assert.deepEqual(summary.uncounted, ['1.200,-\n€']);
   assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, summary, 'USD', 'Crawford 1/1').split('\n')[2], 'Not counted: “1.200,- €”');
 });
+
+test('defaultTerm uses SC wording for Seleucid Coins', () => {
+  assert.equal(defaultTerm({ catalogue: 'SC', number: 'SC 1266.2' }), 'SC 1266.2');
+});
+
+test('quoted uncounted prices are squashed of control characters and capped at 40 characters', () => {
+  const long = `${'1'.repeat(30)} EUR ${'2'.repeat(30)}`;
+  const summary = summarise([lot('100'), lot(long), lot('7\u00858 EUR')], 'USD');
+  const text = summaryText({ label: 'X', corpus: 'pella', id: 'x' }, summary, 'USD', 'X');
+  assert.ok(text.includes(`Not counted: “${long.slice(0, 40)}…”, “7 8 EUR”`), text);
+  assert.equal(text.split('\n').length, 4);
+});

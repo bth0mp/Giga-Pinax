@@ -57,7 +57,7 @@ test('RRC is a remembered catalogue with its own default number', () => {
 });
 
 test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
-  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5' });
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2' });
   assert.ok(Object.isFrozen(DEFAULT_NUMBER));
 });
 
@@ -97,4 +97,11 @@ test('rememberRecent caps ids like restore does, so a round trip is identical', 
 test('Recent entries with a blank id or label are dropped on restore', () => {
   const recent = [{ id: '  ', corpus: 'pella', label: 'Blank id' }, { id: 'price.1', corpus: 'pella', label: '   ' }, { id: 'price.23', corpus: 'pella', label: 'Price 23' }];
   assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, [{ id: 'price.23', corpus: 'pella', label: 'Price 23' }]);
+});
+
+test('SC is a remembered catalogue and sco a valid Recent corpus', () => {
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'SC' })).catalogue, 'SC');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'SC' })).number, '1266.2');
+  const recent = [{ id: 'sc.1.1266.2', corpus: 'sco', label: 'Seleucid Coins (part 1) 1266.2' }];
+  assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
 });

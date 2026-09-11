@@ -5,9 +5,11 @@ const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'four
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 
-// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Price 23") would otherwise be doubled in the query and the acsearch term.
+// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Price 23", "SC 1266.2") would otherwise be doubled in the query and the acsearch term.
 // It is stripped only before the number itself, so "Crawf 44/5" or "Cr . 44/5" stay as typed.
-const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i };
+const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i, SC: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i };
+// Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
+const SCO_ID = 'sc.1.';
 
 // Stray quotes would unbalance the quoted phrase search; curly ones arrive when a reference is copied from prose.
 const unquote = (value) => squash(String(value ?? '').replace(/["“”„]/g, ''));
@@ -18,7 +20,12 @@ export function referenceNumber(catalogue, number) {
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-const SIMPLE_REFERENCE = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(\d\S*)$/i, Price: /^Price\s*(\d\S*)$/i };
+// SCO's own titles ("Seleucid Coins (part 1) 1266.2", as a Recent chip stores them) read as SC too, so a chip fills the fields like the others.
+const SIMPLE_REFERENCE = {
+  RRC: /^(?:RRC|Crawford|Cr\.?)\s*(\d\S*)$/i,
+  Price: /^Price\s*(\d\S*)$/i,
+  SC: /^(?:SC|Seleucid Coins(?: \(part \d+\))?)\s*(\d\S*)$/i,
+};
 // RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
 // optional second-edition marker, then the ruler or mint section (starting with a non-digit, so "RIC I 2 Nero 306" fails)
 // and finally the last token starting with a digit, with an optional parenthetical.
@@ -46,6 +53,10 @@ export function buildQuery({ catalogue, number, volume, section }) {
     return { corpus: 'ocre', query: squash(`RIC ${edition} ${unquote(section)} ${unquote(number)}`) };
   }
   if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${referenceNumber('RRC', number)}`) };
+  if (catalogue === 'SC') {
+    const sc = referenceNumber('SC', number);
+    return { corpus: 'sco', query: squash(`SC ${sc}`), id: `${SCO_ID}${sc}` };
+  }
   return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };
 }
 
@@ -133,6 +144,7 @@ export function toCard(jsonld, corpus, labels = {}) {
 }
 
 const ORIGIN = 'https://numismatics.org';
+const recordUrl = (corpus, id) => `${ORIGIN}/${corpus}/id/${encodeURIComponent(id)}.jsonld`;
 
 async function getText(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal });
@@ -140,9 +152,10 @@ async function getText(url, fetchImpl, signal) {
   return response.text();
 }
 
+// The error carries the HTTP status so a caller can tell a missing record (404) from an outage.
 async function getJson(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal, headers: { Accept: 'application/ld+json' } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
   return response.json();
 }
 
@@ -165,14 +178,19 @@ export async function resolveLabels(slugs, { fetchImpl, cache, signal }) {
   return labels;
 }
 
+// The one path from a fetched record to a card, shared by lookupById and the SC direct fetch.
+async function cardOutcome(jsonld, corpus, { fetchImpl, cache, signal }) {
+  const labels = await resolveLabels(nomismaSlugs(jsonld), { fetchImpl, cache, signal });
+  const card = toCard(jsonld, corpus, labels);
+  return card ? { status: 'ok', card } : { status: 'network' };
+}
+
 export async function lookupById(corpus, id, options = {}) {
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal } = options;
   const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
   try {
-    const jsonld = await getJson(`${ORIGIN}/${corpus}/id/${encodeURIComponent(id)}.jsonld`, fetchImpl, timer.signal);
-    const labels = await resolveLabels(nomismaSlugs(jsonld), { fetchImpl, cache, signal: timer.signal });
-    const card = toCard(jsonld, corpus, labels);
-    return card ? { status: 'ok', card } : { status: 'network' };
+    const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
+    return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal });
   } catch {
     return { status: 'network' };
   } finally {
@@ -180,23 +198,40 @@ export async function lookupById(corpus, id, options = {}) {
   }
 }
 
-// CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group.
+// CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group;
+// SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
 function inGroup(entries, corpus, reference) {
+  if (corpus === 'sco') {
+    const base = `${SCO_ID}${referenceNumber('SC', reference.number).split('.')[0]}`;
+    return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
+  }
   if (corpus !== 'crro') return entries;
   const prefix = norm(`RRC ${referenceNumber('RRC', reference.number).split('/')[0].trim()}/`);
   return entries.filter((entry) => norm(entry.title).startsWith(prefix));
 }
 
 export async function lookupType(reference, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
-  const { corpus, query } = buildQuery(reference);
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
+  const { corpus, query, id } = buildQuery(reference);
   const timer = withTimeout(timeoutMs);
   const search = async (q) => parseFeed(await getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal));
   try {
-    // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
-    let picked = pickMatch(await search(`"${query}"`), query);
-    if (picked.status !== 'ok') picked = pickMatch(inGroup(await search(query), corpus, reference), query);
+    let picked;
+    if (id) {
+      // SCO titles ("Seleucid Coins (part 1) 1266.2") never match "SC 1266.2", but the record id is predictable: fetch it directly,
+      // and only when it is missing (404) run the plain search for "Did you mean"; any other failure is a network error.
+      const record = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal).then((jsonld) => ({ jsonld }), (error) => {
+        if (error?.status === 404) return null;
+        throw error;
+      });
+      if (record) return await cardOutcome(record.jsonld, corpus, { fetchImpl, cache, signal: timer.signal });
+      picked = pickMatch(inGroup(await search(query), corpus, reference), query);
+    } else {
+      // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
+      picked = pickMatch(await search(`"${query}"`), query);
+      if (picked.status !== 'ok') picked = pickMatch(inGroup(await search(query), corpus, reference), query);
+    }
     if (picked.status !== 'ok') return { ...picked, corpus, query };
     return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal });
   } catch {

@@ -64,6 +64,7 @@ export function parsePrice(text, currency) {
 export function defaultTerm({ catalogue, number, section }) {
   if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
   if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
+  if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
   return squash(`Price ${referenceNumber('Price', number)}`);
 }
 
@@ -126,7 +127,13 @@ export async function fetchPrices({ term, currency }, options = {}) {
   }
 }
 
-export const quoteList = (texts) => texts.map((text) => `“${text}”`).join(', ');
+const QUOTE_LIMIT = 40;
+// Raw prices are page text: each is squashed of whitespace and control characters, so a copied line never splits, and capped.
+const quote = (text) => {
+  const clean = String(text).replace(/[\s\p{Cc}]+/gu, ' ').trim();
+  return `“${clean.length > QUOTE_LIMIT ? `${clean.slice(0, QUOTE_LIMIT)}…` : clean}”`;
+};
+export const quoteList = (texts) => texts.map(quote).join(', ');
 
 export function summaryText(card, summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
@@ -135,8 +142,7 @@ export function summaryText(card, summary, currency, term) {
   stats += ` · ${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const lines = [card.label, stats];
-  // Squash each quoted raw price so a newline or tab from acsearch can't split a copied line.
-  if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted.map(squash))}`);
+  if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
   // Plain text for pasting: Intl puts no-break spaces in amounts such as "CHF 500".
   return lines.join('\n').replace(/[\u00a0\u202f]/g, ' ');

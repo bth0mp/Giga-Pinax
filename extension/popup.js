@@ -14,10 +14,10 @@ const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch pr
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5” or “Price 23”, or use the fields below.';
-const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
-const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.' };
-const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5' };
+const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO' };
+const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.' };
+const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5', SC: 'Example: 1266.2' };
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
