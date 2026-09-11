@@ -1,6 +1,6 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.12.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/), Bopearachchi (Bop) references through [BIGR](https://numismatics.org/bigr/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.13.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/), Bopearachchi (Bop) references through [BIGR](https://numismatics.org/bigr/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
 
 acsearch has approved this workflow for the extension: each collector uses their own account, one search runs per click, one page of results is read, and nothing from acsearch is stored. Prices require an acsearch account that includes hammer prices (Premium); without one the extension says so and links to their sign-in page.
 
@@ -12,10 +12,10 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 
 - One **Reference** box: type `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2`, `Bop Euthydemus I 24A` or `Price 23` and the fields fill in.
 - Select a reference on any page, right-click and choose **Look up “…” in Giga Pinax** — it opens in a small window and looks the type and its prices up.
-- Guided entry for Price numbers, an RRC (Crawford) number, an SC (Seleucid Coins) number, a Bopearachchi king and number, or RIC volume/edition, ruler section and number.
+- Guided entry for Price numbers, an RRC (Crawford) number, an SC (Seleucid Coins) number, a Bopearachchi king (a list of the 48 BIGR kings, or **Any king** to list every king with that number) and number, or a RIC volume and ruler or mint section chosen from lists of every OCRE volume and section, and number. A whole reference typed in the Reference box still sets the lists to exactly what it says.
 - Exact-title matching against the ANS search API (SC references are fetched directly by record; Bopearachchi references are verified against the citation in each BIGR record, and a series typed without its king lists every king that has it); near matches are offered as a short list.
 - Ruler, denomination, mint, material, date range, obverse and reverse legends and descriptions (and the Bopearachchi citation for BIGR types).
-- When a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type).
+- When a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type). For Bopearachchi types the search starts as `(Hermaeus Hermaios) "Bopearachchi 20"`: the king in both spellings dealers use and the citation as an exact phrase.
 - A **Recent** row under the form re-opens your last six types with one click.
 - **Alt+Shift+G** opens the popup (change it at `brave://extensions/shortcuts` or in Firefox's Manage Extension Shortcuts).
 - Median hammer price, middle 50% with a range visual, date span, and an expandable list of the sales linking to acsearch.
@@ -26,7 +26,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 ## Checks
 
 ```powershell
-node --test tests/lookup.test.mjs tests/prices.test.mjs tests/preferences.test.mjs tests/selection.test.mjs
+node --test tests/lookup.test.mjs tests/prices.test.mjs tests/preferences.test.mjs tests/selection.test.mjs tests/catalogues.test.mjs
 python -m unittest discover -s tests -p 'test_*.py' -v
 npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 ```

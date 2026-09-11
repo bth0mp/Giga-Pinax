@@ -112,7 +112,9 @@ test('Bop is a remembered catalogue with its own default number and king, and bi
   assert.ok(Object.isFrozen(DEFAULT_SECTION));
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).catalogue, 'Bop');
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).number, '24A');
-  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).section, 'Nero');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).section, 'Euthydemus I');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop', section: 'Hermaeus' })).section, 'Hermaeus');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Price' })).section, 'Nero');
   const recent = [{ id: 'bigr.euthydemus_i.13.1', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1' }];
   assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
 });

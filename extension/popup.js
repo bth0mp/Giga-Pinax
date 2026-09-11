@@ -1,6 +1,7 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
-import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
+import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, fetchPrices, quoteList, summaryText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
+import { BOP_KINGS, RIC_VOLUMES, sectionsOf, selectOptions } from './catalogues.js';
 import { queryFromSearch } from './selection.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +19,7 @@ const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”,
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO', bigr: 'BIGR' };
 const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.', bigr: 'Check the king and Bop number.' };
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306, with I² (2nd ed.) and Nero chosen above', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A' };
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -58,6 +59,20 @@ function savePreferences() {
   catch { $('storage-note').hidden = false; }
 }
 
+// A select is rebuilt from its list plus the wanted value (selectOptions appends an unlisted one, so a typed "Euthydemos" or a parsed "IV, Part 1"
+// is shown and used exactly as it came), each option built with new Option(label, value), never markup; a blank value with no blank option shows the first.
+function fillSelect(select, entries, value) {
+  select.replaceChildren(...selectOptions(entries, value).map((option) => new Option(option.label, option.value)));
+  select.value = value;
+  if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
+}
+
+// The Volume select always lists the RIC volumes; the section select lists the kings for Bop and the chosen volume's sections otherwise.
+function fillSelects(catalogue, volume, section) {
+  fillSelect($('ric-volume'), RIC_VOLUMES, volume);
+  fillSelect($('ric-section'), catalogue === 'Bop' ? BOP_KINGS : sectionsOf($('ric-volume').value), section);
+}
+
 function updateFields() {
   const catalogue = $('catalogue').value;
   const isRic = catalogue === 'RIC';
@@ -75,8 +90,10 @@ function updateFields() {
 function fillFields(parsed) {
   $('catalogue').value = parsed.catalogue;
   $('reference-number').value = parsed.number;
-  if (parsed.catalogue === 'RIC') $('ric-volume').value = parsed.volume;
-  if (parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop') $('ric-section').value = parsed.section;
+  // Only a RIC reference carries a volume and only RIC and Bop a section; the other catalogues leave the selects as they were.
+  const volume = parsed.catalogue === 'RIC' ? parsed.volume : $('ric-volume').value;
+  const section = parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop' ? parsed.section : $('ric-section').value;
+  fillSelects(parsed.catalogue, volume, section);
   updateFields();
 }
 
@@ -156,7 +173,7 @@ function renderCard(card) {
   }
   currentCard = card;
   const saved = Object.hasOwn(preferences.terms, card.id) ? preferences.terms[card.id] : '';
-  $('price-term').value = saved || defaultTerm(currentReference());
+  $('price-term').value = chooseTerm(currentReference(), saved);
   clearPrices();
   updateAcsearchLink();
   $('result').hidden = false;
@@ -346,8 +363,7 @@ function requestHostAccess(origins) {
 $('catalogue').value = preferences.catalogue;
 $('currency').value = preferences.currency;
 $('reference-number').value = preferences.number;
-$('ric-volume').value = preferences.volume;
-$('ric-section').value = preferences.section;
+fillSelects(preferences.catalogue, preferences.volume, preferences.section);
 updateFields();
 renderRecent();
 
@@ -361,7 +377,7 @@ $('quick-reference').addEventListener('change', () => {
 $('catalogue').addEventListener('change', () => {
   $('quick-reference').value = '';
   $('reference-number').value = DEFAULT_NUMBER[$('catalogue').value];
-  if (Object.hasOwn(DEFAULT_SECTION, $('catalogue').value)) $('ric-section').value = DEFAULT_SECTION[$('catalogue').value];
+  if (Object.hasOwn(DEFAULT_SECTION, $('catalogue').value)) fillSelects($('catalogue').value, $('ric-volume').value, DEFAULT_SECTION[$('catalogue').value]);
   updateFields();
   savePreferences();
   clearOutput();
@@ -372,6 +388,14 @@ $('currency').addEventListener('change', () => {
   clearPrices();
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
+});
+// A new volume lists its own sections: the current section stays when the volume has it (Rome, Hadrian), else the first is chosen; a volume outside the
+// list has no sections, so the current one is kept as the extra option. The form's input handler has already cleared the one-box and the output.
+$('ric-volume').addEventListener('change', () => {
+  const sections = sectionsOf($('ric-volume').value);
+  const current = $('ric-section').value;
+  fillSelect($('ric-section'), sections, sections.length === 0 || sections.includes(current) ? current : sections[0]);
+  savePreferences();
 });
 $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;

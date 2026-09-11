@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm } from '../extension/prices.js';
+import { BIGR_KINGS } from '../extension/catalogues.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -223,8 +224,58 @@ test('the quoting cap never splits an astral character', () => {
   assert.ok(text.includes(`“${'1'.repeat(39)}😀…”`), text);
 });
 
-test('defaultTerm uses the first word of the king, Bopearachchi and the series for Bop', () => {
-  assert.equal(defaultTerm({ catalogue: 'Bop', section: ' Euthydemus I ', number: 'Bop 24a' }), 'Euthydemus Bopearachchi 24A');
-  assert.equal(defaultTerm({ catalogue: 'Bop', section: 'Diodotus I or Diodotus II', number: '8A' }), 'Diodotus Bopearachchi 8A');
-  assert.equal(defaultTerm({ catalogue: 'Bop', section: '', number: 'Bop-9C' }), 'Bopearachchi 9C');
+test('defaultTerm groups both spellings of the king and quotes the Bopearachchi series as an exact phrase', () => {
+  const bop = (section, number) => ({ catalogue: 'Bop', section, number });
+  assert.equal(defaultTerm(bop(' Hermaeus ', 'Bop 20')), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(defaultTerm(bop(' Euthydemus I ', 'Bop 24a')), '(Euthydemus Euthydemos) "Bopearachchi 24A"');
+  assert.equal(defaultTerm(bop('Diodotus I or Diodotus II', '8A')), '(Diodotus Diodotos) "Bopearachchi 8A"');
+  assert.equal(defaultTerm(bop('Strato I', '12')), '(Strato Straton) "Bopearachchi 12"');
+  assert.equal(defaultTerm(bop('Menander I', '9C')), 'Menander "Bopearachchi 9C"');
+  assert.equal(defaultTerm(bop('Hermaios', '20')), 'Hermaios "Bopearachchi 20"');
+  assert.equal(defaultTerm(bop('', 'Bop-9C')), '"Bopearachchi 9C"');
+  assert.equal(defaultTerm(bop('Hermaeus', '')), '(Hermaeus Hermaios) Bopearachchi');
+  assert.equal(defaultTerm(bop('', '')), 'Bopearachchi');
+});
+
+// Latin (BIGR) first name to the Greek form dealers use; the unchanged names prove the rules leave them alone.
+const GREEK = {
+  Hermaeus: 'Hermaios', Euthydemus: 'Euthydemos', Eucratides: 'Eukratides', Philoxenus: 'Philoxenos', Antialcidas: 'Antialkidas',
+  Agathocles: 'Agathokles', Heliocles: 'Heliokles', Apollodotus: 'Apollodotos', Demetrius: 'Demetrios', Diodotus: 'Diodotos',
+  Antimachus: 'Antimachos', Zoilus: 'Zoilos', Hippostratus: 'Hippostratos', Artemidorus: 'Artemidoros', Nicias: 'Nikias',
+  Archebius: 'Archebios', Peucolaus: 'Peukolaos', Polyxenus: 'Polyxenos', Theophilus: 'Theophilos', Telephus: 'Telephos',
+  Dionysius: 'Dionysios', Antiochus: 'Antiochos', Strato: 'Straton', Plato: 'Platon',
+  Menander: 'Menander', Lysias: 'Lysias', Amyntas: 'Amyntas', Epander: 'Epander', Thrason: 'Thrason', Pantaleon: 'Pantaleon',
+  Diomedes: 'Diomedes', Apollophanes: 'Apollophanes',
+};
+
+test('greekName follows the four spelling rules for every BIGR first name', () => {
+  assert.equal(Object.keys(GREEK).length, 32);
+  for (const [latin, greek] of Object.entries(GREEK)) assert.equal(greekName(latin), greek, latin);
+  const firstNames = new Set(BIGR_KINGS.map((king) => king.split(' ')[0]));
+  assert.deepEqual([...firstNames].filter((name) => !Object.hasOwn(GREEK, name)), []);
+  assert.equal(greekName(''), '');
+  assert.equal(greekName(undefined), '');
+});
+
+test('buildSearchUrl encodes the parentheses and quotes of a Bop term', () => {
+  assert.equal(buildSearchUrl({ term: '(Hermaeus Hermaios) "Bopearachchi 20"', currency: 'USD' }),
+    'https://www.acsearch.info/search.html?term=%28Hermaeus+Hermaios%29+%22Bopearachchi+20%22&category=1&currency=usd&order=1');
+  assert.equal(buildSearchUrl({ term: 'Menander "Bopearachchi 24A"', currency: 'EUR' }),
+    'https://www.acsearch.info/search.html?term=Menander+%22Bopearachchi+24A%22&category=1&currency=eur&order=1');
+});
+
+test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop default', () => {
+  const hermaeus = { catalogue: 'Bop', section: 'Hermaeus', number: '20' };
+  assert.equal(chooseTerm(hermaeus, 'Hermaeus Bopearachchi 20'), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(chooseTerm(hermaeus, ' Hermaeus  Bopearachchi 20 '), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(chooseTerm(hermaeus, 'Hermaios Bopearachchi 20 tetradrachm'), 'Hermaios Bopearachchi 20 tetradrachm');
+  assert.equal(chooseTerm(hermaeus, '(Hermaeus Hermaios) "Bopearachchi 20"'), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  for (const blank of ['', '   ', undefined, null]) assert.equal(chooseTerm(hermaeus, blank), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '"Bopearachchi 9C"');
+  assert.equal(chooseTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '' }, 'Hermaeus Bopearachchi'), '(Hermaeus Hermaios) Bopearachchi');
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306' };
+  assert.equal(chooseTerm(nero, 'Nero 306'), 'Nero 306');
+  assert.equal(chooseTerm(nero, 'Nero 306 denarius'), 'Nero 306 denarius');
+  assert.equal(chooseTerm(nero, ''), 'Nero 306');
+  assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, undefined), 'Price 23');
 });

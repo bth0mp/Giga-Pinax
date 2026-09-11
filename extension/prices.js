@@ -61,13 +61,39 @@ export function parsePrice(text, currency) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+// Dealers mostly spell an Indo-Greek king in Greek ("Hermaios", "Eukratides") where BIGR spells it in Latin; four rules, in this order, cover every
+// BIGR first name (the table test lists them all): final -us to -os, ae to ai, c not before h to k, final -o to -on. Other names come back unchanged.
+export const greekName = (latin) => String(latin ?? '').replace(/us$/, 'os').replace(/ae/g, 'ai').replace(/c(?!h)/g, 'k').replace(/o$/, 'on');
+
+// The king's first name as BIGR spells it; the section field is the king ("Euthydemus I", "Diodotus I or Diodotus II").
+const firstName = (section) => squash(section).split(' ')[0];
+
+// acsearch ANDs every word anywhere in a lot ("20" matched "20 mm") and offers (a b) for either-or and "…" for an exact phrase, so the term is
+// the king in both spellings, "(Hermaeus Hermaios)" (one word when they agree: Menander), and the series as the exact phrase "Bopearachchi 20".
+// No series (an uncited BIGR type) leaves the bare word Bopearachchi; no king leaves the phrase alone.
+function bopTerm(section, number) {
+  const latin = firstName(section);
+  const greek = greekName(latin);
+  const king = latin && greek !== latin ? `(${latin} ${greek})` : latin;
+  const series = bopSeries(number);
+  return squash(`${king} ${series ? `"Bopearachchi ${series}"` : 'Bopearachchi'}`);
+}
+
 export function defaultTerm({ catalogue, number, section }) {
   if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
   if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
   if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
-  // acsearch lots cite Bopearachchi by the king's first name and series ("Euthydemus Bopearachchi 24A"); the section field is the king.
-  if (catalogue === 'Bop') return squash(`${squash(section).split(' ')[0]} Bopearachchi ${bopSeries(number)}`);
+  if (catalogue === 'Bop') return bopTerm(section, number);
   return squash(`Price ${referenceNumber('Price', number)}`);
+}
+
+// v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
+// a remembered term that is exactly that old default counts as unsaved. Anything else the collector saved still wins.
+const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
+export function chooseTerm(reference, saved) {
+  const term = squash(saved);
+  if (!term || (reference.catalogue === 'Bop' && term === oldBopTerm(reference))) return defaultTerm(reference);
+  return term;
 }
 
 const PAGE_SIZE = 100;

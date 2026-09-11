@@ -43,7 +43,7 @@ export function restorePreferences(raw) {
     catalogue,
     number: text(saved.number, DEFAULT_NUMBER[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),
-    section: text(saved.section, DEFAULT_SECTION.RIC),
+    section: text(saved.section, DEFAULT_SECTION[catalogue] ?? DEFAULT_SECTION.RIC),
     terms: restoreTerms(saved.terms),
     recent: restoreRecent(saved.recent),
   };
