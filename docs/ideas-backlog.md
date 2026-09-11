@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- The improvement loop is **paused** (2026-09-11) — nothing left that is worth doing without the user. Waiting on the user: item 6 (right-click lookup — new permissions), item 8 (Firefox signing — their Mozilla account), item 9 (icon — taste), and "Other projects" item 5 (specimen photos — loading museum images would send the collector's IP to those servers, which the docs currently promise doesn't happen). Also: how the collector cites Philip II coins (see "Other projects" item 3), and the first real acsearch price check on their account.
+- v0.11 right-click lookup (streamlining item 6, approved by the user 2026-09-11 with the `contextMenus` permission): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.11-right-click.md`. Still waiting on the user: Firefox signing (item 8), icon (item 9), specimen photos ("Other projects" item 5), Philip II citation style (item 3), and the first real acsearch price check.
 
 ## Streamlining the extension
 
