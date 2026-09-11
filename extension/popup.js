@@ -84,6 +84,7 @@ function clearPrices() {
 
 function clearOutput() {
   $('form-error').hidden = true;
+  $('form-error').textContent = '';
   $('candidates').hidden = true;
   $('result').hidden = true;
   $('lookup-prompt').hidden = true;
@@ -206,16 +207,25 @@ async function run(perform) {
   catch { outcome = { status: 'network' }; }
   finally { if (id === requestId) setBusy(false); }
   if (id !== requestId) return;
-  if (outcome.status === 'ok') renderCard(outcome.card);
+  if (outcome.status === 'ok') {
+    renderCard(outcome.card);
+    // Same click, same guarded path as Get prices, but only when acsearch access is already granted (never prompts) and without remembering the term.
+    const term = $('price-term').value.trim();
+    const currency = $('currency').value;
+    const ticket = priceRequestId;
+    if (term && await hasAcsearchAccess() && id === requestId && ticket === priceRequestId) runPrices(term, currency, { remember: false });
+  }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`);
   else showError(NETWORK_MESSAGE);
 }
 
-async function runPrices(term, currency) {
+async function runPrices(term, currency, { remember = true } = {}) {
   if (!currentCard) return;
-  preferences = rememberTerm(preferences, currentCard.id, term);
-  savePreferences();
+  if (remember) {
+    preferences = rememberTerm(preferences, currentCard.id, term);
+    savePreferences();
+  }
   updateAcsearchLink();
   clearPrices();
   const id = ++priceRequestId;
@@ -230,6 +240,13 @@ async function runPrices(term, currency) {
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.`, false);
   else showPricesError(ACSEARCH_NETWORK_MESSAGE);
+}
+
+// Checks without prompting; true on a plain page with no permissions API, false if the check fails.
+async function hasAcsearchAccess() {
+  if (!api?.permissions?.contains) return true;
+  try { return (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true; }
+  catch { return false; }
 }
 
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
@@ -283,7 +300,12 @@ $('reference-form').addEventListener('submit', async (event) => {
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
   if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
-  if (!$('reference-form').reportValidity()) return;
+  if (!$('reference-form').reportValidity()) {
+    $('form-error').hidden = true;
+    $('form-error').textContent = '';
+    $('quick-reference').removeAttribute('aria-invalid');
+    return;
+  }
   const access = requestHostAccess([...HOST_ORIGINS]);
   savePreferences();
   if (!(await access)) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
