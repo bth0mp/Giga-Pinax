@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, referenceNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, referenceNumber } from './lookup.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -65,6 +65,8 @@ export function defaultTerm({ catalogue, number, section }) {
   if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
   if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
   if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
+  // acsearch lots cite Bopearachchi by the king's first name and series ("Euthydemus Bopearachchi 24A"); the section field is the king.
+  if (catalogue === 'Bop') return squash(`${squash(section).split(' ')[0]} Bopearachchi ${bopSeries(number)}`);
   return squash(`Price ${referenceNumber('Price', number)}`);
 }
 

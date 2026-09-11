@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION } from '../extension/preferences.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] };
 
@@ -57,7 +57,7 @@ test('RRC is a remembered catalogue with its own default number', () => {
 });
 
 test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
-  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2' });
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
   assert.ok(Object.isFrozen(DEFAULT_NUMBER));
 });
 
@@ -103,5 +103,16 @@ test('SC is a remembered catalogue and sco a valid Recent corpus', () => {
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'SC' })).catalogue, 'SC');
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'SC' })).number, '1266.2');
   const recent = [{ id: 'sc.1.1266.2', corpus: 'sco', label: 'Seleucid Coins (part 1) 1266.2' }];
+  assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
+});
+
+test('Bop is a remembered catalogue with its own default number and king, and bigr a valid Recent corpus', () => {
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
+  assert.deepEqual({ ...DEFAULT_SECTION }, { RIC: 'Nero', Bop: 'Euthydemus I' });
+  assert.ok(Object.isFrozen(DEFAULT_SECTION));
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).catalogue, 'Bop');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).number, '24A');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).section, 'Nero');
+  const recent = [{ id: 'bigr.euthydemus_i.13.1', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1' }];
   assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
 });

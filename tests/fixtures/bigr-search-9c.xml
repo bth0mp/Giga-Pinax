@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+ <title>BIGR</title>
+ <id>https://numismatics.org/bigr/</id>
+ <link rel="self" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=9C&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="https://numismatics.org/bigr/results?q=9C&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=9C&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=9C&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="https://numismatics.org/bigr/opensearch.xml"/>
+ <opensearch:totalResults>16</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="9C" startPage="0"/>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 8</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.8"/>
+  <id>bigr.philoxenus.8</id>
+  <relevance:score>5.2196093</relevance:score>
+  <updated>2025-12-15T05:19:07Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 8.1</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.8.1"/>
+  <id>bigr.philoxenus.8.1</id>
+  <relevance:score>5.2196093</relevance:score>
+  <updated>2025-12-15T05:19:07Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.8.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 7.1</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.7.1"/>
+  <id>bigr.philoxenus.7.1</id>
+  <relevance:score>5.2196093</relevance:score>
+  <updated>2025-12-15T05:19:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 7</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.7"/>
+  <id>bigr.philoxenus.7</id>
+  <relevance:score>5.2196093</relevance:score>
+  <updated>2025-12-15T05:19:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.7.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 6.3</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.6.3"/>
+  <id>bigr.philoxenus.6.3</id>
+  <relevance:score>5.2196093</relevance:score>
+  <updated>2025-12-15T05:19:02Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.3.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.3.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.3.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.3.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Philoxenus 6</title>
+  <link href="https://numismatics.org/bigr/id/bigr.philoxenus.6"/>
+  <id>bigr.philoxenus.6</id>
+  <relevance:score>5.0982895</relevance:score>
+  <updated>2025-12-15T05:19:00Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.philoxenus.6.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-125</begin>
+   <end xmlns="">-110</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Antialcidas 12.2</title>
+  <link href="https://numismatics.org/bigr/id/bigr.antialcidas.12.2"/>
+  <id>bigr.antialcidas.12.2</id>
+  <relevance:score>6.194599</relevance:score>
+  <updated>2025-12-15T05:16:32Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.2.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.2.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.2.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.2.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-130</begin>
+   <end xmlns="">-95</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Antialcidas 12</title>
+  <link href="https://numismatics.org/bigr/id/bigr.antialcidas.12"/>
+  <id>bigr.antialcidas.12</id>
+  <relevance:score>6.194599</relevance:score>
+  <updated>2025-12-15T05:16:31Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.antialcidas.12.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-130</begin>
+   <end xmlns="">-95</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Menander I 17.3</title>
+  <link href="https://numismatics.org/bigr/id/bigr.menander_i.17.3"/>
+  <id>bigr.menander_i.17.3</id>
+  <relevance:score>6.6592054</relevance:score>
+  <updated>2025-12-15T05:09:07Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.3.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.3.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.3.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.3.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-160</begin>
+   <end xmlns="">-135</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Menander I 17</title>
+  <link href="https://numismatics.org/bigr/id/bigr.menander_i.17"/>
+  <id>bigr.menander_i.17</id>
+  <relevance:score>6.194599</relevance:score>
+  <updated>2025-12-15T05:09:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.menander_i.17.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-160</begin>
+   <end xmlns="">-135</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Eucratides I 9.2</title>
+  <link href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.2"/>
+  <id>bigr.eucratides_i.9.2</id>
+  <relevance:score>6.194599</relevance:score>
+  <updated>2025-12-15T04:58:54Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.2.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.2.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.2.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.2.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-170</begin>
+   <end xmlns="">-135</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Eucratides I 9</title>
+  <link href="https://numismatics.org/bigr/id/bigr.eucratides_i.9"/>
+  <id>bigr.eucratides_i.9</id>
+  <relevance:score>5.8121395</relevance:score>
+  <updated>2025-12-15T04:58:53Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.eucratides_i.9.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-170</begin>
+   <end xmlns="">-135</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Hermaeus 9</title>
+  <link href="https://numismatics.org/bigr/id/bigr.hermaeus.9"/>
+  <id>bigr.hermaeus.9</id>
+  <relevance:score>8.0758095</relevance:score>
+  <updated>2023-04-13T01:51:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-105</begin>
+   <end xmlns="">-90</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Hermaeus 9.4</title>
+  <link href="https://numismatics.org/bigr/id/bigr.hermaeus.9.4"/>
+  <id>bigr.hermaeus.9.4</id>
+  <relevance:score>8.715997</relevance:score>
+  <updated>2023-04-13T01:51:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.4.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.4.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.4.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.hermaeus.9.4.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-105</begin>
+   <end xmlns="">-90</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Strato I 12</title>
+  <link href="https://numismatics.org/bigr/id/bigr.strato_i.12"/>
+  <id>bigr.strato_i.12</id>
+  <relevance:score>8.02229</relevance:score>
+  <updated>2023-04-13T01:50:19Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-105</begin>
+   <end xmlns="">-80</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Strato I 12.3</title>
+  <link href="https://numismatics.org/bigr/id/bigr.strato_i.12.3"/>
+  <id>bigr.strato_i.12.3</id>
+  <relevance:score>8.60293</relevance:score>
+  <updated>2023-04-13T01:50:19Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.3.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.3.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.3.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.strato_i.12.3.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-105</begin>
+   <end xmlns="">-80</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

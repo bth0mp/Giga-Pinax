@@ -43,6 +43,7 @@ select,input {width:100%; height:38px; border:1px solid var(--border); border-ra
 .primary-button[disabled] {opacity:.6; cursor:progress;}
 .field-hint {font-size:11px; line-height:1.4; color:var(--muted); margin-top:6px;}
 .ric-fields {display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;}
+.ric-fields.single {grid-template-columns:1fr;}
 .ric-fields input {font-size:12px;}
 .ric-fields label {font-size:11px;}
 .form-error {color:var(--error); font-size:12px; line-height:1.5; padding-top:9px;}

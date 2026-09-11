@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+ <title>BIGR</title>
+ <id>https://numismatics.org/bigr/</id>
+ <link rel="self" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=Euthydemus I 24A&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="https://numismatics.org/bigr/results?q=Euthydemus I 24A&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=Euthydemus I 24A&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="https://numismatics.org/bigr/apis/search?q=Euthydemus I 24A&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="https://numismatics.org/bigr/opensearch.xml"/>
+ <opensearch:totalResults>2</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="Euthydemus I 24A" startPage="0"/>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Euthydemus I 13.1</title>
+  <link href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1"/>
+  <id>bigr.euthydemus_i.13.1</id>
+  <relevance:score>14.978944</relevance:score>
+  <updated>2025-12-15T04:52:52Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-230</begin>
+   <end xmlns="">-190</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>Bactrian and Indo-Greek Coinage Euthydemus I 13</title>
+  <link href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13"/>
+  <id>bigr.euthydemus_i.13</id>
+  <relevance:score>15.21378</relevance:score>
+  <updated>2025-12-15T04:52:51Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="https://numismatics.org/bigr/id/bigr.euthydemus_i.13.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-230</begin>
+   <end xmlns="">-190</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

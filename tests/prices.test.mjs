@@ -222,3 +222,9 @@ test('the quoting cap never splits an astral character', () => {
   const text = summaryText({ label: 'X', corpus: 'pella', id: 'x' }, summary, 'USD', 'X');
   assert.ok(text.includes(`“${'1'.repeat(39)}😀…”`), text);
 });
+
+test('defaultTerm uses the first word of the king, Bopearachchi and the series for Bop', () => {
+  assert.equal(defaultTerm({ catalogue: 'Bop', section: ' Euthydemus I ', number: 'Bop 24a' }), 'Euthydemus Bopearachchi 24A');
+  assert.equal(defaultTerm({ catalogue: 'Bop', section: 'Diodotus I or Diodotus II', number: '8A' }), 'Diodotus Bopearachchi 8A');
+  assert.equal(defaultTerm({ catalogue: 'Bop', section: '', number: 'Bop-9C' }), 'Bopearachchi 9C');
+});

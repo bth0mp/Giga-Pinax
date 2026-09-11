@@ -1,9 +1,11 @@
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
-export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2' });
+export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
+// The section field is the RIC ruler or mint section for RIC and the king for Bop; a catalogue change resets it like the number.
+export const DEFAULT_SECTION = Object.freeze({ RIC: 'Nero', Bop: 'Euthydemus I' });
 export const RECENT_LIMIT = 6;
 const TERM_LIMIT = 50;
-const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco']);
+const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco', 'bigr']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
 
@@ -35,13 +37,13 @@ export function restorePreferences(raw) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const catalogue = ['RIC', 'RRC', 'SC'].includes(saved.catalogue) ? saved.catalogue : 'Price';
+  const catalogue = ['RIC', 'RRC', 'SC', 'Bop'].includes(saved.catalogue) ? saved.catalogue : 'Price';
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,
     number: text(saved.number, DEFAULT_NUMBER[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),
-    section: text(saved.section, 'Nero'),
+    section: text(saved.section, DEFAULT_SECTION.RIC),
     terms: restoreTerms(saved.terms),
     recent: restoreRecent(saved.recent),
   };

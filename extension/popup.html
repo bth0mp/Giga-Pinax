@@ -19,12 +19,12 @@
       <form id="reference-form" class="reference-form" novalidate>
         <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="120" autocomplete="off" spellcheck="false" placeholder="RIC I² Nero 306 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
         <div class="catalogue-row">
-          <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option></select></div>
+          <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
         </div>
         <div id="ric-fields" class="ric-fields" hidden>
-          <div><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" maxlength="120" autocomplete="off"></div>
-          <div><label for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" maxlength="120" autocomplete="off"></div>
+          <div id="volume-field"><label for="ric-volume">Volume / edition</label><input id="ric-volume" name="volume" maxlength="120" autocomplete="off"></div>
+          <div><label id="section-label" for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" maxlength="120" autocomplete="off"></div>
         </div>
         <label id="reference-label" for="reference-number">Price number</label>
         <div class="search-row"><input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button id="lookup-button" class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><span id="lookup-label">Look up</span></button></div>
@@ -34,7 +34,7 @@
       </form>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <section id="result" class="result" aria-labelledby="result-reference" hidden>
-        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
         <dl class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
@@ -58,7 +58,7 @@
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
     </div>
-    <footer class="popup-footer"><span>Type data: ANS OCRE, PELLA, CRRO &amp; SCO (ODbL)</span><a href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="Open acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
+    <footer class="popup-footer"><span>Type data: ANS OCRE, PELLA, CRRO, SCO &amp; BIGR (ODbL)</span><a href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="Open acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
     <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
   </main>
 </body>

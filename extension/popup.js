@@ -1,6 +1,6 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
-import { DEFAULT_NUMBER, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
+import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
 import { queryFromSearch } from './selection.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,11 +14,11 @@ const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
-const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5”, “SC 1266.2” or “Price 23”, or use the fields below.';
-const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO' };
-const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.' };
-const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5', SC: 'Example: 1266.2' };
+const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
+const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO', bigr: 'BIGR' };
+const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.', bigr: 'Check the king and Bop number.' };
+const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A' };
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -61,7 +61,11 @@ function savePreferences() {
 function updateFields() {
   const catalogue = $('catalogue').value;
   const isRic = catalogue === 'RIC';
-  $('ric-fields').hidden = !isRic;
+  const isBop = catalogue === 'Bop';
+  $('ric-fields').hidden = !isRic && !isBop;
+  $('volume-field').hidden = !isRic;
+  $('ric-fields').classList.toggle('single', isBop);
+  $('section-label').textContent = isBop ? 'King' : 'Ruler or mint section';
   $('ric-volume').required = isRic;
   $('ric-section').required = isRic;
   $('reference-label').textContent = REFERENCE_LABEL[catalogue];
@@ -71,10 +75,8 @@ function updateFields() {
 function fillFields(parsed) {
   $('catalogue').value = parsed.catalogue;
   $('reference-number').value = parsed.number;
-  if (parsed.catalogue === 'RIC') {
-    $('ric-volume').value = parsed.volume;
-    $('ric-section').value = parsed.section;
-  }
+  if (parsed.catalogue === 'RIC') $('ric-volume').value = parsed.volume;
+  if (parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop') $('ric-section').value = parsed.section;
   updateFields();
 }
 
@@ -142,6 +144,9 @@ function updateAcsearchLink() {
 function renderCard(card) {
   $('result-reference').textContent = card.label;
   $('result-summary').textContent = [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
+  $('result-citation').textContent = citation;
+  $('result-citation').hidden = !citation;
   $('type-link').href = `https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`;
   $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
   for (const side of ['obverse', 'reverse']) {
@@ -270,6 +275,8 @@ async function run(perform) {
   finally { if (id === requestId) setBusy(false); }
   if (id !== requestId) return;
   if (outcome.status === 'ok') {
+    // A BIGR card fills King and Bop number from itself (title and citation), so the acsearch term follows the chosen type; chips and suggestions carry no parsable Bop label.
+    if (outcome.card.bop) fillFields({ catalogue: 'Bop', number: outcome.card.bop.series ?? '', volume: '', section: outcome.card.bop.king });
     renderCard(outcome.card);
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
@@ -354,6 +361,7 @@ $('quick-reference').addEventListener('change', () => {
 $('catalogue').addEventListener('change', () => {
   $('quick-reference').value = '';
   $('reference-number').value = DEFAULT_NUMBER[$('catalogue').value];
+  if (Object.hasOwn(DEFAULT_SECTION, $('catalogue').value)) $('ric-section').value = DEFAULT_SECTION[$('catalogue').value];
   updateFields();
   savePreferences();
   clearOutput();
