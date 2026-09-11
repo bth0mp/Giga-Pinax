@@ -110,4 +110,17 @@ test('queryFromSearch reads and cleans q, and is empty without it', () => {
 
 ## Verification (controller)
 
+Result 2026-09-11 at `61933d5`, in-app Chromium in a 440×680 window (the size the context menu opens) on `http://localhost:8789` (never loaded before), live numismatics.org:
+
+- No `q` → normal popup, Reference box empty, nothing looked up. Pass.
+- `?q=RIC%20I%C2%B2%20Nero%20306` → with no click: box `RIC I² Nero 306`, fields RIC / `I (2nd edition)` / `Nero` / `306`, card `RIC I (second edition) Nero 306`, acsearch term `Nero 306`. Pass.
+- `?q=Crawford%2044%2F5` → `RRC 44/5`, term `Crawford 44/5`, added to Recent. Pass.
+- `?q=Sear%201234` → text kept in the box, the one-box error, box `aria-invalid="true"`, 0 numismatics.org requests. Pass.
+- `?q=<b>x</b> <img src=x onerror=…>` (encoded) → literal text in the box, no `<b>` or extra `<img>` in the DOM, the `onerror` never ran. Pass.
+- A 300-character `q` → box holds exactly 120 characters. Pass.
+- Popup body 400 px inside the window. Console: only the expected CORS errors for the automatic acsearch fetch from a plain tab (the installed extension's host permission lifts CORS).
+- `dist/brave/manifest.json`: version `0.11.0`, permissions `["contextMenus"]`, background service worker module, the three host permissions; `background.js` and `selection.js` present.
+
+The context-menu item itself runs only in the installed extension — the user checks it in Brave.
+
 In a never-cached served tab: `popup.html?q=RIC%20I%C2%B2%20Nero%20306` resolves `RIC I (second edition) Nero 306` without any click; `?q=Sear%201234` shows the one-box error with the text in the box and no numismatics.org request; a 300-character `q` arrives capped at 120; `?q=%3Cb%3Ex%3C%2Fb%3E` appears as literal text in the box; no `q` → normal popup. The context-menu item itself needs the installed extension — the user checks it in Brave.
