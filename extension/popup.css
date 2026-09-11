@@ -149,7 +149,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-list li strong {font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;}
 .price-note {font-size:11px; line-height:1.5; color:var(--muted); margin-top:8px;}
 .copy-button {padding:8px 0 0;}
-.acsearch-button {margin-top:12px; width:100%;}
+/* The two outside searches share a row when both labels fit (the right-click window); in the 400px popup they stack. */
+.search-links {margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;}
+.search-links a {flex:1 1 max-content; white-space:nowrap;}
 .popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
 .popup-footer a {text-decoration:none; padding:4px 0;}
 .popup-footer a:hover {text-decoration:underline;}

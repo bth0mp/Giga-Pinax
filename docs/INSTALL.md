@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.18.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link opens only when you select it) and nothing from acsearch is stored.
+Version **0.19.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it. Sear Greek references such as `SG6829v` get acsearch prices, and every card has a **Search on CoinArchives ↗** button. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link and the **Search on CoinArchives** button open only when you select them) and nothing from acsearch is stored.
 
 The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.18.0.zip
-dist/giga-pinax-firefox-0.18.0.zip
+dist/giga-pinax-brave-0.19.0.zip
+dist/giga-pinax-firefox-0.19.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.18.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.19.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.18.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.19.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -65,6 +65,8 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - **Bop Euthydemus I 24A** — a bronze of Euthydemus I of Bactria; the card shows its BIGR type and the citation **Bopearachchi Euthydème I 24A**, and its acsearch search starts as `(Euthydemus Euthydemos) "Bopearachchi 24A"` — the king in both spellings and the citation as an exact phrase. **Bop 9C** alone lists every king with a 9C series to choose from; with the **King** left blank, a number alone does the same. Each lookup checks its matches against numismatics.org in one request; if that fails, the popup says it couldn't reach numismatics.org instead of "not found".
 - **BCD Boiotia 174b; HGC 4, 1218** — choose the catalogue **Other (prices only)** and type it in the reference field: neither has open type data, so the card says so, and acsearch is searched for the lots that cite either reference, each as an exact phrase: `("BCD Boiotia 174b" "HGC 4, 1218")`. Any other reference (SNG, Sear, RPC…) works the same way. Typed in the **Reference** box instead, a `;` list is listed reference by reference (prices-only rows, nothing fetched until you pick one), and a single RIC, RRC, SC, Bop or Price reference among them is looked up at once.
 - **RPC I 1234** — priced the same way, and the card also has an **RPC online ↗** link to that coin's page on RPC Online (**RPC V.2 1234** goes to part 2 of volume V). It opens only when you select it; Giga Pinax never contacts RPC itself.
+- **SG6829v** in the Reference box — a Sear *Greek Coins and Their Values* number with a variety `v`: it reads as **SG 6829 var.**, catalogue **Other (prices only)**, since no open type data carries Sear numbers, and acsearch is searched as `("Sear 6829" "SG 6829")`, the two ways dealers cite it. `SG 6829`, `SGCV 6829`, `GCV 6829` and `Sear Greek 6829` read as **SG 6829**, with the same acsearch search; in a pasted lot, `SG 6829v; SC 1` lists **SG 6829 · prices only · var.** and opens **SC 1**.
+- On any card, select **Search on CoinArchives ↗**, under **Search on acsearch ↗** in the toolbar popup and beside it in the right-click window: CoinArchives opens in a new tab on its own search for the reference in plain words (`Sear 6829` for the card above, `Crawford 44/5` for **RRC 44/5**). It is only a link; Giga Pinax fetches nothing from CoinArchives. Without a CoinArchives subscription its results cover about the last six months.
 - **Look up** fetches prices too. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices**.
 - If the popup says no hammer prices could be counted, it quotes up to five prices exactly as acsearch showed them — send that line so the price reader can learn the format.
 - Edit the acsearch search term (for example add the denomination) and select **Get prices** again; the term is remembered for that type.

@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, referenceNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, referenceNumber, sgNumber } from './lookup.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -82,11 +82,21 @@ function bopTerm(section, number) {
 // A reference without type data is searched as dealers cite it: each ";" reference an exact phrase ("HGC 4, 1218" also finds "HGC 4 1218", since
 // acsearch ignores the comma), several offered either-or, ("BCD Boiotia 174b" "HGC 4, 1218"). Quotes are stripped so none unbalances a phrase, and
 // brackets too, since acsearch finds nothing for a phrase holding one: a trailing remark goes whole ("174b (this coin)"), a wrapping pair leaves its
-// text. A part without a letter and a digit ("BMC –", "Rare") would only match unrelated lots, so it is left out.
+// text. A part without a letter and a digit ("BMC –", "Rare") would only match unrelated lots, so it is left out. An SG part in any spelling takes
+// SG's, so a chip saved before 0.19 ("SG6829v") and a "v" behind a remark ("SG 6829v (this coin)") still search as Sear.
+const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '').split(';')
+  .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
+  .filter((part) => /\p{L}/u.test(part) && /\d/.test(part)).map((part) => sgNumber(part) ?? part);
+
+// A Sear Greek part as parseReference normalises it ("SG 6829", "SG 6829 var.", "SG 6829a"); dealers write "Sear 6829" as often as "SG 6829", and a
+// variant is listed under its type's number, so both phrases go without "var.". The first group is N.
+const SG_PART = /^SG (\d+[a-uw-z]?)(?: var\.)?$/i;
+
 function otherTerm(number) {
-  const phrases = String(number ?? '').replace(/["“”„]/g, '').split(';')
-    .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
-    .filter((part) => /\p{L}/u.test(part) && /\d/.test(part)).map((part) => `"${part}"`);
+  const phrases = [...new Set(otherParts(number).flatMap((part) => {
+    const sg = SG_PART.exec(part);
+    return sg ? [`"Sear ${sg[1]}"`, `"SG ${sg[1]}"`] : [`"${part}"`];
+  }))];
   return phrases.length > 1 ? `(${phrases.join(' ')})` : phrases[0] ?? '';
 }
 
@@ -108,6 +118,21 @@ export function chooseTerm(reference, saved) {
   if (!term || (reference.catalogue === 'Bop' && term === oldBopTerm(reference))) return defaultTerm(reference);
   return term;
 }
+
+// CoinArchives is only a link the collector opens (nothing is fetched), and its search takes plain words, so acsearch's quotes and either-or
+// brackets never carry over: RRC, SC and Price already search as plain words; RIC is its acsearch term with a number's bracket opened, keeping
+// the word OCRE tells types apart by ("266 (aureus)" as "266 aureus"); Bop is the king and series (the old v0.12 term); an Other reference is its
+// first searchable ";" part, cleaned as for acsearch, an SG part as "Sear N", the way most dealers cite it.
+export function coinArchivesTerm(reference) {
+  if (reference.catalogue === 'Bop') return oldBopTerm(reference);
+  if (reference.catalogue === 'RIC') return squash(defaultTerm(reference).replace(/[()[\]{}]/g, ' '));
+  if (reference.catalogue !== 'Other') return defaultTerm(reference);
+  const [first = ''] = otherParts(reference.number);
+  const sg = SG_PART.exec(first);
+  return sg ? `Sear ${sg[1]}` : first;
+}
+
+export const coinArchivesUrl = (term) => `https://www.coinarchives.com/a/results.php?search=${encodeURIComponent(squash(term))}&s=0`;
 
 const PAGE_SIZE = 100;
 const EXAMPLE_LIMIT = 5;

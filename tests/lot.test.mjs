@@ -60,6 +60,39 @@ test('the type references are read, and only RIC, RRC, SC, Price and Bop are typ
   assert.deepEqual(ten.filter((found) => found.typed).map((found) => found.text), ['RIC.112']);
 });
 
+test('SG, SGCV and GCV are keys: a Sear Greek reference, normalised, prices only, a trailing "v" or "var." its variant flag', () => {
+  const lot = findReferences('SELEUKID KINGDOM. Seleukos I Nikator, 312-280 BC. Tetradrachm. SG 6829v; SC 1.');
+  assert.deepEqual(lot.references, [
+    { text: 'SG 6829', reference: other('SG 6829 var.'), cf: false, variant: true, typed: false },
+    { text: 'SC 1', reference: { catalogue: 'SC', number: '1', volume: '', section: '' }, cf: false, variant: false, typed: true },
+  ]);
+  assert.equal(lotLabel(lot.references[0], lot.rulers), 'SG 6829 · prices only · var.');
+  assert.deepEqual(only('Tetradrachm. SG 6829 var.'), { text: 'SG 6829', reference: other('SG 6829 var.'), cf: false, variant: true, typed: false });
+  assert.deepEqual(only('Tetradrachm. SGCV 6829.'), { text: 'SGCV 6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Tetradrachm. GCV 6829a.'), { text: 'GCV 6829a', reference: other('SG 6829a'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Tetradrachm. SGCV II 6829.'), { text: 'SGCV II 6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Tetradrachm. SG.6829.'), { text: 'SG.6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Tetradrachm. SG-6829.'), { text: 'SG-6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Tetradrachm. SG 6829var.'), { text: 'SG 6829', reference: other('SG 6829 var.'), cf: false, variant: true, typed: false });
+  // "SG" inside a word, and Sear Greek Imperial, are no SG key.
+  assert.deepEqual(texts('MASGUT 12. ASG 5. SGI 123.'), []);
+});
+
+test('a bracket that opens on the next key is that key\'s, so the reference before it keeps its whole body', () => {
+  assert.deepEqual(texts('HGC 9, 12 (SG 6829)'), ['HGC 9, 12', 'SG 6829']);
+  assert.deepEqual(texts('SELEUKID KINGDOM. Antiochos I Soter, 281-261 BC. Tetradrachm. SC 130.2; HGC 9, 18b (SG 6829v). Toned, VF.'), ['SC 130.2', 'HGC 9, 18b', 'SG 6829']);
+  // The bracket still ends the run, so a single letter in it stays unlisted.
+  assert.deepEqual(texts('RIC 972 (C 17)'), ['RIC 972']);
+});
+
+test('a typed reference ends at its first number: a second one after a comma is another type, not part of it', () => {
+  assert.deepEqual(texts('Tetradrachm. Price 3949, 3950 (Müller 5)'), ['Price 3949', 'Müller 5']);
+  assert.deepEqual(findReferences('Tetradrachm. Price 3949, 3950 (Müller 5)').references[0].reference, { catalogue: 'Price', number: '3949', volume: '', section: '' });
+  assert.deepEqual(findReferences('Denarius. RIC 972, 973; Cohen 17').references.map((found) => [found.text, found.typed]), [['RIC 972', true], ['Cohen 17', false]]);
+  // A catalogue without type data still carries on into its number ("HGC 12, 72").
+  assert.deepEqual(texts('Tetradrachm. HGC 12, 72; SNG ANS 216'), ['HGC 12, 72', 'SNG ANS 216']);
+});
+
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
   assert.deepEqual(rulers, [['Titus'], ['Titus'], [], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);

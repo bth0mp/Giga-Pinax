@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesUrl, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -254,6 +254,49 @@ test('an Other term drops a trailing remark and every bracket, which acsearch ca
   assert.equal(defaultTerm(other('SNG Cop –; BMC –; HGC 4, 1218')), '"HGC 4, 1218"');
   assert.equal(defaultTerm(other('HGC 4, 1218; Rare; unpublished')), '"HGC 4, 1218"');
   assert.equal(defaultTerm(other('Rare; 1218')), '');
+});
+
+test('an SG part is searched as both "Sear N" and "SG N", either-or, with any other part joining the same group', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('SG 6829')), '("Sear 6829" "SG 6829")');
+  assert.equal(defaultTerm(other('SG 6829 var.')), '("Sear 6829" "SG 6829")');
+  assert.equal(defaultTerm(other('SG 6829a')), '("Sear 6829a" "SG 6829a")');
+  assert.equal(defaultTerm(other('SG 6829 var.; SC 1')), '("Sear 6829" "SG 6829" "SC 1")');
+  assert.equal(defaultTerm(other('HGC 9, 12; SG 6829')), '("HGC 9, 12" "Sear 6829" "SG 6829")');
+  // Only a whole SG part is rewritten; "SG" inside a longer citation stays as written.
+  assert.equal(defaultTerm(other('SNG Cop 123')), '"SNG Cop 123"');
+  // Any SG spelling reads so: a Recent chip saved before 0.19, and a "v" behind a remark.
+  for (const number of ['SG6829v', 'SG 6829 var', 'SGCV 6829', 'GCV 6829', 'Sear Greek 6829', 'SG6829', 'SG 6829v (this coin)', 'SG-6829']) {
+    assert.equal(defaultTerm(other(number)), '("Sear 6829" "SG 6829")', number);
+  }
+  assert.equal(defaultTerm(other('SG 6829v; SNG Spaer 1712')), '("Sear 6829" "SG 6829" "SNG Spaer 1712")');
+  assert.equal(defaultTerm(other('SGI 123')), '"SGI 123"');
+  assert.equal(defaultTerm(other('Sear 6829')), '"Sear 6829"');
+});
+
+test('coinArchivesTerm gives plain words for every catalogue, with no acsearch quotes or brackets', () => {
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I 605');
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Hadrian', number: '266 (aureus)' }), 'Hadrian 266 aureus');
+  assert.equal(coinArchivesTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), 'Crawford 44/5');
+  assert.equal(coinArchivesTerm({ catalogue: 'SC', number: 'SC 1266.2' }), 'SC 1266.2');
+  assert.equal(coinArchivesTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');
+  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '20' }), 'Hermaeus Bopearachchi 20');
+  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Euthydemus I', number: 'Bop 24a' }), 'Euthydemus Bopearachchi 24A');
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(coinArchivesTerm(other('SG 6829 var.')), 'Sear 6829');
+  assert.equal(coinArchivesTerm(other('SG 6829a; SC 1')), 'Sear 6829a');
+  assert.equal(coinArchivesTerm(other('SGCV 6829')), 'Sear 6829');
+  assert.equal(coinArchivesTerm(other('SG6829v')), 'Sear 6829');
+  assert.equal(coinArchivesTerm(other('SG 6829v (this coin)')), 'Sear 6829');
+  assert.equal(coinArchivesTerm(other('BCD Boiotia 174b; HGC 4, 1218')), 'BCD Boiotia 174b');
+  assert.equal(coinArchivesTerm(other('“[SNG Cop 123]” (this coin); BMC 4')), 'SNG Cop 123');
+});
+
+test('coinArchivesUrl encodes the words into a CoinArchives search address', () => {
+  assert.equal(coinArchivesUrl('Crawford 44/5'), 'https://www.coinarchives.com/a/results.php?search=Crawford%2044%2F5&s=0');
+  assert.equal(coinArchivesUrl(' BCD  Boiotia 174b '), 'https://www.coinarchives.com/a/results.php?search=BCD%20Boiotia%20174b&s=0');
+  assert.equal(coinArchivesUrl('a&s=9#x'), 'https://www.coinarchives.com/a/results.php?search=a%26s%3D9%23x&s=0');
 });
 
 test('an acsearch page that found nothing is no sales, not a connection failure', async () => {

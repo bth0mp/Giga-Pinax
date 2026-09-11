@@ -572,6 +572,38 @@ test('an Other reference is its own card, built without a request, and lookupByI
   assert.equal(fetchImpl.calls.length, 0);
 });
 
+test('a Sear Greek (SG) reference is Other, its number normalised to "SG n", a "v" or "var." suffix as " var."', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const [text, number] of [
+    ['SG 6829', 'SG 6829'], ['SG6829', 'SG 6829'], ['SG 6829v', 'SG 6829 var.'], ['SG6829v', 'SG 6829 var.'], ['SG 6829 var.', 'SG 6829 var.'],
+    ['SG 6829 var', 'SG 6829 var.'], ['SGCV 6829', 'SG 6829'], ['GCV 6829', 'SG 6829'], ['Sear Greek 6829', 'SG 6829'], ['SG 6829a', 'SG 6829a'],
+    ['sg 6829V', 'SG 6829 var.'], ['SG 6829a var.', 'SG 6829a var.'], ['(SG 6829v)', 'SG 6829 var.'], ['SG 6829v; SNG Spaer 1712', 'SG 6829 var.; SNG Spaer 1712'],
+    // SGCV's volume (the numbers run on across both), and a dot or dash after the key.
+    ['SGCV II 6829', 'SG 6829'], ['GCV II 6829', 'SG 6829'], ['SGCV 2 6829', 'SG 6829'], ['SGCV I 1234', 'SG 1234'], ['SGCV II, 6829', 'SG 6829'],
+    ['SGCV 26829', 'SG 26829'], ['SG.6829', 'SG 6829'], ['SG-6829', 'SG 6829'], ['SG. 6829', 'SG 6829'], ['SG–6829', 'SG 6829'], ['SG 1 234', 'SG 1 234'],
+  ]) assert.deepEqual(parseReference(text), other(number), text);
+  // A card title, as a Recent chip recalls it, reads the same again, and the guided field gives the same card.
+  assert.deepEqual(parseReference('SG 6829 var.'), other('SG 6829 var.'));
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: 'SG6829v' }), { corpus: 'other', query: 'SG 6829 var.' });
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: 'SG 6829 var.' }), { corpus: 'other', query: 'SG 6829 var.' });
+  // Sear Greek Imperial and a Sear number alone stay as written; SC and its titles are untouched, and a typed part still wins.
+  assert.deepEqual(parseReference('SGI 123'), other('SGI 123'));
+  assert.deepEqual(parseReference('Sear 6829'), other('Sear 6829'));
+  assert.deepEqual(parseReference('SC 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('sc1630.2b'), { catalogue: 'SC', number: '1630.2b', volume: '', section: '' });
+  assert.deepEqual(parseReference('Seleucid Coins (part 1) 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('SG 6829v; SC 1'), { catalogue: 'SC', number: '1', volume: '', section: '' });
+});
+
+test('lookupById gives an older SG chip ("SG6829v") the SG spelling, and keeps every other Other id as saved', async () => {
+  const fetchImpl = fakeFetch({});
+  for (const [id, text] of [['SG6829v', 'SG 6829 var.'], ['SGCV 6829', 'SG 6829'], ['Sear Greek 6829', 'SG 6829'], ['"BCD Boiotia 174b"', '"BCD Boiotia 174b"']]) {
+    const { card } = await lookupById('other', id, { fetchImpl });
+    assert.deepEqual([card.id, card.label], [text, text], id);
+  }
+  assert.equal(fetchImpl.calls.length, 0);
+});
+
 test('rpcUrl links an RPC reference to its RPC Online page, the volume in Arabic numerals and a part as ".2", and nothing else', () => {
   for (const [text, path] of [
     ['RPC I 1234', '1/1234'], ['RPC I, 1234', '1/1234'], ['rpc i 1234', '1/1234'], ['RPC V.2 1234', '5.2/1234'], ['RPC V/2 1234', '5.2/1234'],

@@ -71,6 +71,21 @@ const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // only end it stay ("266 (aureus)", "174b (this coin)").
 const unwrap = (value) => unpunctuate(unpunctuate(value.trim()).replace(/^[(\[‘']([^()[\]‘’']*)[)\]’']$/, '$1').trim());
 
+// Sear's Greek Coins and Their Values ("SG 6829", "SG6829v", "SGCV 6829", "GCV 6829", "Sear Greek 6829") has no type data, but one spelling, "SG n"
+// with " var." for a variety's "v" or "var.", lets prices.js search it as dealers cite it ("Sear 6829"). A key must end at the number, so "SGI 123"
+// (Sear Greek Imperial) is no SG; a letter other than v is the number's own ("SG 6829a"). unwrap has dropped a final "." ("var"), which comes back.
+// SGCV's volume goes ("SGCV II 6829": the numbers run on across both) only before a space or comma, so "SGCV 26829" stays whole; a dot or dash may
+// follow the key ("SG.6829", "SG–6829": the Reference box keeps the en dash).
+const SG_REFERENCE = /^(?:(?:SGCV|GCV)(?:\s+(?:II?|[12])(?=[\s,]))?,?|SG|Sear\s+Greek)[\s.\-–]*(\d+)([a-z]?)(\s*var\.?)?$/i;
+export function sgNumber(value) {
+  const [, digits, letter, varied] = String(value ?? '').match(SG_REFERENCE) ?? [];
+  if (!digits) return null;
+  const variety = letter.toLowerCase() === 'v';
+  return `SG ${digits}${variety ? '' : letter.toLowerCase()}${variety || varied ? ' var.' : ''}`;
+}
+// An Other text with its SG parts in that spelling; any other text is kept as it is.
+const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some(sgNumber) ? parts.map((part) => sgNumber(part) ?? part).join('; ') : value);
+
 // References are ";"-separated ("SC 2195.5c; SNG Spaer 1712"): the first one a type rule reads is looked up, else the whole text is Other.
 // The hidden characters go before anything else, the length cap included.
 export function parseReference(text) {
@@ -83,7 +98,7 @@ export function parseReference(text) {
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
-  return /\p{L}/u.test(value) && /\d/.test(value) && !supported ? { catalogue: 'Other', number: value, volume: '', section: '' } : null;
+  return /\p{L}/u.test(value) && /\d/.test(value) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
 // One reference, read by the rules of the catalogues that have type data, or null.
@@ -140,7 +155,7 @@ export function buildQuery({ catalogue, number, volume, section }) {
     return { corpus: BIGR, query: squash(`Bopearachchi ${king} ${series}`), king, series };
   }
   // Cleaned as parseReference cleans it, so the guided field and the Reference box give the same card, Recent chip and term.
-  if (catalogue === 'Other') return { corpus: OTHER, query: unwrap(unquote(number)) };
+  if (catalogue === 'Other') return { corpus: OTHER, query: otherNumber(unwrap(unquote(number))) };
   return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };
 }
 
@@ -314,7 +329,8 @@ const otherCard = (text) => ({ id: text, corpus: OTHER, label: text, authority: 
   obverse: { legend: null, description: null }, reverse: { legend: null, description: null } });
 
 export async function lookupById(corpus, id, options = {}) {
-  if (corpus === OTHER) return { status: 'ok', card: otherCard(id) };
+  // A chip saved before 0.19 ("SG6829v") takes the SG spelling; any other id stays as saved, so its remembered term still matches.
+  if (corpus === OTHER) return { status: 'ok', card: otherCard(otherNumber(id)) };
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
   const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
   try {

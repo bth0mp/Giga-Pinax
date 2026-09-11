@@ -1,4 +1,4 @@
-import { INVISIBLE, parseReference } from './lookup.js';
+import { INVISIBLE, parseReference, sgNumber } from './lookup.js';
 import { RIC_SECTIONS, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -9,7 +9,7 @@ const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
 // that also has a longer key, so "c. 386-338 BC" and the legend "S - C" stay text while "C.309 - RIC.112" is two references. Keys inside a bracket are
 // skipped ("(= BMC 7)", a sale's "(2005, 1132)"), unless the bracket opens on a key: then each key after a separator in it counts ("(Cohen 17; RIC 972)").
 const KEYS = ['BMC/RE', 'BMCRE', 'BMC', 'Bopearachchi', 'Bop\\.?', 'Calicó', 'Calico', 'Cohen', 'Coh\\.?', 'Crawford', 'Craw\\.?', 'Cr\\.?', 'RIC', 'RRC',
-  'RSC', 'RPC', 'RCV', 'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIBE', 'MIB', 'MIR', 'Sydenham',
+  'RSC', 'RPC', 'RCV', 'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIBE', 'MIB', 'MIR', 'Sydenham',
   'Syd\\.?', 'Müller', 'Muller', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
 const KEY = new RegExp(String.raw`(?<![\p{L}\d])(?:Ref(?:erences?|s)?\.?\s*:\s*)?(cf\.?\s*)?(${KEYS.join('|')})(?![\p{L}\d])`, 'giu');
 // Dealers capitalise a catalogue key, so a lower-case word ("hammer price 500", "see doc 12") is never one.
@@ -80,14 +80,18 @@ function chunks(span) {
   return { parts: [...parts, { sep, text: span.slice(start) }], stopped: false };
 }
 
-// The reference after one key: its first chunk (read up to its last number), then every chunk that starts with a number ("HGC 12, 72",
-// "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b", "Lot 23312", "Rome 79")
-// ends it but not the run, so a later C or S still counts; other text ("NGC Choice VF 5/5", "Good VF", "AD 69-79") ends the run too, which broken says.
-function pieceAfter(span) {
+// The keys of the catalogues with type data. Their reference is its first chunk: "Price 3949, 3950" cites two types, so 3950 ends Price 3949.
+const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearachchi|Bop\.?)$/i;
+
+// The reference after one key: its first chunk (read up to its last number), then, for a catalogue without type data, every chunk that starts with a
+// number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
+// "Lot 23312", "Rome 79") ends it but not the run, so a later C or S still counts; other text ("NGC Choice VF 5/5", "Good VF", "AD 69-79") ends the run
+// too, which broken says.
+function pieceAfter(span, typed = false) {
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
-  let body = read, ended = false, broken = stopped || first.text.slice(read.length).trim() !== '';
+  let body = read, ended = typed, broken = stopped || first.text.slice(read.length).trim() !== '';
   for (const { sep, text } of broken ? [] : more) {
     const piece = unpunctuate(text);
     if (!piece) continue;
@@ -105,6 +109,9 @@ const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(\p{L}[\p{L}/
 function normalise(written, key, cf) {
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, ''));
+  // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
+  const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
+  if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
   // A bracket naming a RIC section is that section ("RIC 268 (Elagabalus)"), put before the number; on another catalogue it is a remark.
   const section = [...text.matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0);
   const ric = /^RIC/i.test(key);
@@ -132,9 +139,12 @@ export function findReferences(input) {
   let run = 0;
   const pieces = keys.map((match, index) => {
     const keyStart = match.index + match[0].length - match[2].length;
-    const { body, broken } = pieceAfter(text.slice(match.index + match[0].length, keys[index + 1]?.index ?? text.length));
+    const end = keys[index + 1]?.index ?? text.length;
+    // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
+    const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
+    const { body, broken } = pieceAfter(text.slice(match.index + match[0].length, opens ? end - 1 : end), TYPED_KEY_WORD.test(match[2]));
     const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), written: `${text.slice(keyStart, match.index + match[0].length)}${body}`, run };
-    if (broken) run += 1;
+    if (broken || opens) run += 1;
     return piece;
   });
   const longer = new Set(pieces.filter((piece) => piece.key.length > 1).map((piece) => piece.run));

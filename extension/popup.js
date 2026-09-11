@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, summarise, summaryText, trendOf, trendText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
 import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
@@ -212,6 +212,14 @@ function updateAcsearchLink() {
   $('acsearch-link').href = buildSearchUrl({ term, currency: $('currency').value });
 }
 
+// CoinArchives follows the reference on the card, never the edited acsearch term, whose quotes and brackets it can't read; only the user opens it.
+// A reference that gives no words (none reach a card today) falls back to the card's title, as the acsearch link does.
+function updateCoinArchivesLink(card) {
+  const term = coinArchivesTerm(currentReference()) || card.label;
+  $('coinarchives-link').href = coinArchivesUrl(term);
+  $('coinarchives-link').setAttribute('aria-label', `Search CoinArchives for ${term}, opens a new tab`);
+}
+
 function renderCard(card) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
@@ -241,6 +249,7 @@ function renderCard(card) {
   $('price-term').value = chooseTerm(currentReference(), saved);
   clearPrices();
   updateAcsearchLink();
+  updateCoinArchivesLink(card);
   $('result').hidden = false;
   announce(`Found ${card.label}.`);
 }
@@ -482,6 +491,8 @@ async function run(perform, note = '') {
     const title = outcome.card.corpus === 'ocre' ? parseReference(outcome.card.label) : null;
     if (outcome.card.bop) fillFields({ catalogue: 'Bop', number: outcome.card.bop.series ?? '', volume: '', section: outcome.card.bop.king });
     else if (outcome.card.corpus === 'other') fillFields({ catalogue: 'Other', number: outcome.card.label, volume: '', section: '' });
+    // A PELLA title that does not read back ("Price P1") would leave the last reference in the fields, and both searches with it.
+    else if (outcome.card.corpus === 'pella' && !parseReference(outcome.card.label)) fillFields({ catalogue: 'Price', number: outcome.card.id.replace(/^price\./, ''), volume: '', section: '' });
     else if (title) fillFields(title);
     renderCard(outcome.card);
     preferences = rememberRecent(preferences, outcome.card);
