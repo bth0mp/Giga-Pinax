@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.16.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link opens only when you select it) and nothing from acsearch is stored.
+Version **0.17.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link opens only when you select it) and nothing from acsearch is stored.
 
 The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.16.0.zip
-dist/giga-pinax-firefox-0.16.0.zip
+dist/giga-pinax-brave-0.17.0.zip
+dist/giga-pinax-firefox-0.17.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.16.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.17.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.16.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.17.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -67,11 +67,13 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - **Look up** fetches prices too. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices**.
 - If the popup says no hammer prices could be counted, it quotes up to five prices exactly as acsearch showed them — send that line so the price reader can learn the format.
 - Edit the acsearch search term (for example add the denomination) and select **Get prices** again; the term is remembered for that type.
-- The median hammer price sits right under the type's title, and the obverse and reverse are folded under **Obverse and reverse** (select it to open them). The line under the median says how far to trust it, for example **Solid: 22 sales, 2024–2026** — Thin for 1–4 sales, Moderate for 5–14, Solid for 15 or more — and the next line how many matches it was drawn from.
+- The period buttons and then the median hammer price sit right under the type's title, and the obverse and reverse are folded under **Obverse and reverse** (select it to open them). The line under the median says how far to trust it, for example **Solid: 22 sales, 2024–2026** — Thin for 1–4 sales, Moderate for 5–14, Solid for 15 or more — and, below the trend and **Last sale** lines, a line says how many matches it was drawn from.
+- Above the median, select **Last 2 years**: the median, the line saying how far to trust it, the middle 50%, the lowest and highest sale, **Check a price** (a typed amount stays and is checked again) and **Inspect sales** redraw from the sales already fetched, without asking acsearch again, and the matches line reads, for example, **Out of 12 matches from the last 2 years for “Nero 306”**. **Last 5 years** works the same way, and **All** brings back every sale. The choice is remembered the next time you open Giga Pinax. When no sale in the period has a price, the panel says **No sales with a price in the last 2 years.**
+- Under the median, a line compares the last 2 years with earlier sales, for example **Last 2 years: $250 median, up 18% on earlier sales ($212)**; within 5% it reads **about the same**. It appears only when both sides have at least 3 sales. Under it, **Last sale** shows the date and price of the most recent sale; select the date to open that lot on acsearch. Neither line changes with the period.
 - Under **Middle 50% of sales**, the panel prints the lowest and highest sale, for example **All 22 sales $81–$950**; a quarter of the sales lie above the middle 50%. Lots acsearch lists without a price are counted apart ("2 without a price") from prices the popup couldn't count.
 - Type a bid or an asking price, such as **500**, in **Check a price**: the line under it says how many of the counted sales it tops and its multiple of the median, for example "Higher than 16 of 23 sales, 1.6× the median", and a mark shows where it falls on the range bar; beyond the lowest or highest sale the mark waits at that end with an arrow pointing out. Nothing is stored, and a new lookup or currency starts it empty.
 - Expand **Inspect sales** to see each sale with a link to it on acsearch.
-- Select **Copy summary** at the bottom of the prices panel and paste it anywhere.
+- Select **Copy summary** at the bottom of the prices panel and paste it anywhere. With **Last 5 years** or **Last 2 years** chosen it names the period, and it carries the last sale and the trend too.
 - A number that doesn't exist, such as **RIC I² Nero 9999999**: the popup says it was not found rather than inventing a result.
 - **RIC I Nero 306** typed in the Reference box with the edition left out: a short "Did you mean" list offers the full reference, and choosing it sets the fields.
 - Close and reopen the popup: your last reference, currency and terms are remembered locally.

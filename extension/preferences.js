@@ -1,3 +1,5 @@
+import { PERIODS } from './prices.js';
+
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
@@ -49,6 +51,8 @@ export function restorePreferences(raw) {
     number: text(saved.number, DEFAULT_NUMBER[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),
     section: text(saved.section, DEFAULT_SECTION[catalogue] ?? DEFAULT_SECTION.RIC),
+    // The sales period the prices panel was last drawn for; only an exact PERIODS value, else All.
+    period: PERIODS.some((entry) => entry.value === saved.period) ? saved.period : 'all',
     terms: restoreTerms(saved.terms),
     recent: restoreRecent(saved.recent),
   };

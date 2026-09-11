@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, medianStrength, parsePrice, priceCheck, quoteList, summaryText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
 import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
@@ -158,6 +158,8 @@ function clearPrices() {
   shownPrices = null;
   resetCopyLabel();
   $('prices-panel').hidden = true;
+  // A new result starts with Inspect sales folded; a period redraw leaves it as it was.
+  $('sale-details').open = false;
   // A new lookup or currency starts the price check empty.
   $('check-amount').value = '';
   showCheck();
@@ -291,23 +293,55 @@ const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
 // Where an amount falls on the lowest–highest line, in percent; a single price has no span and sits in the middle.
 const rangePercent = (summary, value) => (summary.max > summary.min ? ((value - summary.min) / (summary.max - summary.min)) * 100 : 50);
 
-function renderPrices(summary, currency, term) {
+// A link to one lot on acsearch, in a new tab.
+function lotLink(sale, text) {
+  const link = document.createElement('a');
+  link.href = `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = text;
+  return link;
+}
+
+// Draws the chosen period from the page's lots, with no request, as of the collector's own date: everything on the panel follows the period
+// except the trend and the last sale, which come from the whole page. A period without a counted sale keeps only the buttons, the trend and the
+// last sale. The announcement names a period other than All, and All too when the collector has just chosen it (named).
+function renderPrices(lots, currency, term, named = false) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const now = localDay(new Date());
+  const period = PERIODS.find((entry) => entry.value === preferences.period);
+  const page = summarise(lots, currency);
+  const summary = summarise(lotsInPeriod(lots, period.value, now), currency);
   const median = money.format(summary.median);
   $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
   $('median-currency').hidden = median.includes(currency);
   const { count, unpriced, total } = summary;
+  const empty = count === 0;
+  for (const id of ['median-line', 'range-block', 'check-row', 'check-result', 'sale-details', 'copy-summary']) $(id).hidden = empty;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const strength = medianStrength(count);
   const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  $('sale-strength').textContent = `${strength}: ${sales(count)}${years}`;
+  const none = `No sales with a price in the last ${period.years} years.`;
+  $('sale-strength').textContent = empty ? none : `${strength}: ${sales(count)}${years}`;
+  const trend = trendOf(lots, currency, now);
+  $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
+  $('sale-trend').hidden = !trend;
+  const last = lastSale(page);
+  $('last-sale').hidden = !last;
+  if (last) {
+    // The name keeps the date it shows, so a screen reader or voice control still finds it.
+    const link = lotLink(last, last.date);
+    link.setAttribute('aria-label', `Last sale ${last.date} on acsearch, opens a new tab`);
+    $('last-sale').replaceChildren('Last sale ', link, ` · ${money.format(last.amount)}`);
+  }
   const skipped = total - count - unpriced;
-  let period = `Out of ${total}${summary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'} for “${term}”`;
-  if (unpriced) period += ` · ${unpriced} without a price`;
-  if (skipped) period += ` · ${skipped} not counted`;
-  $('sale-period').textContent = period;
+  // "+" only when every lot on the page falls in the period, so acsearch may hold more of them.
+  let drawn = `Out of ${total}${summary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for “${term}”`;
+  if (unpriced) drawn += ` · ${unpriced} without a price`;
+  if (skipped) drawn += ` · ${skipped} not counted`;
+  $('sale-period').textContent = drawn;
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
   $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
@@ -320,32 +354,29 @@ function renderPrices(summary, currency, term) {
   $('sale-list').replaceChildren(...summary.priced.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
-    const link = document.createElement('a');
-    link.href = `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = sale.title || `Lot ${sale.id}`;
-    label.append(`${sale.date} · `, link);
+    label.append(`${sale.date} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
     row.append(label, amount);
     return row;
   }));
-  $('price-note').textContent = summary.capped
+  // About the page, whatever the period: it holds only the 100 most recent lots.
+  $('price-note').textContent = page.capped
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
-  $('sale-details').open = false;
-  shownPrices = { card: currentCard, summary, currency, term };
+  shownPrices = { card: currentCard, lots, currency, term, summary, extras: { period, last, trend } };
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
-  $('announcement').textContent = `Median ${spoken} over ${sales(count)} (${strength.toLowerCase()}).`;
+  const heading = named || period.years ? `${period.label}: median` : 'Median';
+  $('announcement').textContent = empty ? none : `${heading} ${spoken} over ${sales(count)} (${strength.toLowerCase()}).`;
 }
 
 // Checked against the sales shown, never stored: blank shows nothing, text parsePrice can't read asks for an amount, and a readable one says how many
 // sales it tops and its multiple of the median. Its marker sits where it falls on the lowest–highest line, or at an end with a caret pointing out.
+// A period without a counted sale hides the check and has nothing to weigh it against.
 function showCheck() {
   const text = $('check-amount').value.trim();
-  const amount = text && shownPrices ? parsePrice(text, shownPrices.currency) : null;
+  const amount = text && shownPrices?.summary.count ? parsePrice(text, shownPrices.currency) : null;
   $('range-check').hidden = amount === null;
   if (amount === null) { $('check-result').textContent = text ? CHECK_MESSAGE : ''; return; }
   const { summary } = shownPrices;
@@ -425,7 +456,7 @@ async function runPrices(term, currency, { remember = true } = {}) {
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId) return;
-  if (outcome.status === 'ok') renderPrices(outcome.summary, currency, term);
+  if (outcome.status === 'ok') renderPrices(outcome.lots, currency, term);
   else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
@@ -453,10 +484,11 @@ function requestHostAccess(origins) {
   });
 }
 
-// The saved fields, currency and Recent row: shown at start-up, and again when the lookup window takes a lookup sent to it (below).
+// The saved fields, currency, sales period and Recent row: shown at start-up, and again when the lookup window takes a lookup sent to it (below).
 function showStored() {
   $('catalogue').value = preferences.catalogue;
   $('currency').value = preferences.currency;
+  for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
   $('reference-number').value = preferences.number;
   fillRicFields(preferences.volume, preferences.section);
   updateFields();
@@ -560,13 +592,22 @@ $('reference-form').addEventListener('submit', async (event) => {
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
 $('check-amount').addEventListener('input', showCheck);
+// A period is remembered and drawn from the lots on show, never fetched; a typed check amount stays and is weighed again against the new sales.
+$('period').addEventListener('change', (event) => {
+  preferences = { ...preferences, period: event.target.value };
+  savePreferences();
+  if (!shownPrices) return;
+  resetCopyLabel();
+  renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term, true);
+  showCheck();
+});
 // writeText is the first call in the click, so it keeps the user gesture; a missing clipboard API throws here and is reported like a refusal.
 // Success relabels the button for 2 seconds; a newer copy restarts the timer, and clearPrices() puts the label back at once.
 $('copy-summary').addEventListener('click', async () => {
   const shown = shownPrices;
   if (!shown) return;
   try {
-    await navigator.clipboard.writeText(summaryText(shown.card, shown.summary, shown.currency, shown.term));
+    await navigator.clipboard.writeText(summaryText(shown.card, shown.summary, shown.currency, shown.term, shown.extras));
     $('announcement').textContent = 'Summary copied.';
     if (shownPrices !== shown) return;
     resetCopyLabel();

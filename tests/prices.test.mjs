@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -151,9 +151,12 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.equal(ok.status, 'ok');
   assert.equal(ok.summary.median, 200);
   assert.equal(ok.summary.total, 3);
+  // The page's lots come back too, for the popup to draw a period from without another request.
+  assert.deepEqual(ok.lots, [lot('100'), lot('300'), lot('*')]);
   const many = await fetchPrices({ term: 'Nero', currency: 'USD' }, { fetchImpl: fakeFetch(page(Array.from({ length: 150 }, (_, index) => lot(String(index + 1), '01.01.2024', String(index))))) });
   assert.equal(many.summary.priced.length, 100);
   assert.equal(many.summary.capped, true);
+  assert.equal(many.lots.length, 100);
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q', examples: ['200 EUR', '300 EUR'] });
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
@@ -322,6 +325,115 @@ test('buildSearchUrl encodes the parentheses and quotes of a Bop term', () => {
     'https://www.acsearch.info/search.html?term=%28Hermaeus+Hermaios%29+%22Bopearachchi+20%22&category=1&currency=usd&order=1');
   assert.equal(buildSearchUrl({ term: 'Menander "Bopearachchi 24A"', currency: 'EUR' }),
     'https://www.acsearch.info/search.html?term=Menander+%22Bopearachchi+24A%22&category=1&currency=eur&order=1');
+});
+
+const iso = (date) => date?.toISOString().slice(0, 10) ?? null;
+
+test('saleDate reads the day of a lot in any of its three forms as midnight UTC, and nothing else', () => {
+  assert.equal(saleDate('08.07.2026').toISOString(), '2026-07-08T00:00:00.000Z');
+  assert.equal(iso(saleDate('28.07.2026 14:00')), '2026-07-28');
+  assert.equal(iso(saleDate('2024-05-01')), '2024-05-01');
+  assert.equal(iso(saleDate(' 29.02.2028 ')), '2028-02-29');
+  // Date.UTC would roll an impossible day into the next month.
+  for (const bad of ['', 'n/a', '31.02.2026', '29.02.2026', '2026-02-30', '00.07.2026', '08.13.2026', '8.7.2026', '07/08/2026', '2026', '08.07.2026x', null, undefined]) {
+    assert.equal(saleDate(bad), null, String(bad));
+  }
+});
+
+// The day the tests are drawn on; two years before it is 11.09.2024 and five years 11.09.2021.
+const NOW = new Date(Date.UTC(2026, 8, 11));
+
+test('PERIODS offers All, the last 5 years and the last 2 years', () => {
+  assert.deepEqual(PERIODS.map(({ value, label, years }) => [value, label, years]), [['all', 'All', null], ['5y', 'Last 5 years', 5], ['2y', 'Last 2 years', 2]]);
+  assert.ok(Object.isFrozen(PERIODS));
+});
+
+test('lotsInPeriod keeps the lots sold on or after the same day N years ago, and only All keeps a lot without a readable date', () => {
+  const lots = [lot('100', '11.09.2024', 'edge2'), lot('100', '10.09.2024 23:59', 'before2'), lot('100', '2021-09-11', 'edge5'), lot('100', '10.09.2021', 'before5'),
+    lot('100', '', 'blank'), lot('100', 'n/a', 'na'), lot('', '08.07.2026', 'unpriced')];
+  const ids = (period, now = NOW) => lotsInPeriod(lots, period, now).map((entry) => entry.id);
+  assert.deepEqual(ids('all'), lots.map((entry) => entry.id));
+  assert.deepEqual(ids('5y'), ['edge2', 'before2', 'edge5', 'unpriced']);
+  assert.deepEqual(ids('2y'), ['edge2', 'unpriced']);
+  // The time of day doesn't move the boundary.
+  assert.deepEqual(ids('2y', new Date(Date.UTC(2026, 8, 11, 23, 59))), ['edge2', 'unpriced']);
+  // 29 February falls back to the 28th in a year without one.
+  const leap = [lot('100', '28.02.2026', 'kept'), lot('100', '27.02.2026', 'dropped')];
+  assert.deepEqual(lotsInPeriod(leap, '2y', new Date(Date.UTC(2028, 1, 29, 18))).map((entry) => entry.id), ['kept']);
+});
+
+test('localDay keeps the local date of a moment, at midnight UTC like a sale date, whatever the time of day', () => {
+  // Built from the local clock, so this holds in any time zone: late on 10 September is still the 10th, just after midnight the 11th.
+  assert.equal(localDay(new Date(2026, 8, 10, 21)).toISOString(), '2026-09-10T00:00:00.000Z');
+  assert.equal(localDay(new Date(2026, 8, 11, 0, 30)).toISOString(), '2026-09-11T00:00:00.000Z');
+  assert.equal(localDay(new Date(2028, 1, 29, 23, 59)).toISOString(), '2028-02-29T00:00:00.000Z');
+  // West of UTC, 21:00 on the 10th is already the 11th in UTC; the collector's 10th still keeps a sale from exactly two years before.
+  assert.deepEqual(lotsInPeriod([lot('100', '10.09.2024', 'edge')], '2y', localDay(new Date(2026, 8, 10, 21))).map((entry) => entry.id), ['edge']);
+});
+
+// Three counted sales in the last 2 years (median 250), with a lot without a price and one in euros; three before (median 150).
+const RECENT = [lot('300', '11.09.2024', 'r1'), lot('$200', '08.07.2026', 'r2'), lot('250', '28.07.2026 14:00', 'r3'), lot('-', '01.08.2026', 'r4'), lot('200 EUR', '02.08.2026', 'r5')];
+const EARLIER = [lot('100', '10.09.2024', 'e1'), lot('150', '2024-05-01', 'e2'), lot('1,200', '01.01.2020', 'e3')];
+const UNDATED = lot('5000', 'n/a', 'u');
+
+test('trendOf sets the median of the last 2 years against earlier sales, only when both rest on at least 3 counted sales', () => {
+  assert.deepEqual(trendOf([...RECENT, ...EARLIER, UNDATED], 'USD', NOW), { recent: 250, recentCount: 3, earlier: 150, earlierCount: 3, change: 250 / 150 - 1 });
+  // A sale without a readable date belongs to neither side: two earlier sales and it are not three.
+  assert.equal(trendOf([...RECENT, ...EARLIER.slice(0, 2), UNDATED], 'USD', NOW), null);
+  assert.equal(trendOf([...RECENT.slice(1), ...EARLIER], 'USD', NOW), null);
+  assert.equal(trendOf([], 'USD', NOW), null);
+});
+
+test('lastSale is the counted sale with the latest readable date, the first in page order on a tie', () => {
+  const summary = summarise([UNDATED, lot('-', '01.08.2026', 'unsold'), lot('200 EUR', '09.07.2026', 'euro'), lot('100', '2024-05-01', 'old'),
+    lot('$950', '08.07.2026', 'first'), lot('1,200', '08.07.2026 18:00', 'tie')], 'USD');
+  assert.deepEqual([lastSale(summary).id, lastSale(summary).amount], ['first', 950]);
+  assert.equal(lastSale(summarise([lot('100', ''), lot('200', 'n/a')], 'USD')), null);
+  assert.equal(lastSale(summarise([], 'USD')), null);
+});
+
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
+const move = (recent, earlier) => ({ recent, recentCount: 3, earlier, earlierCount: 3, change: recent / earlier - 1 });
+
+test('trendText says how far the last 2 years moved from earlier sales, and that a move within 5% is about the same', () => {
+  assert.equal(trendText(trendOf([...RECENT, ...EARLIER], 'USD', NOW), usd), 'Last 2 years: $250 median, up 67% on earlier sales ($150)');
+  assert.equal(trendText(move(150, 250), usd), 'Last 2 years: $150 median, down 40% on earlier sales ($250)');
+  // 210 against 200 is 5%, still about the same.
+  for (const [recent, earlier] of [[210, 200], [190, 200], [204, 200], [200, 200]]) {
+    assert.equal(trendText(move(recent, earlier), usd), `Last 2 years: $${recent} median, about the same as earlier sales ($${earlier})`);
+  }
+  assert.equal(trendText(move(212, 200), usd), 'Last 2 years: $212 median, up 6% on earlier sales ($200)');
+  assert.equal(trendText(move(188, 200), usd), 'Last 2 years: $188 median, down 6% on earlier sales ($200)');
+  // An exact 5.5% rounds up whichever way it moves, though 105.5 / 100 - 1 is 5.4999…% in floating point.
+  assert.equal(trendText(move(211, 200), usd), 'Last 2 years: $211 median, up 6% on earlier sales ($200)');
+  assert.equal(trendText(move(105.5, 100), usd), 'Last 2 years: $106 median, up 6% on earlier sales ($100)');
+  assert.equal(trendText(move(94.5, 100), usd), 'Last 2 years: $95 median, down 6% on earlier sales ($100)');
+});
+
+test('summaryText names a period other than All, then adds the last sale and the trend', () => {
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  const lots = [...RECENT, ...EARLIER, UNDATED];
+  const extras = { period: PERIODS[2], last: lastSale(summarise(lots, 'USD')), trend: trendOf(lots, 'USD', NOW) };
+  assert.equal(summaryText(card, summarise(lotsInPeriod(lots, '2y', NOW), 'USD'), 'USD', 'Price 23', extras), [
+    'Price 23',
+    'Median hammer $250 (last 2 years) · middle 50% $225–$275 · range $200–$300 · 3 sales (thin) matching “Price 23” · 2024–2026',
+    'Last sale 28.07.2026 14:00 · $250',
+    'Last 2 years: $250 median, up 67% on earlier sales ($150)',
+    'Not counted: “200 EUR”',
+    'https://numismatics.org/pella/id/price.23',
+  ].join('\n'));
+  assert.ok(summaryText(card, summarise(lotsInPeriod(lots, '5y', NOW), 'USD'), 'USD', 'Price 23', { ...extras, period: PERIODS[1] }).includes('\nMedian hammer $200 (last 5 years) · '));
+  // All is not named, and without a trend there is no trend line.
+  assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', { ...extras, period: PERIODS[0], trend: null }), [
+    'Price 23',
+    'Median hammer $250 · middle 50% $175–$750 · range $100–$5,000 · 7 sales (moderate) matching “Price 23” · 2020–2026',
+    'Last sale 28.07.2026 14:00 · $250',
+    'Not counted: “200 EUR”',
+    'https://numismatics.org/pella/id/price.23',
+  ].join('\n'));
+  // A copied line never splits, whatever whitespace the page put in a date.
+  const split = { period: PERIODS[0], last: { ...extras.last, date: '28.07.2026\n14:00' }, trend: null };
+  assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', split).split('\n')[2], 'Last sale 28.07.2026 14:00 · $250');
 });
 
 test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop default', () => {

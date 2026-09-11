@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { restorePreferences, rememberTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
 
-const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] };
+const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] };
 
 test('corrupt or missing preferences fall back to Price 23 in USD', () => {
   for (const raw of [null, undefined, '', 'broken', 'null', '7', '[]']) {
@@ -13,7 +13,7 @@ test('corrupt or missing preferences fall back to Price 23 in USD', () => {
 
 test('saved preferences are constrained, trimmed to 120 characters and stripped of unknown keys', () => {
   const saved = restorePreferences(JSON.stringify({ currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true }));
-  assert.deepEqual(saved, { currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] });
+  assert.deepEqual(saved, { currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] });
   const invalid = restorePreferences(JSON.stringify({ currency: 'BTC', catalogue: 'RPC', number: {}, volume: 'x'.repeat(200) }));
   assert.equal(invalid.currency, 'USD');
   assert.equal(invalid.catalogue, 'Price');
@@ -22,6 +22,11 @@ test('saved preferences are constrained, trimmed to 120 characters and stripped 
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RIC' })).number, '306');
   assert.equal(STORAGE_KEY, 'giga-pinax-preferences-v1');
   assert.deepEqual([...CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
+});
+
+test('the sales period restores as All, the last 5 years or the last 2 years, and anything else as All', () => {
+  for (const period of ['all', '5y', '2y']) assert.equal(restorePreferences(JSON.stringify({ period })).period, period);
+  for (const period of ['1y', '2Y', ' 2y', 'All', 2, null, {}, ['2y']]) assert.equal(restorePreferences(JSON.stringify({ period })).period, 'all', String(period));
 });
 
 test('terms are restored per type id, sanitised and capped at 50', () => {

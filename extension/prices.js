@@ -153,6 +153,70 @@ export const medianStrength = (count) => (count >= 15 ? 'Solid' : count >= 5 ? '
 // A bid or an asking price against the counted sales: how many sold strictly under it, and its multiple of the median.
 export const priceCheck = (summary, amount) => ({ below: summary.priced.filter((sale) => sale.amount < amount).length, count: summary.count, ratio: amount / summary.median });
 
+// acsearch dates a lot "08.07.2026", "28.07.2026 14:00" or "2024-05-01"; only the day counts, as midnight UTC. Date.UTC rolls 31.02 into March,
+// so a day that doesn't read back unchanged is no date.
+export function saleDate(text) {
+  const raw = squash(text);
+  const dotted = /^(\d{2})\.(\d{2})\.(\d{4})(?:\s|$)/.exec(raw);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:\s|$)/.exec(raw);
+  const [year, month, day] = dotted ? [dotted[3], dotted[2], dotted[1]] : iso ? iso.slice(1) : [];
+  if (!year) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toISOString().startsWith(`${year}-${month}-${day}`) ? date : null;
+}
+
+// The sales periods the panel offers, all drawn from the one results page (at most the 100 most recent lots).
+export const PERIODS = Object.freeze([{ value: 'all', label: 'All', years: null }, { value: '5y', label: 'Last 5 years', years: 5 }, { value: '2y', label: 'Last 2 years', years: 2 }]);
+
+// A moment's local date as midnight UTC, the form saleDate gives a sale, so a period starts on the collector's own day: the UTC date is another day
+// for part of every day away from UTC.
+export const localDay = (now) => new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
+// The same day and month N years before now, as midnight UTC like saleDate; 29 February falls back to the 28th in a year without one.
+function yearsBefore(now, years) {
+  const from = new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate()));
+  if (from.getUTCDate() !== now.getUTCDate()) from.setUTCDate(0);
+  return from;
+}
+
+// A period keeps the lots sold on or after that day; a lot without a readable date can't be placed, so only All keeps it.
+export function lotsInPeriod(lots, period, now) {
+  const years = PERIODS.find((entry) => entry.value === period)?.years;
+  if (!years) return lots;
+  const from = yearsBefore(now, years);
+  return lots.filter((entry) => {
+    const date = saleDate(entry.date);
+    return date !== null && date >= from;
+  });
+}
+
+const TREND_MIN = 3;
+// Recent sales against earlier ones, whatever period is on show: the counted sales of the last 2 years (the same boundary as its button) and those
+// before, each median trusted only when it rests on at least TREND_MIN sales. A lot without a readable date belongs to neither side.
+export function trendOf(lots, currency, now) {
+  const recentLots = lotsInPeriod(lots, '2y', now);
+  const recent = summarise(recentLots, currency);
+  const earlier = summarise(lots.filter((entry) => saleDate(entry.date) && !recentLots.includes(entry)), currency);
+  if (recent.count < TREND_MIN || earlier.count < TREND_MIN) return null;
+  return { recent: recent.median, recentCount: recent.count, earlier: earlier.median, earlierCount: earlier.count, change: recent.median / earlier.median - 1 };
+}
+
+const FLAT_PERCENT = 5;
+// The trend as the panel and the copy word it (format is an Intl.NumberFormat's format). The rule reads the rounded percent that would be shown, so a
+// move is never worded "up 5%" while 5% counts as about the same. The percent comes from the difference, not from change, so an exact 5.5% rounds up
+// whichever way it moves (105.5 / 100 - 1 is 5.4999…% in floating point).
+export function trendText(trend, format) {
+  const percent = Math.round(Math.abs(trend.recent - trend.earlier) * 100 / trend.earlier);
+  const move = percent <= FLAT_PERCENT ? 'about the same as' : `${trend.change > 0 ? 'up' : 'down'} ${percent}% on`;
+  return `Last 2 years: ${format(trend.recent)} median, ${move} earlier sales (${format(trend.earlier)})`;
+}
+
+// The counted sale with the latest readable date; a tie keeps the first in page order, the one acsearch lists as most recent.
+export function lastSale(summary) {
+  const dated = summary.priced.map((sale) => ({ sale, date: saleDate(sale.date) })).filter((entry) => entry.date);
+  return dated.reduce((last, entry) => (entry.date > last.date ? entry : last), dated[0])?.sale ?? null;
+}
+
 export async function fetchPrices({ term, currency }, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
   const controller = new AbortController();
@@ -170,7 +234,8 @@ export async function fetchPrices({ term, currency }, options = {}) {
     const summary = summarise(page, currency);
     if (summary.signedOut) return { status: 'signed-out' };
     if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };
-    return { status: 'ok', summary };
+    // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
+    return { status: 'ok', summary, lots: page };
   } catch {
     return { status: 'network' };
   } finally {
@@ -187,13 +252,19 @@ const quote = (text) => {
 };
 export const quoteList = (texts) => texts.map(quote).join(', ');
 
-export function summaryText(card, summary, currency, term) {
+// The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
+// popup takes from the whole page whatever the period.
+export function summaryText(card, summary, currency, term, { period, last, trend } = {}) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
-  let stats = `Median hammer ${money.format(summary.median)} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
+  const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
+  let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} ${count === 1 ? 'sale' : 'sales'} (${medianStrength(count).toLowerCase()}) matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const lines = [card.label, stats];
+  // The date is page text, squashed so a copied line never splits.
+  if (last) lines.push(`Last sale ${squash(last.date)} · ${money.format(last.amount)}`);
+  if (trend) lines.push(trendText(trend, money.format));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
