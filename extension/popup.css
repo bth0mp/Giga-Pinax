@@ -43,9 +43,15 @@ h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:
 .icon-button {margin-left:auto; width:32px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink); flex-shrink:0;}
 .icon-button:hover {border-color:var(--accent); color:var(--accent);}
 .icon-button svg {width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+/* The first shown header button takes the free space, so both sit at the right; a second one follows 8px after it (the header's gap is 10px). */
+.icon-button:not([hidden]) + .icon-button {margin-left:-2px;}
 .text-button {border:0; background:transparent; color:var(--accent); font-weight:600; font-size:12px; padding:12px;}
 .text-button:hover {text-decoration:underline; text-underline-offset:3px;}
 .popup-scroll {overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; min-height:0;}
+/* A window opened with ?window=1 can be dragged to any size, so the page fills it: the header and footer stay put and the middle scrolls. */
+.windowed body {width:auto; min-width:360px;}
+.windowed .popup {height:100vh; max-height:none;}
+.windowed .popup-scroll {flex-grow:1;}
 .reference-form {padding:12px 16px; border-bottom:1px solid var(--line);}
 label {display:block; font-size:12px; font-weight:600; margin-bottom:6px;}
 select,input {width:100%; height:36px; border:1px solid var(--field); border-radius:8px; background:var(--card); color:var(--ink); padding:0 10px; min-width:0; font-size:13px;}
@@ -64,7 +70,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .field-hint {font-size:11px; line-height:1.4; color:var(--muted); margin-top:6px;}
 .ric-fields {display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin-bottom:12px;}
 .ric-fields.single {grid-template-columns:minmax(0,1fr);}
-.ric-fields select {font-size:12px; text-overflow:ellipsis;}
+.ric-fields select,.ric-fields input {font-size:12px; text-overflow:ellipsis;}
 .ric-fields label {font-size:11px;}
 .form-error {color:var(--error); font-size:12px; line-height:1.5; padding-top:8px;}
 .candidates {padding-top:6px;}
@@ -98,6 +104,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-period {font-size:11px; color:var(--muted); margin-top:6px;}
 .range-block {background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
 .range-block strong {display:block; font-size:16px; font-weight:600; letter-spacing:-.01em; margin-top:2px; font-variant-numeric:tabular-nums;}
+.range-all {font-size:11px; line-height:1.4; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
 .range-visual {position:relative; height:22px; width:100px; margin-left:auto; flex-shrink:0;}
 .range-whisker {position:absolute; top:10px; left:0; right:0; border-top:1px solid var(--muted);}
 .range-whisker::before,.range-whisker::after {content:""; position:absolute; height:9px; border-left:1px solid var(--muted); top:-5px;}

@@ -58,7 +58,7 @@ test('RRC is a remembered catalogue with its own default number', () => {
 });
 
 test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
-  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
   assert.ok(Object.isFrozen(DEFAULT_NUMBER));
 });
 
@@ -107,8 +107,17 @@ test('SC is a remembered catalogue and sco a valid Recent corpus', () => {
   assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
 });
 
+test('Other is a remembered catalogue with its own default reference, and other a valid Recent corpus', () => {
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Other' })).catalogue, 'Other');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Other' })).number, 'BCD Boiotia 174b');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Other', number: 'BCD Boiotia 174b; HGC 4, 1218' })).number, 'BCD Boiotia 174b; HGC 4, 1218');
+  assert.equal(restorePreferences(JSON.stringify({ catalogue: 'other' })).catalogue, 'Price');
+  const recent = [{ id: 'HGC 4, 1218', corpus: 'other', label: 'HGC 4, 1218' }];
+  assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
+});
+
 test('Bop is a remembered catalogue with its own default number and king, and bigr a valid Recent corpus', () => {
-  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
   assert.deepEqual({ ...DEFAULT_SECTION }, { RIC: 'Nero', Bop: 'Euthydemus I' });
   assert.ok(Object.isFrozen(DEFAULT_SECTION));
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Bop' })).catalogue, 'Bop');

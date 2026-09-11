@@ -79,8 +79,21 @@ function bopTerm(section, number) {
   return squash(`${king} ${series ? `"Bopearachchi ${series}"` : 'Bopearachchi'}`);
 }
 
+// A reference without type data is searched as dealers cite it: each ";" reference an exact phrase ("HGC 4, 1218" also finds "HGC 4 1218", since
+// acsearch ignores the comma), several offered either-or, ("BCD Boiotia 174b" "HGC 4, 1218"). Quotes are stripped so none unbalances a phrase, and
+// brackets too, since acsearch finds nothing for a phrase holding one: a trailing remark goes whole ("174b (this coin)"), a wrapping pair leaves its
+// text. A part without a letter and a digit ("BMC –", "Rare") would only match unrelated lots, so it is left out.
+function otherTerm(number) {
+  const phrases = String(number ?? '').replace(/["“”„]/g, '').split(';')
+    .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
+    .filter((part) => /\p{L}/u.test(part) && /\d/.test(part)).map((part) => `"${part}"`);
+  return phrases.length > 1 ? `(${phrases.join(' ')})` : phrases[0] ?? '';
+}
+
+// A RIC term drops OCRE's split-section parenthetical ("Leo I (East)", "Gallienus (joint reign)"): acsearch would require a word dealers rarely write.
 export function defaultTerm({ catalogue, number, section }) {
-  if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
+  if (catalogue === 'RIC') return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '')} ${squash(number)}`);
+  if (catalogue === 'Other') return otherTerm(number);
   if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
   if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
   if (catalogue === 'Bop') return bopTerm(section, number);
@@ -127,6 +140,8 @@ export function summarise(lots, currency) {
     max: has ? amounts[amounts.length - 1] : null,
     earliest: years.length ? Math.min(...years) : null,
     latest: years.length ? Math.max(...years) : null,
+    // Lots with no price at all (unsold, unpriced: blank, "*" and "-" style markers), told apart from prices that could not be counted.
+    unpriced: lots.filter((entry) => !/\d/.test(entry.price)).length,
     // Raw prices the strict parser (or the currency check) rejected, so the collector can report an unseen format; blank, "*" and "-" style markers are not prices.
     uncounted: parsed.filter((entry) => entry.amount === null && /\d/.test(entry.price)).slice(0, EXAMPLE_LIMIT).map((entry) => entry.price),
   };
@@ -139,8 +154,10 @@ export async function fetchPrices({ term, currency }, options = {}) {
   try {
     const response = await fetchImpl(buildSearchUrl({ term, currency }), { signal: controller.signal, credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
-    const lots = extractLots(await response.text());
-    if (!lots) return { status: 'network' };
+    const html = await response.text();
+    const lots = extractLots(html);
+    // A search without hits comes back as acsearch's "No results found" page, which has no results array at all.
+    if (!lots) return /No results found/i.test(html) ? { status: 'empty', term } : { status: 'network' };
     if (lots.length === 0) return { status: 'empty', term };
     // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds.
     const page = lots.slice(0, PAGE_SIZE);
@@ -168,11 +185,12 @@ export function summaryText(card, summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   let stats = `Median hammer ${money.format(summary.median)} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
-  stats += ` · ${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const lines = [card.label, stats];
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
-  lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
+  // A reference without type data has no type page to link to.
+  if (card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
   // Plain text for pasting: Intl puts no-break spaces in amounts such as "CHF 500".
   return lines.join('\n').replace(/[\u00a0\u202f]/g, ' ');
 }

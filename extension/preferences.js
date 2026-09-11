@@ -1,6 +1,6 @@
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
-export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A' });
+export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
 // The section field is the RIC ruler or mint section for RIC and the king for Bop; a catalogue change resets it like the number.
 export const DEFAULT_SECTION = Object.freeze({ RIC: 'Nero', Bop: 'Euthydemus I' });
 export const RECENT_LIMIT = 6;
@@ -9,7 +9,8 @@ export const THEMES = Object.freeze(['light', 'dark']);
 // The stored light/dark choice, or '' for "follow the system"; theme.js applies the same rule before the first paint.
 export const restoreTheme = (raw) => (THEMES.includes(raw) ? raw : '');
 const TERM_LIMIT = 50;
-const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco', 'bigr']);
+// The corpora a Recent chip, or the pop-out's window, may reopen.
+export const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco', 'bigr', 'other']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
 
@@ -41,7 +42,7 @@ export function restorePreferences(raw) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const catalogue = ['RIC', 'RRC', 'SC', 'Bop'].includes(saved.catalogue) ? saved.catalogue : 'Price';
+  const catalogue = ['RIC', 'RRC', 'SC', 'Bop', 'Other'].includes(saved.catalogue) ? saved.catalogue : 'Price';
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,

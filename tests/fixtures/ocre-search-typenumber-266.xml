@@ -1,0 +1,1053 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+ <title>Online Coins of the Roman Empire</title>
+ <id>http://numismatics.org/ocre/</id>
+ <link rel="self" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;266&#34; OR typeNumber:266_*)&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="http://numismatics.org/ocre/results?q=(typeNumber:&#34;266&#34; OR typeNumber:266_*)&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;266&#34; OR typeNumber:266_*)&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;266&#34; OR typeNumber:266_*)&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="http://numismatics.org/ocre/opensearch.xml"/>
+ <opensearch:totalResults>43</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="(typeNumber:&#34;266&#34; OR typeNumber:266_*)"
+                   startPage="0"/>
+ <entry>
+  <title>RIC X Theodosius II (East) 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.10.theo_ii_e.266"/>
+  <id>ric.10.theo_ii_e.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-06T04:08:57Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.10.theo_ii_e.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.10.theo_ii_e.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.10.theo_ii_e.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.10.theo_ii_e.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.01224 28.976018</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">435</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Domitian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).dom.266"/>
+  <id>ric.2_1(2).dom.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-06T02:43:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">85</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Titus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).tit.266"/>
+  <id>ric.2_1(2).tit.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-06T02:32:00Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">80</begin>
+   <end xmlns="">81</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Vespasian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).ves.266"/>
+  <id>ric.2_1(2).ves.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-06T01:56:36Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">71</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VIII Siscia 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.sis.266"/>
+  <id>ric.8.sis.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T11:30:59Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.sis.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.sis.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.sis.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.sis.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">350</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VIII Rome 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.rom.266"/>
+  <id>ric.8.rom.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T11:19:33Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.rom.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.rom.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.rom.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.rom.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">352</begin>
+   <end xmlns="">355</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Arelate 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.ar.266"/>
+  <id>ric.8.ar.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T11:14:31Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.ar.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.ar.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.ar.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.ar.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>43.677616 4.630799</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">355</begin>
+   <end xmlns="">360</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Treveri 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.tri.266"/>
+  <id>ric.8.tri.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T11:05:42Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.tri.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.tri.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.tri.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.tri.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">350</begin>
+   <end xmlns="">353</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Siscia 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.sis.266"/>
+  <id>ric.7.sis.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:50:10Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.sis.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.sis.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.sis.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.sis.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">337</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Rome 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.rom.266"/>
+  <id>ric.7.rom.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:33:49Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.rom.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.rom.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.rom.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.rom.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">324</begin>
+   <end xmlns="">325</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Arelate 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.ar.266"/>
+  <id>ric.7.ar.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:24:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.ar.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.ar.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.ar.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.ar.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>43.677616 4.630799</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">324</begin>
+   <end xmlns="">325</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Treveri 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.tri.266"/>
+  <id>ric.7.tri.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:12:55Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.tri.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.tri.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.tri.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.tri.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">320</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Lugdunum 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.lug.266"/>
+  <id>ric.7.lug.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:07:22Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.lug.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.lug.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.lug.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.lug.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">333</begin>
+   <end xmlns="">334</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Londinium 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.lon.266"/>
+  <id>ric.7.lon.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T09:00:47Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.lon.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.lon.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.lon.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.lon.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">323</begin>
+   <end xmlns="">324</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Rome 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.rom.266"/>
+  <id>ric.6.rom.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T08:05:22Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.rom.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.rom.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.rom.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.rom.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">310</begin>
+   <end xmlns="">311</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Lugdunum 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.lug.266"/>
+  <id>ric.6.lug.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T07:48:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.lug.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.lug.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.lug.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.lug.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">307</begin>
+   <end xmlns="">308</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Treveri 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.tri.266"/>
+  <id>ric.6.tri.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T07:22:34Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.tri.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.tri.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.tri.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.tri.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">298</begin>
+   <end xmlns="">299</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Londinium 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.lon.266"/>
+  <id>ric.6.lon.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T07:15:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.lon.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.lon.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.lon.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.lon.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">312</begin>
+   <end xmlns="">313</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Carausius 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.cara.266"/>
+  <id>ric.5.cara.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T06:47:40Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.cara.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.cara.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.889852 0.901298</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">286</begin>
+   <end xmlns="">293</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Tetricus I 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.tet_i.266"/>
+  <id>ric.5.tet_i.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T06:42:29Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>50.95 6.966667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">273</begin>
+   <end xmlns="">274</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Postumus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.post.266"/>
+  <id>ric.5.post.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T06:32:52Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.post.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.post.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.post.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.post.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>50.95 6.966667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">269</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Diocletian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.dio.266"/>
+  <id>ric.5.dio.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T06:20:31Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.dio.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.dio.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.dio.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.dio.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">285</begin>
+   <end xmlns="">286</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Carus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.car.266"/>
+  <id>ric.5.car.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T06:13:09Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.car.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.car.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.car.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.car.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">283</begin>
+   <end xmlns="">285</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Probus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.pro.266"/>
+  <id>ric.5.pro.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T05:58:02Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.pro.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.pro.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.pro.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.pro.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">276</begin>
+   <end xmlns="">282</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Aurelian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.aur.266"/>
+  <id>ric.5.aur.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T05:45:02Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.aur.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.aur.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>42.7 23.333333</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">270</begin>
+   <end xmlns="">275</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Claudius Gothicus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.cg.266"/>
+  <id>ric.5.cg.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T05:39:00Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.cg.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.cg.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.cg.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.cg.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.463746 9.188060</geo:pos>
+   </geo:Point>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">270</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Gallienus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.gall(2).266"/>
+  <id>ric.5.gall(2).266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T04:59:36Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">268</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Gallienus (joint reign) 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.gall(1).266"/>
+  <id>ric.5.gall(1).266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T04:30:51Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(1).266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(1).266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.gall(1).266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.gall(1).266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">255</begin>
+   <end xmlns="">256</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Valerian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.val_i.266"/>
+  <id>ric.5.val_i.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2026-01-05T04:23:17Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.val_i.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.val_i.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.val_i.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.val_i.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.463746 9.188060</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">257</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC IV Philip I 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.ph_i.266"/>
+  <id>ric.4.ph_i.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T11:28:50Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.ph_i.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.ph_i.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.ph_i.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.ph_i.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">246</begin>
+   <end xmlns="">249</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IV Gordian III 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.gor_iii.266"/>
+  <id>ric.4.gor_iii.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T11:23:29Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.gor_iii.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.gor_iii.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.gor_iii.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.gor_iii.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">239</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC IV Elagabalus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.el.266"/>
+  <id>ric.4.el.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T11:10:37Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.el.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.el.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.el.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.el.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">218</begin>
+   <end xmlns="">222</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IV Caracalla 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.crl.266"/>
+  <id>ric.4.crl.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T10:57:57Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.crl.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.crl.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.crl.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.crl.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">215</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC IV Septimius Severus 266 (aureus)</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.ss.266_aureus"/>
+  <id>ric.4.ss.266_aureus</id>
+  <relevance:score>1.4052782</relevance:score>
+  <updated>2025-12-19T10:47:54Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_aureus.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_aureus.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_aureus.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_aureus.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">202</begin>
+   <end xmlns="">210</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IV Septimius Severus 266 (denarius)</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.ss.266_denarius"/>
+  <id>ric.4.ss.266_denarius</id>
+  <relevance:score>1.4052782</relevance:score>
+  <updated>2025-12-19T10:47:54Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_denarius.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_denarius.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_denarius.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.ss.266_denarius.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">202</begin>
+   <end xmlns="">210</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC III Commodus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.3.com.266"/>
+  <id>ric.3.com.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T09:34:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.3.com.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.3.com.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.3.com.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.3.com.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">180</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC III Marcus Aurelius 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.3.m_aur.266"/>
+  <id>ric.3.m_aur.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T09:20:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.3.m_aur.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.3.m_aur.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.3.m_aur.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.3.m_aur.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">171</begin>
+   <end xmlns="">172</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC II, Part 3 (second edition) Hadrian 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_3(2).hdn.266"/>
+  <id>ric.2_3(2).hdn.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T08:14:04Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_3(2).hdn.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_3(2).hdn.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_3(2).hdn.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_3(2).hdn.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">119</begin>
+   <end xmlns="">120</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC II Trajan 266 (denarius)</title>
+  <link href="http://numismatics.org/ocre/id/ric.2.tr.266_denarius"/>
+  <id>ric.2.tr.266_denarius</id>
+  <relevance:score>1.4052782</relevance:score>
+  <updated>2025-12-19T07:57:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_denarius.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_denarius.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_denarius.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_denarius.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">112</begin>
+   <end xmlns="">114</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC II Trajan 266 (aureus)</title>
+  <link href="http://numismatics.org/ocre/id/ric.2.tr.266_aureus"/>
+  <id>ric.2.tr.266_aureus</id>
+  <relevance:score>1.4052782</relevance:score>
+  <updated>2025-12-19T07:57:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_aureus.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_aureus.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_aureus.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2.tr.266_aureus.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">112</begin>
+   <end xmlns="">114</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC I (second edition) Galba 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.1(2).gal.266"/>
+  <id>ric.1(2).gal.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T06:54:25Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).gal.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).gal.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.1(2).gal.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.1(2).gal.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">68</begin>
+   <end xmlns="">69</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC I (second edition) Nero 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.1(2).ner.266"/>
+  <id>ric.1(2).ner.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T06:48:33Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.1(2).ner.266.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">62</begin>
+   <end xmlns="">68</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC I (second edition) Augustus 266</title>
+  <link href="http://numismatics.org/ocre/id/ric.1(2).aug.266"/>
+  <id>ric.1(2).aug.266</id>
+  <relevance:score>3.812045</relevance:score>
+  <updated>2025-12-19T06:42:22Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).aug.266.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.1(2).aug.266.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.1(2).aug.266.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.1(2).aug.266.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">-29</begin>
+   <end xmlns="">-27</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

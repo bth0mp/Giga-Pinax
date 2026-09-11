@@ -1,8 +1,8 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
-import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, fetchPrices, quoteList, summaryText } from './prices.js';
-import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BOP_KINGS, RIC_VOLUMES, sectionsOf, selectOptions } from './catalogues.js';
-import { queryFromSearch } from './selection.js';
+import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
+import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
+import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
+import { cardFromSearch, cardUrlFor, queryFromSearch } from './selection.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -14,12 +14,14 @@ const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acse
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
+const EMPTY_OTHER_MESSAGE = 'Enter a reference, such as “BCD Boiotia 174b”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
-const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
+const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC 972”, “Titus 123”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO', bigr: 'BIGR' };
-const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.', bigr: 'Check the king and Bop number.' };
-const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306, with I² (2nd ed.) and Nero chosen above', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A' };
+const NOT_FOUND_HINT = { ocre: 'Check the ruler, volume and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.', bigr: 'Check the king and Bop number.' };
+const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number', Other: 'Reference, as the dealer cites it' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A. Leave the king blank to list every king with that number.', Other: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' };
+const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -88,19 +90,14 @@ function savePreferences() {
   catch { $('storage-note').hidden = false; }
 }
 
-// A select is rebuilt from its list plus the wanted value (selectOptions appends an unlisted one, so a typed "Euthydemos" or a parsed "IV, Part 1"
-// is shown and used exactly as it came), each option built with new Option(label, value), never markup; a blank value with no blank option shows the first.
-function fillSelect(select, entries, value) {
-  const wanted = String(value ?? '');
-  select.replaceChildren(...selectOptions(entries, wanted).map((option) => new Option(option.label, option.value)));
-  select.value = wanted;
-  if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
-}
-
-// The Volume select always lists the RIC volumes; the section select lists the kings for Bop and the chosen volume's sections otherwise.
-function fillSelects(catalogue, volume, section) {
-  fillSelect($('ric-volume'), RIC_VOLUMES, volume);
-  fillSelect($('ric-section'), catalogue === 'Bop' ? BOP_KINGS : sectionsOf($('ric-volume').value), section);
+// The Volume select lists Any volume and the RIC volumes, plus the wanted one when it is not listed (selectOptions), so a parsed "IV, Part 1" is
+// shown and used exactly as it came; each option is a new Option(label, value), never markup. The Ruler/King input takes its value as given: blank
+// means any.
+function fillRicFields(volume, section) {
+  const wanted = String(volume ?? '');
+  $('ric-volume').replaceChildren(...selectOptions(VOLUME_OPTIONS, wanted).map((option) => new Option(option.label, option.value)));
+  $('ric-volume').value = wanted;
+  $('ric-section').value = String(section ?? '');
 }
 
 function updateFields() {
@@ -111,8 +108,9 @@ function updateFields() {
   $('volume-field').hidden = !isRic;
   $('ric-fields').classList.toggle('single', isBop);
   $('section-label').textContent = isBop ? 'King' : 'Ruler or mint section';
-  $('ric-volume').required = isRic;
-  $('ric-section').required = isRic;
+  // The Ruler/King input suggests every RIC ruler and mint, or the BIGR kings for Bop, one new Option each, never markup.
+  $('ric-section').placeholder = isBop ? 'Any king' : 'Any ruler';
+  $('section-options').replaceChildren(...(isBop ? BIGR_KINGS : RIC_RULERS).map((name) => new Option(name, name)));
   $('reference-label').textContent = REFERENCE_LABEL[catalogue];
   $('reference-help').textContent = REFERENCE_HELP[catalogue];
 }
@@ -120,9 +118,11 @@ function updateFields() {
 function fillFields(parsed) {
   $('catalogue').value = parsed.catalogue;
   $('reference-number').value = parsed.number;
-  // Only a RIC reference carries a volume and only RIC and Bop a section; the other catalogues leave the hidden selects untouched.
+  // Only a RIC reference carries a volume and only RIC and Bop a section; the other catalogues leave the hidden fields untouched.
+  // A RIC reference without a volume takes the one its ruler implies ("Titus 123" shows II.1²), but an explicit volume is never changed:
+  // RIC II (1926) numbers are not II.1² (2007) numbers, so "correcting" RIC II Titus 5 would show the wrong coin.
   if (parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop') {
-    fillSelects(parsed.catalogue, parsed.catalogue === 'RIC' ? parsed.volume : $('ric-volume').value, parsed.section);
+    fillRicFields(parsed.catalogue === 'RIC' ? parsed.volume || volumeFor(parsed.section, '') : $('ric-volume').value, parsed.section);
   }
   updateFields();
 }
@@ -158,7 +158,10 @@ function clearPrices() {
   setPricesBusy(false);
 }
 
+// Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
+  requestId += 1;
+  setBusy(false);
   $('form-error').hidden = true;
   $('form-error').textContent = '';
   $('candidates').hidden = true;
@@ -189,13 +192,17 @@ function updateAcsearchLink() {
 }
 
 function renderCard(card) {
+  // A reference without type data has no type page and no sides to show, only its prices.
+  const other = card.corpus === 'other';
   $('result-reference').textContent = card.label;
-  $('result-summary').textContent = [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
   $('result-citation').hidden = !citation;
   $('type-link').href = `https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`;
   $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
+  $('type-link').hidden = other;
+  $('sides').hidden = other;
   for (const side of ['obverse', 'reverse']) {
     $(`${side}-legend`).textContent = card[side].legend ?? '';
     $(`${side}-legend`).hidden = !card[side].legend;
@@ -210,7 +217,9 @@ function renderCard(card) {
   $('announcement').textContent = `Found ${card.label}.`;
 }
 
-function renderCandidates(candidates, corpus) {
+// A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
+function renderCandidates(candidates, corpus, partial) {
+  $('candidates-label').textContent = partial ? 'Choose a type:' : 'Did you mean:';
   $('candidate-list').replaceChildren(...candidates.map(({ id, title }) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
@@ -264,12 +273,17 @@ function renderPrices(summary, currency, term) {
   $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
   $('median-currency').hidden = median.includes(currency);
-  const { count } = summary;
+  const { count, unpriced } = summary;
+  // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
+  const skipped = summary.total - count - unpriced;
   let period = `${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) period += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  if (summary.total > count) period += ` · ${summary.total - count} not counted`;
+  if (unpriced) period += ` · ${unpriced} without a price`;
+  if (skipped) period += ` · ${skipped} not counted`;
   $('sale-period').textContent = period;
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
+  // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
+  $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
   const span = summary.max - summary.min;
   const percent = (value) => (span > 0 ? ((value - summary.min) / span) * 100 : 50);
   $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
@@ -313,8 +327,8 @@ function showPricesError(message) {
 }
 
 async function run(perform) {
-  const id = ++requestId;
   clearOutput();
+  const id = ++requestId;
   setBusy(true);
   let outcome;
   try { outcome = await perform(); }
@@ -322,8 +336,13 @@ async function run(perform) {
   finally { if (id === requestId) setBusy(false); }
   if (id !== requestId) return;
   if (outcome.status === 'ok') {
-    // A BIGR card fills King and Bop number from itself (title and citation), so the acsearch term follows the chosen type; chips and suggestions carry no parsable Bop label.
+    // A card fills the fields from itself, so the acsearch term follows the chosen type: a BIGR card its King and Bop number (title and citation;
+    // chips and suggestions carry no parsable Bop label), an OCRE card its RIC fields from its title (a lone "Hadrian 12" hit shows II.3² Hadrian 12),
+    // an Other card its text (a chip's text can read as a type reference when Other was chosen by hand).
+    const title = outcome.card.corpus === 'ocre' ? parseReference(outcome.card.label) : null;
     if (outcome.card.bop) fillFields({ catalogue: 'Bop', number: outcome.card.bop.series ?? '', volume: '', section: outcome.card.bop.king });
+    else if (outcome.card.corpus === 'other') fillFields({ catalogue: 'Other', number: outcome.card.label, volume: '', section: '' });
+    else if (title) fillFields(title);
     renderCard(outcome.card);
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
@@ -342,7 +361,8 @@ async function run(perform) {
       $('announcement').textContent = `Found ${outcome.card.label}. ${ACCESS_HINT}`;
     }
   }
-  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
+  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
+  else if (outcome.status === 'too-many') showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
   else showError(NETWORK_MESSAGE);
 }
@@ -393,11 +413,15 @@ function requestHostAccess(origins) {
 $('catalogue').value = preferences.catalogue;
 $('currency').value = preferences.currency;
 $('reference-number').value = preferences.number;
-fillSelects(preferences.catalogue, preferences.volume, preferences.section);
+fillRicFields(preferences.volume, preferences.section);
 updateFields();
 renderRecent();
 applyStoredTheme();
 syncThemeButton();
+// A window opened with ?window=1 (right-click, the pop-out button) can be resized: the page fills it (popup.css) and offers no pop-out of its own.
+const windowed = new URLSearchParams(location.search).get('window') === '1';
+document.documentElement.classList.toggle('windowed', windowed);
+$('pop-out').hidden = windowed;
 
 $('quick-reference').addEventListener('change', () => {
   if (!$('quick-reference').value.trim() || !applyQuickReference()) return;
@@ -412,7 +436,7 @@ $('catalogue').addEventListener('change', () => {
   const catalogue = $('catalogue').value;
   $('quick-reference').value = '';
   $('reference-number').value = DEFAULT_NUMBER[catalogue];
-  if (Object.hasOwn(DEFAULT_SECTION, catalogue)) fillSelects(catalogue, catalogue === 'RIC' ? RIC_VOLUMES[0].value : $('ric-volume').value, DEFAULT_SECTION[catalogue]);
+  if (Object.hasOwn(DEFAULT_SECTION, catalogue)) fillRicFields(catalogue === 'RIC' ? RIC_VOLUMES[0].value : $('ric-volume').value, DEFAULT_SECTION[catalogue]);
   updateFields();
   savePreferences();
   clearOutput();
@@ -424,12 +448,17 @@ $('currency').addEventListener('change', () => {
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
 });
-// A new volume lists its own sections: the current section stays when the volume has it (Rome, Hadrian), else the first is chosen; a volume outside the
-// list has no sections, so the current one is kept as the extra option. The form's input handler has already cleared the one-box and the output.
+// A listed volume clears a known ruler it lacks (Titus under I²), since blank means any ruler, and says so; Any volume, a volume OCRE does not list
+// (a parsed "IV, Part 1") and text that names no known ruler keep it. The form's input handler has already cleared the one-box and the output, and a
+// select's change comes after its input, so the announcement stays.
 $('ric-volume').addEventListener('change', () => {
-  const sections = sectionsOf($('ric-volume').value);
-  const current = $('ric-section').value;
-  fillSelect($('ric-section'), sections, sections.length === 0 || sections.includes(current) ? current : sections[0]);
+  const volume = $('ric-volume').value;
+  const ruler = $('ric-section').value;
+  const volumes = volumesOf(ruler);
+  if (RIC_VOLUMES.some((option) => option.value === volume) && volumes.length > 0 && !volumes.includes(volume)) {
+    $('ric-section').value = '';
+    $('announcement').textContent = `Ruler cleared: ${ruler.trim()} is not in ${$('ric-volume').selectedOptions[0].label}.`;
+  }
   savePreferences();
 });
 $('reference-form').addEventListener('input', (event) => {
@@ -437,6 +466,15 @@ $('reference-form').addEventListener('input', (event) => {
   $('quick-reference').value = '';
   clearOutput();
   $('lookup-prompt').hidden = false;
+  // Typing a RIC ruler moves the volume to the one that has it (Titus: II.1²), or to Any volume when several do (Hadrian, Antioch), unless the chosen
+  // volume has it; text that names no known ruler leaves it alone. Announced here, after clearOutput() has emptied the live region.
+  if (event.target.id === 'ric-section' && $('catalogue').value === 'RIC') {
+    const volume = volumeFor($('ric-section').value, $('ric-volume').value);
+    if (volume !== $('ric-volume').value) {
+      $('ric-volume').value = volume;
+      $('announcement').textContent = `Volume set to ${$('ric-volume').selectedOptions[0].label}.`;
+    }
+  }
   savePreferences();
 });
 $('reference-form').addEventListener('submit', async (event) => {
@@ -450,9 +488,13 @@ $('reference-form').addEventListener('submit', async (event) => {
     $('quick-reference').removeAttribute('aria-invalid');
     return;
   }
-  const access = requestHostAccess([...HOST_ORIGINS]);
+  // Other contacts nothing but acsearch, and its card needs no access at all: a refusal leaves the prices to the "Get prices" hint.
+  const other = $('catalogue').value === 'Other';
+  // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
+  if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
+  const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   savePreferences();
-  if (!(await access)) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
+  if (!(await access) && !other) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
   run(() => lookupType(currentReference(), { cache: labelCache }));
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
@@ -488,9 +530,19 @@ $('prices-form').addEventListener('submit', async (event) => {
   runPrices(term, currency);
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));
+// Browsers fix a toolbar popup's size, so the pop-out opens the popup in a window you can resize and closes itself. The window reopens the card it
+// shows by corpus and id (below). A plain page, without the windows API, opens the same URL itself.
+$('pop-out').addEventListener('click', () => {
+  const url = cardUrlFor(currentCard);
+  if (!api?.windows?.create) { window.open(url, '_blank', 'popup,width=440,height=680'); return; }
+  Promise.resolve(api.windows.create({ url: api.runtime.getURL(url), type: 'popup', width: 440, height: 680 })).then(() => window.close());
+});
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);
 
 // A right-click lookup opens popup.html?q=<selection>: the text goes only into the Reference box, and requestSubmit runs the same submit handler as Look up.
+// The pop-out's window names a card instead and reopens it like a Recent chip: with the fields stored alongside it, and without a permission request.
 const selected = queryFromSearch(location.search);
+const opened = cardFromSearch(location.search);
 if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
+else if (opened && CORPORA.includes(opened.corpus)) run(() => lookupById(opened.corpus, opened.id, { cache: labelCache }));

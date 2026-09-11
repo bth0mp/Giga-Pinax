@@ -1,0 +1,2340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns:georss="http://www.georss.org/georss"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+ <title>Online Coins of the Roman Empire</title>
+ <id>http://numismatics.org/ocre/</id>
+ <link rel="self" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;1&#34; OR typeNumber:1_*)&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="http://numismatics.org/ocre/results?q=(typeNumber:&#34;1&#34; OR typeNumber:1_*)&amp;start=0"/>
+ <link rel="last" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;1&#34; OR typeNumber:1_*)&amp;start=100"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="http://numismatics.org/ocre/opensearch.xml"/>
+ <opensearch:totalResults>160</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request" searchTerms="(typeNumber:&#34;1&#34; OR typeNumber:1_*)" startPage="0"/>
+ <entry>
+  <title>RIC IX Thessalonica 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.thes.1"/>
+  <id>ric.9.thes.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:59:33Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.thes.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.thes.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.thes.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.thes.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.633333 22.95</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Rome 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.rom.1"/>
+  <id>ric.9.rom.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:42:59Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.rom.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.rom.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.rom.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.rom.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Nicomedia 1: Subtype 4</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.nic.1.4"/>
+  <id>ric.9.nic.1.4</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:38:43Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.4.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.4.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.4.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.4.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Nicomedia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.nic.1"/>
+  <id>ric.9.nic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:38:42Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Nicomedia 1: Subtype 3</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.nic.1.3"/>
+  <id>ric.9.nic.1.3</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:38:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.3.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.3.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.3.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.3.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Nicomedia 1: Subtype 2</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.nic.1.2"/>
+  <id>ric.9.nic.1.2</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:38:40Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.2.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.2.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.2.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.2.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Nicomedia 1: Subtype 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.nic.1.1"/>
+  <id>ric.9.nic.1.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:38:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.nic.1.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Mediolanum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.med.1"/>
+  <id>ric.9.med.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:37:14Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.med.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.med.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.med.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.med.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.463746 9.188060</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Londinium 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.lon.1"/>
+  <id>ric.9.lon.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:33:09Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.lon.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.lon.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.lon.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.lon.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">383</begin>
+   <end xmlns="">388</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Cyzicus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.cyz.1"/>
+  <id>ric.9.cyz.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:27:47Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">366</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Cyzicus 1: Subtype 2</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.cyz.1.2"/>
+  <id>ric.9.cyz.1.2</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:27:47Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.2.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.2.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.2.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.2.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">366</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Cyzicus 1: Subtype 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.cyz.1.1"/>
+  <id>ric.9.cyz.1.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:27:44Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.cyz.1.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">366</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Constantinople 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.cnp.1"/>
+  <id>ric.9.cnp.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:19:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.cnp.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.cnp.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.cnp.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.cnp.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.01224 28.976018</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Aquileia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.aq.1"/>
+  <id>ric.9.aq.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:09:11Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.aq.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.aq.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.aq.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.aq.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.768259 13.364601</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC IX Antioch 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.9.anch.1"/>
+  <id>ric.9.anch.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T12:00:26Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.9.anch.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.9.anch.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.9.anch.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.9.anch.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">364</begin>
+   <end xmlns="">367</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC X Arcadius 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.10.arc_e.1"/>
+  <id>ric.10.arc_e.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T04:05:25Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.10.arc_e.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.10.arc_e.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.10.arc_e.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.10.arc_e.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>44.966447 19.610106</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">395</begin>
+   <end xmlns="">397</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Domitian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).dom.1"/>
+  <id>ric.2_1(2).dom.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T02:37:57Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).dom.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">81</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Titus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).tit.1"/>
+  <id>ric.2_1(2).tit.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T02:26:44Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).tit.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">79</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC II, Part 1 (second edition) Vespasian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.2_1(2).ves.1"/>
+  <id>ric.2_1(2).ves.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-06T01:49:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.2_1(2).ves.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">69</begin>
+   <end xmlns="">70</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Alexandria 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.alex.1"/>
+  <id>ric.8.alex.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:50:02Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.alex.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.alex.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.alex.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.alex.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>31.201435 29.909773</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Antioch 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.anch.1"/>
+  <id>ric.8.anch.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:46:50Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.anch.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.anch.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.anch.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.anch.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">347</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Cyzicus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.cyz.1"/>
+  <id>ric.8.cyz.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:44:56Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.cyz.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.cyz.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.cyz.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.cyz.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Nicomedia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.nic.1"/>
+  <id>ric.8.nic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:43:11Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.nic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.nic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.nic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.nic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Constantinople 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.cnp.1"/>
+  <id>ric.8.cnp.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:40:01Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.cnp.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.cnp.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.cnp.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.cnp.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.01224 28.976018</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Heraclea 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.her.1"/>
+  <id>ric.8.her.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:38:23Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.her.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.her.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.her.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.her.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.97003 27.95528</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Thessalonica 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.thes.1"/>
+  <id>ric.8.thes.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:35:01Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.thes.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.thes.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.thes.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.thes.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.633333 22.95</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Sirmium 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.sir.1"/>
+  <id>ric.8.sir.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:33:09Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.sir.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.sir.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.sir.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.sir.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>44.966447 19.610106</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">351</begin>
+   <end xmlns="">355</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Siscia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.sis.1"/>
+  <id>ric.8.sis.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:26:49Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.sis.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.sis.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.sis.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.sis.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Aquileia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.aq.1"/>
+  <id>ric.8.aq.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:23:27Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.aq.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.aq.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.aq.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.aq.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.768259 13.364601</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Rome 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.rom.1"/>
+  <id>ric.8.rom.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:15:32Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.rom.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.rom.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.rom.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.rom.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Mediolanum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.med.1"/>
+  <id>ric.8.med.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:15:30Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.med.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.med.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.med.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.med.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.463746 9.188060</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">352</begin>
+   <end xmlns="">357</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Arelate 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.ar.1"/>
+  <id>ric.8.ar.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:10:35Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.ar.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.ar.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.ar.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.ar.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>43.677616 4.630799</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Lugdunum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.lug.1"/>
+  <id>ric.8.lug.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:07:09Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.lug.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.lug.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.lug.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.lug.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Treveri 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.tri.1"/>
+  <id>ric.8.tri.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:01:17Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.tri.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.tri.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.tri.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.tri.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">337</begin>
+   <end xmlns="">340</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VIII Amiens 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.8.amb.1"/>
+  <id>ric.8.amb.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T11:00:23Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.8.amb.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.8.amb.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.8.amb.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.8.amb.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.892624 2.293832</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">350</begin>
+   <end xmlns="">353</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Alexandria 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.alex.1"/>
+  <id>ric.7.alex.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T10:09:38Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.alex.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.alex.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.alex.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.alex.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>31.201435 29.909773</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">314</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Antioch 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.anch.1"/>
+  <id>ric.7.anch.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T10:07:33Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.anch.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.anch.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.anch.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.anch.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Cyzicus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.cyz.1"/>
+  <id>ric.7.cyz.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T10:04:54Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.cyz.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.cyz.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.cyz.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.cyz.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">315</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Nicomedia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.nic.1"/>
+  <id>ric.7.nic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T10:01:29Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.nic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.nic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.nic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.nic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Constantinople 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.cnp.1"/>
+  <id>ric.7.cnp.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:58:16Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.cnp.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.cnp.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.cnp.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.cnp.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.01224 28.976018</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">326</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Heraclea 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.her.1"/>
+  <id>ric.7.her.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:55:30Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.her.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.her.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.her.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.her.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.97003 27.95528</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Thessalonica 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.thes.1"/>
+  <id>ric.7.thes.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:51:21Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.thes.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.thes.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.thes.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.thes.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.633333 22.95</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">316</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Serdica 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.serd.1"/>
+  <id>ric.7.serd.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:51:15Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.serd.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.serd.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.serd.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.serd.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>42.7 23.333333</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">314</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Sirmium 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.sir.1"/>
+  <id>ric.7.sir.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:50:11Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.sir.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.sir.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.sir.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.sir.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>44.966447 19.610106</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">320</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Siscia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.sis.1"/>
+  <id>ric.7.sis.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:44:59Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.sis.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.sis.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.sis.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.sis.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">314</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Aquileia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.aq.1"/>
+  <id>ric.7.aq.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:41:36Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.aq.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.aq.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.aq.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.aq.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.768259 13.364601</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">316</begin>
+   <end xmlns="">317</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Ticinum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.tic.1"/>
+  <id>ric.7.tic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:37:20Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.tic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.tic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.tic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.tic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.185899 9.156562</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Rome 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.rom.1"/>
+  <id>ric.7.rom.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:26:49Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.rom.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.rom.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.rom.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.rom.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Arelate 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.ar.1"/>
+  <id>ric.7.ar.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:18:58Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.ar.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.ar.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.ar.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.ar.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>43.677616 4.630799</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">313</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VII Treveri 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.tri.1"/>
+  <id>ric.7.tri.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:07:53Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.tri.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.tri.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.tri.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.tri.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">315</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Lugdunum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.lug.1"/>
+  <id>ric.7.lug.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T09:01:38Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.lug.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.lug.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.lug.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.lug.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">314</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VII Londinium 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.7.lon.1"/>
+  <id>ric.7.lon.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:54:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.7.lon.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.7.lon.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.7.lon.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.7.lon.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">313</begin>
+   <end xmlns="">314</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Alexandria 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.alex.1"/>
+  <id>ric.6.alex.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:37:30Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.alex.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.alex.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.alex.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.alex.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>31.201435 29.909773</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">294</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VI Antioch 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.anch.1"/>
+  <id>ric.6.anch.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:32:47Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.anch.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.anch.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.anch.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.anch.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">294</begin>
+   <end xmlns="">305</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Cyzicus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.cyz.1"/>
+  <id>ric.6.cyz.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:29:14Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.cyz.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.cyz.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.cyz.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.cyz.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.381323 27.892255</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">294</begin>
+   <end xmlns="">295</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Nicomedia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.nic.1"/>
+  <id>ric.6.nic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:26:55Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.nic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.nic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.nic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.nic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.766667 29.916667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">294</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VI Heraclea 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.her.1"/>
+  <id>ric.6.her.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:25:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.her.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.her.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.her.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.her.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>40.97003 27.95528</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">294</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VI Siscia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.sis.1"/>
+  <id>ric.6.sis.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:14:01Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.sis.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.sis.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.sis.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.sis.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">293</begin>
+   <end xmlns="">294</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Carthage 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.carth.1"/>
+  <id>ric.6.carth.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:11:18Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.carth.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.carth.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.carth.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.carth.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.847009 10.312944</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">296</begin>
+   <end xmlns="">305</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Ostia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.ost.1"/>
+  <id>ric.6.ost.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T08:08:36Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.ost.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.ost.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.ost.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.ost.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.754855 12.287656</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">308</begin>
+   <end xmlns="">312</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Rome 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.rom.1"/>
+  <id>ric.6.rom.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:58:13Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.rom.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.rom.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.rom.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.rom.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">294</begin>
+   <end xmlns="">295</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Aquileia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.aq.1"/>
+  <id>ric.6.aq.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:53:54Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.aq.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.aq.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.aq.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.aq.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.768259 13.364601</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">294</begin>
+   <end xmlns="">303</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC VI Ticinum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.tic.1"/>
+  <id>ric.6.tic.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:49:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.tic.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.tic.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.tic.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.tic.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.185899 9.156562</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">294</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VI Lugdunum 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.lug.1"/>
+  <id>ric.6.lug.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:40:17Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.lug.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.lug.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.lug.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.lug.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">294</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC VI Treveri 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.6.tri.1"/>
+  <id>ric.6.tri.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:16:17Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.6.tri.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.6.tri.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.6.tri.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.6.tri.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>49.756667 6.641389</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">293</begin>
+   <end xmlns="">294</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Amandus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.ama.1"/>
+  <id>ric.5.ama.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:25Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.ama.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.ama.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.ama.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.ama.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">285</begin>
+   <end xmlns="">286</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Sabinus Julianus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.jul_i.1"/>
+  <id>ric.5.jul_i.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:20Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.jul_i.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.jul_i.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.jul_i.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.jul_i.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.483168 16.371388</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">283</begin>
+   <end xmlns="">286</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Bonosus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.bon.1"/>
+  <id>ric.5.bon.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:13Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.bon.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.bon.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.bon.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.bon.1.ttl"/>
+  <gx:TimeStamp>
+   <when xmlns="">281</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Saturninus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.sat.1"/>
+  <id>ric.5.sat.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:10Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.sat.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.sat.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.sat.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.sat.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>31.201435 29.909773</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">280</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Domitianus of Gaul 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.dom_g.1"/>
+  <id>ric.5.dom_g.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:08Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.dom_g.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.dom_g.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.dom_g.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.dom_g.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">270</begin>
+   <end xmlns="">271</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Aureolus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.aurl.1"/>
+  <id>ric.5.aurl.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.aurl.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.aurl.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.aurl.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.aurl.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.463746 9.188060</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">268</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Dryantilla 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.dry.1"/>
+  <id>ric.5.dry.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:06:04Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.dry.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.dry.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.dry.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.dry.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>48.116667 16.866667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">260</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Regalianus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.reg.1"/>
+  <id>ric.5.reg.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:05:56Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.reg.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.reg.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.reg.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.reg.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>48.116667 16.866667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">260</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Vabalathus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.vab.1"/>
+  <id>ric.5.vab.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:05:43Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.vab.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.vab.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.vab.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.vab.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">267</begin>
+   <end xmlns="">272</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Zenobia 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.zen.1"/>
+  <id>ric.5.zen.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:05:41Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.zen.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.zen.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.zen.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.zen.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">258</begin>
+   <end xmlns="">273</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Quietus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.quit.1"/>
+  <id>ric.5.quit.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:05:27Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.quit.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.quit.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.quit.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.quit.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">261</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Macrianus Minor 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.mac_ii.1"/>
+  <id>ric.5.mac_ii.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:05:13Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.mac_ii.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.mac_ii.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.mac_ii.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.mac_ii.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>36.2 36.15</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">261</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Allectus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.all.1"/>
+  <id>ric.5.all.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:02:28Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.all.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.all.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.all.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.all.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">293</begin>
+   <end xmlns="">296</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Carausius issuing for Diocletian/Maximian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.cara-dio-max_her.1"/>
+  <id>ric.5.cara-dio-max_her.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T07:01:45Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara-dio-max_her.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara-dio-max_her.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.cara-dio-max_her.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.cara-dio-max_her.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.889852 0.901298</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">286</begin>
+   <end xmlns="">293</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Carausius 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.cara.1"/>
+  <id>ric.5.cara.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:42:56Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.cara.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.cara.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.cara.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>51.513335 -0.088949</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">286</begin>
+   <end xmlns="">293</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Tetricus I 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.tet_i.1"/>
+  <id>ric.5.tet_i.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:38:10Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.tet_i.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>50.95 6.966667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">271</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Victorinus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.vict.1"/>
+  <id>ric.5.vict.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:35:38Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.vict.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.vict.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.vict.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.vict.1.ttl"/>
+  <gx:TimeStamp>
+   <when xmlns="">269</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Marius 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.mar.1"/>
+  <id>ric.5.mar.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:35:14Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.mar.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.mar.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.mar.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.mar.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>50.95 6.966667</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">269</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Laelianus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.lae.1"/>
+  <id>ric.5.lae.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:35:01Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.lae.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.lae.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.lae.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.lae.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>50 8.271111</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">269</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Postumus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.post.1"/>
+  <id>ric.5.post.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:28:05Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.post.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.post.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.post.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.post.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">259</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Diocletian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.dio.1"/>
+  <id>ric.5.dio.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:16:33Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.dio.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.dio.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.dio.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.dio.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">284</begin>
+   <end xmlns="">294</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Carus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.car.1"/>
+  <id>ric.5.car.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T06:09:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.car.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.car.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.car.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.car.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">282</begin>
+   <end xmlns="">283</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Probus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.pro.1"/>
+  <id>ric.5.pro.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:54:12Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.pro.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.pro.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.pro.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.pro.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">277</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Anonymous 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.intr.1"/>
+  <id>ric.5.intr.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:54:09Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.intr.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.intr.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.intr.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.intr.1.ttl"/>
+  <gx:TimeStamp>
+   <when xmlns="">275</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Florian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.fl.1"/>
+  <id>ric.5.fl.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:52:29Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.fl.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.fl.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.fl.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.fl.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">276</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Tacitus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.tac.1"/>
+  <id>ric.5.tac.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:49:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.tac.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.tac.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.tac.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.tac.1.ttl"/>
+  <gx:TimeStamp>
+   <when xmlns="">275</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Severina 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.seva.1"/>
+  <id>ric.5.seva.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:48:49Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.seva.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.seva.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.seva.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.seva.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">270</begin>
+   <end xmlns="">275</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Aurelian and Severina 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.aur_seva.1"/>
+  <id>ric.5.aur_seva.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:48:45Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur_seva.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur_seva.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.aur_seva.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.aur_seva.1.ttl"/>
+  <gx:TimeSpan>
+   <begin xmlns="">270</begin>
+   <end xmlns="">275</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Aurelian 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.aur.1"/>
+  <id>ric.5.aur.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:41:06Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.aur.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.aur.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.aur.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>45.759722 4.819444</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">270</begin>
+   <end xmlns="">275</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Quintillus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.qu.1"/>
+  <id>ric.5.qu.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:39:39Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.qu.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.qu.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.qu.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.qu.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">270</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Claudius Gothicus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.cg.1"/>
+  <id>ric.5.cg.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:34:34Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.cg.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.cg.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.cg.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.cg.1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">268</begin>
+   <end xmlns="">270</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Salonina (2) 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.sala(2).1"/>
+  <id>ric.5.sala(2).1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:31:48Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.sala(2).1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.sala(2).1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.sala(2).1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.sala(2).1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">268</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Gallienus and Salonina (2) 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.gall_sala(2).1"/>
+  <id>ric.5.gall_sala(2).1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T05:31:43Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall_sala(2).1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall_sala(2).1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.gall_sala(2).1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.gall_sala(2).1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">260</begin>
+   <end xmlns="">268</end>
+  </gx:TimeSpan>
+ </entry>
+ <entry>
+  <title>RIC V Gallienus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.gall(2).1"/>
+  <id>ric.5.gall(2).1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T04:40:52Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.gall(2).1.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeStamp>
+   <when xmlns="">263</when>
+  </gx:TimeStamp>
+ </entry>
+ <entry>
+  <title>RIC V Quintus Julius Gallienus 1</title>
+  <link href="http://numismatics.org/ocre/id/ric.5.qjg.1"/>
+  <id>ric.5.qjg.1</id>
+  <relevance:score>3.1102328</relevance:score>
+  <updated>2026-01-05T04:40:49Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.5.qjg.1.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.5.qjg.1.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.5.qjg.1.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.5.qjg.1.ttl"/>
+  <gx:TimeStamp>
+   <when xmlns="">255</when>
+  </gx:TimeStamp>
+ </entry>
+</feed>

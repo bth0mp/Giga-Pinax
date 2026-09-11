@@ -1,7 +1,8 @@
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
 //   SELECT ?l WHERE { ?t a nmo:TypeSeriesItem ; skos:prefLabel ?l . FILTER(STRSTARTS(STR(?l), "RIC ")) }
-// grouped by volume and section with subtype noise removed: 12 volumes, 194 sections, each list in code-unit order.
+// grouped by volume and section with subtype noise removed ("Salonina (2)" is OCRE's second Salonina series, a section): 12 volumes, 196 sections,
+// each list in code-unit order.
 // Volume values are the form parseReference produces ("I (2nd edition)"); buildQuery turns them into OCRE's title form ("I (second edition)").
 // BIGR kings: the 57 distinct kings in BIGR's type titles ("Bactrian and Indo-Greek Coinage {king} {number}") the same day, minus data typos
 // ("Hermaues", "Theohpilus II", "Archebios") and subtype noise ("Eucratides I A.1", "Menander I14A"): 48, in code-unit order, so "Heliocles I" and
@@ -47,9 +48,9 @@ export const RIC_SECTIONS = Object.freeze({
   'V': Object.freeze([
     'Allectus', 'Amandus', 'Anonymous', 'Aurelian', 'Aurelian and Severina', 'Aureolus', 'Bonosus', 'Carausius',
     'Carausius issuing for Diocletian/Maximian', 'Carus', 'Claudius Gothicus', 'Diocletian', 'Domitianus of Gaul', 'Dryantilla', 'Florian',
-    'Gallienus', 'Gallienus (joint reign)', 'Gallienus and Salonina', 'Gallienus and Saloninus', 'Laelianus', 'Macrianus Minor', 'Mariniana',
-    'Marius', 'Postumus', 'Probus', 'Quietus', 'Quintillus', 'Quintus Julius Gallienus', 'Regalianus', 'Sabinus Julianus', 'Salonina', 'Saloninus',
-    'Saturninus', 'Severina', 'Tacitus', 'Tetricus I', 'Vabalathus', 'Valerian', 'Valerian II', 'Valerian and Gallienus',
+    'Gallienus', 'Gallienus (joint reign)', 'Gallienus and Salonina', 'Gallienus and Salonina (2)', 'Gallienus and Saloninus', 'Laelianus',
+    'Macrianus Minor', 'Mariniana', 'Marius', 'Postumus', 'Probus', 'Quietus', 'Quintillus', 'Quintus Julius Gallienus', 'Regalianus',
+    'Sabinus Julianus', 'Salonina', 'Salonina (2)', 'Saloninus', 'Saturninus', 'Severina', 'Tacitus', 'Tetricus I', 'Vabalathus', 'Valerian', 'Valerian II', 'Valerian and Gallienus',
     'Valerian, Gallienus, Valerian II, and Salonina', 'Victorinus', 'Zenobia',
   ]),
   'VI': Object.freeze([
@@ -86,17 +87,36 @@ export const BIGR_KINGS = Object.freeze([
   'Theophilus II', 'Thrason', 'Zoilus I', 'Zoilus II',
 ]);
 
-// The king-less pick-list stays reachable from the guided fields: an empty king lists every king with the typed number.
-export const ANY_KING = Object.freeze({ value: '', label: 'Any king (list every king with that number)' });
-export const BOP_KINGS = Object.freeze([ANY_KING, ...BIGR_KINGS]);
+// Every distinct section across the volumes (the rulers, and the mints of VI–IX), in code-unit order: the Ruler suggestions, and the only rulers
+// a reference without a volume may name.
+export const RIC_RULERS = Object.freeze([...new Set(Object.values(RIC_SECTIONS).flat())].sort());
 
-// The sections of a volume; none for a volume outside the list (a parsed "IV, Part 1") or an inherited key.
-export const sectionsOf = (volume) => (Object.hasOwn(RIC_SECTIONS, volume) ? RIC_SECTIONS[volume] : []);
+// A blank volume means any: a RIC number is then listed from every volume (that has the ruler, when one is given).
+export const ANY_VOLUME = Object.freeze({ value: '', label: 'Any volume' });
+export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 
-// The options a select shows for a value: the list (strings become { value, label }), plus the value itself, last, when it is not listed,
-// so a typed "Euthydemos", a parsed "IV, Part 1" or a stored section is shown and used exactly as it came. A blank value adds nothing.
+const rulerKey = (ruler) => String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// The volumes whose sections include a ruler, ignoring case and spacing; none for a blank or unknown one. A ruler OCRE splits into sections is also
+// known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). The lists are searched, never indexed by the
+// ruler, so an inherited key ("constructor") is unknown too.
+export function volumesOf(ruler) {
+  const wanted = rulerKey(ruler);
+  const named = (section) => rulerKey(section) === wanted || rulerKey(section.split(' (')[0]) === wanted;
+  return wanted ? RIC_VOLUMES.map(({ value }) => value).filter((volume) => RIC_SECTIONS[volume].some(named)) : [];
+}
+
+// The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
+// else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).
+export function volumeFor(ruler, current) {
+  const volumes = volumesOf(ruler);
+  if (volumes.length === 0 || volumes.includes(current)) return current;
+  return volumes.length === 1 ? volumes[0] : ANY_VOLUME.value;
+}
+
+// The options a select shows for a value: the list, plus the value itself, last, when it is not listed, so a parsed "IV, Part 1" or a stored volume
+// is shown and used exactly as it came. A blank value adds nothing.
 export function selectOptions(entries, value) {
-  const options = entries.map((entry) => (typeof entry === 'string' ? { value: entry, label: entry } : entry));
   const wanted = String(value ?? '');
-  return wanted && !options.some((option) => option.value === wanted) ? [...options, { value: wanted, label: wanted }] : options;
+  return wanted && !entries.some((option) => option.value === wanted) ? [...entries, { value: wanted, label: wanted }] : entries;
 }

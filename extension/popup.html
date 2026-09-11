@@ -15,6 +15,9 @@
     <header class="popup-header">
       <img class="brand-icon" src="icons/icon-48.png" width="32" height="32" alt="">
       <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
+      <button id="pop-out" class="icon-button" type="button" aria-label="Open in a window" title="Open in a window you can resize">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+      </button>
       <button id="theme-toggle" class="icon-button" type="button" aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme">
         <svg id="icon-moon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
         <svg id="icon-sun" aria-hidden="true" viewBox="0 0 24 24" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -22,14 +25,14 @@
     </header>
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
-        <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="120" autocomplete="off" spellcheck="false" placeholder="RIC I² Nero 306 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
+        <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Titus 123 · RIC 972 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
         <div class="catalogue-row">
-          <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option></select></div>
+          <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option><option value="Other">Other (prices only)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
         </div>
         <div id="ric-fields" class="ric-fields" hidden>
           <div id="volume-field"><label for="ric-volume">Volume / edition</label><select id="ric-volume" name="volume"></select></div>
-          <div><label id="section-label" for="ric-section">Ruler or mint section</label><select id="ric-section" name="section"></select></div>
+          <div><label id="section-label" for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" list="section-options" maxlength="120" autocomplete="off" spellcheck="false"><datalist id="section-options"></datalist></div>
         </div>
         <label id="reference-label" for="reference-number">Price number</label>
         <div class="search-row"><input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button id="lookup-button" class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><span id="lookup-label">Look up</span></button></div>
@@ -40,7 +43,7 @@
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
-        <dl class="sides">
+        <dl id="sides" class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
         </dl>
@@ -52,7 +55,7 @@
         </form>
         <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
           <div class="median-block"><p class="metric-label">Median hammer price</p><div class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-period" class="sale-period"></p></div>
-          <div class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span></div></div>
+          <div class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span></div></div>
           <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="sale-list" class="sale-list"></ol></details>
           <p id="price-note" class="price-note"></p>
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>

@@ -209,6 +209,7 @@ test('lookupType falls back to the plain search for suggestions, and CRRO sugges
   assert.equal(near.status, 'candidates');
   assert.equal(near.query, 'RIC I Nero 306');
   assert.deepEqual(near.candidates.map((entry) => entry.id), ['ric.1(2).ner.306']);
+  assert.equal(Object.hasOwn(near, 'partial'), false);
   assert.equal(ocre.calls.filter((url) => url.includes('/apis/search')).length, 2);
 
   const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
@@ -275,7 +276,7 @@ test('parseReference reads whole RIC, RRC and Price references', () => {
     ['"Price 3a"', { catalogue: 'Price', number: '3a', volume: '', section: '' }],
   ];
   for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
-  for (const text of ['', 'hello', 'RIC Nero 306', 'RIC I Nero', 'Sear 1234', 'Price', 'Crawford', 'RIC XI Nero 1']) {
+  for (const text of ['', 'hello', 'RIC I Nero', 'Price', 'Crawford', 'RIC XI Nero 1']) {
     assert.equal(parseReference(text), null, text);
   }
 });
@@ -284,6 +285,205 @@ test('a parsed one-box reference feeds buildQuery the OCRE title shape', () => {
   assert.deepEqual(buildQuery(parseReference('RIC I² Nero 306')), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
   assert.deepEqual(buildQuery(parseReference('RIC II, Part 3 (2nd ed.) Hadrian 12')), { corpus: 'ocre', query: 'RIC II, Part 3 (second edition) Hadrian 12' });
   assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: 'I (2nd edition)"', section: '"Nero', number: '306"' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
+});
+
+test('parseReference reads a RIC number alone, a volume without a ruler, and a ruler OCRE knows without a volume', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  const cases = [
+    ['RIC 972', ric('', '', '972')],
+    ['ric 56a', ric('', '', '56a')],
+    ['RIC 266 (aureus)', ric('', '', '266 (aureus)')],
+    ['RIC I² 306', ric('I (2nd edition)', '', '306')],
+    ['RIC 2/3² 12', ric('II, Part 3 (2nd edition)', '', '12')],
+    ['RIC Titus 123', ric('', 'Titus', '123')],
+    ['ric titus 123', ric('', 'titus', '123')],
+    ['RIC Nero 306', ric('', 'Nero', '306')],
+    ['Titus 123', ric('', 'Titus', '123')],
+    ['Hadrian 12', ric('', 'Hadrian', '12')],
+    ['Rome 306', ric('', 'Rome', '306')],
+    ['  zeno  (east) 972 ', ric('', 'zeno (east)', '972')],
+    ['“Gaius/Caligula 12”', ric('', 'Gaius/Caligula', '12')],
+    // A ruler OCRE splits into sections ("Theodosius II (East)" and "(West)") is known by the name before the parenthesis too.
+    ['Theodosius II 306', ric('', 'Theodosius II', '306')],
+    ['Leo I 605', ric('', 'Leo I', '605')],
+    ['Zeno 972', ric('', 'Zeno', '972')],
+    ['Gordian III 1', ric('', 'Gordian III', '1')],
+    ['Salonina (2) 12', ric('', 'Salonina (2)', '12')],
+    ['RIC Gallienus and Salonina (2) 5', ric('', 'Gallienus and Salonina (2)', '5')],
+    // Sentence punctuation a selection drags along is dropped, for every catalogue.
+    ['RIC 972.', ric('', '', '972')],
+    ['RIC 972 :', ric('', '', '972')],
+    ['Hadrian 12,', ric('', 'Hadrian', '12')],
+    ['RIC I² Nero 306;', ric('I (2nd edition)', 'Nero', '306')],
+    ['Crawford 44/5.', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['SC 1266.2;', { catalogue: 'SC', number: '1266.2', volume: '', section: '' }],
+  ];
+  for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
+  for (const text of ['RIC XI Nero 1', 'RIC I 2 Nero 306', 'RIC hello 5', '972', 'RIC', 'Titus']) {
+    assert.equal(parseReference(text), null, text);
+  }
+});
+
+test('buildQuery squashes a blank RIC volume or ruler out of the query and marks the reference partial', () => {
+  assert.deepEqual(buildQuery(parseReference('RIC 972')), { corpus: 'ocre', query: 'RIC 972', partial: true });
+  assert.deepEqual(buildQuery(parseReference('Hadrian 12')), { corpus: 'ocre', query: 'RIC Hadrian 12', partial: true });
+  assert.deepEqual(buildQuery(parseReference('RIC I² 306')), { corpus: 'ocre', query: 'RIC I (second edition) 306', partial: true });
+  assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: '"', section: ' Titus ', number: '123' }), { corpus: 'ocre', query: 'RIC Titus 123', partial: true });
+  assert.equal(Object.hasOwn(buildQuery(parseReference('RIC II Titus 5')), 'partial'), false);
+});
+
+test('a RIC number without volume or ruler lists every type with that number in RIC volume order, from one typeNumber search', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-972.xml') });
+  assert.deepEqual(await lookupType(parseReference('RIC 972'), { fetchImpl }), { status: 'candidates', corpus: 'ocre', query: 'RIC 972', partial: true, candidates: [
+    { id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' },
+    { id: 'ric.2_3(2).hdn.972', title: 'RIC II, Part 3 (second edition) Hadrian 972' },
+    { id: 'ric.3.ant.972', title: 'RIC III Antoninus Pius 972' },
+    { id: 'ric.3.m_aur.972', title: 'RIC III Marcus Aurelius 972' },
+    { id: 'ric.5.cara.972', title: 'RIC V Carausius 972' },
+    { id: 'ric.10.zeno(2)_e.972', title: 'RIC X Zeno (East) 972' },
+  ] });
+  assert.deepEqual(fetchImpl.calls, [`https://numismatics.org/ocre/apis/search?q=${encodeURIComponent('(typeNumber:"972" OR typeNumber:972_*)')}`]);
+  // A volume narrows the same search: none of the six is in IV.
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: 'IV', section: '', number: '972' }, { fetchImpl }), { status: 'none', corpus: 'ocre', query: 'RIC IV 972' });
+  // A guided number keeps no sentence punctuation either.
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972.' }, { fetchImpl })).candidates?.length, 6);
+});
+
+test('a ruler also keeps the sections OCRE splits it into and offers them, and only subtypes are left out of a number list', async () => {
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  const ric = (section, number) => ({ catalogue: 'RIC', volume: '', section, number });
+  const gallienus = await lookupType(ric('Gallienus', '123'), { fetchImpl: fakeFetch({ 'ocre/apis/search': feed('RIC V Gallienus 123', 'RIC V Gallienus (joint reign) 123', 'RIC V Valerian 123') }) });
+  assert.deepEqual(gallienus.candidates?.map((entry) => entry.title), ['RIC V Gallienus 123', 'RIC V Gallienus (joint reign) 123']);
+  // One sibling alone is offered too, never opened as the type: "Zeno" finds only Zeno (East) 972.
+  const zeno = await lookupType(parseReference('Zeno 972'), { fetchImpl: fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-972.xml') }) });
+  assert.deepEqual(zeno, { status: 'candidates', corpus: 'ocre', query: 'RIC Zeno 972', partial: true, candidates: [{ id: 'ric.10.zeno(2)_e.972', title: 'RIC X Zeno (East) 972' }] });
+  const theodosius = await lookupType(parseReference('Theodosius II 306'), { fetchImpl: fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-306.xml') }) });
+  assert.deepEqual(theodosius.candidates?.map((entry) => entry.id), ['ric.10.theo_ii_e.306']);
+  // "Salonina (2)" is a real section, not a subtype: only a colon marks one.
+  const fifty = await lookupType(parseReference('RIC 50'), { fetchImpl: fakeFetch({ 'ocre/apis/search': feed('RIC V Salonina (2) 50', 'RIC IX Thessalonica 50: Subtype 1', 'RIC IX Thessalonica 50') }) });
+  assert.deepEqual(fifty.candidates?.map((entry) => entry.title), ['RIC V Salonina (2) 50', 'RIC IX Thessalonica 50']);
+  const salonina = await lookupType(ric('Salonina', '12'), { fetchImpl: fakeFetch({ 'ocre/apis/search': feed('RIC V Salonina 12', 'RIC V Salonina (2) 12') }) });
+  assert.deepEqual(salonina.candidates?.map((entry) => entry.title), ['RIC V Salonina 12', 'RIC V Salonina (2) 12']);
+});
+
+test('with the volume the popup fills in, a ruler OCRE also splits into sections is still listed, so a sibling with the number is never skipped', async () => {
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [volume, section] of [['V', 'Gallienus'], ['IV', 'gordian iii'], ['X', 'Zeno'], ['X', 'Theodosius II'], ['X', 'Leo I'], ['V', 'Salonina'], ['V', 'Gallienus and Salonina']]) {
+    assert.deepEqual(buildQuery(ric(volume, section, '12')), { corpus: 'ocre', query: `RIC ${volume} ${section} 12`, partial: true }, section);
+  }
+  // A section with no sibling, a sibling itself, and a volume OCRE does not list are looked up by their exact title as before.
+  for (const [volume, section] of [['II, Part 1 (2nd edition)', 'Titus'], ['I (2nd edition)', 'Nero'], ['V', 'Gallienus (joint reign)'], ['V', 'Salonina (2)'], ['X', 'Zeno (East)'],
+    ['X', 'Leo II'], ['V', 'Valerian'], ['IX', 'Antioch'], ['I', 'Nero'], ['V, Part 1', 'Gallienus']]) {
+    assert.equal(Object.hasOwn(buildQuery(ric(volume, section, '12')), 'partial'), false, section);
+  }
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed('RIC V Gallienus 123', 'RIC V Gallienus (joint reign) 123', 'RIC V Valerian 123') });
+  const gallienus = await lookupType(ric('V', 'Gallienus', '123'), { fetchImpl });
+  assert.deepEqual(gallienus, { status: 'candidates', corpus: 'ocre', query: 'RIC V Gallienus 123', partial: true,
+    candidates: [{ id: 'x0', title: 'RIC V Gallienus 123' }, { id: 'x1', title: 'RIC V Gallienus (joint reign) 123' }] });
+  assert.deepEqual(fetchImpl.calls.map((url) => decodeURIComponent(url.split('?q=')[1])), ['(typeNumber:"123" OR typeNumber:123_*) AND "RIC V" AND "Gallienus"']);
+  const zeno = await lookupType(ric('X', 'Zeno', '972'), { fetchImpl: fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-972.xml') }) });
+  assert.deepEqual(zeno.candidates, [{ id: 'ric.10.zeno(2)_e.972', title: 'RIC X Zeno (East) 972' }]);
+});
+
+test('a volume OCRE does not list is matched by its numeral, and by its part where OCRE divides the volume, and its types are always offered', async () => {
+  const ocre306 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-306.xml') });
+  assert.deepEqual(await lookupType(parseReference('RIC I 306'), { fetchImpl: ocre306 }), { status: 'candidates', corpus: 'ocre', query: 'RIC I 306', partial: true, candidates: [
+    { id: 'ric.1(2).aug.306', title: 'RIC I (second edition) Augustus 306' },
+    { id: 'ric.1(2).gal.306', title: 'RIC I (second edition) Galba 306' },
+    { id: 'ric.1(2).ner.306', title: 'RIC I (second edition) Nero 306' },
+  ] });
+  // OCRE keeps IV and V whole, so "V/2" and "IV.1" are all of V and IV.
+  assert.deepEqual((await lookupType(parseReference('RIC V/2 306'), { fetchImpl: ocre306 })).candidates?.map((entry) => entry.id),
+    ['ric.5.aur.306', 'ric.5.cara.306', 'ric.5.car.306', 'ric.5.dio.306', 'ric.5.gall(2).306', 'ric.5.gall(1).306', 'ric.5.post.306', 'ric.5.pro.306']);
+  const ocre266 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-266.xml') });
+  assert.deepEqual((await lookupType(parseReference('RIC IV.1 266'), { fetchImpl: ocre266 })).candidates?.map((entry) => entry.id),
+    ['ric.4.crl.266', 'ric.4.el.266', 'ric.4.gor_iii.266', 'ric.4.ph_i.266', 'ric.4.ss.266_aureus', 'ric.4.ss.266_denarius']);
+  // RIC II parts exist only in the second edition, so "II.3" is II.3², offered even when it is the only one; OCRE has no II.2.
+  const ocre972 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-972.xml') });
+  assert.deepEqual(await lookupType(parseReference('RIC II.3 972'), { fetchImpl: ocre972 }), { status: 'candidates', corpus: 'ocre', query: 'RIC II, Part 3 972', partial: true,
+    candidates: [{ id: 'ric.2_3(2).hdn.972', title: 'RIC II, Part 3 (second edition) Hadrian 972' }] });
+  assert.equal((await lookupType(parseReference('RIC II.2 306'), { fetchImpl: ocre306 })).status, 'none');
+});
+
+test('a volume narrows the typeNumber search by its OCRE title words, or by its numeral (and divided part) when OCRE does not list it', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  for (const [volume, number] of [['I (2nd edition)', '12'], ['II, Part 3 (2nd edition)', '12'], ['VII', '1'], ['I', '306'], ['II, Part 3', '972'], ['IV, Part 1', '266'], ['V, Part 2', '306']]) {
+    await lookupType({ catalogue: 'RIC', volume, section: '', number }, { fetchImpl });
+  }
+  assert.deepEqual(fetchImpl.calls.map((url) => decodeURIComponent(url.split('?q=')[1])), [
+    '(typeNumber:"12" OR typeNumber:12_*) AND "RIC I (second edition)"',
+    '(typeNumber:"12" OR typeNumber:12_*) AND "RIC II, Part 3 (second edition)"',
+    '(typeNumber:"1" OR typeNumber:1_*) AND "RIC VII"',
+    '(typeNumber:"306" OR typeNumber:306_*) AND "RIC I"',
+    '(typeNumber:"972" OR typeNumber:972_*) AND "RIC II, Part 3"',
+    '(typeNumber:"266" OR typeNumber:266_*) AND "RIC IV"',
+    '(typeNumber:"306" OR typeNumber:306_*) AND "RIC V"',
+  ]);
+});
+
+test('a number list includes the types OCRE stores with a word after the number, and a typed word keeps only its own types', async () => {
+  const ocre266 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-266.xml') });
+  const all = await lookupType(parseReference('RIC 266'), { fetchImpl: ocre266 });
+  assert.equal(all.candidates?.length, 43);
+  for (const title of ['RIC II Trajan 266 (aureus)', 'RIC IV Septimius Severus 266 (denarius)']) assert.ok(all.candidates.some((entry) => entry.title === title), title);
+  const aurei = await lookupType(parseReference('RIC 266 (Aureus)'), { fetchImpl: ocre266 });
+  assert.deepEqual(aurei.candidates?.map((entry) => entry.id), ['ric.2.tr.266_aureus', 'ric.4.ss.266_aureus']);
+  // Typed without the space OCRE's titles have, the word still keeps the types the search found.
+  const unspaced = await lookupType(parseReference('RIC 266(aureus)'), { fetchImpl: ocre266 });
+  assert.deepEqual(unspaced.candidates?.map((entry) => entry.id), ['ric.2.tr.266_aureus', 'ric.4.ss.266_aureus']);
+});
+
+test('a ruler without a volume narrows the search by a quoted phrase, and the one hit it keeps is looked up as the type', async () => {
+  const routes = { 'ocre/apis/search': fixture('ocre-search-typenumber-123-titus.xml'), 'ocre/id/ric.2_1(2).tit.123.jsonld': fixture('ocre-titus-123.jsonld') };
+  const fetchImpl = fakeFetch(routes);
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: 'Titus', number: '123' }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.id, 'ric.2_1(2).tit.123');
+  assert.equal(result.card.label, 'RIC II, Part 1 (second edition) Titus 123');
+  assert.equal(result.card.dates, 'AD 80');
+  assert.equal(fetchImpl.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent('(typeNumber:"123" OR typeNumber:123_*) AND "Titus"')}`);
+  assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
+  assert.ok(fetchImpl.signals.every((signal) => signal === fetchImpl.signals[0]));
+  // OCRE's phrase search ignores case (same two hits for "titus"), and so does the ruler check that drops RIC III Antoninus Pius 123.
+  assert.equal((await lookupType(parseReference('ric titus 123'), { fetchImpl: fakeFetch(routes), cache: new Map() })).card?.id, 'ric.2_1(2).tit.123');
+});
+
+test('a number list leaves out subtypes, keeps to a chosen volume, and more hits than one page is too many to list', async () => {
+  const ocre306 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-306.xml') });
+  const all = await lookupType(parseReference('RIC 306'), { fetchImpl: ocre306 });
+  assert.equal(all.status, 'candidates');
+  assert.equal(all.candidates.length, 33);
+  assert.ok(all.candidates.every((entry) => !entry.title.includes('Subtype')));
+  assert.deepEqual([all.candidates[0].title, all.candidates.at(-1).title], ['RIC I (second edition) Augustus 306', 'RIC X Theodosius II (East) 306']);
+  const first = await lookupType(parseReference('RIC I² 306'), { fetchImpl: ocre306 });
+  assert.deepEqual(first.candidates.map((entry) => entry.id), ['ric.1(2).aug.306', 'ric.1(2).gal.306', 'ric.1(2).ner.306']);
+
+  const one = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-typenumber-1.xml') });
+  assert.deepEqual(await lookupType(parseReference('RIC 1'), { fetchImpl: one }), { status: 'too-many', corpus: 'ocre', query: 'RIC 1' });
+  assert.equal(one.calls.length, 1);
+  assert.deepEqual(await lookupType(parseReference('RIC 99999'), { fetchImpl: fakeFetch({ 'ocre/apis/search': '<feed></feed>' }) }), { status: 'none', corpus: 'ocre', query: 'RIC 99999' });
+  assert.deepEqual(await lookupType(parseReference('RIC 972'), { fetchImpl: fakeFetch({}) }), { status: 'network' });
+});
+
+test('the typeNumber search asks for both cases of a letter suffix and for the types stored with a word after the number, joins a parenthetical as OCRE does, and keeps quotes, backslashes and trailing punctuation out', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  for (const reference of [
+    { number: '56a', section: '' }, { number: '972', section: 'Zeno (East)' }, { number: '"123\\', section: 'Ti"tus\\' },
+    { number: '266 (aureus)', section: '' }, { number: '266C (denarius)', section: '' }, { number: '266 (Aureus)', section: '' }, { number: '509 (BB)', section: '' },
+    { number: '1a1', section: '' }, { number: '12,', section: 'Hadrian' },
+  ]) await lookupType({ catalogue: 'RIC', volume: '', ...reference }, { fetchImpl });
+  assert.deepEqual(fetchImpl.calls.map((url) => decodeURIComponent(url.split('?q=')[1])), [
+    '(typeNumber:"56a" OR typeNumber:56a_* OR typeNumber:"56A" OR typeNumber:56A_*)',
+    '(typeNumber:"972" OR typeNumber:972_*) AND "Zeno (East)"',
+    '(typeNumber:"123" OR typeNumber:123_*) AND "Titus"',
+    'typeNumber:"266_aureus"',
+    '(typeNumber:"266c_denarius" OR typeNumber:"266C_denarius")',
+    '(typeNumber:"266_Aureus" OR typeNumber:"266_aureus")',
+    '(typeNumber:"509_BB" OR typeNumber:"509_bb")',
+    '(typeNumber:"1a1" OR typeNumber:"1A1")',
+    '(typeNumber:"12" OR typeNumber:12_*) AND "Hadrian"',
+  ]);
 });
 
 test('an exact title found only by the CRRO plain fallback survives the group filter', async () => {
@@ -302,6 +502,53 @@ test('parseReference strips curly quotes, rejects a digit where the section shou
   assert.deepEqual(parseReference('„RIC I² Nero 306“'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
   for (const text of ['RIC I 2 Nero 306', 'RIC II 3 Hadrian 12', `RIC I Nero ${'1'.repeat(120)}`]) assert.equal(parseReference(text), null, text);
   assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: '“I (2nd edition)”', section: 'Nero', number: '306' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
+});
+
+test('a reference no type rule reads is Other, whole, unless a supported catalogue or its titles begin it; the first ";" part a type rule reads wins', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const [text, number] of [
+    ['Sear 1234', 'Sear 1234'], ['HGC 4, 1218', 'HGC 4, 1218'], ['BCD Boiotia 174b; HGC 4, 1218', 'BCD Boiotia 174b; HGC 4, 1218'],
+    ['SNG Cop 123', 'SNG Cop 123'], ['RPC I 1234', 'RPC I 1234'], ['hello 5', 'hello 5'], ['  “HGC  4, 1218.”  ', 'HGC 4, 1218'],
+    // A ruler OCRE does not know and a Bop series without "Bop" are no type reference either.
+    ['Tit 123', 'Tit 123'], ['Leo 605', 'Leo 605'], ['Theodosius 306', 'Theodosius 306'], ['Euthydemus I 24A', 'Euthydemus I 24A'],
+    // Catalogues that only share their first letters with a supported one (Sydenham's CRR, Sear's CRI, Schönert-Geiss…).
+    ['CRR 1234', 'CRR 1234'], ['CRI 123', 'CRI 123'], ['Croesus 5', 'Croesus 5'], ['Schönert-Geiss 123', 'Schönert-Geiss 123'], ['Crusafont 1', 'Crusafont 1'],
+    ['Ricci 3', 'Ricci 3'], ['Craig 5', 'Craig 5'], ['Schulten 12', 'Schulten 12'], ['Scheers 30', 'Scheers 30'], ['SCBI 12', 'SCBI 12'],
+    // Brackets that wrap the whole text are dropped; a remark's are kept, and a part that names no catalogue with a number ("RIC –") is no reference.
+    ['(BCD Boiotia 174b)', 'BCD Boiotia 174b'], ['HGC 4, 1218; BCD Boiotia 174b (this coin)', 'HGC 4, 1218; BCD Boiotia 174b (this coin)'], ['Sear 1234; RIC –', 'Sear 1234; RIC –'],
+  ]) assert.deepEqual(parseReference(text), other(number), text);
+  assert.deepEqual(parseReference('SC 2195.5c; SNG Spaer 1712'), { catalogue: 'SC', number: '2195.5c', volume: '', section: '' });
+  assert.deepEqual(parseReference('HGC 9, 1; RIC I² Nero 306'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+  assert.deepEqual(parseReference('Titus 123; RIC 972'), { catalogue: 'RIC', volume: '', section: 'Titus', number: '123' });
+  // A supported reference in brackets or single quotes reads as the type, alone or as one ";" part.
+  const ric972 = { catalogue: 'RIC', volume: '', section: '', number: '972' };
+  for (const text of ['(RIC 972)', '[RIC 972]', '‘RIC 972’', "'RIC 972'", '(RIC 972).', '(RIC 972.)', 'HGC 4, 1218; (RIC 972)']) assert.deepEqual(parseReference(text), ric972, text);
+  assert.deepEqual(parseReference('(Crawford 44/5)'), { catalogue: 'RRC', number: '44/5', volume: '', section: '' });
+  assert.deepEqual(parseReference('(Price 23)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+  assert.deepEqual(parseReference('(SC 1266.2)'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('(RIC I² Nero 306)'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+  // Unread text in a supported catalogue (or a title of one) is still an error, and so is text without a letter or without a digit.
+  for (const text of ['Bopearachi 9C', 'RIC XI Nero 1', 'Crawf 44/5', 'Crawfrd 44/5', 'Cr . 44/5', 'Cr x1', 'price 23 x', 'SCO 5', 'Sc. 5', 'seleucid 5', 'RIC hello 5; ',
+    'Bactrian and Indo-Greek Coinage Euthydemus I 13.1', 'hello', 'Price', '972', '1; 2', ';', `HGC ${'1'.repeat(120)}`,
+    // A supported catalogue named inside a numbered part, after a word: never searched as loose text.
+    'cf. RIC 972', 'Ref: RIC 972', 'Lot 80: RIC 972', 'HGC 4, 1218; cf. Crawford 44/5', 'cf. Cr. 44/5', 'SNG Spaer 1712 (SC 2195.5c)']) {
+    assert.equal(parseReference(text), null, text);
+  }
+});
+
+test('an Other reference is its own card, built without a request, and lookupById builds the same card for a Recent chip', async () => {
+  const fetchImpl = fakeFetch({});
+  const text = 'BCD Boiotia 174b; HGC 4, 1218';
+  const card = { id: text, corpus: 'other', label: text, authority: null, denomination: null, mint: null, material: null, dates: null,
+    obverse: { legend: null, description: null }, reverse: { legend: null, description: null } };
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: ' "BCD Boiotia  174b; HGC 4, 1218" ' }), { corpus: 'other', query: text });
+  // Typed in the guided field, an Other reference is cleaned as the Reference box cleans it, so both give the same card, Recent chip and term.
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: 'HGC 4, 1218.' }), { corpus: 'other', query: 'HGC 4, 1218' });
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: '(BCD Boiotia 174b)' }), { corpus: 'other', query: 'BCD Boiotia 174b' });
+  assert.deepEqual(await lookupType(parseReference(text), { fetchImpl }), { status: 'ok', card });
+  assert.deepEqual(await lookupType({ catalogue: 'Other', number: ` “${text}” `, volume: 'IV', section: 'Nero' }, { fetchImpl }), { status: 'ok', card });
+  assert.deepEqual(await lookupById('other', text, { fetchImpl }), { status: 'ok', card });
+  assert.equal(fetchImpl.calls.length, 0);
 });
 
 test('SC references build the SCO record id and parse from one box', () => {
@@ -365,7 +612,7 @@ test('Bop references parse from one box with or without a king, and build a BIGR
     ['“Bop Philoxenus 9C”', bop('Philoxenus', '9C')],
   ];
   for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
-  for (const text of ['Bop', 'Bopearachchi', 'Euthydemus I 24A', 'Bopearachi 9C', 'Bop 9C tetradrachm', 'Bop Euthydemus 1 24A',
+  for (const text of ['Bop', 'Bopearachchi', 'Bopearachi 9C', 'Bop 9C tetradrachm', 'Bop Euthydemus 1 24A',
     'Bopearachchi Philoxène 9C (Philoxenus 8.1)', 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1']) {
     assert.equal(parseReference(text), null, text);
   }

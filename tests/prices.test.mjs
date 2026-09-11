@@ -71,6 +71,10 @@ test('parsePrice never joins two numbers: marks only at the ends, one separator 
 test('defaultTerm builds the acsearch term from the guided reference', () => {
   assert.equal(defaultTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
   assert.equal(defaultTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');
+  // OCRE's split-section parenthetical would make acsearch require "East", "Caesar"… that dealers rarely write; the number's own stays.
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I 605');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Gallienus (joint reign)', number: '123' }), 'Gallienus 123');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Septimius Severus', number: '266 (aureus)' }), 'Septimius Severus 266 (aureus)');
 });
 
 const lot = (price, date = '01.01.2024', id = '1') => ({ id, title: `Lot ${id}`, date, price });
@@ -186,16 +190,55 @@ test('summaryText produces a shareable plain-text summary', () => {
   const summary = summarise(amounts.map((price, i) => lot(price, `01.01.${2020 + (i % 4)}`, String(i))).concat([lot('1.200,- €')]), 'USD');
   assert.equal(summaryText({ label: 'Price 23', corpus: 'pella', id: 'price.23' }, summary, 'USD', 'Price 23'), [
     'Price 23',
-    'Median hammer $180 · middle 50% $135–$245 · 9 sales matching “Price 23” · 2020–2023',
+    'Median hammer $180 · middle 50% $135–$245 · range $90–$450 · 9 sales matching “Price 23” · 2020–2023',
     'Not counted: “1.200,- €”',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   const one = summarise([lot('500', '01.01.2024')], 'CHF');
   assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, one, 'CHF', 'Crawford 1/1'), [
     'RRC 1/1',
-    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · 1 sale matching “Crawford 1/1” · 2024',
+    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · range CHF 500–CHF 500 · 1 sale matching “Crawford 1/1” · 2024',
     'https://numismatics.org/crro/id/rrc-1.1',
   ].join('\n'));
+});
+
+test('summaryText has no type link for a reference without type data', () => {
+  const summary = summarise([lot('100', '01.01.2025'), lot('300', '01.01.2026'), lot('')], 'USD');
+  assert.equal(summaryText({ label: 'HGC 4, 1218', corpus: 'other', id: 'HGC 4, 1218' }, summary, 'USD', '"HGC 4, 1218"'), [
+    'HGC 4, 1218',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 sales matching “"HGC 4, 1218"” · 2025–2026',
+  ].join('\n'));
+});
+
+test('summarise counts the lots without a price apart from the prices it could not read', () => {
+  const summary = summarise([lot('100'), lot(''), lot('*'), lot('-'), lot('unsold'), lot('200 EUR'), lot('1.200,- €')], 'USD');
+  assert.deepEqual([summary.total, summary.count, summary.unpriced], [7, 1, 4]);
+  assert.deepEqual(summary.uncounted, ['200 EUR', '1.200,- €']);
+  assert.equal(summarise([lot('100'), lot('300')], 'USD').unpriced, 0);
+  assert.equal(summarise([], 'USD').unpriced, 0);
+});
+
+test('defaultTerm searches a reference without type data as an exact phrase, and several ";" references as either-or phrases', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other(' HGC 4,  1218 ')), '"HGC 4, 1218"');
+  assert.equal(defaultTerm(other('BCD Boiotia 174b; HGC 4, 1218')), '("BCD Boiotia 174b" "HGC 4, 1218")');
+  assert.equal(defaultTerm(other('"Sear 1234"; ; “SNG Cop 123”;')), '("Sear 1234" "SNG Cop 123")');
+});
+
+test('an Other term drops a trailing remark and every bracket, which acsearch cannot match in a phrase, and searches only parts with a letter and a digit', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('(BCD Boiotia 174b)')), '"BCD Boiotia 174b"');
+  assert.equal(defaultTerm(other('HGC 4, 1218; BCD Boiotia 174b (this coin)')), '("HGC 4, 1218" "BCD Boiotia 174b")');
+  assert.equal(defaultTerm(other('[SNG Cop 123]')), '"SNG Cop 123"');
+  // "Not in" citations and remarks carry no number and would match unrelated lots.
+  assert.equal(defaultTerm(other('SNG Cop –; BMC –; HGC 4, 1218')), '"HGC 4, 1218"');
+  assert.equal(defaultTerm(other('HGC 4, 1218; Rare; unpublished')), '"HGC 4, 1218"');
+  assert.equal(defaultTerm(other('Rare; 1218')), '');
+});
+
+test('an acsearch page that found nothing is no sales, not a connection failure', async () => {
+  const term = '"(BCD Boiotia 174b)"';
+  assert.deepEqual(await fetchPrices({ term, currency: 'USD' }, { fetchImpl: fakeFetch(fixture('acsearch-search-no-results.html')) }), { status: 'empty', term });
 });
 
 test('summaryText collapses whitespace inside a quoted raw price so a copied line never splits', () => {
