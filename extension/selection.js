@@ -1,13 +1,20 @@
 import { INVISIBLE } from './lookup.js';
+import { MAX_LOT, looksLikeLot, oneLine } from './lot.js';
 
 export const MAX_SELECTION = 120;
+export { MAX_LOT };
 
 // The hidden characters dealer pages add go before the cap, and a lone surrogate is made well-formed where the browser can, so encodeURIComponent
-// never throws on it. Whitespace squashed, capped at 120 characters; a longer text is cut after its last whole ";" reference, so none is searched cut
-// short ("…; Rosen 567" as "Rosen 56").
+// never throws on it. Whitespace squashed, a line break in lot text as ". " (oneLine). A whole lot description (looksLikeLot) keeps up to 3,000
+// characters, cut at a word boundary, for the popup to find every reference in; one reference is capped at 120 characters, a longer text cut after
+// its last whole ";" reference, so none is searched cut short ("…; Rosen 567" as "Rosen 56").
 export function selectionQuery(text) {
   const raw = String(text ?? '');
-  const chars = Array.from((raw.toWellFormed?.() ?? raw).replace(INVISIBLE, '').replace(/\s+/g, ' ').trim());
+  const chars = Array.from(oneLine((raw.toWellFormed?.() ?? raw).replace(INVISIBLE, '')).replace(/\s+/g, ' ').trim());
+  if (looksLikeLot(chars.join(''))) {
+    const lot = chars.slice(0, MAX_LOT).join('');
+    return (chars.length > MAX_LOT && chars[MAX_LOT] !== ' ' && lot.includes(' ') ? lot.slice(0, lot.lastIndexOf(' ')) : lot).trim();
+  }
   const kept = chars.slice(0, MAX_SELECTION).join('');
   return (chars.length > MAX_SELECTION && kept.includes(';') ? kept.slice(0, kept.lastIndexOf(';')) : kept).trim();
 }

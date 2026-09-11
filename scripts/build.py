@@ -31,6 +31,7 @@ ASSET_PATHS = (
     "prices.js",
     "catalogues.js",
     "selection.js",
+    "lot.js",
     "background.js",
     "icon.svg",
     "icons/icon-16.png",

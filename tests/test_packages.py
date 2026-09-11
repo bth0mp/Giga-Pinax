@@ -25,6 +25,7 @@ ASSETS = {
     "prices.js",
     "catalogues.js",
     "selection.js",
+    "lot.js",
     "background.js",
     "icon.svg",
     "icons/icon-16.png",
@@ -45,7 +46,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.17.0", manifest["version"])
+                self.assertEqual("0.18.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -118,7 +119,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.17.0.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.18.0.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}

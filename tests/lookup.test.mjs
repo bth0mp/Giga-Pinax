@@ -815,3 +815,76 @@ test('lookupById on BIGR fetches the NUDS record for the citation, and an unread
   assert.equal(other.status, 'ok');
   assert.equal(Object.hasOwn(other.card, 'bop'), false);
 });
+
+test('rulers from a lot text search OCRE portrait and authority facets without a section filter, and one kept hit is the type', async () => {
+  const facets = '(typeNumber:"972" OR typeNumber:972_*) AND (portrait_facet:"Titus" OR authority_facet:"Titus")';
+  const routes = { 'ocre/apis/search': fixture('ocre-search-titus-972.xml'), 'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld') };
+  const fetchImpl = fakeFetch(routes);
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  // Titus as Caesar sits in the Vespasian section, which a section filter would drop.
+  assert.equal(result.card.label, 'RIC II, Part 1 (second edition) Vespasian 972');
+  assert.equal(fetchImpl.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(facets)}`);
+  assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
+  const titus1073 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-titus-1073.xml'), 'ocre/id/ric.2_1(2).ves.1073.jsonld': fixture('ocre-vespasian-1073.jsonld') });
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1073', rulers: ['Titus'] }, { fetchImpl: titus1073, cache: new Map() })).card?.id, 'ric.2_1(2).ves.1073');
+});
+
+test('several rulers and a volume make one bracketed facet group, quote-safe, and several kept hits are offered with the rulers in the query', async () => {
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed('RIC I (second edition) Nero 306', 'RIC I (second edition) Claudius 306', 'RIC I (second edition) Nero 306: Subtype 1') });
+  const result = await lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: '', number: '306', rulers: ['Claudius', 'Ne"ro\\'] }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', corpus: 'ocre', query: 'RIC I (second edition) 306 (Claudius, Nero)', partial: true, candidates: [
+    { id: 'x1', title: 'RIC I (second edition) Claudius 306' },
+    { id: 'x0', title: 'RIC I (second edition) Nero 306' },
+  ] });
+  const q = '(typeNumber:"306" OR typeNumber:306_*) AND (portrait_facet:"Claudius" OR authority_facet:"Claudius" OR portrait_facet:"Nero" OR authority_facet:"Nero") AND "RIC I (second edition)"';
+  assert.deepEqual(fetchImpl.calls, [`https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(q)}`]);
+});
+
+test('a RIC section asks the facets by OCRE\'s own name for it: "Gaius/Caligula" whole, Claudius Gothicus as "Claudius II Gothicus"', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1', rulers: ['Gaius/Caligula'] }, { fetchImpl });
+  const q = '(typeNumber:"1" OR typeNumber:1_*) AND (portrait_facet:"Gaius/Caligula" OR authority_facet:"Gaius/Caligula")';
+  assert.equal(fetchImpl.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(q)}`);
+  const gothicus = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius Gothicus'] }, { fetchImpl: gothicus });
+  const facet = '(typeNumber:"36" OR typeNumber:36_*) AND (portrait_facet:"Claudius II Gothicus" OR authority_facet:"Claudius II Gothicus")';
+  assert.equal(gothicus.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(facet)}`);
+});
+
+test('a single facet hit in a volume typed another way than OCRE lists it ("RIC I") is offered, never opened', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed><entry><title>RIC I (second edition) Claudius 66</title><id>x0</id></entry></feed>' });
+  const result = await lookupType({ catalogue: 'RIC', volume: 'I', section: '', number: '66', rulers: ['Claudius'] }, { fetchImpl });
+  assert.equal(result.status, 'candidates');
+  assert.deepEqual(result.candidates, [{ id: 'x0', title: 'RIC I (second edition) Claudius 66' }]);
+});
+
+test('a facet miss retries the number search without rulers once, and offers even a single hit rather than opening it', async () => {
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  // Nero has no 972 in OCRE's facets: the six types with the number are offered.
+  const nero = fakeFetch({ 'portrait_facet': fixture('ocre-search-nero-972.xml'), 'ocre/apis/search': fixture('ocre-search-typenumber-972.xml') });
+  const listed = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Nero'] }, { fetchImpl: nero });
+  assert.equal(listed.status, 'candidates');
+  assert.equal(listed.partial, true);
+  assert.equal(listed.query, 'RIC 972 (Nero)');
+  assert.equal(listed.candidates.length, 6);
+  assert.equal(nero.calls.length, 2);
+  assert.equal(nero.calls[1], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent('(typeNumber:"972" OR typeNumber:972_*)')}`);
+  const single = fakeFetch({ 'portrait_facet': '<feed></feed>', 'ocre/apis/search': feed('RIC III Faustina I 394a') });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: 'III', section: '', number: '394a', rulers: ['Faustina'] }, { fetchImpl: single }),
+    { status: 'candidates', corpus: 'ocre', query: 'RIC III 394a (Faustina)', partial: true, candidates: [{ id: 'x0', title: 'RIC III Faustina I 394a' }] });
+  assert.equal(single.calls.length, 2);
+  const none = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '99999', rulers: ['Nero'] }, { fetchImpl: none }), { status: 'none', corpus: 'ocre', query: 'RIC 99999 (Nero)' });
+});
+
+test('a reference with a section, or with no rulers, ignores the rulers and searches as before', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-elagabalus-268.xml'), 'ocre/id/': fixture('ocre-elagabalus-268.jsonld') });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: 'Elagabalus', number: '268', rulers: ['Julia Maesa'] }, { fetchImpl, cache: new Map() });
+  assert.equal(fetchImpl.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent('(typeNumber:"268" OR typeNumber:268_*) AND "Elagabalus"')}`);
+  assert.equal(result.status, 'ok');
+  const empty = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: [] }, { fetchImpl: empty }), { status: 'none', corpus: 'ocre', query: 'RIC 972' });
+  assert.equal(empty.calls.length, 1);
+});

@@ -75,7 +75,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .form-error {color:var(--error); font-size:12px; line-height:1.5; padding-top:8px;}
 .candidates {padding-top:6px;}
 .candidate-list {list-style:none; margin:0; padding:0;}
-.candidate-list .text-button {display:block; width:100%; text-align:left; padding:8px 0; border-top:1px solid var(--line);}
+.candidate-list .text-button {display:block; width:100%; text-align:left; padding:8px 0; border-top:1px solid var(--line); overflow-wrap:anywhere;}
+/* The lot row whose type is on show: ink with an accent bar, so it reads as chosen without colour alone. */
+.candidate-list [aria-current="true"] {color:var(--ink); box-shadow:inset 3px 0 0 var(--accent); padding-left:10px;}
 .recent {padding:8px 16px 12px; border-bottom:1px solid var(--line);}
 .recent .field-hint {margin-top:0;}
 .recent-list {list-style:none; margin:6px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}

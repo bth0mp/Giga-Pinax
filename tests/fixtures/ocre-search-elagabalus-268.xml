@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns="http://www.w3.org/2005/Atom"
+      xmlns:gx="http://www.google.com/kml/ext/2.2"
+      xmlns:georss="http://www.georss.org/georss"
+      xmlns:atom="http://www.w3.org/2005/Atom"
+      xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/">
+ <title>Online Coins of the Roman Empire</title>
+ <id>http://numismatics.org/ocre/</id>
+ <link rel="self" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;268&#34; OR typeNumber:268_*) AND &#34;Elagabalus&#34;&amp;start=0"/>
+ <link rel="alternative" type="text/html"
+       href="http://numismatics.org/ocre/results?q=(typeNumber:&#34;268&#34; OR typeNumber:268_*) AND &#34;Elagabalus&#34;&amp;start=0"/>
+ <link rel="next" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;268&#34; OR typeNumber:268_*) AND &#34;Elagabalus&#34;&amp;start=100"/>
+ <link rel="last" type="application/atom+xml"
+       href="http://numismatics.org/ocre/apis/search?q=(typeNumber:&#34;268&#34; OR typeNumber:268_*) AND &#34;Elagabalus&#34;&amp;start=0"/>
+ <link rel="search" type="application/opensearchdescription+xml"
+       href="http://numismatics.org/ocre/opensearch.xml"/>
+ <opensearch:totalResults>1</opensearch:totalResults>
+ <opensearch:startIndex>0</opensearch:startIndex>
+ <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+ <opensearch:Query role="request"
+                   searchTerms="(typeNumber:&#34;268&#34; OR typeNumber:268_*) AND &#34;Elagabalus&#34;"
+                   startPage="0"/>
+ <entry>
+  <title>RIC IV Elagabalus 268</title>
+  <link href="http://numismatics.org/ocre/id/ric.4.el.268"/>
+  <id>ric.4.el.268</id>
+  <relevance:score>7.5471067</relevance:score>
+  <updated>2025-12-19T11:10:37Z</updated>
+  <link rel="alternate" type="application/xml"
+        href="http://numismatics.org/ocre/id/ric.4.el.268.xml"/>
+  <link rel="alternate" type="application/rdf+xml"
+        href="http://numismatics.org/ocre/id/ric.4.el.268.rdf"/>
+  <link rel="alternate" type="application/ld+json"
+        href="http://numismatics.org/ocre/id/ric.4.el.268.jsonld"/>
+  <link rel="alternate" type="text/turtle"
+        href="http://numismatics.org/ocre/id/ric.4.el.268.ttl"/>
+  <georss:where>
+   <geo:Point>
+    <geo:pos>41.9 12.5</geo:pos>
+   </geo:Point>
+  </georss:where>
+  <gx:TimeSpan>
+   <begin xmlns="">218</begin>
+   <end xmlns="">222</end>
+  </gx:TimeSpan>
+ </entry>
+</feed>

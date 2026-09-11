@@ -3,6 +3,7 @@ import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, defaultTerm, fetc
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
 import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
+import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -23,6 +24,7 @@ const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any
 const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A. Leave the king blank to list every king with that number.', Other: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' };
 const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
+const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -36,6 +38,12 @@ let shownPrices = null;
 let copiedTimer = 0;
 // The Recent label the arrow keys last put in the Reference box, by position (-1: none).
 let recalled = -1;
+// Bumped by every lot row pick and by clearLot(), so a pick still waiting on its permission prompt never opens over a newer one.
+let lotPick = 0;
+// "3 references found in this text." while a lot's single type opens at once: said before that lookup's own announcements, which would otherwise
+// replace it before a screen reader speaks it; clearOutput() drops it, so only the lookup run() is handed it keeps it.
+let lotNote = '';
+const announce = (message) => { $('announcement').textContent = [lotNote, message].filter(Boolean).join(' '); };
 
 // Read once per popup; get reads memory and set writes the whole object back. Missing, corrupt or unwritable storage leaves an in-memory cache.
 function readLabels() {
@@ -181,6 +189,7 @@ function clearOutput() {
   $('reference-number').removeAttribute('aria-invalid');
   $('quick-reference').removeAttribute('aria-invalid');
   $('announcement').textContent = '';
+  lotNote = '';
   currentCard = null;
   clearPrices();
 }
@@ -190,6 +199,7 @@ function showError(message, field) {
   $('form-error').textContent = message;
   $('form-error').hidden = false;
   if (field) $(field).setAttribute('aria-invalid', 'true');
+  if (lotNote) announce('');
 }
 
 function setBusy(busy) {
@@ -232,7 +242,7 @@ function renderCard(card) {
   clearPrices();
   updateAcsearchLink();
   $('result').hidden = false;
-  $('announcement').textContent = `Found ${card.label}.`;
+  announce(`Found ${card.label}.`);
 }
 
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
@@ -255,17 +265,72 @@ function renderCandidates(candidates, corpus, partial) {
     return item;
   }));
   $('candidates').hidden = false;
-  $('announcement').textContent = `${candidates.length} possible matches. Choose one.`;
+  announce(`${candidates.length} possible matches. Choose one.`);
 }
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
 // from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or "Price P1" would not read back) and makes
-// no permission request.
+// no permission request. It empties the lot list too, whose chosen row would name another type.
 function openRecent(entry) {
+  clearLot();
   $('quick-reference').value = '';
   const parsed = parseReference(entry.label);
   if (parsed) { fillFields(parsed); savePreferences(); }
   run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }));
+}
+
+// The lot list lives outside #candidates, so a lookup's clearOutput() leaves it above the card; only a new Reference, a guided edit, a catalogue
+// change, a Recent chip or a Look up that isn't lot text empties it.
+function clearLot() {
+  lotPick += 1;
+  $('lot-list').replaceChildren();
+  $('lot-refs').hidden = true;
+}
+
+// A chosen row (a findReferences item: its parsed reference is found.reference), like a Recent chip, fills the guided fields so the acsearch term
+// follows it. The permission request comes before any await, so it keeps the click's (or Look up's) gesture: acsearch only for Other, whose card needs
+// no access, as in the submit handler. note is the lot's count, said with an auto-opened lookup's announcements.
+async function openLotReference(found, rulers, button, note = '') {
+  const pick = ++lotPick;
+  const fail = (message) => { clearOutput(); lotNote = note; showError(message); };
+  for (const row of $('lot-list').querySelectorAll('button')) row.removeAttribute('aria-current');
+  button.setAttribute('aria-current', 'true');
+  fillFields(found.reference);
+  savePreferences();
+  const other = found.reference.catalogue === 'Other';
+  if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
+  const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const allowed = await access;
+  if (pick !== lotPick) return;
+  if (!allowed && !other) { fail(PERMISSION_MESSAGE); return; }
+  run(() => lookupType(lotLookup(found, rulers), { cache: labelCache }), note);
+}
+
+// Lot text lists every reference in it, in text order. A single type-data reference opens at once (the user's 0.18 decision), its row marked
+// chosen; several wait for a pick, so a lot fetches nothing it wasn't asked for.
+function showLot(text) {
+  const { references, rulers } = findReferences(text);
+  clearOutput();
+  clearLot();
+  if (references.length === 0) { showError(NO_REFERENCES_MESSAGE, 'quick-reference'); return; }
+  const buttons = references.map((found) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'text-button';
+    button.textContent = lotLabel(found, rulers);
+    button.addEventListener('click', () => openLotReference(found, rulers, button));
+    return button;
+  });
+  $('lot-list').replaceChildren(...buttons.map((button) => {
+    const item = document.createElement('li');
+    item.append(button);
+    return item;
+  }));
+  $('lot-refs').hidden = false;
+  const count = `${references.length} ${references.length === 1 ? 'reference' : 'references'} found in this text.`;
+  $('announcement').textContent = count;
+  const typed = references.flatMap((found, index) => (found.typed ? [index] : []));
+  if (typed.length === 1) openLotReference(references[typed[0]], rulers, buttons[typed[0]], count);
 }
 
 function renderRecent() {
@@ -400,8 +465,9 @@ function showPricesError(message) {
   $('prices-error').hidden = false;
 }
 
-async function run(perform) {
+async function run(perform, note = '') {
   clearOutput();
+  lotNote = note;
   const id = ++requestId;
   setBusy(true);
   let outcome;
@@ -432,7 +498,7 @@ async function run(perform) {
     if (granted) runPrices(term, currency, { remember: false });
     else {
       showPricesNote(ACCESS_HINT, false);
-      $('announcement').textContent = `Found ${outcome.card.label}. ${ACCESS_HINT}`;
+      announce(`Found ${outcome.card.label}. ${ACCESS_HINT}`);
     }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
@@ -502,8 +568,9 @@ const windowed = new URLSearchParams(location.search).get('window') === '1';
 document.documentElement.classList.toggle('windowed', windowed);
 $('pop-out').hidden = windowed;
 
+// Lot text waits for Look up: parseReference would read only a piece of it into the fields.
 $('quick-reference').addEventListener('change', () => {
-  if (!$('quick-reference').value.trim() || !applyQuickReference()) return;
+  if (!$('quick-reference').value.trim() || isLot($('quick-reference').value) || !applyQuickReference()) return;
   savePreferences();
   clearOutput();
   $('lookup-prompt').hidden = false;
@@ -516,10 +583,23 @@ $('quick-reference').addEventListener('keydown', (event) => {
   if (!step) return;
   event.preventDefault();
   recalled = step.position;
+  clearLot();
   $('quick-reference').value = step.text;
   $('quick-reference').setSelectionRange(step.text.length, step.text.length);
 });
-$('quick-reference').addEventListener('input', () => { recalled = -1; });
+$('quick-reference').addEventListener('input', () => { recalled = -1; clearLot(); });
+// A lot description pasted from a dealer page arrives in lines; the one-line box takes it with each break as ". " (oneLine: a break still ends the
+// reference above it), up to its 3,000 characters (setRangeText ignores maxlength, so the room is cut here), and the input event does what typing would.
+$('quick-reference').addEventListener('paste', (event) => {
+  const text = event.clipboardData?.getData('text/plain');
+  if (!text) return;
+  event.preventDefault();
+  const box = $('quick-reference');
+  const { selectionStart: start, selectionEnd: end } = box;
+  const room = Math.max(box.maxLength - (box.value.length - (end - start)), 0);
+  box.setRangeText(oneLine(text).slice(0, room), start, end, 'end');
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+});
 // A guided edit (here and in the form input handler) clears the one-box, so a stale one-box value can never override the correction on the next Look up.
 // A new catalogue starts from its defaults: RIC from the first volume with its default section and number, so a remembered volume can't pair with a
 // section it lacks; Bop from its default king and number, keeping the hidden volume.
@@ -531,6 +611,7 @@ $('catalogue').addEventListener('change', () => {
   updateFields();
   savePreferences();
   clearOutput();
+  clearLot();
   $('lookup-prompt').hidden = false;
 });
 $('currency').addEventListener('change', () => {
@@ -556,6 +637,7 @@ $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;
   $('quick-reference').value = '';
   clearOutput();
+  clearLot();
   $('lookup-prompt').hidden = false;
   // Typing a RIC ruler moves the volume to the one that has it (Titus: II.1²), or to Any volume when several do (Hadrian, Antioch), unless the chosen
   // volume has it; text that names no known ruler leaves it alone. Announced here, after clearOutput() has emptied the live region.
@@ -570,8 +652,12 @@ $('reference-form').addEventListener('input', (event) => {
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or "Price P1", would read as lot text.
   const entry = preferences.recent[recalled];
   if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
+  // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.
+  if (isLot($('quick-reference').value)) { showLot($('quick-reference').value); return; }
+  clearLot();
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
   if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
@@ -678,6 +764,7 @@ if (windowed) api?.runtime?.onMessage?.addListener((message, sender, sendRespons
     try { preferences = restorePreferences(localStorage.getItem(STORAGE_KEY)); } catch { /* unreadable: keep this window's copy */ }
     recalled = -1;
     $('quick-reference').value = '';
+    clearLot();
     showStored();
     openFrom(search);
   }

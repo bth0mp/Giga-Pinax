@@ -61,7 +61,7 @@ const MAX_REFERENCE = 120;
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
 // is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
-const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
+export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones PREFIX reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
@@ -404,13 +404,17 @@ function volumePhrase(volume) {
 // quoted phrase. typeNumber is case-sensitive ("56A" is in IX, "56a" in III, IV and VI), so a lettered number asks for both. OCRE stores a word after
 // the number as "266_aureus", which a search for 266 does not find: a typed word is asked for as typed and in lower case (denominations are lower
 // case, "509 (BB)" is not), and a plain number also asks for those types (266_*; unquoted, so digits and letters only).
-function ricSearch({ number, volume, section }) {
+// Rulers from a lot text ask OCRE's portrait and authority facets for any of them. Every OR group stays bracketed: unbracketed, "a OR b AND c" is
+// read as "a OR (b AND c)" (394a_* OR 394A_* returned 51,853 hits).
+function ricSearch({ number, volume, section }, rulers = []) {
   const [, base, word] = ricNumber(number).match(/^(.*?)\s*(?:\(([^)]*)\))?$/);
   const clauses = [...new Set([base.toLowerCase(), base.toUpperCase()])].flatMap((form) => (word
     ? [...new Set([word, word.toLowerCase()])].map((typed) => `typeNumber:"${form}_${typed}"`)
     : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
+  const group = (list) => (list.length > 1 ? `(${list.join(' OR ')})` : list[0]);
+  const facets = rulers.flatMap((name) => [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]);
   const narrow = [volumePhrase(unquote(volume)), phrase(section)].filter(Boolean).map((text) => ` AND "${text}"`).join('');
-  return `${clauses.length > 1 ? `(${clauses.join(' OR ')})` : clauses[0]}${narrow}`;
+  return `${group(clauses)}${facets.length ? ` AND ${group(facets)}` : ''}${narrow}`;
 }
 
 // Kept: the RIC types with the typed number (with any word OCRE stores after it, unless a word is typed), in the typed volume and by the typed ruler
@@ -437,6 +441,22 @@ function pickRic(xml, reference) {
   return { status: 'candidates', candidates: kept.map(({ entry }) => entry), partial: true };
 }
 
+// The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
+// hold OCRE's names: "Gaius/Caligula" whole (either half finds nothing), and Claudius Gothicus as "Claudius II Gothicus".
+const FACET_NAMES = Object.freeze({ 'Claudius Gothicus': 'Claudius II Gothicus' });
+const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
+  .map((name) => phrase(FACET_NAMES[name] ?? String(name ?? ''))).filter(Boolean))];
+
+// A RIC number with rulers read from a lot text: the facets already tie each hit to a ruler, and a Titus-as-Caesar coin sits in the Vespasian
+// section, so pickRic runs without a section and one kept hit is the type, as pickRic decides it (a volume typed another way, "RIC I", is still only
+// offered). A miss retries the plain number search once, and those hits are only offered, even a single one, since nothing tied them to the rulers.
+async function pickRulers(reference, rulers, feed) {
+  const picked = pickRic(await feed(ricSearch(reference, rulers)), reference);
+  if (picked.status !== 'none') return picked;
+  const retry = pickRic(await feed(ricSearch(reference)), reference);
+  return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+}
+
 export async function lookupType(reference, options = {}) {
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
   const built = buildQuery(reference);
@@ -445,10 +465,15 @@ export async function lookupType(reference, options = {}) {
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
+  // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text.
+  const rulers = corpus === 'ocre' && !phrase(reference.section) ? rulersOf(reference) : [];
+  const shown = rulers.length ? `${query} (${rulers.join(', ')})` : query;
   try {
     let picked;
     if (corpus === BIGR) {
       picked = await pickBop(built, search, fetchImpl, timer.signal);
+    } else if (rulers.length) {
+      picked = await pickRulers(reference, rulers, feed);
     } else if (built.partial) {
       // One exact hit is the type, fetched like an exact pick; anything else kept is offered, all of it (one page holds at most 100).
       picked = pickRic(await feed(ricSearch(reference)), reference);
@@ -467,7 +492,7 @@ export async function lookupType(reference, options = {}) {
       picked = pickMatch(await search(`"${query}"`), query);
       if (picked.status !== 'ok') picked = pickMatch(inGroup(await search(query), corpus, reference), query);
     }
-    if (picked.status !== 'ok') return { ...picked, corpus, query };
+    if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
     return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
   } catch {
     return { status: 'network' };

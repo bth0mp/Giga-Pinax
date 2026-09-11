@@ -25,7 +25,7 @@
     </header>
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
-        <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="120" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
+        <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
         <div class="catalogue-row">
           <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option><option value="Other">Other (prices only)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
@@ -39,6 +39,7 @@
         <p id="reference-help" class="field-hint">Example: Price 23</p>
         <p id="form-error" class="form-error" role="alert" hidden></p>
         <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
+        <div id="lot-refs" class="candidates" hidden><p id="lot-refs-label" class="field-hint">Found in this text:</p><ul id="lot-list" class="candidate-list" aria-labelledby="lot-refs-label"></ul></div>
       </form>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>

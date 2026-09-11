@@ -1,14 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_SELECTION, LOOKUP_MESSAGE, selectionQuery, popupUrlFor, queryFromSearch, cardUrlFor, cardFromSearch, showInWindow } from '../extension/selection.js';
+import { MAX_SELECTION, MAX_LOT, LOOKUP_MESSAGE, selectionQuery, popupUrlFor, queryFromSearch, cardUrlFor, cardFromSearch, showInWindow } from '../extension/selection.js';
 
-test('selectionQuery collapses whitespace, trims and caps at 120 characters without splitting a character', () => {
+test('selectionQuery collapses whitespace and trims; a lot is capped at 3,000 characters, cut at a word boundary, never inside a character', () => {
   assert.equal(selectionQuery('  RIC I²\n Nero\t306  '), 'RIC I² Nero 306');
   assert.equal(selectionQuery(''), '');
   assert.equal(selectionQuery(undefined), '');
-  assert.equal(selectionQuery('x'.repeat(200)).length, MAX_SELECTION);
   assert.equal(MAX_SELECTION, 120);
-  assert.equal(selectionQuery(`${'1'.repeat(119)}😀tail`), `${'1'.repeat(119)}😀`);
+  assert.equal(MAX_LOT, 3000);
+  assert.equal(selectionQuery('x'.repeat(200)), 'x'.repeat(200));
+  assert.equal(selectionQuery('x'.repeat(4000)).length, MAX_LOT);
+  assert.equal(selectionQuery(`${'1'.repeat(2999)}😀tail`), `${'1'.repeat(2999)}😀`);
+  assert.equal(selectionQuery(`${'word '.repeat(700)}RIC 972`), 'word '.repeat(600).trim());
+});
+
+test('a lot selection keeps the whole description, with every reference in it', () => {
+  const lot = 'TITUS, AD 69-79. AR, Denarius. Rome. Obv: T CAESAR VESPASIANVS. Head of Titus, laureate, right. Rev: ANNONA AVG. Ref: RIC 972; Cohen 17; BMC 319.';
+  assert.equal(selectionQuery(`  ${lot.replace(/\. /g, '.\n')}  `), lot);
+  assert.equal(selectionQuery('RIC 972; Cohen 17'), 'RIC 972; Cohen 17');
+  assert.equal(queryFromSearch(popupUrlFor(lot).slice('popup.html'.length)), lot);
+  // A reference line without its full stop still ends at the break, so the weight on the next line is not read into it.
+  assert.equal(selectionQuery('Titus, as Caesar. AR Denarius\nRIC 1073\n18 mm, 3.42 g'), 'Titus, as Caesar. AR Denarius. RIC 1073. 18 mm, 3.42 g');
 });
 
 test('the hidden characters dealer pages add are dropped before the cap, and a lone surrogate never makes the window URL throw', () => {
@@ -19,11 +31,11 @@ test('the hidden characters dealer pages add are dropped before the cap, and a l
   assert.equal(popupUrlFor('\uD800Price 23'), 'popup.html?window=1&q=%EF%BF%BDPrice%2023');
 });
 
-test('a selection longer than 120 characters is cut after its last whole ";" reference, never inside one', () => {
+test('a list of references longer than 120 characters reads as a lot and is kept whole', () => {
   const references = ['HGC 4, 1218', 'BCD Boiotia 174b', 'SNG Copenhagen 123', 'SNG München 456', 'Traité IV 1234', 'Jameson 1234', 'Babelon 1830', 'Rosen 567'];
   const text = `${references.join('; ')}.`;
   assert.ok(text.length > MAX_SELECTION);
-  assert.equal(selectionQuery(text), references.slice(0, -1).join('; '));
+  assert.equal(selectionQuery(text), text);
   assert.equal(selectionQuery(references.slice(0, 3).join(';\n')), references.slice(0, 3).join('; '));
 });
 

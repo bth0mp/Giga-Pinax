@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.17.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link opens only when you select it) and nothing from acsearch is stored.
+Version **0.18.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link opens only when you select it) and nothing from acsearch is stored.
 
 The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.17.0.zip
-dist/giga-pinax-firefox-0.17.0.zip
+dist/giga-pinax-brave-0.18.0.zip
+dist/giga-pinax-firefox-0.18.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.17.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.18.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.17.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.18.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -56,13 +56,14 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - Type **RIC I² Nero 306** in the Reference box and select **Look up**; the RIC fields fill in and the type resolves.
 - Select **RIC I² Nero 306** on any web page, right-click and choose **Look up “RIC I² Nero 306” in Giga Pinax**. Drag the window it opens to make it longer or wider.
 - With that window still open, right-click another reference, such as **Craw. 44/5** or a reference copied from an auction page: the same window looks it up and comes to the front, rather than a second window opening. Dealer abbreviations (**Craw.**, **Crawf.**), a trailing **;** and the hidden characters auction pages add are read.
+- Paste a whole lot description from biddr into the Reference box, such as **TITUS, AD 69-79. AR, Denarius. Rome. Obv: T CAESAR VESPASIANVS. Head of Titus, laureate, right. Rev: ANNONA AVG. Ref: RIC 972; Cohen 17; BMC 319.**, and select **Look up**: the three references are listed as **RIC 972 · Titus**, **Cohen 17 · prices only** and **BMC 319 · prices only**, and because only RIC has type data it opens at once as RIC II.1² Vespasian 972, Titus's denarius as Caesar, found from the ruler in the heading. Select **Cohen 17** to get its acsearch prices instead. Selecting the same text on biddr and right-clicking does the same in the lookup window. A lot with several RIC, RRC, SC, Bop or Price references fetches nothing until you pick one.
 - Select the window button (a square with an arrow) in the header: Giga Pinax opens on the type it was showing, in the window already open or in a new one, and you can drag that window to any size.
 - **Price 23**, then catalogue **RIC**, and type **Titus** in **Ruler or mint section**: it is suggested as you type, from every OCRE volume, and the volume becomes **II.1² (2nd ed.)** by itself. With number **123**, **Look up** finds RIC II.1² Titus 123. A blank volume or ruler means any.
 - **RIC 972** in the Reference box: a list of the six types numbered 972, from Vespasian (II.1²) to Zeno (X); choosing one sets the fields, and its acsearch search follows it (for example "Hadrian 972").
 - **RRC 44/5** — an anonymous Roman Republican denarius; its acsearch search starts as "Crawford 44/5".
 - **SC 1266.2** — a tetradrachm of Demetrius II from Antioch; **SC 1266.9** doesn't exist and offers **SC 1266** instead.
 - **Bop Euthydemus I 24A** — a bronze of Euthydemus I of Bactria; the card shows its BIGR type and the citation **Bopearachchi Euthydème I 24A**, and its acsearch search starts as `(Euthydemus Euthydemos) "Bopearachchi 24A"` — the king in both spellings and the citation as an exact phrase. **Bop 9C** alone lists every king with a 9C series to choose from; with the **King** left blank, a number alone does the same. Each lookup checks its matches against numismatics.org in one request; if that fails, the popup says it couldn't reach numismatics.org instead of "not found".
-- **BCD Boiotia 174b; HGC 4, 1218** — neither has open type data, so the catalogue becomes **Other (prices only)** and the card says so; acsearch is searched for the lots that cite either reference, each as an exact phrase: `("BCD Boiotia 174b" "HGC 4, 1218")`. Any other reference (SNG, Sear, RPC…) works the same way, and in a `;` list a RIC, RRC, SC, Bop or Price reference is looked up instead.
+- **BCD Boiotia 174b; HGC 4, 1218** — choose the catalogue **Other (prices only)** and type it in the reference field: neither has open type data, so the card says so, and acsearch is searched for the lots that cite either reference, each as an exact phrase: `("BCD Boiotia 174b" "HGC 4, 1218")`. Any other reference (SNG, Sear, RPC…) works the same way. Typed in the **Reference** box instead, a `;` list is listed reference by reference (prices-only rows, nothing fetched until you pick one), and a single RIC, RRC, SC, Bop or Price reference among them is looked up at once.
 - **RPC I 1234** — priced the same way, and the card also has an **RPC online ↗** link to that coin's page on RPC Online (**RPC V.2 1234** goes to part 2 of volume V). It opens only when you select it; Giga Pinax never contacts RPC itself.
 - **Look up** fetches prices too. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices**.
 - If the popup says no hammer prices could be counted, it quotes up to five prices exactly as acsearch showed them — send that line so the price reader can learn the format.
