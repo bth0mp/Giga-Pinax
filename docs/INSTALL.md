@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.7.0** looks up RIC, RRC and Price coin types from the American Numismatic Society's open OCRE, CRRO and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you select **Look up**, and `www.acsearch.info` when a type resolves (**Look up** or a "Did you mean" choice) or you select **Get prices**. Nothing else is contacted and nothing from acsearch is stored.
+Version **0.7.0** looks up RIC, RRC and Price coin types from the American Numismatic Society's open OCRE, CRRO and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a "Did you mean" choice or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip) or you select **Get prices**. Nothing else is contacted and nothing from acsearch is stored.
 
 ## Build the packages
 

@@ -152,6 +152,8 @@ function renderCandidates(candidates, corpus) {
 
 // A chip is a user action like a "Did you mean" choice: it fills the guided fields from the stored title (so the acsearch term follows it) and makes no permission request.
 function renderRecent() {
+  // Rebuilding drops focus to body; the chip just used always moves to first place, so focus returns there.
+  const refocus = $('recent-list').contains(document.activeElement);
   $('recent-list').replaceChildren(...preferences.recent.map((entry) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
@@ -168,6 +170,8 @@ function renderRecent() {
     return item;
   }));
   $('recent').hidden = preferences.recent.length === 0;
+  const first = $('recent-list').querySelector('button');
+  if (refocus && first) first.focus();
 }
 
 function renderPrices(summary, currency, term) {
@@ -246,7 +250,10 @@ async function run(perform) {
     const granted = await hasAcsearchAccess();
     if (id !== requestId || ticket !== priceRequestId) return;
     if (granted) runPrices(term, currency, { remember: false });
-    else showPricesNote(ACCESS_HINT, false);
+    else {
+      showPricesNote(ACCESS_HINT, false);
+      $('announcement').textContent = `Found ${outcome.card.label}. ${ACCESS_HINT}`;
+    }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`);

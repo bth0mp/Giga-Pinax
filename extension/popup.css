@@ -52,6 +52,7 @@ select,input {width:100%; height:38px; border:1px solid var(--border); border-ra
 .recent {padding:8px 20px 10px; border-bottom:1px solid var(--border);}
 .recent .field-hint {margin-top:0;}
 .recent-list {list-style:none; margin:4px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
+.recent-list li {min-width:0; max-width:100%;}
 .recent-list button {max-width:100%; border:1px solid var(--border); border-radius:999px; background:var(--soft); color:var(--ink); font-size:11px; padding:4px 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .result {padding:12px 20px;}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}

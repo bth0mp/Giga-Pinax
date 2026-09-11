@@ -14,7 +14,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 - Guided entry for Price numbers, an RRC (Crawford) number, or RIC volume/edition, ruler section and number.
 - Exact-title matching against the ANS search API; near matches are offered as a short list.
 - Ruler, denomination, mint, material, date range, obverse and reverse legends and descriptions.
-- When a type resolves (**Look up** or a "Did you mean" choice), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type).
+- When a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type).
 - A **Recent** row under the form re-opens your last six types with one click.
 - Median hammer price, middle 50% with a range visual, date span, and an expandable list of the sales linking to acsearch.
 - Currency USD, EUR, GBP or CHF is passed to acsearch; a price quoted in a different currency is left out rather than mixed in.

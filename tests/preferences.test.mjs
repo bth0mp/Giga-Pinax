@@ -86,3 +86,10 @@ test('rememberRecent puts the newest type first, drops its older copy, keeps six
   preferences = rememberRecent(preferences, { id: 'price.4', corpus: 'ocre', label: 'Other corpus, same id' });
   assert.equal(preferences.recent.filter((e) => e.id === 'price.4').length, 2);
 });
+
+test('rememberRecent caps ids like restore does, so a round trip is identical', () => {
+  const long = 'x'.repeat(200);
+  const remembered = rememberRecent(restorePreferences(null), { id: long, corpus: 'pella', label: 'L' });
+  assert.equal(remembered.recent[0].id.length, 120);
+  assert.deepEqual(restorePreferences(JSON.stringify(remembered)).recent, remembered.recent);
+});

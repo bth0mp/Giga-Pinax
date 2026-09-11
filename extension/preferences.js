@@ -48,7 +48,7 @@ export function restorePreferences(raw) {
 }
 
 export function rememberRecent(preferences, card) {
-  const entry = { id: card.id, corpus: card.corpus, label: String(card.label).slice(0, 120) };
+  const entry = { id: String(card.id).slice(0, 120), corpus: card.corpus, label: String(card.label).slice(0, 120) };
   const older = preferences.recent.filter((other) => other.corpus !== entry.corpus || other.id !== entry.id);
   return { ...preferences, recent: [entry, ...older].slice(0, RECENT_LIMIT) };
 }
