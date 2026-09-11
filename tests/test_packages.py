@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -6,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +168,32 @@ class PackageBuildTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("inside the project", result.stderr.lower())
             self.assertFalse(outside.exists())
+
+
+def load_build_script():
+    spec = importlib.util.spec_from_file_location("giga_pinax_build", BUILD_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ReplaceRetryTests(unittest.TestCase):
+    def test_retries_a_transient_access_denied(self) -> None:
+        build = load_build_script()
+        denied = PermissionError(13, "Access is denied")
+        with mock.patch.object(build.os, "replace", side_effect=[denied, None]) as replace, \
+                mock.patch.object(build.time, "sleep"):
+            build.replace_with_retry(Path("staged.zip"), Path("dist.zip"))
+        self.assertEqual(2, replace.call_count)
+
+    def test_gives_up_after_the_last_attempt(self) -> None:
+        build = load_build_script()
+        denied = PermissionError(13, "Access is denied")
+        with mock.patch.object(build.os, "replace", side_effect=denied) as replace, \
+                mock.patch.object(build.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                build.replace_with_retry(Path("staged.zip"), Path("dist.zip"))
+        self.assertEqual(5, replace.call_count)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -127,6 +128,19 @@ def replace_known_directory(staged: Path, destination: Path, output_root: Path) 
     shutil.move(str(staged), str(destination))
 
 
+def replace_with_retry(source: Path, destination: Path, attempts: int = 5) -> None:
+    # ponytail: the project's SMB share (Z:) briefly denies overwriting a just-written zip
+    # (WinError 5, ~1 build in 12); retry for up to ~1 s, then give up with the real error.
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2)
+
+
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
@@ -141,7 +155,7 @@ def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
             destination_directory = output_root / browser
             destination_zip = output_root / f"giga-pinax-{browser}-{version}.zip"
             replace_known_directory(staged_directory, destination_directory, output_root)
-            os.replace(staged_zip, destination_zip)
+            replace_with_retry(staged_zip, destination_zip)
             results.extend((destination_directory, destination_zip))
         return results
     finally:
