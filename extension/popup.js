@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
-import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices } from './prices.js';
+import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
 import { DEFAULT_NUMBER, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +12,7 @@ const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acse
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
+const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5” or “Price 23”, or use the fields below.';
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
 const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.' };
@@ -25,6 +26,8 @@ let preferences = restorePreferences(rawPreferences);
 let requestId = 0;
 let priceRequestId = 0;
 let currentCard = null;
+// What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
+let shownPrices = null;
 
 const labelCache = {
   read() { try { return JSON.parse(localStorage.getItem(LABELS_KEY)) ?? {}; } catch { return {}; } },
@@ -80,6 +83,7 @@ function setPricesBusy(busy) {
 
 function clearPrices() {
   priceRequestId += 1;
+  shownPrices = null;
   $('prices-panel').hidden = true;
   $('prices-error').hidden = true;
   $('prices-note').hidden = true;
@@ -213,6 +217,7 @@ function renderPrices(summary, currency, term) {
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   $('sale-details').open = false;
+  shownPrices = { summary, currency, term };
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   $('announcement').textContent = `Median ${spoken} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
@@ -281,7 +286,10 @@ async function runPrices(term, currency, { remember = true } = {}) {
   if (outcome.status === 'ok') renderPrices(outcome.summary, currency, term);
   else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
-  else if (outcome.status === 'unpriced') showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.`, false);
+  else if (outcome.status === 'unpriced') {
+    const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
+    showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
+  }
   else showPricesError(ACSEARCH_NETWORK_MESSAGE);
 }
 
@@ -356,6 +364,17 @@ $('reference-form').addEventListener('submit', async (event) => {
   run(() => lookupType(currentReference(), { cache: labelCache }));
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
+// writeText is the first call in the click, so it keeps the user gesture; a missing clipboard API throws here and is reported like a refusal.
+$('copy-summary').addEventListener('click', async () => {
+  if (!currentCard || !shownPrices) return;
+  const { summary, currency, term } = shownPrices;
+  try {
+    await navigator.clipboard.writeText(summaryText(currentCard, summary, currency, term));
+    $('announcement').textContent = 'Summary copied.';
+  } catch {
+    $('announcement').textContent = COPY_FAILED_MESSAGE;
+  }
+});
 $('prices-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!currentCard || $('prices-button').disabled) return;

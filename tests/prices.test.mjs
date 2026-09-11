@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText } from '../extension/prices.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -149,7 +149,7 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   const many = await fetchPrices({ term: 'Nero', currency: 'USD' }, { fetchImpl: fakeFetch(page(Array.from({ length: 150 }, (_, index) => lot(String(index + 1), '01.01.2024', String(index))))) });
   assert.equal(many.summary.priced.length, 100);
   assert.equal(many.summary.capped, true);
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q' });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q', examples: ['200 EUR', '300 EUR'] });
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
@@ -166,4 +166,39 @@ test('defaultTerm ignores a typed catalogue prefix', () => {
   assert.equal(defaultTerm({ catalogue: 'RRC', number: 'RRC 44/5' }), 'Crawford 44/5');
   assert.equal(defaultTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), 'Crawford 44/5');
   assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), 'Price 23');
+});
+
+test('summarise lists up to five raw prices it could not count, skipping blanks, * and digit-free markers', () => {
+  const lots = [lot('100'), lot(''), lot('*'), lot('-'), lot('1.200,- €'), lot('3000 CHF (3300 USD)'), lot('abc'), lot('x1'), lot('x2'), lot('x3'), lot('x4')];
+  assert.deepEqual(summarise(lots, 'USD').uncounted, ['1.200,- €', '3000 CHF (3300 USD)', 'x1', 'x2', 'x3']);
+  assert.deepEqual(summarise([lot('100'), lot('')], 'USD').uncounted, []);
+});
+
+test('fetchPrices quotes unrecognised prices only when there are some', async () => {
+  const page = (lots) => `<script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script>`;
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('1.200,- €'), lot('')])) }), { status: 'unpriced', term: 'q', examples: ['1.200,- €'] });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
+});
+
+test('summaryText produces a shareable plain-text summary', () => {
+  const amounts = ['90', '110', '135', '165', '180', '215', '245', '310', '450'];
+  const summary = summarise(amounts.map((price, i) => lot(price, `01.01.${2020 + (i % 4)}`, String(i))).concat([lot('1.200,- €')]), 'USD');
+  assert.equal(summaryText({ label: 'Price 23', corpus: 'pella', id: 'price.23' }, summary, 'USD', 'Price 23'), [
+    'Price 23',
+    'Median hammer $180 · middle 50% $135–$245 · 9 sales matching “Price 23” · 2020–2023',
+    'Not counted: “1.200,- €”',
+    'https://numismatics.org/pella/id/price.23',
+  ].join('\n'));
+  const one = summarise([lot('500', '01.01.2024')], 'CHF');
+  assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, one, 'CHF', 'Crawford 1/1'), [
+    'RRC 1/1',
+    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · 1 sale matching “Crawford 1/1” · 2024',
+    'https://numismatics.org/crro/id/rrc-1.1',
+  ].join('\n'));
+});
+
+test('summaryText collapses whitespace inside a quoted raw price so a copied line never splits', () => {
+  const summary = summarise([lot('500', '01.01.2024'), lot('1.200,-\n€')], 'USD');
+  assert.deepEqual(summary.uncounted, ['1.200,-\n€']);
+  assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, summary, 'USD', 'Crawford 1/1').split('\n')[2], 'Not counted: “1.200,- €”');
 });

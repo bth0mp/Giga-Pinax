@@ -68,9 +68,11 @@ export function defaultTerm({ catalogue, number, section }) {
 }
 
 const PAGE_SIZE = 100;
+const EXAMPLE_LIMIT = 5;
 
 export function summarise(lots, currency) {
-  const priced = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price, currency) })).filter((entry) => entry.amount !== null);
+  const parsed = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price, currency) }));
+  const priced = parsed.filter((entry) => entry.amount !== null);
   const amounts = priced.map((entry) => entry.amount).sort((a, b) => a - b);
   const at = (fraction) => {
     const position = fraction * (amounts.length - 1);
@@ -96,6 +98,8 @@ export function summarise(lots, currency) {
     max: has ? amounts[amounts.length - 1] : null,
     earliest: years.length ? Math.min(...years) : null,
     latest: years.length ? Math.max(...years) : null,
+    // Raw prices the strict parser (or the currency check) rejected, so the collector can report an unseen format; blank, "*" and "-" style markers are not prices.
+    uncounted: parsed.filter((entry) => entry.amount === null && /\d/.test(entry.price)).slice(0, EXAMPLE_LIMIT).map((entry) => entry.price),
   };
 }
 
@@ -113,11 +117,27 @@ export async function fetchPrices({ term, currency }, options = {}) {
     const page = lots.slice(0, PAGE_SIZE);
     const summary = summarise(page, currency);
     if (summary.signedOut) return { status: 'signed-out' };
-    if (summary.count === 0) return { status: 'unpriced', term };
+    if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };
     return { status: 'ok', summary };
   } catch {
     return { status: 'network' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export const quoteList = (texts) => texts.map((text) => `“${text}”`).join(', ');
+
+export function summaryText(card, summary, currency, term) {
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const { count } = summary;
+  let stats = `Median hammer ${money.format(summary.median)} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
+  stats += ` · ${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  const lines = [card.label, stats];
+  // Squash each quoted raw price so a newline or tab from acsearch can't split a copied line.
+  if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted.map(squash))}`);
+  lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
+  // Plain text for pasting: Intl puts no-break spaces in amounts such as "CHF 500".
+  return lines.join('\n').replace(/[\u00a0\u202f]/g, ' ');
 }
