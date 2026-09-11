@@ -25,6 +25,7 @@ ASSET_PATHS = (
     "popup.html",
     "popup.css",
     "popup.js",
+    "theme.js",
     "lookup.js",
     "preferences.js",
     "prices.js",

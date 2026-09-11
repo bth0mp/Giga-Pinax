@@ -1,6 +1,6 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, fetchPrices, quoteList, summaryText } from './prices.js';
-import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
+import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BOP_KINGS, RIC_VOLUMES, sectionsOf, selectOptions } from './catalogues.js';
 import { queryFromSearch } from './selection.js';
 
@@ -47,6 +47,35 @@ const labelCache = {
     try { localStorage.setItem(LABELS_KEY, JSON.stringify(this.labels)); } catch { /* cache is optional */ }
   },
 };
+
+// Light or dark: the popup follows the system scheme until the header button is used. That choice is stored under its own key as a bare
+// 'light' or 'dark' (theme.js applies it before the first paint; restoreTheme validates it here too, so anything else falls back to the system).
+const darkScheme = matchMedia('(prefers-color-scheme: dark)');
+const shownTheme = () => document.documentElement.dataset.theme || (darkScheme.matches ? 'dark' : 'light');
+
+// The button is "pressed" while dark is shown, and its icon shows what a click switches to: a moon in light, a sun in dark.
+function syncThemeButton() {
+  const dark = shownTheme() === 'dark';
+  $('theme-toggle').setAttribute('aria-pressed', String(dark));
+  $('theme-toggle').title = dark ? 'Switch to light theme' : 'Switch to dark theme';
+  $('icon-sun').hidden = !dark;
+  $('icon-moon').hidden = dark;
+}
+
+function applyStoredTheme() {
+  let theme = '';
+  try { theme = restoreTheme(localStorage.getItem(THEME_KEY)); } catch { /* unreadable storage: follow the system */ }
+  if (theme) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+}
+
+// A click switches to the opposite of what is shown and remembers it; a failed write shows the storage note like any other preference.
+function chooseTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); }
+  catch { $('storage-note').hidden = false; }
+  syncThemeButton();
+}
 
 function currentReference() {
   return { catalogue: $('catalogue').value, number: $('reference-number').value,
@@ -367,6 +396,8 @@ $('reference-number').value = preferences.number;
 fillSelects(preferences.catalogue, preferences.volume, preferences.section);
 updateFields();
 renderRecent();
+applyStoredTheme();
+syncThemeButton();
 
 $('quick-reference').addEventListener('change', () => {
   if (!$('quick-reference').value.trim() || !applyQuickReference()) return;
@@ -456,6 +487,9 @@ $('prices-form').addEventListener('submit', async (event) => {
   if (!allowed) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
   runPrices(term, currency);
 });
+$('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));
+// Only matters while following the system: shownTheme reads a stored choice first.
+darkScheme.addEventListener('change', syncThemeButton);
 
 // A right-click lookup opens popup.html?q=<selection>: the text goes only into the Reference box, and requestSubmit runs the same submit handler as Look up.
 const selected = queryFromSearch(location.search);

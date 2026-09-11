@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION } from '../extension/preferences.js';
+import { readFileSync } from 'node:fs';
+import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] };
 
@@ -117,4 +118,21 @@ test('Bop is a remembered catalogue with its own default number and king, and bi
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'Price' })).section, 'Nero');
   const recent = [{ id: 'bigr.euthydemus_i.13.1', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1' }];
   assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, recent);
+});
+
+test('restoreTheme keeps only an exact light or dark choice; anything else follows the system', () => {
+  assert.equal(THEME_KEY, 'giga-pinax-theme-v1');
+  assert.deepEqual([...THEMES], ['light', 'dark']);
+  assert.ok(Object.isFrozen(THEMES));
+  assert.equal(restoreTheme('light'), 'light');
+  assert.equal(restoreTheme('dark'), 'dark');
+  for (const raw of [null, undefined, '', 'Dark', 'system', 'auto', ' dark', '"dark"', 0, {}, []]) assert.equal(restoreTheme(raw), '', String(raw));
+});
+
+test('theme.js is a classic pre-paint script that reads the same key and accepts the same two values', () => {
+  const source = readFileSync(new URL('../extension/theme.js', import.meta.url), 'utf8');
+  assert.ok(source.includes(`'${THEME_KEY}'`));
+  assert.ok(!/^\s*(?:import|export)\b/m.test(source));
+  for (const theme of THEMES) assert.ok(source.includes(`=== '${theme}'`), theme);
+  assert.ok(source.includes('dataset.theme = theme'));
 });

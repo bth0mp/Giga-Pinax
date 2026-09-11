@@ -4,6 +4,10 @@ export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/
 // The section field is the RIC ruler or mint section for RIC and the king for Bop; a catalogue change resets it like the number.
 export const DEFAULT_SECTION = Object.freeze({ RIC: 'Nero', Bop: 'Euthydemus I' });
 export const RECENT_LIMIT = 6;
+export const THEME_KEY = 'giga-pinax-theme-v1';
+export const THEMES = Object.freeze(['light', 'dark']);
+// The stored light/dark choice, or '' for "follow the system"; theme.js applies the same rule before the first paint.
+export const restoreTheme = (raw) => (THEMES.includes(raw) ? raw : '');
 const TERM_LIMIT = 50;
 const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco', 'bigr']);
 

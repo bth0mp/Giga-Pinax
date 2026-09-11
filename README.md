@@ -1,6 +1,6 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.13.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/), Bopearachchi (Bop) references through [BIGR](https://numismatics.org/bigr/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.14.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/), Bopearachchi (Bop) references through [BIGR](https://numismatics.org/bigr/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
 
 acsearch has approved this workflow for the extension: each collector uses their own account, one search runs per click, one page of results is read, and nothing from acsearch is stored. Prices require an acsearch account that includes hammer prices (Premium); without one the extension says so and links to their sign-in page.
 
@@ -18,6 +18,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 - When a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type). For Bopearachchi types the search starts as `(Hermaeus Hermaios) "Bopearachchi 20"`: the king in both spellings dealers use and the citation as an exact phrase.
 - A **Recent** row under the form re-opens your last six types with one click.
 - **Alt+Shift+G** opens the popup (change it at `brave://extensions/shortcuts` or in Firefox's Manage Extension Shortcuts).
+- A light or dark look: the popup follows your system theme until you select the sun or moon button in the header, and that choice is remembered.
 - Median hammer price, middle 50% with a range visual, date span, and an expandable list of the sales linking to acsearch.
 - **Copy summary** copies the type, median, middle 50%, sale count, search term, years, type link and any prices it couldn't count, as plain text.
 - Currency USD, EUR, GBP or CHF is passed to acsearch; a price quoted in a different currency is left out rather than mixed in.
@@ -31,7 +32,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 ```
 
-The runtime has no dependencies. Building uses Python's standard library. `web-ext` is used only for validation. Fixtures under `tests/fixtures/` are real API responses captured on 2026-09-10 and 2026-09-11, including a logged-out acsearch page trimmed to three lots.
+The runtime has no dependencies. Building uses Python's standard library; `python scripts/make_icons.py` redraws the toolbar icon PNGs from the geometry of `extension/icon.svg` and needs Pillow, a development tool that is never packaged. `web-ext` is used only for validation. Fixtures under `tests/fixtures/` are real API responses captured on 2026-09-10 and 2026-09-11, including a logged-out acsearch page trimmed to three lots.
 
 ## History
 

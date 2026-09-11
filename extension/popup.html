@@ -6,14 +6,19 @@
   <meta name="color-scheme" content="light dark">
   <title>Giga Pinax</title>
   <link rel="icon" href="icons/icon-32.png">
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="popup.css">
   <script src="popup.js" type="module"></script>
 </head>
 <body>
   <main class="popup">
     <header class="popup-header">
-      <img class="brand-icon" src="icons/icon-48.png" width="34" height="34" alt="">
+      <img class="brand-icon" src="icons/icon-48.png" width="32" height="32" alt="">
       <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
+      <button id="theme-toggle" class="icon-button" type="button" aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme">
+        <svg id="icon-moon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg id="icon-sun" aria-hidden="true" viewBox="0 0 24 24" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
     </header>
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
@@ -33,7 +38,7 @@
         <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
       </form>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
-      <section id="result" class="result" aria-labelledby="result-reference" hidden>
+      <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a></div>
         <dl class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>

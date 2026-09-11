@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.13.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a "Did you mean" choice or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip) or you select **Get prices**. Nothing else is contacted and nothing from acsearch is stored.
+Version **0.14.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a "Did you mean" choice or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip) or you select **Get prices**. Nothing else is contacted and nothing from acsearch is stored.
 
 The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.13.0.zip
-dist/giga-pinax-firefox-0.13.0.zip
+dist/giga-pinax-brave-0.14.0.zip
+dist/giga-pinax-firefox-0.14.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.13.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.14.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.13.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.14.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -67,6 +67,7 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - A number that doesn't exist, such as **RIC I² Nero 9999999**: the popup says it was not found rather than inventing a result.
 - **RIC I Nero 306** typed in the Reference box with the edition left out: a short "Did you mean" list offers the full reference, and choosing it sets the lists.
 - Close and reopen the popup: your last reference, currency and terms are remembered locally.
+- Select the sun or moon button in the header: the popup switches between its light and dark look and remembers the choice; until then it follows your system theme.
 - Look up two or three types, close and reopen the popup, and choose one from **Recent**.
 - Press **Alt+Shift+G** to open Giga Pinax without the mouse. If nothing happens, the key is taken — set another at `brave://extensions/shortcuts` or in Firefox under Add-ons › ⚙ › Manage Extension Shortcuts.
 
