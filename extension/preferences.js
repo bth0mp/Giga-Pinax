@@ -1,5 +1,6 @@
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
+export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5' });
 const TERM_LIMIT = 50;
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
@@ -21,7 +22,7 @@ export function restorePreferences(raw) {
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,
-    number: text(saved.number, { Price: '23', RIC: '306', RRC: '44/5' }[catalogue]),
+    number: text(saved.number, DEFAULT_NUMBER[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),
     section: text(saved.section, 'Nero'),
     terms: restoreTerms(saved.terms),

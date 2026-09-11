@@ -1,6 +1,6 @@
 import { HOST_ORIGINS, lookupById, lookupType } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices } from './prices.js';
-import { STORAGE_KEY, rememberTerm, restorePreferences } from './preferences.js';
+import { DEFAULT_NUMBER, STORAGE_KEY, rememberTerm, restorePreferences } from './preferences.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -11,11 +11,10 @@ const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connecti
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
-const DEFAULT_NUMBER = { Price: '23', RIC: '306', RRC: '44/5' };
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
 const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.' };
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: RRC 44/5' };
+const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: I (2nd edition), Nero 306', RRC: 'Example: 44/5' };
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }

@@ -161,3 +161,9 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
 test('defaultTerm uses Crawford wording for RRC, which acsearch lists far more often', () => {
   assert.equal(defaultTerm({ catalogue: 'RRC', number: ' 44/5 ' }), 'Crawford 44/5');
 });
+
+test('defaultTerm ignores a typed catalogue prefix', () => {
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'RRC 44/5' }), 'Crawford 44/5');
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), 'Crawford 44/5');
+  assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), 'Price 23');
+});

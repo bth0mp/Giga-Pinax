@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -112,7 +112,7 @@ test('lookupType resolves an exact RIC match into a labelled card and caches lab
   assert.equal(result.card.mint, 'Rome');
   assert.equal(result.card.material, 'ae');
   assert.equal(cache.get('nero'), 'Nero');
-  assert.ok(fetchImpl.calls[0].endsWith('/ocre/apis/search?q=RIC%20I%20(second%20edition)%20Nero%20306'));
+  assert.ok(fetchImpl.calls[0].endsWith('/ocre/apis/search?q=%22RIC%20I%20(second%20edition)%20Nero%20306%22'));
   assert.ok(fetchImpl.calls[0].startsWith('https://numismatics.org/'));
   assert.ok(!fetchImpl.calls.some((url) => url.includes('rome.jsonld')));
 });
@@ -181,4 +181,40 @@ test('authority still wins over issuer when a record has both', () => {
     'nmo:hasAuthority': [{ '@id': 'http://nomisma.org/id/nero' }], 'nmo:hasIssuer': [{ '@id': 'http://nomisma.org/id/anonymous' }] }] };
   assert.deepEqual(nomismaSlugs(jsonld), ['nero']);
   assert.equal(toCard(jsonld, 'crro', {}).authority, 'nero');
+});
+
+test('referenceNumber strips a typed catalogue prefix for RRC and Price only', () => {
+  for (const typed of ['44/5', 'RRC 44/5', 'rrc44/5', 'Crawford 44/5', 'Cr. 44/5', ' Cr 44/5 ']) assert.equal(referenceNumber('RRC', typed), '44/5');
+  assert.equal(referenceNumber('Price', 'Price 23'), '23');
+  assert.equal(referenceNumber('RIC', 'RIC 306'), 'RIC 306');
+  assert.deepEqual(buildQuery({ catalogue: 'RRC', number: 'Crawford 44/5' }), { corpus: 'crro', query: 'RRC 44/5' });
+  assert.deepEqual(buildQuery({ catalogue: 'Price', number: 'price 23' }), { corpus: 'pella', query: 'Price 23' });
+});
+
+test('lookupType resolves an exact reference from the quoted search without a second search', async () => {
+  const fetchImpl = fakeFetch({
+    'crro/apis/search?q=%22': fixture('crro-search-quoted-rrc-1-1.xml'),
+    'crro/id/rrc-1.1.jsonld': fixture('crro-rrc-1-1.jsonld'),
+  });
+  const result = await lookupType({ catalogue: 'RRC', number: 'RRC 1/1' }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.label, 'RRC 1/1');
+  assert.ok(fetchImpl.calls[0].includes('/crro/apis/search?q=%22RRC%201%2F1%22'));
+  assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
+});
+
+test('lookupType falls back to the plain search for suggestions, and CRRO suggestions stay in the typed group', async () => {
+  const ocre = fakeFetch({ 'ocre/apis/search?q=%22': '<feed></feed>', 'ocre/apis/search?q=': fixture('ocre-search-nero-306.xml') });
+  const near = await lookupType({ catalogue: 'RIC', volume: 'I', section: 'Nero', number: '306' }, { fetchImpl: ocre });
+  assert.equal(near.status, 'candidates');
+  assert.equal(near.query, 'RIC I Nero 306');
+  assert.deepEqual(near.candidates.map((entry) => entry.id), ['ric.1(2).ner.306']);
+  assert.equal(ocre.calls.filter((url) => url.includes('/apis/search')).length, 2);
+
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  const unrelated = fakeFetch({ 'crro/apis/search?q=%22': '<feed></feed>', 'crro/apis/search?q=': feed('RRC 480/5a', 'RRC 480/5') });
+  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl: unrelated }), { status: 'none', corpus: 'crro', query: 'RRC 44/5a' });
+  const related = fakeFetch({ 'crro/apis/search?q=%22': '<feed></feed>', 'crro/apis/search?q=': feed('RRC 480/5a', 'RRC 44/5', 'RRC 44/6') });
+  const kept = await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl: related });
+  assert.deepEqual(kept.candidates.map((entry) => entry.title), ['RRC 44/5', 'RRC 44/6']);
 });

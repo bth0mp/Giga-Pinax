@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restorePreferences, rememberTerm, STORAGE_KEY, CURRENCIES } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER } from '../extension/preferences.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {} };
 
@@ -54,4 +54,9 @@ test('RRC is a remembered catalogue with its own default number', () => {
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RRC' })).catalogue, 'RRC');
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RRC' })).number, '44/5');
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RPC' })).catalogue, 'Price');
+});
+
+test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
+  assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5' });
+  assert.ok(Object.isFrozen(DEFAULT_NUMBER));
 });

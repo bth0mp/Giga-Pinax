@@ -5,13 +5,21 @@ const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'four
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 
+// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Price 23") would otherwise be doubled in the query and the acsearch term.
+const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?) ?/i, Price: /^Price ?/i };
+
+export function referenceNumber(catalogue, number) {
+  const value = squash(number);
+  return Object.hasOwn(PREFIX, catalogue) ? value.replace(PREFIX[catalogue], '') : value;
+}
+
 export function buildQuery({ catalogue, number, volume, section }) {
   if (catalogue === 'RIC') {
     const edition = squash(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
     return { corpus: 'ocre', query: squash(`RIC ${edition} ${squash(section)} ${squash(number)}`) };
   }
-  if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${squash(number)}`) };
-  return { corpus: 'pella', query: squash(`Price ${squash(number)}`) };
+  if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${referenceNumber('RRC', number)}`) };
+  return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -145,13 +153,23 @@ export async function lookupById(corpus, id, options = {}) {
   }
 }
 
+// CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group.
+function sameGroup(picked, corpus, reference) {
+  if (corpus !== 'crro' || picked.status !== 'candidates') return picked;
+  const prefix = `rrc ${referenceNumber('RRC', reference.number).split('/')[0].trim()}/`;
+  const candidates = picked.candidates.filter((entry) => norm(entry.title).startsWith(prefix));
+  return candidates.length ? { status: 'candidates', candidates } : { status: 'none' };
+}
+
 export async function lookupType(reference, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
   const { corpus, query } = buildQuery(reference);
   const timer = withTimeout(timeoutMs);
+  const search = async (q) => parseFeed(await getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal));
   try {
-    const xml = await getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(query)}`, fetchImpl, timer.signal);
-    const picked = pickMatch(parseFeed(xml), query);
+    // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
+    let picked = pickMatch(await search(`"${query}"`), query);
+    if (picked.status !== 'ok') picked = sameGroup(pickMatch(await search(query), query), corpus, reference);
     if (picked.status !== 'ok') return { ...picked, corpus, query };
     return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal });
   } catch {

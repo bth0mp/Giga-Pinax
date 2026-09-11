@@ -1,4 +1,4 @@
-import { TIMEOUT_MS } from './lookup.js';
+import { TIMEOUT_MS, referenceNumber } from './lookup.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -63,8 +63,8 @@ export function parsePrice(text, currency) {
 
 export function defaultTerm({ catalogue, number, section }) {
   if (catalogue === 'RIC') return squash(`${squash(section)} ${squash(number)}`);
-  if (catalogue === 'RRC') return squash(`Crawford ${squash(number)}`);
-  return squash(`Price ${squash(number)}`);
+  if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
+  return squash(`Price ${referenceNumber('Price', number)}`);
 }
 
 const PAGE_SIZE = 100;
