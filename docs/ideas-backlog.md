@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 3 (recent lookups).
+- v0.7 recent lookups (streamlining item 3, plus the three v0.6 minors from item 7): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.7-recent.md`.
 
 ## Streamlining the extension
 
@@ -26,7 +26,7 @@ ANS runs several type corpora on the same Numishare software as OCRE and PELLA, 
 1. ~~**CRRO**~~ — shipped in v0.4 (see Done). Crawford RRC references. *Probed 2026-09-10:* `numismatics.org/crro/apis/search?q=RRC 44/5` returns title `RRC 44/5`, id `rrc-44.5`, CORS open — exact-title matching works as-is, so this is a third catalogue option plus a query rule (`RRC {number}`).
 2. **SCO / Seleucid Coins Online** and **PCO / Ptolemaic Coins Online**. *Probed:* both CORS open, but titles differ from the collector's shorthand — SCO `Seleucid Coins (part 1) 1266.2` (id `sc.1.1266.2`), PCO indexes CPE not Svoronos (`Coins of the Ptolemaic Empire Vol. I, Part II, no. B549`, id `cpe.1_2.B549`). Needs a per-corpus title builder, and PCO needs a Svoronos→CPE story before it helps.
 3. **HRC** (Hellenistic Royal Coinages) and **Coins of the Roman Empire** extensions as coverage grows.
-4. **RPC Online** (Oxford, Roman Provincial Coinage) — provincial references; separate site and API, check its terms.
+4. **RPC Online** (Oxford, Roman Provincial Coinage) — provincial references; separate site and API, check its terms. *Probed 2026-09-11:* every URL, including the home page, answers `403 Forbidden` to a plain scripted request — bot protection, not a public API. Don't work around it; ask the RPC team about an approved integration (as with acsearch) before planning anything.
 5. **Specimen thumbnails** from OCRE/PELLA example coins (IIIF images from ANS, BM, BnF) in the type card.
 6. **Numista** — has an official API with a key; natural backbone for the **Giga Collection** tracker (your coins, purchase price vs current median, CSV export).
 7. **Upcoming-sale alerts** (NumisBids, Sixbid, Biddr, CoinArchives) — "this type is in an auction next week". Each needs its own permission check before any fetch.
