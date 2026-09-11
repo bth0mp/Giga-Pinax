@@ -60,6 +60,15 @@ export function rememberRecent(preferences, card) {
   return { ...preferences, recent: [entry, ...older].slice(0, RECENT_LIMIT) };
 }
 
+// The Reference box's ArrowUp and ArrowDown walk the Recent labels, storing nothing: position -1 is the empty box, 0 the newest label. Up goes older and
+// stops at the oldest, down goes newer and ends at the empty box. Null leaves the key to the box: it holds typed text, or there is nowhere to go.
+export function recallStep(recent, position, value, key) {
+  const shown = value === '' ? -1 : recent[position]?.label === value ? position : null;
+  if (shown === null) return null;
+  const next = Math.max(-1, Math.min(shown + (key === 'ArrowUp' ? 1 : -1), recent.length - 1));
+  return next === shown ? null : { position: next, text: next < 0 ? '' : recent[next].label };
+}
+
 export function rememberTerm(preferences, typeId, term) {
   if (!String(term).trim()) return preferences;
   const terms = { ...preferences.terms };

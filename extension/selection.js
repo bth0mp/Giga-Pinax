@@ -1,9 +1,13 @@
+import { INVISIBLE } from './lookup.js';
+
 export const MAX_SELECTION = 120;
 
-// Whitespace squashed, capped at 120 characters; a longer text is cut after its last whole ";" reference, so none is searched cut short
-// ("…; Rosen 567" as "Rosen 56").
+// The hidden characters dealer pages add go before the cap, and a lone surrogate is made well-formed where the browser can, so encodeURIComponent
+// never throws on it. Whitespace squashed, capped at 120 characters; a longer text is cut after its last whole ";" reference, so none is searched cut
+// short ("…; Rosen 567" as "Rosen 56").
 export function selectionQuery(text) {
-  const chars = Array.from(String(text ?? '').replace(/\s+/g, ' ').trim());
+  const raw = String(text ?? '');
+  const chars = Array.from((raw.toWellFormed?.() ?? raw).replace(INVISIBLE, '').replace(/\s+/g, ' ').trim());
   const kept = chars.slice(0, MAX_SELECTION).join('');
   return (chars.length > MAX_SELECTION && kept.includes(';') ? kept.slice(0, kept.lastIndexOf(';')) : kept).trim();
 }
@@ -26,4 +30,14 @@ export function cardFromSearch(search) {
   const params = new URLSearchParams(String(search ?? ''));
   const [corpus, id] = [params.get('corpus'), params.get('id')];
   return corpus && id ? { corpus, id } : null;
+}
+
+// One lookup window: the right-click and the pop-out send the address they would open to a window already open (a windowed popup page, which looks it
+// up and answers with its window id, brought to the front here). With none to answer (the send rejects, or nothing replies), a new window opens on it.
+export const LOOKUP_MESSAGE = 'giga-pinax-lookup';
+export async function showInWindow(api, url) {
+  let answer = null;
+  try { answer = await api.runtime.sendMessage({ type: LOOKUP_MESSAGE, url }); } catch { /* no window open */ }
+  if (!answer) await api.windows.create({ url: api.runtime.getURL(url), type: 'popup', width: 440, height: 680 });
+  else if (Number.isInteger(answer.windowId)) await api.windows.update(answer.windowId, { focused: true });
 }

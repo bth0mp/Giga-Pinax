@@ -1,0 +1,763 @@
+<?xml version="1.0" encoding="UTF-8"?><nudsGroup xmlns:mods="http://www.loc.gov/mods/v3" xmlns:mets="http://www.loc.gov/METS/" xmlns:nuds="http://nomisma.org/nuds" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.eucratides_i.28</recordId>
+        <otherRecordId localType="typeNumber">28</otherRecordId>
+        <otherRecordId localType="sortId">00502</otherRecordId>
+        <publicationStatus>approved</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:01:28+00:00">Mon, 15 Dec 2025 17:01:28 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Eucratides I 28</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q693690">bull</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q241045">bust</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q7378">elephant</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q6581072">female</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q33767">hand</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q696809">palm branch</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q207961">shape</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q189233">throne</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0150" notAfter="0001">late second/first century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_l_bigr">Denomination L</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/rectangle">Rectangle</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="statedAuthority" xlink:href="http://nomisma.org/id/eucratides_i_bactria">Eucratides I of Bactria</persname>
+                <authenticity xlink:type="simple" xlink:href="http://nomisma.org/id/contemporary_imitation">Contemporary Imitation</authenticity>
+            </authority>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΜΕΓΑΛΟΥ ΕΥΚΡΑΤΙΔΟΥ</legend>
+                <type>
+                    <description xml:lang="en">Bust of Eucratides I, diademed, draped and cuirassed right, wearing Boeotian helmet adorned with bull's horn and ear</description>
+                    <description xml:lang="fr">Buste d'Eucratides Ier, coiffé d'un diadième et d'un casque béotien orné des cornes et des oreilles d'un taureau, vêtu d'un drapé et d'une cuirassee</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="portrait" xlink:href="http://nomisma.org/id/eucratides_i_bactria">Eucratides I of Bactria</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="↓←↑">𐨐𐨬𐨁𐨯𐨁𐨩𐨅 𐨣𐨒𐨪 𐨡𐨅𐨬𐨟</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>Kavisiye nagara devata</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Female figure seated on throne left making a blessing gesture with right hand, holding a palm in left hand; to right hill?, to left forepart of elephant</description>
+                </type>
+                <corpname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/dioscuri">Dioscuri</corpname>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Eucratide I 24</tei:idno>
+            </reference>
+            <reference>
+                <tei:title key="http://nomisma.org/id/mitchiner-1976">Mitchiner</tei:title>
+                <tei:idno>194</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.eucratides_i.28.1</recordId>
+        <otherRecordId localType="typeNumber">28.1</otherRecordId>
+        <otherRecordId semantic="skos:broader">bigr.eucratides_i.28</otherRecordId>
+        <publicationStatus>approvedSubtype</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:01:28+00:00">Mon, 15 Dec 2025 17:01:28 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Eucratides I 28.1</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q693690">bull</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q241045">bust</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q7378">elephant</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q6581072">female</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q33767">hand</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q696809">palm branch</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q207961">shape</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q189233">throne</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0150" notAfter="0001">late second/first century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_l_bigr">Denomination L</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/rectangle">Rectangle</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="statedAuthority" xlink:href="http://nomisma.org/id/eucratides_i_bactria">Eucratides I of Bactria</persname>
+                <authenticity xlink:type="simple" xlink:href="http://nomisma.org/id/contemporary_imitation">Contemporary Imitation</authenticity>
+            </authority>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΜΕΓΑΛΟΥ ΕΥΚΡΑΤΙΔΟΥ</legend>
+                <type>
+                    <description xml:lang="en">Bust of Eucratides I, diademed, draped and cuirassed right, wearing Boeotian helmet adorned with bull's horn and ear</description>
+                    <description xml:lang="fr">Buste d'Eucratides Ier, coiffé d'un diadième et d'un casque béotien orné des cornes et des oreilles d'un taureau, vêtu d'un drapé et d'une cuirassee</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="portrait" xlink:href="http://nomisma.org/id/eucratides_i_bactria">Eucratides I of Bactria</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="↓←↑">𐨐𐨬𐨁𐨯𐨁𐨩𐨅 𐨣𐨒𐨪 𐨡𐨅𐨬𐨟</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>Kavisiye nagara devata</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Female figure seated on throne left making a blessing gesture with right hand, holding a palm in left hand; to right hill?, to left forepart of elephant</description>
+                </type>
+                <corpname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/dioscuri">Dioscuri</corpname>
+                <symbol position="rightField">
+                    <tei:div type="edition">
+                        <tei:ab>
+                            <tei:am>
+                                <tei:g type="nmo:Monogram" ref="https://numismatics.org/bigr/symbol/monogram.bop.272">Bopearachchi Monogram 272</tei:g>
+                            </tei:am>
+                        </tei:ab>
+                    </tei:div>
+                </symbol>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Eucratide I 24A</tei:idno>
+            </reference>
+            <reference>
+                <tei:title key="http://nomisma.org/id/mitchiner-1976">Mitchiner</tei:title>
+                <tei:idno>194a</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.euthydemus_i.13.1</recordId>
+        <otherRecordId localType="typeNumber">13.1</otherRecordId>
+        <otherRecordId semantic="skos:broader">bigr.euthydemus_i.13</otherRecordId>
+        <publicationStatus>approvedSubtype</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T16:52:52+00:00">Mon, 15 Dec 2025 16:52:52 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Euthydemus I 13.1</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q122248">Heracles</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q23640">head</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q726">horse</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0230" notAfter="-0190">late third century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_d_sco">Denomination D (half)</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/round">Round</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/euthydemus_i_bactria">Euthydemus I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/bactria">Bactria</geogname>
+            </geographic>
+            <obverse>
+                <type>
+                    <description xml:lang="en">Head of Heracles right</description>
+                    <description xml:lang="fr">Tête d'Héraclès à droite</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/heracles">Heracles</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="⇉">ΒΑΣΙΛΕΩΣ ΕΥΘΥΔΗΜΟΥ</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>basileōs euthydēmou</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Horse galloping right</description>
+                </type>
+                <symbol position="rightField">
+                    <tei:div type="edition">
+                        <tei:ab>
+                            <tei:space/>
+                        </tei:ab>
+                    </tei:div>
+                </symbol>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Euthydème I 24A</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.euthydemus_i.13</recordId>
+        <otherRecordId localType="typeNumber">13</otherRecordId>
+        <otherRecordId localType="sortId">00141</otherRecordId>
+        <publicationStatus>approved</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T16:52:51+00:00">Mon, 15 Dec 2025 16:52:51 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Euthydemus I 13</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q122248">Heracles</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q23640">head</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q726">horse</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0230" notAfter="-0190">late third century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_d_sco">Denomination D (half)</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/round">Round</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/euthydemus_i_bactria">Euthydemus I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/bactria">Bactria</geogname>
+            </geographic>
+            <obverse>
+                <type>
+                    <description xml:lang="en">Head of Heracles right</description>
+                    <description xml:lang="fr">Tête d'Héraclès à droite</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/heracles">Heracles</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="⇉">ΒΑΣΙΛΕΩΣ ΕΥΘΥΔΗΜΟΥ</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>basileōs euthydēmou</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Horse galloping right</description>
+                </type>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Euthydème I 24</tei:idno>
+            </reference>
+            <reference>
+                <tei:title key="http://nomisma.org/id/mitchiner-1976">Mitchiner</tei:title>
+                <tei:idno>99</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.strato_i.28</recordId>
+        <otherRecordId localType="typeNumber">28</otherRecordId>
+        <otherRecordId localType="sortId">00983</otherRecordId>
+        <publicationStatus>approved</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:12:34+00:00">Mon, 15 Dec 2025 17:12:34 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Strato I 28</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q37122">Athena</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q693690">bull</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q241045">bust</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q33767">hand</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q131559">shield</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q2794866">thunderbolt</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0105" notAfter="-0080">late second/early first century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/tetradrachm">Tetradrachm</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ar">Silver</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/round">Round</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/strato_i_bactria">Strato I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/indo-greek_kingdom">Indo-Greek Kingdoms</geogname>
+            </geographic>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΣΩΤΗΡΟΣ ΚΑΙ ΔΙΚΑΙΟΥ ΣΤΡΑΤΩΝΟΣ</legend>
+                <type>
+                    <description xml:lang="en">Bust of Strato I, diademed and draped, wearing Boeotian helmet adorned with bull's ear and horn right</description>
+                    <description xml:lang="fr">Buste de Straton Ier à droite, coiffé d'un diadième et d'un casque béotien orné des cornes et des oreilles d'un taureau, vêtu d'un drapé</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="portrait" xlink:href="http://nomisma.org/id/strato_i_bactria">Strato I of Bactria</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="↶(plus arrow below, going clockwise from right to left)">𐨨𐨱𐨪𐨗𐨯 𐨟𐨿𐨪𐨟𐨪𐨯 𐨢𐨿𐨪𐨨𐨁𐨐𐨯 𐨯𐨿𐨟𐨿𐨪𐨟𐨯</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>mahārājasa tratarasa dhramikasa stratasa</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Athena standing facing, holding shield with left arm, throwing thunderbolt with right hand</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/athena">Athena</persname>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Straton I 24</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.strato_i.28.1</recordId>
+        <otherRecordId localType="typeNumber">28.1</otherRecordId>
+        <otherRecordId semantic="skos:broader">bigr.strato_i.28</otherRecordId>
+        <publicationStatus>approvedSubtype</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:12:35+00:00">Mon, 15 Dec 2025 17:12:35 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Strato I 28.1</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q37122">Athena</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q693690">bull</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q241045">bust</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q33767">hand</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q131559">shield</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q2794866">thunderbolt</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0105" notAfter="-0080">late second/early first century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/tetradrachm">Tetradrachm</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ar">Silver</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/round">Round</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/strato_i_bactria">Strato I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/indo-greek_kingdom">Indo-Greek Kingdoms</geogname>
+            </geographic>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΣΩΤΗΡΟΣ ΚΑΙ ΔΙΚΑΙΟΥ ΣΤΡΑΤΩΝΟΣ</legend>
+                <type>
+                    <description xml:lang="en">Bust of Strato I, diademed and draped, wearing Boeotian helmet adorned with bull's ear and horn right</description>
+                    <description xml:lang="fr">Buste de Straton Ier à droite, coiffé d'un diadième et d'un casque béotien orné des cornes et des oreilles d'un taureau, vêtu d'un drapé</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="portrait" xlink:href="http://nomisma.org/id/strato_i_bactria">Strato I of Bactria</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="↶(plus arrow below, going clockwise from right to left)">𐨨𐨱𐨪𐨗𐨯 𐨟𐨿𐨪𐨟𐨪𐨯 𐨢𐨿𐨪𐨨𐨁𐨐𐨯 𐨯𐨿𐨟𐨿𐨪𐨟𐨯</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>mahārājasa tratarasa dhramikasa stratasa</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Athena standing facing, holding shield with left arm, throwing thunderbolt with right hand</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/athena">Athena</persname>
+                <symbol position="leftField">
+                    <tei:div type="edition">
+                        <tei:ab>
+                            <tei:am>
+                                <tei:g type="nmo:Monogram" ref="https://numismatics.org/bigr/symbol/monogram.bop.191">Bopearachchi Monogram 191</tei:g>
+                            </tei:am>
+                        </tei:ab>
+                    </tei:div>
+                </symbol>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Straton I 24A</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.menander_i.23</recordId>
+        <otherRecordId localType="typeNumber">23</otherRecordId>
+        <otherRecordId localType="sortId">00814</otherRecordId>
+        <publicationStatus>approved</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:09:24+00:00">Mon, 15 Dec 2025 17:09:24 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Menander I 23</title>
+        <noteSet>
+            <note xml:lang="en">Bordeaux Group N1</note>
+        </noteSet>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q37122">Athena</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q425554">Corinthian helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q23640">head</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q726">horse</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q97331354">prancing</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0160" notAfter="-0135">mid second century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_a_bigr">Denomination A</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/rectangle">Rectangle</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/menander_i_bactria">Menander I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/indo-greek_kingdom">Indo-Greek Kingdoms</geogname>
+            </geographic>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΣΩΤΗΡΟΣ ΜΕΝΑΝΔΡΟΥ</legend>
+                <type>
+                    <description xml:lang="en">Head of Athena, wearing crested Corinthian helmet right</description>
+                    <description xml:lang="fr">Tête de Athéna à droite, coiffée d'un casque corinthien</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/athena">Athena</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="🠓🠐🠑">𐨨𐨱𐨪𐨗𐨯 𐨟𐨿𐨪𐨟𐨪𐨯 𐨨𐨅𐨣𐨡𐨿𐨪𐨯</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>mahārājasa tratarasa menaṃdrasa</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Horse prancing right</description>
+                </type>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Ménandre I 24</tei:idno>
+            </reference>
+            <reference>
+                <tei:title key="http://nomisma.org/id/mitchiner-1976">Mitchiner</tei:title>
+                <tei:idno>231</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+    <nuds xmlns="http://nomisma.org/nuds" xmlns:tei="http://www.tei-c.org/ns/1.0" xsi:schemaLocation="http://nomisma.org/nuds http://nomisma.org/nuds.xsd" recordType="conceptual">
+    <control>
+        <recordId>bigr.menander_i.23.1</recordId>
+        <otherRecordId localType="typeNumber">23.1</otherRecordId>
+        <otherRecordId semantic="skos:broader">bigr.menander_i.23</otherRecordId>
+        <publicationStatus>approvedSubtype</publicationStatus>
+        <maintenanceStatus>derived</maintenanceStatus>
+        <maintenanceAgency>
+            <agencyName>American Numismatic Society</agencyName>
+        </maintenanceAgency>
+        <maintenanceHistory>
+            <maintenanceEvent>
+                <eventType>derived</eventType>
+                <eventDateTime standardDateTime="2025-12-15T17:09:25+00:00">Mon, 15 Dec 2025 17:09:25 +0000</eventDateTime>
+                <agentType>machine</agentType>
+                <agent>PHP</agent>
+                <eventDescription>Generated from CSV from ANS Curatorial Google Drive.</eventDescription>
+                <source>https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5yn9InMwKrrK2UKvbBACm8PZSn5Ht9YSG7iv4wQ2TOu9a-h3WcTQE1E3lLO58hy22cHahMeVBQe5k/pub?gid=0&amp;single=true&amp;output=csv</source>
+            </maintenanceEvent>
+        </maintenanceHistory>
+        <rightsStmt>
+            <copyrightHolder>American Numismatic Society</copyrightHolder>
+            <license xlink:type="simple" xlink:href="http://opendatacommons.org/licenses/odbl/"/>
+        </rightsStmt>
+        <semanticDeclaration>
+            <prefix>dcterms</prefix>
+            <namespace>http://purl.org/dc/terms/</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>nmo</prefix>
+            <namespace>http://nomisma.org/ontology#</namespace>
+        </semanticDeclaration>
+        <semanticDeclaration>
+            <prefix>skos</prefix>
+            <namespace>http://www.w3.org/2004/02/skos/core#</namespace>
+        </semanticDeclaration>
+    </control>
+    <descMeta>
+        <title xml:lang="en">Bactrian and Indo-Greek Coinage Menander I 23.1</title>
+        <subjectSet>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q37122">Athena</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q425554">Corinthian helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q23640">head</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q173603">helmet</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q726">horse</subject>
+            <subject localType="concept" xlink:type="simple" xlink:href="http://www.wikidata.org/entity/Q97331354">prancing</subject>
+        </subjectSet>
+        <typeDesc>
+            <date notBefore="-0160" notAfter="-0135">mid second century BCE</date>
+            <denomination xlink:type="simple" xlink:href="http://nomisma.org/id/denomination_a_bigr">Denomination A</denomination>
+            <material xlink:type="simple" xlink:href="http://nomisma.org/id/ae">Bronze</material>
+            <shape xlink:type="simple" xlink:href="http://nomisma.org/id/rectangle">Rectangle</shape>
+            <authority>
+                <persname xlink:type="simple" xlink:role="authority" xlink:href="http://nomisma.org/id/menander_i_bactria">Menander I of Bactria</persname>
+            </authority>
+            <geographic>
+                <geogname xlink:type="simple" xlink:role="region" xlink:href="http://nomisma.org/id/indo-greek_kingdom">Indo-Greek Kingdoms</geogname>
+            </geographic>
+            <obverse>
+                <legend scriptCode="Grek" xml:lang="grc">ΒΑΣΙΛΕΩΣ ΣΩΤΗΡΟΣ ΜΕΝΑΝΔΡΟΥ</legend>
+                <type>
+                    <description xml:lang="en">Head of Athena, wearing crested Corinthian helmet right</description>
+                    <description xml:lang="fr">Tête de Athéna à droite, coiffée d'un casque corinthien</description>
+                </type>
+                <persname xlink:type="simple" xlink:role="deity" xlink:href="http://nomisma.org/id/athena">Athena</persname>
+            </obverse>
+            <reverse>
+                <legend>
+                    <tei:div type="edition">
+                        <tei:ab rend="🠓🠐🠑">𐨨𐨱𐨪𐨗𐨯 𐨟𐨿𐨪𐨟𐨪𐨯 𐨨𐨅𐨣𐨡𐨿𐨪𐨯</tei:ab>
+                    </tei:div>
+                    <tei:div type="transliteration">
+                        <tei:ab>mahārājasa tratarasa menaṃdrasa</tei:ab>
+                    </tei:div>
+                </legend>
+                <type>
+                    <description xml:lang="en">Horse prancing right</description>
+                </type>
+                <symbol position="rightField">
+                    <tei:div type="edition">
+                        <tei:ab>
+                            <tei:am>
+                                <tei:g type="nmo:Monogram" ref="https://numismatics.org/bigr/symbol/monogram.bop.182">Bopearachchi Monogram 182</tei:g>
+                            </tei:am>
+                        </tei:ab>
+                    </tei:div>
+                </symbol>
+            </reverse>
+        </typeDesc>
+        <refDesc>
+            <reference>
+                <tei:title key="http://nomisma.org/id/bopearachchi-1991">Bopearachchi</tei:title>
+                <tei:idno>Ménandre I 24A</tei:idno>
+            </reference>
+            <reference>
+                <tei:title key="http://nomisma.org/id/mitchiner-1976">Mitchiner</tei:title>
+                <tei:idno>231a</tei:idno>
+            </reference>
+        </refDesc>
+    </descMeta>
+</nuds>
+</nudsGroup>

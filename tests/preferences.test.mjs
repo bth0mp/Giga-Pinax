@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] };
 
@@ -93,6 +93,21 @@ test('rememberRecent caps ids like restore does, so a round trip is identical', 
   const remembered = rememberRecent(restorePreferences(null), { id: long, corpus: 'pella', label: 'L' });
   assert.equal(remembered.recent[0].id.length, 120);
   assert.deepEqual(restorePreferences(JSON.stringify(remembered)).recent, remembered.recent);
+});
+
+test('ArrowUp walks the Recent labels from an empty box to older ones, stopping at the oldest; ArrowDown goes back to newer ones and then empty', () => {
+  const recent = ['Price 23', 'RRC 44/5', 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1'].map((label, i) => ({ id: `t${i}`, corpus: 'pella', label }));
+  assert.deepEqual(recallStep(recent, -1, '', 'ArrowUp'), { position: 0, text: 'Price 23' });
+  assert.deepEqual(recallStep(recent, 0, 'Price 23', 'ArrowUp'), { position: 1, text: 'RRC 44/5' });
+  assert.equal(recallStep(recent, 2, recent[2].label, 'ArrowUp'), null);
+  assert.deepEqual(recallStep(recent, 1, 'RRC 44/5', 'ArrowDown'), { position: 0, text: 'Price 23' });
+  assert.deepEqual(recallStep(recent, 0, 'Price 23', 'ArrowDown'), { position: -1, text: '' });
+  assert.equal(recallStep(recent, -1, '', 'ArrowDown'), null);
+  assert.equal(recallStep([], -1, '', 'ArrowUp'), null);
+  // Typed text keeps its caret keys; an empty box starts again from the newest.
+  assert.equal(recallStep(recent, -1, 'Price 2', 'ArrowUp'), null);
+  assert.equal(recallStep(recent, 1, 'RRC 44/', 'ArrowDown'), null);
+  assert.deepEqual(recallStep(recent, 2, '', 'ArrowUp'), { position: 0, text: 'Price 23' });
 });
 
 test('Recent entries with a blank id or label are dropped on restore', () => {

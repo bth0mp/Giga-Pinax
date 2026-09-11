@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, bopCitation, seriesOf, kingOf, bopDetails } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -235,7 +235,7 @@ test('CRRO suggestions: lettered groups match case-insensitively and the group f
 test('referenceNumber drops stray quotes and only strips a real prefix', () => {
   assert.equal(referenceNumber('RRC', '44/5"'), '44/5');
   assert.equal(referenceNumber('RRC', '"RRC 44/5"'), '44/5');
-  for (const [typed, expected] of [['Cr44/5', '44/5'], ['CRAWFORD  44/5', '44/5'], ['Cr. 44/5', '44/5'], ['Crawf 44/5', 'Crawf 44/5'], ['Cr . 44/5', 'Cr . 44/5']]) {
+  for (const [typed, expected] of [['Cr44/5', '44/5'], ['CRAWFORD  44/5', '44/5'], ['Cr. 44/5', '44/5'], ['Crawf 44/5', '44/5'], ['Craw. 44/5', '44/5'], ['Crawfrd 44/5', 'Crawfrd 44/5'], ['Cr . 44/5', 'Cr . 44/5']]) {
     assert.equal(referenceNumber('RRC', typed), expected);
   }
   assert.equal(referenceNumber('Price', 'P23'), 'P23');
@@ -504,6 +504,25 @@ test('parseReference strips curly quotes, rejects a digit where the section shou
   assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: '“I (2nd edition)”', section: 'Nero', number: '306' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
 });
 
+const codePoints = (from, to) => Array.from({ length: to - from + 1 }, (_, index) => String.fromCodePoint(from + index));
+
+test('a reference copied from a sale page reads without the hidden characters dealer pages add, and with Craw., Crawf. or Crawford', () => {
+  const rrc = { catalogue: 'RRC', number: '44/5', volume: '', section: '' };
+  for (const text of ['Crawford 44/5;', 'Craw. 44/5', 'Crawf. 44/5', 'Craw 44/5', 'crawf44/5', 'Cra\u00adwford 44/5']) assert.deepEqual(parseReference(text), rrc, text);
+  assert.deepEqual(parseReference('RIC\u200b I² Nero 306'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+  assert.deepEqual(parseReference('SC 2195.5c\u00ad'), { catalogue: 'SC', number: '2195.5c', volume: '', section: '' });
+  assert.deepEqual(parseReference('Bop\u00a0Hermaeus 20'), { catalogue: 'Bop', number: '20', volume: '', section: 'Hermaeus' });
+  assert.deepEqual(parseReference('\ufeffPrice 23'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+  // Soft hyphen, zero-width and direction marks, bidi embeddings and isolates, word joiner and invisible operators, byte order mark.
+  const hidden = ['\u00ad', ...codePoints(0x200b, 0x200f), ...codePoints(0x202a, 0x202e), ...codePoints(0x2060, 0x2064), ...codePoints(0x2066, 0x2069), '\ufeff'];
+  for (const mark of hidden) {
+    assert.deepEqual(parseReference(`${mark}RIC${mark} 972${mark}`), { catalogue: 'RIC', volume: '', section: '', number: '972' }, mark.codePointAt(0).toString(16));
+  }
+  // Removed before anything else: they never reach an Other card, its Recent chip or its acsearch term, nor count towards the length cap.
+  assert.deepEqual(parseReference('HGC\u200b 4, 1218\u00ad'), { catalogue: 'Other', number: 'HGC 4, 1218', volume: '', section: '' });
+  assert.deepEqual(parseReference(`${'\u200b'.repeat(200)}Price 23`), { catalogue: 'Price', number: '23', volume: '', section: '' });
+});
+
 test('a reference no type rule reads is Other, whole, unless a supported catalogue or its titles begin it; the first ";" part a type rule reads wins', () => {
   const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
   for (const [text, number] of [
@@ -528,10 +547,12 @@ test('a reference no type rule reads is Other, whole, unless a supported catalog
   assert.deepEqual(parseReference('(SC 1266.2)'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
   assert.deepEqual(parseReference('(RIC I² Nero 306)'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
   // Unread text in a supported catalogue (or a title of one) is still an error, and so is text without a letter or without a digit.
-  for (const text of ['Bopearachi 9C', 'RIC XI Nero 1', 'Crawf 44/5', 'Crawfrd 44/5', 'Cr . 44/5', 'Cr x1', 'price 23 x', 'SCO 5', 'Sc. 5', 'seleucid 5', 'RIC hello 5; ',
+  for (const text of ['Bopearachi 9C', 'RIC XI Nero 1', 'Crawfrd 44/5', 'Cr . 44/5', 'Cr x1', 'price 23 x', 'SCO 5', 'Sc. 5', 'seleucid 5', 'RIC hello 5; ',
     'Bactrian and Indo-Greek Coinage Euthydemus I 13.1', 'hello', 'Price', '972', '1; 2', ';', `HGC ${'1'.repeat(120)}`,
     // A supported catalogue named inside a numbered part, after a word: never searched as loose text.
-    'cf. RIC 972', 'Ref: RIC 972', 'Lot 80: RIC 972', 'HGC 4, 1218; cf. Crawford 44/5', 'cf. Cr. 44/5', 'SNG Spaer 1712 (SC 2195.5c)']) {
+    'cf. RIC 972', 'Ref: RIC 972', 'Lot 80: RIC 972', 'HGC 4, 1218; cf. Crawford 44/5', 'cf. Cr. 44/5', 'SNG Spaer 1712 (SC 2195.5c)',
+    // The Crawford abbreviations the prefix reads are catalogue names here too.
+    'cf. Craw. 44/5', 'Lot 80: Crawf. 44/5', 'HGC 4, 1218; cf. Craw. 44/5']) {
     assert.equal(parseReference(text), null, text);
   }
 });
@@ -549,6 +570,17 @@ test('an Other reference is its own card, built without a request, and lookupByI
   assert.deepEqual(await lookupType({ catalogue: 'Other', number: ` “${text}” `, volume: 'IV', section: 'Nero' }, { fetchImpl }), { status: 'ok', card });
   assert.deepEqual(await lookupById('other', text, { fetchImpl }), { status: 'ok', card });
   assert.equal(fetchImpl.calls.length, 0);
+});
+
+test('rpcUrl links an RPC reference to its RPC Online page, the volume in Arabic numerals and a part as ".2", and nothing else', () => {
+  for (const [text, path] of [
+    ['RPC I 1234', '1/1234'], ['RPC I, 1234', '1/1234'], ['rpc i 1234', '1/1234'], ['RPC V.2 1234', '5.2/1234'], ['RPC V/2 1234', '5.2/1234'],
+    ['RPC V, Part 2 1234', '5.2/1234'], ['RPC V part 2, 1234', '5.2/1234'], ['RPC VII.1 40', '7.1/40'], ['RPC II 12', '2/12'], ['RPC IX 5', '9/5'],
+    ['RPC X 1', '10/1'], ['RPC 3 567', '3/567'],
+  ]) assert.equal(rpcUrl(text), `https://rpc.ashmus.ox.ac.uk/coins/${path}`, text);
+  for (const text of ['RPC 1234', 'RPC I', 'RPC XI 1', 'RPC I 12a', 'RPC I 2 3', 'RPC I 1234 (this coin)', 'RIC I 1234', 'SNG Cop 123', 'Sear 1234', '', undefined, null]) {
+    assert.equal(rpcUrl(text), null, String(text));
+  }
 });
 
 test('SC references build the SCO record id and parse from one box', () => {
@@ -643,15 +675,19 @@ test('bopCitation reads the Bopearachchi idno from a NUDS record and fails close
   assert.deepEqual(bopDetails('Bactrian and Indo-Greek Coinage Diodotus I or Diodotus II 8A', null), { king: 'Diodotus I or Diodotus II', series: null, citation: null });
 });
 
-// Routes match by substring in order: the 24A search is listed before the 24 one, whose needle is its prefix.
+// Routes match by substring in order: the 24A search is listed before the 24 one, whose needle is its prefix. Hits are verified by one getNuds
+// request; its route answers with the real group for the eight hits of the 24A search, which holds every hit here (a record missing from a group
+// is simply absent). The .xml route serves lookupById, which still fetches a card's own NUDS record.
 const BIGR_ROUTES = {
   'bigr/apis/search?q=Euthydemus%20I%2024A': fixture('bigr-search-euthydemus-i-24a.xml'),
   'bigr/apis/search?q=Euthydemus%20I%2024': fixture('bigr-search-euthydemus-i-24.xml'),
+  'bigr/apis/getNuds': fixture('bigr-getnuds-24a.xml'),
   'bigr/id/bigr.euthydemus_i.13.1.jsonld': fixture('bigr-euthydemus-i-13-1.jsonld'),
   'bigr/id/bigr.euthydemus_i.13.1.xml': fixture('bigr-euthydemus-i-13-1.xml'),
   'bigr/id/bigr.euthydemus_i.13.jsonld': fixture('bigr-euthydemus-i-13.jsonld'),
-  'bigr/id/bigr.euthydemus_i.13.xml': fixture('bigr-euthydemus-i-13.xml'),
 };
+const groups = (fetchImpl) => fetchImpl.calls.filter((url) => url.includes('/apis/getNuds'));
+const identifiers = (url) => decodeURIComponent(url.split('?identifiers=')[1]).split('|');
 
 test('a Bop lookup with a king searches "{king} {series}", verifies each hit by its NUDS citation and resolves the one exact type', async () => {
   const fetchImpl = fakeFetch(BIGR_ROUTES);
@@ -665,69 +701,72 @@ test('a Bop lookup with a king searches "{king} {series}", verifies each hit by 
   assert.equal(result.card.reverse.legend, 'ΒΑΣΙΛΕΩΣ ΕΥΘΥΔΗΜΟΥ');
   assert.equal(fetchImpl.calls[0], 'https://numismatics.org/bigr/apis/search?q=Euthydemus%20I%2024A');
   assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
-  assert.deepEqual(fetchImpl.calls.filter((url) => url.endsWith('.xml')).sort(),
-    ['https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.xml', 'https://numismatics.org/bigr/id/bigr.euthydemus_i.13.xml']);
+  // Both hits in one request, the "|" between ids encoded (the server refuses a bare one with HTTP 400); the type's card needs no .xml of its own.
+  assert.deepEqual(groups(fetchImpl), ['https://numismatics.org/bigr/apis/getNuds?identifiers=bigr.euthydemus_i.13.1%7Cbigr.euthydemus_i.13']);
+  assert.equal(fetchImpl.calls.filter((url) => url.endsWith('.xml')).length, 0);
   assert.deepEqual(fetchImpl.calls.filter((url) => url.includes('/bigr/id/') && url.endsWith('.jsonld')), ['https://numismatics.org/bigr/id/bigr.euthydemus_i.13.1.jsonld']);
   assert.ok(fetchImpl.signals.every((signal) => signal === fetchImpl.signals[0]));
 
-  const parent = await lookupType({ catalogue: 'Bop', section: 'Euthydemus I', number: '24' }, { fetchImpl: fakeFetch(BIGR_ROUTES), cache: new Map() });
+  const parentFetch = fakeFetch(BIGR_ROUTES);
+  const parent = await lookupType({ catalogue: 'Bop', section: 'Euthydemus I', number: '24' }, { fetchImpl: parentFetch, cache: new Map() });
   assert.equal(parent.status, 'ok');
   assert.equal(parent.card.id, 'bigr.euthydemus_i.13');
   assert.deepEqual(parent.card.bop, { king: 'Euthydemus I', series: '24', citation: 'Euthydème I 24' });
+  assert.deepEqual(groups(parentFetch).map(identifiers), [['bigr.euthydemus_i.13']]);
 });
 
 test('a king BIGR does not know falls back to the series alone and offers every verified king as a labelled list', async () => {
   const fetchImpl = fakeFetch({ 'bigr/apis/search?q=Euthydemos%2024A': '<feed></feed>', 'bigr/apis/search?q=24A': fixture('bigr-search-24a.xml'), ...BIGR_ROUTES });
   const result = await lookupType({ catalogue: 'Bop', section: 'Euthydemos', number: '24A' }, { fetchImpl });
-  assert.deepEqual(result, { status: 'candidates', corpus: 'bigr', query: 'Bopearachchi Euthydemos 24A',
-    candidates: [{ id: 'bigr.euthydemus_i.13.1', title: 'Bopearachchi Euthydème I 24A (Euthydemus I 13.1)' }] });
+  assert.deepEqual(result, { status: 'candidates', corpus: 'bigr', query: 'Bopearachchi Euthydemos 24A', candidates: [
+    { id: 'bigr.eucratides_i.28.1', title: 'Bopearachchi Eucratide I 24A (Eucratides I 28.1)' },
+    { id: 'bigr.euthydemus_i.13.1', title: 'Bopearachchi Euthydème I 24A (Euthydemus I 13.1)' },
+    { id: 'bigr.strato_i.28.1', title: 'Bopearachchi Straton I 24A (Strato I 28.1)' },
+    { id: 'bigr.menander_i.23.1', title: 'Bopearachchi Ménandre I 24A (Menander I 23.1)' },
+  ] });
   assert.deepEqual(fetchImpl.calls.filter((url) => url.includes('/apis/search')),
     ['https://numismatics.org/bigr/apis/search?q=Euthydemos%2024A', 'https://numismatics.org/bigr/apis/search?q=24A']);
-  assert.equal(fetchImpl.calls.filter((url) => url.endsWith('.xml')).length, 8);
-  assert.equal(fetchImpl.calls.filter((url) => url.endsWith('.jsonld')).length, 0);
+  // The empty first search verifies nothing; the eight hits of the second cost one request.
+  assert.deepEqual(groups(fetchImpl).map(identifiers), [['bigr.eucratides_i.28', 'bigr.eucratides_i.28.1', 'bigr.euthydemus_i.13.1', 'bigr.euthydemus_i.13',
+    'bigr.strato_i.28', 'bigr.strato_i.28.1', 'bigr.menander_i.23', 'bigr.menander_i.23.1']]);
+  assert.equal(fetchImpl.calls.filter((url) => url.endsWith('.xml') || url.endsWith('.jsonld')).length, 0);
 });
 
-test('a Bop series without a king lists the verified types of every king; unverified hits are left out', async () => {
-  const fetchImpl = fakeFetch({
-    'bigr/apis/search?q=9C': fixture('bigr-search-9c.xml'),
-    'bigr/id/bigr.philoxenus.6.3.xml': fixture('bigr-philoxenus-6-3.xml'),
-    'bigr/id/bigr.philoxenus.7.1.xml': fixture('bigr-philoxenus-7-1.xml'),
-    'bigr/id/bigr.philoxenus.8.1.xml': fixture('bigr-philoxenus-8-1.xml'),
-    'bigr/id/bigr.philoxenus.6.xml': fixture('bigr-philoxenus-6.xml'),
-    'bigr/id/bigr.antialcidas.12.2.xml': fixture('bigr-antialcidas-12-2.xml'),
-    'bigr/id/bigr.hermaeus.9.4.xml': fixture('bigr-hermaeus-9-4.xml'),
-  });
+test('a Bop series without a king lists the exact types of every king, its sixteen hits verified in one request', async () => {
+  const fetchImpl = fakeFetch({ 'bigr/apis/search?q=9C': fixture('bigr-search-9c.xml'), 'bigr/apis/getNuds': fixture('bigr-getnuds-9c.xml') });
   const result = await lookupType({ catalogue: 'Bop', section: '', number: 'Bop-9C' }, { fetchImpl });
   assert.equal(result.status, 'candidates');
   assert.equal(result.query, 'Bopearachchi 9C');
+  // The parent types ("Philoxène 9") are verified too, and left out: their series is not 9C.
   assert.deepEqual(result.candidates.map((entry) => entry.title), [
     'Bopearachchi Philoxène 9C (Philoxenus 8.1)',
     'Bopearachchi Philoxène 9C (Philoxenus 7.1)',
     'Bopearachchi Philoxène 9C (Philoxenus 6.3)',
     'Bopearachchi Antialcidas 9C (Antialcidas 12.2)',
+    'Bopearachchi Ménandre I 9C (Menander I 17.3)',
+    'Bopearachchi Eucratide I 9C (Eucratides I 9.2)',
     'Bopearachchi Hermaios 9C (Hermaeus 9.4)',
+    'Bopearachchi Straton I 9C (Strato I 12.3)',
   ]);
-  assert.deepEqual(result.candidates.map((entry) => entry.id), ['bigr.philoxenus.8.1', 'bigr.philoxenus.7.1', 'bigr.philoxenus.6.3', 'bigr.antialcidas.12.2', 'bigr.hermaeus.9.4']);
+  assert.deepEqual(result.candidates.map((entry) => entry.id), ['bigr.philoxenus.8.1', 'bigr.philoxenus.7.1', 'bigr.philoxenus.6.3', 'bigr.antialcidas.12.2',
+    'bigr.menander_i.17.3', 'bigr.eucratides_i.9.2', 'bigr.hermaeus.9.4', 'bigr.strato_i.12.3']);
   assert.deepEqual(fetchImpl.calls.filter((url) => url.includes('/apis/search')), ['https://numismatics.org/bigr/apis/search?q=9C']);
-  const xml = fetchImpl.calls.filter((url) => url.endsWith('.xml'));
-  assert.equal(xml.length, 16);
-  assert.ok(xml.every((url) => /^https:\/\/numismatics\.org\/bigr\/id\/bigr\.[a-z_]+(?:\.\d+[A-Z]?)+\.xml$/.test(url)), xml.join('\n'));
+  assert.deepEqual(groups(fetchImpl).map(identifiers), [parseFeed(fixture('bigr-search-9c.xml')).map((entry) => entry.id)]);
+  assert.equal(identifiers(groups(fetchImpl)[0]).length, 16);
+  assert.equal(fetchImpl.calls.filter((url) => url.endsWith('.xml')).length, 0);
   assert.ok(fetchImpl.signals.every((signal) => signal === fetchImpl.signals[0]));
 });
 
 test('with a king, several exact hits are offered by citation and BIGR number, and near misses follow the five-suggestion rule', async () => {
-  const philoxenus = {
-    'bigr/id/bigr.philoxenus.6.3.xml': fixture('bigr-philoxenus-6-3.xml'),
-    'bigr/id/bigr.philoxenus.7.1.xml': fixture('bigr-philoxenus-7-1.xml'),
-    'bigr/id/bigr.philoxenus.8.1.xml': fixture('bigr-philoxenus-8-1.xml'),
-    'bigr/id/bigr.philoxenus.6.xml': fixture('bigr-philoxenus-6.xml'),
-  };
+  // The real group for the 9C search's sixteen hits holds the Philoxenus ones; bigr.philoxenus.99 is in no group, so it stays unverified.
+  const philoxenus = { 'bigr/apis/getNuds': fixture('bigr-getnuds-9c.xml') };
   const several = fakeFetch({ 'bigr/apis/search?q=Philoxenus%209C': fixture('bigr-search-philoxenus-9c.xml'), ...philoxenus });
   const result = await lookupType({ catalogue: 'Bop', section: 'Philoxenus', number: '9c' }, { fetchImpl: several });
   assert.equal(result.status, 'candidates');
   assert.deepEqual(result.candidates.map((entry) => entry.title), ['Bopearachchi Philoxène 9C (Philoxenus 8.1)', 'Bopearachchi Philoxène 9C (Philoxenus 7.1)', 'Bopearachchi Philoxène 9C (Philoxenus 6.3)']);
   assert.equal(several.calls.filter((url) => url.includes('/apis/search')).length, 1);
-  assert.equal(several.calls.filter((url) => url.endsWith('.xml')).length, 6);
+  assert.equal(groups(several).length, 1);
+  assert.equal(several.calls.filter((url) => url.endsWith('.xml')).length, 0);
 
   const feed = (...ids) => `<feed>${ids.map((id) => `<entry><title>Bactrian and Indo-Greek Coinage Philoxenus ${id}</title><id>bigr.philoxenus.${id}</id></entry>`).join('')}</feed>`;
   const near = await lookupType({ catalogue: 'Bop', section: 'Philoxenus', number: '9D' }, { fetchImpl: fakeFetch({ 'bigr/apis/search?q=Philoxenus%209D': feed('6', '6.3', '99'), ...philoxenus }) });
@@ -742,14 +781,24 @@ test('with a king, several exact hits are offered by citation and BIGR number, a
   assert.deepEqual(nothing, { status: 'none', corpus: 'bigr', query: 'Bopearachchi 9D' });
 });
 
-test('Bop lookups report network errors for a failing search or a timed-out verification', async () => {
+test('Bop lookups report network errors for a failing search or a failed or timed-out verification, never "not found"', async () => {
   const failing = async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) });
-  assert.deepEqual(await lookupType({ catalogue: 'Bop', section: 'Euthydemus I', number: '24A' }, { fetchImpl: failing }), { status: 'network' });
+  const euthydemus = { catalogue: 'Bop', section: 'Euthydemus I', number: '24A' };
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: failing }), { status: 'network' });
+  // The search answers but getNuds fails (here 404, as a bare "|" would give 400): the hits could not be checked, which is an outage, not a miss.
+  const searchOnly = fakeFetch({ 'bigr/apis/search?q=Euthydemus%20I%2024A': fixture('bigr-search-euthydemus-i-24a.xml') });
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: searchOnly }), { status: 'network' });
+  assert.equal(groups(searchOnly).length, 1);
   const search = fakeFetch(BIGR_ROUTES);
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  const hangGroup = (url, init) => (url.includes('/apis/getNuds') ? hang(url, init) : search(url, init));
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: hangGroup, timeoutMs: 20 }), { status: 'network' });
   const hangXml = (url, init) => (url.endsWith('.xml') ? hang(url, init) : search(url, init));
-  assert.deepEqual(await lookupType({ catalogue: 'Bop', section: 'Euthydemus I', number: '24A' }, { fetchImpl: hangXml, timeoutMs: 20 }), { status: 'network' });
   assert.deepEqual(await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: hangXml, cache: new Map(), timeoutMs: 20 }), { status: 'network' });
+  // No hits, nothing to verify: no request, and the miss is reported as one.
+  const empty = fakeFetch({ 'bigr/apis/search': '<feed></feed>' });
+  assert.deepEqual(await lookupType({ catalogue: 'Bop', section: '', number: '9D' }, { fetchImpl: empty }), { status: 'none', corpus: 'bigr', query: 'Bopearachchi 9D' });
+  assert.equal(groups(empty).length, 0);
 });
 
 test('lookupById on BIGR fetches the NUDS record for the citation, and an unreadable one leaves the card uncited', async () => {

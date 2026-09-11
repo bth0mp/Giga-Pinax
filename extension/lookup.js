@@ -6,10 +6,13 @@ export const TIMEOUT_MS = 15000;
 const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
+// The hidden characters dealer pages add (soft hyphens, zero-width and direction marks, bidi controls, word joiners, a byte order mark) would split a
+// copied reference inside a word; parseReference and a right-click selection drop them first. NBSP and other Unicode spaces are squashed as spaces.
+export const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
-// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and the acsearch term.
-// It is stripped only before the number itself, so "Crawf 44/5" or "Cr . 44/5" stay as typed.
-const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i, SC: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i, Bop: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i };
+// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Craw. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and
+// the acsearch term. It is stripped only before the number itself, so "Crawfrd 44/5" or "Cr . 44/5" stay as typed.
+const PREFIX = { RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i, SC: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i, Bop: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i };
 // Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
 const SCO_ID = 'sc.1.';
 // Bopearachchi (1991) references resolve through BIGR, whose own numbering ("Euthydemus I 13.1") differs from Bopearachchi's series ("Euthydème I 24A");
@@ -19,7 +22,7 @@ const BIGR_TITLE = 'Bactrian and Indo-Greek Coinage ';
 const BOP_KEY = 'http://nomisma.org/id/bopearachchi-1991';
 // Any other reference ("BCD Boiotia 174b; HGC 4, 1218") has no open type database: its card is its own text, and only acsearch is searched.
 const OTHER = 'other';
-// Hits verified per lookup (each costs one XML request inside the shared deadline); a bare series such as "9C" has 16 hits.
+// Hits verified per lookup, all in one getNuds request inside the shared deadline; a bare series such as "9C" has 16 hits.
 const VERIFY_LIMIT = 24;
 
 // Stray quotes would unbalance the quoted phrase search; curly ones arrive when a reference is copied from prose.
@@ -38,7 +41,7 @@ export const bopSeries = (number) => referenceNumber('Bop', number).toUpperCase(
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // SCO's own titles ("Seleucid Coins (part 1) 1266.2", as a Recent chip stores them) read as SC too, so a chip fills the fields like the others.
 const SIMPLE_REFERENCE = {
-  RRC: /^(?:RRC|Crawford|Cr\.?)\s*(\d\S*)$/i,
+  RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(\d\S*)$/i,
   Price: /^Price\s*(\d\S*)$/i,
   SC: /^(?:SC|Seleucid Coins(?: \(part \d+\))?)\s*(\d\S*)$/i,
 };
@@ -56,12 +59,12 @@ const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[
 const RIC_ANY_VOLUME = /^(?:RIC(?![a-z])\s*(?:([^\d\s].*?)\s+)?|([^\d\s].*?)\s+)(\d\S*(?: \([^)]*\))?)$/i;
 const MAX_REFERENCE = 120;
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
-// is a typo ("Bopearachi 9C", "Crawf 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
+// is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
 const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
-// Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972"), which would search a type as loose text; "RIC –"
-// (not in RIC) has no number.
-const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Crawford|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
+// Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
+// text; "RIC –" (not in RIC) has no number. The Crawford names are the ones PREFIX reads.
+const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // A reference as read: without that punctuation, nor the brackets or single quotes a dealer wraps it in ("(RIC 972)", "‘Price 23’."); brackets that
@@ -69,9 +72,11 @@ const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 const unwrap = (value) => unpunctuate(unpunctuate(value.trim()).replace(/^[(\[‘']([^()[\]‘’']*)[)\]’']$/, '$1').trim());
 
 // References are ";"-separated ("SC 2195.5c; SNG Spaer 1712"): the first one a type rule reads is looked up, else the whole text is Other.
+// The hidden characters go before anything else, the length cap included.
 export function parseReference(text) {
-  if (squash(text).length > MAX_REFERENCE) return null;
-  const value = unwrap(unquote(text));
+  const visible = String(text ?? '').replace(INVISIBLE, '');
+  if (squash(visible).length > MAX_REFERENCE) return null;
+  const value = unwrap(unquote(visible));
   const parts = value.split(';').map(unwrap);
   for (const part of parts) {
     const type = readType(part);
@@ -100,6 +105,16 @@ function readType(value) {
   const ruler = any?.[1] ?? any?.[2] ?? '';
   if (!any || (ruler && volumesOf(ruler).length === 0)) return null;
   return { catalogue: 'RIC', number: any[3], volume: '', section: ruler };
+}
+
+// RPC has no open type data here, but RPC Online has a page per type, which only the user opens (Giga Pinax never fetches RPC): "RPC I 1234" and
+// "RPC I, 1234" are coins/1/1234, "RPC V.2 1234" ("V/2", "V, Part 2") coins/5.2/1234, the volume in Arabic numerals. Null for anything else.
+const RPC_REFERENCE = /^RPC\s*(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./]|,?\s*part)\s*(\d)(?!\d))?\s*,?\s*(\d+)$/i;
+export function rpcUrl(text) {
+  const [, numeral, part, number] = String(text ?? '').trim().match(RPC_REFERENCE) ?? [];
+  if (!number) return null;
+  const volume = /^\d/.test(numeral) ? Number(numeral) : ROMAN.indexOf(numeral.toUpperCase()) + 1;
+  return `https://rpc.ashmus.ox.ac.uk/coins/${volume}${part ? `.${part}` : ''}/${number}`;
 }
 
 export function buildQuery({ catalogue, number, volume, section }) {
@@ -239,6 +254,8 @@ export const bopDetails = (title, citation) => ({ king: kingOf(title), series: c
 const ORIGIN = 'https://numismatics.org';
 const recordUrl = (corpus, id) => `${ORIGIN}/${corpus}/id/${encodeURIComponent(id)}.jsonld`;
 const nudsUrl = (corpus, id) => `${ORIGIN}/${corpus}/id/${encodeURIComponent(id)}.xml`;
+// Many NUDS records in one <nudsGroup>. The "|" between ids is encoded too: the server refuses a bare one with HTTP 400.
+const groupUrl = (corpus, ids) => `${ORIGIN}/${corpus}/apis/getNuds?identifiers=${encodeURIComponent(ids.join('|'))}`;
 
 async function getText(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal });
@@ -272,7 +289,8 @@ export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(
   return labels;
 }
 
-// Fails closed: a missing or unreadable NUDS record is null (unverified). Only the deadline propagates, so a timed-out lookup is still a network error.
+// A card's own NUDS record, for the citation when none was read while verifying (Recent chips, the pop-out's window): missing or unreadable, the card
+// is uncited. Only the deadline propagates, so a timed-out lookup is still a network error.
 async function fetchCitation(id, fetchImpl, signal) {
   try { return bopCitation(await getText(nudsUrl(BIGR, id), fetchImpl, signal)); }
   catch (error) {
@@ -326,12 +344,19 @@ function inGroup(entries, corpus, reference) {
 }
 
 // BIGR's plain search matches the citation text ("Euthydemus I 24A" finds Euthydemus I 13.1 and its parent 13), so every hit is verified against its own
-// NUDS citation, in parallel: exact when the series matches. The verified hits keep their citation so the card needs no second XML request.
+// NUDS citation: exact when the series matches. One getNuds request brings every hit's record, a <nuds> each in a <nudsGroup>, read by its recordId.
+// Fails closed: a failed request throws, so the lookup is a network error and never "not found"; a record missing from the group, or without a Bop
+// idno, leaves its hit unverified. The verified hits keep their citation so the card needs no second XML request.
+// ponytail: the group is split by regex, like parseFeed.
 async function verifyBop(entries, series, fetchImpl, signal) {
-  return Promise.all(entries.slice(0, VERIFY_LIMIT).map(async (entry) => {
-    const citation = await fetchCitation(entry.id, fetchImpl, signal);
+  const hits = entries.slice(0, VERIFY_LIMIT);
+  if (hits.length === 0) return [];
+  const group = await getText(groupUrl(BIGR, hits.map((hit) => hit.id)), fetchImpl, signal);
+  const citations = new Map([...group.matchAll(/<nuds[\s>][\s\S]*?<\/nuds>/g)].map(([record]) => [record.match(/<recordId>([^<]*)<\/recordId>/)?.[1], bopCitation(record)]));
+  return hits.map((entry) => {
+    const citation = citations.get(entry.id) ?? null;
     return { ...entry, citation, exact: citation !== null && norm(seriesOf(citation)) === norm(series) };
-  }));
+  });
 }
 
 // Suggestions are labelled by citation, with BIGR's own number to tell three "Philoxène 9C" subtypes apart; an uncited hit keeps its BIGR title.

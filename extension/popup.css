@@ -88,19 +88,21 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .type-heading p {font-size:11px; line-height:1.3; color:var(--muted); margin-top:4px;}
 .type-link {margin-left:auto; text-decoration:none; font-size:12px; white-space:nowrap; padding:4px 0 8px 8px;}
 .type-link:hover {text-decoration:underline;}
-.sides {margin:12px 0 0; display:grid; gap:8px;}
+.sides {margin:0 0 12px; display:grid; gap:8px;}
 .sides div {display:grid; grid-template-columns:62px 1fr; gap:8px; font-size:12px; line-height:1.45;}
 .sides dt {color:var(--muted); font-weight:600;}
 .sides dd {margin:0; display:grid; gap:2px; min-width:0;}
 .legend {font-family:var(--font-mono); font-size:11px; letter-spacing:.03em; color:var(--accent); overflow-wrap:anywhere;}
 .metric-label {font-size:12px; color:var(--muted);}
 .prices {margin-top:16px; padding-top:12px; border-top:1px solid var(--line);}
-.prices-note {font-size:12px; line-height:1.5; color:var(--muted); padding-top:8px;}
+.prices-note {font-size:12px; line-height:1.5; color:var(--muted);}
 .prices-note a {white-space:nowrap;}
-.median-block {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
+/* The median sits right under the heading; without prices, the note takes its place. */
+.median-block,.prices-note {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
 .median-line {display:flex; align-items:baseline; gap:8px; margin-top:2px;}
 .median-line strong {font-family:var(--font-serif); font-size:44px; line-height:1.05; letter-spacing:-.02em; font-weight:400; color:var(--gold); font-variant-numeric:lining-nums tabular-nums;}
 #median-currency {font-size:12px; font-weight:600; color:var(--muted);}
+.sale-strength {font-size:12px; font-weight:600; margin-top:4px;}
 .sale-period {font-size:11px; color:var(--muted); margin-top:6px;}
 .range-block {background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
 .range-block strong {display:block; font-size:16px; font-weight:600; letter-spacing:-.01em; margin-top:2px; font-variant-numeric:tabular-nums;}
@@ -111,12 +113,20 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .range-whisker::after {right:0;}
 .range-box {position:absolute; top:2px; height:17px; border:1px solid var(--accent); background:var(--accent-soft); border-radius:3px;}
 .range-median {position:absolute; height:21px; border-left:2px solid var(--accent); top:0;}
-.sale-details {margin-top:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
-.sale-details summary {list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; min-height:40px; font-size:12px; font-weight:600;}
-.sale-details summary::-webkit-details-marker {display:none;}
+/* The checked price: ink with a gold edge, apart from the median line; beyond the lowest or highest sale it waits at that end, a caret pointing out. */
+.range-check {position:absolute; top:-2px; height:25px; border-left:2px solid var(--ink); box-shadow:0 0 0 1px var(--gold);}
+.range-check.beyond-low::before,.range-check.beyond-high::before {content:""; position:absolute; top:8px; border:4px solid transparent;}
+.range-check.beyond-low::before {right:4px; border-right-color:var(--ink);}
+.range-check.beyond-high::before {left:2px; border-left-color:var(--ink);}
+.check-row {margin-top:12px; display:grid; grid-template-columns:1fr 120px; align-items:center; gap:12px;}
+.check-row label {margin-bottom:0;}
+/* Inspect sales, and the obverse and reverse folded under the prices form. */
+.sale-details,.sides-details {margin-top:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
+.sale-details summary,.sides-details summary {list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; min-height:40px; font-size:12px; font-weight:600;}
+.sale-details summary::-webkit-details-marker,.sides-details summary::-webkit-details-marker {display:none;}
 .sale-count {display:flex; align-items:center; gap:12px; color:var(--muted);}
-.chevron {font-size:15px;}
-.sale-details[open] .chevron {transform:rotate(180deg);}
+.chevron {font-size:15px; color:var(--muted);}
+.sale-details[open] .chevron,.sides-details[open] .chevron {transform:rotate(180deg);}
 .sale-list {list-style:none; padding:0; margin:0 0 4px;}
 .sale-list li {display:flex; gap:10px; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); font-size:12px;}
 .sale-list li span {color:var(--muted); min-width:0; overflow-wrap:anywhere;}

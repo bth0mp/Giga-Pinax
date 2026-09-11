@@ -147,6 +147,12 @@ export function summarise(lots, currency) {
   };
 }
 
+// How far to trust a median, by the sales it rests on. Never "Fair", which would read as a verdict on a checked price.
+export const medianStrength = (count) => (count >= 15 ? 'Solid' : count >= 5 ? 'Moderate' : 'Thin');
+
+// A bid or an asking price against the counted sales: how many sold strictly under it, and its multiple of the median.
+export const priceCheck = (summary, amount) => ({ below: summary.priced.filter((sale) => sale.amount < amount).length, count: summary.count, ratio: amount / summary.median });
+
 export async function fetchPrices({ term, currency }, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
   const controller = new AbortController();
@@ -185,7 +191,7 @@ export function summaryText(card, summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   let stats = `Median hammer ${money.format(summary.median)} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
-  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} ${count === 1 ? 'sale' : 'sales'} (${medianStrength(count).toLowerCase()}) matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const lines = [card.label, stats];
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);

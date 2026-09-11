@@ -1,4 +1,4 @@
-import { popupUrlFor, selectionQuery } from './selection.js';
+import { popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = globalThis.browser ?? globalThis.chrome;
 const MENU_ID = 'giga-pinax-lookup';
@@ -15,5 +15,5 @@ api.runtime.onStartup.addListener(createMenu);
 api.contextMenus.onClicked.addListener((info) => {
   if (info.menuItemId !== MENU_ID) return;
   if (!selectionQuery(info.selectionText)) return;
-  api.windows.create({ url: api.runtime.getURL(popupUrlFor(info.selectionText)), type: 'popup', width: 440, height: 680 });
+  showInWindow(api, popupUrlFor(info.selectionText));
 });

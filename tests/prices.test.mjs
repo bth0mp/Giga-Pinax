@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -190,14 +190,14 @@ test('summaryText produces a shareable plain-text summary', () => {
   const summary = summarise(amounts.map((price, i) => lot(price, `01.01.${2020 + (i % 4)}`, String(i))).concat([lot('1.200,- €')]), 'USD');
   assert.equal(summaryText({ label: 'Price 23', corpus: 'pella', id: 'price.23' }, summary, 'USD', 'Price 23'), [
     'Price 23',
-    'Median hammer $180 · middle 50% $135–$245 · range $90–$450 · 9 sales matching “Price 23” · 2020–2023',
+    'Median hammer $180 · middle 50% $135–$245 · range $90–$450 · 9 sales (moderate) matching “Price 23” · 2020–2023',
     'Not counted: “1.200,- €”',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   const one = summarise([lot('500', '01.01.2024')], 'CHF');
   assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, one, 'CHF', 'Crawford 1/1'), [
     'RRC 1/1',
-    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · range CHF 500–CHF 500 · 1 sale matching “Crawford 1/1” · 2024',
+    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · range CHF 500–CHF 500 · 1 sale (thin) matching “Crawford 1/1” · 2024',
     'https://numismatics.org/crro/id/rrc-1.1',
   ].join('\n'));
 });
@@ -206,8 +206,25 @@ test('summaryText has no type link for a reference without type data', () => {
   const summary = summarise([lot('100', '01.01.2025'), lot('300', '01.01.2026'), lot('')], 'USD');
   assert.equal(summaryText({ label: 'HGC 4, 1218', corpus: 'other', id: 'HGC 4, 1218' }, summary, 'USD', '"HGC 4, 1218"'), [
     'HGC 4, 1218',
-    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 sales matching “"HGC 4, 1218"” · 2025–2026',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 sales (thin) matching “"HGC 4, 1218"” · 2025–2026',
   ].join('\n'));
+});
+
+test('medianStrength rates a median by how many sales it rests on: Thin under 5, Moderate under 15, Solid from 15', () => {
+  for (const [count, strength] of [[1, 'Thin'], [4, 'Thin'], [5, 'Moderate'], [14, 'Moderate'], [15, 'Solid'], [100, 'Solid']]) {
+    assert.equal(medianStrength(count), strength, String(count));
+  }
+});
+
+test('priceCheck counts the counted sales strictly under an amount and sets it against the median', () => {
+  const amounts = ['90', '110', '135', '165', '180', '215', '245', '310', '450'];
+  // A lot without a price and one in another currency are not sales the amount is checked against.
+  const summary = summarise(amounts.map((price, i) => lot(price, '01.01.2024', String(i))).concat([lot(''), lot('200 EUR')]), 'USD');
+  assert.deepEqual(priceCheck(summary, 288), { below: 7, count: 9, ratio: 1.6 });
+  assert.deepEqual(priceCheck(summary, 180), { below: 4, count: 9, ratio: 1 });
+  assert.deepEqual(priceCheck(summary, 45), { below: 0, count: 9, ratio: 0.25 });
+  assert.deepEqual(priceCheck(summary, 900), { below: 9, count: 9, ratio: 5 });
+  assert.deepEqual(priceCheck(summarise([lot('500')], 'USD'), 800), { below: 1, count: 1, ratio: 1.6 });
 });
 
 test('summarise counts the lots without a price apart from the prices it could not read', () => {

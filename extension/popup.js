@@ -1,8 +1,8 @@
-import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
-import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
-import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
+import { HOST_ORIGINS, INVISIBLE, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { ACSEARCH_ORIGIN, buildSearchUrl, chooseTerm, defaultTerm, fetchPrices, medianStrength, parsePrice, priceCheck, quoteList, summaryText } from './prices.js';
+import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
-import { cardFromSearch, cardUrlFor, queryFromSearch } from './selection.js';
+import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -22,6 +22,7 @@ const NOT_FOUND_HINT = { ocre: 'Check the ruler, volume and number.', crro: 'Che
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number', Other: 'Reference, as the dealer cites it' };
 const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A. Leave the king blank to list every king with that number.', Other: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' };
 const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
+const CHECK_MESSAGE = 'Enter an amount such as 500.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -33,6 +34,8 @@ let currentCard = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
 let copiedTimer = 0;
+// The Recent label the arrow keys last put in the Reference box, by position (-1: none).
+let recalled = -1;
 
 // Read once per popup; get reads memory and set writes the whole object back. Missing, corrupt or unwritable storage leaves an in-memory cache.
 function readLabels() {
@@ -79,9 +82,12 @@ function chooseTheme(theme) {
   syncThemeButton();
 }
 
+// A Number or Ruler/King pasted from a dealer page can carry the hidden characters parseReference drops ("23" plus a soft hyphen is no Price 23), so the
+// guided fields are read without them: the lookup, its acsearch term, the saved fields and the ruler's volume.
+const visible = (id) => $(id).value.replace(INVISIBLE, '');
 function currentReference() {
-  return { catalogue: $('catalogue').value, number: $('reference-number').value,
-    volume: $('ric-volume').value, section: $('ric-section').value };
+  return { catalogue: $('catalogue').value, number: visible('reference-number'),
+    volume: $('ric-volume').value, section: visible('ric-section') };
 }
 
 function savePreferences() {
@@ -152,6 +158,9 @@ function clearPrices() {
   shownPrices = null;
   resetCopyLabel();
   $('prices-panel').hidden = true;
+  // A new lookup or currency starts the price check empty.
+  $('check-amount').value = '';
+  showCheck();
   $('prices-error').hidden = true;
   $('prices-note').hidden = true;
   $('signin-link').hidden = true;
@@ -202,7 +211,14 @@ function renderCard(card) {
   $('type-link').href = `https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`;
   $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
   $('type-link').hidden = other;
-  $('sides').hidden = other;
+  // An RPC reference has no type data here, but RPC Online has its page: that link takes the Type link's place, and only the user opens it.
+  const rpc = other ? rpcUrl(card.label) : null;
+  $('rpc-link').hidden = !rpc;
+  if (rpc) {
+    $('rpc-link').href = rpc;
+    $('rpc-link').setAttribute('aria-label', `View ${card.label} on RPC Online, opens a new tab`);
+  }
+  $('sides-details').hidden = other;
   for (const side of ['obverse', 'reverse']) {
     $(`${side}-legend`).textContent = card[side].legend ?? '';
     $(`${side}-legend`).hidden = !card[side].legend;
@@ -240,7 +256,16 @@ function renderCandidates(candidates, corpus, partial) {
   $('announcement').textContent = `${candidates.length} possible matches. Choose one.`;
 }
 
-// A chip is a user action like a "Did you mean" choice: it fills the guided fields from the stored title (so the acsearch term follows it) and makes no permission request.
+// A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
+// from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or "Price P1" would not read back) and makes
+// no permission request.
+function openRecent(entry) {
+  $('quick-reference').value = '';
+  const parsed = parseReference(entry.label);
+  if (parsed) { fillFields(parsed); savePreferences(); }
+  run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }));
+}
+
 function renderRecent() {
   // Rebuilding drops focus to body; if a chip had focus, it returns to the same chip (a used chip is now first), else to the first chip.
   const refocus = $('recent-list').contains(document.activeElement);
@@ -252,12 +277,7 @@ function renderRecent() {
     button.textContent = entry.label;
     button.title = entry.label;
     button.dataset.key = `${entry.corpus}:${entry.id}`;
-    button.addEventListener('click', () => {
-      $('quick-reference').value = '';
-      const parsed = parseReference(entry.label);
-      if (parsed) { fillFields(parsed); savePreferences(); }
-      run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }));
-    });
+    button.addEventListener('click', () => openRecent(entry));
     item.append(button);
     return item;
   }));
@@ -267,17 +287,24 @@ function renderRecent() {
   if (refocus && target) target.focus();
 }
 
+const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
+// Where an amount falls on the lowest–highest line, in percent; a single price has no span and sits in the middle.
+const rangePercent = (summary, value) => (summary.max > summary.min ? ((value - summary.min) / (summary.max - summary.min)) * 100 : 50);
+
 function renderPrices(summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const median = money.format(summary.median);
   $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
   $('median-currency').hidden = median.includes(currency);
-  const { count, unpriced } = summary;
-  // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const skipped = summary.total - count - unpriced;
-  let period = `${count} ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
-  if (summary.earliest !== null) period += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  const { count, unpriced, total } = summary;
+  // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
+  // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
+  const strength = medianStrength(count);
+  const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  $('sale-strength').textContent = `${strength}: ${sales(count)}${years}`;
+  const skipped = total - count - unpriced;
+  let period = `Out of ${total}${summary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'} for “${term}”`;
   if (unpriced) period += ` · ${unpriced} without a price`;
   if (skipped) period += ` · ${skipped} not counted`;
   $('sale-period').textContent = period;
@@ -285,7 +312,7 @@ function renderPrices(summary, currency, term) {
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
   $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
   const span = summary.max - summary.min;
-  const percent = (value) => (span > 0 ? ((value - summary.min) / span) * 100 : 50);
+  const percent = (value) => rangePercent(summary, value);
   $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
   $('range-box').style.width = `${span > 0 ? percent(summary.upperQuartile) - percent(summary.lowerQuartile) : 0}%`;
   $('range-median').style.left = `${percent(summary.median)}%`;
@@ -311,7 +338,23 @@ function renderPrices(summary, currency, term) {
   shownPrices = { card: currentCard, summary, currency, term };
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
-  $('announcement').textContent = `Median ${spoken} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
+  $('announcement').textContent = `Median ${spoken} over ${sales(count)} (${strength.toLowerCase()}).`;
+}
+
+// Checked against the sales shown, never stored: blank shows nothing, text parsePrice can't read asks for an amount, and a readable one says how many
+// sales it tops and its multiple of the median. Its marker sits where it falls on the lowest–highest line, or at an end with a caret pointing out.
+function showCheck() {
+  const text = $('check-amount').value.trim();
+  const amount = text && shownPrices ? parsePrice(text, shownPrices.currency) : null;
+  $('range-check').hidden = amount === null;
+  if (amount === null) { $('check-result').textContent = text ? CHECK_MESSAGE : ''; return; }
+  const { summary } = shownPrices;
+  const { below, count, ratio } = priceCheck(summary, amount);
+  $('check-result').textContent = `Higher than ${below} of ${sales(count)}, ${ratio.toFixed(1)}× the median`;
+  const beyond = amount < summary.min ? 'low' : amount > summary.max ? 'high' : '';
+  $('range-check').style.left = `${beyond === 'low' ? 0 : beyond === 'high' ? 100 : rangePercent(summary, amount)}%`;
+  $('range-check').classList.toggle('beyond-low', beyond === 'low');
+  $('range-check').classList.toggle('beyond-high', beyond === 'high');
 }
 
 function showPricesNote(message, withSignIn) {
@@ -410,12 +453,16 @@ function requestHostAccess(origins) {
   });
 }
 
-$('catalogue').value = preferences.catalogue;
-$('currency').value = preferences.currency;
-$('reference-number').value = preferences.number;
-fillRicFields(preferences.volume, preferences.section);
-updateFields();
-renderRecent();
+// The saved fields, currency and Recent row: shown at start-up, and again when the lookup window takes a lookup sent to it (below).
+function showStored() {
+  $('catalogue').value = preferences.catalogue;
+  $('currency').value = preferences.currency;
+  $('reference-number').value = preferences.number;
+  fillRicFields(preferences.volume, preferences.section);
+  updateFields();
+  renderRecent();
+}
+showStored();
 applyStoredTheme();
 syncThemeButton();
 // A window opened with ?window=1 (right-click, the pop-out button) can be resized: the page fills it (popup.css) and offers no pop-out of its own.
@@ -429,6 +476,18 @@ $('quick-reference').addEventListener('change', () => {
   clearOutput();
   $('lookup-prompt').hidden = false;
 });
+// ArrowUp and ArrowDown (no modifier) bring back the Recent labels while the box is empty or shows one, the caret at the end; typing forgets the
+// position, and a recalled label sent unchanged reopens as its chip does (the submit handler).
+$('quick-reference').addEventListener('keydown', (event) => {
+  if (!['ArrowUp', 'ArrowDown'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const step = recallStep(preferences.recent, recalled, $('quick-reference').value, event.key);
+  if (!step) return;
+  event.preventDefault();
+  recalled = step.position;
+  $('quick-reference').value = step.text;
+  $('quick-reference').setSelectionRange(step.text.length, step.text.length);
+});
+$('quick-reference').addEventListener('input', () => { recalled = -1; });
 // A guided edit (here and in the form input handler) clears the one-box, so a stale one-box value can never override the correction on the next Look up.
 // A new catalogue starts from its defaults: RIC from the first volume with its default section and number, so a remembered volume can't pair with a
 // section it lacks; Bop from its default king and number, keeping the hidden volume.
@@ -453,7 +512,7 @@ $('currency').addEventListener('change', () => {
 // select's change comes after its input, so the announcement stays.
 $('ric-volume').addEventListener('change', () => {
   const volume = $('ric-volume').value;
-  const ruler = $('ric-section').value;
+  const ruler = visible('ric-section');
   const volumes = volumesOf(ruler);
   if (RIC_VOLUMES.some((option) => option.value === volume) && volumes.length > 0 && !volumes.includes(volume)) {
     $('ric-section').value = '';
@@ -469,7 +528,7 @@ $('reference-form').addEventListener('input', (event) => {
   // Typing a RIC ruler moves the volume to the one that has it (Titus: II.1²), or to Any volume when several do (Hadrian, Antioch), unless the chosen
   // volume has it; text that names no known ruler leaves it alone. Announced here, after clearOutput() has emptied the live region.
   if (event.target.id === 'ric-section' && $('catalogue').value === 'RIC') {
-    const volume = volumeFor($('ric-section').value, $('ric-volume').value);
+    const volume = volumeFor(visible('ric-section'), $('ric-volume').value);
     if (volume !== $('ric-volume').value) {
       $('ric-volume').value = volume;
       $('announcement').textContent = `Volume set to ${$('ric-volume').selectedOptions[0].label}.`;
@@ -479,6 +538,8 @@ $('reference-form').addEventListener('input', (event) => {
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const entry = preferences.recent[recalled];
+  if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
   if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
@@ -498,6 +559,7 @@ $('reference-form').addEventListener('submit', async (event) => {
   run(() => lookupType(currentReference(), { cache: labelCache }));
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
+$('check-amount').addEventListener('input', showCheck);
 // writeText is the first call in the click, so it keeps the user gesture; a missing clipboard API throws here and is reported like a refusal.
 // Success relabels the button for 2 seconds; a newer copy restarts the timer, and clearPrices() puts the label back at once.
 $('copy-summary').addEventListener('click', async () => {
@@ -530,19 +592,55 @@ $('prices-form').addEventListener('submit', async (event) => {
   runPrices(term, currency);
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));
-// Browsers fix a toolbar popup's size, so the pop-out opens the popup in a window you can resize and closes itself. The window reopens the card it
-// shows by corpus and id (below). A plain page, without the windows API, opens the same URL itself.
+// Browsers fix a toolbar popup's size, so the pop-out shows the popup in a window you can resize and closes itself: the lookup window when one is open,
+// else a new one (showInWindow). The window reopens the card it shows by corpus and id (below). A plain page, without the windows API, opens the same
+// URL itself.
 $('pop-out').addEventListener('click', () => {
   const url = cardUrlFor(currentCard);
   if (!api?.windows?.create) { window.open(url, '_blank', 'popup,width=440,height=680'); return; }
-  Promise.resolve(api.windows.create({ url: api.runtime.getURL(url), type: 'popup', width: 440, height: 680 })).then(() => window.close());
+  showInWindow(api, url).then(() => window.close());
 });
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);
 
 // A right-click lookup opens popup.html?q=<selection>: the text goes only into the Reference box, and requestSubmit runs the same submit handler as Look up.
 // The pop-out's window names a card instead and reopens it like a Recent chip: with the fields stored alongside it, and without a permission request.
-const selected = queryFromSearch(location.search);
-const opened = cardFromSearch(location.search);
-if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
-else if (opened && CORPORA.includes(opened.corpus)) run(() => lookupById(opened.corpus, opened.id, { cache: labelCache }));
+// Either way the cursor then waits in the Reference box (Alt+Shift+G, type, Enter): Firefox popups can ignore autofocus.
+function openFrom(search) {
+  const selected = queryFromSearch(search);
+  const opened = cardFromSearch(search);
+  if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
+  else if (opened && CORPORA.includes(opened.corpus)) run(() => lookupById(opened.corpus, opened.id, { cache: labelCache }));
+  $('quick-reference').focus();
+}
+// Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its
+// own next save keeps them. The fields and currency shown here stay as they are.
+// A theme chosen there shows here too. A recalled label keeps its place when the list shifts under it, so Enter still reopens it as its chip.
+window.addEventListener('storage', (event) => {
+  if (event.key === THEME_KEY) { applyStoredTheme(); syncThemeButton(); return; }
+  if (event.key !== STORAGE_KEY) return;
+  const stored = restorePreferences(event.newValue);
+  preferences = { ...preferences, recent: stored.recent, terms: stored.terms };
+  if (recalled >= 0) recalled = preferences.recent.findIndex((entry) => entry.label === $('quick-reference').value);
+  renderRecent();
+});
+// One lookup window: while this window is open, a right-click or the pop-out sends it the address it would have opened (showInWindow), read here like
+// this page's own; the answer names the window so the sender brings it forward. The toolbar popup doesn't listen, so it never takes one. The window
+// first takes up what the sender saved, as a new window does at start-up: a card sent by corpus and id is priced with its own fields, term and currency,
+// and this window's older copy is never saved over the sender's Recent list, terms and currency.
+if (windowed) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+  if (message?.type !== LOOKUP_MESSAGE) return false;
+  const search = new URL(String(message.url), location.href).search;
+  const opened = cardFromSearch(search);
+  // A pop-out with no card only brings this window forward: its fields, currency and card stay as they are.
+  if (queryFromSearch(search) || (opened && CORPORA.includes(opened.corpus))) {
+    try { preferences = restorePreferences(localStorage.getItem(STORAGE_KEY)); } catch { /* unreadable: keep this window's copy */ }
+    recalled = -1;
+    $('quick-reference').value = '';
+    showStored();
+    openFrom(search);
+  }
+  Promise.resolve(api.windows.getCurrent()).catch(() => null).then((current) => sendResponse({ windowId: current?.id }));
+  return true;
+});
+openFrom(location.search);
