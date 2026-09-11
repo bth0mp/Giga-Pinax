@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 2 (Get prices in the same click as Look up).
+- v0.6 one-click prices (streamlining item 2, plus two a11y minors from the v0.5 review): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.6-one-click-prices.md`.
 
 ## Streamlining the extension
 
