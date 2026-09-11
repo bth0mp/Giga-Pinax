@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restorePreferences, rememberTerm, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberRecent, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER } from '../extension/preferences.js';
 
-const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {} };
+const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] };
 
 test('corrupt or missing preferences fall back to Price 23 in USD', () => {
   for (const raw of [null, undefined, '', 'broken', 'null', '7', '[]']) {
@@ -12,7 +12,7 @@ test('corrupt or missing preferences fall back to Price 23 in USD', () => {
 
 test('saved preferences are constrained, trimmed to 120 characters and stripped of unknown keys', () => {
   const saved = restorePreferences(JSON.stringify({ currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true }));
-  assert.deepEqual(saved, { currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', terms: {} });
+  assert.deepEqual(saved, { currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', terms: {}, recent: [] });
   const invalid = restorePreferences(JSON.stringify({ currency: 'BTC', catalogue: 'RPC', number: {}, volume: 'x'.repeat(200) }));
   assert.equal(invalid.currency, 'USD');
   assert.equal(invalid.catalogue, 'Price');
@@ -59,4 +59,30 @@ test('RRC is a remembered catalogue with its own default number', () => {
 test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
   assert.deepEqual({ ...DEFAULT_NUMBER }, { Price: '23', RIC: '306', RRC: '44/5' });
   assert.ok(Object.isFrozen(DEFAULT_NUMBER));
+});
+
+test('recent lookups are restored, sanitised, deduplicated and capped', () => {
+  const entry = (id, corpus = 'pella', label = id) => ({ id, corpus, label });
+  const saved = restorePreferences(JSON.stringify({ recent: [
+    entry('price.23', 'pella', 'Price 23'), { id: 'x', corpus: 'evil', label: 'X' }, { id: 7, corpus: 'ocre', label: 'Y' },
+    entry('price.23', 'pella', 'dupe'), 'junk', null, entry('rrc-44.5', 'crro', 'RRC 44/5'), entry('', 'ocre', 'empty id'),
+  ] }));
+  assert.deepEqual(saved.recent, [entry('price.23', 'pella', 'Price 23'), entry('rrc-44.5', 'crro', 'RRC 44/5')]);
+  assert.equal(restorePreferences(JSON.stringify({ recent: Array.from({ length: 10 }, (_, i) => entry(`price.${i}`)) })).recent.length, RECENT_LIMIT);
+  assert.deepEqual(restorePreferences(JSON.stringify({ recent: 'nope' })).recent, []);
+  assert.equal(restorePreferences(JSON.stringify({ recent: [entry('p', 'pella', 'L'.repeat(200))] })).recent[0].label.length, 120);
+  assert.equal(RECENT_LIMIT, 6);
+});
+
+test('rememberRecent puts the newest type first, drops its older copy, keeps six and stores only id, corpus and label', () => {
+  let preferences = restorePreferences(null);
+  const before = preferences;
+  for (let i = 0; i < 8; i += 1) preferences = rememberRecent(preferences, { id: `price.${i}`, corpus: 'pella', label: `Price ${i}`, uri: 'u', obverse: {} });
+  assert.deepEqual(before.recent, []);
+  assert.deepEqual(preferences.recent.map((e) => e.id), ['price.7', 'price.6', 'price.5', 'price.4', 'price.3', 'price.2']);
+  preferences = rememberRecent(preferences, { id: 'price.4', corpus: 'pella', label: 'Price 4' });
+  assert.deepEqual(preferences.recent.map((e) => e.id), ['price.4', 'price.7', 'price.6', 'price.5', 'price.3', 'price.2']);
+  assert.deepEqual(Object.keys(preferences.recent[0]), ['id', 'corpus', 'label']);
+  preferences = rememberRecent(preferences, { id: 'price.4', corpus: 'ocre', label: 'Other corpus, same id' });
+  assert.equal(preferences.recent.filter((e) => e.id === 'price.4').length, 2);
 });

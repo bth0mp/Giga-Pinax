@@ -1,9 +1,26 @@
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5' });
+export const RECENT_LIMIT = 6;
 const TERM_LIMIT = 50;
+const CORPORA = Object.freeze(['ocre', 'pella', 'crro']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
+
+// Untrusted: keeps plain { id, corpus, label } entries with non-empty strings and a known corpus, first copy of each type only, newest first.
+function restoreRecent(value) {
+  if (!Array.isArray(value)) return [];
+  const recent = [];
+  for (const entry of value) {
+    if (recent.length === RECENT_LIMIT) break;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const { id, corpus, label } = entry;
+    if (typeof id !== 'string' || !id || typeof label !== 'string' || !label || !CORPORA.includes(corpus)) continue;
+    const kept = { id: id.slice(0, 120), corpus, label: label.slice(0, 120) };
+    if (!recent.some((other) => other.corpus === kept.corpus && other.id === kept.id)) recent.push(kept);
+  }
+  return recent;
+}
 
 function restoreTerms(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -26,7 +43,14 @@ export function restorePreferences(raw) {
     volume: text(saved.volume, 'I (2nd edition)'),
     section: text(saved.section, 'Nero'),
     terms: restoreTerms(saved.terms),
+    recent: restoreRecent(saved.recent),
   };
+}
+
+export function rememberRecent(preferences, card) {
+  const entry = { id: card.id, corpus: card.corpus, label: String(card.label).slice(0, 120) };
+  const older = preferences.recent.filter((other) => other.corpus !== entry.corpus || other.id !== entry.id);
+  return { ...preferences, recent: [entry, ...older].slice(0, RECENT_LIMIT) };
 }
 
 export function rememberTerm(preferences, typeId, term) {

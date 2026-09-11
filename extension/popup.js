@@ -1,6 +1,6 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices } from './prices.js';
-import { DEFAULT_NUMBER, STORAGE_KEY, rememberTerm, restorePreferences } from './preferences.js';
+import { DEFAULT_NUMBER, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -9,7 +9,8 @@ const NETWORK_MESSAGE = 'Couldn’t reach numismatics.org. Check your connection
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
-const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.';
+const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
+const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5” or “Price 23”, or use the fields below.';
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
@@ -52,12 +53,7 @@ function updateFields() {
   $('reference-help').textContent = REFERENCE_HELP[catalogue];
 }
 
-// An empty one-box leaves the guided fields alone; a parsed one fills them so they show what was understood. False when it doesn't parse.
-function applyQuickReference() {
-  const text = $('quick-reference').value;
-  if (!text.trim()) return true;
-  const parsed = parseReference(text);
-  if (!parsed) return false;
+function fillFields(parsed) {
   $('catalogue').value = parsed.catalogue;
   $('reference-number').value = parsed.number;
   if (parsed.catalogue === 'RIC') {
@@ -65,6 +61,15 @@ function applyQuickReference() {
     $('ric-section').value = parsed.section;
   }
   updateFields();
+}
+
+// An empty one-box leaves the guided fields alone; a parsed one fills them so they show what was understood. False when it doesn't parse.
+function applyQuickReference() {
+  const text = $('quick-reference').value;
+  if (!text.trim()) return true;
+  const parsed = parseReference(text);
+  if (!parsed) return false;
+  fillFields(parsed);
   return true;
 }
 
@@ -145,6 +150,26 @@ function renderCandidates(candidates, corpus) {
   $('announcement').textContent = `${candidates.length} possible matches. Choose one.`;
 }
 
+// A chip is a user action like a "Did you mean" choice: it fills the guided fields from the stored title (so the acsearch term follows it) and makes no permission request.
+function renderRecent() {
+  $('recent-list').replaceChildren(...preferences.recent.map((entry) => {
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = entry.label;
+    button.title = entry.label;
+    button.addEventListener('click', () => {
+      $('quick-reference').value = '';
+      const parsed = parseReference(entry.label);
+      if (parsed) { fillFields(parsed); savePreferences(); }
+      run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }));
+    });
+    item.append(button);
+    return item;
+  }));
+  $('recent').hidden = preferences.recent.length === 0;
+}
+
 function renderPrices(summary, currency, term) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const median = money.format(summary.median);
@@ -209,11 +234,19 @@ async function run(perform) {
   if (id !== requestId) return;
   if (outcome.status === 'ok') {
     renderCard(outcome.card);
+    preferences = rememberRecent(preferences, outcome.card);
+    savePreferences();
+    renderRecent();
     // Same click, same guarded path as Get prices, but only when acsearch access is already granted (never prompts) and without remembering the term.
+    // Without access, the same guards decide whether to say how to allow it instead.
     const term = $('price-term').value.trim();
     const currency = $('currency').value;
     const ticket = priceRequestId;
-    if (term && await hasAcsearchAccess() && id === requestId && ticket === priceRequestId) runPrices(term, currency, { remember: false });
+    if (!term) return;
+    const granted = await hasAcsearchAccess();
+    if (id !== requestId || ticket !== priceRequestId) return;
+    if (granted) runPrices(term, currency, { remember: false });
+    else showPricesNote(ACCESS_HINT, false);
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`);
@@ -266,6 +299,7 @@ $('reference-number').value = preferences.number;
 $('ric-volume').value = preferences.volume;
 $('ric-section').value = preferences.section;
 updateFields();
+renderRecent();
 
 $('quick-reference').addEventListener('change', () => {
   if (!$('quick-reference').value.trim() || !applyQuickReference()) return;
