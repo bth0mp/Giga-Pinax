@@ -106,4 +106,16 @@ test('quoted uncounted prices are squashed of control characters and capped at 4
 
 ## Verification (controller, never-cached origin)
 
+Result 2026-09-11 at `81cb1d1`, in-app Chromium at 400×600 on `http://localhost:8786` (never loaded before), live numismatics.org, acsearch stubbed:
+
+- Catalogue SC → option `SC (Seleucid Coins)`, label `Seleucid Coins number`, help `Example: 1266.2`, default `1266.2`, RIC fields hidden, footer `Type data: ANS OCRE, PELLA, CRRO & SCO (ODbL)`. Pass.
+- `SC 1266.2` in the Reference box → card `Seleucid Coins (part 1) 1266.2`, `Demetrius II Nicator · Tetradrachm · Antioch, Syria · Silver · 129–128 BC`, Greek reverse legend, type link `…/sco/id/sc.1.1266.2`, term `SC 1266.2`; the only SCO request was the record (no search); 1 acsearch request. Pass.
+- `SC 99999` → `No SC 99999 found in SCO. Check the number.` Pass. (The browser logs the expected 404s for missing records.)
+- Recent chip for the SC card with the form on Price → fields SC / `1266.2`, RIC fields hidden, term `SC 1266.2`, 1 acsearch request with that term. Pass (relies on the implementer's extra title-form parse).
+- **Fail:** `SC 1266.9` → `No SC 1266.9 found in SCO.` instead of the suggestion `Seleucid Coins (part 1) 1266`. Live probe: plain search `SC 1266.9` → 0 hits, `SC 1266` → 1 hit (`sc.1.1266`); `SC 1630.9` → 0. **Plan defect:** the 404 fallback must search the base number (`SC {base}`), not the full missing number. The unit test passed only because its fake fetch answers every `sco/apis/search?q=` with the base-number fixture; it must also assert the search URL ends in `q=SC%201266`.
+
+After the fix (`28a1334`), on another never-loaded origin (`http://localhost:8787`), live numismatics.org, acsearch stubbed: `SC 1266.9` → the only SCO search is `/sco/apis/search?q=SC%201266` (the missing record's 404 appears once in the console) and one suggestion `Seleucid Coins (part 1) 1266`; choosing it → fields SC / `1266`, Reference box cleared, card `Seleucid Coins (part 1) 1266`, acsearch term `SC 1266`, 1 acsearch request. RIC volume `I` Nero 306 → suggestion `RIC I (second edition) Nero 306`; choosing it fills `I (2nd edition)` / `Nero` / `306`, term `Nero 306`, 1 acsearch request. `SC 1266.2` → one SCO request (the record), no search. 400 px. Pass.
+
+Planned checks:
+
 Live numismatics.org, acsearch stubbed: catalogue SC shows label `Seleucid Coins number`, help `Example: 1266.2`, default `1266.2`, RIC fields hidden; `SC 1266.2` in the Reference box → card `Seleucid Coins (part 1) 1266.2` with ruler/denomination/mint/material labels and `129–128 BC`, type link `…/sco/id/sc.1.1266.2`, acsearch term `SC 1266.2`, no SCO search request (network log), one acsearch request; `SC 1266.9` → one "Did you mean" `Seleucid Coins (part 1) 1266`; `SC 99999` → `No SC 99999 found in SCO. Check the number.`; Recent chip for the SC card re-opens it; 400 px; console clean.
