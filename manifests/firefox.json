@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Giga Pinax",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Look up ancient coin types by RIC, RRC, SC or Price reference and see recent acsearch hammer prices.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -22,6 +22,8 @@
       "description": "Open Giga Pinax"
     }
   },
+  "background": { "scripts": ["background.js"], "type": "module" },
+  "permissions": ["contextMenus"],
   "host_permissions": [
     "https://numismatics.org/*",
     "https://nomisma.org/*",

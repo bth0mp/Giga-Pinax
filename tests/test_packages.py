@@ -20,6 +20,8 @@ ASSETS = {
     "lookup.js",
     "preferences.js",
     "prices.js",
+    "selection.js",
+    "background.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
@@ -39,7 +41,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.10.1", manifest["version"])
+                self.assertEqual("0.11.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -68,8 +70,19 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(browser=browser):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(HOST_PERMISSIONS, manifest["host_permissions"])
-                for key in ("permissions", "optional_permissions", "optional_host_permissions", "content_scripts", "background"):
+                self.assertEqual(["contextMenus"], manifest["permissions"])
+                for key in ("optional_permissions", "optional_host_permissions", "content_scripts"):
                     self.assertNotIn(key, manifest)
+
+    def test_manifests_declare_the_context_menu_background(self) -> None:
+        self.assertEqual(
+            {"service_worker": "background.js", "type": "module"},
+            self.load_manifest("brave")["background"],
+        )
+        self.assertEqual(
+            {"scripts": ["background.js"], "type": "module"},
+            self.load_manifest("firefox")["background"],
+        )
 
     def test_firefox_declares_identity_and_no_data_collection(self) -> None:
         gecko = self.load_manifest("firefox")["browser_specific_settings"]["gecko"]
@@ -101,7 +114,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.10.1.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.11.0.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}

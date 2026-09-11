@@ -1,6 +1,7 @@
 import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices, quoteList, summaryText } from './prices.js';
 import { DEFAULT_NUMBER, STORAGE_KEY, rememberRecent, rememberTerm, restorePreferences } from './preferences.js';
+import { queryFromSearch } from './selection.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -419,3 +420,7 @@ $('prices-form').addEventListener('submit', async (event) => {
   if (!allowed) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
   runPrices(term, currency);
 });
+
+// A right-click lookup opens popup.html?q=<selection>: the text goes only into the Reference box, and requestSubmit runs the same submit handler as Look up.
+const selected = queryFromSearch(location.search);
+if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
