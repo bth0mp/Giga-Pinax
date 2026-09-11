@@ -41,4 +41,16 @@
 
 ## Verification (controller, never-cached origin, acsearch stubbed)
 
+Result 2026-09-11 at `dbfbfb6`, in-app Chromium at 400×600 on `http://localhost:8781` (never loaded before), numismatics.org/nomisma.org live, `https://www.acsearch.info/` answered by a `window.fetch` stub returning nine lots 90…450. The first run used fixed sleeps and read the page before a slow numismatics.org response had arrived (network log showed the Price 23 record still loading when the next lookup superseded it); the re-run polls until each card or panel appears.
+
+- Look up `Price 23` (no permissions API = access) → card `Price 23` and median `$180`; exactly 1 acsearch request; stored terms `{}`.
+- Choosing the "Did you mean" `RIC I (second edition) Nero 306` → card, 1 acsearch request with term `Nero 306`, median `$180`, stored terms `{}`.
+- Get prices after editing the term to `Price 23 tetradrachm` → 1 request with that term; stored `terms["price.23"] = "Price 23 tetradrachm"`.
+- RRC 44/5 with a 3 s acsearch delay; currency changed to EUR while the button read `Fetching…` → panel stayed hidden, button back to `Get prices` and enabled, 1 request total.
+- `chrome.permissions.contains` stubbed to `false`: Look up `Price 23` → card, 0 acsearch requests, panel hidden; Get prices → 1 request, panel shown.
+- `Sear 1234` → one-box error, 0 acsearch requests; `RRC 9999/9` → `No RRC 9999/9 found in CRRO. Check the number.`, 0 acsearch requests; a guided edit afterwards left `#form-error` text empty.
+- 400 px, no overflow; console clean. Pass.
+
+Planned checks:
+
 With `window.fetch` wrapped so `https://www.acsearch.info/` returns a stub page and every other request is real: Look up `Price 23` → type card then the median panel with exactly one acsearch request and no term stored; choosing a suggestion (RIC `I` Nero 306) → one acsearch request; Get prices after editing the term → one more request and the term stored; with `chrome.permissions` stubbed so `contains` resolves `false`, Look up makes zero acsearch requests and Get prices still works; changing currency during an automatic fetch leaves no panel; the one-box error path and not-found path make zero acsearch requests; 400 px; console clean.

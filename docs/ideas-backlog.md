@@ -4,18 +4,18 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- v0.6 one-click prices (streamlining item 2, plus two a11y minors from the v0.5 review): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.6-one-click-prices.md`.
+- Nothing. Next loop tick takes streamlining item 3 (recent lookups).
 
 ## Streamlining the extension
 
 0. ~~**RRC follow-ups from the v0.4 review.**~~ Shipped in v0.4.1 (quoted-first search instead of id guessing). Its review's two remaining minors (RIC fields quote strip; CRRO plain-fallback exact-match test) shipped in v0.5 (`948f2d0`). Original note: (a) `RRC 1/1` is falsely "not found": CRRO's search ranks it past the first 100 of 656 hits, but `crro/id/rrc-1.1.jsonld` exists — on a search miss, try the id built from the number (`rrc-{group}.{n}`, case-sensitive, only for `^\d+(-\d+[A-Z])?\/\d+[a-z]?$`) inside the same deadline; one extra numismatics.org request, never acsearch. (b) Strip a typed `RRC` / `Crawford` / `Cr.` prefix in `buildQuery` and `defaultTerm` (today `RRC 44/5` in the field becomes `RRC RRC 44/5` and the term `Crawford RRC 44/5`). (c) Only offer "Did you mean" candidates whose title starts with the typed group (`RRC 44/`), since CRRO also matches dates. (d) Export the default-number table from `preferences.js` instead of repeating it in `popup.js`.
 1. ~~**One-box reference entry.**~~ Shipped in v0.5 (see Done). Original note: Accept `RIC I² Nero 306`, `RIC 1(2) Nero 306`, `Price 23` in a single field and fill the guided fields from it. Fewer fields, faster lookups; guided fields stay for when parsing fails.
-2. **Get prices in the same click.** After acsearch permission is granted, Look up runs the type lookup and then the price fetch for that one reference. Still one acsearch request per user click.
+2. ~~**Get prices in the same click.**~~ Shipped in v0.6 (see Done). Original note: After acsearch permission is granted, Look up runs the type lookup and then the price fetch for that one reference. Still one acsearch request per user click.
 3. **Recent lookups.** Last 10 resolved types as one-click chips under the form, stored locally.
 4. **Keyboard shortcut** to open the popup (`commands` in the manifest, e.g. Alt+Shift+G).
 5. **Copy summary** button: `RIC I² Nero 306 · median $180 (9 sales, 2019–2026)` to the clipboard.
 6. **Right-click lookup.** Select "RIC 306" or "Price 23" on any auction page → Giga Pinax opens on it. Needs `contextMenus` and a background worker; weigh the extra permission.
-7. **Deferred review minors:** candidate list accessible name; `aria-invalid` only for not-found; drop dead `.try-it a` rules; read the label cache once per popup; `resolveLabels` option defaults.
+7. **Deferred review minors:** from the v0.6 review — the sign-in note says "select “Get prices” again" even when the fetch was automatic (drop "again"); README/INSTALL tie acsearch contact to Look up and Get prices but a "Did you mean" choice also fetches (say "when a type resolves"); no hint when prices are skipped because acsearch access was turned off. Older: candidate list accessible name; `aria-invalid` only for not-found; drop dead `.try-it a` rules; read the label cache once per popup; `resolveLabels` option defaults.
 8. **Firefox permanent install** via Mozilla's unlisted (self-distributed) signing.
 9. **Giga-branded icon** set.
 
@@ -38,3 +38,4 @@ ANS runs several type corpora on the same Numishare software as OCRE and PELLA, 
 - v0.4 Roman Republican (RRC/Crawford) references via ANS CRRO, issuer fallback for the ruler slot, acsearch term `Crawford {number}`, catalogue-aware not-found hint (`cfd6ce9`, `56d0143`).
 - v0.4.1 exact references via a quoted phrase search first (fixes RRC 1/1), typed `RRC`/`Crawford`/`Cr.`/`Price` prefixes and stray quotes ignored, CRRO suggestions limited to the typed Crawford group before the five-suggestion cap, one default-number table (`db486f0`, `a89b0e2`).
 - v0.5 one-box Reference entry: `RIC I² Nero 306`, `Crawford 44/5`, `Price 23` (Arabic volumes, parts, edition shorthands, curly quotes) fill the guided fields and look up in one click; unreadable input explains itself without a request; guided edits clear the box; RIC fields strip stray quotes (`948f2d0`, `a72d79a`).
+- v0.6 one-click prices: a resolved type (Look up or a "Did you mean" choice) fetches its acsearch prices in the same click when acsearch access is already granted — never prompts, never stores the term, one request per action; Get prices re-runs with an edited term; stale error text cleared for screen readers (`dbfbfb6`).
