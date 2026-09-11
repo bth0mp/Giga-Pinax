@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -341,4 +341,9 @@ test('parseReference reads SCO titles so SC chips and suggestions fill the field
   assert.deepEqual(parseReference('Seleucid Coins (part 1) 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
   assert.deepEqual(parseReference('Seleucid Coins (part 1) 1266'), { catalogue: 'SC', number: '1266', volume: '', section: '' });
   assert.equal(parseReference('Seleucid Coins (part 1) 1266.2 (x)'), null);
+});
+
+test('resolveLabels works without a cache argument', async () => {
+  const fetchImpl = fakeFetch({ 'nomisma.org/id/nero.jsonld': fixture('nomisma-nero.jsonld') });
+  assert.deepEqual(await resolveLabels(['nero', 'missing'], { fetchImpl }), { nero: 'Nero' });
 });

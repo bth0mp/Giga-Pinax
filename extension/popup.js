@@ -13,7 +13,7 @@ const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
-const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5” or “Price 23”, or use the fields below.';
+const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5”, “SC 1266.2” or “Price 23”, or use the fields below.';
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO' };
 const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.' };
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number' };
@@ -28,11 +28,22 @@ let priceRequestId = 0;
 let currentCard = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
+let copiedTimer = 0;
 
+// Read once per popup; get reads memory and set writes the whole object back. Missing, corrupt or unwritable storage leaves an in-memory cache.
+function readLabels() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LABELS_KEY));
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch { return {}; }
+}
 const labelCache = {
-  read() { try { return JSON.parse(localStorage.getItem(LABELS_KEY)) ?? {}; } catch { return {}; } },
-  get(slug) { return this.read()[slug]; },
-  set(slug, label) { try { localStorage.setItem(LABELS_KEY, JSON.stringify({ ...this.read(), [slug]: label })); } catch { /* cache is optional */ } },
+  labels: readLabels(),
+  get(slug) { return this.labels[slug]; },
+  set(slug, label) {
+    this.labels[slug] = label;
+    try { localStorage.setItem(LABELS_KEY, JSON.stringify(this.labels)); } catch { /* cache is optional */ }
+  },
 };
 
 function currentReference() {
@@ -81,9 +92,15 @@ function setPricesBusy(busy) {
   $('prices-label').textContent = busy ? 'Fetching…' : 'Get prices';
 }
 
+function resetCopyLabel() {
+  clearTimeout(copiedTimer);
+  $('copy-summary').textContent = 'Copy summary';
+}
+
 function clearPrices() {
   priceRequestId += 1;
   shownPrices = null;
+  resetCopyLabel();
   $('prices-panel').hidden = true;
   $('prices-error').hidden = true;
   $('prices-note').hidden = true;
@@ -104,10 +121,11 @@ function clearOutput() {
   clearPrices();
 }
 
-function showError(message, field = 'reference-number') {
+// Only a reference that wasn't found or read marks its field invalid; network and permission messages name no field.
+function showError(message, field) {
   $('form-error').textContent = message;
   $('form-error').hidden = false;
-  $(field).setAttribute('aria-invalid', 'true');
+  if (field) $(field).setAttribute('aria-invalid', 'true');
 }
 
 function setBusy(busy) {
@@ -223,7 +241,7 @@ function renderPrices(summary, currency, term) {
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   $('sale-details').open = false;
-  shownPrices = { summary, currency, term };
+  shownPrices = { card: currentCard, summary, currency, term };
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   $('announcement').textContent = `Median ${spoken} over ${count} ${count === 1 ? 'sale' : 'sales'}.`;
@@ -270,7 +288,7 @@ async function run(perform) {
     }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus);
-  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`);
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
   else showError(NETWORK_MESSAGE);
 }
 
@@ -371,12 +389,17 @@ $('reference-form').addEventListener('submit', async (event) => {
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
 // writeText is the first call in the click, so it keeps the user gesture; a missing clipboard API throws here and is reported like a refusal.
+// Success relabels the button for 2 seconds; a newer copy restarts the timer, and clearPrices() puts the label back at once.
 $('copy-summary').addEventListener('click', async () => {
-  if (!currentCard || !shownPrices) return;
-  const { summary, currency, term } = shownPrices;
+  const shown = shownPrices;
+  if (!shown) return;
   try {
-    await navigator.clipboard.writeText(summaryText(currentCard, summary, currency, term));
+    await navigator.clipboard.writeText(summaryText(shown.card, shown.summary, shown.currency, shown.term));
     $('announcement').textContent = 'Summary copied.';
+    if (shownPrices !== shown) return;
+    resetCopyLabel();
+    $('copy-summary').textContent = 'Copied';
+    copiedTimer = setTimeout(resetCopyLabel, 2000);
   } catch {
     $('announcement').textContent = COPY_FAILED_MESSAGE;
   }

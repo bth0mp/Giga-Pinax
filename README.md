@@ -1,6 +1,6 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.10.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.10.1** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/), Seleucid Coins (SC) references through [SCO](https://numismatics.org/sco/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
 
 acsearch has approved this workflow for the extension: each collector uses their own account, one search runs per click, one page of results is read, and nothing from acsearch is stored. Prices require an acsearch account that includes hammer prices (Premium); without one the extension says so and links to their sign-in page.
 
@@ -18,7 +18,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 - A **Recent** row under the form re-opens your last six types with one click.
 - **Alt+Shift+G** opens the popup (change it at `brave://extensions/shortcuts` or in Firefox's Manage Extension Shortcuts).
 - Median hammer price, middle 50% with a range visual, date span, and an expandable list of the sales linking to acsearch.
-- **Copy summary** copies the type, median, middle 50%, sale count, search term and type link as plain text.
+- **Copy summary** copies the type, median, middle 50%, sale count, search term, years, type link and any prices it couldn't count, as plain text.
 - Currency USD, EUR, GBP or CHF is passed to acsearch; a price quoted in a different currency is left out rather than mixed in.
 - Contacts only `numismatics.org`, `nomisma.org` and `www.acsearch.info` (the last with your own session). Your preferences stay in the browser; only the reference or term you look up is sent.
 

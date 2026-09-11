@@ -165,7 +165,7 @@ function withTimeout(ms) {
   return { signal: controller.signal, done: () => clearTimeout(timer) };
 }
 
-export async function resolveLabels(slugs, { fetchImpl, cache, signal }) {
+export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal } = {}) {
   const labels = {};
   await Promise.all(slugs.map(async (slug) => {
     const cached = cache.get(slug);
