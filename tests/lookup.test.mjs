@@ -296,3 +296,10 @@ test('an exact title found only by the CRRO plain fallback survives the group fi
   assert.equal(result.status, 'ok');
   assert.equal(result.card.label, 'RRC 44/5');
 });
+
+test('parseReference strips curly quotes, rejects a digit where the section should be, and caps length', () => {
+  assert.deepEqual(parseReference('“Crawford 44/5”'), { catalogue: 'RRC', number: '44/5', volume: '', section: '' });
+  assert.deepEqual(parseReference('„RIC I² Nero 306“'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+  for (const text of ['RIC I 2 Nero 306', 'RIC II 3 Hadrian 12', `RIC I Nero ${'1'.repeat(120)}`]) assert.equal(parseReference(text), null, text);
+  assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: '“I (2nd edition)”', section: 'Nero', number: '306' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
+});

@@ -9,8 +9,8 @@ const norm = (value) => squash(value).toLowerCase();
 // It is stripped only before the number itself, so "Crawf 44/5" or "Cr . 44/5" stay as typed.
 const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i };
 
-// Stray quotes would unbalance the quoted phrase search.
-const unquote = (value) => squash(String(value ?? '').replaceAll('"', ''));
+// Stray quotes would unbalance the quoted phrase search; curly ones arrive when a reference is copied from prose.
+const unquote = (value) => squash(String(value ?? '').replace(/["“”„]/g, ''));
 
 export function referenceNumber(catalogue, number) {
   const value = unquote(number);
@@ -20,10 +20,13 @@ export function referenceNumber(catalogue, number) {
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const SIMPLE_REFERENCE = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(\d\S*)$/i, Price: /^Price\s*(\d\S*)$/i };
 // RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
-// optional second-edition marker, then the ruler or mint section and finally the last token starting with a digit, with an optional parenthetical.
-const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./,]\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:\s*,\s*|\s+)(.+?)\s+(\d\S*(?: \([^)]*\))?)$/i;
+// optional second-edition marker, then the ruler or mint section (starting with a non-digit, so "RIC I 2 Nero 306" fails)
+// and finally the last token starting with a digit, with an optional parenthetical.
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./,]\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:\s*,\s*|\s+)([^\d\s].*?)\s+(\d\S*(?: \([^)]*\))?)$/i;
+const MAX_REFERENCE = 120;
 
 export function parseReference(text) {
+  if (squash(text).length > MAX_REFERENCE) return null;
   const value = unquote(text);
   for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
     const number = value.match(pattern)?.[1];

@@ -88,15 +88,16 @@ function clearOutput() {
   $('result').hidden = true;
   $('lookup-prompt').hidden = true;
   $('reference-number').removeAttribute('aria-invalid');
+  $('quick-reference').removeAttribute('aria-invalid');
   $('announcement').textContent = '';
   currentCard = null;
   clearPrices();
 }
 
-function showError(message) {
+function showError(message, field = 'reference-number') {
   $('form-error').textContent = message;
   $('form-error').hidden = false;
-  $('reference-number').setAttribute('aria-invalid', 'true');
+  $(field).setAttribute('aria-invalid', 'true');
 }
 
 function setBusy(busy) {
@@ -250,7 +251,10 @@ $('ric-section').value = preferences.section;
 updateFields();
 
 $('quick-reference').addEventListener('change', () => {
-  if (applyQuickReference()) savePreferences();
+  if (!$('quick-reference').value.trim() || !applyQuickReference()) return;
+  savePreferences();
+  clearOutput();
+  $('lookup-prompt').hidden = false;
 });
 // A guided edit (here and in the form input handler) clears the one-box, so a stale one-box value can never override the correction on the next Look up.
 $('catalogue').addEventListener('change', () => {
@@ -276,8 +280,10 @@ $('reference-form').addEventListener('input', (event) => {
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  // Parsing stays synchronous so the permission request below is still the first await and keeps the user gesture.
-  if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR); return; }
+  // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
+  // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
+  if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
+  if (!$('reference-form').reportValidity()) return;
   const access = requestHostAccess([...HOST_ORIGINS]);
   savePreferences();
   if (!(await access)) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
