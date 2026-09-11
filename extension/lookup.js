@@ -9,16 +9,38 @@ const norm = (value) => squash(value).toLowerCase();
 // It is stripped only before the number itself, so "Crawf 44/5" or "Cr . 44/5" stay as typed.
 const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i };
 
+// Stray quotes would unbalance the quoted phrase search.
+const unquote = (value) => squash(String(value ?? '').replaceAll('"', ''));
+
 export function referenceNumber(catalogue, number) {
-  // Stray quotes would unbalance the quoted phrase search.
-  const value = squash(String(number ?? '').replaceAll('"', ''));
+  const value = unquote(number);
   return Object.hasOwn(PREFIX, catalogue) ? value.replace(PREFIX[catalogue], '') : value;
+}
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const SIMPLE_REFERENCE = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(\d\S*)$/i, Price: /^Price\s*(\d\S*)$/i };
+// RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
+// optional second-edition marker, then the ruler or mint section and finally the last token starting with a digit, with an optional parenthetical.
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./,]\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:\s*,\s*|\s+)(.+?)\s+(\d\S*(?: \([^)]*\))?)$/i;
+
+export function parseReference(text) {
+  const value = unquote(text);
+  for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
+    const number = value.match(pattern)?.[1];
+    if (number) return { catalogue, number, volume: '', section: '' };
+  }
+  const ric = value.match(RIC_REFERENCE);
+  if (!ric) return null;
+  const [, numeral, part, edition, section, number] = ric;
+  const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
+  const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
+  return { catalogue: 'RIC', number, volume, section };
 }
 
 export function buildQuery({ catalogue, number, volume, section }) {
   if (catalogue === 'RIC') {
-    const edition = squash(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
-    return { corpus: 'ocre', query: squash(`RIC ${edition} ${squash(section)} ${squash(number)}`) };
+    const edition = unquote(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
+    return { corpus: 'ocre', query: squash(`RIC ${edition} ${unquote(section)} ${unquote(number)}`) };
   }
   if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${referenceNumber('RRC', number)}`) };
   return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };

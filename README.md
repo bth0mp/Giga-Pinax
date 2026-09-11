@@ -1,6 +1,6 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.4.1** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types by catalogue reference and shows what they have sold for. Version **0.5.0** resolves RIC references through [OCRE](https://numismatics.org/ocre/), Roman Republican (Crawford RRC) references through [CRRO](https://numismatics.org/crro/) and Price references through [PELLA](https://numismatics.org/pella/), open datasets from the American Numismatic Society published under the Open Database License, then fetches up to 100 of the most recent matching sales from acsearch using your own acsearch account and shows the median hammer price, the middle 50%, and the sales behind them.
 
 acsearch has approved this workflow for the extension: each collector uses their own account, one search runs per click, one page of results is read, and nothing from acsearch is stored. Prices require an acsearch account that includes hammer prices (Premium); without one the extension says so and links to their sign-in page.
 
@@ -10,6 +10,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 
 ## What it does
 
+- One **Reference** box: type `RIC I² Nero 306`, `Crawford 44/5` or `Price 23` and the fields fill in.
 - Guided entry for Price numbers, an RRC (Crawford) number, or RIC volume/edition, ruler section and number.
 - Exact-title matching against the ANS search API; near matches are offered as a short list.
 - Ruler, denomination, mint, material, date range, obverse and reverse legends and descriptions.

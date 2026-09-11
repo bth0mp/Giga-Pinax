@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -251,4 +251,48 @@ test('the plain-search fallback shares the lookup deadline', { timeout: 5000 }, 
   assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'network' });
   assert.equal(signals.length, 2);
   assert.equal(signals[0], signals[1]);
+});
+
+test('parseReference reads whole RIC, RRC and Price references', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  const cases = [
+    ['RIC I² Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+    ['RIC I (2nd ed.) Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+    ['ric 1(2) nero 306', ric('I (2nd edition)', 'nero', '306')],
+    ['RIC I 2nd edition Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+    ['RIC I (second edition) Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+    ['RIC II.3 Hadrian 12', ric('II, Part 3', 'Hadrian', '12')],
+    ['RIC II, Part 3 (2nd ed.) Hadrian 12', ric('II, Part 3 (2nd edition)', 'Hadrian', '12')],
+    ['RIC 2/3² Hadrian 12', ric('II, Part 3 (2nd edition)', 'Hadrian', '12')],
+    ['RIC vol. IV Septimius Severus 266', ric('IV', 'Septimius Severus', '266')],
+    ['RIC IV Septimius Severus 266 (aureus)', ric('IV', 'Septimius Severus', '266 (aureus)')],
+    ['RIC VII Antioch 1', ric('VII', 'Antioch', '1')],
+    ['RIC IX Antioch 56A', ric('IX', 'Antioch', '56A')],
+    ['Crawford 44/5', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['RRC 44/5', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['cr. 197-198B/1a', { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' }],
+    ['  Price   23 ', { catalogue: 'Price', number: '23', volume: '', section: '' }],
+    ['"Price 3a"', { catalogue: 'Price', number: '3a', volume: '', section: '' }],
+  ];
+  for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
+  for (const text of ['', 'hello', 'RIC Nero 306', 'RIC I Nero', 'Sear 1234', 'Price', 'Crawford', 'RIC XI Nero 1']) {
+    assert.equal(parseReference(text), null, text);
+  }
+});
+
+test('a parsed one-box reference feeds buildQuery the OCRE title shape', () => {
+  assert.deepEqual(buildQuery(parseReference('RIC I² Nero 306')), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
+  assert.deepEqual(buildQuery(parseReference('RIC II, Part 3 (2nd ed.) Hadrian 12')), { corpus: 'ocre', query: 'RIC II, Part 3 (second edition) Hadrian 12' });
+  assert.deepEqual(buildQuery({ catalogue: 'RIC', volume: 'I (2nd edition)"', section: '"Nero', number: '306"' }), { corpus: 'ocre', query: 'RIC I (second edition) Nero 306' });
+});
+
+test('an exact title found only by the CRRO plain fallback survives the group filter', async () => {
+  const fetchImpl = fakeFetch({
+    'crro/apis/search?q=%22': '<feed></feed>',
+    'crro/apis/search?q=': '<feed><entry><title>RRC 44/5</title><id>rrc-44.5</id></entry><entry><title>RRC 480/5</title><id>rrc-480.5</id></entry></feed>',
+    'crro/id/rrc-44.5.jsonld': fixture('crro-rrc-44-5.jsonld'),
+  });
+  const result = await lookupType({ catalogue: 'RRC', number: '44/5' }, { fetchImpl, cache: new Map() });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.label, 'RRC 44/5');
 });

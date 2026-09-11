@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, lookupById, lookupType } from './lookup.js';
+import { HOST_ORIGINS, lookupById, lookupType, parseReference } from './lookup.js';
 import { ACSEARCH_ORIGIN, buildSearchUrl, defaultTerm, fetchPrices } from './prices.js';
 import { DEFAULT_NUMBER, STORAGE_KEY, rememberTerm, restorePreferences } from './preferences.js';
 
@@ -11,6 +11,7 @@ const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connecti
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices” again.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
+const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5” or “Price 23”, or use the fields below.';
 const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO' };
 const NOT_FOUND_HINT = { ocre: 'Check the volume, edition and number.', crro: 'Check the number.', pella: 'Check the number.' };
 const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number' };
@@ -49,6 +50,22 @@ function updateFields() {
   $('ric-section').required = isRic;
   $('reference-label').textContent = REFERENCE_LABEL[catalogue];
   $('reference-help').textContent = REFERENCE_HELP[catalogue];
+}
+
+// An empty one-box leaves the guided fields alone; a parsed one fills them so they show what was understood. False when it doesn't parse.
+function applyQuickReference() {
+  const text = $('quick-reference').value;
+  if (!text.trim()) return true;
+  const parsed = parseReference(text);
+  if (!parsed) return false;
+  $('catalogue').value = parsed.catalogue;
+  $('reference-number').value = parsed.number;
+  if (parsed.catalogue === 'RIC') {
+    $('ric-volume').value = parsed.volume;
+    $('ric-section').value = parsed.section;
+  }
+  updateFields();
+  return true;
 }
 
 function setPricesBusy(busy) {
@@ -232,7 +249,12 @@ $('ric-volume').value = preferences.volume;
 $('ric-section').value = preferences.section;
 updateFields();
 
+$('quick-reference').addEventListener('change', () => {
+  if (applyQuickReference()) savePreferences();
+});
+// A guided edit (here and in the form input handler) clears the one-box, so a stale one-box value can never override the correction on the next Look up.
 $('catalogue').addEventListener('change', () => {
+  $('quick-reference').value = '';
   $('reference-number').value = DEFAULT_NUMBER[$('catalogue').value];
   updateFields();
   savePreferences();
@@ -247,12 +269,15 @@ $('currency').addEventListener('change', () => {
 });
 $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;
+  $('quick-reference').value = '';
   clearOutput();
   $('lookup-prompt').hidden = false;
   savePreferences();
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  // Parsing stays synchronous so the permission request below is still the first await and keeps the user gesture.
+  if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR); return; }
   const access = requestHostAccess([...HOST_ORIGINS]);
   savePreferences();
   if (!(await access)) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
