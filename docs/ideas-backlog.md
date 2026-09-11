@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 4 (keyboard shortcut).
+- v0.8 keyboard shortcut (streamlining item 4, plus two v0.7 minors from item 7): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.8-shortcut.md`.
 
 ## Streamlining the extension
 
