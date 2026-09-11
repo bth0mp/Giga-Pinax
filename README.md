@@ -26,7 +26,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 ```
 
-The runtime has no dependencies. Building uses Python's standard library. `web-ext` is used only for validation. Fixtures under `tests/fixtures/` are real API responses captured on 2026-09-10, including a logged-out acsearch page trimmed to three lots.
+The runtime has no dependencies. Building uses Python's standard library. `web-ext` is used only for validation. Fixtures under `tests/fixtures/` are real API responses captured on 2026-09-10 and 2026-09-11, including a logged-out acsearch page trimmed to three lots.
 
 ## History
 

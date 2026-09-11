@@ -6,10 +6,12 @@ const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 
 // A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Price 23") would otherwise be doubled in the query and the acsearch term.
-const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?) ?/i, Price: /^Price ?/i };
+// It is stripped only before the number itself, so "Crawf 44/5" or "Cr . 44/5" stay as typed.
+const PREFIX = { RRC: /^(?:RRC|Crawford|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i };
 
 export function referenceNumber(catalogue, number) {
-  const value = squash(number);
+  // Stray quotes would unbalance the quoted phrase search.
+  const value = squash(String(number ?? '').replaceAll('"', ''));
   return Object.hasOwn(PREFIX, catalogue) ? value.replace(PREFIX[catalogue], '') : value;
 }
 
@@ -154,11 +156,11 @@ export async function lookupById(corpus, id, options = {}) {
 }
 
 // CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group.
-function sameGroup(picked, corpus, reference) {
-  if (corpus !== 'crro' || picked.status !== 'candidates') return picked;
-  const prefix = `rrc ${referenceNumber('RRC', reference.number).split('/')[0].trim()}/`;
-  const candidates = picked.candidates.filter((entry) => norm(entry.title).startsWith(prefix));
-  return candidates.length ? { status: 'candidates', candidates } : { status: 'none' };
+// Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
+function inGroup(entries, corpus, reference) {
+  if (corpus !== 'crro') return entries;
+  const prefix = norm(`RRC ${referenceNumber('RRC', reference.number).split('/')[0].trim()}/`);
+  return entries.filter((entry) => norm(entry.title).startsWith(prefix));
 }
 
 export async function lookupType(reference, options = {}) {
@@ -169,7 +171,7 @@ export async function lookupType(reference, options = {}) {
   try {
     // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
     let picked = pickMatch(await search(`"${query}"`), query);
-    if (picked.status !== 'ok') picked = sameGroup(pickMatch(await search(query), query), corpus, reference);
+    if (picked.status !== 'ok') picked = pickMatch(inGroup(await search(query), corpus, reference), query);
     if (picked.status !== 'ok') return { ...picked, corpus, query };
     return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal });
   } catch {

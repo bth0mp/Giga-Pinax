@@ -218,3 +218,37 @@ test('lookupType falls back to the plain search for suggestions, and CRRO sugges
   const kept = await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl: related });
   assert.deepEqual(kept.candidates.map((entry) => entry.title), ['RRC 44/5', 'RRC 44/6']);
 });
+
+test('CRRO suggestions: lettered groups match case-insensitively and the group filter runs before the five-suggestion cap', async () => {
+  const feed = (...titles) => `<feed>${titles.map((title, index) => `<entry><title>${title}</title><id>x${index}</id></entry>`).join('')}</feed>`;
+  const lettered = fakeFetch({ 'crro/apis/search?q=%22': '<feed></feed>', 'crro/apis/search?q=': feed('RRC 197-198B/1a', 'RRC 480/5a') });
+  const kept = await lookupType({ catalogue: 'RRC', number: '197-198B/1' }, { fetchImpl: lettered });
+  assert.deepEqual(kept.candidates.map((entry) => entry.title), ['RRC 197-198B/1a']);
+
+  const noisy = feed('RRC 480/5a', 'RRC 480/5', 'RRC 44/5', 'RRC 144/1', 'RRC 44/6', 'RRC 344/2', 'RRC 440/1', 'RRC 44/7');
+  const capped = await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl: fakeFetch({ 'crro/apis/search?q=%22': '<feed></feed>', 'crro/apis/search?q=': noisy }) });
+  assert.equal(capped.status, 'candidates');
+  assert.deepEqual(capped.candidates.map((entry) => entry.title), ['RRC 44/5', 'RRC 44/6', 'RRC 44/7']);
+});
+
+test('referenceNumber drops stray quotes and only strips a real prefix', () => {
+  assert.equal(referenceNumber('RRC', '44/5"'), '44/5');
+  assert.equal(referenceNumber('RRC', '"RRC 44/5"'), '44/5');
+  for (const [typed, expected] of [['Cr44/5', '44/5'], ['CRAWFORD  44/5', '44/5'], ['Cr. 44/5', '44/5'], ['Crawf 44/5', 'Crawf 44/5'], ['Cr . 44/5', 'Cr . 44/5']]) {
+    assert.equal(referenceNumber('RRC', typed), expected);
+  }
+  assert.equal(referenceNumber('Price', 'P23'), 'P23');
+});
+
+// node:test takes options before the function; a trailing options object is silently ignored.
+test('the plain-search fallback shares the lookup deadline', { timeout: 5000 }, async () => {
+  const signals = [];
+  const fetchImpl = (url, { signal } = {}) => {
+    signals.push(signal);
+    if (url.includes('?q=%22')) return Promise.resolve({ ok: true, status: 200, text: async () => '<feed></feed>' });
+    return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  };
+  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'network' });
+  assert.equal(signals.length, 2);
+  assert.equal(signals[0], signals[1]);
+});
