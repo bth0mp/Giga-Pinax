@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Streamlining item 6 (right-click lookup) still waits for the user's permission decision. Next loop tick takes item 7's minors, then "Other projects" item 5 (specimen thumbnails).
+- v0.10.1 polish sweep of item 7's minors: `docs/superpowers/plans/2026-09-11-giga-pinax-v0.10.1-polish.md`. Waiting on the user: item 6 (right-click lookup — new permissions), item 8 (Firefox signing — their Mozilla account), item 9 (icon — taste), and "Other projects" item 5 (specimen photos — loading museum images would send the collector's IP to those servers, which the docs currently promise doesn't happen).
 
 ## Streamlining the extension
 
