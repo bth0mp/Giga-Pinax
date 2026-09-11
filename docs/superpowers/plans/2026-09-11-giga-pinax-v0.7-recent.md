@@ -84,4 +84,17 @@ test('rememberRecent puts the newest type first, drops its older copy, keeps six
 
 ## Verification (controller, never-cached origin, acsearch stubbed)
 
+Result 2026-09-11 at `8c7e010`, in-app Chromium at 400×600 on `http://localhost:8782` (never loaded before), numismatics.org live, acsearch stubbed (nine lots; the logged-out fixture for the sign-in case), polling waits:
+
+- Fresh storage → Recent hidden. Price 23, RIC I² Nero 306, RRC 44/5 → chips `RRC 44/5`, `RIC I (second edition) Nero 306`, `Price 23`; same after reload. Pass.
+- Fields on Price, click the RRC chip → fields RRC / `44/5`, card `RRC 44/5`, term `Crawford 44/5`, exactly 1 acsearch request. Pass. Keyboard focus ends on `body` after the chips are rebuilt (minor).
+- Repeat Price 23 → it moves first, no duplicate. Six seeded entries plus a new lookup → 6 chips, newest first, oldest dropped. Pass.
+- `permissions.contains` → false: note `Select “Get prices” to let Giga Pinax fetch acsearch prices.`, no sign-in link, 0 acsearch requests. Logged-out page → `acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.` with the sign-in link. Pass.
+- **Fail:** a 112-character label does not ellipsize — its button and `<li>` extend to x = 575 while the list ends at 380; the popup's `overflow:hidden` clips the chip mid-word (document width stays 400). The flex `<li>` needs `min-width:0` and `max-width:100%` for the button's `max-width:100%` to apply.
+- Console clean.
+
+After the review fix (`feb7832`), on another never-loaded origin (`http://localhost:8783`): the served CSS contains the `.recent-list li` rule; the 112-character chip now ends in an ellipsis (`scrollWidth > clientWidth`, `text-overflow: ellipsis`), its button and `<li>` end at x = 380 exactly where the list ends, document width 400; focusing and clicking the `RRC 44/5` chip → card `RRC 44/5`, 1 acsearch request, focus on the first chip (the one just used); with `permissions.contains` → false, `Price 23` → note `Select “Get prices” to let Giga Pinax fetch acsearch prices.`, announcement `Found Price 23. Select “Get prices” to let Giga Pinax fetch acsearch prices.`, 0 acsearch requests; console clean. Pass.
+
+Planned checks:
+
 Fresh storage: no Recent row. Look up Price 23, RIC I² Nero 306 and RRC 44/5 → Recent shows `RRC 44/5`, `RIC I (second edition) Nero 306`, `Price 23` (newest first). Reload → same chips. With the guided fields on Price, click the RRC chip → fields switch to RRC / `44/5`, card `RRC 44/5`, acsearch term `Crawford 44/5`, exactly one acsearch request; the chip moves first. Looking up an existing type again does not duplicate it; a seventh type drops the oldest. `chrome.permissions.contains` stubbed `false` → after Look up, the prices note reads `Select “Get prices” to let Giga Pinax fetch acsearch prices.` and 0 acsearch requests. Signed-out stub → note without "again". Long labels ellipsize within 400 px; console clean.
