@@ -62,8 +62,9 @@ function savePreferences() {
 // A select is rebuilt from its list plus the wanted value (selectOptions appends an unlisted one, so a typed "Euthydemos" or a parsed "IV, Part 1"
 // is shown and used exactly as it came), each option built with new Option(label, value), never markup; a blank value with no blank option shows the first.
 function fillSelect(select, entries, value) {
-  select.replaceChildren(...selectOptions(entries, value).map((option) => new Option(option.label, option.value)));
-  select.value = value;
+  const wanted = String(value ?? '');
+  select.replaceChildren(...selectOptions(entries, wanted).map((option) => new Option(option.label, option.value)));
+  select.value = wanted;
   if (select.selectedIndex < 0 && select.options.length) select.selectedIndex = 0;
 }
 
@@ -90,10 +91,10 @@ function updateFields() {
 function fillFields(parsed) {
   $('catalogue').value = parsed.catalogue;
   $('reference-number').value = parsed.number;
-  // Only a RIC reference carries a volume and only RIC and Bop a section; the other catalogues leave the selects as they were.
-  const volume = parsed.catalogue === 'RIC' ? parsed.volume : $('ric-volume').value;
-  const section = parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop' ? parsed.section : $('ric-section').value;
-  fillSelects(parsed.catalogue, volume, section);
+  // Only a RIC reference carries a volume and only RIC and Bop a section; the other catalogues leave the hidden selects untouched.
+  if (parsed.catalogue === 'RIC' || parsed.catalogue === 'Bop') {
+    fillSelects(parsed.catalogue, parsed.catalogue === 'RIC' ? parsed.volume : $('ric-volume').value, parsed.section);
+  }
   updateFields();
 }
 
@@ -374,10 +375,13 @@ $('quick-reference').addEventListener('change', () => {
   $('lookup-prompt').hidden = false;
 });
 // A guided edit (here and in the form input handler) clears the one-box, so a stale one-box value can never override the correction on the next Look up.
+// A new catalogue starts from its defaults: RIC from the first volume with its default section and number, so a remembered volume can't pair with a
+// section it lacks; Bop from its default king and number, keeping the hidden volume.
 $('catalogue').addEventListener('change', () => {
+  const catalogue = $('catalogue').value;
   $('quick-reference').value = '';
-  $('reference-number').value = DEFAULT_NUMBER[$('catalogue').value];
-  if (Object.hasOwn(DEFAULT_SECTION, $('catalogue').value)) fillSelects($('catalogue').value, $('ric-volume').value, DEFAULT_SECTION[$('catalogue').value]);
+  $('reference-number').value = DEFAULT_NUMBER[catalogue];
+  if (Object.hasOwn(DEFAULT_SECTION, catalogue)) fillSelects(catalogue, catalogue === 'RIC' ? RIC_VOLUMES[0].value : $('ric-volume').value, DEFAULT_SECTION[catalogue]);
   updateFields();
   savePreferences();
   clearOutput();
