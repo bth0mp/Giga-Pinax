@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 5 (copy summary).
+- v0.9 Copy summary plus quoting unrecognised acsearch prices (streamlining item 5; speeds up the pending logged-in price-format check): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.9-copy-summary.md`.
 
 ## Streamlining the extension
 
