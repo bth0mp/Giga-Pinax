@@ -45,4 +45,15 @@ test('resolveLabels works without a cache argument', async () => {
 
 ## Verification (controller, never-cached origin, acsearch and clipboard stubbed)
 
+Result 2026-09-11 at `e610bfe`, in-app Chromium at 400×600 on `http://localhost:8788` (never loaded before), live numismatics.org, acsearch and `navigator.clipboard.writeText` stubbed:
+
+- `Sear 1234` → `Couldn’t read that reference. Try “RIC I² Nero 306”, “Crawford 44/5”, “SC 1266.2” or “Price 23”, or use the fields below.`; `#quick-reference` `aria-invalid="true"`, `#reference-number` unmarked. Pass.
+- numismatics.org requests forced to fail → `Couldn’t reach numismatics.org. Check your connection and try again.` with no `aria-invalid` on either field; `RRC 9999/9` → not-found message and `#reference-number` `aria-invalid="true"`. Pass.
+- `RIC I Nero 306` → one suggestion `RIC I (second edition) Nero 306`; `#candidate-list` `aria-labelledby="candidates-label"` whose text is `Did you mean:`; number field unmarked. Pass. (A first attempt read the page while the previous not-found error was still showing — a harness race, re-run with a specific wait.)
+- `SC 1266.2` with the prices panel → 0 `localStorage.getItem('giga-pinax-labels-v1')` reads during the lookup, 4 write-throughs for the new labels; 1 acsearch request. Pass.
+- Copy summary → button `Copied`, announcement `Summary copied.`, copied first line `Seleucid Coins (part 1) 1266.2`; back to `Copy summary` after ~2.3 s. Copy then change currency → panel hidden and the button already reads `Copy summary`. Pass.
+- 400 px; console clean.
+
+Planned checks:
+
 Copy summary relabels to `Copied` and back after ~2 s; `#candidate-list` has an accessible name "Did you mean:"; a network error leaves `#reference-number` without `aria-invalid` while a not-found error sets it; `QUICK_ERROR` names SC; the label cache performs one `localStorage` read per popup load; lookups and prices otherwise unchanged; 400 px; console clean.
