@@ -83,8 +83,24 @@ export function sgNumber(value) {
   const variety = letter.toLowerCase() === 'v';
   return `SG ${digits}${variety ? '' : letter.toLowerCase()}${variety || varied ? ' var.' : ''}`;
 }
-// An Other text with its SG parts in that spelling; any other text is kept as it is.
-const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some(sgNumber) ? parts.map((part) => sgNumber(part) ?? part).join('; ') : value);
+// Krause & Mishler's Standard Catalog of World Coins ("KM# 123", "KM 123", "KM#123", "KM-123", "KM.123") is the reference for world and modern coins.
+// It has no open type data either, so a KM reference is prices only, like SG. The number is an optional letter prefix, digits, an optional ".n" and an
+// optional letter ("123", "123.2", "123.2a", "A123"), normalised as the catalogue writes it. A separator after the key is required, so "KM123" and
+// "KMS1" are no KM, and the lookahead-free word break falls out of it: "AKM 5" has no key at the start. A KM number repeats across countries, so a
+// country typed in front ("Netherlands KM# 123", "German States Rostock KM# 123") is kept, as typed: up to four letter-only words, which narrow the search.
+const KM_REFERENCE = /^((?:\p{L}+ ){0,4})KM[#.\-–\s]+([a-z]?\d+(?:\.\d+)?[a-z]?)$/iu;
+export function kmNumber(value) {
+  const [, country = '', number] = squash(value).match(KM_REFERENCE) ?? [];
+  if (!number) return null;
+  // The key pattern matches case-insensitively over Unicode, so a letter that folds to ASCII (KELVIN SIGN, long s) reaches here: read it back the same
+  // way and fail closed, never throwing on a Reference box the collector is typing into.
+  const [, prefix = '', digits, suffix = ''] = number.match(/^(\p{L}?)([\d.]+)(\p{L}?)$/u) ?? [];
+  if (!digits) return null;
+  return `${country}KM# ${prefix.toUpperCase()}${digits}${suffix.toLowerCase()}`;
+}
+// An Other text with its SG and KM parts in those spellings; any other text is kept as it is.
+const otherPart = (part) => sgNumber(part) ?? kmNumber(part);
+const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some(otherPart) ? parts.map((part) => otherPart(part) ?? part).join('; ') : value);
 
 // References are ";"-separated ("SC 2195.5c; SNG Spaer 1712"): the first one a type rule reads is looked up, else the whole text is Other.
 // The hidden characters go before anything else, the length cap included.

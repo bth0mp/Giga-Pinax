@@ -246,3 +246,18 @@ test('looksLikeLot: over 120 characters, or two catalogue keys', () => {
   assert.equal(looksLikeLot('x'.repeat(121)), true);
   assert.equal(looksLikeLot(`${'\u200b'.repeat(200)}Crawford 44/5`), false);
 });
+
+test('KM is a key: a Krause reference, normalised, prices only, and the lot heading\'s country stays out of it', () => {
+  const lot = findReferences('Netherlands. 2½ Gulden 1898. KM# 123; Scholten 782.');
+  assert.deepEqual(lot.references, [
+    { text: 'KM# 123', reference: other('KM# 123'), cf: false, variant: false, typed: false },
+    { text: 'Scholten 782', reference: other('Scholten 782'), cf: false, variant: false, typed: false },
+  ]);
+  assert.equal(lotLabel(lot.references[0], lot.rulers), 'KM# 123 · prices only');
+  assert.deepEqual(only('2½ Gulden 1898. KM-123.'), { text: 'KM-123', reference: other('KM# 123'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('2½ Gulden 1898. KM.123.'), { text: 'KM.123', reference: other('KM# 123'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('2½ Gulden 1898. KM#123.2a.'), { text: 'KM#123.2a', reference: other('KM# 123.2a'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('2½ Gulden 1898. KM# A123.'), { text: 'KM# A123', reference: other('KM# A123'), cf: false, variant: false, typed: false });
+  // "KM" inside a word is no key.
+  assert.deepEqual(texts('2½ Gulden 1898. KMS 1. AKM 5.'), []);
+});

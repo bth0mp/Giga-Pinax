@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -919,4 +919,38 @@ test('a reference with a section, or with no rulers, ignores the rulers and sear
   const empty = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: [] }, { fetchImpl: empty }), { status: 'none', corpus: 'ocre', query: 'RIC 972' });
   assert.equal(empty.calls.length, 1);
+});
+
+test('a Krause (KM#) reference is Other, its number normalised to "KM# n", with a country kept in front', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const [text, number] of [
+    ['KM# 123', 'KM# 123'], ['KM 123', 'KM# 123'], ['KM#123', 'KM# 123'], ['KM-123', 'KM# 123'], ['KM.123', 'KM# 123'], ['KM–123', 'KM# 123'],
+    ['KM# 123.2', 'KM# 123.2'], ['KM# 123.2a', 'KM# 123.2a'], ['KM# A123', 'KM# A123'], ['km# a123', 'KM# A123'], ['KM 123.2A', 'KM# 123.2a'],
+    ['(KM# 123)', 'KM# 123'], ['KM# 123.', 'KM# 123'],
+    // A country typed in front is kept, up to four words.
+    ['Netherlands KM# 123', 'Netherlands KM# 123'], ['German States Rostock KM# 123', 'German States Rostock KM# 123'],
+    // Letters in any script, so prices.js must read the country the same way ("Württemberg" cannot be spelled without the umlaut).
+    ['Württemberg KM 123', 'Württemberg KM# 123'], ['México KM-123', 'México KM# 123'],
+    ['netherlands km 123', 'netherlands KM# 123'],
+    // Every part is read, KM or SG.
+    ['KM# 123; SG 6829', 'KM# 123; SG 6829'], ['SG 6829; KM-123', 'SG 6829; KM# 123'],
+  ]) assert.deepEqual(parseReference(text), other(number), text);
+  assert.equal(kmNumber('KM# 123.2a'), 'KM# 123.2a');
+  assert.equal(kmNumber('Netherlands KM 123'), 'Netherlands KM# 123');
+  assert.equal(kmNumber('Scholten 782'), null);
+  assert.equal(kmNumber(undefined), null);
+  // A letter that case-folds to ASCII (KELVIN SIGN, long s) passes the key pattern, so reading the number back must never throw and kill the box.
+  assert.equal(kmNumber('KM 123'), 'KM# 123');
+  for (const text of ['KM-K5', 'KM ſ123', 'KM 123K']) {
+    assert.doesNotThrow(() => kmNumber(text), text);
+    assert.doesNotThrow(() => parseReference(text), text);
+  }
+  // "KM" inside a word is never a key, and a country of five words is text.
+  for (const text of ['KMS 1', 'AKM 5', 'KMS1', 'KM123', 'One Two Three Four Five KM# 123']) assert.deepEqual(parseReference(text), other(text), text);
+  // A card title, as a Recent chip recalls it, reads the same again, and the guided field gives the same card.
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: 'KM-123' }), { corpus: 'other', query: 'KM# 123' });
+  assert.deepEqual(buildQuery({ catalogue: 'Other', number: 'Netherlands KM# 123' }), { corpus: 'other', query: 'Netherlands KM# 123' });
+  // The catalogues with type data are untouched.
+  assert.deepEqual(parseReference('SC 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('KM# 123; SC 1'), { catalogue: 'SC', number: '1', volume: '', section: '' });
 });

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesUrl, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, medianStrength, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -493,4 +493,59 @@ test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop def
   assert.equal(chooseTerm(nero, 'Nero 306 denarius'), 'Nero 306 denarius');
   assert.equal(chooseTerm(nero, ''), 'Nero 306');
   assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, undefined), 'Price 23');
+});
+
+// Krause (0.20): a KM reference is modern, so it searches acsearch's category 2 and CoinArchives' world section, in both spellings dealers cite.
+test('defaultTerm offers both Krause spellings, keeping a country in front of an all-KM reference', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('KM# 123')), '("KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('KM 123')), '("KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('KM# 123.2a')), '("KM 123.2a" "Krause/Mishler 123.2a")');
+  assert.equal(defaultTerm(other('KM# A123')), '("KM A123" "Krause/Mishler A123")');
+  assert.equal(defaultTerm(other('Netherlands KM# 123')), 'Netherlands ("KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('German States Rostock KM# 123')), 'German States Rostock ("KM 123" "Krause/Mishler 123")');
+  // A country is letters in any script here too, the way lookup reads it: Württemberg and México are ordinary Krause headings.
+  assert.equal(defaultTerm(other('Württemberg KM# 123')), 'Württemberg ("KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('México KM-123')), 'México ("KM 123" "Krause/Mishler 123")');
+  // Mixed with another catalogue: both phrases join the one either-or group and the country goes, since the search is no longer certainly that country's.
+  assert.equal(defaultTerm(other('KM# 123; SG 6829')), '("KM 123" "Krause/Mishler 123" "Sear 6829" "SG 6829")');
+  assert.equal(defaultTerm(other('Netherlands KM# 123; Scholten 782')), '("KM 123" "Krause/Mishler 123" "Scholten 782")');
+  // Two countries, or one of two parts carrying one: acsearch ANDs the bare word with the whole group, so it would exclude the other country's lots.
+  assert.equal(defaultTerm(other('Netherlands KM# 123; Bolivia KM# 124')), '("KM 123" "Krause/Mishler 123" "KM 124" "Krause/Mishler 124")');
+  assert.equal(defaultTerm(other('KM# 123; Netherlands KM# 124')), '("KM 123" "Krause/Mishler 123" "KM 124" "Krause/Mishler 124")');
+});
+
+test('searchCategory sends an all-KM reference to modern coins and everything else to ancients', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(searchCategory(other('KM# 123')), '2');
+  assert.equal(searchCategory(other('Netherlands KM# 123.2a')), '2');
+  assert.equal(searchCategory(other('Württemberg KM# 123')), '2');
+  assert.equal(searchCategory(other('KM# 123; KM# 124')), '2');
+  assert.equal(searchCategory(other('KM# 123; SG 6829')), '1');
+  assert.equal(searchCategory(other('SG 6829')), '1');
+  assert.equal(searchCategory(other('HGC 4, 1218')), '1');
+  assert.equal(searchCategory(other('Rare')), '1');
+  assert.equal(searchCategory({ catalogue: 'RIC', section: 'Nero', number: '306' }), '1');
+  assert.equal(searchCategory({ catalogue: 'SC', number: 'SC 1266.2' }), '1');
+});
+
+test('buildSearchUrl carries the category it is given', () => {
+  assert.equal(buildSearchUrl({ term: 'KM 123', currency: 'USD', category: '2' }), 'https://www.acsearch.info/search.html?term=KM+123&category=2&currency=usd&order=1');
+  assert.equal(buildSearchUrl({ term: 'Nero 306', currency: 'USD' }), 'https://www.acsearch.info/search.html?term=Nero+306&category=1&currency=usd&order=1');
+});
+
+test('a KM reference links to CoinArchives world section in plain words', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(coinArchivesTerm(other('Netherlands KM# 123')), 'Netherlands KM 123');
+  assert.equal(coinArchivesTerm(other('KM# 123.2a')), 'KM 123.2a');
+  assert.equal(coinArchivesTerm(other('Württemberg KM# 123')), 'Württemberg KM 123');
+  assert.equal(coinArchivesSection(other('KM# 123')), 'w');
+  assert.equal(coinArchivesSection(other('Württemberg KM# 123')), 'w');
+  // The section follows the part the term was built from, not acsearch's stricter all-KM rule: the link searches "KM 123", which /a/ can never hold.
+  assert.equal(coinArchivesSection(other('KM# 123; SG 6829')), 'w');
+  assert.equal(coinArchivesSection(other('SG 6829; KM# 123')), 'a');
+  assert.equal(coinArchivesSection(other('SG 6829')), 'a');
+  assert.equal(coinArchivesSection({ catalogue: 'RIC', section: 'Nero', number: '306' }), 'a');
+  assert.equal(coinArchivesUrl('Netherlands KM 123', 'w'), 'https://www.coinarchives.com/w/results.php?search=Netherlands%20KM%20123&s=0');
+  assert.equal(coinArchivesUrl('Crawford 44/5'), 'https://www.coinarchives.com/a/results.php?search=Crawford%2044%2F5&s=0');
 });

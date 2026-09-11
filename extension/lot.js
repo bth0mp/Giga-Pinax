@@ -1,4 +1,4 @@
-import { INVISIBLE, parseReference, sgNumber } from './lookup.js';
+import { INVISIBLE, kmNumber, parseReference, sgNumber } from './lookup.js';
 import { RIC_SECTIONS, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -9,8 +9,8 @@ const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
 // that also has a longer key, so "c. 386-338 BC" and the legend "S - C" stay text while "C.309 - RIC.112" is two references. Keys inside a bracket are
 // skipped ("(= BMC 7)", a sale's "(2005, 1132)"), unless the bracket opens on a key: then each key after a separator in it counts ("(Cohen 17; RIC 972)").
 const KEYS = ['BMC/RE', 'BMCRE', 'BMC', 'Bopearachchi', 'Bop\\.?', 'Calicó', 'Calico', 'Cohen', 'Coh\\.?', 'Crawford', 'Craw\\.?', 'Cr\\.?', 'RIC', 'RRC',
-  'RSC', 'RPC', 'RCV', 'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIBE', 'MIB', 'MIR', 'Sydenham',
-  'Syd\\.?', 'Müller', 'Muller', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
+  'RSC', 'RPC', 'RCV', 'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIBE', 'MIB', 'MIR', 'Sydenham',
+  'Syd\\.?', 'Müller', 'Muller', 'KM', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
 const KEY = new RegExp(String.raw`(?<![\p{L}\d])(?:Ref(?:erences?|s)?\.?\s*:\s*)?(cf\.?\s*)?(${KEYS.join('|')})(?![\p{L}\d])`, 'giu');
 // Dealers capitalise a catalogue key, so a lower-case word ("hammer price 500", "see doc 12") is never one.
 const keyAt = (match) => /^\p{Lu}/u.test(match[2]);
@@ -112,6 +112,10 @@ function normalise(written, key, cf) {
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
   const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
   if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
+  // A Krause reference is KM's spelling, prices only. Only the key's own text is read, so the country in a lot's heading ("Netherlands. 2½ Gulden
+  // 1898. KM# 123") never joins it: a heading is not part of a reference.
+  const km = kmNumber(text);
+  if (km) return { text, reference: { catalogue: 'Other', number: km, volume: '', section: '' }, cf, variant, typed: false };
   // A bracket naming a RIC section is that section ("RIC 268 (Elagabalus)"), put before the number; on another catalogue it is a remark.
   const section = [...text.matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0);
   const ric = /^RIC/i.test(key);

@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, summarise, summaryText, trendOf, trendText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
 import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
@@ -209,14 +209,15 @@ function setBusy(busy) {
 
 function updateAcsearchLink() {
   const term = $('price-term').value.trim() || currentCard?.label || '';
-  $('acsearch-link').href = buildSearchUrl({ term, currency: $('currency').value });
+  // The category follows the reference on the card, not the edited term: a Krause reference searches modern coins.
+  $('acsearch-link').href = buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(currentReference()) });
 }
 
 // CoinArchives follows the reference on the card, never the edited acsearch term, whose quotes and brackets it can't read; only the user opens it.
 // A reference that gives no words (none reach a card today) falls back to the card's title, as the acsearch link does.
 function updateCoinArchivesLink(card) {
   const term = coinArchivesTerm(currentReference()) || card.label;
-  $('coinarchives-link').href = coinArchivesUrl(term);
+  $('coinarchives-link').href = coinArchivesUrl(term, coinArchivesSection(currentReference()));
   $('coinarchives-link').setAttribute('aria-label', `Search CoinArchives for ${term}, opens a new tab`);
 }
 
@@ -529,7 +530,7 @@ async function runPrices(term, currency, { remember = true } = {}) {
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
-  try { outcome = await fetchPrices({ term, currency }); }
+  try { outcome = await fetchPrices({ term, currency, category: searchCategory(currentReference()) }); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId) return;

@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, referenceNumber, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, sgNumber } from './lookup.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -6,10 +6,11 @@ const MARKER = 'acsearch.initSearchResults = ';
 
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
-export function buildSearchUrl({ term, currency, order = 1 }) {
+// category is acsearch's own: '1' Ancient coins, '2' Modern coins. Ancients is the default, as it was before Krause.
+export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
   const params = new URLSearchParams({
     term: squash(term),
-    category: '1',
+    category: String(category),
     currency: String(currency ?? 'USD').toLowerCase(),
     order: String(order),
   });
@@ -92,12 +93,39 @@ const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '')
 // variant is listed under its type's number, so both phrases go without "var.". The first group is N.
 const SG_PART = /^SG (\d+[a-uw-z]?)(?: var\.)?$/i;
 
+// A KM part as lookup normalises it ("KM# 123.2a"), with the country words a reference may keep in front ("German States Rostock KM# 123"); null when
+// the part is no Krause reference. Up to 4 letter-only words, as lookup reads them: letters in any script, or Württemberg and México would fall out
+// of the Krause path here while the card still showed them as KM.
+const KM_PART = /^((?:\p{L}+ ){0,4})(KM\b.*)$/iu;
+const kmPart = (part) => {
+  const [, country = '', rest] = KM_PART.exec(squash(part)) ?? [];
+  const number = rest ? kmNumber(rest) : null;
+  return number ? { country: squash(country), number: number.replace(/^KM#\s*/, '') } : null;
+};
+
+// acsearch ignores the "#" ("KM# 123" and "KM 123" find the same lots) but the Krause/Mishler spelling finds German sales the "KM" one misses, so a
+// Krause part is both phrases, either-or. A country narrows a number that repeats across countries (Netherlands, Rostock and Bolivia all have a 123),
+// so it goes in front of the group — but only when every part is KM and names the same country, since acsearch ANDs the bare word with the whole
+// group: it would wrongly narrow the other catalogues' phrases, or the other country's number, too.
 function otherTerm(number) {
-  const phrases = [...new Set(otherParts(number).flatMap((part) => {
+  const parts = otherParts(number);
+  const kms = parts.map(kmPart);
+  const phrases = [...new Set(parts.flatMap((part, index) => {
+    const km = kms[index];
+    if (km) return [`"KM ${km.number}"`, `"Krause/Mishler ${km.number}"`];
     const sg = SG_PART.exec(part);
     return sg ? [`"Sear ${sg[1]}"`, `"SG ${sg[1]}"`] : [`"${part}"`];
   }))];
-  return phrases.length > 1 ? `(${phrases.join(' ')})` : phrases[0] ?? '';
+  const group = phrases.length > 1 ? `(${phrases.join(' ')})` : phrases[0] ?? '';
+  const country = allKm(kms) && kms.every((km) => km.country === kms[0].country) ? kms[0].country : '';
+  return squash(`${country} ${group}`);
+}
+
+// Only a reference whose searchable parts are all Krause is certainly modern; one mixed with an ancient catalogue stays in Ancients.
+const allKm = (kms) => kms.length > 0 && kms.every(Boolean);
+export function searchCategory(reference) {
+  if (reference?.catalogue !== 'Other') return '1';
+  return allKm(otherParts(reference.number).map(kmPart)) ? '2' : '1';
 }
 
 // A RIC term drops OCRE's split-section parenthetical ("Leo I (East)", "Gallienus (joint reign)"): acsearch would require a word dealers rarely write.
@@ -128,11 +156,18 @@ export function coinArchivesTerm(reference) {
   if (reference.catalogue === 'RIC') return squash(defaultTerm(reference).replace(/[()[\]{}]/g, ' '));
   if (reference.catalogue !== 'Other') return defaultTerm(reference);
   const [first = ''] = otherParts(reference.number);
+  const km = kmPart(first);
+  if (km) return squash(`${km.country} KM ${km.number}`);
   const sg = SG_PART.exec(first);
   return sg ? `Sear ${sg[1]}` : first;
 }
 
-export const coinArchivesUrl = (term) => `https://www.coinarchives.com/a/results.php?search=${encodeURIComponent(squash(term))}&s=0`;
+// CoinArchives keeps world and modern coins in its own section; ancients are /a/. The section follows the part coinArchivesTerm built the link from,
+// not acsearch's stricter all-KM rule: a mixed reference opening on KM searches "KM 123", which /a/ can never hold.
+export const coinArchivesSection = (reference) =>
+  (reference?.catalogue === 'Other' && kmPart(otherParts(reference.number)[0] ?? '') ? 'w' : 'a');
+
+export const coinArchivesUrl = (term, section = 'a') => `https://www.coinarchives.com/${section}/results.php?search=${encodeURIComponent(squash(term))}&s=0`;
 
 const PAGE_SIZE = 100;
 const EXAMPLE_LIMIT = 5;
@@ -242,12 +277,12 @@ export function lastSale(summary) {
   return dated.reduce((last, entry) => (entry.date > last.date ? entry : last), dated[0])?.sale ?? null;
 }
 
-export async function fetchPrices({ term, currency }, options = {}) {
+export async function fetchPrices({ term, currency, category }, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(buildSearchUrl({ term, currency }), { signal: controller.signal, credentials: 'include', cache: 'no-store' });
+    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: controller.signal, credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
     const html = await response.text();
     const lots = extractLots(html);
