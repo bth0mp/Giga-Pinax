@@ -79,4 +79,14 @@ test('summaryText produces a shareable plain-text summary', () => {
 
 ## Verification (controller, never-cached origin, acsearch stubbed, clipboard stubbed)
 
+Result 2026-09-11 at `b0d5940`, in-app Chromium at 400×600 on `http://localhost:8785` (never loaded before), numismatics.org live, acsearch and `navigator.clipboard.writeText` stubbed:
+
+- Look up `Price 23` with nine priced lots plus `1.200,- €` → period `9 sales matching “Price 23” · 2020–2023 · 1 not counted`; 1 acsearch request.
+- Copy summary → captured text exactly `Price 23` / `Median hammer $180 · middle 50% $135–$245 · 9 sales matching “Price 23” · 2020–2023` / `Not counted: “1.200,- €”` / `https://numismatics.org/pella/id/price.23`; announcement `Summary copied.`; no extra acsearch request.
+- `writeText` rejecting → announcement `Couldn’t copy the summary.`
+- Page of `1.200,- €`, `200 EUR` and a blank → note `No hammer prices among the sales acsearch returned for “Price 23”. Unrecognised prices: “1.200,- €”, “200 EUR”.`, panel hidden, 1 request.
+- 400 px; console clean. Pass.
+
+Planned checks:
+
 With `navigator.clipboard.writeText` wrapped to capture its argument: Look up Price 23 with nine priced lots plus `1.200,- €` → period line ends `· 1 not counted`; Copy summary → captured text equals the four expected lines and the announcement reads `Summary copied.`; with `writeText` rejecting → `Couldn’t copy the summary.`; a page of only `1.200,- €` and `200 EUR` → note `No hammer prices among the sales acsearch returned for “Price 23”. Unrecognised prices: “1.200,- €”, “200 EUR”.`; exactly one acsearch request per action; 400 px; console clean.
