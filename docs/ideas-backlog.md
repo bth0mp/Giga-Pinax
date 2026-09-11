@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Streamlining item 6 (right-click lookup) needs new permissions (`contextMenus` plus a background worker) — ask the user before building it. Until then the loop takes item 7's minors, then the SCO catalogue from "Other projects".
+- v0.10 Seleucid Coins (SC) via ANS SCO, plus two v0.9 quoting minors: `docs/superpowers/plans/2026-09-11-giga-pinax-v0.10-sco.md`. Streamlining item 6 (right-click lookup) still waits for the user's permission decision.
 
 ## Streamlining the extension
 
