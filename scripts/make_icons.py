@@ -59,7 +59,8 @@ def main(arguments: list[str]) -> int:
     if arguments and not check:
         print("usage: make_icons.py [--check]", file=sys.stderr)
         return 2
-    ICON_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    if not check:
+        ICON_DIRECTORY.mkdir(parents=True, exist_ok=True)
     stale = []
     for size in SIZES:
         target = ICON_DIRECTORY / f"icon-{size}.png"

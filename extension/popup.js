@@ -58,8 +58,8 @@ function syncThemeButton() {
   const dark = shownTheme() === 'dark';
   $('theme-toggle').setAttribute('aria-pressed', String(dark));
   $('theme-toggle').title = dark ? 'Switch to light theme' : 'Switch to dark theme';
-  $('icon-sun').hidden = !dark;
-  $('icon-moon').hidden = dark;
+  $('icon-sun').toggleAttribute('hidden', !dark);
+  $('icon-moon').toggleAttribute('hidden', dark);
 }
 
 function applyStoredTheme() {

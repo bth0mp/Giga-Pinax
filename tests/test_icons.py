@@ -33,7 +33,7 @@ class IconFileTests(unittest.TestCase):
         self.assertEqual(3, svg.count('fill="#F1E7D8"'))
         self.assertIn('stroke="#E8BE5A" stroke-width="7"', svg)
         self.assertIn('d="M22 92 44 78 62 86 84 60 106 66"', svg)
-        self.assertNotIn("#0B3B36", svg)
+        self.assertNotIn("#244c5a", svg.lower())
 
 
 @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow is not installed (development tool only)")
