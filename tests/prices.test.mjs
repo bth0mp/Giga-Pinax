@@ -214,3 +214,11 @@ test('quoted uncounted prices are squashed of control characters and capped at 4
   assert.ok(text.includes(`Not counted: “${long.slice(0, 40)}…”, “7 8 EUR”`), text);
   assert.equal(text.split('\n').length, 4);
 });
+
+test('the quoting cap never splits an astral character', () => {
+  // Digits, because only a raw price with a digit is listed as uncounted.
+  const raw = `${'1'.repeat(39)}😀😀 EUR`;
+  const summary = summarise([lot('100'), lot(raw)], 'USD');
+  const text = summaryText({ label: 'X', corpus: 'pella', id: 'x' }, summary, 'USD', 'X');
+  assert.ok(text.includes(`“${'1'.repeat(39)}😀…”`), text);
+});

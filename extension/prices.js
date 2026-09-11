@@ -128,10 +128,11 @@ export async function fetchPrices({ term, currency }, options = {}) {
 }
 
 const QUOTE_LIMIT = 40;
-// Raw prices are page text: each is squashed of whitespace and control characters, so a copied line never splits, and capped.
+// Raw prices are page text: each is squashed of whitespace and control characters, so a copied line never splits,
+// and capped by characters (not UTF-16 units), so a surrogate pair is never cut in half.
 const quote = (text) => {
-  const clean = String(text).replace(/[\s\p{Cc}]+/gu, ' ').trim();
-  return `“${clean.length > QUOTE_LIMIT ? `${clean.slice(0, QUOTE_LIMIT)}…` : clean}”`;
+  const chars = Array.from(String(text).replace(/[\s\p{Cc}]+/gu, ' ').trim());
+  return `“${chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}…` : chars.join('')}”`;
 };
 export const quoteList = (texts) => texts.map(quote).join(', ');
 

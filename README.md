@@ -12,7 +12,7 @@ Run `python scripts/build.py` to create `dist/brave`, `dist/firefox` and the mat
 
 - One **Reference** box: type `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2` or `Price 23` and the fields fill in.
 - Guided entry for Price numbers, an RRC (Crawford) number, an SC (Seleucid Coins) number, or RIC volume/edition, ruler section and number.
-- Exact-title matching against the ANS search API; near matches are offered as a short list.
+- Exact-title matching against the ANS search API (SC references are fetched directly by record); near matches are offered as a short list.
 - Ruler, denomination, mint, material, date range, obverse and reverse legends and descriptions.
 - When a type resolves (**Look up**, a "Did you mean" choice or a **Recent** chip), acsearch prices are fetched in the same click once acsearch access is granted; edit the acsearch search term and select **Get prices** to re-run it (edited terms are remembered per type).
 - A **Recent** row under the form re-opens your last six types with one click.

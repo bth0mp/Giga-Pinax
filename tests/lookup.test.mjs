@@ -323,12 +323,22 @@ test('an SC lookup fetches the SCO record directly, without a search', async () 
 });
 
 test('a missing SC number suggests types with the same base number, and other failures are network errors', async () => {
-  const near = await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: fakeFetch({ 'sco/apis/search?q=': fixture('sco-search-sc-1266.xml') }) });
+  const sco = fakeFetch({ 'sco/apis/search?q=': fixture('sco-search-sc-1266.xml') });
+  const near = await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: sco });
   assert.equal(near.status, 'candidates');
   assert.equal(near.query, 'SC 1266.9');
   assert.deepEqual(near.candidates.map((entry) => entry.id), ['sc.1.1266']);
+  const searches = sco.calls.filter((url) => url.includes('/apis/search'));
+  assert.equal(searches.length, 1);
+  assert.ok(searches[0].endsWith('/sco/apis/search?q=SC%201266'), searches[0]);
   const unrelated = fakeFetch({ 'sco/apis/search?q=': '<feed><entry><title>Seleucid Coins (part 2) 1630.2b</title><id>sc.1.1630.2b</id></entry></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: unrelated }), { status: 'none', corpus: 'sco', query: 'SC 1266.9' });
   const failing = async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) });
   assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.2' }, { fetchImpl: failing }), { status: 'network' });
+});
+
+test('parseReference reads SCO titles so SC chips and suggestions fill the fields', () => {
+  assert.deepEqual(parseReference('Seleucid Coins (part 1) 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
+  assert.deepEqual(parseReference('Seleucid Coins (part 1) 1266'), { catalogue: 'SC', number: '1266', volume: '', section: '' });
+  assert.equal(parseReference('Seleucid Coins (part 1) 1266.2 (x)'), null);
 });

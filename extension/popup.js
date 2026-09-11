@@ -146,7 +146,13 @@ function renderCandidates(candidates, corpus) {
     button.type = 'button';
     button.className = 'text-button';
     button.textContent = title;
-    button.addEventListener('click', () => run(() => lookupById(corpus, id, { cache: labelCache })));
+    // Like a Recent chip: the chosen title fills the guided fields, so the acsearch term follows the chosen type, not the mistyped one.
+    button.addEventListener('click', () => {
+      $('quick-reference').value = '';
+      const parsed = parseReference(title);
+      if (parsed) { fillFields(parsed); savePreferences(); }
+      run(() => lookupById(corpus, id, { cache: labelCache }));
+    });
     item.append(button);
     return item;
   }));

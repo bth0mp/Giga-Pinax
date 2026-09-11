@@ -198,12 +198,15 @@ export async function lookupById(corpus, id, options = {}) {
   }
 }
 
+// The SC number up to its first "." ("1266.9" → "1266").
+const scBase = (number) => referenceNumber('SC', number).split('.')[0];
+
 // CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group;
 // SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
 function inGroup(entries, corpus, reference) {
   if (corpus === 'sco') {
-    const base = `${SCO_ID}${referenceNumber('SC', reference.number).split('.')[0]}`;
+    const base = `${SCO_ID}${scBase(reference.number)}`;
     return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
   }
   if (corpus !== 'crro') return entries;
@@ -221,12 +224,13 @@ export async function lookupType(reference, options = {}) {
     if (id) {
       // SCO titles ("Seleucid Coins (part 1) 1266.2") never match "SC 1266.2", but the record id is predictable: fetch it directly,
       // and only when it is missing (404) run the plain search for "Did you mean"; any other failure is a network error.
+      // The search is for the base number: SCO finds nothing for a missing "SC 1266.9" but finds sc.1.1266 for "SC 1266".
       const record = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal).then((jsonld) => ({ jsonld }), (error) => {
         if (error?.status === 404) return null;
         throw error;
       });
       if (record) return await cardOutcome(record.jsonld, corpus, { fetchImpl, cache, signal: timer.signal });
-      picked = pickMatch(inGroup(await search(query), corpus, reference), query);
+      picked = pickMatch(inGroup(await search(`SC ${scBase(reference.number)}`), corpus, reference), query);
     } else {
       // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
       picked = pickMatch(await search(`"${query}"`), query);
