@@ -4,7 +4,7 @@ Worked through by the 30-minute improvement loop. Top of each list goes first. A
 
 ## In flight
 
-- Nothing. Next loop tick takes streamlining item 1 (one-box reference entry).
+- v0.5 one-box reference entry (streamlining item 1, plus item 0's remaining minors): `docs/superpowers/plans/2026-09-11-giga-pinax-v0.5-one-box.md`.
 
 ## Streamlining the extension
 
