@@ -100,4 +100,10 @@ test('DEFAULT_NUMBER is the single source of default reference numbers', () => {
 
 ## Verification (controller, fresh origin)
 
+Result 2026-09-11, in-app Chromium at 400×600 against `extension/popup.html` on a never-cached origin (`http://localhost:8778`), live numismatics.org: RRC help `Example: 44/5`; `1/1` → `RRC 1/1`, `Anonymous · Uncertain value · Neapolis · Bronze · 326–242 BC`, type link `…/crro/id/rrc-1.1`, term `Crawford 1/1`; typed `RRC 44/5` → `RRC 44/5`, term `Crawford 44/5`; `44/5a` → `No RRC 44/5a found in CRRO. Check the number.` with no suggestions; RIC volume `I` Nero 306 → one suggestion `RIC I (second edition) Nero 306`; typed `Price 23` → `Price 23`, term `Price 23`; no overflow; console clean. Pass.
+
+After the review fix (`a89b0e2`), same origin, exercising the freshly served module via a cache-busted `import()` (the served `lookup.js` was confirmed to contain the `norm(` group prefix): `1/1` → ok `RRC 1/1`; `Cr. 44/5` → ok `RRC 44/5`; `44/5a` → none (live plain search has no in-group titles); RIC `I` Nero 306 → candidates `RIC I (second edition) Nero 306`; `Price 23` → ok; `referenceNumber('RRC', '"RRC 44/5"')` → `44/5`; `Crawf 44/5` kept as typed; console clean. Pass.
+
+Planned checks:
+
 RRC `1/1` resolves to `RRC 1/1`; `RRC 44/5` typed as `RRC 44/5` resolves with term `Crawford 44/5`; `RRC 44/5a` → not found in CRRO (no unrelated suggestions); RIC volume `I` Nero 306 → one "Did you mean"; Price 23 unchanged.
