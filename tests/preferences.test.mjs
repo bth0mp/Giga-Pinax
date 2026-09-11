@@ -93,3 +93,8 @@ test('rememberRecent caps ids like restore does, so a round trip is identical', 
   assert.equal(remembered.recent[0].id.length, 120);
   assert.deepEqual(restorePreferences(JSON.stringify(remembered)).recent, remembered.recent);
 });
+
+test('Recent entries with a blank id or label are dropped on restore', () => {
+  const recent = [{ id: '  ', corpus: 'pella', label: 'Blank id' }, { id: 'price.1', corpus: 'pella', label: '   ' }, { id: 'price.23', corpus: 'pella', label: 'Price 23' }];
+  assert.deepEqual(restorePreferences(JSON.stringify({ recent })).recent, [{ id: 'price.23', corpus: 'pella', label: 'Price 23' }]);
+});

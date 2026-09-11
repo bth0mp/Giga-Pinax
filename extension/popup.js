@@ -152,14 +152,16 @@ function renderCandidates(candidates, corpus) {
 
 // A chip is a user action like a "Did you mean" choice: it fills the guided fields from the stored title (so the acsearch term follows it) and makes no permission request.
 function renderRecent() {
-  // Rebuilding drops focus to body; the chip just used always moves to first place, so focus returns there.
+  // Rebuilding drops focus to body; if a chip had focus, it returns to the same chip (a used chip is now first), else to the first chip.
   const refocus = $('recent-list').contains(document.activeElement);
+  const focusedKey = refocus ? document.activeElement.dataset.key : undefined;
   $('recent-list').replaceChildren(...preferences.recent.map((entry) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = entry.label;
     button.title = entry.label;
+    button.dataset.key = `${entry.corpus}:${entry.id}`;
     button.addEventListener('click', () => {
       $('quick-reference').value = '';
       const parsed = parseReference(entry.label);
@@ -170,8 +172,9 @@ function renderRecent() {
     return item;
   }));
   $('recent').hidden = preferences.recent.length === 0;
-  const first = $('recent-list').querySelector('button');
-  if (refocus && first) first.focus();
+  const chips = [...$('recent-list').querySelectorAll('button')];
+  const target = chips.find((chip) => chip.dataset.key === focusedKey) || chips[0];
+  if (refocus && target) target.focus();
 }
 
 function renderPrices(summary, currency, term) {

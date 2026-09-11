@@ -7,7 +7,7 @@ const CORPORA = Object.freeze(['ocre', 'pella', 'crro']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
 
-// Untrusted: keeps plain { id, corpus, label } entries with non-empty strings and a known corpus, first copy of each type only, newest first.
+// Untrusted: keeps plain { id, corpus, label } entries with non-blank strings (stored untrimmed) and a known corpus, first copy of each type only, newest first.
 function restoreRecent(value) {
   if (!Array.isArray(value)) return [];
   const recent = [];
@@ -15,7 +15,7 @@ function restoreRecent(value) {
     if (recent.length === RECENT_LIMIT) break;
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const { id, corpus, label } = entry;
-    if (typeof id !== 'string' || !id || typeof label !== 'string' || !label || !CORPORA.includes(corpus)) continue;
+    if (typeof id !== 'string' || !id.trim() || typeof label !== 'string' || !label.trim() || !CORPORA.includes(corpus)) continue;
     const kept = { id: id.slice(0, 120), corpus, label: label.slice(0, 120) };
     if (!recent.some((other) => other.corpus === kept.corpus && other.id === kept.id)) recent.push(kept);
   }
