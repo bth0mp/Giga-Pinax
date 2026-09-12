@@ -4,8 +4,6 @@ A toolbar extension for desktop Brave and Firefox that looks up ancient coin typ
 
 The workspace records lots, alternative priorities, planned and externally active bids, reminders, outcomes, collection history, and collector-entered comparables in USD, EUR, GBP, or CHF. It never places or cancels bids. A resolved reference can be sent to an editable watchlist draft, but fetched acsearch rows, prices, medians, and claims stay only in the current Research view.
 
-acsearch has approved this workflow for the extension: each collector uses their own account, one search runs per click, one page of results is read, and nothing from acsearch is stored. Prices require an acsearch account that includes hammer prices (Premium); without one the extension says so and links to their sign-in page.
-
 ## Install
 
 Ready-to-load builds are in `dist/brave`, `dist/firefox`, and the matching 0.27.0 ZIPs. Follow [the installation guide](docs/INSTALL.md). If Giga Pinax is already loaded from this checkout, rebuilds require only **Reload** at `brave://extensions`.
