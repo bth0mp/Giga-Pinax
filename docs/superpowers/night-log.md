@@ -131,3 +131,24 @@ popup that is not being painted should still put the answer where he will see it
 the card's top sat 455 px into a 498 px panel. After: the panel scrolls to it and the heading is in view.
 
 **Next:** 0.26, and the separator shapes (`Pieper-2753`, `Deyell # 8a`) lead it, ahead of the 26 keys.
+
+## 0.27 queued — the price audit answers his "300 when a coin clearly shows 950"
+
+`docs/superpowers/price-audit-2026-09-13.md`, and **the complaint needs no bug to explain it**. A page built with nothing but the correct coin, every
+lot genuine, grades in the proportions the type really appears in, run through the repo's own `summarise()`: **median $239 against a $950 asking price,
+labelled "Solid"**. The median of the EF sales alone was $1,450. The median is a *type* median across every grade; he is looking at one *coin* in one
+grade. Both numbers are right, and the tool never says which it is showing. Grade mix fires on every search there is.
+
+Ordered by what protects him from a bad bid:
+
+1. **Say what the median is** — one permanent sentence under it. A text change, and the most valuable thing in the file.
+2. **The total is already in the page and thrown away.** The fixture's own header reads `Results 1-100 of 623 for nero 306`; the card says "Out of 100+ matches".
+3. **A gated lot is reported as unsold.** The page marks `Log in` and `Premium` lots, and `summarise` only treats `*` as signed-out.
+4. **The strength indicator counts sales and measures nothing else**, so his own example holds: 40 sales spread tenfold read "Solid" (真 band ±59%), 8 tight sales read "Moderate" (±7%). Replace with a confidence band from order statistics; below six counted sales no 95% band exists at all - arithmetic, not taste.
+5. **The trend cries wolf.** Monte Carlo on a flat market: it announces a move **95% of the time**, claims 20% or more **80% of the time**, and once claimed up 668%. Raising the threshold does not fix it. Gating on non-overlapping medians gives 0% false alarms and still catches a real move.
+6. **The trend ignores the chosen period** - always a two-year comparison, which is how "No sales in the last 2 years" ends up beside "Last sale 12.03.2019".
+7. **The range bar is linear on prices that are log-distributed**, so half the sales squash into the left 8% and any realistic price he types flies far right and looks extravagant. `Math.log` inside `rangePercent` is the whole fix.
+8. **`saleDate` rejects `1.7.2026` and `2026/07/01`**, so a period button can silently drop *recent* sales and move the median 80%.
+9. **Outliers: compute, never apply.** 1.5x IQR flags ten genuine high-grade sales and drags the median down - it would make his complaint worse - and catches none of the wrong coins or forgeries on a poisoned page.
+
+Unverifiable tonight and worth watching on his first real run: no signed-in acsearch page has ever been seen by this code. The `Not counted:` line is the thing to read first.
