@@ -103,3 +103,15 @@ Carried: the extra nomisma label request is still spent on RIC VI-IX lookups whe
 it costs no serial time; worth skipping if the request budget ever matters.
 
 **Next:** 0.25 from the design audit - the card arriving off screen is the biggest thing left in the tool.
+
+## 0.26 planned — and the list is much shorter than the audit's 102
+
+`docs/superpowers/plans/2026-09-13-giga-pinax-v0.26-missing-catalogues.md`. **26 names are worth adding, not 102**, and the reason is not risk per key:
+
+- **The rows would search the wrong place.** `searchCategory` sends a row to acsearch's Modern category only when every part is Krause, so `SCBC 1490`, `Duplessy 213`, `Hartill 22.1279`, `JNDA 01-23`, `Huszar 123` and `D&H 45` would all be searched in **Ancient coins**, where they cannot exist. That drops the whole medieval / East-Asian / Ottoman / token block however safely it reads. **Worth its own change: teach `searchCategory` the non-ancient catalogues, not just Krause.**
+- **The Reference box already reads them.** Typing `Klat 686` works today with no key at all — `KEYS` only affects pasted lot text, so these names buy convenience, not capability.
+- **Four of the 102 already read** (`Noe`, `Koln`, `Bohringer`, and `Meshorer & Qedar`, which 0.23's co-author infix handles), and 0.23 closed 12 of the audit's 16 "right key, wrong form" misses. The audit's own priority list is two-thirds done.
+
+Two candidates died on contact with the real code: `Albert` breaks the repo's own 0.23 test (`SAXONY. Albert 1485-1500` becomes a row), and `Cribb` steals `Jongeward & Cribb 123` unless it carries the co-author guard. `Callataÿ` reads the wrong number from its real citation form. All reproduced, none argued.
+
+About 10 lines in `lot.js` and 70 in tests.

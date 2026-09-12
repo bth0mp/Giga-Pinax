@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Version **0.24.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it. Sear Greek references such as `SG6829v` and Krause world-coin references such as `Netherlands KM# 123` and `Russia Y# 59.3` get acsearch prices, and every card has a **Search on CoinArchives ↗** button. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link and the **Search on CoinArchives** button open only when you select them) and nothing from acsearch is stored.
+Version **0.25.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it. Sear Greek references such as `SG6829v` and Krause world-coin references such as `Netherlands KM# 123` and `Russia Y# 59.3` get acsearch prices, and every card has a **Search on CoinArchives ↗** button. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link and the **Search on CoinArchives** button open only when you select them) and nothing from acsearch is stored.
 
 The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.24.0.zip
-dist/giga-pinax-firefox-0.24.0.zip
+dist/giga-pinax-brave-0.25.0.zip
+dist/giga-pinax-firefox-0.25.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.24.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.25.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.24.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.25.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -58,7 +58,7 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - With that window still open, right-click another reference, such as **Craw. 44/5** or a reference copied from an auction page: the same window looks it up and comes to the front, rather than a second window opening. Dealer abbreviations (**Craw.**, **Crawf.**), a trailing **;** and the hidden characters auction pages add are read.
 - Paste a whole lot description from biddr into the Reference box, such as **TITUS, AD 69-79. AR, Denarius. Rome. Obv: T CAESAR VESPASIANVS. Head of Titus, laureate, right. Rev: ANNONA AVG. Ref: RIC 972; Cohen 17; BMC 319.**, and select **Look up**: the three references are listed as **RIC 972 · Titus**, **Cohen 17 · prices only** and **BMC 319 · prices only**, and because only RIC has type data it opens at once as RIC II.1² Vespasian 972, Titus's denarius as Caesar, found from the ruler in the heading. Select **Cohen 17** to get its acsearch prices instead. Selecting the same text on biddr and right-clicking does the same in the lookup window. A lot with several RIC, RRC, SC, Bop or Price references fetches nothing until you pick one.
 - Select the window button (a square with an arrow) in the header: Giga Pinax opens on the type it was showing, in the window already open or in a new one, and you can drag that window to any size.
-- **Price 23**, then catalogue **RIC**, and type **Titus** in **Ruler or mint section**: it is suggested as you type, from every OCRE volume, and the volume becomes **II.1² (2nd ed.)** by itself. With number **123**, **Look up** finds RIC II.1² Titus 123. A blank volume or ruler means any.
+- **Price 23**, then catalogue **RIC**, and type **Titus** in **Ruler or mint section**: it is suggested as you type, from every OCRE volume, and the volume becomes **II.1² (2nd ed.)** by itself, with a line under the fields saying so. Choose **RIC I² (2nd ed.)** instead and the ruler box empties, because Titus is not in that volume — the same line says that too. With number **123**, **Look up** finds RIC II.1² Titus 123. A blank volume or ruler means any.
 - **RIC 972** in the Reference box: a list of the six types numbered 972, from Vespasian (II.1²) to Zeno (X); choosing one sets the fields, and its acsearch search follows it (for example "Hadrian 972").
 - **RRC 44/5** — an anonymous Roman Republican denarius; its acsearch search starts as "Crawford 44/5".
 - **SC 1266.2** — a tetradrachm of Demetrius II from Antioch; **SC 1266.9** doesn't exist and offers **SC 1266** instead.
@@ -71,6 +71,9 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - **Look up** fetches prices too. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices**.
 - If the popup says no hammer prices could be counted, it quotes up to five prices exactly as acsearch showed them — send that line so the price reader can learn the format.
 - Edit the acsearch search term (for example add the denomination) and select **Get prices** again; the term is remembered for that type.
+- **Titus 972** typed in the Reference box: RIC files it in the Vespasian section, so the search by ruler finds nothing and Giga Pinax tries the portrait once more, opening **RIC II, Part 1 (second edition) Vespasian 972** with the line below explaining it. When there is no such line to explain the other ruler, the type is offered as a choice instead of opened.
+- Select **Look up** with the Reference box empty on a freshly opened popup: nothing is looked up, and the popup says to type a reference — the number already in the guided field below was filled in by the tool, not by you. Fill that field in yourself, or choose a catalogue, and it answers for **Look up** as before.
+- After any lookup, the card scrolls into view by itself if it landed below the fold — unless you have scrolled the popup yourself in the meantime, or your system asks for reduced motion, in which case it jumps instead of gliding.
 - When RIC files a type under a different ruler from the one on its portrait, one line under the type's title says so, for example **Portrait of Titus, listed under Vespasian.** (RIC files a Caesar's coins in the reigning emperor's section). Where the volume splits that ruler in two, the same line adds which other section exists, for example **RIC V also has a Gallienus (joint reign) section.** — only after the first sentence, so an ordinary card stays quiet. It appears only when the portrait is a ruler RIC itself heads a section with and the card's own section is that ruler, so nothing shown doesn't mean the portrait is the section's ruler: a deity, a name nomisma spells differently, or a volume filed by mint (RIC VI–IX) all stay silent.
 - The period buttons and then the median hammer price sit right under the type's title, and the obverse and reverse are folded under **Obverse and reverse** (select it to open them). The line under the median says how far to trust it, for example **Solid: 22 sales, 2024–2026** — Thin for 1–4 sales, Moderate for 5–14, Solid for 15 or more — and, below the trend and **Last sale** lines, a line says how many matches it was drawn from.
 - Above the median, select **Last 2 years**: the median, the line saying how far to trust it, the middle 50%, the lowest and highest sale, **Check a price** (a typed amount stays and is checked again) and **Inspect sales** redraw from the sales already fetched, without asking acsearch again, and the matches line reads, for example, **Out of 12 matches from the last 2 years for “Nero 306”**. **Last 5 years** works the same way, and **All** brings back every sale. The choice is remembered the next time you open Giga Pinax. When no sale in the period has a price, the panel says **No sales with a price in the last 2 years.**
