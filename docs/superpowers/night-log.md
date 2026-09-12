@@ -76,3 +76,30 @@ The high one was mine to fix — the name guard lived inside a case-insensitive 
 initial and dropped Sear. Fixed by reading both name guards case-sensitively outside the key pattern, where a capital really is a capital.
 
 **Next:** 0.24, the "listed under Vespasian" label (plan already written), then the 102 unread catalogue names from the round-2 audit.
+
+## Queue after 0.24 — the design audit's own top five
+
+`docs/superpowers/design-audit-2026-09-12.md`, measured against popup.css rather than guessed:
+
+1. **The answer arrives off screen.** Header 57 px + form 250 px (316 with the RIC fields) + a full Recent row 210 px is about 460 px of a ~503 px scroll area, so the card lands in the last 43 px and the median sits ~120 px below that. `run()` never scrolls. The commonest outcome of pressing Look up is a screen that looks unchanged. One line.
+2. **Look up is not beside the box he types in.** It sits two fields lower, next to a number the tool pre-filled itself, and an empty top box still runs a lookup — of a coin nobody asked for.
+3. **Two paths disagree about one coin.** Typed `Titus 972` says it cannot be found; the same reference inside pasted lot text opens Vespasian 972. 0.24 explains the card once he reaches it, but does not get him there from the typed path — retry without the ruler, and let 0.24's line say what happened.
+4. **Two field changes are explained only to screen readers** (`Volume set to ...`, `Ruler cleared: ...`). The strings exist; showing them is an hour.
+5. **Focus and contrast:** the Recent chips he is meant to click have a 1.28:1 border, a clicked candidate row drops focus to `<body>`, and `#check-result` is both a live region and an `aria-describedby` target, so it speaks three times while he types an amount.
+
+Also proposed: invert the prices panel so the price check and its verdict come first; fold trend, last sale and the fee note into one "More about these sales" (and note that trend and last sale ignore the chosen period). Deletions to consider, the theme toggle among them — that one is his taste, so ask before touching it.
+
+## Tick 4 (03:0x-) — 0.24 the listed-under line
+
+Shipped `4c9ced6`. The live probes across two dozen records are what made it safe to print a person's name beside a coin: the reverse portrait is a
+deity (Annona on Vespasian 972 itself), `portrait_facet` matches a reverse portrait so it can never build the label, and obverse portraits are often not
+people at all. Two gates keep a wrong name off the card, and both are deliberate under-claims.
+
+The review's one surviving finding was mine to decide: the sibling sentence was ungated, so it would have spoken on every ordinary card in a split
+volume - RIC V's Gallienus types alone are over four thousand. It now speaks only after the portrait sentence, where it answers the collector's next
+question instead of interrupting a card he was happy with.
+
+Carried: the extra nomisma label request is still spent on RIC VI-IX lookups where the section gate will discard it. Parallel, cached, same deadline, so
+it costs no serial time; worth skipping if the request budget ever matters.
+
+**Next:** 0.25 from the design audit - the card arriving off screen is the biggest thing left in the tool.
