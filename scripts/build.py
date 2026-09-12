@@ -37,6 +37,8 @@ ASSET_PATHS = (
     "popup.css",
     "popup.js",
     "theme.js",
+    "updates.css",
+    "updates.js",
     "lookup.js",
     "preferences.js",
     "prices.js",
@@ -173,9 +175,13 @@ def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
         for browser, staged_directory, staged_zip, version in staged:
             destination_directory = output_root / browser
             destination_zip = output_root / f"giga-pinax-{browser}-{version}.zip"
+            stable_destination_zip = output_root / f"giga-pinax-{browser}.zip"
+            staged_stable_zip = stage_root / f"giga-pinax-{browser}-stable.zip"
+            shutil.copyfile(staged_zip, staged_stable_zip)
             replace_known_directory(staged_directory, destination_directory, output_root)
             replace_with_retry(staged_zip, destination_zip)
-            results.extend((destination_directory, destination_zip))
+            replace_with_retry(staged_stable_zip, stable_destination_zip)
+            results.extend((destination_directory, destination_zip, stable_destination_zip))
         return results
     finally:
         if stage_root.exists():

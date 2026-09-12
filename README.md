@@ -1,12 +1,14 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types, shows session-only acsearch prices, calculates buyer’s premium, and keeps a local auction watchlist. Version **0.27.0** preserves Giga Pinax’s RIC, RRC, SC, Bop, Price, Sear, Krause and other catalogue workflows while adding separate **Research**, **Calculator**, and **Watchlist** tabs plus a full auction workspace.
+A toolbar extension for desktop Brave and Firefox that looks up ancient coin types, shows session-only acsearch prices, calculates buyer’s premium, and keeps a local auction watchlist. Version **0.27.1** preserves Giga Pinax’s RIC, RRC, SC, Bop, Price, Sear, Krause and other catalogue workflows and adds an **Updates** disclosure that shows the installed version and downloads the current release package from GitHub.
 
 The workspace records lots, alternative priorities, planned and externally active bids, reminders, outcomes, collection history, and collector-entered comparables in USD, EUR, GBP, or CHF. It never places or cancels bids. A resolved reference can be sent to an editable watchlist draft, but fetched acsearch rows, prices, medians, and claims stay only in the current Research view.
 
 ## Install
 
-Ready-to-load builds are in `dist/brave`, `dist/firefox`, and the matching 0.27.0 ZIPs. Follow [the installation guide](docs/INSTALL.md). If Giga Pinax is already loaded from this checkout, rebuilds require only **Reload** at `brave://extensions`.
+Download the release package for your browser from the [latest GitHub release](https://github.com/bth0mp/Giga-Pinax/releases/latest). This repository is private, so GitHub asks you to sign in with an account that has access. Extract the Chromium ZIP for Brave or Chrome; Firefox can load its unsigned ZIP temporarily. Follow [the installation guide](docs/INSTALL.md).
+
+For later releases, open **Updates** under the popup header and select **Download latest update**. The button downloads the stable package for your browser from the latest GitHub release. It does not silently install files: replace the files in the folder you already loaded and select **Reload** in Brave or Chrome, or load the latest unsigned ZIP again in Firefox.
 
 ## What it does
 

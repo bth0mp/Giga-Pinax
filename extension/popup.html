@@ -9,8 +9,10 @@
   <script src="theme.js"></script>
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="companion-popup.css">
+  <link rel="stylesheet" href="updates.css">
   <script src="popup.js" type="module"></script>
   <script src="companion-popup.js" type="module"></script>
+  <script src="updates.js" type="module"></script>
 </head>
 <body>
   <main class="popup">
@@ -25,6 +27,19 @@
         <svg id="icon-sun" aria-hidden="true" viewBox="0 0 24 24" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
       </button>
     </header>
+    <details class="updates">
+      <summary>Updates</summary>
+      <div class="updates-body">
+        <p id="updates-version" class="updates-version"></p>
+        <p class="updates-copy">Download the latest ZIP from GitHub. Sign in there with access to this repository if needed.</p>
+        <div class="updates-actions">
+          <a id="updates-download" class="primary-button" href="https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip" target="_blank" rel="noopener noreferrer">Download latest update <span aria-hidden="true">↗</span></a>
+          <a class="updates-release-link" href="https://github.com/bth0mp/Giga-Pinax/releases/latest" target="_blank" rel="noopener noreferrer">View releases <span aria-hidden="true">↗</span></a>
+        </div>
+        <h2 id="updates-browser"></h2>
+        <p id="updates-instructions" class="updates-copy"></p>
+      </div>
+    </details>
     <nav id="companion-tabs" class="companion-tabs" role="tablist" aria-label="Giga Pinax tools">
       <button id="companion-tab-research" type="button" role="tab" aria-selected="true" aria-controls="companion-panel-research">Research</button>
       <button id="companion-tab-calculator" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-calculator" tabindex="-1">Calculator</button>

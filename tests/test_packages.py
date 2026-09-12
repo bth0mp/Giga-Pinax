@@ -31,6 +31,8 @@ ASSETS = {
     "popup.css",
     "popup.js",
     "theme.js",
+    "updates.css",
+    "updates.js",
     "lookup.js",
     "preferences.js",
     "prices.js",
@@ -62,7 +64,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.27.0", manifest["version"])
+                self.assertEqual("0.27.1", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -143,16 +145,28 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.27.0.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.27.1.zip"
+            for browser in ("brave", "firefox")
+        }
+        stable_zip_paths = {
+            browser: DIST / f"giga-pinax-{browser}.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}
+        self.assertEqual(
+            first_digests,
+            {browser: self.digest(path) for browser, path in stable_zip_paths.items()},
+        )
 
         second = self.run_builder()
         self.assertEqual(0, second.returncode, second.stderr)
         self.assertEqual(
             first_digests,
             {browser: self.digest(path) for browser, path in zip_paths.items()},
+        )
+        self.assertEqual(
+            first_digests,
+            {browser: self.digest(path) for browser, path in stable_zip_paths.items()},
         )
         self.assertEqual("unrelated output", sentinel.read_text(encoding="utf-8"))
 

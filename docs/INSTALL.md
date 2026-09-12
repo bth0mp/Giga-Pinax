@@ -1,55 +1,45 @@
 # Install Giga Pinax
 
-Version **0.27.0** keeps the complete Giga Pinax catalogue and session acsearch workflow and adds Calculator and Watchlist tabs plus a full local auction workspace. The workspace records lots, alternatives, planned and externally active bids, reminders, outcomes, collection history, and manually entered comparables in USD, EUR, GBP, or CHF. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or companion backups.
+Version **0.27.1** keeps the complete Giga Pinax catalogue, session acsearch workflow, Calculator, Watchlist, and local auction workspace. It also adds **Updates** under the popup header, with the installed version and a direct download for the latest GitHub release. The workspace records lots, alternatives, planned and externally active bids, reminders, outcomes, collection history, and manually entered comparables in USD, EUR, GBP, or CHF. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or companion backups.
 
 The extension uses right-click actions for Giga lookup, highlighted research, and auction confirmation. Current-page extraction runs only after your action and remains editable before saving. Optional desktop notifications are requested only when you enable them.
 
-## Build the packages
+## Install in Brave or Chrome
 
-From the repository root, run:
-
-```powershell
-python scripts/build.py
-```
-
-The command creates these unpacked directories and matching ZIP archives:
-
-```text
-dist/brave/
-dist/firefox/
-dist/giga-pinax-brave-0.27.0.zip
-dist/giga-pinax-firefox-0.27.0.zip
-```
-
-Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
-
-## Test in Brave
-
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.27.0.zip` into its own folder.
-2. Open `brave://extensions` in Brave.
-3. Turn on **Developer mode**.
-4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
-5. Open Giga Pinax from Brave's extensions menu. Pin it if you want its button to remain on the toolbar.
+1. Sign in to GitHub with an account that can access the private repository, then download the [latest Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip).
+2. Extract the ZIP into a folder you will keep.
+3. Open `brave://extensions` in Brave or `chrome://extensions` in Chrome.
+4. Turn on **Developer mode**.
+5. Select **Load unpacked** and choose the folder that contains `manifest.json`.
+6. Open Giga Pinax from the extensions menu. Pin it if you want its button to remain on the toolbar.
 
 Brave grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` at install.
 
-**Already installed?** Rebuild, then select **Reload** on Giga Pinax at `brave://extensions`. If you loaded an extracted copy, replace its files with the new ZIP's contents first. Reopen the toolbar popup to use the update.
+**Already installed?** Open **Updates** in Giga Pinax and select **Download latest update**. After the ZIP downloads, replace the files in the same extracted folder, then select **Reload** at `brave://extensions` or `chrome://extensions`. Reopen the popup. Giga Pinax opens the download in your signed-in browser; it does not install the files silently.
 
 ## Test temporarily in Firefox
 
 Use Firefox 142 or later.
 
-1. Open `about:debugging`.
-2. Select **This Firefox**.
+1. Sign in to GitHub with an account that can access the private repository, then download the [latest Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-firefox.zip).
+2. Open `about:debugging` and select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.27.0.zip`.
+4. Choose the downloaded ZIP.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
 
 Firefox removes a temporary add-on when Firefox restarts. Permanent installation needs a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
 
-**Already installed temporarily?** After rebuilding, select **Reload** for Giga Pinax under **This Firefox** at `about:debugging`, or load the updated ZIP again.
+**Already installed temporarily?** Open **Updates** and select **Download latest update**, then load the downloaded unsigned ZIP again. Firefox removes a temporary installation on restart.
+
+The download button opens a fixed GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Use [View releases](https://github.com/bth0mp/Giga-Pinax/releases/latest) if GitHub needs you to sign in or you want to read the release notes.
+
+## Developer build
+
+End users do not need Python for the download-and-reload update above. To build from source, run `python scripts/build.py` from the repository root. The builder creates `dist/brave/`, `dist/firefox/`, versioned ZIPs such as `giga-pinax-brave-0.27.1.zip`, and byte-identical stable aliases named `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. A release must upload both stable aliases alongside the versioned archives so the in-extension download links remain valid. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+
+GitHub's automatically generated **Source code** archives are repository snapshots and are not loadable extension packages.
 
 ## What to try
 
