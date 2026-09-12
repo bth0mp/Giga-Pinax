@@ -156,3 +156,32 @@ Unverifiable tonight and worth watching on his first real run: no signed-in acse
 *Housekeeping: `2b3e7f2` swept the in-flight 0.26 edits to `docs/INSTALL.md` and `docs/ideas-backlog.md` into the audit commit, so that one commit
 advertises 0.26 while the manifests still read 0.25. The working tree was untouched and the release commit that follows makes it consistent. Stage
 explicit paths, not `-A -- docs`, while a build is running.*
+
+## Tick 6 (06:0x-) — 0.26 separator shapes and 26 catalogues
+
+Shipped `e09513c`. This workflow's own review/verify/fix/recheck chain hit the weekly Opus usage limit partway through (the user switched the session to
+Sonnet 5 to keep going). Implementation and two of the three review lenses had already completed; I finished the job myself directly rather than
+re-spawning agents: read every finding out of the workflow's journal (including the separators lens, whose own verify step never ran and so was silently
+dropped by the script's `filter(Boolean)` - worth remembering for the next script), applied the six confirmed fixes test-first, and ran the full release
+check battery and a browser check myself.
+
+The best find of the six: a long non-digit run straight after a key (a rule of dots, a run-together identifier) backtracked in `BODY` at up to O(n^4) -
+2,900 dots hung the single-threaded popup for what would have been several minutes (I killed a 120s-timeout test run rather than wait for the real one
+to finish). Pre-existing since long before tonight, surfaced only because this review timed the reader. Fixed to milliseconds with no test regression:
+each token after the first must now cost a space, which makes the split unambiguous.
+
+Also fixed: "Agrippina Senior, 37-41" and "Newell. 1938" no longer read as citations of their own (the separator work was reading the reader's own
+sentence boundary as a house's separator); "Price:1,200" stays untyped so it can never open a wrong PELLA coin for a hammer amount; two countermark
+corpora no longer swallow the host coin's ruler; a co-author's hyphen can no longer steal Jongeward's reference for Cribb alone; Prieto y Vives is
+attributed to its own book instead of Vives y Escudero's at the same number.
+
+Noted for later, not fixed tonight (both queued in the 0.26 backlog entry): the accepted stray-publication-year leak is now three separator spellings
+wide across 23 more author names, which is one more reason `OVER_RANGE` narrowing is worth doing next; and an `Other` row's acsearch phrase keeps the
+dealer's separator verbatim, so the same coin cited with a hyphen and with a space searches two different exact phrases.
+
+Also noticed in the browser check, unrelated to any 0.26 change and confirmed byte-identical back to 0.25: a short lot line naming only one catalogue
+key ("KUSHAN. Vima Kadphises. AV Dinar. Jongeward-Cribb 123.") does not go down the lot-list path at all - `isLot` needs 2+ keys or 120+ characters -
+and instead searches acsearch for the WHOLE sentence as one Other reference. Not a regression, but a design gap worth a future tick: a single short
+reference embedded in a one-line heading probably wants the same "list one row" treatment full lot text gets.
+
+**Next:** 0.27, the price-honesty pass (see the price audit above).
