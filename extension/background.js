@@ -1,6 +1,7 @@
 import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './browser-api.js';
 import { createCommandWriter } from './store.js';
-import { LOOKUP_MESSAGE, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
+import { reconcileScheduler } from './core/reminders.js';
+import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = extensionApi();
 const writer = createCommandWriter(storageLocalAdapter(), {
@@ -27,6 +28,7 @@ const COMMAND_TYPES = new Set([
   'scheduler.reconcile', 'backup.import',
 ]);
 const RECONCILE_AFTER = new Set([
+  'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
   'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import',
 ]);
@@ -80,7 +82,7 @@ async function deliverOverdue(plan) {
       const when = first.precision === 'timed'
         ? new Date(first.eventStartsAt).toLocaleString()
         : `${first.localDate} (${first.timeZone})`;
-      await invokeExtensionMethod(api.notifications.create, api.notifications,
+      const notificationId = await invokeExtensionMethod(api.notifications.create, api.notifications,
         `auction-companion:${eventId}`,
         {
           type: 'basic',
@@ -88,7 +90,7 @@ async function deliverOverdue(plan) {
           title: first.eventName,
           message: `Auction reminder: ${when}`,
         });
-      delivered = true;
+      delivered = notificationId !== false;
     } catch {
       delivered = false;
     }
@@ -105,7 +107,12 @@ async function runReconcileRuntime() {
   if (!reply.ok) return reply;
   await setAlarm(reply.value.nextWakeAt);
   await refreshBadge();
-  await deliverOverdue(reply.value);
+  const state = await snapshot();
+  if (state) {
+    const events = state.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
+      state.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
+    await deliverOverdue(reconcileScheduler(events, { alerts: state.alerts }, new Date().toISOString()));
+  }
   await refreshBadge();
   return reply;
 }
@@ -144,6 +151,17 @@ function registerMenus() {
 }
 
 api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === LOOKUP_LAUNCH_MESSAGE) {
+    if (!isLookupWindowUrl(message.url)) {
+      sendResponse({ ok: false, message: 'Invalid lookup window address.' });
+      return false;
+    }
+    showInWindow(api, message.url).then(
+      () => sendResponse({ ok: true }),
+      (error) => sendResponse({ ok: false, message: error.message || 'Unable to open the lookup window.' }),
+    );
+    return true;
+  }
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
   processCommand(message).then(sendResponse, (error) => sendResponse({
     ok: false,

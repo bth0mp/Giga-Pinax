@@ -79,6 +79,24 @@ test('replace preview reports exact outgoing and incoming collection counts', ()
   assert.equal(preview.value.counts.incoming.alternativeGroups, 1);
 });
 
+test('merge preview preserves current drafts while omitting incoming drafts', () => {
+  const current = createEmptySnapshot(NOW);
+  const draft = {
+    id: '66666666-6666-4666-8666-666666666666', revision: 0, dataClass: 'collector',
+    kind: 'research-highlight', payload: { rawText: 'RIC 306', pageUrl: 'https://example.test/lot' },
+    createdAt: NOW, updatedAt: NOW, expiresAt: '2026-09-12T12:30:00.000Z',
+  };
+  current.drafts.push(draft);
+  const incoming = createEmptySnapshot(NOW);
+  incoming.drafts.push({ ...draft, id: '77777777-7777-4777-8777-777777777777' });
+  const before = structuredClone(current);
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true);
+  assert.deepEqual(preview.value.snapshot.drafts, [draft]);
+  assert.deepEqual(current, before, 'preview must not mutate current data');
+  assert.equal(JSON.stringify(preview.value.snapshot.drafts).includes('RIC 306'), true);
+});
+
 test('merge preview reports canonical same-sale evidence under different stable IDs', () => {
   const observation = {
     id: '11111111-1111-4111-8111-111111111111',

@@ -1,10 +1,27 @@
-import { createEmptySnapshot, setOutcome, validateDraftPayload, validateSnapshot } from './core/records.js';
+import { LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validateSnapshot } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+const SCHEDULE_CHANGING_COMMANDS = new Set([
+  'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set', 'backup.import',
+]);
+const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
+const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
+
+function storageBytesWithReserve(snapshot, commandHeadroom = true) {
+  const reserved = clone(snapshot);
+  for (const alert of reserved.alerts) {
+    alert.revision = Number.MAX_SAFE_INTEGER;
+    alert.status = 'acknowledged';
+    for (const field of ['attemptedAt', 'claimedAt', 'deliveredAt', 'acknowledgedAt', 'snoozedUntil', 'missedAt']) {
+      alert[field] = RESERVED_INSTANT;
+    }
+  }
+  return new TextEncoder().encode(JSON.stringify(reserved)).length + (commandHeadroom ? LIMITS.commandReplyBytes : 0);
+}
 
 const ok = (value) => ({ ok: true, value });
 const fail = (code, message, path) => ({
@@ -124,6 +141,47 @@ function compactGroupPriorities(lots, groupId, now) {
       lot.revision += 1;
       lot.updatedAt = now;
     });
+}
+
+function reconcileIntoSnapshot(next, context) {
+  const now = getNow(context);
+  const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
+    next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
+  const triggers = deriveReminderTriggers(events, now);
+  const triggerIds = new Set(triggers.map(({ id }) => id));
+  next.alerts = next.alerts.filter((alert) => triggerIds.has(alert.triggerId));
+  const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
+  for (const trigger of triggers) {
+    if (existing.has(trigger.id)) continue;
+    next.alerts.push(baseRecord({
+      triggerId: trigger.id,
+      eventId: trigger.eventId,
+      eventRevision: trigger.eventRevision,
+      reminderId: trigger.reminderId,
+      triggerAt: trigger.triggerAt,
+      status: 'pending',
+    }, context));
+  }
+  const plan = reconcileScheduler(events, { alerts: next.alerts }, now);
+  const missed = new Set(plan.missedTriggerIds);
+  const due = new Set(Object.values(plan.overdueByEvent).flat().map(({ id }) => id));
+  for (const alert of next.alerts) {
+    let status = alert.status;
+    if (missed.has(alert.triggerId)) status = 'missed';
+    else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
+      (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
+    if (status === alert.status) continue;
+    alert.status = status;
+    if (status === 'missed') alert.missedAt = now;
+    alert.revision += 1;
+    alert.updatedAt = now;
+  }
+  next.scheduler = {
+    revision: next.scheduler.revision + 1,
+    nextWakeAt: plan.nextWakeAt,
+    lastReconciledAt: now,
+  };
+  return plan;
 }
 
 function mutation(snapshot, command, context) {
@@ -568,7 +626,7 @@ function mutation(snapshot, command, context) {
           alert.claimedAt = now;
         } else {
           if (alert.status !== 'claimed' || typeof command.delivered !== 'boolean') continue;
-          alert.status = command.delivered ? 'delivered' : 'due';
+          alert.status = command.delivered ? 'delivered' : 'claimed';
           if (command.delivered) alert.deliveredAt = now;
         }
         alert.revision += 1;
@@ -583,43 +641,8 @@ function mutation(snapshot, command, context) {
       break;
     }
     case 'scheduler.reconcile': {
-      const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
-        next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
-      const triggers = deriveReminderTriggers(events, now);
-      const triggerIds = new Set(triggers.map(({ id }) => id));
-      next.alerts = next.alerts.filter((alert) => triggerIds.has(alert.triggerId));
-      const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
-      for (const trigger of triggers) {
-        if (existing.has(trigger.id)) continue;
-        next.alerts.push(baseRecord({
-          triggerId: trigger.id,
-          eventId: trigger.eventId,
-          eventRevision: trigger.eventRevision,
-          reminderId: trigger.reminderId,
-          triggerAt: trigger.triggerAt,
-          status: 'pending',
-        }, context));
-      }
-      const plan = reconcileScheduler(events, { alerts: next.alerts }, now);
-      const missed = new Set(plan.missedTriggerIds);
-      const due = new Set(Object.values(plan.overdueByEvent).flat().map(({ id }) => id));
-      for (const alert of next.alerts) {
-        let status = alert.status;
-        if (missed.has(alert.triggerId)) status = 'missed';
-        else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
-          (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
-        if (status === alert.status) continue;
-        alert.status = status;
-        if (status === 'missed') alert.missedAt = now;
-        alert.revision += 1;
-        alert.updatedAt = now;
-      }
-      next.scheduler = {
-        revision: next.scheduler.revision + 1,
-        nextWakeAt: plan.nextWakeAt,
-        lastReconciledAt: now,
-      };
-      value = { ...plan, dueEventCount: Object.keys(plan.overdueByEvent).length };
+      const plan = reconcileIntoSnapshot(next, context);
+      value = { nextWakeAt: plan.nextWakeAt, dueEventCount: Object.keys(plan.overdueByEvent).length };
       effects.push({ type: 'alarm.schedule', nextWakeAt: plan.nextWakeAt }, { type: 'badge.refresh' });
       break;
     }
@@ -644,6 +667,33 @@ function mutation(snapshot, command, context) {
     }
     default:
       return fail('unsupported', `Unsupported command: ${String(command.type)}`, 'type');
+  }
+
+  if (SCHEDULE_CHANGING_COMMANDS.has(command.type)) {
+    let projectedId = 0;
+    const projected = clone(next);
+    projected.revision = snapshot.revision + 1;
+    projected.updatedAt = now;
+    const projectedReply = { ok: true, requestId: command.requestId, revision: projected.revision, value: clone(value) };
+    projected.recentCommands.push({
+      requestId: command.requestId, commandType: command.type, revision: projected.revision, committedAt: now, reply: projectedReply,
+    });
+    projected.recentCommands = projected.recentCommands.slice(-200);
+    reconcileIntoSnapshot(projected, {
+      now: () => now,
+      newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
+    });
+    projected.revision += 1;
+    const reconcileRequestId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const reconcileValue = { nextWakeAt: projected.scheduler.nextWakeAt, dueEventCount: projected.alerts.filter(({ status }) => status === 'due').length };
+    projected.recentCommands.push({
+      requestId: reconcileRequestId, commandType: 'scheduler.reconcile', revision: projected.revision, committedAt: now,
+      reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
+    });
+    projected.recentCommands = projected.recentCommands.slice(-200);
+    if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
+      return fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
+    }
   }
 
   next.revision = snapshot.revision + 1;
@@ -711,7 +761,12 @@ export function createCommandWriter(storageArea, context) {
     const prior = stored.recentCommands.find(({ requestId }) => requestId === command.requestId);
     if (prior) return prior.reply;
 
-    const applied = applyCommand(stored, command, context);
+    // Internal delivery commands are reproducible from authoritative alert state. Drop their
+    // older ledger entries before each new write so they can spend, then replenish, the
+    // command headroom without evicting public commands needed for retry idempotency.
+    const working = clone(stored);
+    working.recentCommands = working.recentCommands.filter(({ commandType }) => !INTERNAL_COMMANDS.has(commandType));
+    const applied = applyCommand(working, command, context);
     if (!applied.ok) {
       const code = ['conflict', 'unsupported'].includes(applied.error.code) ? applied.error.code : 'validation';
       return errorReply(command, code, 'not-committed', applied.error.message);
@@ -719,9 +774,9 @@ export function createCommandWriter(storageArea, context) {
     if (!applied.value.mutated) {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: applied.value.value };
     }
-    const encoded = new TextEncoder().encode(JSON.stringify(applied.value.snapshot));
-    if (encoded.length > MAX_ROOT_BYTES) {
-      return errorReply(command, 'validation', 'not-committed', 'Local data exceeds the 5 MiB storage bound.');
+    const includeCommandHeadroom = !INTERNAL_COMMANDS.has(command.type);
+    if (storageBytesWithReserve(applied.value.snapshot, includeCommandHeadroom) > MAX_ROOT_BYTES) {
+      return errorReply(command, 'validation', 'not-committed', 'Local data plus reminder-delivery reserve exceeds the 5 MiB storage bound. Remove old auction events, reminders, or other saved data before retrying.');
     }
     try {
       await storageArea.set({ [STORAGE_KEY]: applied.value.snapshot });

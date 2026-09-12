@@ -18,6 +18,9 @@ import {
   outcomeDraftForLot,
   receiveWorkspaceSnapshot,
   routeFromHash,
+  applyActiveRoute,
+  editorCompletion,
+  sameEditorIdentity,
 } from '../extension/workspace.js';
 
 test('workspace chooses only supported direct routes', () => {
@@ -25,6 +28,25 @@ test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#event-draft=abc'), 'auctions');
   assert.equal(routeFromHash('#lot-draft=abc'), 'watchlist');
   assert.equal(routeFromHash('#unknown'), 'search');
+});
+
+test('workspace marks only the active route with the aria-current page token', () => {
+  const nodes = new Map(['search', 'watchlist'].map((route) => [route, {
+    hidden: false,
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+  }]));
+  const links = new Map(['search', 'watchlist'].map((route) => [route, {
+    attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; },
+  }]));
+  applyActiveRoute(['search', 'watchlist'], 'watchlist', (route) => nodes.get(route), (route) => links.get(route));
+  assert.equal(nodes.get('search').hidden, true);
+  assert.equal(nodes.get('watchlist').hidden, false);
+  assert.equal(links.get('search').attributes['aria-current'], undefined);
+  assert.equal(links.get('watchlist').attributes['aria-current'], 'page');
 });
 
 test('watchlist draft is consumed only after the lot write is confirmed', () => {
@@ -107,6 +129,21 @@ test('dirty workspace editors survive committed updates and show conflict state'
   assert.equal(next.snapshot.revision, 2);
   assert.equal(next.editorValues.lot.title, 'Unsaved');
   assert.equal(next.conflict.pendingSnapshot.revision, 3);
+});
+
+test('a save reply resets only the editor version that was submitted', () => {
+  assert.equal(editorCompletion(4, 4), 'reset');
+  assert.equal(editorCompletion(4, 5), 'preserve');
+  assert.equal(editorCompletion(4, 9), 'preserve');
+});
+
+test('a late save reply rebases only the same editor record', () => {
+  const sameNewDraft = { id: null };
+  assert.equal(sameEditorIdentity(sameNewDraft, sameNewDraft), true);
+  assert.equal(sameEditorIdentity({ id: null }, { id: null }), false);
+  assert.equal(sameEditorIdentity({ id: 'lot-a' }, { id: 'lot-a' }), true);
+  assert.equal(sameEditorIdentity({ id: null }, { id: 'lot-b' }), false);
+  assert.equal(sameEditorIdentity({ id: 'lot-a' }, { id: 'lot-b' }), false);
 });
 
 test('command builders use the background contract and complete group order', () => {

@@ -83,3 +83,13 @@ test('watchlist summary keeps CHF exposure separate', () => {
   assert.equal(summary.exposure.CHF.hammerMinor, 10000);
   assert.equal(summary.exposure.USD.hammerMinor, 0);
 });
+
+test('date-only next auctions use each event local calendar day and sort with timed events', () => {
+  const newYork = { id: 'ny', name: 'New York day', precision: 'date-only', localDate: '2026-09-12', timeZone: 'America/New_York' };
+  const tokyoPast = { id: 'tokyo', name: 'Tokyo yesterday', precision: 'date-only', localDate: '2026-09-12', timeZone: 'Asia/Tokyo' };
+  const timed = { id: 'timed', name: 'Timed sale', precision: 'timed', startsAt: '2026-09-13T01:00:00.000Z' };
+  const summary = buildWatchlistSummary({ auctionEvents: [timed, tokyoPast, newYork], alerts: [], lots: [] }, '2026-09-13T00:30:00.000Z');
+  assert.equal(summary.nextEvent.id, 'ny');
+  const afterNewYorkMidnight = buildWatchlistSummary({ auctionEvents: [newYork], alerts: [], lots: [] }, '2026-09-13T04:00:00.001Z');
+  assert.equal(afterNewYorkMidnight.nextEvent, null);
+});

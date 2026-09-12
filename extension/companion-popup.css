@@ -44,6 +44,15 @@
 .companion-current-lot {margin:0; border-bottom:1px solid var(--line);}
 .companion-current-lot summary {padding:10px 16px; cursor:pointer; color:var(--accent); font-size:12px; font-weight:650;}
 .companion-current-lot-body {padding:0 16px 13px;}
+.coinarchives-pro {margin:0; border-bottom:1px solid var(--line);}
+.coinarchives-pro summary {padding:10px 16px; cursor:pointer; color:var(--accent); font-size:12px; font-weight:650;}
+.coinarchives-pro-body {padding:0 16px 13px;}
+.coinarchives-pro-body > p {margin:0 0 9px; color:var(--muted); font-size:12px; line-height:1.45;}
+.coinarchives-pro-body > .field-hint {margin:9px 0 0;}
+.coinarchives-pro-links {display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;}
+.coinarchives-pro-links a {display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:34px; padding:7px 9px; border:1px solid var(--gold-line); border-radius:7px; background:var(--card); color:var(--accent); font-size:11px; font-weight:650; line-height:1.3; text-decoration:none;}
+.coinarchives-pro-links a:hover {background:var(--accent-soft);}
+.coinarchives-pro-links .coinarchives-pro-signin {grid-column:1/-1; border-color:var(--accent);}
 .companion-outline-button {min-height:36px; padding:6px 11px; border:1px solid var(--accent); border-radius:8px; background:var(--card); color:var(--accent); font-size:12px; font-weight:650;}
 .companion-outline-button:hover {background:var(--accent-soft);}
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}

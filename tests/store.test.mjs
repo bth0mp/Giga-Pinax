@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createEmptySnapshot } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
-import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
+import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
 let nextId = 1;
@@ -326,6 +326,27 @@ test('serialized writer checks revisions inside its queue and returns prior repl
   assert.equal(storage.read().recentCommands.length, 2);
 });
 
+test('an internal reconcile can spend reserved headroom after a near-bound public write', async () => {
+  const initial = createEmptySnapshot(NOW);
+  const save = command('group.save', {
+    expectedRevision: null,
+    group: { name: 'Near-bound group', memberLotIds: [] },
+  });
+  initial.padding = '';
+  let projected = applyCommand(initial, save, context()).value.snapshot;
+  initial.padding = 'x'.repeat(MAX_ROOT_BYTES - 100_010 - new TextEncoder().encode(JSON.stringify(projected)).length);
+
+  const storage = memoryStorage(initial);
+  const writer = createCommandWriter(storage, context());
+  const saved = await writer.commitCommand(save);
+  assert.equal(saved.ok, true);
+  assert.equal((await writer.commitCommand(command('scheduler.reconcile'))).ok, true);
+  assert.ok(new TextEncoder().encode(JSON.stringify(storage.read())).length <= MAX_ROOT_BYTES);
+  const revision = storage.read().revision;
+  assert.deepEqual(await writer.commitCommand(save), saved);
+  assert.equal(storage.read().revision, revision);
+});
+
 test('writer returns conflict for racing updates to the same record', async () => {
   const storage = memoryStorage(createEmptySnapshot(NOW));
   const writer = createCommandWriter(storage, context());
@@ -388,6 +409,93 @@ test('scheduler reconciliation persists occurrences and one next wake', () => {
   assert.equal(reconciled.snapshot.alerts.length, 1);
   assert.equal(reconciled.snapshot.alerts[0].status, 'pending');
   assert.equal(reconciled.snapshot.scheduler.nextWakeAt, '2026-10-10T11:00:00.000Z');
+});
+
+test('scheduler reconciliation supports more than 500 alerts from valid events', () => {
+  let state = createEmptySnapshot(NOW);
+  for (let eventIndex = 0; eventIndex < 26; eventIndex += 1) {
+    const saved = reduce(state, command('event.save', {
+      expectedRevision: null,
+      event: {
+        name: `Sale ${eventIndex}`, eventKind: 'auction-starts', precision: 'timed',
+        localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+        reminderScope: 'standalone', reminders: Array.from({ length: 20 }, (_, reminderIndex) => ({
+          kind: 'offset', offsetMinutes: reminderIndex + 1,
+        })),
+      },
+    }));
+    state = saved.snapshot;
+  }
+  const reconciled = reduce(state, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 520);
+});
+
+test('scheduler reconciliation keeps a compact replayable reply with 520 due reminders', () => {
+  let state = createEmptySnapshot(NOW);
+  for (let eventIndex = 0; eventIndex < 26; eventIndex += 1) {
+    state.auctionEvents.push({
+      id: uuid(), revision: 0, dataClass: 'collector', name: `Due ${eventIndex}`,
+      eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:00',
+      timeZone: 'UTC', startsAt: NOW, reminderScope: 'standalone',
+      reminders: Array.from({ length: 20 }, (_, reminderIndex) => ({ id: uuid(), kind: 'offset', offsetMinutes: reminderIndex })),
+      createdAt: NOW, updatedAt: NOW,
+    });
+  }
+  const reconciled = reduce(state, command('scheduler.reconcile'));
+  assert.deepEqual(Object.keys(reconciled.reply.value).sort(), ['dueEventCount', 'nextWakeAt']);
+  assert.equal(reconciled.reply.value.dueEventCount, 26);
+  assert.equal(reconciled.snapshot.alerts.length, 520);
+});
+
+test('writer atomically rejects an event whose fully materialized reminders exceed 5 MiB', async () => {
+  const current = createEmptySnapshot(NOW);
+  const event = (eventIndex) => ({
+    id: uuid(), revision: 0, dataClass: 'collector', name: `Future ${eventIndex}`,
+    eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-20', localTime: '12:00',
+    timeZone: 'UTC', startsAt: '2026-09-20T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: Array.from({ length: 20 }, (_, reminderIndex) => ({ id: uuid(), kind: 'offset', offsetMinutes: reminderIndex * 60 })),
+    createdAt: NOW, updatedAt: NOW,
+  });
+  for (let index = 0; index < 499; index += 1) current.auctionEvents.push(event(index));
+  const storage = memoryStorage(current);
+  const writer = createCommandWriter(storage, context());
+  const result = await writer.commitCommand(command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future 499', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-20', localTime: '12:00',
+      timeZone: 'UTC', reminderScope: 'standalone', reminders: Array.from({ length: 20 }, (_, reminderIndex) => ({ kind: 'offset', offsetMinutes: reminderIndex * 60 })),
+    },
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.equal(storage.read().auctionEvents.length, 499);
+});
+
+test('writer preflights linked reminders when a lot activates their event', async () => {
+  const current = createEmptySnapshot(NOW);
+  for (let eventIndex = 0; eventIndex < 500; eventIndex += 1) {
+    const eventId = uuid();
+    current.auctionEvents.push({
+      id: eventId, revision: 0, dataClass: 'collector', name: `Linked ${eventIndex}`,
+      eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-20', localTime: '12:00',
+      timeZone: 'UTC', startsAt: '2026-09-20T12:00:00.000Z', reminderScope: 'linked-lots',
+      reminders: Array.from({ length: 20 }, (_, reminderIndex) => ({ id: uuid(), kind: 'offset', offsetMinutes: reminderIndex * 60 })),
+      createdAt: NOW, updatedAt: NOW,
+    });
+    if (eventIndex < 499) current.lots.push({
+      id: uuid(), revision: 0, dataClass: 'collector', title: `Lot ${eventIndex}`, auctionEventId: eventId,
+      sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+    });
+  }
+  const storage = memoryStorage(current);
+  const writer = createCommandWriter(storage, context());
+  const result = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null,
+    lot: { title: 'Final linked lot', auctionEventId: current.auctionEvents.at(-1).id, sourceLinks: [] },
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.equal(storage.read().lots.length, 499);
 });
 
 test('linked-event reminders exist only while at least one linked lot stays open', () => {
@@ -515,4 +623,48 @@ test('claims an overdue event before notification delivery and records the outco
   }));
   assert.equal(delivered.snapshot.alerts[0].status, 'delivered');
   assert.equal(delivered.snapshot.alerts[0].deliveredAt, NOW);
+});
+
+test('failed notification delivery remains claimed until the five-minute retry', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Due sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '13:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const alert = state.alerts[0];
+  state = reduce(state, command('alert.claim', { eventId: alert.eventId, triggerIds: [alert.triggerId] })).snapshot;
+  const failed = reduce(state, command('alert.delivery.record', { triggerIds: [alert.triggerId], delivered: false }));
+  assert.equal(failed.snapshot.alerts[0].status, 'claimed');
+  const waiting = reduce(failed.snapshot, command('scheduler.reconcile'), { now: () => '2026-09-12T12:00:01.000Z', newId: uuid });
+  assert.equal(waiting.value.nextWakeAt, '2026-09-12T12:05:00.000Z');
+  const retry = reduce(waiting.snapshot, command('scheduler.reconcile'), { now: () => '2026-09-12T12:05:00.000Z', newId: uuid });
+  assert.equal(retry.snapshot.alerts[0].status, 'due');
+  const reclaimed = reduce(retry.snapshot, command('alert.claim', { eventId: alert.eventId, triggerIds: [alert.triggerId] }), {
+    now: () => '2026-09-12T12:05:00.000Z', newId: uuid,
+  });
+  const delivered = reduce(reclaimed.snapshot, command('alert.delivery.record', { triggerIds: [alert.triggerId], delivered: true }), {
+    now: () => '2026-09-12T12:05:01.000Z', newId: uuid,
+  });
+  assert.equal(delivered.snapshot.alerts[0].status, 'delivered');
+});
+
+test('failed notification delivery expires without another retry after event relevance', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Ending sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 1 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const alert = state.alerts[0];
+  state = reduce(state, command('alert.claim', { eventId: alert.eventId, triggerIds: [alert.triggerId] })).snapshot;
+  state = reduce(state, command('alert.delivery.record', { triggerIds: [alert.triggerId], delivered: false })).snapshot;
+  const expired = reduce(state, command('scheduler.reconcile'), { now: () => '2026-09-12T12:15:00.001Z', newId: uuid });
+  assert.equal(expired.snapshot.alerts[0].status, 'missed');
+  assert.equal(expired.value.nextWakeAt, null);
 });

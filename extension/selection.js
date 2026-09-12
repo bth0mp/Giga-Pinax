@@ -42,9 +42,57 @@ export function cardFromSearch(search) {
 // One lookup window: the right-click and the pop-out send the address they would open to a window already open (a windowed popup page, which looks it
 // up and answers with its window id, brought to the front here). With none to answer (the send rejects, or nothing replies), a new window opens on it.
 export const LOOKUP_MESSAGE = 'giga-pinax-lookup';
-export async function showInWindow(api, url) {
-  let answer = null;
-  try { answer = await api.runtime.sendMessage({ type: LOOKUP_MESSAGE, url }); } catch { /* no window open */ }
-  if (!answer) await api.windows.create({ url: api.runtime.getURL(url), type: 'popup', width: 440, height: 680 });
-  else if (Number.isInteger(answer.windowId)) await api.windows.update(answer.windowId, { focused: true });
+export const LOOKUP_LAUNCH_MESSAGE = 'giga-pinax-launch-lookup';
+export const lookupLaunchSucceeded = (reply) => reply?.ok === true;
+export function isLookupWindowUrl(value) {
+  if (typeof value !== 'string' || value.length > 3200) return false;
+  try {
+    const parsed = new URL(value, 'https://extension.invalid/');
+    return parsed.origin === 'https://extension.invalid' && parsed.pathname === '/popup.html' && parsed.searchParams.get('window') === '1';
+  } catch { return false; }
+}
+let pendingLaunch = null;
+let latestLaunchUrl = '';
+let launchVersion = 0;
+
+async function launchLatest(api) {
+  await Promise.resolve();
+  let created = null;
+  while (true) {
+    const version = launchVersion;
+    const url = latestLaunchUrl;
+    let answer = null;
+    try { answer = await api.runtime.sendMessage({ type: LOOKUP_MESSAGE, url }); } catch { /* no window open */ }
+    if (answer && !Object.hasOwn(answer, 'windowId')) {
+      if (version === launchVersion) return;
+      continue;
+    }
+    if (Number.isInteger(answer?.windowId) && answer.windowId >= 0) {
+      try {
+        await api.windows.update(answer.windowId, { focused: true });
+        if (version === launchVersion) return;
+        continue;
+      } catch { /* the responder closed before it could be focused */ }
+    }
+    if (!created) {
+      await Promise.resolve();
+      const createVersion = launchVersion;
+      const createUrl = latestLaunchUrl;
+      created = await api.windows.create({ url: api.runtime.getURL(createUrl), type: 'popup', width: 440, height: 680 });
+      if (createVersion === launchVersion) return;
+      continue;
+    }
+    const tabId = created?.tabs?.[0]?.id;
+    if (Number.isInteger(tabId) && api.tabs?.update) await api.tabs.update(tabId, { url: api.runtime.getURL(url) });
+    if (version === launchVersion) return;
+  }
+}
+
+export function showInWindow(api, url) {
+  latestLaunchUrl = url;
+  launchVersion += 1;
+  if (!pendingLaunch) {
+    pendingLaunch = launchLatest(api).finally(() => { pendingLaunch = null; });
+  }
+  return pendingLaunch;
 }

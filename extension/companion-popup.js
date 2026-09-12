@@ -1,5 +1,6 @@
 import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { projectExposure } from './core/records.js';
+import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
@@ -66,7 +67,9 @@ export function watchlistPayloadFromCapture(draft) {
 
 export function buildWatchlistSummary(snapshot, now = new Date().toISOString()) {
   const events = [...(snapshot?.auctionEvents ?? [])]
-    .filter((event) => (event.startsAt ?? `${event.localDate ?? '9999-12-31'}T23:59:59.999Z`) >= now)
+    .filter((event) => event.startsAt
+      ? event.startsAt >= now
+      : event.localDate >= localDateAtInstant(event.timeZone, now))
     .sort((left, right) => (left.startsAt ?? left.localDate).localeCompare(right.startsAt ?? right.localDate));
   const dueEventIds = new Set((snapshot?.alerts ?? [])
     .filter((alert) => ['due', 'claimed', 'delivered'].includes(alert.status) && alert.eventId)

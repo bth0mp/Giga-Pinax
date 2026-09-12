@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_SELECTION, MAX_LOT, LOOKUP_MESSAGE, selectionQuery, popupUrlFor, queryFromSearch, cardUrlFor, cardFromSearch, showInWindow } from '../extension/selection.js';
+import { MAX_SELECTION, MAX_LOT, LOOKUP_MESSAGE, LOOKUP_LAUNCH_MESSAGE, isLookupWindowUrl, lookupLaunchSucceeded, selectionQuery, popupUrlFor, queryFromSearch, cardUrlFor, cardFromSearch, showInWindow } from '../extension/selection.js';
 
 test('selectionQuery collapses whitespace and trims; a lot is capped at 3,000 characters, cut at a word boundary, never inside a character', () => {
   assert.equal(selectionQuery('  RIC I²\n Nero\t306  '), 'RIC I² Nero 306');
@@ -83,9 +83,94 @@ test('one lookup window: an open one is sent the address and brought forward; wi
   assert.equal(LOOKUP_MESSAGE, 'giga-pinax-lookup');
 });
 
+test('rapid launches create one window on the latest query while creation is pending', async () => {
+  const calls = [];
+  let releaseSend;
+  const firstSend = new Promise((resolve) => { releaseSend = resolve; });
+  let sends = 0;
+  const api = {
+    runtime: {
+      getURL: (path) => `chrome-extension://id/${path}`,
+      sendMessage: async (message) => { calls.push(['send', message]); sends += 1; if (sends === 1) await firstSend; },
+    },
+    windows: {
+      create: async (options) => { calls.push(['create', options]); return { id: 12 }; },
+      update: async (id, options) => { calls.push(['update', id, options]); },
+    },
+  };
+  const first = showInWindow(api, popupUrlFor('Price 23'));
+  const second = showInWindow(api, popupUrlFor('RIC 972'));
+  releaseSend();
+  await Promise.all([first, second]);
+  assert.equal(calls.filter(([kind]) => kind === 'create').length, 1);
+  assert.equal(calls.find(([kind]) => kind === 'create')[1].url, 'chrome-extension://id/popup.html?window=1&q=RIC%20972');
+});
+
+test('a newer query arriving during an existing-window response is delivered before the shared launch completes', async () => {
+  const sent = [];
+  let releaseFirst;
+  const firstReply = new Promise((resolve) => { releaseFirst = resolve; });
+  const api = {
+    runtime: {
+      getURL: (path) => `chrome-extension://id/${path}`,
+      sendMessage: async (message) => { sent.push(message.url); if (sent.length === 1) return firstReply; return { windowId: 7 }; },
+    },
+    windows: { create: async () => assert.fail('the open window should be reused'), update: async () => {} },
+  };
+  const first = showInWindow(api, popupUrlFor('Price 23'));
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = showInWindow(api, popupUrlFor('RIC 972'));
+  releaseFirst({ windowId: 7 });
+  await Promise.all([first, second]);
+  assert.deepEqual(sent, [popupUrlFor('Price 23'), popupUrlFor('RIC 972')]);
+});
+
+test('a newer query received while windows.create is pending replaces the created tab URL', async () => {
+  let releaseCreate;
+  const creating = new Promise((resolve) => { releaseCreate = resolve; });
+  const tabUpdates = [];
+  const api = {
+    runtime: { getURL: (path) => `chrome-extension://id/${path}`, sendMessage: async () => undefined },
+    windows: { create: async () => { await creating; return { id: 12, tabs: [{ id: 34 }] }; }, update: async () => {} },
+    tabs: { update: async (id, options) => { tabUpdates.push([id, options]); } },
+  };
+  const first = showInWindow(api, popupUrlFor('Price 23'));
+  await new Promise((resolve) => setImmediate(resolve));
+  const second = showInWindow(api, popupUrlFor('RIC 972'));
+  releaseCreate();
+  await Promise.all([first, second]);
+  assert.deepEqual(tabUpdates, [[34, { url: 'chrome-extension://id/popup.html?window=1&q=RIC%20972' }]]);
+});
+
+test('an invalid or closed responder window is ignored and recovered with a new lookup window', async () => {
+  for (const answer of [{ windowId: '7' }, { windowId: 7 }]) {
+    const creates = [];
+    const api = {
+      runtime: { getURL: (path) => `chrome-extension://id/${path}`, sendMessage: async () => answer },
+      windows: {
+        update: async () => { throw new Error('No window with id'); },
+        create: async (options) => { creates.push(options); return { id: 9 }; },
+      },
+    };
+    await showInWindow(api, popupUrlFor('SC 1266.2'));
+    assert.equal(creates.length, 1);
+  }
+});
+
 test('queryFromSearch reads and cleans q, and is empty without it', () => {
   assert.equal(queryFromSearch('?q=SC%201266.2'), 'SC 1266.2');
   assert.equal(queryFromSearch(`?q=${encodeURIComponent('  Price   23 ')}`), 'Price 23');
   assert.equal(queryFromSearch(''), '');
   assert.equal(queryFromSearch('?other=1'), '');
+});
+
+test('central lookup launch messages accept only bounded local popup window URLs', () => {
+  assert.equal(LOOKUP_LAUNCH_MESSAGE, 'giga-pinax-launch-lookup');
+  for (const url of [popupUrlFor('RIC 972'), cardUrlFor({ corpus: 'pella', id: 'price.23' }), 'popup.html?window=1']) assert.equal(isLookupWindowUrl(url), true, url);
+  for (const url of ['https://evil.example/popup.html?window=1', 'popup.html?q=RIC+972', 'workspace.html?window=1', '', null, `popup.html?window=1&q=${'x'.repeat(4000)}`]) assert.equal(isLookupWindowUrl(url), false, String(url));
+});
+
+test('a pop-out closes only after the background confirms the lookup launch', () => {
+  assert.equal(lookupLaunchSucceeded({ ok: true }), true);
+  for (const reply of [{ ok: false, message: 'Window failed' }, undefined, null, {}, true]) assert.equal(lookupLaunchSucceeded(reply), false);
 });

@@ -25,6 +25,12 @@ test('builds the observed CoinArchives Ancient Coins GET search-form route', () 
   });
 });
 
+test('routes KM and Y references to CoinArchives World Coins while ordinary queries stay in Ancient Coins', () => {
+  assert.equal(buildUserInitiatedSearch('coinarchives', 'KM 123').value.url, 'https://www.coinarchives.com/w/results.php?search=KM+123&s=0');
+  assert.equal(buildUserInitiatedSearch('coinarchives', 'Y# 31').value.url, 'https://www.coinarchives.com/w/results.php?search=Y%23+31&s=0');
+  assert.equal(buildUserInitiatedSearch('coinarchives', 'Nero aureus').value.url, 'https://www.coinarchives.com/a/results.php?search=Nero+aureus&s=0');
+});
+
 test('builds the observed acsearch coin-category GET search-form route', () => {
   assert.deepEqual(buildUserInitiatedSearch('acsearch', 'Alexander III Price 23 + drachm'), {
     ok: true,

@@ -1,3 +1,6 @@
+import { parseReference } from './lookup.js';
+import { coinArchivesSection } from './prices.js';
+
 const ACCESS_UNAVAILABLE = Object.freeze({
   status: 'unavailable',
   label: 'Unavailable — access not approved',
@@ -58,7 +61,10 @@ export function buildUserInitiatedSearch(source, query) {
     };
   }
 
-  const { origin, pathname } = capability.launch.route;
+  const { origin } = capability.launch.route;
+  const pathname = source === 'coinarchives'
+    ? `/${coinArchivesSection(parseReference(normalizedQuery))}/results.php`
+    : capability.launch.route.pathname;
   const url = new URL(pathname, origin);
   if (source === 'coinarchives') {
     url.searchParams.set('search', normalizedQuery);

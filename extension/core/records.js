@@ -10,7 +10,7 @@ export const LIMITS = Object.freeze({
   evidenceObservations: 10000,
   collectionEntries: 1000,
   drafts: 20,
-  alerts: 500,
+  alerts: 10000,
   recentCommands: 200,
   sourceLinks: 20,
   reminders: 20,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { restorePreferences, rememberTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] };
 
@@ -31,11 +31,10 @@ test('the sales period restores as All, the last 5 years or the last 2 years, an
 
 test('terms are restored per type id, sanitised and capped at 50', () => {
   const saved = restorePreferences(JSON.stringify({ terms: { 'price.23': 'Price 23 tetradrachm', bad: 7, ['x'.repeat(200)]: 'y'.repeat(200) } }));
-  assert.equal(saved.terms['price.23'], 'Price 23 tetradrachm');
+  assert.equal(rememberedTerm(saved, { corpus: 'pella', id: 'price.23' }), 'Price 23 tetradrachm');
   assert.equal(saved.terms.bad, undefined);
-  assert.equal(Object.keys(saved.terms).length, 2);
-  assert.equal(saved.terms['x'.repeat(120)].length, 120);
-  const many = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`t${index}`, `term ${index}`]));
+  assert.equal(Object.keys(saved.terms).length, 1);
+  const many = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`other:t${index}`, `term ${index}`]));
   assert.equal(Object.keys(restorePreferences(JSON.stringify({ terms: many })).terms).length, 50);
   assert.deepEqual(restorePreferences(JSON.stringify({ terms: ['nope'] })).terms, {});
   assert.equal(restorePreferences(JSON.stringify({ currency: 'CHF' })).currency, 'CHF');
@@ -43,17 +42,54 @@ test('terms are restored per type id, sanitised and capped at 50', () => {
 
 test('rememberTerm stores the newest term last and drops the oldest beyond 50', () => {
   let preferences = restorePreferences(null);
-  for (let index = 0; index < 55; index += 1) preferences = rememberTerm(preferences, `t${index}`, `term ${index}`);
+  for (let index = 0; index < 55; index += 1) preferences = rememberTerm(preferences, { corpus: 'other', id: `t${index}` }, `term ${index}`);
   assert.equal(Object.keys(preferences.terms).length, 50);
-  assert.equal(preferences.terms.t0, undefined);
-  assert.equal(preferences.terms.t54, 'term 54');
-  preferences = rememberTerm(preferences, 't10', 'updated');
-  assert.equal(Object.keys(preferences.terms).at(-1), 't10');
-  assert.equal(preferences.terms.t10, 'updated');
-  assert.equal(rememberTerm(preferences, 'k', 'v'.repeat(200)).terms.k.length, 120);
-  const blank = rememberTerm(preferences, 'k', '   ');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: 't0' }), '');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: 't54' }), 'term 54');
+  preferences = rememberTerm(preferences, { corpus: 'other', id: 't10' }, 'updated');
+  assert.equal(Object.keys(preferences.terms).at(-1), 'other:t10');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: 't10' }), 'updated');
+  assert.equal(rememberedTerm(rememberTerm(preferences, { corpus: 'other', id: 'k' }, 'v'.repeat(200)), { corpus: 'other', id: 'k' }).length, 120);
+  const blank = rememberTerm(preferences, { corpus: 'other', id: 'k' }, '   ');
   assert.deepEqual(blank.terms, preferences.terms);
-  assert.equal(Object.hasOwn(blank.terms, 'k'), false);
+  assert.equal(rememberedTerm(blank, { corpus: 'other', id: 'k' }), '');
+});
+
+test('saved price terms belong to a corpus and id, including ids that collide with Other references', () => {
+  let preferences = restorePreferences(null);
+  preferences = rememberTerm(preferences, { corpus: 'other', id: 'price.23' }, 'custom other query');
+  preferences = rememberTerm(preferences, { corpus: 'pella', id: 'price.23' }, 'Alexander tetradrachm');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: 'price.23' }), 'custom other query');
+  assert.equal(rememberedTerm(preferences, { corpus: 'pella', id: 'price.23' }), 'Alexander tetradrachm');
+  assert.equal(Object.keys(preferences.terms).length, 2);
+});
+
+test('legacy canonical terms migrate when their corpus is unambiguous and never leak to a colliding Other id', () => {
+  const preferences = restorePreferences(JSON.stringify({ terms: { 'price.23': 'edited Price term' } }));
+  assert.equal(rememberedTerm(preferences, { corpus: 'pella', id: 'price.23' }), 'edited Price term');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: 'price.23' }), '');
+});
+
+test('malformed encoded term keys in untrusted storage are ignored', () => {
+  assert.doesNotThrow(() => restorePreferences(JSON.stringify({ terms: { 'other:%E0%A4%A': 'bad' } })));
+  assert.deepEqual(restorePreferences(JSON.stringify({ terms: { 'other:%E0%A4%A': 'bad' } })).terms, {});
+});
+
+test('namespaced term keys keep distinct 120-character ids distinct', () => {
+  const prefix = 'x'.repeat(119);
+  let preferences = restorePreferences(null);
+  preferences = rememberTerm(preferences, { corpus: 'other', id: `${prefix}a` }, 'first');
+  preferences = rememberTerm(preferences, { corpus: 'other', id: `${prefix}b` }, 'second');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: `${prefix}a` }), 'first');
+  assert.equal(rememberedTerm(preferences, { corpus: 'other', id: `${prefix}b` }), 'second');
+});
+
+test('term identities are bounded without splitting an astral character', () => {
+  const card = { corpus: 'other', id: `${'x'.repeat(119)}😀tail` };
+  const preferences = rememberTerm(restorePreferences(null), card, 'astral-safe');
+  assert.equal(rememberedTerm(preferences, card), 'astral-safe');
+  assert.doesNotThrow(() => restorePreferences(JSON.stringify(preferences)));
+  assert.equal(rememberedTerm(restorePreferences(JSON.stringify(preferences)), card), 'astral-safe');
 });
 
 test('RRC is a remembered catalogue with its own default number', () => {

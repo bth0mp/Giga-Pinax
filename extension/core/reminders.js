@@ -33,6 +33,11 @@ function localParts(format, instant) {
     .map(({ type, value }) => [type, Number(value)]));
 }
 
+export function localDateAtInstant(timeZone, instant) {
+  const parts = localParts(formatter(timeZone), new Date(instant));
+  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
 export function resolveZonedDateTime(input) {
   if (!input || input.disambiguation !== 'reject') {
     return fail('invalid-disambiguation', 'Disambiguation must be reject.', 'disambiguation');

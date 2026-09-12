@@ -88,6 +88,10 @@ test('creates the complete version 1 durable root contract', () => {
   assert.equal(validateSnapshot(createEmptySnapshot(NOW)).ok, true);
 });
 
+test('alert capacity covers every supported event reminder', () => {
+  assert.equal(LIMITS.alerts, LIMITS.auctionEvents * LIMITS.reminders);
+});
+
 test('validates stable ids, revisions, enums, bounded fields, and absent unknown premiums', () => {
   const valid = snapshotWith(makeLot(IDS.lotUsdKnown, {
     auctionEventId: IDS.eventUsd,

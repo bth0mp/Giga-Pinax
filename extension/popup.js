@@ -1,8 +1,8 @@
 import { HOST_ORIGINS, INVISIBLE, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
-import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
+import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
-import { LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, queryFromSearch, showInWindow } from './selection.js';
+import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 
 const $ = (id) => document.getElementById(id);
@@ -309,7 +309,7 @@ function renderCard(card) {
     pageUrl: other ? (rpc ?? '') : $('type-link').href,
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
-  const saved = Object.hasOwn(preferences.terms, card.id) ? preferences.terms[card.id] : '';
+  const saved = rememberedTerm(preferences, card);
   $('price-term').value = chooseTerm(currentReference(), saved);
   clearPrices();
   updateAcsearchLink();
@@ -602,7 +602,7 @@ async function run(perform, note = '') {
 async function runPrices(term, currency, { remember = true } = {}) {
   if (!currentCard) return;
   if (remember) {
-    preferences = rememberTerm(preferences, currentCard.id, term);
+    preferences = rememberTerm(preferences, currentCard, term);
     savePreferences();
   }
   updateAcsearchLink();
@@ -834,10 +834,13 @@ $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === '
 // Browsers fix a toolbar popup's size, so the pop-out shows the popup in a window you can resize and closes itself: the lookup window when one is open,
 // else a new one (showInWindow). The window reopens the card it shows by corpus and id (below). A plain page, without the windows API, opens the same
 // URL itself.
-$('pop-out').addEventListener('click', () => {
+$('pop-out').addEventListener('click', async () => {
   const url = cardUrlFor(currentCard);
   if (!api?.windows?.create) { window.open(url, '_blank', 'popup,width=440,height=680'); return; }
-  showInWindow(api, url).then(() => window.close());
+  let reply = null;
+  try { reply = await api.runtime.sendMessage({ type: LOOKUP_LAUNCH_MESSAGE, url }); } catch { /* background unavailable */ }
+  if (lookupLaunchSucceeded(reply)) window.close();
+  else announce(reply?.message || 'Couldn’t open the lookup window. Try again.');
 });
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);

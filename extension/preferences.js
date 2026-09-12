@@ -31,11 +31,31 @@ function restoreRecent(value) {
   return recent;
 }
 
-function restoreTerms(value) {
+const boundedId = (id) => Array.from((String(id).toWellFormed?.() ?? String(id))).slice(0, 120).join('');
+const termKey = ({ corpus, id }) => `${corpus}:${encodeURIComponent(boundedId(id))}`;
+const canonicalCorpus = (id) => id.startsWith('price.') ? 'pella'
+  : id.startsWith('ric.') ? 'ocre'
+    : id.startsWith('rrc-') ? 'crro'
+      : id.startsWith('sc.') ? 'sco'
+        : id.startsWith('bigr.') ? 'bigr' : '';
+
+function restoreTerms(value, recent) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const terms = {};
   for (const [key, term] of Object.entries(value).slice(-TERM_LIMIT)) {
-    if (key && typeof term === 'string') terms[key.slice(0, 120)] = term.slice(0, 120);
+    if (!key || typeof term !== 'string') continue;
+    const separator = key.indexOf(':');
+    const namespacedCorpus = key.slice(0, separator);
+    if (separator > 0 && CORPORA.includes(namespacedCorpus)) {
+      let id;
+      try { id = boundedId(decodeURIComponent(key.slice(separator + 1))); }
+      catch { continue; }
+      if (id) terms[termKey({ corpus: namespacedCorpus, id })] = term.slice(0, 120);
+      continue;
+    }
+    const matches = recent.filter((entry) => entry.id === key);
+    const corpus = canonicalCorpus(key) || (matches.length === 1 ? matches[0].corpus : '');
+    if (corpus) terms[termKey({ corpus, id: key })] = term.slice(0, 120);
   }
   return terms;
 }
@@ -45,6 +65,7 @@ export function restorePreferences(raw) {
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
   const catalogue = ['RIC', 'RRC', 'SC', 'Bop', 'Other'].includes(saved.catalogue) ? saved.catalogue : 'Price';
+  const recent = restoreRecent(saved.recent);
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,
@@ -53,8 +74,8 @@ export function restorePreferences(raw) {
     section: text(saved.section, DEFAULT_SECTION[catalogue] ?? DEFAULT_SECTION.RIC),
     // The sales period the prices panel was last drawn for; only an exact PERIODS value, else All.
     period: PERIODS.some((entry) => entry.value === saved.period) ? saved.period : 'all',
-    terms: restoreTerms(saved.terms),
-    recent: restoreRecent(saved.recent),
+    terms: restoreTerms(saved.terms, recent),
+    recent,
   };
 }
 
@@ -73,11 +94,18 @@ export function recallStep(recent, position, value, key) {
   return next === shown ? null : { position: next, text: next < 0 ? '' : recent[next].label };
 }
 
-export function rememberTerm(preferences, typeId, term) {
+export function rememberedTerm(preferences, card) {
+  return preferences.terms[termKey(card)] ?? '';
+}
+
+export function rememberTerm(preferences, card, term) {
   if (!String(term).trim()) return preferences;
+  const identity = typeof card === 'string' ? { corpus: canonicalCorpus(card) || 'other', id: card } : card;
+  if (!identity || !CORPORA.includes(identity.corpus) || !String(identity.id).trim()) return preferences;
+  const key = termKey(identity);
   const terms = { ...preferences.terms };
-  delete terms[typeId];
-  terms[typeId] = String(term).slice(0, 120);
+  delete terms[key];
+  terms[key] = String(term).slice(0, 120);
   const keys = Object.keys(terms).slice(-TERM_LIMIT);
   return { ...preferences, terms: Object.fromEntries(keys.map((key) => [key, terms[key]])) };
 }

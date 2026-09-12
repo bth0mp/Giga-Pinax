@@ -94,7 +94,8 @@ export function previewImport(current, incoming, mode) {
     return { ok: true, value: { mode, counts: summary, conflicts: [], snapshot, requiresConfirmation: true } };
   }
 
-  const snapshot = exportableSnapshot(current);
+  const snapshot = clone(current);
+  snapshot.recentCommands = [];
   const conflicts = [];
   for (const key of COLLECTIONS) {
     const byId = new Map(snapshot[key].map((record) => [record.id, record]));

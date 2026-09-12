@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Giga Pinax",
-  "version": "0.27.1",
+  "version": "0.27.2",
   "description": "Look up RIC and other ancient coin types with session prices; manage local watchlists, bids, reminders and collection history.",
   "icons": {
     "16": "icons/icon-16.png",
