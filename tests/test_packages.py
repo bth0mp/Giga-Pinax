@@ -16,6 +16,17 @@ BUILD_SCRIPT = ROOT / "scripts" / "build.py"
 DIST = ROOT / "dist"
 
 ASSETS = {
+    "background.js",
+    "browser-api.js",
+    "companion-popup.css",
+    "companion-popup.js",
+    "companion-preferences.js",
+    "core/backup.js",
+    "core/evidence.js",
+    "core/money.js",
+    "core/records.js",
+    "core/reminders.js",
+    "current-lot.js",
     "popup.html",
     "popup.css",
     "popup.js",
@@ -26,7 +37,12 @@ ASSETS = {
     "catalogues.js",
     "selection.js",
     "lot.js",
-    "background.js",
+    "sample-data.js",
+    "source-launchers.js",
+    "store.js",
+    "workspace.css",
+    "workspace.html",
+    "workspace.js",
     "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
@@ -46,7 +62,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.26.0", manifest["version"])
+                self.assertEqual("0.27.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -70,14 +86,19 @@ class ManifestTests(unittest.TestCase):
                 for relative_path in icon_paths | {manifest["action"]["default_popup"]}:
                     self.assertTrue((ROOT / "extension" / relative_path).is_file())
 
-    def test_manifests_request_only_type_data_hosts(self) -> None:
+    def test_manifests_request_only_integrated_hosts_and_browser_permissions(self) -> None:
         for browser in ("brave", "firefox"):
             with self.subTest(browser=browser):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(HOST_PERMISSIONS, manifest["host_permissions"])
-                self.assertEqual(["contextMenus"], manifest["permissions"])
-                for key in ("optional_permissions", "optional_host_permissions", "content_scripts"):
+                self.assertEqual(
+                    {"storage", "activeTab", "scripting", "contextMenus", "alarms"},
+                    set(manifest["permissions"]),
+                )
+                self.assertEqual(["notifications"], manifest["optional_permissions"])
+                for key in ("optional_host_permissions", "content_scripts", "offscreen"):
                     self.assertNotIn(key, manifest)
+                self.assertNotIn("tabs", manifest["permissions"])
 
     def test_manifests_declare_the_context_menu_background(self) -> None:
         self.assertEqual(
@@ -89,11 +110,14 @@ class ManifestTests(unittest.TestCase):
             self.load_manifest("firefox")["background"],
         )
 
-    def test_firefox_declares_identity_and_no_data_collection(self) -> None:
+    def test_firefox_preserves_identity_and_declares_transmitted_data(self) -> None:
         gecko = self.load_manifest("firefox")["browser_specific_settings"]["gecko"]
         self.assertRegex(gecko["id"], r"^[^@\s]+@[^@\s]+$")
         self.assertEqual("giga-pinax@local.invalid", gecko["id"])
-        self.assertEqual(["none"], gecko["data_collection_permissions"]["required"])
+        self.assertEqual(
+            {"searchTerms", "websiteContent"},
+            set(gecko["data_collection_permissions"]["required"]),
+        )
 
 
 class PackageBuildTests(unittest.TestCase):
@@ -119,7 +143,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.26.0.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.27.0.zip"
             for browser in ("brave", "firefox")
         }
         first_digests = {browser: self.digest(path) for browser, path in zip_paths.items()}

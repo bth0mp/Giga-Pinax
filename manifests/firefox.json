@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Giga Pinax",
-  "version": "0.26.0",
-  "description": "Look up ancient coin types by RIC, RRC, SC, Bopearachchi or Price reference and see recent acsearch hammer prices.",
+  "version": "0.27.0",
+  "description": "Look up RIC and other ancient coin types with session prices; manage local watchlists, bids, reminders and collection history.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -23,7 +23,8 @@
     }
   },
   "background": { "scripts": ["background.js"], "type": "module" },
-  "permissions": ["contextMenus"],
+  "permissions": ["contextMenus", "storage", "activeTab", "scripting", "alarms"],
+  "optional_permissions": ["notifications"],
   "host_permissions": [
     "https://numismatics.org/*",
     "https://nomisma.org/*",
@@ -35,7 +36,8 @@
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [
-          "none"
+          "searchTerms",
+          "websiteContent"
         ]
       }
     }

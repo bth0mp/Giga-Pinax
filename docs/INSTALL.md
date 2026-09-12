@@ -1,8 +1,8 @@
 # Install Giga Pinax
 
-Version **0.26.0** looks up RIC, RRC, SC, Bopearachchi and Price coin types from the American Numismatic Society's open OCRE, CRRO, SCO, BIGR and PELLA datasets and fetches recent hammer prices from acsearch with your own account. Paste or right-click a whole lot description and it lists every catalogue reference in it, whichever separator the house writes between a key and its number (`Hendin-1188`, `Emmett # 874`, `Paruck.285`), and 26 more catalogues are keys. Sear Greek references such as `SG6829v` and Krause world-coin references such as `Netherlands KM# 123` and `Russia Y# 59.3` get acsearch prices, and every card has a **Search on CoinArchives ↗** button. It contacts `numismatics.org` and `nomisma.org` when you look up a type (**Look up**, a choice from a list or a **Recent** chip), and `www.acsearch.info` when a type resolves (**Look up**, a choice from a list or a **Recent** chip) or you select **Get prices**. A reference without open type data (catalogue **Other**) contacts only `www.acsearch.info`. Nothing else is contacted (an RPC reference's **RPC online** link and the **Search on CoinArchives** button open only when you select them) and nothing from acsearch is stored.
+Version **0.27.0** keeps the complete Giga Pinax catalogue and session acsearch workflow and adds Calculator and Watchlist tabs plus a full local auction workspace. The workspace records lots, alternatives, planned and externally active bids, reminders, outcomes, collection history, and manually entered comparables in USD, EUR, GBP, or CHF. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or companion backups.
 
-The extension now asks for one browser permission, `contextMenus`, to add a **Look up “…” in Giga Pinax** item to the right-click menu when you select text. Selected text is sent only when you choose that item, and only to `numismatics.org` (and `www.acsearch.info` for prices, as before).
+The extension uses right-click actions for Giga lookup, highlighted research, and auction confirmation. Current-page extraction runs only after your action and remains editable before saving. Optional desktop notifications are requested only when you enable them.
 
 ## Build the packages
 
@@ -17,15 +17,15 @@ The command creates these unpacked directories and matching ZIP archives:
 ```text
 dist/brave/
 dist/firefox/
-dist/giga-pinax-brave-0.26.0.zip
-dist/giga-pinax-firefox-0.26.0.zip
+dist/giga-pinax-brave-0.27.0.zip
+dist/giga-pinax-firefox-0.27.0.zip
 ```
 
 Run the same command again whenever an extension asset or manifest changes. You can build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 ## Test in Brave
 
-1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.26.0.zip` into its own folder.
+1. Use `dist/brave`, or unzip `dist/giga-pinax-brave-0.27.0.zip` into its own folder.
 2. Open `brave://extensions` in Brave.
 3. Turn on **Developer mode**.
 4. Select **Load unpacked** and choose the folder that contains `manifest.json`.
@@ -42,7 +42,7 @@ Use Firefox 142 or later.
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Select **Load Temporary Add-on**.
-4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.26.0.zip`.
+4. Choose `dist/firefox/manifest.json`, or `dist/giga-pinax-firefox-0.27.0.zip`.
 5. Open Giga Pinax from Firefox's extensions menu.
 
 Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
@@ -52,6 +52,11 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 **Already installed temporarily?** After rebuilding, select **Reload** for Giga Pinax under **This Firefox** at `about:debugging`, or load the updated ZIP again.
 
 ## What to try
+
+- Open the popup and switch among **Research**, **Calculator**, and **Watchlist**. Enter hammer **100.00** and buyer’s premium **25** to see **125.00** in any supported currency.
+- Resolve a reference, then select **Save reference to watchlist**. Review the prefilled lot in the workspace and select **Save lot**; nothing is created before that save.
+- Use **Current page** to capture ruler, denomination, mint, and reference from an auction page. Review or correct every field before using it.
+- Open the workspace to keep lots, auction reminders, externally active bids, outcomes, and saved comparables. The acsearch prices shown in Research are never copied into those records.
 
 - Type **RIC I² Nero 306** in the Reference box and select **Look up**; the RIC fields fill in and the type resolves.
 - Select **RIC I² Nero 306** on any web page, right-click and choose **Look up “RIC I² Nero 306” in Giga Pinax**. Drag the window it opens to make it longer or wider.
@@ -90,5 +95,7 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 - Press **Alt+Shift+G**, type a reference and press Enter: the cursor is already in the Reference box, so Giga Pinax works without the mouse. If nothing happens, the key is taken — set another at `brave://extensions/shortcuts` or in Firefox under Add-ons › ⚙ › Manage Extension Shortcuts.
 
 ## Remove
+
+Before removal, export a companion JSON backup from the workspace if you need its records. The backup excludes Giga lookup preferences, theme, ANS label cache, sessions, and live acsearch results. Records from a different extension origin require explicit export there and import here.
 
 In Brave, open `brave://extensions` and select **Remove**. In Firefox, remove it from `about:debugging`, or close and restart Firefox.

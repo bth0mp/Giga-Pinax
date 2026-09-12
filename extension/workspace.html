@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Giga Pinax auction workspace</title>
+  <link rel="icon" href="icons/icon-32.png">
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="workspace.css">
+  <script src="workspace.js" type="module"></script>
+</head>
+<body>
+  <header class="workspace-header">
+    <img src="icons/icon-48.png" width="38" height="38" alt="">
+    <div><h1>Giga Pinax</h1><p>Auction workspace</p></div>
+    <span class="local-mark">Stored on this device</span>
+  </header>
+
+  <nav class="workspace-nav" aria-label="Auction companion">
+    <a href="#search" data-route="search">Search</a>
+    <a href="#watchlist" data-route="watchlist">Watchlist</a>
+    <a href="#auctions" data-route="auctions">Auctions</a>
+    <a href="#bids" data-route="bids">Active bids</a>
+    <a href="#history" data-route="history">History</a>
+  </nav>
+
+  <div id="runtime-note" class="notice warning" hidden>Extension storage is unavailable in this browser page. Search launchers and calculator-style fields still work; durable records are disabled.</div>
+  <div id="conflict-note" class="notice warning" hidden>Committed data changed while an editor has unsaved input. Review your entries, then <button id="reload-snapshot" type="button">reload committed data</button>.</div>
+  <div id="unknown-note" class="notice warning" hidden>The last save could not be verified. <button id="retry-uncertain" type="button">Retry the same request</button>.</div>
+  <p id="workspace-status" class="notice" role="status">Loading local records…</p>
+
+  <main class="workspace-main">
+    <section id="route-search" class="route" aria-labelledby="search-heading">
+      <div class="section-heading"><div><h2 id="search-heading">Saved comparables</h2><p>These collector-entered records stay separate from the session-only acsearch prices in the Research tab.</p></div></div>
+      <form id="research-form" class="toolbar-form">
+        <label for="research-query">Coin or reference query</label>
+        <div class="inline-actions"><input id="research-query" maxlength="400" required><button id="launch-ca" type="button">Search CoinArchives</button><button id="launch-ac" type="button">Search acsearch</button></div>
+      </form>
+      <div class="split-layout">
+        <section class="panel" aria-labelledby="statistics-heading">
+          <h3 id="statistics-heading">Evidence statistics</h3>
+          <form id="evidence-filters" class="filter-grid">
+            <label>Comparable set<select id="evidence-query"></select></label>
+            <label>Currency<select id="evidence-currency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label>
+            <label>From<input id="evidence-from" type="date" value="2000-01-01"></label>
+            <label>To<input id="evidence-to" type="date" value="2026-12-31"></label>
+            <fieldset><legend>Sources</legend><label><input type="checkbox" name="evidence-source" value="manual" checked> Manual</label><label><input type="checkbox" name="evidence-source" value="authorized-import" checked> Authorized import</label><label><input type="checkbox" name="evidence-source" value="coinarchives"> CoinArchives</label><label><input type="checkbox" name="evidence-source" value="acsearch"> acsearch</label></fieldset>
+          </form>
+          <div id="statistics-output" class="metric-strip"></div>
+          <div id="evidence-list" class="record-list"></div>
+        </section>
+        <section class="panel" aria-labelledby="manual-evidence-heading">
+          <h3 id="manual-evidence-heading">Add a comparable manually</h3>
+          <form id="evidence-form" data-editor="evidence">
+            <label>Auction house<input name="auctionHouse" required maxlength="500"></label>
+            <label>House sale or catalogue ID<input name="houseSaleId" maxlength="500"></label>
+            <div class="field-pair"><label>Auction name<input name="auctionName" maxlength="500"></label><label>Lot number<input name="lotNumber" required maxlength="500"></label></div>
+            <div class="field-pair"><label>Auction date<input name="auctionDate" type="date" required></label><label>Price basis<select name="priceBasis"><option value="hammer">Hammer</option><option value="estimate">Estimate</option><option value="unsold">Unsold</option><option value="missing">Missing price</option><option value="hammer-plus-bp">Hammer + BP</option></select></label></div>
+            <div class="field-pair"><label>Amount<input name="amount" inputmode="decimal"></label><label>Currency<select name="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label></div>
+            <label>Source URL<input name="sourceUrl" type="url" maxlength="4096"></label>
+            <button type="submit" data-needs-runtime>Save manual evidence</button>
+          </form>
+        </section>
+      </div>
+    </section>
+
+    <section id="route-watchlist" class="route" aria-labelledby="watchlist-heading" hidden>
+      <div class="section-heading"><div><h2 id="watchlist-heading">Watchlist</h2><p>Lots stay separate from auction events and bids until you attach them.</p></div><button id="new-lot" type="button">New lot</button></div>
+      <div class="split-layout">
+        <div><div id="lot-list" class="record-list"></div><section class="panel compact"><h3>Alternative groups</h3><div id="group-list" class="record-list"></div><form id="group-form" data-editor="group"><input type="hidden" name="id"><label>Group name<input name="name" required maxlength="200"></label><button type="submit" data-needs-runtime>Save group</button></form></section></div>
+        <div>
+          <form id="lot-form" class="panel" data-editor="lot"><h3>Lot details</h3><input type="hidden" name="id"><label>Title<input name="title" required maxlength="500"></label><div class="field-pair"><label>Reference<input name="reference" maxlength="500"></label><label>Lot number<input name="lotNumber" maxlength="500"></label></div><label>Auction event<select name="auctionEventId"><option value="">Unassigned</option></select></label><label>Source URL<input name="sourceUrl" type="url" maxlength="4096"></label><div class="form-actions"><button type="submit" data-needs-runtime>Save lot</button><button id="delete-lot" class="danger" type="button" data-needs-runtime>Remove lot</button></div></form>
+          <form id="bid-form" class="panel" data-editor="bid"><h3>Bid terms</h3><label>Lot<select name="lotId"></select></label><div class="field-pair"><label>Hammer limit<input name="amount" inputmode="decimal" required></label><label>Currency<select name="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label></div><label>Buyer’s premium % <span class="optional">optional</span><input name="premium" inputmode="decimal"></label><div class="form-actions"><button name="action" value="plan" type="submit" data-needs-runtime>Save planned bid</button><button name="action" value="place" type="submit" data-needs-runtime>Record externally placed bid</button><button id="cancel-bid" type="button" data-needs-runtime>Record external cancellation</button></div><p class="field-note">This extension never places or cancels a bid at the auction house.</p></form>
+        </div>
+      </div>
+    </section>
+
+    <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
+      <div class="section-heading"><div><h2 id="auctions-heading">Auctions and reminders</h2><p>Confirm the date, precision, timezone, and each reminder before saving.</p></div><button id="enable-notifications" type="button" data-needs-runtime>Enable desktop alerts</button></div>
+      <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event"><h3>Event confirmation</h3><input type="hidden" name="id"><label>Name<input name="name" required maxlength="500"></label><label>Event kind<select name="eventKind"><option value="auction-starts">Auction starts</option><option value="lot-closes">Lot closes</option><option value="auction-day">Auction day</option></select></label><fieldset><legend>Time precision</legend><label><input type="radio" name="precision" value="timed" checked> Precise time</label><label><input type="radio" name="precision" value="date-only"> Date only</label></fieldset><div class="field-pair"><label>Date<input name="localDate" type="date" required></label><label id="event-time-label">Time<input name="localTime" type="time" required></label></div><label>Confirmed IANA timezone<input name="timeZone" value="Europe/London" required maxlength="100"></label><label>Reminder scope<select name="reminderScope"><option value="standalone">Standalone auction</option><option value="linked-lots">Linked lots</option></select></label><fieldset><legend>Editable reminders</legend><label><input type="checkbox" name="reminder24h" checked> First offset (minutes before) <input name="reminder24hValue" type="number" min="1" value="1440"></label><label><input type="checkbox" name="reminder1h" checked> Second offset (minutes before) <input name="reminder1hValue" type="number" min="1" value="60"></label><label><input type="checkbox" name="reminderDayBefore" checked> Previous day at <input name="reminderDayBeforeTime" type="time" value="09:00"></label><label><input type="checkbox" name="reminderDayOf" checked> Auction day at <input name="reminderDayOfTime" type="time" value="09:00"></label></fieldset><label>Captured text<textarea name="capturedText" maxlength="500"></textarea></label><label>Captured source URL<input name="capturedFromUrl" type="url" maxlength="2048"></label><div class="form-actions"><button type="submit" data-needs-runtime>Review and save event</button><button id="delete-event" class="danger" type="button" data-needs-runtime>Remove event</button></div></form></div>
+      <section class="panel compact"><h3>Due reminders</h3><div id="alert-list" class="record-list"></div><div class="form-actions"><button id="ack-alerts" type="button" data-needs-runtime>Acknowledge displayed</button><button id="snooze-alerts" type="button" data-needs-runtime>Snooze 15 minutes</button><button id="mark-all-read" type="button" data-needs-runtime>Mark all read</button></div><p class="field-note">System notification sound may play, depending on browser and OS settings. Delivery is best effort while the browser is running.</p></section>
+    </section>
+
+    <section id="route-bids" class="route" aria-labelledby="bids-heading" hidden><div class="section-heading"><div><h2 id="bids-heading">Active bid exposure</h2><p>Binding bids are totalled within each currency and auction. Alternatives do not reduce exposure.</p></div></div><div id="exposure-list" class="exposure-grid"></div></section>
+
+    <section id="route-history" class="route" aria-labelledby="history-heading" hidden>
+      <div class="section-heading"><div><h2 id="history-heading">Outcomes and history</h2><p>Final prices are personal, unverified records and never become comparable evidence.</p></div></div>
+      <div class="split-layout"><div><form id="outcome-form" class="panel" data-editor="outcome"><h3>Record outcome</h3><label>Lot<select name="lotId"></select></label><fieldset><legend>Outcome</legend><label><input type="radio" name="status" value="won" checked> Won</label><label><input type="radio" name="status" value="lost"> Lost</label><label><input id="passed-outcome" type="radio" name="status" value="passed"> Passed</label><label><input type="radio" name="status" value="open"> Reopen</label></fieldset><p id="passed-help" class="field-note">Passed is unavailable while an externally active bid remains.</p><div class="field-pair"><label>Hammer<input name="hammer" inputmode="decimal"></label><label>Hammer currency<select name="hammerCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label></div><div class="field-pair"><label>Actual invoice <span class="optional">charged total</span><input name="invoice" inputmode="decimal"></label><label>Invoice currency<select name="invoiceCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label></div><fieldset id="reopen-choice" hidden><legend>Are the last binding terms externally active again?</legend><label><input type="radio" name="bindingActive" value="true"> Yes</label><label><input type="radio" name="bindingActive" value="false"> No</label></fieldset><label><input type="checkbox" name="addToCollection"> Add a won coin to collection history</label><label>Acquisition date<input name="acquisitionDate" type="date"></label><label>Collection notes<textarea name="collectionNotes" maxlength="2000"></textarea></label><button type="submit" data-needs-runtime>Save outcome</button></form><div id="history-list" class="record-list"></div></div>
+        <section class="panel"><h3>Companion backup and restore</h3><p class="field-note">This JSON contains companion records and settings. Giga lookup preferences, theme, ANS label cache, and live acsearch results remain outside it. Export before uninstalling or changing extension origin.</p><button id="export-backup" type="button" data-needs-runtime>Export companion JSON</button><form id="import-form"><label>Companion backup file<input id="import-file" type="file" accept="application/json,.json"></label><fieldset><legend>Import mode</legend><label><input type="radio" name="mode" value="merge" checked> Merge</label><label><input type="radio" name="mode" value="replace"> Replace</label></fieldset><button type="submit" data-needs-runtime>Preview import</button></form><div id="import-preview" class="notice" hidden></div><button id="confirm-import" type="button" data-needs-runtime hidden>Confirm import</button><div id="collection-list" class="record-list"></div></section>
+      </div>
+    </section>
+  </main>
+  <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

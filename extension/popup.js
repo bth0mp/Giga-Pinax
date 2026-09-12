@@ -235,6 +235,8 @@ function clearOutput() {
   clearRicNote();
   lotNote = '';
   currentCard = null;
+  globalThis.gigaPinaxWatchlistReference = null;
+  dispatchEvent(new CustomEvent('giga-pinax-card', { detail: null }));
   clearPrices();
 }
 
@@ -301,6 +303,12 @@ function renderCard(card) {
     $(`${side}-description`).textContent = card[side].description ?? '—';
   }
   currentCard = card;
+  globalThis.gigaPinaxWatchlistReference = Object.freeze({
+    title: [card.label, card.denomination].filter(Boolean).join(' — '),
+    reference: card.label,
+    pageUrl: other ? (rpc ?? '') : $('type-link').href,
+  });
+  dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
   const saved = Object.hasOwn(preferences.terms, card.id) ? preferences.terms[card.id] : '';
   $('price-term').value = chooseTerm(currentReference(), saved);
   clearPrices();

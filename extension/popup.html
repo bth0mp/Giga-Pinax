@@ -8,7 +8,9 @@
   <link rel="icon" href="icons/icon-32.png">
   <script src="theme.js"></script>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="companion-popup.css">
   <script src="popup.js" type="module"></script>
+  <script src="companion-popup.js" type="module"></script>
 </head>
 <body>
   <main class="popup">
@@ -23,6 +25,12 @@
         <svg id="icon-sun" aria-hidden="true" viewBox="0 0 24 24" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
       </button>
     </header>
+    <nav id="companion-tabs" class="companion-tabs" role="tablist" aria-label="Giga Pinax tools">
+      <button id="companion-tab-research" type="button" role="tab" aria-selected="true" aria-controls="companion-panel-research">Research</button>
+      <button id="companion-tab-calculator" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-calculator" tabindex="-1">Calculator</button>
+      <button id="companion-tab-watchlist" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-watchlist" tabindex="-1">Watchlist</button>
+    </nav>
+    <section id="companion-panel-research" class="companion-tab-panel" role="tabpanel" aria-labelledby="companion-tab-research">
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
         <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Price 23" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
@@ -42,6 +50,19 @@
         <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
         <div id="lot-refs" class="candidates" hidden><p id="lot-refs-label" class="field-hint">Found in this text:</p><ul id="lot-list" class="candidate-list" aria-labelledby="lot-refs-label"></ul></div>
       </form>
+      <details class="companion-current-lot">
+        <summary>Current page</summary>
+        <div class="companion-current-lot-body">
+          <button id="companion-capture-current" class="companion-outline-button" type="button">Capture current-page details</button>
+          <div id="companion-capture-editor" hidden>
+            <p id="companion-capture-source" class="field-hint"></p>
+            <div class="companion-field-pair"><label>Ruler<input id="companion-capture-ruler" maxlength="120"></label><label>Denomination<input id="companion-capture-denomination" maxlength="120"></label></div>
+            <div class="companion-field-pair"><label>Mint<input id="companion-capture-mint" maxlength="120"></label><label>Reference<input id="companion-capture-reference" maxlength="120"></label></div>
+            <div class="companion-capture-actions"><button id="companion-use-capture" class="companion-outline-button" type="button">Use in Reference</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime>Review in watchlist</button></div>
+          </div>
+          <p class="field-hint">Review every extracted field before lookup or saving.</p>
+        </div>
+      </details>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
@@ -66,12 +87,51 @@
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
         </dl></details>
         <div class="search-links"><a id="acsearch-link" class="primary-button" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">Search on acsearch <span aria-hidden="true">↗</span></a><a id="coinarchives-link" class="primary-button" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">Search on CoinArchives <span aria-hidden="true">↗</span></a></div>
+        <button id="companion-save-watchlist" class="companion-save-watchlist" type="button" data-companion-runtime disabled>Save reference to watchlist</button>
+        <p class="field-hint">Saves the reference and type-page link for review. Session acsearch prices stay in this view.</p>
       </section>
       <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
     </div>
     <footer class="popup-footer"><span>Type data: ANS OCRE, PELLA, CRRO, SCO &amp; BIGR (ODbL)</span><a href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="Open acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
+    </section>
+    <section id="companion-panel-calculator" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-calculator" hidden>
+      <form id="companion-calculator-form" class="companion-card" novalidate>
+        <h2>Hammer + buyer’s premium</h2>
+        <p class="companion-intro">Calculate the auction total without tax, shipping, or currency conversion.</p>
+        <div class="companion-field-pair">
+          <label>Hammer<input id="companion-hammer" inputmode="decimal" autocomplete="off" placeholder="100.00"></label>
+          <label>Currency<select id="companion-calculator-currency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label>
+        </div>
+        <label>Buyer’s premium % <span class="companion-optional">optional</span><input id="companion-premium-percent" inputmode="decimal" autocomplete="off" placeholder="25"></label>
+        <p id="companion-calculator-error" class="form-error" role="alert" hidden></p>
+        <dl class="companion-calculator-result" aria-live="polite">
+          <div><dt>Buyer’s premium</dt><dd id="companion-premium-output">—</dd></div>
+          <div class="companion-total"><dt>Hammer + premium</dt><dd id="companion-total-output">—</dd></div>
+        </dl>
+        <p id="companion-calculator-note" class="field-hint"></p>
+      </form>
+    </section>
+    <section id="companion-panel-watchlist" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-watchlist" hidden>
+      <div class="companion-card">
+        <div class="companion-heading-row"><div><h2>Watchlist</h2><p class="companion-intro">Auction dates, active exposure, and saved comparables.</p></div><button id="companion-open-workspace" class="icon-button" type="button" data-companion-runtime aria-label="Open full workspace" title="Open full workspace"><span aria-hidden="true">↗</span></button></div>
+        <dl class="companion-summary">
+          <div><dt>Next auction</dt><dd id="companion-next-event">No upcoming auction</dd></div>
+          <div><dt>Auctions due</dt><dd id="companion-due-count">0</dd></div>
+        </dl>
+        <h3>Externally active exposure</h3>
+        <ul class="companion-exposure-list">
+          <li><span>USD</span><strong id="companion-exposure-USD">$0.00</strong></li>
+          <li><span>EUR</span><strong id="companion-exposure-EUR">€0.00</strong></li>
+          <li><span>GBP</span><strong id="companion-exposure-GBP">£0.00</strong></li>
+          <li><span>CHF</span><strong id="companion-exposure-CHF">CHF 0.00</strong></li>
+        </ul>
+        <button id="companion-open-watchlist" class="primary-button companion-full-button" type="button" data-companion-runtime>Open auction workspace</button>
+        <p id="companion-runtime-note" class="storage-note" hidden>Durable watchlist features require the installed extension. The calculator still works here.</p>
+      </div>
+    </section>
+    <p id="companion-status" class="companion-status" role="status"></p>
     <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
   </main>
 </body>

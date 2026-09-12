@@ -1,0 +1,953 @@
+import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
+import { validateSaleEvidence } from './evidence.js';
+import { resolveZonedDateTime } from './reminders.js';
+
+export const SCHEMA_VERSION = 1;
+export const LIMITS = Object.freeze({
+  lots: 5000,
+  auctionEvents: 500,
+  alternativeGroups: 1000,
+  evidenceObservations: 10000,
+  collectionEntries: 1000,
+  drafts: 20,
+  alerts: 500,
+  recentCommands: 200,
+  sourceLinks: 20,
+  reminders: 20,
+  bidHistory: 500,
+  outcomeHistory: 100,
+  title: 300,
+  shortText: 120,
+  notes: 5000,
+  url: 2048,
+  draftPayloadBytes: 10000,
+  commandReplyBytes: 100000,
+});
+
+const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const LIVE_DATA_CLASSES = new Set(['collector', 'authorized']);
+const OUTCOMES = new Set(['open', 'won', 'lost', 'passed']);
+const SOURCES = new Set(['coinarchives', 'acsearch', 'manual', 'authorized-import']);
+const BID_ACTIONS = new Set([
+  'planned-revised',
+  'planned-cleared',
+  'placed',
+  'active-revised',
+  'externally-cancelled',
+  'settled-won',
+  'settled-lost',
+  'reopened-active',
+  'reopened-inactive',
+]);
+const ALERT_STATES = new Set([
+  'pending', 'due', 'claimed', 'delivered', 'acknowledged', 'snoozed', 'missed',
+]);
+const DRAFT_KINDS = new Set(['research-highlight', 'current-lot', 'auction-capture']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function failure(code, message, path) {
+  const error = { code, message };
+  if (path !== undefined) error.path = path;
+  return { ok: false, error };
+}
+
+function firstFailure(...results) {
+  return results.find((result) => !result.ok) ?? { ok: true, value: undefined };
+}
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function objectResult(value, path) {
+  return isObject(value)
+    ? { ok: true, value }
+    : failure('invalid-record', 'Expected an object.', path);
+}
+
+function stringResult(value, path, maximum, { nonEmpty = true } = {}) {
+  if (typeof value !== 'string' || value.length > maximum || (nonEmpty && value.trim() === '')) {
+    return failure('invalid-string', `Expected a string of at most ${maximum} characters.`, path);
+  }
+  return { ok: true, value };
+}
+
+function optionalString(record, key, path, maximum, options) {
+  return OWN(record, key)
+    ? stringResult(record[key], `${path}.${key}`, maximum, options)
+    : { ok: true, value: undefined };
+}
+
+function integerResult(value, path, { minimum = 0, maximum = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    return failure('invalid-integer', `Expected an integer from ${minimum} through ${maximum}.`, path);
+  }
+  return { ok: true, value };
+}
+
+function uuidResult(value, path) {
+  return typeof value === 'string' && UUID.test(value)
+    ? { ok: true, value }
+    : failure('invalid-id', 'Expected a canonical UUID string.', path);
+}
+
+function instantResult(value, path, { nullable = false } = {}) {
+  if (nullable && value === null) return { ok: true, value };
+  let canonical = false;
+  if (typeof value === 'string' && ISO_INSTANT.test(value)) {
+    const parsed = new Date(value);
+    canonical = Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+  }
+  if (!canonical) {
+    return failure('invalid-timestamp', 'Expected a UTC ISO timestamp.', path);
+  }
+  return { ok: true, value };
+}
+
+function dateResult(value, path) {
+  const match = typeof value === 'string' ? DATE.exec(value) : null;
+  if (!match) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return failure('invalid-date', 'Expected a real calendar date.', path);
+  }
+  return { ok: true, value };
+}
+
+function shiftDate(value, days) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+function urlResult(value, path) {
+  const bounded = stringResult(value, path, LIMITS.url);
+  if (!bounded.ok) return bounded;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('protocol');
+    return { ok: true, value };
+  } catch {
+    return failure('invalid-url', 'Expected an HTTP or HTTPS URL.', path);
+  }
+}
+
+function optionalUrl(record, key, path) {
+  return OWN(record, key) ? urlResult(record[key], `${path}.${key}`) : { ok: true, value: undefined };
+}
+
+function enumResult(value, allowed, path) {
+  return allowed.has(value)
+    ? { ok: true, value }
+    : failure('invalid-enum', 'Value is outside the allowed set.', path);
+}
+
+function arrayResult(value, path, maximum) {
+  if (!Array.isArray(value) || value.length > maximum) {
+    return failure('collection-limit', `Expected an array with at most ${maximum} entries.`, path);
+  }
+  return { ok: true, value };
+}
+
+function moneyResult(value, path) {
+  const result = validateMoney(value);
+  if (result.ok) return result;
+  return { ok: false, error: { ...result.error, path } };
+}
+
+function bpsResult(record, key, path) {
+  if (!OWN(record, key)) return { ok: true, value: undefined };
+  return integerResult(record[key], `${path}.${key}`, { minimum: 0, maximum: 10000 });
+}
+
+function commonRecord(record, path, { dataClass = true } = {}) {
+  const object = objectResult(record, path);
+  if (!object.ok) return object;
+  const checks = [
+    uuidResult(record.id, `${path}.id`),
+    integerResult(record.revision, `${path}.revision`),
+    instantResult(record.createdAt, `${path}.createdAt`),
+    instantResult(record.updatedAt, `${path}.updatedAt`),
+  ];
+  if (dataClass && !LIVE_DATA_CLASSES.has(record.dataClass)) {
+    checks.push(failure(
+      'invalid-data-class',
+      'Durable live records must be collector or authorized data.',
+      `${path}.dataClass`,
+    ));
+  }
+  return firstFailure(...checks);
+}
+
+function sourceLinkResult(link, path) {
+  const object = objectResult(link, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    enumResult(link.source, SOURCES, `${path}.source`),
+    urlResult(link.url, `${path}.url`),
+    optionalString(link, 'sourceRecordId', path, LIMITS.shortText),
+  );
+}
+
+function sourceLinksResult(links, path) {
+  const array = arrayResult(links, path, LIMITS.sourceLinks);
+  if (!array.ok) return array;
+  for (let index = 0; index < links.length; index += 1) {
+    const result = sourceLinkResult(links[index], `${path}[${index}]`);
+    if (!result.ok) return result;
+  }
+  return { ok: true, value: links };
+}
+
+function bidResult(bid, path, active) {
+  const object = objectResult(bid, path);
+  if (!object.ok) return object;
+  const checks = [moneyResult(bid.amount, `${path}.amount`), bpsResult(bid, 'buyerPremiumBps', path)];
+  if (active) checks.push(instantResult(bid.placedAt, `${path}.placedAt`));
+  return firstFailure(...checks);
+}
+
+function bidHistoryResult(history, path) {
+  const array = arrayResult(history, path, LIMITS.bidHistory);
+  if (!array.ok) return array;
+  const ids = new Set();
+  for (let index = 0; index < history.length; index += 1) {
+    const item = history[index];
+    const itemPath = `${path}[${index}]`;
+    const object = objectResult(item, itemPath);
+    if (!object.ok) return object;
+    const checks = [
+      uuidResult(item.id, `${itemPath}.id`),
+      enumResult(item.action, BID_ACTIONS, `${itemPath}.action`),
+      instantResult(item.recordedAt, `${itemPath}.recordedAt`),
+    ];
+    if (OWN(item, 'amount')) checks.push(moneyResult(item.amount, `${itemPath}.amount`));
+    checks.push(bpsResult(item, 'buyerPremiumBps', itemPath));
+    const result = firstFailure(...checks);
+    if (!result.ok) return result;
+    if (ids.has(item.id)) return failure('duplicate-id', 'Bid history IDs must be unique.', `${itemPath}.id`);
+    ids.add(item.id);
+    if (item.action !== 'reopened-inactive' && !OWN(item, 'amount')) {
+      return failure('invalid-bid-history', 'This bid action requires its declared amount.', `${itemPath}.amount`);
+    }
+  }
+  return { ok: true, value: history };
+}
+
+function outcomeResult(outcome, path) {
+  const object = objectResult(outcome, path);
+  if (!object.ok) return object;
+  const status = enumResult(outcome.status, OUTCOMES, `${path}.status`);
+  if (!status.ok) return status;
+  const checks = [];
+  if (OWN(outcome, 'hammer')) checks.push(moneyResult(outcome.hammer, `${path}.hammer`));
+  if (OWN(outcome, 'actualInvoice')) checks.push(moneyResult(outcome.actualInvoice, `${path}.actualInvoice`));
+  if (OWN(outcome, 'correctedAt')) checks.push(instantResult(outcome.correctedAt, `${path}.correctedAt`));
+  if (OWN(outcome, 'verification')) {
+    checks.push(enumResult(
+      outcome.verification,
+      new Set(['personal-unverified']),
+      `${path}.verification`,
+    ));
+  }
+  const result = firstFailure(...checks);
+  if (!result.ok) return result;
+  if ((outcome.status === 'open' || outcome.status === 'passed') &&
+      (OWN(outcome, 'hammer') || OWN(outcome, 'actualInvoice') || OWN(outcome, 'verification'))) {
+    return failure('invalid-outcome-price', 'Open and passed outcomes cannot carry final prices.', path);
+  }
+  if ((OWN(outcome, 'hammer') || OWN(outcome, 'actualInvoice')) &&
+      outcome.verification !== 'personal-unverified') {
+    return failure('missing-verification', 'User-entered outcome prices require a verification label.', `${path}.verification`);
+  }
+  return { ok: true, value: outcome };
+}
+
+function outcomeHistoryResult(history, path) {
+  const array = arrayResult(history, path, LIMITS.outcomeHistory);
+  if (!array.ok) return array;
+  const ids = new Set();
+  for (let index = 0; index < history.length; index += 1) {
+    const item = history[index];
+    const itemPath = `${path}[${index}]`;
+    const object = objectResult(item, itemPath);
+    if (!object.ok) return object;
+    const result = firstFailure(
+      uuidResult(item.id, `${itemPath}.id`),
+      enumResult(item.from, OUTCOMES, `${itemPath}.from`),
+      enumResult(item.to, OUTCOMES, `${itemPath}.to`),
+      instantResult(item.recordedAt, `${itemPath}.recordedAt`),
+      OWN(item, 'bindingActive') && typeof item.bindingActive !== 'boolean'
+        ? failure('invalid-boolean', 'Expected a boolean.', `${itemPath}.bindingActive`)
+        : { ok: true, value: item.bindingActive },
+    );
+    if (!result.ok) return result;
+    if (ids.has(item.id)) return failure('duplicate-id', 'Outcome history IDs must be unique.', `${itemPath}.id`);
+    ids.add(item.id);
+  }
+  return { ok: true, value: history };
+}
+
+function lotResult(lot, path) {
+  const common = commonRecord(lot, path);
+  if (!common.ok) return common;
+  const checks = [
+    stringResult(lot.title, `${path}.title`, LIMITS.title),
+    optionalString(lot, 'reference', path, LIMITS.shortText),
+    optionalString(lot, 'lotNumber', path, LIMITS.shortText),
+    sourceLinksResult(lot.sourceLinks, `${path}.sourceLinks`),
+    bidHistoryResult(lot.bidHistory, `${path}.bidHistory`),
+    outcomeResult(lot.outcome, `${path}.outcome`),
+    outcomeHistoryResult(lot.outcomeHistory, `${path}.outcomeHistory`),
+  ];
+  if (OWN(lot, 'auctionEventId')) checks.push(uuidResult(lot.auctionEventId, `${path}.auctionEventId`));
+  if (OWN(lot, 'alternativeGroupId')) checks.push(uuidResult(lot.alternativeGroupId, `${path}.alternativeGroupId`));
+  if (OWN(lot, 'collectionEntryId')) checks.push(uuidResult(lot.collectionEntryId, `${path}.collectionEntryId`));
+  if (OWN(lot, 'priority')) checks.push(integerResult(lot.priority, `${path}.priority`, { minimum: 1 }));
+  if (OWN(lot, 'plannedBid')) checks.push(bidResult(lot.plannedBid, `${path}.plannedBid`, false));
+  if (OWN(lot, 'activeBid')) checks.push(bidResult(lot.activeBid, `${path}.activeBid`, true));
+  if (OWN(lot, 'collectionReviewReason')) {
+    checks.push(enumResult(
+      lot.collectionReviewReason,
+      new Set(['source-lot-no-longer-won']),
+      `${path}.collectionReviewReason`,
+    ));
+  }
+  const result = firstFailure(...checks);
+  if (!result.ok) return result;
+  if (OWN(lot, 'priority') !== OWN(lot, 'alternativeGroupId')) {
+    return failure('invalid-priority', 'Alternative group and priority must be present together.', path);
+  }
+  if (lot.outcome.status !== 'open' && OWN(lot, 'activeBid')) {
+    return failure('active-bid', 'A terminal lot cannot retain an active bid.', `${path}.activeBid`);
+  }
+  let declaredBindingState = null;
+  for (const entry of lot.bidHistory) {
+    if (['placed', 'active-revised', 'reopened-active'].includes(entry.action)) {
+      declaredBindingState = 'active';
+    } else if (['externally-cancelled', 'settled-won', 'settled-lost', 'reopened-inactive'].includes(entry.action)) {
+      declaredBindingState = 'inactive';
+    }
+  }
+  if (declaredBindingState === 'active' && !OWN(lot, 'activeBid')) {
+    return failure(
+      'invalid-bid-state',
+      'An active external declaration requires active bid terms.',
+      `${path}.activeBid`,
+    );
+  }
+  if (declaredBindingState === 'inactive' && OWN(lot, 'activeBid')) {
+    return failure(
+      'invalid-bid-state',
+      'Inactive bid history cannot retain active bid terms.',
+      `${path}.activeBid`,
+    );
+  }
+  return { ok: true, value: lot };
+}
+
+function timeZoneResult(value, path) {
+  const text = stringResult(value, path, LIMITS.shortText);
+  if (!text.ok) return text;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format(0);
+    return { ok: true, value };
+  } catch {
+    return failure('invalid-time-zone', 'Expected an IANA time zone.', path);
+  }
+}
+
+function reminderResult(reminder, path) {
+  const object = objectResult(reminder, path);
+  if (!object.ok) return object;
+  const id = uuidResult(reminder.id, `${path}.id`);
+  if (!id.ok) return id;
+  if (reminder.kind === 'offset') {
+    return integerResult(reminder.offsetMinutes, `${path}.offsetMinutes`, { maximum: 525600 });
+  }
+  if (reminder.kind === 'wall-time') {
+    return firstFailure(
+      integerResult(reminder.daysBefore, `${path}.daysBefore`, { maximum: 365 }),
+      TIME.test(reminder.localTime)
+        ? { ok: true, value: reminder.localTime }
+        : failure('invalid-time', 'Expected HH:mm.', `${path}.localTime`),
+    );
+  }
+  return failure('invalid-enum', 'Unknown reminder kind.', `${path}.kind`);
+}
+
+function eventResult(event, path) {
+  const common = commonRecord(event, path);
+  if (!common.ok) return common;
+  const checks = [
+    stringResult(event.name, `${path}.name`, LIMITS.title),
+    enumResult(event.eventKind, new Set(['auction-starts', 'lot-closes', 'auction-day']), `${path}.eventKind`),
+    enumResult(event.precision, new Set(['timed', 'date-only']), `${path}.precision`),
+    dateResult(event.localDate, `${path}.localDate`),
+    timeZoneResult(event.timeZone, `${path}.timeZone`),
+    enumResult(event.reminderScope, new Set(['standalone', 'linked-lots']), `${path}.reminderScope`),
+    arrayResult(event.reminders, `${path}.reminders`, LIMITS.reminders),
+    optionalString(event, 'capturedText', path, 500),
+    optionalUrl(event, 'capturedFromUrl', path),
+    optionalUrl(event, 'sourceUrl', path),
+  ];
+  const initial = firstFailure(...checks);
+  if (!initial.ok) return initial;
+  const reminderIds = new Set();
+  for (let index = 0; index < event.reminders.length; index += 1) {
+    const result = reminderResult(event.reminders[index], `${path}.reminders[${index}]`);
+    if (!result.ok) return result;
+    const expectedKind = event.precision === 'timed' ? 'offset' : 'wall-time';
+    if (event.reminders[index].kind !== expectedKind) {
+      return failure('invalid-reminder-kind', 'Reminder kind must match the event precision.', `${path}.reminders[${index}].kind`);
+    }
+    if (expectedKind === 'wall-time') {
+      const reminder = event.reminders[index];
+      const resolved = resolveZonedDateTime({
+        localDate: shiftDate(event.localDate, -reminder.daysBefore),
+        localTime: reminder.localTime,
+        timeZone: event.timeZone,
+        disambiguation: 'reject',
+      });
+      if (!resolved.ok) {
+        return failure(
+          'invalid-reminder-time',
+          'Reminder wall time must exist exactly once in the confirmed time zone.',
+          `${path}.reminders[${index}].localTime`,
+        );
+      }
+    }
+    if (reminderIds.has(event.reminders[index].id)) {
+      return failure('duplicate-id', 'Reminder IDs must be unique in an event.', `${path}.reminders[${index}].id`);
+    }
+    reminderIds.add(event.reminders[index].id);
+  }
+  if (event.precision === 'timed') {
+    if (!TIME.test(event.localTime)) return failure('invalid-time', 'Timed events require HH:mm.', `${path}.localTime`);
+    const startsAt = instantResult(event.startsAt, `${path}.startsAt`);
+    if (!startsAt.ok) return startsAt;
+    const resolved = resolveZonedDateTime({
+      localDate: event.localDate,
+      localTime: event.localTime,
+      timeZone: event.timeZone,
+      disambiguation: 'reject',
+    });
+    if (!resolved.ok || resolved.value.startsAt !== event.startsAt) {
+      return failure('inconsistent-instant', 'Stored start must match the confirmed local date, time, and zone.', `${path}.startsAt`);
+    }
+  } else if (OWN(event, 'localTime') || OWN(event, 'startsAt')) {
+    return failure('invalid-event-precision', 'Date-only events cannot carry a time or instant.', path);
+  }
+  return { ok: true, value: event };
+}
+
+function groupResult(group, path) {
+  const common = commonRecord(group, path);
+  if (!common.ok) return common;
+  return stringResult(group.name, `${path}.name`, LIMITS.title);
+}
+
+function collectionEntryResult(entry, path) {
+  const common = commonRecord(entry, path);
+  if (!common.ok) return common;
+  const checks = [
+    uuidResult(entry.lotId, `${path}.lotId`),
+    stringResult(entry.title, `${path}.title`, LIMITS.title),
+    dateResult(entry.acquisitionDate, `${path}.acquisitionDate`),
+    sourceLinksResult(entry.sourceLinks, `${path}.sourceLinks`),
+    optionalString(entry, 'notes', path, LIMITS.notes, { nonEmpty: false }),
+  ];
+  if (OWN(entry, 'hammer')) checks.push(moneyResult(entry.hammer, `${path}.hammer`));
+  if (OWN(entry, 'actualInvoice')) checks.push(moneyResult(entry.actualInvoice, `${path}.actualInvoice`));
+  if (OWN(entry, 'reviewReason')) {
+    checks.push(enumResult(
+      entry.reviewReason,
+      new Set(['source-lot-no-longer-won']),
+      `${path}.reviewReason`,
+    ));
+  }
+  return firstFailure(...checks);
+}
+
+function evidenceResult(evidence, path) {
+  const common = commonRecord(evidence, path);
+  if (!common.ok) return common;
+  const observations = arrayResult(
+    evidence.observations,
+    `${path}.observations`,
+    LIMITS.evidenceObservations,
+  );
+  if (!observations.ok) return observations;
+  const validated = validateSaleEvidence(evidence, { mode: 'live' });
+  if (validated.ok) return validated;
+  const nestedPath = validated.error.path ? `${path}.${validated.error.path}` : path;
+  return { ok: false, error: { ...validated.error, path: nestedPath } };
+}
+
+function preferencesResult(preferences, path) {
+  if (preferences === null) return { ok: true, value: preferences };
+  const object = objectResult(preferences, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    integerResult(preferences.revision, `${path}.revision`),
+    instantResult(preferences.createdAt, `${path}.createdAt`),
+    instantResult(preferences.updatedAt, `${path}.updatedAt`),
+    preferences.schemaVersion === SCHEMA_VERSION
+      ? { ok: true, value: preferences.schemaVersion }
+      : failure('unsupported-schema', 'Preferences schema version is unsupported.', `${path}.schemaVersion`),
+    enumResult(preferences.currency, new Set(CURRENCIES), `${path}.currency`),
+    enumResult(preferences.catalogue, new Set(['Price', 'RIC']), `${path}.catalogue`),
+    stringResult(preferences.number, `${path}.number`, LIMITS.shortText, { nonEmpty: false }),
+    stringResult(preferences.volume, `${path}.volume`, LIMITS.shortText, { nonEmpty: false }),
+    stringResult(preferences.section, `${path}.section`, LIMITS.shortText, { nonEmpty: false }),
+    typeof preferences.sampleMode === 'boolean'
+      ? { ok: true, value: preferences.sampleMode }
+      : failure('invalid-boolean', 'Expected a boolean.', `${path}.sampleMode`),
+    typeof preferences.desktopAlertsEnabled === 'boolean'
+      ? { ok: true, value: preferences.desktopAlertsEnabled }
+      : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
+  );
+}
+
+export function validateDraftPayload(kind, payload, path = '') {
+  const kindPath = path ? `${path}.kind` : 'kind';
+  const payloadPath = path ? `${path}.payload` : 'payload';
+  const kindResult = enumResult(kind, DRAFT_KINDS, kindPath);
+  if (!kindResult.ok) return kindResult;
+  const object = objectResult(payload, payloadPath);
+  if (!object.ok) return object;
+
+  const allowed = kind === 'current-lot'
+    ? new Set(['target', 'title', 'reference', 'pageUrl'])
+    : new Set(['rawText', 'pageUrl']);
+  const unexpected = Object.keys(payload).find((key) => !allowed.has(key));
+  if (unexpected) {
+    return failure('unexpected-field', 'Draft payload contains an unsupported field.', `${payloadPath}.${unexpected}`);
+  }
+
+  if (kind === 'current-lot') {
+    if (payload.target !== 'watchlist') {
+      return failure('invalid-target', 'Current-lot drafts must target the watchlist.', `${payloadPath}.target`);
+    }
+    const fields = firstFailure(
+      optionalString(payload, 'title', payloadPath, 200),
+      optionalString(payload, 'reference', payloadPath, LIMITS.shortText),
+      optionalString(payload, 'pageUrl', payloadPath, LIMITS.url),
+    );
+    return fields.ok ? { ok: true, value: payload } : fields;
+  }
+
+  const fields = firstFailure(
+    optionalString(payload, 'rawText', payloadPath, 3000, { nonEmpty: false }),
+    optionalString(payload, 'pageUrl', payloadPath, LIMITS.url, { nonEmpty: false }),
+  );
+  return fields.ok ? { ok: true, value: payload } : fields;
+}
+
+function draftResult(draft, path) {
+  const common = commonRecord(draft, path);
+  if (!common.ok) return common;
+  const checks = [
+    validateDraftPayload(draft.kind, draft.payload, path),
+    instantResult(draft.createdAt, `${path}.createdAt`),
+    instantResult(draft.expiresAt, `${path}.expiresAt`),
+  ];
+  const result = firstFailure(...checks);
+  if (!result.ok) return result;
+  let encoded;
+  try { encoded = JSON.stringify(draft.payload); } catch { encoded = null; }
+  if (typeof encoded !== 'string' || new TextEncoder().encode(encoded).length > LIMITS.draftPayloadBytes) {
+    return failure('draft-too-large', 'Draft payload exceeds its storage bound.', `${path}.payload`);
+  }
+  return { ok: true, value: draft };
+}
+
+function alertResult(alert, path) {
+  const common = commonRecord(alert, path);
+  if (!common.ok) return common;
+  const checks = [
+    stringResult(alert.triggerId, `${path}.triggerId`, 500),
+    uuidResult(alert.eventId, `${path}.eventId`),
+    integerResult(alert.eventRevision, `${path}.eventRevision`),
+    uuidResult(alert.reminderId, `${path}.reminderId`),
+    instantResult(alert.triggerAt, `${path}.triggerAt`),
+    enumResult(alert.status, ALERT_STATES, `${path}.status`),
+  ];
+  for (const field of ['attemptedAt', 'claimedAt', 'deliveredAt', 'acknowledgedAt', 'snoozedUntil', 'missedAt']) {
+    if (OWN(alert, field)) checks.push(instantResult(alert[field], `${path}.${field}`));
+  }
+  const initial = firstFailure(...checks);
+  if (!initial.ok) return initial;
+  const requiredByStatus = {
+    claimed: ['attemptedAt', 'claimedAt'],
+    delivered: ['attemptedAt', 'claimedAt', 'deliveredAt'],
+    acknowledged: ['acknowledgedAt'],
+    snoozed: ['snoozedUntil'],
+    missed: ['missedAt'],
+  };
+  for (const field of requiredByStatus[alert.status] ?? []) {
+    if (!OWN(alert, field)) return failure('missing-state-time', `Alert status ${alert.status} requires ${field}.`, `${path}.${field}`);
+  }
+  return { ok: true, value: alert };
+}
+
+function schedulerResult(scheduler, path) {
+  const object = objectResult(scheduler, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    integerResult(scheduler.revision, `${path}.revision`),
+    instantResult(scheduler.nextWakeAt, `${path}.nextWakeAt`, { nullable: true }),
+    instantResult(scheduler.lastReconciledAt, `${path}.lastReconciledAt`, { nullable: true }),
+  );
+}
+
+function recentCommandResult(command, path) {
+  const object = objectResult(command, path);
+  if (!object.ok) return object;
+  const checks = [
+    uuidResult(command.requestId, `${path}.requestId`),
+    stringResult(command.commandType, `${path}.commandType`, LIMITS.shortText),
+    integerResult(command.revision, `${path}.revision`),
+    instantResult(command.committedAt, `${path}.committedAt`),
+    objectResult(command.reply, `${path}.reply`),
+  ];
+  const result = firstFailure(...checks);
+  if (!result.ok) return result;
+  if (command.reply.ok !== true || command.reply.requestId !== command.requestId ||
+      command.reply.revision !== command.revision) {
+    return failure('invalid-reply', 'The ledger reply must match its committed request and revision.', `${path}.reply`);
+  }
+  let encoded;
+  try { encoded = JSON.stringify(command.reply); } catch { encoded = null; }
+  if (typeof encoded !== 'string' || new TextEncoder().encode(encoded).length > LIMITS.commandReplyBytes) {
+    return failure('reply-too-large', 'Ledger reply exceeds its storage bound.', `${path}.reply`);
+  }
+  return { ok: true, value: command };
+}
+
+function validateCollection(snapshot, key, maximum, validator) {
+  const array = arrayResult(snapshot[key], key, maximum);
+  if (!array.ok) return array;
+  const ids = new Set();
+  for (let index = 0; index < snapshot[key].length; index += 1) {
+    const item = snapshot[key][index];
+    const result = validator(item, `${key}[${index}]`);
+    if (!result.ok) return result;
+    const id = item.id ?? item.requestId;
+    if (ids.has(id)) return failure('duplicate-id', `${key} IDs must be unique.`, `${key}[${index}].id`);
+    ids.add(id);
+  }
+  return { ok: true, value: snapshot[key] };
+}
+
+export function createEmptySnapshot(now) {
+  const instant = instantResult(now, 'now');
+  if (!instant.ok) throw new TypeError(instant.error.message);
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    revision: 0,
+    updatedAt: now,
+    preferences: null,
+    lots: [],
+    auctionEvents: [],
+    alternativeGroups: [],
+    evidence: [],
+    collectionEntries: [],
+    drafts: [],
+    alerts: [],
+    scheduler: { revision: 0, nextWakeAt: null, lastReconciledAt: null },
+    recentCommands: [],
+  };
+}
+
+export function validateSnapshot(value) {
+  const object = objectResult(value, 'snapshot');
+  if (!object.ok) return object;
+  if (value.schemaVersion !== SCHEMA_VERSION) {
+    return failure('unsupported-schema', 'Snapshot schema version is unsupported.', 'schemaVersion');
+  }
+  const header = firstFailure(
+    integerResult(value.revision, 'revision'),
+    instantResult(value.updatedAt, 'updatedAt'),
+    preferencesResult(value.preferences, 'preferences'),
+    schedulerResult(value.scheduler, 'scheduler'),
+  );
+  if (!header.ok) return header;
+
+  const collections = [
+    validateCollection(value, 'lots', LIMITS.lots, lotResult),
+    validateCollection(value, 'auctionEvents', LIMITS.auctionEvents, eventResult),
+    validateCollection(value, 'alternativeGroups', LIMITS.alternativeGroups, groupResult),
+    validateCollection(value, 'evidence', LIMITS.evidenceObservations, evidenceResult),
+    validateCollection(value, 'collectionEntries', LIMITS.collectionEntries, collectionEntryResult),
+    validateCollection(value, 'drafts', LIMITS.drafts, draftResult),
+    validateCollection(value, 'alerts', LIMITS.alerts, alertResult),
+    validateCollection(value, 'recentCommands', LIMITS.recentCommands, recentCommandResult),
+  ];
+  const collectionFailure = firstFailure(...collections);
+  if (!collectionFailure.ok) return collectionFailure;
+
+  const events = new Map(value.auctionEvents.map((event) => [event.id, event]));
+  const groups = new Set(value.alternativeGroups.map((group) => group.id));
+  const entries = new Map(value.collectionEntries.map((entry) => [entry.id, entry]));
+  const priorities = new Set();
+  const prioritiesByGroup = new Map();
+  for (let index = 0; index < value.lots.length; index += 1) {
+    const lot = value.lots[index];
+    if (OWN(lot, 'auctionEventId') && !events.has(lot.auctionEventId)) {
+      return failure('foreign-key', 'Lot refers to an unknown auction event.', `lots[${index}].auctionEventId`);
+    }
+    if (OWN(lot, 'alternativeGroupId') && !groups.has(lot.alternativeGroupId)) {
+      return failure('foreign-key', 'Lot refers to an unknown alternative group.', `lots[${index}].alternativeGroupId`);
+    }
+    if (OWN(lot, 'collectionEntryId')) {
+      const entry = entries.get(lot.collectionEntryId);
+      if (!entry || entry.lotId !== lot.id) {
+        return failure(
+          'foreign-key',
+          'Lot and collection entry must refer to each other.',
+          `lots[${index}].collectionEntryId`,
+        );
+      }
+    }
+    if (OWN(lot, 'alternativeGroupId')) {
+      const key = `${lot.alternativeGroupId}:${lot.priority}`;
+      if (priorities.has(key)) {
+        return failure('duplicate-priority', 'Priorities must be unique within an alternative group.', `lots[${index}].priority`);
+      }
+      priorities.add(key);
+      const groupPriorities = prioritiesByGroup.get(lot.alternativeGroupId) ?? [];
+      groupPriorities.push(lot.priority);
+      prioritiesByGroup.set(lot.alternativeGroupId, groupPriorities);
+    }
+  }
+  for (const [groupId, groupPriorities] of prioritiesByGroup) {
+    groupPriorities.sort((left, right) => left - right);
+    for (let index = 0; index < groupPriorities.length; index += 1) {
+      if (groupPriorities[index] !== index + 1) {
+        return failure(
+          'noncompact-priority',
+          'Alternative priorities must be compact from one through group size.',
+          `alternativeGroups.${groupId}`,
+        );
+      }
+    }
+  }
+  const lotsById = new Map(value.lots.map((lot) => [lot.id, lot]));
+  for (let index = 0; index < value.collectionEntries.length; index += 1) {
+    const entry = value.collectionEntries[index];
+    const lot = lotsById.get(entry.lotId);
+    if (!lot || lot.collectionEntryId !== entry.id) {
+      return failure(
+        'foreign-key',
+        'Collection entry and lot must refer to each other.',
+        `collectionEntries[${index}].lotId`,
+      );
+    }
+  }
+  let observationCount = 0;
+  for (const evidence of value.evidence) observationCount += evidence.observations.length;
+  if (observationCount > LIMITS.evidenceObservations) {
+    return failure('collection-limit', 'Evidence observation limit exceeded.', 'evidence');
+  }
+  for (let index = 0; index < value.alerts.length; index += 1) {
+    const alert = value.alerts[index];
+    const event = events.get(alert.eventId);
+    if (!event) return failure('foreign-key', 'Alert refers to an unknown event.', `alerts[${index}].eventId`);
+    if (!event.reminders.some((reminder) => reminder.id === alert.reminderId)) {
+      return failure('foreign-key', 'Alert refers to an unknown event reminder.', `alerts[${index}].reminderId`);
+    }
+  }
+  try { projectExposure(value); } catch {
+    return failure('unsafe-exposure', 'Projected exposure exceeds the supported integer range.', 'lots');
+  }
+  return { ok: true, value };
+}
+
+function emptyExposure() {
+  return {
+    hammerMinor: 0,
+    knownHammerPlusBpMinor: 0,
+    bindingCount: 0,
+    unknownPremiumCount: 0,
+    byEvent: {},
+  };
+}
+
+function addSafe(left, right) {
+  const sum = BigInt(left) + BigInt(right);
+  if (sum > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError('unsafe exposure');
+  return Number(sum);
+}
+
+export function projectExposure(snapshot) {
+  const byCurrency = {};
+  for (const lot of snapshot.lots ?? []) {
+    if (lot?.outcome?.status !== 'open' || !lot.activeBid) continue;
+    const money = validateMoney(lot.activeBid.amount);
+    if (!money.ok) throw new TypeError(money.error.message);
+    const currency = lot.activeBid.amount.currency;
+    const eventId = lot.auctionEventId ?? 'unassigned';
+    byCurrency[currency] ??= emptyExposure();
+    byCurrency[currency].byEvent[eventId] ??= {
+      hammerMinor: 0,
+      knownHammerPlusBpMinor: 0,
+      bindingCount: 0,
+      unknownPremiumCount: 0,
+    };
+    const totals = [byCurrency[currency], byCurrency[currency].byEvent[eventId]];
+    for (const total of totals) {
+      total.hammerMinor = addSafe(total.hammerMinor, lot.activeBid.amount.minor);
+      total.bindingCount += 1;
+    }
+    if (!OWN(lot.activeBid, 'buyerPremiumBps')) {
+      for (const total of totals) total.unknownPremiumCount += 1;
+      continue;
+    }
+    const premium = calculatePremium(lot.activeBid.amount, lot.activeBid.buyerPremiumBps);
+    if (!premium.ok) throw new RangeError(premium.error.message);
+    for (const total of totals) {
+      total.knownHammerPlusBpMinor = addSafe(
+        total.knownHammerPlusBpMinor,
+        premium.value.hammerPlusPremium.minor,
+      );
+    }
+  }
+  const ordered = {};
+  for (const currency of CURRENCIES) if (byCurrency[currency]) ordered[currency] = byCurrency[currency];
+  return ordered;
+}
+
+function derivedUuid(seed) {
+  const hash = (salt) => {
+    let value = 14695981039346656037n ^ BigInt(salt);
+    for (let index = 0; index < seed.length; index += 1) {
+      value ^= BigInt(seed.charCodeAt(index));
+      value = BigInt.asUintN(64, value * 1099511628211n);
+    }
+    return value.toString(16).padStart(16, '0');
+  };
+  const hex = `${hash(0)}${hash(1)}`.split('');
+  hex[12] = '5';
+  hex[16] = ['8', '9', 'a', 'b'][Number.parseInt(hex[16], 16) % 4];
+  const joined = hex.join('');
+  return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`;
+}
+
+function lastSettlement(history) {
+  return [...history].reverse().find(({ action }) => action === 'settled-won' || action === 'settled-lost');
+}
+
+export function setOutcome(lot, outcomeDraft, now) {
+  const validLot = lotResult(lot, 'lot');
+  if (!validLot.ok) return validLot;
+  const instant = instantResult(now, 'now');
+  if (!instant.ok) return instant;
+  const draft = objectResult(outcomeDraft, 'outcome');
+  if (!draft.ok) return draft;
+  const status = enumResult(outcomeDraft.status, OUTCOMES, 'outcome.status');
+  if (!status.ok) return status;
+  if (outcomeDraft.status === 'passed' && OWN(lot, 'activeBid')) {
+    return failure('active-bid', 'Record external cancellation before marking this lot passed.', 'activeBid');
+  }
+  if ((outcomeDraft.status === 'open' || outcomeDraft.status === 'passed') &&
+      (OWN(outcomeDraft, 'hammer') || OWN(outcomeDraft, 'actualInvoice'))) {
+    return failure('invalid-outcome-price', 'Open and passed outcomes cannot carry final prices.', 'outcome');
+  }
+  if (OWN(outcomeDraft, 'hammer')) {
+    const hammer = moneyResult(outcomeDraft.hammer, 'outcome.hammer');
+    if (!hammer.ok) return hammer;
+  }
+  if (OWN(outcomeDraft, 'actualInvoice')) {
+    const invoice = moneyResult(outcomeDraft.actualInvoice, 'outcome.actualInvoice');
+    if (!invoice.ok) return invoice;
+  }
+
+  const reopeningSettled = outcomeDraft.status === 'open' &&
+    (lot.outcome.status === 'won' || lot.outcome.status === 'lost');
+  if (reopeningSettled && typeof outcomeDraft.bindingActive !== 'boolean') {
+    return failure(
+      'reopen-decision-required',
+      'Say whether the last settled binding terms are externally active again.',
+      'outcome.bindingActive',
+    );
+  }
+
+  const next = {
+    ...lot,
+    revision: lot.revision + 1,
+    updatedAt: now,
+    bidHistory: [...lot.bidHistory],
+    outcomeHistory: [...lot.outcomeHistory],
+  };
+  const prices = {};
+  if (OWN(outcomeDraft, 'hammer')) prices.hammer = { ...outcomeDraft.hammer };
+  if (OWN(outcomeDraft, 'actualInvoice')) prices.actualInvoice = { ...outcomeDraft.actualInvoice };
+  const nextOutcome = { status: outcomeDraft.status, ...prices };
+  if (Object.keys(prices).length > 0) nextOutcome.verification = 'personal-unverified';
+  if (lot.outcome.status !== 'open') nextOutcome.correctedAt = now;
+  next.outcome = nextOutcome;
+
+  if ((outcomeDraft.status === 'won' || outcomeDraft.status === 'lost') && OWN(next, 'activeBid')) {
+    const action = outcomeDraft.status === 'won' ? 'settled-won' : 'settled-lost';
+    const entry = {
+      id: derivedUuid(`${lot.id}|${lot.revision}|${now}|${action}`),
+      action,
+      amount: { ...next.activeBid.amount },
+      recordedAt: now,
+    };
+    if (OWN(next.activeBid, 'buyerPremiumBps')) entry.buyerPremiumBps = next.activeBid.buyerPremiumBps;
+    next.bidHistory.push(entry);
+    delete next.activeBid;
+  }
+
+  if (reopeningSettled) {
+    const settled = lastSettlement(next.bidHistory);
+    if (outcomeDraft.bindingActive && !settled?.amount) {
+      return failure('missing-binding-terms', 'No settled binding terms are available to restore.', 'bidHistory');
+    }
+    const action = outcomeDraft.bindingActive ? 'reopened-active' : 'reopened-inactive';
+    const declaration = {
+      id: derivedUuid(`${lot.id}|${lot.revision}|${now}|${action}`),
+      action,
+      recordedAt: now,
+    };
+    if (settled?.amount) declaration.amount = { ...settled.amount };
+    if (settled && OWN(settled, 'buyerPremiumBps')) {
+      declaration.buyerPremiumBps = settled.buyerPremiumBps;
+    }
+    next.bidHistory.push(declaration);
+    if (outcomeDraft.bindingActive) {
+      next.activeBid = { amount: { ...settled.amount }, placedAt: now };
+      if (OWN(settled, 'buyerPremiumBps')) next.activeBid.buyerPremiumBps = settled.buyerPremiumBps;
+    } else {
+      delete next.activeBid;
+    }
+  }
+
+  if (next.bidHistory.length > LIMITS.bidHistory) {
+    return failure('collection-limit', 'Bid history limit exceeded.', 'bidHistory');
+  }
+  next.outcomeHistory.push({
+    id: derivedUuid(`${lot.id}|${lot.revision}|${now}|outcome|${lot.outcome.status}|${outcomeDraft.status}`),
+    from: lot.outcome.status,
+    to: outcomeDraft.status,
+    recordedAt: now,
+    ...(reopeningSettled ? { bindingActive: outcomeDraft.bindingActive } : {}),
+  });
+  if (next.outcomeHistory.length > LIMITS.outcomeHistory) {
+    return failure('collection-limit', 'Outcome history limit exceeded.', 'outcomeHistory');
+  }
+  if (lot.outcome.status === 'won' && outcomeDraft.status !== 'won' && OWN(lot, 'collectionEntryId')) {
+    next.collectionReviewReason = 'source-lot-no-longer-won';
+  }
+
+  const validated = lotResult(next, 'lot');
+  if (!validated.ok) return validated;
+  return { ok: true, value: next };
+}
