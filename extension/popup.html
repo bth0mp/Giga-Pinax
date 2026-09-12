@@ -25,7 +25,7 @@
     </header>
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
-        <div class="quick-row"><label for="quick-reference">Reference</label><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Crawford 44/5 · Price 23" aria-describedby="quick-help form-error"><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
+        <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Price 23" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
         <div class="catalogue-row">
           <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option><option value="Other">Other (prices only)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
@@ -33,9 +33,10 @@
         <div id="ric-fields" class="ric-fields" hidden>
           <div id="volume-field"><label for="ric-volume">Volume / edition</label><select id="ric-volume" name="volume"></select></div>
           <div><label id="section-label" for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" list="section-options" maxlength="120" autocomplete="off" spellcheck="false"><datalist id="section-options"></datalist></div>
+          <p id="ric-note" class="field-hint ric-note"></p>
         </div>
         <label id="reference-label" for="reference-number">Price number</label>
-        <div class="search-row"><input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error"><button id="lookup-button" class="primary-button" type="submit"><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><span id="lookup-label">Look up</span></button></div>
+        <input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error">
         <p id="reference-help" class="field-hint">Example: Price 23</p>
         <p id="form-error" class="form-error" role="alert" hidden></p>
         <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
@@ -48,7 +49,7 @@
           <div class="median-block"><fieldset id="period" class="period"><legend class="sr-only">Sales period</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
             <p class="metric-label">Median hammer price</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
-          <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500" aria-describedby="check-result"></div>
+          <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
           <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="sale-list" class="sale-list"></ol></details>
           <p id="price-note" class="price-note"></p>

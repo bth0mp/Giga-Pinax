@@ -59,6 +59,11 @@ select:hover,input:hover {border-color:var(--accent);}
 select:focus-visible,input:focus-visible {border-color:var(--accent); outline-offset:1px;}
 .quick-row {margin-bottom:12px;}
 .quick-row input {font-family:var(--font-mono); font-weight:600;}
+/* Look up now shares this row, so the box keeps the smaller size: as much of the placeholder's four shapes as the narrower field can show. */
+.quick-row .search-row input {font-size:13px;}
+/* Look up sizes the column beside the box, so its width is fixed: "Looking up…" must not narrow the field being typed into. It carries no magnifier
+   here, which is what buys the room for the wider busy label without taking characters off the placeholder. */
+.quick-row .search-row .primary-button {min-width:105px;}
 .catalogue-row {display:grid; grid-template-columns:1fr 91px; gap:12px; margin-bottom:12px;}
 .catalogue-row select {font-weight:600;}
 .search-row {display:grid; grid-template-columns:minmax(60px,1fr) auto; gap:8px;}
@@ -68,7 +73,10 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .primary-button svg {width:16px; height:16px; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; fill:none;}
 .primary-button[disabled] {opacity:.6; cursor:progress;}
 .field-hint {font-size:11px; line-height:1.4; color:var(--muted); margin-top:6px;}
-.ric-fields {display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin-bottom:12px;}
+.ric-fields {display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:12px; row-gap:4px; margin-bottom:12px;}
+/* What the tool changed by itself, under the fields it changed. Its line is always there, empty or not, so the message never moves the fields. */
+/* One line always: the two longest RIC section names would wrap and push the fields below them down, and the whole sentence is spoken anyway. */
+.ric-note {grid-column:1/-1; min-height:15px; margin-top:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .ric-fields.single {grid-template-columns:minmax(0,1fr);}
 .ric-fields select,.ric-fields input {font-size:12px; text-overflow:ellipsis;}
 .ric-fields label {font-size:11px;}
@@ -82,7 +90,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .recent .field-hint {margin-top:0;}
 .recent-list {list-style:none; margin:6px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
 .recent-list li {min-width:0; max-width:100%;}
-.recent-list button {max-width:100%; border:1px solid var(--line); border-radius:999px; background:var(--soft); color:var(--ink); font-size:11px; padding:5px 12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+/* The chips are buttons, so their edge carries the same weight as the typed field's: --line reads as 1.3:1 against the page, --muted as 4.7:1 light and 7.7:1 dark. */
+.recent-list button {max-width:100%; border:1px solid var(--muted); border-radius:999px; background:var(--soft); color:var(--ink); font-size:11px; padding:5px 12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .recent-list button:hover {border-color:var(--accent); color:var(--accent);}
 .result {margin:12px 16px; padding:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}

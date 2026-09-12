@@ -559,13 +559,17 @@ test('the typeNumber search asks for both cases of a letter suffix and for the t
   assert.deepEqual(fetchImpl.calls.map((url) => decodeURIComponent(url.split('?q=')[1])), [
     '(typeNumber:"56a" OR typeNumber:56a_* OR typeNumber:"56A" OR typeNumber:56A_*)',
     '(typeNumber:"972" OR typeNumber:972_*) AND "Zeno (East)"',
+    // Each miss with a ruler asks the portrait facet once more, quoted the same way.
+    '(typeNumber:"972" OR typeNumber:972_*) AND (portrait_facet:"Zeno (East)" OR authority_facet:"Zeno (East)")',
     '(typeNumber:"123" OR typeNumber:123_*) AND "Titus"',
+    '(typeNumber:"123" OR typeNumber:123_*) AND (portrait_facet:"Titus" OR authority_facet:"Titus")',
     'typeNumber:"266_aureus"',
     '(typeNumber:"266c_denarius" OR typeNumber:"266C_denarius")',
     '(typeNumber:"266_Aureus" OR typeNumber:"266_aureus")',
     '(typeNumber:"509_BB" OR typeNumber:"509_bb")',
     '(typeNumber:"1a1" OR typeNumber:"1A1")',
     '(typeNumber:"12" OR typeNumber:12_*) AND "Hadrian"',
+    '(typeNumber:"12" OR typeNumber:12_*) AND (portrait_facet:"Hadrian" OR authority_facet:"Hadrian")',
   ]);
 });
 
@@ -945,6 +949,77 @@ test('lookupById on BIGR fetches the NUDS record for the citation, and an unread
   const other = await lookupById('pella', 'price.23', { fetchImpl: fakeFetch({ 'pella/id/price.23.jsonld': fixture('pella-price-23.jsonld') }), cache: new Map() });
   assert.equal(other.status, 'ok');
   assert.equal(Object.hasOwn(other.card, 'bop'), false);
+});
+
+test('a typed ruler and number that OCRE files elsewhere retries once on the portrait facet, and opens the coin the card can explain', async () => {
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  // The section search finds nothing (RIC files Titus as Caesar under Vespasian); only the facet search answers.
+  const routes = () => ({ 'portrait_facet': fixture('ocre-search-titus-972.xml'), 'ocre/apis/search': '<feed></feed>',
+    'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'), 'nomisma.org/id/titus.jsonld': titus });
+  const fetchImpl = fakeFetch(routes());
+  const typed = { catalogue: 'RIC', volume: 'II, Part 1 (2nd edition)', section: 'Titus', number: '972' };
+  const result = await lookupType(typed, { fetchImpl, cache: new Map([['vespasian', 'Vespasian']]) });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.label, 'RIC II, Part 1 (second edition) Vespasian 972');
+  // The 0.24 line is what explains the other ruler, so it must be there.
+  assert.equal(filingNote(result.card), 'Portrait of Titus, listed under Vespasian.');
+  const searches = fetchImpl.calls.filter((url) => url.includes('/apis/search'));
+  assert.equal(searches.length, 3);
+  const facets = '(typeNumber:"972" OR typeNumber:972_*) AND (portrait_facet:"Titus" OR authority_facet:"Titus") AND "RIC II, Part 1 (second edition)"';
+  assert.equal(searches[2], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(facets)}`);
+  // The same retry from Any volume, where the typed ruler is a title word instead.
+  const any = fakeFetch(routes());
+  assert.equal((await lookupType({ ...typed, volume: '' }, { fetchImpl: any, cache: new Map([['vespasian', 'Vespasian']]) })).card?.id, 'ric.2_1(2).ves.972');
+  assert.equal(any.calls.filter((url) => url.includes('/apis/search')).length, 2);
+});
+
+test('a portrait-facet hit the card cannot explain is offered, never opened, and a retry that finds nothing keeps the original miss', async () => {
+  // No portrait label resolves, so the card would say nothing about the other ruler: the collector chooses instead.
+  const fetchImpl = fakeFetch({ 'portrait_facet': fixture('ocre-search-titus-972.xml'), 'ocre/apis/search': '<feed></feed>',
+    'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld') });
+  const typed = { catalogue: 'RIC', volume: 'II, Part 1 (2nd edition)', section: 'Titus', number: '972' };
+  assert.deepEqual(await lookupType(typed, { fetchImpl, cache: new Map([['vespasian', 'Vespasian']]) }), {
+    status: 'candidates', corpus: 'ocre', query: 'RIC II, Part 1 (second edition) Titus 972', partial: true,
+    candidates: [{ id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' }],
+  });
+  const empty = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  assert.deepEqual(await lookupType(typed, { fetchImpl: empty, cache: new Map() }),
+    { status: 'none', corpus: 'ocre', query: 'RIC II, Part 1 (second edition) Titus 972' });
+  assert.equal(empty.calls.length, 3);
+  // A mint section (RIC VI–IX) and a catalogue without sections at all never make the extra request.
+  const mint = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Antioch', number: '99999' }, { fetchImpl: mint, cache: new Map() });
+  assert.equal(mint.calls.filter((url) => url.includes('portrait_facet')).length, 0);
+});
+
+test('a portrait hit whose own portrait is a third ruler is offered, never opened under the name that was asked for', async () => {
+  // OCRE's portrait_facet carries reverse portraits too, so a Domitian search can match a coin RIC files under Vespasian whose obverse is Titus.
+  // The card would explain itself — "Portrait of Titus, listed under Vespasian." — without ever naming Domitian, so it is offered instead.
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  const fetchImpl = fakeFetch({ 'portrait_facet': fixture('ocre-search-titus-972.xml'), 'ocre/apis/search': '<feed></feed>',
+    'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'), 'nomisma.org/id/titus.jsonld': titus });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: 'Domitian', number: '972' },
+    { fetchImpl, cache: new Map([['vespasian', 'Vespasian']]) }), {
+    status: 'candidates', corpus: 'ocre', query: 'RIC Domitian 972', partial: true,
+    candidates: [{ id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' }],
+  });
+});
+
+test('a failed portrait retry leaves the miss standing, and a section naming two people never makes the request', async () => {
+  // The retry is a second chance, so its own failure must not turn a clean "not found" into "couldn't reach numismatics.org".
+  const thrown = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  let attempts = 0;
+  const failing = async (url, options) => {
+    if (url.includes('portrait_facet')) { attempts += 1; throw new TypeError('Failed to fetch'); }
+    return thrown(url, options);
+  };
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: 'Titus', number: '9999' }, { fetchImpl: failing, cache: new Map() }),
+    { status: 'none', corpus: 'ocre', query: 'RIC Titus 9999' });
+  assert.equal(attempts, 1);
+  // No facet holds "Leo II and Zeno", so asking for one would spend a request that cannot answer.
+  const pair = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: 'Leo II and Zeno', number: '3' }, { fetchImpl: pair, cache: new Map() })).status, 'none');
+  assert.equal(pair.calls.filter((url) => url.includes('portrait_facet')).length, 0);
 });
 
 test('rulers from a lot text search OCRE portrait and authority facets without a section filter, and one kept hit is the type', async () => {

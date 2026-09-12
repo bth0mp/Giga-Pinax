@@ -551,8 +551,9 @@ function pickRic(xml, reference) {
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
 // hold OCRE's names: "Gaius/Caligula" whole (either half finds nothing), and Claudius Gothicus as "Claudius II Gothicus".
 const FACET_NAMES = Object.freeze({ 'Claudius Gothicus': 'Claudius II Gothicus' });
+const facetName = (name) => phrase(FACET_NAMES[squash(name)] ?? String(name ?? ''));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
-  .map((name) => phrase(FACET_NAMES[name] ?? String(name ?? ''))).filter(Boolean))];
+  .map(facetName).filter(Boolean))];
 
 // A RIC number with rulers read from a lot text: the facets already tie each hit to a ruler, and a Titus-as-Caesar coin sits in the Vespasian
 // section, so pickRic runs without a section and one kept hit is the type, as pickRic decides it (a volume typed another way, "RIC I", is still only
@@ -562,6 +563,14 @@ async function pickRulers(reference, rulers, feed) {
   if (picked.status !== 'none') return picked;
   const retry = pickRic(await feed(ricSearch(reference)), reference);
   return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+}
+
+// The same search lot text makes, for a ruler typed into the guided field instead: the number with that name on OCRE's portrait and authority facets,
+// and no section filter, which would throw the hits away again. Only a name RIC heads a ruler section with is worth asking for — a mint section
+// (RIC VI–IX) has no portrait behind it — and the typed volume still narrows it.
+async function pickPortrait(reference, feed) {
+  const anyRuler = { ...reference, section: '' };
+  return pickRic(await feed(ricSearch(anyRuler, [facetName(reference.section)])), anyRuler);
 }
 
 export async function lookupType(reference, options = {}) {
@@ -599,8 +608,27 @@ export async function lookupType(reference, options = {}) {
       picked = pickMatch(await search(`"${query}"`), query);
       if (picked.status !== 'ok') picked = pickMatch(inGroup(await search(query), corpus, reference), query);
     }
+    // A typed ruler and number that OCRE files under another emperor (Titus as Caesar under Vespasian) finds nothing by section, so ask the portrait
+    // facet once before giving up — the answer the lot path has always had. Only its hits are taken: anything else leaves the original miss standing.
+    // A section naming two people ("Leo II and Zeno") is skipped: no facet holds one, so the request could only ever come back empty.
+    let byPortrait = false;
+    if (picked.status === 'none' && corpus === 'ocre' && rulers.length === 0 && namesASection(phrase(reference.section)) && !/\band\b/i.test(reference.section)) {
+      // A second chance never downgrades the answer already in hand: a 5xx or a dropped connection here leaves the miss standing rather than turning a
+      // clean "not found" into "couldn't reach numismatics.org".
+      try {
+        const retried = await pickPortrait(reference, feed);
+        if (retried.status === 'ok' || retried.status === 'candidates') { picked = retried; byPortrait = true; }
+      } catch { /* the miss already in hand stands */ }
+    }
     if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
-    return await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
+    const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
+    // A coin from another ruler opens only when the card says why it is filed there AND the portrait it names is the ruler that was typed: the portrait
+    // facet carries reverse portraits too, so a hit can be a third ruler's coin whose obverse happens to head the section. Anything else is offered.
+    const typed = [reference.section, facetName(reference.section)].map((name) => norm(squash(name)));
+    if (byPortrait && found.status === 'ok' && (!filingNote(found.card) || !typed.includes(norm(found.card.portrait)))) {
+      return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+    }
+    return found;
   } catch {
     return { status: 'network' };
   } finally {

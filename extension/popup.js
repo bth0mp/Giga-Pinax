@@ -27,6 +27,7 @@ const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306 with Ner
 const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
+const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -46,6 +47,40 @@ let lotPick = 0;
 // replace it before a screen reader speaks it; clearOutput() drops it, so only the lookup run() is handed it keeps it.
 let lotNote = '';
 const announce = (message) => { $('announcement').textContent = [lotNote, message].filter(Boolean).join(' '); };
+// Look up belongs to the Reference box. The guided fields start from a stored or example number the tool filled in itself ("Price 23"), so they
+// answer for a lookup only once the collector has chosen a catalogue or edited them on purpose; until then an empty box looks nothing up.
+let guidedTouched = false;
+
+// The form, a Recent row and the card together are taller than the popup, so the answer usually arrives below the fold and pressing Look up looks like
+// nothing happened. reveal() brings the top of the answer into view; his own scrolling wins, since the panel having moved since the lookup began means
+// he moved it. Errors never scroll: they belong beside the box he typed in.
+const scroller = document.querySelector('.popup-scroll');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let restingScroll = 0;
+const markScroll = () => { restingScroll = scroller.scrollTop; };
+// The card grows after it is shown - Recent renders under it, then the prices panel arrives a second later - and until it does there may be nothing to
+// scroll at all, so the answer is revealed again as it settles. Timers, not requestAnimationFrame: a popup whose window is not being painted never runs
+// an animation frame, and the answer must still be where he can see it when he looks.
+const revealAgain = (id) => { for (const wait of [0, 60, 400]) setTimeout(() => reveal(id), wait); };
+// His own scrolling wins: the panel having moved since the lookup began means he moved it. Errors never scroll - they belong beside the box he typed in.
+function reveal(id) {
+  const view = scroller.getBoundingClientRect();
+  const box = $(id).getBoundingClientRect();
+  // Nothing to do once the answer starts at the top of the panel, which is also what stops the later passes from fighting the first.
+  if (scroller.scrollTop !== restingScroll || box.top <= view.top + 8) return;
+  $(id).scrollIntoView({ block: 'start', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+  // Where the panel now rests is where we put it, or the next pass reads our own scroll as his and never moves.
+  scroller.addEventListener('scrollend', markScroll, { once: true });
+  setTimeout(markScroll, 700);
+}
+
+// A change the tool made to the guided fields by itself: shown under those fields for everyone, and said once — #ric-note is no live region, so a
+// screen reader hears the announcement alone. It lasts until the next edit.
+function ricChanged(message) {
+  $('ric-note').textContent = message;
+  $('announcement').textContent = message;
+}
+const clearRicNote = () => { $('ric-note').textContent = ''; };
 
 // Read once per popup; get reads memory and set writes the whole object back. Missing, corrupt or unwritable storage leaves an in-memory cache.
 function readLabels() {
@@ -127,6 +162,10 @@ function updateFields() {
   // The Ruler/King input suggests every RIC ruler and mint, or the BIGR kings for Bop, one new Option each, never markup.
   $('ric-section').placeholder = isBop ? 'Any king' : 'Any ruler';
   $('section-options').replaceChildren(...(isBop ? BIGR_KINGS : RIC_RULERS).map((name) => new Option(name, name)));
+  // The note goes with the fields it explains: only RIC can ever write one, so Bop drops the reserved line instead of holding a blank it cannot fill,
+  // and any refill of the fields — a chip, a chosen candidate, a card — drops the line written about the fields it replaced.
+  $('ric-note').hidden = !isRic;
+  clearRicNote();
   $('reference-label').textContent = REFERENCE_LABEL[catalogue];
   $('reference-help').textContent = REFERENCE_HELP[catalogue];
 }
@@ -191,6 +230,9 @@ function clearOutput() {
   $('reference-number').removeAttribute('aria-invalid');
   $('quick-reference').removeAttribute('aria-invalid');
   $('announcement').textContent = '';
+  // A note about the fields as they were must not outlive a lookup that rewrites them. Both writers announce after their own clearOutput(), so this
+  // never erases a line just written.
+  clearRicNote();
   lotNote = '';
   currentCard = null;
   clearPrices();
@@ -266,6 +308,7 @@ function renderCard(card) {
   updateCoinArchivesLink(card);
   $('result').hidden = false;
   announce(announcement(card));
+  revealAgain('result');
 }
 
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
@@ -282,6 +325,10 @@ function renderCandidates(candidates, corpus, partial) {
       $('quick-reference').value = '';
       const parsed = parseReference(title);
       if (parsed) { fillFields(parsed); savePreferences(); }
+      // The list this row sits in is about to be hidden with the row still in it, which drops focus to the body and restarts the next Tab at the top of
+      // the popup; renderRecent keeps focus on a chip, and this keeps it on the box the choice came from.
+      // preventScroll: without it the box is scrolled back into view, only for the card below to scroll away from it again — two movements for one click.
+      $('quick-reference').focus({ preventScroll: true });
       run(() => lookupById(corpus, id, { cache: labelCache }));
     });
     item.append(button);
@@ -289,6 +336,7 @@ function renderCandidates(candidates, corpus, partial) {
   }));
   $('candidates').hidden = false;
   announce(`${candidates.length} possible matches. Choose one.`);
+  revealAgain('candidates');
 }
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
@@ -335,6 +383,7 @@ function showLot(text) {
   const { references, rulers } = findReferences(text);
   clearOutput();
   clearLot();
+  markScroll();
   if (references.length === 0) { showError(NO_REFERENCES_MESSAGE, 'quick-reference'); return; }
   const buttons = references.map((found) => {
     const button = document.createElement('button');
@@ -353,7 +402,9 @@ function showLot(text) {
   const count = `${references.length} ${references.length === 1 ? 'reference' : 'references'} found in this text.`;
   $('announcement').textContent = count;
   const typed = references.flatMap((found, index) => (found.typed ? [index] : []));
+  // The list is the answer only when it waits for a pick; a single type opens at once, and its card is what to bring into view.
   if (typed.length === 1) openLotReference(references[typed[0]], rulers, buttons[typed[0]], count);
+  else revealAgain('lot-refs');
 }
 
 function renderRecent() {
@@ -490,6 +541,7 @@ function showPricesError(message) {
 
 async function run(perform, note = '') {
   clearOutput();
+  markScroll();
   lotNote = note;
   const id = ++requestId;
   setBusy(true);
@@ -554,7 +606,7 @@ async function runPrices(term, currency, { remember = true } = {}) {
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId) return;
-  if (outcome.status === 'ok') renderPrices(outcome.lots, currency, term);
+  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term); revealAgain('result'); }
   else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
@@ -591,6 +643,8 @@ function showStored() {
   fillRicFields(preferences.volume, preferences.section);
   updateFields();
   renderRecent();
+  // What is shown here is what was stored, not what he has just typed in.
+  guidedTouched = false;
 }
 showStored();
 applyStoredTheme();
@@ -619,7 +673,17 @@ $('quick-reference').addEventListener('keydown', (event) => {
   $('quick-reference').value = step.text;
   $('quick-reference').setSelectionRange(step.text.length, step.text.length);
 });
-$('quick-reference').addEventListener('input', () => { recalled = -1; clearLot(); });
+// Typing in the box answers a refusal that asked for exactly this, so the red line and the invalid mark go at the first keystroke. Not clearOutput():
+// that would tear down a card still being read and cancel a lookup in flight.
+$('quick-reference').addEventListener('input', () => {
+  recalled = -1;
+  clearLot();
+  clearRicNote();
+  $('form-error').hidden = true;
+  $('form-error').textContent = '';
+  $('quick-reference').removeAttribute('aria-invalid');
+  $('reference-number').removeAttribute('aria-invalid');
+});
 // A lot description pasted from a dealer page arrives in lines; the one-line box takes it with each break as ". " (oneLine: a break still ends the
 // reference above it), up to its 3,000 characters (setRangeText ignores maxlength, so the room is cut here), and the input event does what typing would.
 $('quick-reference').addEventListener('paste', (event) => {
@@ -637,6 +701,9 @@ $('quick-reference').addEventListener('paste', (event) => {
 // section it lacks; Bop from its default king and number, keeping the hidden volume.
 $('catalogue').addEventListener('change', () => {
   const catalogue = $('catalogue').value;
+  // Choosing a catalogue is a deliberate move into the guided fields, which then answer for Look up with an empty Reference box.
+  guidedTouched = true;
+  clearRicNote();
   $('quick-reference').value = '';
   $('reference-number').value = DEFAULT_NUMBER[catalogue];
   if (Object.hasOwn(DEFAULT_SECTION, catalogue)) fillRicFields(catalogue === 'RIC' ? RIC_VOLUMES[0].value : $('ric-volume').value, DEFAULT_SECTION[catalogue]);
@@ -661,12 +728,14 @@ $('ric-volume').addEventListener('change', () => {
   const volumes = volumesOf(ruler);
   if (RIC_VOLUMES.some((option) => option.value === volume) && volumes.length > 0 && !volumes.includes(volume)) {
     $('ric-section').value = '';
-    $('announcement').textContent = `Ruler cleared: ${ruler.trim()} is not in ${$('ric-volume').selectedOptions[0].label}.`;
+    ricChanged(`Ruler cleared: ${ruler.trim()} is not in ${$('ric-volume').selectedOptions[0].label}.`);
   }
   savePreferences();
 });
 $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;
+  guidedTouched = true;
+  clearRicNote();
   $('quick-reference').value = '';
   clearOutput();
   clearLot();
@@ -677,7 +746,7 @@ $('reference-form').addEventListener('input', (event) => {
     const volume = volumeFor(visible('ric-section'), $('ric-volume').value);
     if (volume !== $('ric-volume').value) {
       $('ric-volume').value = volume;
-      $('announcement').textContent = `Volume set to ${$('ric-volume').selectedOptions[0].label}.`;
+      ricChanged(`Volume set to ${$('ric-volume').selectedOptions[0].label}.`);
     }
   }
   savePreferences();
@@ -689,6 +758,9 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
   // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.
   if (isLot($('quick-reference').value)) { showLot($('quick-reference').value); return; }
+  // The button sits beside the Reference box, so an empty box looks up nothing: the stored or example number below it was never typed, and looking it
+  // up would open a coin nobody asked about. Fields the collector has chosen or edited himself still answer for it.
+  if (!$('quick-reference').value.trim() && !guidedTouched) { clearOutput(); showError(EMPTY_QUICK_MESSAGE, 'quick-reference'); return; }
   clearLot();
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
