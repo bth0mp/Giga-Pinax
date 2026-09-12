@@ -584,3 +584,57 @@ area, for keys we already have. It should lead 0.26.
 
 Numbers in this area are also not plain digits: letter-code numbers (`Fishman-7A`, `M54`, `HS27`, `LH4`), dotted numbers (`21.1.158`), variant suffixes
 (`GH 61v4`), and glued `var`. Any key added here needs a number shape that admits them, or it will read the key and drop the number.
+
+## Appendix 2: forty names checked against real dealer text
+
+From a pass over CNG, Leu, Nomos, Künker, Gorny & Mosch, Stephen Album, Chris Rudd, Baldwin's, NumisBids, biddr, Zeno, WildWinds and the ANS. Two
+findings reshape this plan; the rest are mechanics we should encode whatever we add.
+
+### Eight names are not the string a dealer writes
+
+Keying on the author gets near-zero recall on these, because the trade cites the work, not the writer:
+
+| We would have added | What dealers actually write |
+| --- | --- |
+| Schindel | `SNS` (and never `Sch-`: 19 of 20 corpus hits are Scholten) |
+| Lorber | `CPE`, bronze `CPE B454` |
+| Ziegaus | `Flesche` / `Slg. Flesche` — the collection, not the author |
+| Castelin (Swiss volume) | `SLM` |
+| Rudd | `ABC` — and Chris Rudd Ltd is a dealer, so in a 50-lot Celtic sale "Rudd" appeared 15 times and **none** were references |
+| Rosenfield / Jongeward & Cribb | `ANS Kushan` |
+| Gitler | `Gitler & Tal`, never bare |
+| Delestrée | `DT` |
+
+Three more are never followed by a number at all: **Kinns** (always a page), **Topalov** (title, then `p. 337, 7`), **Zambaur** (a mint-and-date index —
+zero lot hits anywhere; a `Zambaur \d+` rule would fire only on mistakes).
+
+### The dangerous ones, with the sentence that proves it
+
+- **Miles** — the worst of the forty. An ordinary English word, and a NumisBids search for it returns Greek electrum on the *Lydo-Milesian standard*,
+  not Islamic coins at all. Also "ex Miles collection".
+- **Pere** — the Catalan kings. `Pere III (1336-1387). Barcelona. Croat.` would be read as Pere 1336. (0.23's year rule catches the bare year; the
+  bracketed reign date is what to watch.)
+- **Van Arsdell's `VA`** — `Alexandria, VA 22314`. Capping the main number at four digits kills it, since ZIP codes are five.
+- **Vives** — `Prieto y Vives` is a different catalogue entirely, and Spanish banknotes carry "Luis Vives".
+- **Goodwin** — only half its hits are references, and a grade follows the name verbatim: `Goodwin, VF, RRR`.
+- **Hurter** — an English noun, and Silvia Hurter ran Bank Leu, so her name is a cataloguer, an editor and a pedigree.
+- **Ashton**, **Konuk** (Turkish for "guest"), **Kellner** (German for "waiter"), **Damali** (Turkish for "checkered"), **GH** (the Ghanaian cedi).
+
+### Mechanics worth encoding whatever we add
+
+- **A dash where a digit belongs means "not in this reference"** — `VA-`, `ABC-`, `Flesche -.`, `SLM -.`, `SNS--`, `Cribb---`. In one Chris Rudd sale
+  `VA-,` appears fourteen times. Each is a row we must never list.
+- **The separator is the house's, not the catalogue's**: hyphen at Stephen Album (`Pieper-2753`), space at CNG and Leu, **dot** at the museums
+  (`Paruck.285`, `Klat.587b`, `Vondrovec.001A`), **colon** at some (`SNAT-XIVc:336`).
+- **A word often sits between name and number**: `Em.` (Bodenstedt), `Type`/`Typ`, `Class`, `Pl.`, `p.`, `& Tal`, and `vergl.`/`vgl.` meaning compare.
+- **A Roman numeral means four different things** — volume, group, plate or class, depending on the catalogue.
+- **A grade token straight after a name is never a number**: VF, VG, XF, EF, UNC, MS, RRR.
+- **`ex `, `Ex `, `Slg. ` or "From the ... Collection" in front of a surname means provenance**, not a reference. That one rule kills most bad Rudd,
+  Evans, Hurter and Miles hits.
+- **A hyphen is not always a range**: `VA 620-7` is a sub-number, `Paulsen 620-628` and `Regling 166-167` are ranges.
+
+### What this does to the plan
+
+The three names it clears as genuinely safe — **Bodenstedt**, **Desneux**, **Klat**, plus **Vondrovec** and **SNAT** — are already in the recommended
+set. What it removes is the temptation to add the other side of the list. And it confirms the appendix-1 conclusion: the separator and negative-citation
+rules are worth more than the names, because they apply to every key already in the file.
