@@ -64,3 +64,15 @@ Then: `Price realized 1,200 CHF`, `Aureo & Calicó 300, lot 45` → `Calico 300`
 4. Show the coin and its thumbnail in the sales list.
 5. Flag outliers in the median (1.5×IQR, the quartiles are already computed).
 6. Remember the last price check per Recent chip.
+
+## Tick 3 (02:0x-) — 0.23 reading fixes
+
+Shipped `65802a9`. The audit's own advice was overruled on one point: it asked for any 1500-2100 number after a key to be refused as a year, which would
+have thrown away real coins (Price runs past 3900; Sear, Hendin, Svoronos and SNG Copenhagen all have numbers in that range). Evidence decides instead,
+and with none the reference is kept — a stray prices-only row costs the collector less than a lost reference.
+
+The review round earned its keep: 15 confirmed findings, most of them regressions the implementer's own tests missed, and the recheck found five more.
+The high one was mine to fix — the name guard lived inside a case-insensitive pattern, so `17.21 g, 8 h. Sear 2537` read the die axis as a forename's
+initial and dropped Sear. Fixed by reading both name guards case-sensitively outside the key pattern, where a capital really is a capital.
+
+**Next:** 0.24, the "listed under Vespasian" label (plan already written), then the 102 unread catalogue names from the round-2 audit.
