@@ -115,3 +115,19 @@ it costs no serial time; worth skipping if the request budget ever matters.
 Two candidates died on contact with the real code: `Albert` breaks the repo's own 0.23 test (`SAXONY. Albert 1485-1500` becomes a row), and `Cribb` steals `Jongeward & Cribb 123` unless it carries the co-author guard. `Callataÿ` reads the wrong number from its real citation form. All reproduced, none argued.
 
 About 10 lines in `lot.js` and 70 in tests.
+
+## Tick 5 (05:0x-) — 0.25 the first ten seconds
+
+Shipped `6892e4a`. Two things worth remembering from this one.
+
+**The audit was wrong about its own headline case.** It reported that typed `Titus 972` errors while the lot path finds Vespasian 972. Run live against
+OCRE at both 0.24 and 0.25, a typed `Titus 972` already offers Vespasian 972 as a one-row choice. The retry still earns its place for a real miss, and
+it never opens another ruler's coin unless 0.24's line explains it and the portrait is the ruler that was typed - but the docs now say what happens,
+not what the audit assumed. Run the premise, not just the fix.
+
+**The verification pane never paints, so it cannot see a smooth scroll.** `requestAnimationFrame` never fires there and `scrollIntoView({behavior:
+'smooth'})` moves nothing, while `'auto'` works. The reveal is now scheduled on timers rather than animation frames - which is right anyway, since a
+popup that is not being painted should still put the answer where he will see it - and the browser check forces `'auto'` to measure the result. Before:
+the card's top sat 455 px into a 498 px panel. After: the panel scrolls to it and the heading is in view.
+
+**Next:** 0.26, and the separator shapes (`Pieper-2753`, `Deyell # 8a`) lead it, ahead of the 26 keys.
