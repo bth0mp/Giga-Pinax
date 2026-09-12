@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -986,4 +986,30 @@ test('Krause\'s Y# is the KM family, normalised the same way, so one number is o
   assert.equal(kmNumber('KM# 123.2a'), 'KM# 123.2a');
   assert.equal(kmNumber('KM 123'), 'KM# 123');
   for (const text of ['Y31', 'SY 31', 'Yeoman 31', 'Scholten 782']) assert.equal(kmNumber(text), null, text);
+});
+
+// A sentence is not a reference (0.22): prose has nothing prices.js can search, so the Reference box says so instead of showing a prices-only card.
+test('an Other reference whose every part is too long to be a citation is not read', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  assert.equal(parseReference('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago, bought in Vienna'), null);
+  assert.equal(parseReference('bought in Vienna in 2014 from a dealer I no longer remember'), null);
+  for (const text of ['BCD Boiotia 174b; HGC 4, 1218', 'SNG von Aulock 8305', 'Sylloge Nummorum Graecorum Copenhagen 123', 'RPC I 1234; SNG Cop 5']) {
+    assert.deepEqual(parseReference(text), other(text), text);
+  }
+  assert.deepEqual(parseReference('German States Rostock KM# 123'), other('German States Rostock KM# 123'));
+  // One short part carries the reference, whatever prose stands beside it; a trailing remark is the reference's, not its own words.
+  assert.deepEqual(parseReference('a very long sentence of eight words here; HGC 4, 1218'), other('a very long sentence of eight words here; HGC 4, 1218'));
+  assert.deepEqual(parseReference('BCD Boiotia 174b (this coin, ex Berk 1991)'), other('BCD Boiotia 174b (this coin, ex Berk 1991)'));
+});
+
+// A group lot cites several numbers under one key, and that run is one citation, not prose: the words are counted with the run collapsed.
+test('a citation listing several numbers under one catalogue is still read', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const text of ['SNG von Aulock 5960, 5961, 5962, 5963, 5964, 5965, 5966', 'SNG Copenhagen 12, 13, 14, 15, 16, 17', 'Svoronos pl. 20, 1, 2, 3, 4, 5, 6', 'HGC 4, 1218, 1219, 1220, 1221, 1222, 1223']) {
+    assert.equal(searchablePart(text), true, text);
+    assert.deepEqual(parseReference(text), other(text), text);
+  }
+  // Prose is alphabetic where a run of numbers is not, so it is still refused, and so is a sentence that ends on a number.
+  assert.equal(searchablePart('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago'), false);
+  assert.equal(searchablePart('a lovely old cabinet piece bought in Vienna in 2014'), false);
 });

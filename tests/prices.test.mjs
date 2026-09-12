@@ -549,3 +549,57 @@ test('a KM reference links to CoinArchives world section in plain words', () => 
   assert.equal(coinArchivesUrl('Netherlands KM 123', 'w'), 'https://www.coinarchives.com/w/results.php?search=Netherlands%20KM%20123&s=0');
   assert.equal(coinArchivesUrl('Crawford 44/5'), 'https://www.coinarchives.com/a/results.php?search=Crawford%2044%2F5&s=0');
 });
+
+// Y# (0.22): the same Krause family as KM, so it searches modern coins and links to the world section, in the two spellings dealers write.
+test('a Y# reference searches world coins exactly as KM does', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('Y# 31')), '("Y 31" "Y# 31")');
+  assert.equal(defaultTerm(other('Y 31')), '("Y 31" "Y# 31")');
+  assert.equal(defaultTerm(other('Y# 59.3a')), '("Y 59.3a" "Y# 59.3a")');
+  assert.equal(defaultTerm(other('Russia Y# 59.3')), 'Russia ("Y 59.3" "Y# 59.3")');
+  // A country in front is kept only when every part is Krause and names it, as for KM; the two keys mix freely.
+  assert.equal(defaultTerm(other('Russia Y# 31; Russia KM# 123')), 'Russia ("Y 31" "Y# 31" "KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('Y# 31; Scholten 782')), '("Y 31" "Y# 31" "Scholten 782")');
+  assert.equal(searchCategory(other('Y# 31')), '2');
+  assert.equal(searchCategory(other('Russia Y# 59.3')), '2');
+  assert.equal(searchCategory(other('Y# 31; KM# 123')), '2');
+  // Mixed with an ancient reference it stays in Ancients, as KM does, while the link follows the first part: Y first opens /w/, SG first /a/.
+  assert.equal(searchCategory(other('Y# 31; SG 6829')), '1');
+  assert.equal(coinArchivesSection(other('Y# 31; SG 6829')), 'w');
+  assert.equal(coinArchivesTerm(other('Russia Y# 59.3')), 'Russia Y 59.3');
+  assert.equal(coinArchivesTerm(other('Y# 31')), 'Y 31');
+  assert.equal(coinArchivesSection(other('Y# 31')), 'w');
+  assert.equal(coinArchivesSection(other('SG 6829; Y# 31')), 'a');
+});
+
+// A sentence is not a reference (0.22): a pasted description would search as one exact phrase and median unrelated lots.
+test('an Other part longer than a citation is not searched', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago, bought in Vienna')), '');
+  assert.equal(defaultTerm(other('BCD Boiotia 174b; HGC 4, 1218')), '("BCD Boiotia 174b" "HGC 4, 1218")');
+  assert.equal(defaultTerm(other('SNG von Aulock 8305')), '"SNG von Aulock 8305"');
+  assert.equal(defaultTerm(other('German States Rostock KM# 123')), 'German States Rostock ("KM 123" "Krause/Mishler 123")');
+  assert.equal(defaultTerm(other('Sylloge Nummorum Graecorum Copenhagen 123')), '"Sylloge Nummorum Graecorum Copenhagen 123"');
+  assert.equal(defaultTerm(other('RPC I 1234; SNG Cop 5')), '("RPC I 1234" "SNG Cop 5")');
+  // A short part beside prose still searches on its own, and a trailing remark is dropped before the words are counted.
+  assert.equal(defaultTerm(other('a very long sentence of eight words here; HGC 4, 1218')), '"HGC 4, 1218"');
+  assert.equal(defaultTerm(other('BCD Boiotia 174b (this coin, ex Berk 1991)')), '"BCD Boiotia 174b"');
+  assert.equal(coinArchivesTerm(other('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago')), '');
+});
+
+// A group lot cites a run of numbers under one key ("SNG von Aulock 5960, 5961, ..."): one citation, so it is searched, not counted out as prose.
+test('a citation listing several numbers under one catalogue is still searched', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  assert.equal(defaultTerm(other('SNG von Aulock 5960, 5961, 5962, 5963, 5964')), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
+  assert.equal(defaultTerm(other('HGC 4, 1218, 1219, 1220, 1221, 1222, 1223')), '"HGC 4, 1218, 1219, 1220, 1221, 1222, 1223"');
+  assert.equal(coinArchivesTerm(other('SNG Copenhagen 12, 13, 14, 15, 16, 17')), 'SNG Copenhagen 12, 13, 14, 15, 16, 17');
+});
+
+// A term saved before 0.22 for what is now prose would fetch the whole sentence again when its chip reopens, so it is dropped with the default.
+test('a remembered term is dropped when its Other reference gives no searchable part', () => {
+  const prose = { catalogue: 'Other', number: 'Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago', section: '' };
+  assert.equal(chooseTerm(prose, '"Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago"'), '');
+  // Every reference that still searches keeps the term the collector saved.
+  assert.equal(chooseTerm({ catalogue: 'Other', number: 'BCD Boiotia 174b', section: '' }, 'BCD Boiotia 174'), 'BCD Boiotia 174');
+  assert.equal(chooseTerm({ catalogue: 'RIC', section: 'Nero', number: '306' }, 'Nero denarius'), 'Nero denarius');
+});

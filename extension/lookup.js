@@ -100,6 +100,19 @@ export function kmNumber(value) {
   if (!digits) return null;
   return `${country}${key.toUpperCase()}# ${prefix.toUpperCase()}${digits}${suffix.toLowerCase()}`;
 }
+// A real citation is short: a ";" part of more words than this is prose ("Good VF, 3.21 g, 6h, lot 42, ... bought in Vienna"), which acsearch would
+// search as one exact phrase and median unrelated lots. A part still needs a letter and a digit to name anything; a trailing remark ("174b (this
+// coin)") is prices.js's to drop, so it is dropped here too and its words go uncounted. prices.js filters the card's parts by the same rule, so the
+// card, its search term and this box's error always agree.
+const MAX_PART_WORDS = 7;
+// A group lot cites several numbers under one key ("SNG von Aulock 5960, 5961, 5962, 5963, 5964", "HGC 4, 1218, 1219, 1220"): that trailing run is one
+// citation, so it counts as one word. Prose is alphabetic where the run is not, so it is still counted whole and refused.
+const oneCitation = (text) => text.replace(/(\d[\w.\/-]*)(?:\s*,\s*\d[\w.\/-]*)+$/, '$1');
+export const searchablePart = (part) => {
+  const text = squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1');
+  return /\p{L}/u.test(text) && /\d/.test(text) && oneCitation(text).split(' ').length <= MAX_PART_WORDS;
+};
+
 // An Other text with its SG and KM parts in those spellings; any other text is kept as it is.
 const otherPart = (part) => sgNumber(part) ?? kmNumber(part);
 const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some(otherPart) ? parts.map((part) => otherPart(part) ?? part).join('; ') : value);
@@ -116,7 +129,7 @@ export function parseReference(text) {
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
-  return /\p{L}/u.test(value) && /\d/.test(value) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
+  return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
 // One reference, read by the rules of the catalogues that have type data, or null.

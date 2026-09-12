@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { defaultTerm } from '../extension/prices.js';
 
 const LOTS = [
   'TITUS, AD 69-79. AR, Denarius. Rome. Obv: T CAESAR VESPASIANVS. Head of Titus, laureate, right. Rev: ANNONA AVG. Ref: RIC 972; Cohen 17; BMC 319.',
@@ -392,4 +393,22 @@ test('the word-like keys need their number straight after them, and an auction h
   assert.deepEqual(texts('Sold by Stephen Album 12. RIC 128.'), ['RIC 128']);
   assert.deepEqual(texts('Rodolfo Ratto 1234. RIC 128.'), ['RIC 128']);
   assert.deepEqual(texts('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago'), []);
+});
+
+// The word limit on an Other part (0.22) is the Reference box's rule, not the lot path's: a lot still lists every reference in its prose.
+test('a lot description with two catalogue keys still lists its references', () => {
+  const text = 'Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago. BCD Boiotia 174b; HGC 4, 1218.';
+  assert.equal(isLot(text), true);
+  assert.deepEqual(findReferences(text).references.map((found) => found.text), ['BCD Boiotia 174b', 'HGC 4, 1218']);
+  // Prose alone names no catalogue, so it is neither a lot nor a reference.
+  assert.equal(isLot('Good VF, 3.21 g, 6h, lot 42, from an old album, bought in Vienna 12 years ago'), false);
+});
+
+// A group lot's one reference is listed and can be opened: the row's term is the rule the click applies, so the two must agree.
+test('a group lot listing several numbers under one key gives a row that can be searched', () => {
+  const text = 'GREEK. Cilicia, Tarsos. Lot of 5 AR staters, 4th century BC. SNG von Aulock 5960, 5961, 5962, 5963, 5964. Fine to VF.';
+  const [found, ...rest] = findReferences(text).references;
+  assert.deepEqual(rest, []);
+  assert.equal(found.text, 'SNG von Aulock 5960, 5961, 5962, 5963, 5964');
+  assert.equal(defaultTerm(found.reference), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
 });

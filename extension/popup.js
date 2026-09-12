@@ -15,6 +15,8 @@ const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acse
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
+const ACSEARCH_HOME = 'https://www.acsearch.info/';
+const COINARCHIVES_HOME = 'https://www.coinarchives.com/';
 const EMPTY_OTHER_MESSAGE = 'Enter a reference, such as “BCD Boiotia 174b”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC 972”, “Titus 123”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
@@ -207,18 +209,22 @@ function setBusy(busy) {
   $('lookup-label').textContent = busy ? 'Looking up…' : 'Look up';
 }
 
+// A card's title stands in for an empty term, but only when the reference gives words at all: a chip stored before 0.22 from a pasted description
+// still opens its card, and searching that whole sentence as one phrase is what 0.22 stopped, so such a card searches neither site — both links
+// stay on the site's home page, as they are before a lookup.
+const cardFallbackTerm = () => (defaultTerm(currentReference()) ? currentCard?.label ?? '' : '');
+
 function updateAcsearchLink() {
-  const term = $('price-term').value.trim() || currentCard?.label || '';
+  const term = $('price-term').value.trim() || cardFallbackTerm();
   // The category follows the reference on the card, not the edited term: a Krause reference searches modern coins.
-  $('acsearch-link').href = buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(currentReference()) });
+  $('acsearch-link').href = term ? buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(currentReference()) }) : ACSEARCH_HOME;
 }
 
 // CoinArchives follows the reference on the card, never the edited acsearch term, whose quotes and brackets it can't read; only the user opens it.
-// A reference that gives no words (none reach a card today) falls back to the card's title, as the acsearch link does.
 function updateCoinArchivesLink(card) {
-  const term = coinArchivesTerm(currentReference()) || card.label;
-  $('coinarchives-link').href = coinArchivesUrl(term, coinArchivesSection(currentReference()));
-  $('coinarchives-link').setAttribute('aria-label', `Search CoinArchives for ${term}, opens a new tab`);
+  const term = coinArchivesTerm(currentReference()) || (defaultTerm(currentReference()) ? card.label : '');
+  $('coinarchives-link').href = term ? coinArchivesUrl(term, coinArchivesSection(currentReference())) : COINARCHIVES_HOME;
+  $('coinarchives-link').setAttribute('aria-label', term ? `Search CoinArchives for ${term}, opens a new tab` : 'Open CoinArchives, opens a new tab');
 }
 
 function renderCard(card) {
@@ -504,7 +510,14 @@ async function run(perform, note = '') {
     const term = $('price-term').value.trim();
     const currency = $('currency').value;
     const ticket = priceRequestId;
-    if (!term) return;
+    // A card with no term is an Other chip stored before 0.22, whose text is now prose: say why nothing is priced instead of leaving the box blank.
+    if (!term) {
+      if (outcome.card.corpus === 'other') {
+        showPricesNote(EMPTY_OTHER_MESSAGE, false);
+        announce(`Found ${outcome.card.label}. ${EMPTY_OTHER_MESSAGE}`);
+      }
+      return;
+    }
     const granted = await hasAcsearchAccess();
     if (id !== requestId || ticket !== priceRequestId) return;
     if (granted) runPrices(term, currency, { remember: false });

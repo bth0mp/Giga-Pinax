@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -83,36 +83,40 @@ function bopTerm(section, number) {
 // A reference without type data is searched as dealers cite it: each ";" reference an exact phrase ("HGC 4, 1218" also finds "HGC 4 1218", since
 // acsearch ignores the comma), several offered either-or, ("BCD Boiotia 174b" "HGC 4, 1218"). Quotes are stripped so none unbalances a phrase, and
 // brackets too, since acsearch finds nothing for a phrase holding one: a trailing remark goes whole ("174b (this coin)"), a wrapping pair leaves its
-// text. A part without a letter and a digit ("BMC –", "Rare") would only match unrelated lots, so it is left out. An SG part in any spelling takes
-// SG's, so a chip saved before 0.19 ("SG6829v") and a "v" behind a remark ("SG 6829v (this coin)") still search as Sear.
+// text. A part lookup calls unsearchable — no letter and digit ("BMC –", "Rare"), or more words than a citation has — would only match unrelated lots,
+// so it is left out; with no part left the card has no term and the guided field says so. An SG part in any spelling takes SG's, so a chip saved
+// before 0.19 ("SG6829v") and a "v" behind a remark ("SG 6829v (this coin)") still search as Sear.
 const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '').split(';')
   .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
-  .filter((part) => /\p{L}/u.test(part) && /\d/.test(part)).map((part) => sgNumber(part) ?? part);
+  .filter(searchablePart).map((part) => sgNumber(part) ?? part);
 
 // A Sear Greek part as parseReference normalises it ("SG 6829", "SG 6829 var.", "SG 6829a"); dealers write "Sear 6829" as often as "SG 6829", and a
 // variant is listed under its type's number, so both phrases go without "var.". The first group is N.
 const SG_PART = /^SG (\d+[a-uw-z]?)(?: var\.)?$/i;
 
-// A KM part as lookup normalises it ("KM# 123.2a"), with the country words a reference may keep in front ("German States Rostock KM# 123"); null when
-// the part is no Krause reference. Up to 4 letter-only words, as lookup reads them: letters in any script, or Württemberg and México would fall out
-// of the Krause path here while the card still showed them as KM.
-const KM_PART = /^((?:\p{L}+ ){0,4})(KM\b.*)$/iu;
+// A Krause part as lookup normalises it ("KM# 123.2a", "Y# 59.3"), with the country words a reference may keep in front ("German States Rostock KM#
+// 123"); null when the part is no Krause reference. Y# is the same catalogue family in the same shape, so it takes this path too, keeping its own key.
+// Up to 4 letter-only words, as lookup reads them: letters in any script, or Württemberg and México would fall out of the Krause path here while the
+// card still showed them as KM.
+const KM_PART = /^((?:\p{L}+ ){0,4})((?:KM|Y)\b.*)$/iu;
 const kmPart = (part) => {
   const [, country = '', rest] = KM_PART.exec(squash(part)) ?? [];
   const number = rest ? kmNumber(rest) : null;
-  return number ? { country: squash(country), number: number.replace(/^KM#\s*/, '') } : null;
+  const [, key, digits] = number?.match(/^(KM|Y)#\s*(.*)$/) ?? [];
+  return digits ? { country: squash(country), key, number: digits } : null;
 };
 
 // acsearch ignores the "#" ("KM# 123" and "KM 123" find the same lots) but the Krause/Mishler spelling finds German sales the "KM" one misses, so a
-// Krause part is both phrases, either-or. A country narrows a number that repeats across countries (Netherlands, Rostock and Bolivia all have a 123),
-// so it goes in front of the group — but only when every part is KM and names the same country, since acsearch ANDs the bare word with the whole
-// group: it would wrongly narrow the other catalogues' phrases, or the other country's number, too.
+// KM part is both phrases, either-or; Y is never spelled out that way, so it offers the two spellings dealers do write, "Y 31" and "Y# 31". A country
+// narrows a number that repeats across countries (Netherlands, Rostock and Bolivia all have a 123), so it goes in front of the group — but only when
+// every part is Krause and names the same country, since acsearch ANDs the bare word with the whole group: it would wrongly narrow the other
+// catalogues' phrases, or the other country's number, too.
 function otherTerm(number) {
   const parts = otherParts(number);
   const kms = parts.map(kmPart);
   const phrases = [...new Set(parts.flatMap((part, index) => {
     const km = kms[index];
-    if (km) return [`"KM ${km.number}"`, `"Krause/Mishler ${km.number}"`];
+    if (km) return km.key === 'Y' ? [`"Y ${km.number}"`, `"Y# ${km.number}"`] : [`"KM ${km.number}"`, `"Krause/Mishler ${km.number}"`];
     const sg = SG_PART.exec(part);
     return sg ? [`"Sear ${sg[1]}"`, `"SG ${sg[1]}"`] : [`"${part}"`];
   }))];
@@ -121,7 +125,7 @@ function otherTerm(number) {
   return squash(`${country} ${group}`);
 }
 
-// Only a reference whose searchable parts are all Krause is certainly modern; one mixed with an ancient catalogue stays in Ancients.
+// Only a reference whose searchable parts are all Krause (KM or Y) is certainly modern; one mixed with an ancient catalogue stays in Ancients.
 const allKm = (kms) => kms.length > 0 && kms.every(Boolean);
 export function searchCategory(reference) {
   if (reference?.catalogue !== 'Other') return '1';
@@ -143,7 +147,9 @@ export function defaultTerm({ catalogue, number, section }) {
 const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
 export function chooseTerm(reference, saved) {
   const term = squash(saved);
-  if (!term || (reference.catalogue === 'Bop' && term === oldBopTerm(reference))) return defaultTerm(reference);
+  // A term saved before 0.22 for text now read as prose is that whole sentence: it would search acsearch for it again, so it goes with the default.
+  const none = reference.catalogue === 'Other' && !defaultTerm(reference);
+  if (!term || none || (reference.catalogue === 'Bop' && term === oldBopTerm(reference))) return defaultTerm(reference);
   return term;
 }
 
@@ -157,13 +163,13 @@ export function coinArchivesTerm(reference) {
   if (reference.catalogue !== 'Other') return defaultTerm(reference);
   const [first = ''] = otherParts(reference.number);
   const km = kmPart(first);
-  if (km) return squash(`${km.country} KM ${km.number}`);
+  if (km) return squash(`${km.country} ${km.key} ${km.number}`);
   const sg = SG_PART.exec(first);
   return sg ? `Sear ${sg[1]}` : first;
 }
 
 // CoinArchives keeps world and modern coins in its own section; ancients are /a/. The section follows the part coinArchivesTerm built the link from,
-// not acsearch's stricter all-KM rule: a mixed reference opening on KM searches "KM 123", which /a/ can never hold.
+// not acsearch's stricter all-Krause rule: a mixed reference opening on KM searches "KM 123", which /a/ can never hold.
 export const coinArchivesSection = (reference) =>
   (reference?.catalogue === 'Other' && kmPart(otherParts(reference.number)[0] ?? '') ? 'w' : 'a');
 
