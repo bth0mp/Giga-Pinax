@@ -311,9 +311,11 @@ test('a plain surname counts only with its own number, so a scholar and a year i
   assert.deepEqual(texts('Tetradrachm, purchased from Ratto 1927, 345 francs. Sear 1234.'), ['Sear 1234']);
   // The citation itself still reads: its number is the whole of it.
   assert.deepEqual(texts('Judaea. Prutah. Hendin 1243. Fine.'), ['Hendin 1243']);
-  // An edition between the key and the number leaves only the ordinal, which is no reference.
-  assert.deepEqual(texts('Judaea. Prutah. Hendin 6th ed. 1243. Fine.'), []);
-  assert.deepEqual(texts('Album 3rd ed. 1234.'), []);
+  // An edition between the key and the number is read past, so the citation is the number after it, not the ordinal.
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 6th ed. 1243. Fine.'), ['Hendin 1243']);
+  assert.deepEqual(texts('Album 3rd ed. 1234.'), ['Album 1234']);
+  // An ordinal with no number after it is still no reference.
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 6th ed. Fine.'), []);
 });
 
 test('every plain surname key is guarded, so a bibliographic aside in a lot is never a reference', () => {
@@ -341,6 +343,8 @@ test('a ruler, a city and a field letter are not keys, however a number follows 
   assert.deepEqual(texts('Köln Erzbistum 12'), []);
   assert.deepEqual(texts('Germany. Köln. 1 Taler 1705. Dav. 5155.'), ['Dav. 5155']);
   assert.deepEqual(texts('Alexandria. Köln 1234. RIC 12.'), ['Köln 1234', 'RIC 12']);
+  // Nothing in the clause decides "Butcher 2004. Prieur 123." either, so that reference is kept too: a stray prices-only row is the cheaper failure.
+  assert.deepEqual(texts('A rare provincial bronze. Butcher 2004. Prieur 123.'), ['Butcher 2004', 'Prieur 123']);
   // The short Celtic keys need their number straight after them; La Tour's plate volume may come between.
   assert.deepEqual(texts('Celtic. Obv: blank. Rev: horse left, VA below 12.'), []);
   assert.deepEqual(texts('VF. Struck on a broad flan, LT in exergue 12 mm.'), []);
@@ -411,4 +415,190 @@ test('a group lot listing several numbers under one key gives a row that can be 
   assert.deepEqual(rest, []);
   assert.equal(found.text, 'SNG von Aulock 5960, 5961, 5962, 5963, 5964');
   assert.equal(defaultTerm(found.reference), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
+});
+
+test('a publication year after a key is no type number when the clause says it is a book', () => {
+  // A typed catalogue whose numbers never reach the year: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits.
+  assert.deepEqual(texts('See Crawford 1974, p. 745, for the chronology. Crawford 443/1; Sydenham 1006.'), ['Crawford 443/1', 'Sydenham 1006']);
+  assert.deepEqual(texts('Bopearachchi 1991 assigns this to Series 24. MIG 217.'), ['MIG 217']);
+  // Every other catalogue needs the evidence: a cue in front of the year, or a page, plate or verb of argument behind it.
+  const asides = [['Price 1991 dates the issue to 325 BC. Price 3949.', ['Price 3949']],
+    ['Mitchiner 1975, p. 23, illustrates a similar piece. MIG 217.', ['MIG 217']],
+    ['Sear 2000 lists this as common. RIC II 456.', ['RIC II 456']],
+    ['Svoronos 1904 pl. 12. SNG Cop 123.', ['SNG Cop 123']],
+    ['Kroll 1993 discusses the series. SNG Cop 12.', ['SNG Cop 12']],
+    ['Sydenham 1952 remains the standard. Crawford 443/1.', ['Crawford 443/1']],
+    ['Cohen 1880 lists two variants. RIC 972.', ['RIC 972']],
+    ['McClean 1923 records this. SNG Cop 12.', ['SNG Cop 12']],
+    ['DOC 1973 catalogues the type. SB 139.', ['SB 139']],
+    ['MEC 1986 covers the period. SB 139.', ['SB 139']],
+    ['Published by Sommer 1994.', []],
+    ['Attributed following Hendin 2010.', []],
+    ['See Metcalf 1995.', []],
+    ['Discussed in Walker 1956.', []],
+    ['Compare Newell 1938.', []],
+    ['Dated by Estiot 2004.', []],
+    ['Cited in Grierson 1982.', []],
+    ['Purchased from Seaby 1975. RSC 12.', ['RSC 12']],
+    ['Price 1991, p. 123. Price 3949.', ['Price 3949']],
+    ['As Price 1991 argues, the issue is late. Price 3949.', ['Price 3949']],
+    ['Hendin (2010) revised the dates. RPC I 4846.', ['RPC I 4846']]];
+  for (const [line, expected] of asides) assert.deepEqual(texts(line), expected, line);
+  // Nothing decides these, so the reference is kept: Price runs past 3900 and Hendin, Sear, Svoronos and SNG Copenhagen all number into the 1500s.
+  assert.deepEqual(texts('Alexander III. Tetradrachm. Price 1991.'), ['Price 1991']);
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 1610; TJC 234.'), ['Hendin 1610', 'TJC 234']);
+  assert.deepEqual(texts('Alexandria. Köln 1234. RIC 12.'), ['Köln 1234', 'RIC 12']);
+  // Nothing in the clause decides "Butcher 2004. Prieur 123." either, so that reference is kept too: a stray prices-only row is the cheaper failure.
+  assert.deepEqual(texts('A rare provincial bronze. Butcher 2004. Prieur 123.'), ['Butcher 2004', 'Prieur 123']);
+});
+
+test('a house sale, a certificate and a hammer price are not catalogues', () => {
+  const lines = [['Album 46, lot 1234. SICA 123.', ['SICA 123']],
+    ['Aureo & Calico 300, lot 45. RIC II 123.', ['RIC II 123']],
+    ['Freeman & Sear 15, lot 123. Crawford 443/1.', ['Crawford 443/1']],
+    ['Sear 25, lot 12. RIC 123.', ['RIC 123']],
+    ['Includes David R. Sear certificate no. 12345. RIC II 123.', ['RIC II 123']],
+    ['Estimate 500 CHF. Price realized 1,200 CHF. RIC 123.', ['RIC 123']],
+    ['Price realised: 1200 EUR. Hammer 1000. RIC 123.', ['RIC 123']]];
+  for (const [line, expected] of lines) assert.deepEqual(texts(line), expected, line);
+  // The catalogues of the same name still read where no sale, name or price is around them.
+  assert.deepEqual(texts('Umayyad Caliphate. Dirham. Album 128; SICA 1234.'), ['Album 128', 'SICA 1234']);
+  assert.deepEqual(texts('Denarius. Sear 1234; Price 3949.'), ['Sear 1234', 'Price 3949']);
+});
+
+test('one short word from a closed list may sit between a key and its number', () => {
+  const lines = [['Judaea. Prutah. Hendin 6th ed. 1243. Fine.', ['Hendin 1243']],
+    ['Judaea. Prutah. Hendin 1243 (6th ed.). Fine.', ['Hendin 1243']],
+    ['Hadrian. Tetradrachm, Alexandria. Dattari-Savio Pl. 123, 456.', ['Dattari-Savio Pl. 123, 456']],
+    ['Septimius Severus. Marcianopolis. Varbanov (Eng.) 1234.', ['Varbanov (Eng.) 1234']],
+    ['Alexandria. Tetradrachm. Recueil general 123.', ['Recueil general 123']],
+    ['Alexandria. Tetradrachm. Recueil général 123.', ['Recueil général 123']],
+    ['Indo-Scythian. Azes. Drachm. Senior ISCH 123.', ['Senior ISCH 123']],
+    ['Caracalla. Tetradrachm. Lindgren-Kovacs 123.', ['Lindgren-Kovacs 123']],
+    ['Kushan. Vima Kadphises. Jongeward & Cribb 123.', ['Jongeward & Cribb 123']],
+    ['Byzantine. Solidus. Morrisson BnF 5/Cp/AV/12.', ['Morrisson BnF 5/Cp/AV/12']],
+    ['Trajan. Denarius. Hunter, vol. III, 45.', ['Hunter III, 45']],
+    ['Byzantine. Solidus. Fueg I.A.1.', ['Fueg I.A.1']],
+    ['Islamic. Diler Ab-123.', ['Diler Ab-123']]];
+  for (const [line, expected] of lines) assert.deepEqual(texts(line), expected, line);
+  // Only a word from the list: any word at all would undo the sale and name guards.
+  assert.deepEqual(texts('Price realized 1,200 CHF.'), []);
+  assert.deepEqual(texts('MONACO. Albert II. 2 Euro 2007.'), []);
+  assert.deepEqual(texts('Hunter Coin Cabinet, Glasgow. RIC 128.'), ['RIC 128']);
+});
+
+test('provenance cuts its own sentence, so the references written after it are still read', () => {
+  const lines = [['Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.', ['RIC 972', 'Cohen 17']],
+    ['From the Sunrise Collection. Gobl I/1; SNS II 12.', ['Gobl I/1', 'SNS II 12']],
+    ['From the Weber Collection, part II. SNG ANS 123.', ['SNG ANS 123']],
+    ['Ex Hunter duplicates. RIC II 45.', ['RIC II 45']],
+    ['Provenance: Gorny & Mosch 250. RIC II 45; BMC 12.', ['RIC II 45', 'BMC 12']],
+    ['Ex CNG 105, lot 123. Ex NAC 50, lot 4. RIC 972.', ['RIC 972']]];
+  for (const [line, expected] of lines) assert.deepEqual(texts(line), expected, line);
+  // Provenance after the references still takes nothing with it.
+  assert.deepEqual(texts('RIC 972; Cohen 17. Ex Leu 4, 25 May 1972, lot 123.'), ['RIC 972', 'Cohen 17']);
+  assert.deepEqual(texts('RIC 972. From the Smith Collection, RIC 1'), ['RIC 972']);
+});
+
+test('the de-accented spellings are keys as their accented ones are, and Noe is one', () => {
+  assert.deepEqual(texts('Alexandria. Koln 1234. RIC 12.'), ['Koln 1234', 'RIC 12']);
+  assert.deepEqual(texts('Syracuse. Tetradrachm. Bohringer 411; SNG ANS 12.'), ['Bohringer 411', 'SNG ANS 12']);
+  assert.deepEqual(texts('Metapontum. Nomos. Noe 322; HN Italy 1234.'), ['Noe 322', 'HN Italy 1234']);
+});
+
+test('the name guard wants a name, so a conjunction, a mintmark or a regnal numeral is not one', () => {
+  // "&" and "and" join two references as often as they join a firm's two partners: what tells them apart is a word, never a number, in front.
+  const joined = [['Titus. Denarius. RIC 972 and Cohen 17.', ['RIC 972', 'Cohen 17']],
+    ['Nero. AE As. RIC I 543 and BMCRE 380. Fine.', ['RIC I 543', 'BMCRE 380']],
+    ['Augustus. RIC 207 & BMC 12.', ['RIC 207', 'BMC 12']],
+    ['Titus. RIC II 972 & RSC 123.', ['RIC II 972', 'RSC 123']],
+    ['Roman Republic. Crawford 443/1 and Sydenham 1006.', ['Crawford 443/1', 'Sydenham 1006']],
+    ['Judaea. Prutah. Hendin 1243 & TJC 234.', ['Hendin 1243', 'TJC 234']],
+    ['Alexandria. Emmett 838 & Dattari 5678.', ['Emmett 838', 'Dattari 5678']]];
+  for (const [line, expected] of joined) assert.deepEqual(texts(line), expected, line);
+  // Ordinary lot furniture ends in a single letter and a full stop; none of it is a forename's initial.
+  const furniture = [['Constantius II. AE3. Siscia, officina B. RIC VIII 123; LRBC 1000.', ['RIC VIII 123', 'LRBC 1000']],
+    ['Honorius. Solidus. Mintmark R. RIC X 1205.', ['RIC X 1205']],
+    ['Nero. Bronze Æ. RIC 543.', ['RIC 543']],
+    ['Titus. AE. Rev: S C. RIC 543.', ['RIC 543']],
+    ['Antioch. Series A. Prieur 1234.', ['Prieur 1234']],
+    ['Philip I. RIC 12.', ['RIC 12']],
+    ['Seleukid Kingdom. Antiochos I. SC 322.', ['SC 322']],
+    ['RPC I. Sear 12.', ['Sear 12']]];
+  for (const [line, expected] of furniture) assert.deepEqual(texts(line), expected, line);
+  // The names themselves still drop.
+  assert.deepEqual(texts('Includes David R. Sear certificate no. 12345. RIC II 123.'), ['RIC II 123']);
+  assert.deepEqual(texts('Aureo & Calico 300. RIC II 123.'), ['RIC II 123']);
+  assert.deepEqual(texts('Freeman & Sear 15. Crawford 443/1.'), ['Crawford 443/1']);
+});
+
+test('the evidence for a book is in the reference\u2019s own clause, not the sentence before it', () => {
+  // "As" is the commonest Roman bronze denomination as well as a citation cue, so a cue across a full stop is no cue at all.
+  const denomination = [['Nero, 54-68. As. RIC 1600.', ['RIC 1600']],
+    ['Claudius. AE As. Sear 1857; RIC I 113.', ['Sear 1857', 'RIC I 113']],
+    ['Domitian. As. Cohen 1550.', ['Cohen 1550']],
+    ['Titus as Caesar. As. Sear 2000.', ['Sear 2000']]];
+  for (const [line, expected] of denomination) assert.deepEqual(texts(line), expected, line);
+  // A plate hung on the number with a comma is part of the citation; a reign date or a run of further numbers is not a page range.
+  const kept = [['Ptolemaic. Svoronos 1600, pl. 20; SNG Cop 123.', ['Svoronos 1600', 'SNG Cop 123']],
+    ['Alexander III. Tetradrachm. Price 1533, pl. 12.', ['Price 1533']],
+    ['Roman. Sear 1962, pl. 3.', ['Sear 1962']],
+    ['Byzantine. SB 1868, pl. 44.', ['SB 1868']],
+    ['Alexander III. Tetradrachm. Price 1533, 336-323 BC.', ['Price 1533']],
+    ['Roman. Sear 1962, 54-68 AD.', ['Sear 1962']],
+    ['Alexander III. Tetradrachm. Price 1533, 1534-1536.', ['Price 1533']],
+    // A verb that describes the coin or its entry says nothing about a book's author.
+    ['Roman. RIC 1600 reads IMP CAES on the obverse.', ['RIC 1600']],
+    ['Byzantine. SB 1868 gives the mint as Constantinople.', ['SB 1868']],
+    ['Roman. RIC 1600 places this at Lugdunum.', ['RIC 1600']],
+    ['Roman. RIC 1600 attributes it to Siscia.', ['RIC 1600']]];
+  for (const [line, expected] of kept) assert.deepEqual(texts(line), expected, line);
+  // The bibliographic shapes still drop: a plate written as prose, a page, and the verbs an author is the subject of.
+  const dropped = [['Svoronos 1904 pl. 12. SNG Cop 123.', ['SNG Cop 123']],
+    ['See Crawford 1974, p. 745, for the chronology. Crawford 443/1.', ['Crawford 443/1']],
+    ['Sydenham 1952 remains the standard. Crawford 443/1.', ['Crawford 443/1']],
+    ['MEC 1986 covers the period. SB 139.', ['SB 139']],
+    ['Sear 2000 lists this as common. RIC II 456.', ['RIC II 456']],
+    ['Published by Sommer 1994.', []],
+    ['Cited in Grierson 1982.', []]];
+  for (const [line, expected] of dropped) assert.deepEqual(texts(line), expected, line);
+});
+
+test('a RIC volume keeps its edition, and a lot number belongs to a house', () => {
+  const found = only('Nero. AR Denarius. RIC I (2nd ed.) Nero 306.');
+  assert.equal(found.text, 'RIC I (2nd ed.) Nero 306');
+  assert.deepEqual(found.reference, ric('306', 'I (2nd edition)', 'Nero'));
+  // An edition after the whole reference is still a remark on the book.
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 1243 (6th ed.). Fine.'), ['Hendin 1243']);
+  // Only a house's number is a sale number; a catalogue's is its own.
+  assert.deepEqual(texts('Price 3949, lot 12. M\u00fcller 123.'), ['Price 3949', 'M\u00fcller 123']);
+  assert.deepEqual(texts('RIC 972, lot 123.'), ['RIC 972']);
+  assert.deepEqual(texts('Judaea. Hendin 1243, lot 45. TJC 234.'), ['Hendin 1243', 'TJC 234']);
+  assert.deepEqual(texts('Album 46, lot 1234. SICA 123.'), ['SICA 123']);
+  assert.deepEqual(texts('Sear 25, lot 12. RIC 123.'), ['RIC 123']);
+  // A provenance ends at the end of its sentence, not at the abbreviation inside it.
+  assert.deepEqual(texts('Ex Dr. Sear collection, 1975. RIC 972.'), ['RIC 972']);
+});
+
+test('a weight or a die axis in front of a name is no initial, and a dealer\u2019s aside is no book', () => {
+  // The initial and partner guards are read case-sensitively: "8 h." is how a dealer writes the die axis, not how anyone writes a forename.
+  assert.deepEqual(texts('ATTICA. Athens. Circa 393-355 BC. Silver, 23 mm, 17.21 g, 8 h. Sear 2537. SNG Cop 63.'), ['Sear 2537', 'SNG Cop 63']);
+  assert.deepEqual(texts('ROMAN EMPIRE. Nero. AR Denarius. Rome, AD 65. 3.42 g. Sear 1943; RIC I 52.'), ['Sear 1943', 'RIC I 52']);
+  assert.deepEqual(texts('David R. Sear certificate no. 12345.'), []);
+  assert.deepEqual(texts('Aureo & Calico 300, lot 45.'), []);
+  // Only a firm's own key takes the partner rule, so a run of catalogues reads as itself.
+  assert.deepEqual(texts('Sydenham and Crawford 443/1.'), ['Crawford 443/1']);
+  assert.deepEqual(texts('RIC 972 and Cohen 17.'), ['RIC 972', 'Cohen 17']);
+  // A die match is not a citation, however the dealer phrases it.
+  assert.deepEqual(texts('Same obverse die as Price 1533.'), ['Price 1533']);
+  assert.deepEqual(texts('Struck from the same dies as Sear 1998.'), ['Sear 1998']);
+  assert.deepEqual(texts('As RIC 1600, but with a star.'), ['RIC 1600']);
+  // A colon or a note number is the dealer writing about the coin; only a page marker after a comma is a book.
+  assert.deepEqual(texts('RIC 1600: this coin.'), ['RIC 1600']);
+  assert.deepEqual(texts('RIC 1600, no. 5.'), ['RIC 1600']);
+  assert.deepEqual(texts('Svoronos 1600, pl. 20.'), ['Svoronos 1600']);
+  assert.deepEqual(texts('Svoronos 1904 pl. 12, see Newell 1938 p. 4.'), []);
+  // A firm or a collection ends the provenance sentence like any other, and what follows it is read.
+  assert.deepEqual(texts('Ex the J. P. Morgan coll. RIC 972.'), ['RIC 972']);
+  assert.deepEqual(texts('From Roma Numismatics Ltd. RIC 972.'), ['RIC 972']);
 });
