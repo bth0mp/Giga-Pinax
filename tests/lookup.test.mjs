@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -595,6 +595,22 @@ test('a Sear Greek (SG) reference is Other, its number normalised to "SG n", a "
   assert.deepEqual(parseReference('SG 6829v; SC 1'), { catalogue: 'SC', number: '1', volume: '', section: '' });
 });
 
+test('a Sear Greek reference reads with the book title in front of the key ("Sear GCV 2757"), which lot text runs on into it', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const [text, number] of [
+    ['Sear GCV 2757', 'SG 2757'], ['Sear SGCV 2757', 'SG 2757'], ['Sear SG 6829', 'SG 6829'], ['Sear Greek 6829', 'SG 6829'],
+    ['Sear SGCV II 6829', 'SG 6829'], ['Sear GCV 2757v', 'SG 2757 var.'], ['sear gcv 2757', 'SG 2757'], ['Sear SG-6829', 'SG 6829'],
+  ]) {
+    assert.equal(sgNumber(text), number, text);
+    assert.deepEqual(parseReference(text), other(number), text);
+  }
+  // Sear's Roman and Byzantine volumes carry their own numbers, which are no SG.
+  assert.equal(sgNumber('Sear 6829'), null);
+  assert.deepEqual(parseReference('Sear 6829'), other('Sear 6829'));
+  assert.equal(sgNumber('Sear Byzantine 1234'), null);
+  assert.equal(sgNumber('Sear'), null);
+});
+
 test('lookupById gives an older SG chip ("SG6829v") the SG spelling, and keeps every other Other id as saved', async () => {
   const fetchImpl = fakeFetch({});
   for (const [id, text] of [['SG6829v', 'SG 6829 var.'], ['SGCV 6829', 'SG 6829'], ['Sear Greek 6829', 'SG 6829'], ['"BCD Boiotia 174b"', '"BCD Boiotia 174b"']]) {
@@ -953,4 +969,21 @@ test('a Krause (KM#) reference is Other, its number normalised to "KM# n", with 
   // The catalogues with type data are untouched.
   assert.deepEqual(parseReference('SC 1266.2'), { catalogue: 'SC', number: '1266.2', volume: '', section: '' });
   assert.deepEqual(parseReference('KM# 123; SC 1'), { catalogue: 'SC', number: '1', volume: '', section: '' });
+});
+
+test('Krause\'s Y# is the KM family, normalised the same way, so one number is one row and one search', () => {
+  const other = (number) => ({ catalogue: 'Other', number, volume: '', section: '' });
+  for (const [text, number] of [
+    ['Y#31', 'Y# 31'], ['Y# 31', 'Y# 31'], ['Y 31', 'Y# 31'], ['Y-31', 'Y# 31'], ['Y.31', 'Y# 31'], ['Y–31', 'Y# 31'],
+    ['Y#31a', 'Y# 31a'], ['Y#59.3', 'Y# 59.3'], ['y#31', 'Y# 31'], ['Y# A31', 'Y# A31'],
+    // A country in front narrows a number that repeats, as it does for KM.
+    ['Russia Y# 59.3', 'Russia Y# 59.3'], ['China Empire Y 31', 'China Empire Y# 31'],
+  ]) {
+    assert.equal(kmNumber(text), number, text);
+    assert.deepEqual(parseReference(text), other(number), text);
+  }
+  // The KM spelling is untouched, and Y needs its separator and its own word, as KM does.
+  assert.equal(kmNumber('KM# 123.2a'), 'KM# 123.2a');
+  assert.equal(kmNumber('KM 123'), 'KM# 123');
+  for (const text of ['Y31', 'SY 31', 'Yeoman 31', 'Scholten 782']) assert.equal(kmNumber(text), null, text);
 });

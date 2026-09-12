@@ -8,10 +8,53 @@ const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
 // A run of references starts only at one of these keys. The single letters C (Cohen) and S (Sear) are matched upper case only and kept only in a run
 // that also has a longer key, so "c. 386-338 BC" and the legend "S - C" stay text while "C.309 - RIC.112" is two references. Keys inside a bracket are
 // skipped ("(= BMC 7)", a sale's "(2005, 1132)"), unless the bracket opens on a key: then each key after a separator in it counts ("(Cohen 17; RIC 972)").
-const KEYS = ['BMC/RE', 'BMCRE', 'BMC', 'Bopearachchi', 'Bop\\.?', 'Calicó', 'Calico', 'Cohen', 'Coh\\.?', 'Crawford', 'Craw\\.?', 'Cr\\.?', 'RIC', 'RRC',
-  'RSC', 'RPC', 'RCV', 'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIBE', 'MIB', 'MIR', 'Sydenham',
-  'Syd\\.?', 'Müller', 'Muller', 'KM', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
-const KEY = new RegExp(String.raw`(?<![\p{L}\d])(?:Ref(?:erences?|s)?\.?\s*:\s*)?(cf\.?\s*)?(${KEYS.join('|')})(?![\p{L}\d])`, 'giu');
+// A key that is an ordinary word or a plain surname counts only with its number straight after it ("Hunter 12", never "Hunter Coin Cabinet").
+const word = (key) => String.raw`${key}(?=[\s.-]*\d)`;
+// A plain surname is a key only when its number is the whole reference: what usually follows a scholar's name in lot prose is the year of their book
+// ("Butcher 2004 notes 3 obverse dies"), not a catalogue number.
+const SURNAMES = new Set();
+const surname = (key) => { SURNAMES.add(key.toLowerCase()); return word(key); };
+// La Tour is cited by plate volume, so a numeral may stand between the key and the number ("LT XXII 1234").
+const plate = (key) => String.raw`${key}(?=[\s.-]*(?:[IVXL]+[\s.,-]+)?\d)`;
+// A surname whose catalogue is cited by volume ("Lindgren III 456", "Varbanov I 1234") is guarded the same way, its numeral part of the number.
+const plateName = (key) => { SURNAMES.add(key.toLowerCase()); return plate(key); };
+// Two catalogues carry an auction house's name as well; the house's own first name in front of it is never the book.
+const notHouse = (first, key) => String.raw`(?<!${first}\s)${key}`;
+// Longest first wherever one key opens another ("BMCRR" before "BMC", "MIBEC" before "MIB", "Sellwood" before "Sell."), and the single letters last.
+const KEYS = [
+  // Roman: the British Museum's three, the Republic's Crawford line, Sear's Imperators, the Hunter cabinet, the late bronze and the Gallic hoards.
+  'BMC/RE', 'BMCRE', 'BMCRR', 'BMC', 'Bopearachchi', String.raw`Bop\.?`, 'Calicó', 'Calico', 'Cohen', String.raw`Coh\.?`, 'Crawford',
+  String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
+  surname('Cunetio'), surname('Elmer'), surname('Normanby'), surname('Mairat'), surname('Bastien'), surname('Giard'), surname('Depeyrot'),
+  surname('Estiot'), surname('Szaivert'), surname('Gnecchi'), surname('Babelon'), surname('Bahrfeldt'), surname('Banti'), 'CNR',
+  'AGK', surname('Kampmann'), surname('Van Meter'), surname('Vagi'), surname('Foss'), surname('Mazzini'), surname('Biaggi'), surname('Seaby'), 'DCA',
+  // Roman provincial and the Levant, then Alexandria.
+  surname('Prieur'), surname('McAlee'), plateName('Varbanov'), 'AMNG', plateName('Lindgren'), 'GIC', 'SGI', surname('Moushmov'), 'H&J',
+  surname('Bellinger'), surname('Butcher'), surname('Spijkerman'), surname('Rosenberger'), surname('Kadman'), surname('Sofaer'), surname('Ziegler'),
+  surname('Klose'), plateName('Recueil'), surname('Emmett'), surname('Milne'), surname('Dattari-Savio'), surname('Dattari'), surname('Geissen'), 'K&G',
+  surname('Curtis'), surname('Köln'), surname('Koeln'), surname('Christiansen'),
+  // Judaea, then the Greek world, its collections and its hoard inventories.
+  surname('Hendin'), surname('Meshorer'), 'TJC', 'AJC', 'GBC', surname('Mildenberg'), 'HN Italy', surname('Vlasto'), surname('Fischer-Bossert'),
+  surname('Böhringer'), surname('Boehringer'), surname('Jenkins'), surname('Weber'), surname('Forrer'), surname('Pozzi'), surname('Jameson'),
+  surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'), surname('Newell'), surname('Le Rider'),
+  'ACGC', surname('Kraay'), surname('Grose'), 'ACIP', 'CNH', surname('Betlyon'), surname('Rouvier'), surname('Klein'), surname('Asyut'), 'IGCH',
+  surname('Carradice'),
+  // Seleucid and Ptolemaic, then the East: Parthia, the Sasanians, Bactria and their collections.
+  'WSM', 'CSE', 'CPE', 'SMA', surname('Weiser'), surname('Sellwood'), String.raw`Sell\.?`, surname('Shore'), 'Göbl', 'Goebl', 'Gobl', 'SNS',
+  word('Sunrise'), surname('Senior'), surname('Alram'), surname('Nercessian'), surname('Jongeward'),
+  // Byzantium and after, then the Celts and the Islamic world.
+  'MIBEC', 'MIBE', 'MIB', notHouse('Rodolfo', surname('Ratto')), surname('Sommer'), surname('Füeg'), surname('Fueg'), surname('Morrisson'),
+  surname('Grierson'), surname('Hahn'), surname('Tolstoi'), surname('Bendall'), 'MEC', word('COI'), surname('Metlich'), surname('Malloy'),
+  surname('Metcalf'), surname('Hobbs'), surname('Scheers'), word('OTA'), surname('Mack'), surname('Dembski'), surname('Kostial'), surname('Sills'),
+  'SCBI', plate('LT'), word('DT'), word('ABC'), word('VA'), notHouse('Stephen', surname('Album')), 'SICA', surname('Walker'), surname('Nicol'),
+  surname('Bernardi'), surname('Lavoix'), surname('Diler'),
+  // World and modern, beside the existing KM.
+  surname('Friedberg'), surname('Davenport'), String.raw`Dav\.?`, surname('Bitkin'), 'Y#',
+  // The rest of the older keys, the single letters last of all.
+  'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'SC', 'Price', 'Pr', 'Mitchiner', 'MIG', 'DOC', 'MIR', 'Sydenham',
+  String.raw`Syd\.?`, 'Müller', 'Muller', 'KM', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
+// Only "Y#" ends in a separator, and Krause glues its number to it ("Y#31a"), so the boundary after a "#" is the "#" itself.
+const KEY = new RegExp(String.raw`(?<![\p{L}\d])(?:Ref(?:erences?|s)?\.?\s*:\s*)?(cf\.?\s*)?(${KEYS.join('|')})(?:(?<=#)|(?![\p{L}\d]))`, 'giu');
 // Dealers capitalise a catalogue key, so a lower-case word ("hammer price 500", "see doc 12") is never one.
 const keyAt = (match) => /^\p{Lu}/u.test(match[2]);
 // Where references are separated: ";", ", ", ". ", " - ", "=" or a line break (a comma or dot inside a number, "HGC 12, 72" aside, never splits).
@@ -27,6 +70,23 @@ const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)(?:Ex|From|Provenance)\b/;
 const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
 const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
+// A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
+// volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").
+const NUMBER_ONLY = /^\s*(?:[IVXL]+[\s.,-]+)?\d[^\s()]*$/;
+const numberOnly = (body) => NUMBER_ONLY.test(unpunctuate(body.replace(REMARKS, '').replace(VARIANT, '')));
+const YEAR = /^\s*(?:1[5-9]\d\d|20\d\d|2100)$/;
+// An edition between a key and its number leaves only the ordinal ("Hendin 6th ed. 1243" reads "Hendin 6th"), which is no reference.
+const ORDINAL_ONLY = /^\D*\d+(?:st|nd|rd|th)\D*$/i;
+// A key with only space between it and the key before is part of that reference ("Sear GIC 1234", "SNG Klein 123"), never a second catalogue.
+// The key before is the last one kept: one already dropped as a run-on is part of that same reference, so it never suppresses the next key too.
+const runOn = (text, matches) => {
+  let before = null;
+  return matches.filter((match) => {
+    const keep = !before || /\S/.test(text.slice(before.index + before[0].length, match.index));
+    if (keep) before = match;
+    return keep;
+  });
+};
 // The bracket depth before each UTF-16 index, as matchAll counts them, and where the outermost bracket around it opened (-1 outside one).
 const depths = (text) => {
   let level = 0, open = -1;
@@ -134,7 +194,7 @@ export function findReferences(input) {
   const cut = cleaned.match(PROVENANCE);
   const text = cut ? cleaned.slice(0, cut.index) : cleaned;
   const depth = depths(text);
-  const all = [...text.matchAll(KEY)].filter(keyAt);
+  const all = runOn(text, [...text.matchAll(KEY)].filter(keyAt));
   const listed = ({ index }) => {
     const { level, open } = depth[index];
     return level === 0 || (level === 1 && (text[index - 1] === '(' || (all.some((key) => key.index === open + 1) && /(?:[;,.=]\s*|\s-\s+)$/.test(text.slice(open, index)))));
@@ -147,12 +207,14 @@ export function findReferences(input) {
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
     const { body, broken } = pieceAfter(text.slice(match.index + match[0].length, opens ? end - 1 : end), TYPED_KEY_WORD.test(match[2]));
-    const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), written: `${text.slice(keyStart, match.index + match[0].length)}${body}`, run };
+    const own = !SURNAMES.has(match[2].toLowerCase()) || (numberOnly(body) && !(broken && YEAR.test(body)));
+    const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run,
+      written: `${text.slice(keyStart, match.index + match[0].length)}${own ? body : ''}` };
     if (broken || opens) run += 1;
     return piece;
   });
   const longer = new Set(pieces.filter((piece) => piece.key.length > 1).map((piece) => piece.run));
-  const kept = pieces.filter((piece) => /\d/.test(piece.written) && (piece.key.length > 1 || longer.has(piece.run)));
+  const kept = pieces.filter((piece) => /\d/.test(piece.written) && !ORDINAL_ONLY.test(piece.written) && (piece.key.length > 1 || longer.has(piece.run)));
   const seen = new Set();
   const references = kept.map((piece) => normalise(piece.written, piece.key, piece.cf)).filter(({ reference: { catalogue, volume, section, number } }) => {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
@@ -164,7 +226,7 @@ export function findReferences(input) {
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
 export function looksLikeLot(input) {
   const text = clean(input).replace(/\s+/g, ' ');
-  return Array.from(text).length > 120 || [...text.matchAll(KEY)].filter((match) => match[2].length > 1 && keyAt(match)).length >= 2;
+  return Array.from(text).length > 120 || runOn(text, [...text.matchAll(KEY)].filter(keyAt)).filter((match) => match[2].length > 1).length >= 2;
 }
 
 // Lot text is long or names two catalogues; a short heading with one reference in it ("Diva Faustina I … RIC III (Antoninus Pius) 394a", "SELEUCID

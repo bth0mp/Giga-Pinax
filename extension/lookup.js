@@ -75,8 +75,9 @@ const unwrap = (value) => unpunctuate(unpunctuate(value.trim()).replace(/^[(\[�
 // with " var." for a variety's "v" or "var.", lets prices.js search it as dealers cite it ("Sear 6829"). A key must end at the number, so "SGI 123"
 // (Sear Greek Imperial) is no SG; a letter other than v is the number's own ("SG 6829a"). unwrap has dropped a final "." ("var"), which comes back.
 // SGCV's volume goes ("SGCV II 6829": the numbers run on across both) only before a space or comma, so "SGCV 26829" stays whole; a dot or dash may
-// follow the key ("SG.6829", "SG–6829": the Reference box keeps the en dash).
-const SG_REFERENCE = /^(?:(?:SGCV|GCV)(?:\s+(?:II?|[12])(?=[\s,]))?,?|SG|Sear\s+Greek)[\s.\-–]*(\d+)([a-z]?)(\s*var\.?)?$/i;
+// follow the key ("SG.6829", "SG–6829": the Reference box keeps the en dash). The author's name in front of his own abbreviation is redundant but
+// common, and lot text joins the two keys ("Sear GCV 2757"), so it is read and dropped; "Sear 6829" alone is his Roman or Byzantine number, not SG.
+const SG_REFERENCE = /^(?:Sear\s+)?(?:(?:SGCV|GCV)(?:\s+(?:II?|[12])(?=[\s,]))?,?|SG|Sear\s+Greek)[\s.\-–]*(\d+)([a-z]?)(\s*var\.?)?$/i;
 export function sgNumber(value) {
   const [, digits, letter, varied] = String(value ?? '').match(SG_REFERENCE) ?? [];
   if (!digits) return null;
@@ -88,15 +89,16 @@ export function sgNumber(value) {
 // optional letter ("123", "123.2", "123.2a", "A123"), normalised as the catalogue writes it. A separator after the key is required, so "KM123" and
 // "KMS1" are no KM, and the lookahead-free word break falls out of it: "AKM 5" has no key at the start. A KM number repeats across countries, so a
 // country typed in front ("Netherlands KM# 123", "German States Rostock KM# 123") is kept, as typed: up to four letter-only words, which narrow the search.
-const KM_REFERENCE = /^((?:\p{L}+ ){0,4})KM[#.\-–\s]+([a-z]?\d+(?:\.\d+)?[a-z]?)$/iu;
+// Y# is Krause's own older numbering (Yeoman), the same catalogue family in the same shape, so it is read the same way and keeps its own key.
+const KM_REFERENCE = /^((?:\p{L}+ ){0,4})(KM|Y)[#.\-–\s]+([a-z]?\d+(?:\.\d+)?[a-z]?)$/iu;
 export function kmNumber(value) {
-  const [, country = '', number] = squash(value).match(KM_REFERENCE) ?? [];
+  const [, country = '', key = '', number] = squash(value).match(KM_REFERENCE) ?? [];
   if (!number) return null;
   // The key pattern matches case-insensitively over Unicode, so a letter that folds to ASCII (KELVIN SIGN, long s) reaches here: read it back the same
   // way and fail closed, never throwing on a Reference box the collector is typing into.
   const [, prefix = '', digits, suffix = ''] = number.match(/^(\p{L}?)([\d.]+)(\p{L}?)$/u) ?? [];
   if (!digits) return null;
-  return `${country}KM# ${prefix.toUpperCase()}${digits}${suffix.toLowerCase()}`;
+  return `${country}${key.toUpperCase()}# ${prefix.toUpperCase()}${digits}${suffix.toLowerCase()}`;
 }
 // An Other text with its SG and KM parts in those spellings; any other text is kept as it is.
 const otherPart = (part) => sgNumber(part) ?? kmNumber(part);

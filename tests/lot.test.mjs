@@ -74,8 +74,8 @@ test('SG, SGCV and GCV are keys: a Sear Greek reference, normalised, prices only
   assert.deepEqual(only('Tetradrachm. SG.6829.'), { text: 'SG.6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
   assert.deepEqual(only('Tetradrachm. SG-6829.'), { text: 'SG-6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
   assert.deepEqual(only('Tetradrachm. SG 6829var.'), { text: 'SG 6829', reference: other('SG 6829 var.'), cf: false, variant: true, typed: false });
-  // "SG" inside a word, and Sear Greek Imperial, are no SG key.
-  assert.deepEqual(texts('MASGUT 12. ASG 5. SGI 123.'), []);
+  // "SG" inside a word is no SG key; Sear Greek Imperial (SGI) is its own key, tested with the other areas below.
+  assert.deepEqual(texts('MASGUT 12. ASG 5.'), []);
 });
 
 test('a bracket that opens on the next key is that key\'s, so the reference before it keeps its whole body', () => {
@@ -152,11 +152,11 @@ test('duplicates go, the provenance tail is cut and hidden characters and dashes
 });
 
 test('a reference carries on only into a number, so a later non-key reference, a grade, a lot number or a place ends it', () => {
-  assert.deepEqual(texts('Trajan, 98-117. Denarius, Rome, 103-111. BMC 316. RIC 128. Woytek 290b.'), ['BMC 316', 'RIC 128']);
-  assert.deepEqual(findReferences('Trajan. BMC 316. RIC 128. Woytek 290b.').references[1].reference, ric('128'));
-  assert.deepEqual(texts('Crawford 344/1a. BMCRR Rome 2320.'), ['Crawford 344/1a']);
-  assert.deepEqual(texts('Crawford 344/1a, RBW 1353'), ['Crawford 344/1a']);
-  assert.deepEqual(texts('RIC II.1 1073 (Vespasian), Hunter 12'), ['RIC II.1 1073 (Vespasian)']);
+  assert.deepEqual(texts('Trajan, 98-117. Denarius, Rome, 103-111. BMC 316. RIC 128. Thirion 123.'), ['BMC 316', 'RIC 128']);
+  assert.deepEqual(findReferences('Trajan. BMC 316. RIC 128. Thirion 123.').references[1].reference, ric('128'));
+  assert.deepEqual(texts('Crawford 344/1a. Hersh 12.'), ['Crawford 344/1a']);
+  assert.deepEqual(texts('Crawford 344/1a, Sternberg 1353'), ['Crawford 344/1a']);
+  assert.deepEqual(texts('RIC II.1 1073 (Vespasian), Paris 12'), ['RIC II.1 1073 (Vespasian)']);
   assert.deepEqual(texts('Philip I. Antoninianus. RIC 28c. NGC Choice VF 5/5 - 4/5.'), ['RIC 28c']);
   for (const tail of ['. Lot 23312', ', Rome 79', ', axis 6', '. Extremely Fine 5', '. ex Roma E-Sale 45, 123.']) {
     assert.deepEqual(findReferences(`RIC 972${tail}`).references.map((found) => found.reference), [ric('972')], tail);
@@ -260,4 +260,136 @@ test('KM is a key: a Krause reference, normalised, prices only, and the lot head
   assert.deepEqual(only('2½ Gulden 1898. KM# A123.'), { text: 'KM# A123', reference: other('KM# A123'), cf: false, variant: false, typed: false });
   // "KM" inside a word is no key.
   assert.deepEqual(texts('2½ Gulden 1898. KMS 1. AKM 5.'), []);
+});
+
+test('the standard catalogue of each collecting area is a key, so a dealer line lists every reference in it', () => {
+  const lines = [
+    ['TARAS, Calabria. Nomos, circa 380 BC. Vlasto 123; HN Italy 934; ACGC 12.', ['Vlasto 123', 'HN Italy 934', 'ACGC 12']],
+    ['Roman Republic. L. Titurius Sabinus. Denarius. Crawford 344/1a; Sydenham 698; RBW 1353; BMCRR Rome 2320.',
+      ['Crawford 344/1a', 'Sydenham 698', 'RBW 1353', 'BMCRR Rome 2320']],
+    ['Marc Antony, 32-31 BC. Denarius. CRI 350; HCRI 419; Sydenham 1216.', ['CRI 350', 'HCRI 419', 'Sydenham 1216']],
+    ['Trajan, 98-117. Denarius, Rome. RIC 128; Woytek 290b; Hunter 12.', ['RIC 128', 'Woytek 290b', 'Hunter 12']],
+    ['Constantius II, 337-361. AE3, Siscia. LRBC 1401; Cunetio 2452; Elmer 638.', ['LRBC 1401', 'Cunetio 2452', 'Elmer 638']],
+    ['Caracalla. Tetradrachm, Antioch. Prieur 234; McAlee 677; Lindgren III 456.', ['Prieur 234', 'McAlee 677', 'Lindgren III 456']],
+    ['Septimius Severus. Marcianopolis. Varbanov 1234; AMNG I/1 1234; GIC 1234; SGI 1234.',
+      ['Varbanov 1234', 'AMNG I/1 1234', 'GIC 1234', 'SGI 1234']],
+    ['Hadrian. Tetradrachm, Alexandria. Emmett 838 (R2); Dattari 5678; Milne 1234; Geissen 1234.',
+      ['Emmett 838', 'Dattari 5678', 'Milne 1234', 'Geissen 1234']],
+    ['Judaea. Bar Kokhba Revolt. Zuz. Hendin 1435; Meshorer 123; TJC 234; AJC II 12.',
+      ['Hendin 1435', 'Meshorer 123', 'TJC 234', 'AJC II 12']],
+    ['Seleukid Empire. Antiochos III. Drachm. WSM 1234; CSE II 456; SMA 12.', ['WSM 1234', 'CSE II 456', 'SMA 12']],
+    ['Ptolemy II. Tetradrachm, Alexandria. CPE 456; Svoronos 552.', ['CPE 456', 'Svoronos 552']],
+    ['Parthia. Mithradates II. Drachm, Rhagae. Sellwood 24.9; Shore 76; Sell. 25.1.', ['Sellwood 24.9', 'Shore 76', 'Sell. 25.1']],
+    ['Sasanian Kings. Shapur I, 240-272. Drachm. Göbl I/1; SNS 12.', ['Göbl I/1', 'SNS 12']],
+    ['CELTIC, Northeast Gaul. Stater. LT XXII 1234; DT 123; Scheers 12.', ['LT XXII 1234', 'DT 123', 'Scheers 12']],
+    ['CELTIC, Britain. Durotriges. Stater. ABC 1244; VA 1234; Hobbs 2525.', ['ABC 1244', 'VA 1234', 'Hobbs 2525']],
+    ['Umayyad Caliphate. Dirham, Wasit AH 100. Album 128; SICA 1234; Walker 123.', ['Album 128', 'SICA 1234', 'Walker 123']],
+    ['Justinian I, 527-565. Follis, Nicomedia. MIBEC 12; Ratto 1234; MEC 1, 12.', ['MIBEC 12', 'Ratto 1234', 'MEC 1, 12']],
+    ['Netherlands. Ducat 1729. Friedberg 285; Davenport 1234; Dav. 4567.', ['Friedberg 285', 'Davenport 1234', 'Dav. 4567']],
+  ];
+  for (const [line, expected] of lines) assert.deepEqual(texts(line), expected, line);
+});
+
+test('the dotted keys keep their literal dot, so a key plus one more letter is not one', () => {
+  assert.deepEqual(texts('Cohn 12. Cra 12. Cro 12. Crawl 12. Sells 100. Bopp 12. Davy 12. Sella 12.'), []);
+  assert.deepEqual(texts('Rev: Selle curule entre 2 epis.'), []);
+  assert.deepEqual(texts('Roman Republic. Denarius. Cr, 344/1a.'), []);
+  assert.deepEqual(texts('Cr. 344/1a; Coh. 309; Craw. 44/5; Syd. 698; Bop. 1C; Sell. 25.1; Dav. 4567.'),
+    ['Cr. 344/1a', 'Coh. 309', 'Craw. 44/5', 'Syd. 698', 'Bop. 1C', 'Sell. 25.1', 'Dav. 4567']);
+});
+
+test('a plain surname counts only with its own number, so a scholar and a year in prose is no reference', () => {
+  assert.deepEqual(texts('A rare provincial bronze. Butcher 2004 notes 3 obverse dies for this issue. RPC IV 1234.'), ['RPC IV 1234']);
+  assert.deepEqual(texts('Athens. New Style tetradrachm. Thompson 1961 dates the issue to 135/4 BC.'), []);
+  assert.deepEqual(texts('Tetradrachm. Newell 1938 published this obverse die. Price 3949.'), ['Price 3949']);
+  assert.deepEqual(texts('Milne 1933 records 4 specimens.'), []);
+  assert.deepEqual(texts('Metcalf 1995 volume 3 covers this mint.'), []);
+  assert.deepEqual(texts('Erworben im Sommer 1994 bei Muenzhandlung Ritter. RIC IV 12.'), ['RIC IV 12']);
+  assert.deepEqual(texts('Roman Imperial. Sestertius. With an old Seaby 1970 ticket. RIC III 623.'), ['RIC III 623']);
+  assert.deepEqual(texts('NGC MS 62. Walker 1956 records 12 specimens of this dirham. Album 123.'), ['Album 123']);
+  assert.deepEqual(texts('Tetradrachm, purchased from Ratto 1927, 345 francs. Sear 1234.'), ['Sear 1234']);
+  // The citation itself still reads: its number is the whole of it.
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 1243. Fine.'), ['Hendin 1243']);
+  // An edition between the key and the number leaves only the ordinal, which is no reference.
+  assert.deepEqual(texts('Judaea. Prutah. Hendin 6th ed. 1243. Fine.'), []);
+  assert.deepEqual(texts('Album 3rd ed. 1234.'), []);
+});
+
+test('every plain surname key is guarded, so a bibliographic aside in a lot is never a reference', () => {
+  assert.deepEqual(texts('Trajan, 98-117. Tetradrachm of Antioch. Prieur 1506; McAlee 452. Butcher 2004 notes three obverse dies.'),
+    ['Prieur 1506', 'McAlee 452']);
+  assert.deepEqual(texts('Tetradrachm of Antioch. See Prieur 2000, p. 12 for the dies. RPC III 1234.'), ['RPC III 1234']);
+  for (const aside of ['Emmett 1996 lists the regnal years', 'Meshorer 1982 dates the issue', 'Woytek 2010 records five obverse dies',
+    'Bastien 1976 publishes this bust type', 'Mildenberg 1984 reads the letters', 'Vlasto 1899 owned this piece',
+    'Alram 1986 lists the legend', 'Morrisson 1970 catalogues the Paris cabinet', 'Bitkin 2003 prices it higher',
+    'Szaivert 1984 dates the emission', 'Friedberg 2017 illustrates the type', 'Bellinger 1940 excavated the hoard',
+    'Christiansen 1988 counted the dies', 'Le Rider 1977 grouped the issues', 'Fischer-Bossert 1999 dated the dies',
+    'Gnecchi 1912 published the medallions', 'Troxell 1997 revised the sequence', 'Lindgren 1989 bought it in Athens']) {
+    assert.deepEqual(texts(`Denarius. ${aside}.`), [], aside);
+  }
+  // The citations themselves still read: a rarity bracket or a variety after the number is part of the reference, not prose.
+  assert.deepEqual(texts('Tetradrachm. Prieur 1506 var.; Emmett 838 (R2); Lindgren III 456.'), ['Prieur 1506', 'Emmett 838', 'Lindgren III 456']);
+});
+
+test('a ruler, a city and a field letter are not keys, however a number follows them', () => {
+  // Albert I and II head Belgian, Monegasque and Saxon lots far more often than Rainer Albert's handbook is cited.
+  assert.deepEqual(texts('BELGIUM. Albert I, 1909-1934. 20 Francs 1914, Brussels. KM# 78. Good VF.'), ['KM# 78']);
+  assert.deepEqual(texts('MONACO. Albert II. 2 Euro 2007.'), []);
+  assert.deepEqual(texts('SAXONY. Albert 1485-1500. Groschen. KM# 12.'), ['KM# 12']);
+  // Köln is guarded as its transliteration is.
+  assert.deepEqual(texts('Köln Erzbistum 12'), []);
+  assert.deepEqual(texts('Germany. Köln. 1 Taler 1705. Dav. 5155.'), ['Dav. 5155']);
+  assert.deepEqual(texts('Alexandria. Köln 1234. RIC 12.'), ['Köln 1234', 'RIC 12']);
+  // The short Celtic keys need their number straight after them; La Tour's plate volume may come between.
+  assert.deepEqual(texts('Celtic. Obv: blank. Rev: horse left, VA below 12.'), []);
+  assert.deepEqual(texts('VF. Struck on a broad flan, LT in exergue 12 mm.'), []);
+});
+
+test('a key straight after another is part of that reference, not a second catalogue', () => {
+  assert.deepEqual(texts('Sear GIC 1234'), ['Sear GIC 1234']);
+  assert.deepEqual(texts('Sear SGI 1234'), ['Sear SGI 1234']);
+  assert.deepEqual(texts('SNG Klein 123'), ['SNG Klein 123']);
+  assert.deepEqual(texts('SNG Hunter 12'), ['SNG Hunter 12']);
+  assert.equal(looksLikeLot('Sear GIC 1234'), false);
+  assert.equal(looksLikeLot('SNG Klein 123'), false);
+});
+
+test('a key the run-on rule has already dropped no longer suppresses the key after it', () => {
+  // "Sear GIC" carries no number of its own, so the reference is SGI's; only the key before a kept one joins it.
+  assert.deepEqual(texts('Sear GIC SGI 1234'), ['SGI 1234']);
+  assert.deepEqual(texts('Denarius. BMC Sear SG 6829.'), ['SG 6829']);
+  // A single run-on still reads as one reference.
+  assert.deepEqual(texts('Sear GIC 1234; SNG Klein 123'), ['Sear GIC 1234', 'SNG Klein 123']);
+});
+
+test('a Sear Greek reference keeps its book title, so "Sear GCV 2757" is still an SG number', () => {
+  assert.deepEqual(only('Athens. Tetradrachm. Sear GCV 2757.'), { text: 'Sear GCV 2757', reference: other('SG 2757'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Athens. Tetradrachm. Sear SG 6829.'), { text: 'Sear SG 6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Athens. Tetradrachm. Sear Greek 6829.'), { text: 'Sear Greek 6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('Athens. Tetradrachm. Sear SGCV II 6829.'), { text: 'Sear SGCV II 6829', reference: other('SG 6829'), cf: false, variant: false, typed: false });
+  // Sear's own Roman and Byzantine numbers stay as the dealer wrote them.
+  assert.deepEqual(only('Denarius. Sear 1234.'), { text: 'Sear 1234', reference: other('Sear 1234'), cf: false, variant: false, typed: false });
+});
+
+test('Y# is read glued to its number, as KM# is', () => {
+  assert.deepEqual(texts('CHINA. Dollar Year 3. Y#31.'), ['Y#31']);
+  assert.deepEqual(texts('CHINA. Dollar Year 3. Y#31a.'), ['Y#31a']);
+  assert.deepEqual(texts('NETHERLANDS. 2½ Gulden 1898. Y# 123. VF.'), ['Y# 123']);
+});
+
+test('a Y# reference is normalised as KM# is, so its spellings are one row and one search', () => {
+  assert.deepEqual(only('CHINA. Dollar Year 3. Y#31.'), { text: 'Y#31', reference: other('Y# 31'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('CHINA. Dollar Year 3. Y# 31.'), { text: 'Y# 31', reference: other('Y# 31'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('CHINA. Dollar Year 3. Y#31a.'), { text: 'Y#31a', reference: other('Y# 31a'), cf: false, variant: false, typed: false });
+  assert.deepEqual(only('RUSSIA. Rouble 1899. Y#59.3.'), { text: 'Y#59.3', reference: other('Y# 59.3'), cf: false, variant: false, typed: false });
+  // The two spellings are the same reference, so the second is the duplicate it is.
+  assert.deepEqual(texts('CHINA. Dollar Year 3. Y#31; Y# 31.'), ['Y#31']);
+});
+
+test('the word-like keys need their number straight after them, and an auction house of the same name is never one', () => {
+  // "Hunter", "Album", "Shore" and "Ratto" are ordinary words, a sale house and a cabinet name as well as catalogues.
+  assert.deepEqual(texts('Hunter Coin Cabinet, Glasgow. RIC 128.'), ['RIC 128']);
+  assert.deepEqual(texts('Sold by Stephen Album 12. RIC 128.'), ['RIC 128']);
+  assert.deepEqual(texts('Rodolfo Ratto 1234. RIC 128.'), ['RIC 128']);
+  assert.deepEqual(texts('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago'), []);
 });
