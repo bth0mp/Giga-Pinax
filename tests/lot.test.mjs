@@ -504,6 +504,7 @@ test('the de-accented spellings are keys as their accented ones are, and Noe is 
   assert.deepEqual(texts('Alexandria. Koln 1234. RIC 12.'), ['Koln 1234', 'RIC 12']);
   assert.deepEqual(texts('Syracuse. Tetradrachm. Bohringer 411; SNG ANS 12.'), ['Bohringer 411', 'SNG ANS 12']);
   assert.deepEqual(texts('Metapontum. Nomos. Noe 322; HN Italy 1234.'), ['Noe 322', 'HN Italy 1234']);
+  assert.deepEqual(texts('CELTIC, Gaul. AV Stater. Delestree 240.'), ['Delestree 240']);
 });
 
 test('the name guard wants a name, so a conjunction, a mintmark or a regnal numeral is not one', () => {
@@ -601,4 +602,202 @@ test('a weight or a die axis in front of a name is no initial, and a dealer\u201
   // A firm or a collection ends the provenance sentence like any other, and what follows it is read.
   assert.deepEqual(texts('Ex the J. P. Morgan coll. RIC 972.'), ['RIC 972']);
   assert.deepEqual(texts('From Roma Numismatics Ltd. RIC 972.'), ['RIC 972']);
+});
+
+test('a house writes its own separator between a key and its number, and a hyphen is not always one', () => {
+  // Stephen Album glues the number on with a hyphen and every Indian house puts a hash with spaces round it; both are the whole reference.
+  assert.deepEqual(texts('JUDAEA. Prutah. Hendin-1188.'), ['Hendin-1188']);
+  assert.deepEqual(texts('GREEK. Tetradrachm. Sear-6829.'), ['Sear-6829']);
+  assert.deepEqual(texts('GREEK. AR Obol. SNG Cop-63.'), ['SNG Cop-63']);
+  assert.deepEqual(texts('EGYPT. Tetradrachm. Emmett # 874.'), ['Emmett # 874']);
+  assert.deepEqual(texts('JUDAEA. Prutah. (Hendin # 1188).'), ['Hendin # 1188']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Album-1827; SICA 123.'), ['Album-1827', 'SICA 123']);
+  // The museums write a dot and a few write a colon; the separator is the house's, never part of the number.
+  assert.deepEqual(texts('SASANIAN. Ardashir I. AR Drachm. Paruck.285; SNS I 12.'), ['Paruck.285', 'SNS I 12']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Klat.587b; Album 128.'), ['Klat.587b', 'Album 128']);
+  assert.deepEqual(texts('HUNNIC. AR Drachm. Vondrovec.001A.'), ['Vondrovec.001A']);
+  assert.deepEqual(texts('SAMANID. AR Dirham. SNAT-XIVc:336; Album 1449.'), ['SNAT-XIVc:336', 'Album 1449']);
+  assert.deepEqual(texts('CELTIC, Gaul. AV Stater. Delestree:161; DT 240.'), ['Delestree:161', 'DT 240']);
+  // A typed catalogue is read the same whichever separator carries its number.
+  assert.deepEqual(only('ROMAN. Denarius. RIC-972.'), { text: 'RIC-972', reference: ric('972'), cf: false, variant: false, typed: true });
+  assert.deepEqual(only('ROMAN. Denarius. RIC:972.').reference, ric('972'));
+  // The numbers in this area are not plain digits: a letter code, a dotted number, a variant letter and a glued "var" all belong to the reference.
+  assert.deepEqual(texts('INDO-SCYTHIAN. Azes II. AR Tetradrachm. Senior-98.245T.'), ['Senior-98.245T']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Klat-581.b; Album 128.'), ['Klat-581.b', 'Album 128']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Klat 61v4.'), ['Klat 61v4']);
+  assert.deepEqual(texts('EGYPT. Tetradrachm. Emmett-874var.'), ['Emmett-874var']);
+  // A hyphen is also a range, a sub-number, a "not in" marker and an ordinary dash between words, and a dot is also a sentence end and a decimal.
+  assert.deepEqual(texts('JUDAEA. Prutah. Hendin 1188-1190.'), ['Hendin 1188-1190']);
+  assert.deepEqual(texts('CELTIC, Britain. AV Stater. VA 620-7.'), ['VA 620-7']);
+  assert.deepEqual(texts('ROMAN. Denarius. RIC -; Cohen 17.'), ['Cohen 17']);
+  assert.deepEqual(texts('JUDAEA. Prutah. Hendin --; TJC 234.'), ['TJC 234']);
+  assert.deepEqual(texts('SASANIAN. AR Drachm. Flesche -. SNS--. Paruck 285.'), ['Paruck 285']);
+  assert.deepEqual(texts('ROMAN. AE As. Arab-Byzantine imitation. RIC I 543.'), ['RIC I 543']);
+  assert.deepEqual(texts('Caracalla. Tetradrachm. Lindgren-Kovacs 123.'), ['Lindgren-Kovacs 123']);
+  assert.deepEqual(texts('TITUS. AR Denarius. RIC 972. Cohen 17.'), ['RIC 972', 'Cohen 17']);
+  assert.deepEqual(texts('Parthia. Drachm. Sellwood 24.9.'), ['Sellwood 24.9']);
+  // A grading term, an auction house, a scholar in a footnote and a lot number are no more references glued than they are spaced.
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Good VF. GH-109.'), []);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Stephen Album-1827; SICA 123.'), ['SICA 123']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Stephen Album # 1827; SICA 123.'), ['SICA 123']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Album # 46, lot 1234. SICA 123.'), ['SICA 123']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Album-46, lot 1234. SICA 123.'), ['SICA 123']);
+  assert.deepEqual(texts('Tetradrachm of Antioch. See Butcher-2004, p. 12. RPC IV 1234.'), ['RPC IV 1234']);
+  assert.deepEqual(texts('ROMAN. Denarius. Lot #123. RIC 972.'), ['RIC 972']);
+});
+
+test('the countermark, Kushan, Sasanian and Islamic corpora are keys', () => {
+  // Each is cited as the whole reference, so the surname guard is enough; every line also carries a key that reads today.
+  assert.deepEqual(texts('ROMAN. AE As, countermarked. Howgego 123; RIC I 543.'), ['Howgego 123', 'RIC I 543']);
+  assert.deepEqual(texts('ROMAN. AE As, countermarked TIB IM. Pangerl 45. RIC I 543.'), ['Pangerl 45', 'RIC I 543']);
+  assert.deepEqual(texts('KUSHAN. Kanishka I. AV Dinar. Rosenfield 123; Gobl 57.'), ['Rosenfield 123', 'Gobl 57']);
+  assert.deepEqual(texts('SASANIAN. Shapur II. AR Drachm. Schindel 12; SNS II 12.'), ['Schindel 12', 'SNS II 12']);
+  assert.deepEqual(texts('SASANIAN. Khusro II. AR Drachm. Saeedi 345; SNS III 12.'), ['Saeedi 345', 'SNS III 12']);
+  assert.deepEqual(texts('SASANIAN. Ardashir I. AR Drachm. Paruck 345; SNS I 12.'), ['Paruck 345', 'SNS I 12']);
+  assert.deepEqual(texts('HUNNIC. Alchon. AR Drachm. Vondrovec 345; Gobl Em. 60.'), ['Vondrovec 345', 'Gobl Em. 60']);
+  assert.deepEqual(texts('UMAYYAD. AR Dirham. Wasit, AH 96. Klat 686; Album 128.'), ['Klat 686', 'Album 128']);
+  assert.deepEqual(texts('MAMLUK. AR Dirham. Balog 229; Album 1000.'), ['Balog 229', 'Album 1000']);
+  assert.deepEqual(texts('ARAB-BYZANTINE. AE Fals. Goodwin 123; Album 3512.'), ['Goodwin 123', 'Album 3512']);
+  assert.deepEqual(texts('ARTUQID. AE Dirham. Artuk 1234; Album 1827.'), ['Artuk 1234', 'Album 1827']);
+  assert.deepEqual(texts('SPAIN, Umayyad. AR Dirham. Vives 123; Album 340.'), ['Vives 123', 'Album 340']);
+  // A plain key needs no guard: SNAT carries its volume as a word, and MIRB is not swallowed by MIR.
+  assert.deepEqual(texts('SAMANID. AR Dirham. SNAT XIVa 456; Album 1449.'), ['SNAT XIVa 456', 'Album 1449']);
+  assert.deepEqual(texts('SAMANID. AR Dirham. SNAT Ia 123.'), ['SNAT Ia 123']);
+  assert.deepEqual(texts('INDO-SCYTHIAN. AR Tetradrachm. MACW 2158; Senior 98.245T.'), ['MACW 2158', 'Senior 98.245T']);
+  assert.deepEqual(texts('ROMAN. AR Antoninianus. MIR 12; MIRB 34. RIC V 45.'), ['MIR 12', 'MIRB 34', 'RIC V 45']);
+  assert.deepEqual(texts('BYZANTINE. Phocas. AE Follis. MIRB 12; SB 640.'), ['MIRB 12', 'SB 640']);
+  // Byzantine and Vandal, beside the keys that already read.
+  assert.deepEqual(texts('BYZANTINE. Justinian I. AE Follis. Sabatier 6; SB 163.'), ['Sabatier 6', 'SB 163']);
+  assert.deepEqual(texts('VANDALS. Gunthamund. AR Siliqua. Wroth 88; MEC 1, 21.'), ['Wroth 88', 'MEC 1, 21']);
+  // The Greek keys, two of them cited by plate volume.
+  assert.deepEqual(texts('CARIA, Rhodes. AR Drachm. Ashton 209; SNG Keckman 552.'), ['Ashton 209', 'SNG Keckman 552']);
+  assert.deepEqual(texts('PAEONIA. Patraos. AR Tetradrachm. Draganov 434; SNG ANS 1035.'), ['Draganov 434', 'SNG ANS 1035']);
+  assert.deepEqual(texts('MYSIA, Kyzikos. EL Stater. Von Fritze I, 134; SNG France 12.'), ['Von Fritze I, 134', 'SNG France 12']);
+  assert.deepEqual(texts('THRACE, Mesembria. AV Stater. Karayotov I, 45; SNG Cop 12.'), ['Karayotov I, 45', 'SNG Cop 12']);
+  assert.deepEqual(texts('PTOLEMAIC. Ptolemy II. AE Drachm. Lorber 12; CPE B123.'), ['Lorber 12', 'CPE B123']);
+  // The Celtic names, beside the abbreviations that already read.
+  assert.deepEqual(texts('CELTIC, Britain. AV Stater. Van Arsdell 1732; ABC 2445.'), ['Van Arsdell 1732', 'ABC 2445']);
+  assert.deepEqual(texts('CELTIC, Gaul. AV Stater. Delestrée 240; DT 240.'), ['Delestrée 240', 'DT 240']);
+  assert.deepEqual(texts('CELTIC, Gaul. AV Stater. LT XXII 1234; Delestree 240.'), ['LT XXII 1234', 'Delestree 240']);
+  // Every one of them is prices only, and the row is the text the dealer wrote.
+  assert.deepEqual(only('MAMLUK. AR Dirham. Balog 229.'),
+    { text: 'Balog 229', reference: other('Balog 229'), cf: false, variant: false, typed: false });
+});
+
+test('an emission tag belongs to the reference, and a co-author does not steal it', () => {
+  // Bodenstedt numbers Mytilene by emission, so "Em." is part of the number, not a remark on the book.
+  assert.deepEqual(texts('LESBOS, Mytilene. EL Hekte. Bodenstedt Em. 46; SNG Cop 312.'), ['Bodenstedt Em. 46', 'SNG Cop 312']);
+  assert.deepEqual(texts('LESBOS, Mytilene. EL Hekte. Bodenstedt Em 46.'), ['Bodenstedt Em 46']);
+  assert.deepEqual(texts('LESBOS, Mytilene. EL Hekte. Bodenstedt 46.'), ['Bodenstedt 46']);
+  assert.equal(lotLabel(only('LESBOS, Mytilene. EL Hekte. Bodenstedt Em. 46.'), []), 'Bodenstedt Em. 46 · prices only');
+  // Göbl's Hunnic emissions read the same way, as they did before.
+  assert.deepEqual(texts('HUNNIC. AR Drachm. Gobl Em. 60.'), ['Gobl Em. 60']);
+  // "Em" is an infix, never a key of its own, and no ordinary word starting with it becomes one.
+  assert.deepEqual(texts('GREEK. AR Stater. Em. 12.'), []);
+  assert.deepEqual(texts('ROMAN. AR Denarius. Emission 3, Rome. RIC 12.'), ['RIC 12']);
+  assert.deepEqual(texts('EGYPT. Emmett 838 (R2).'), ['Emmett 838']);
+  // Cribb is the second author of the Kushan corpus: his key must not take Jongeward's reference away.
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Jongeward & Cribb 123.'), ['Jongeward & Cribb 123']);
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Cribb 12; MACW 3005.'), ['Cribb 12', 'MACW 3005']);
+  // The other co-author forms are unchanged.
+  assert.deepEqual(texts('SAMARIA. AR Obol. Meshorer & Qedar 12.'), ['Meshorer & Qedar 12']);
+  assert.deepEqual(texts('ALEXANDRIA. Tetradrachm. Dattari-Savio Pl. 123, 456.'), ['Dattari-Savio Pl. 123, 456']);
+});
+
+test('the names left out are left out, and a scholar’s year is still not a number', () => {
+  // A ruler, a find-spot, a dealer and an ordinary English word all read as themselves, so none of them is a key.
+  assert.deepEqual(texts('SAXONY. Albert 1485-1500. Groschen. KM# 12.'), ['KM# 12']);
+  assert.deepEqual(texts('CELTIC, Britain. AV Stater. Found in Kent 1987. ABC 2445.'), ['ABC 2445']);
+  assert.deepEqual(texts('SELJUQ. Alp Arslan 1063-1072 AD. AR Dirham. Album 1670.'), ['Album 1670']);
+  assert.deepEqual(texts('CELTIC, Britain. AR Unit. Rudd 123. ABC 1567.'), ['ABC 1567']);
+  assert.deepEqual(texts('INDIA. AR Drachm. Rajgor 24, lot 112. Senior 12.'), ['Senior 12']);
+  assert.deepEqual(texts('ROMAN EMPIRE. Trajan. AR Denarius. Miles 123 were struck at Rome. RIC II 234.'), ['RIC II 234']);
+  assert.deepEqual(texts('OSTROGOTHS. AE Nummus. Demo 45 is the Croatian corpus. MEC 1, 132.'), ['MEC 1, 132']);
+  assert.deepEqual(texts('CELTIC, Britain. AV Stater. Evans 1890. VA 1732.'), ['VA 1732']);
+  assert.deepEqual(texts('PONTOS. AR Tetradrachm. Callatay pl. 12, D22. SNG BM 1043.'), ['SNG BM 1043']);
+  // A new key is a name like the others: a cue or a verb of argument in its own clause still says "book".
+  assert.deepEqual(texts('ROMAN. AE As. Countermark discussed by Howgego 1985. RIC I 543.'), ['RIC I 543']);
+  assert.deepEqual(texts('BYZANTINE. AE Follis. Wroth 1908 catalogued this. SB 163.'), ['SB 163']);
+  assert.deepEqual(texts('GREEK. AR Drachm. See Ashton 1988, p. 12. SNG Keckman 552.'), ['SNG Keckman 552']);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Klat 2002, pl. 3. Album 128.'), ['Album 128']);
+  assert.deepEqual(texts('ARAB-BYZANTINE. AE Fals. Goodwin 2005 discusses the mint. Album 3512.'), ['Album 3512']);
+  assert.deepEqual(texts('PTOLEMAIC. AE Drachm. Lorber 2018 lists two. CPE B123.'), ['CPE B123']);
+  assert.deepEqual(texts('KUSHAN. AV Dinar. Published by Rosenfield 1967. Gobl 57.'), ['Gobl 57']);
+  assert.deepEqual(texts('HUNNIC. AR Drachm. Vondrovec 2014, vol. II. SNS II 12.'), ['SNS II 12']);
+  assert.deepEqual(texts('CELTIC, Gaul. AV Stater. Delestree 2002, pl. 12. DT 240.'), ['DT 240']);
+  // A dynasty's founder, a grading term and a Spanish verb carry no number, so no guard has to refuse them.
+  assert.deepEqual(texts('ARTUQID. Artuk bin Eksuk, AH 495-502. AE Dirham. Album 1827.'), ['Album 1827']);
+  assert.deepEqual(texts('ARAB-BYZANTINE. AE Fals. Goodwin, VF, RRR. Album 3512.'), ['Album 3512']);
+  assert.deepEqual(texts('SPAIN. AR Dirham. Si vives 123 anos. Album 340.'), ['Album 340']);
+  // A provenance sentence still takes its own names with it.
+  assert.deepEqual(texts('GREEK. AR Stater. From the Lorber estate, 2019. CPE B123.'), ['CPE B123']);
+  assert.deepEqual(texts('CELTIC. AR Unit. Ex the Ashton hoard, found at Ashton 1985. ABC 1567.'), ['ABC 1567']);
+  assert.deepEqual(texts('CELTIC, Britain. AV Stater. Ex Van Arsdell 1989, lot 12. ABC 2445.'), ['ABC 2445']);
+  assert.deepEqual(texts('MAMLUK. AR Dirham. Ex the Balog collection, 1980. Album 1000.'), ['Album 1000']);
+  assert.deepEqual(texts('ARAB-BYZANTINE. AE Fals. Ex the Goodwin collection. Album 3512.'), ['Album 3512']);
+});
+
+test('the separator is glued to the number, never to the reader’s own boundary between references', () => {
+  // A comma or a full stop followed by a space ends one reference and starts the next; unseparate must never read that as the house's own separator.
+  assert.deepEqual(texts('Gaius (Caligula), with Agrippina Senior, 37-41. Denarius (Silver, 19 mm, 3.68 g, 6 h), Lugdunum, 37-38. RIC I 8.'), ['RIC I 8']);
+  assert.deepEqual(texts('Diva Faustina Senior, 138-141. AR Denarius. RIC III 344.'), ['RIC III 344']);
+  assert.deepEqual(texts('GREEK. AR Tetradrachm. Newell. 1938. SNG Cop 12.'), ['SNG Cop 12']);
+  assert.deepEqual(texts('GREEK. Tetradrachm. Ashton. 209. SNG Keckman 552.'), ['SNG Keckman 552']);
+  // The house forms this release exists for are unaffected — all glued straight to the number, none of them followed by ", " or ". ".
+  assert.deepEqual(texts('JUDAEA. Prutah. Hendin-1188.'), ['Hendin-1188']);
+  assert.deepEqual(texts('MYSIA, Kyzikos. EL Stater. Von Fritze I, 134; SNG France 12.'), ['Von Fritze I, 134', 'SNG France 12']);
+  assert.deepEqual(texts('ALEXANDRIA. Tetradrachm. Dattari-Savio Pl. 123, 456.'), ['Dattari-Savio Pl. 123, 456']);
+  assert.deepEqual(texts('SASANIAN. Ardashir I. AR Drachm. Paruck.285; SNS I 12.'), ['Paruck.285', 'SNS I 12']);
+  // A "not in this reference" dash run followed by a bare number is still "not in", whichever key carries it.
+  assert.deepEqual(texts('JUDAEA. Prutah. Hendin--, 1188.'), []);
+  assert.deepEqual(texts('ISLAMIC. AR Dirham. Klat--, 686.'), []);
+  assert.deepEqual(texts('PARTHIAN. Drachm. Shore---, 2044.'), []);
+});
+
+test('Price is the one typed key that is also an English word, so a colon before an amount is never a type lookup', () => {
+  // "Price:1,200" is a hammer price, not a catalogue number: it still lists as a row, since 0.25 already did, but only as an Other, prices-only one —
+  // never a PELLA type lookup — so the real reference beside it is the lot's only typed reference and still opens on its own.
+  const withPrice = findReferences('Roman denarius. Price:1,200. RIC 972.').references;
+  assert.deepEqual(withPrice.map((entry) => entry.text), ['Price:1,200', 'RIC 972']);
+  assert.equal(withPrice[0].reference.catalogue, 'Other');
+  assert.deepEqual(withPrice[1].reference, ric('972'));
+  assert.equal(findReferences('Attractive dark patina, well centred. Buy it now Price:500.').references[0].reference.catalogue, 'Other');
+  // The colon still joins a type's own key to its number — Price is the one exception, not the rule.
+  assert.deepEqual(only('ROMAN. Denarius. RIC:972.').reference, ric('972'));
+});
+
+test('a countermark corpus is cited about the punch, not the host coin, so it does not end the search for the host’s ruler', () => {
+  // A countermark row precedes the ruler's own name, so the RIC row must still borrow it — the row it comes with is prices-only either way.
+  const [countermarked, viaPangerl, headingFirst] = [
+    'ROMAN IMPERIAL. AE As, countermarked TIB IM (Howgego 123) on an as of Augustus. RIC I 543.',
+    'Countermarked as, Pangerl 45, struck under Titus. RIC II 543.',
+    'ROMAN IMPERIAL. Augustus. AE As, countermarked. Howgego 123. RIC I 543.',
+  ].map(findReferences);
+  const ricRow = (lot) => lot.references.find((entry) => entry.text.startsWith('RIC'));
+  assert.deepEqual(lotLookup(ricRow(countermarked), countermarked.rulers), { ...ric('543', 'I'), rulers: ['Augustus'] });
+  assert.deepEqual(lotLookup(ricRow(viaPangerl), viaPangerl.rulers), { ...ric('543', 'II'), rulers: ['Titus'] });
+  // The heading-first order already kept the ruler, and still does.
+  assert.deepEqual(lotLookup(ricRow(headingFirst), headingFirst.rulers), { ...ric('543', 'I'), rulers: ['Augustus'] });
+});
+
+test('a co-author’s hyphen does not steal the first author’s reference', () => {
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Jongeward-Cribb 123.'), ['Jongeward-Cribb 123']);
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Jongeward &Cribb 123.'), ['Jongeward &Cribb 123']);
+  // The canonical spacing, and Cribb cited alone, are unaffected.
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Jongeward & Cribb 123.'), ['Jongeward & Cribb 123']);
+  assert.deepEqual(texts('KUSHAN. Vima Kadphises. AV Dinar. Cribb 12; MACW 3005.'), ['Cribb 12', 'MACW 3005']);
+});
+
+test('Prieto y Vives is a different catalogue from Vives, so the row is attributed to the book the dealer named', () => {
+  assert.deepEqual(texts('SPAIN, Taifa. AR Fractional Dirham. Prieto y Vives 55; Album 400.'), ['Prieto y Vives 55', 'Album 400']);
+  // Vives on its own, and the Spanish verb the plan already cleared, are unaffected.
+  assert.deepEqual(texts('SPAIN, Umayyad. AR Dirham. Vives 123; Album 340.'), ['Vives 123', 'Album 340']);
+  assert.deepEqual(texts('SPAIN. AR Dirham. Si vives 123 anos. Album 340.'), ['Album 340']);
+});
+
+test('a long run of non-space text after a key resolves quickly, not in minutes', () => {
+  // BODY's repeated group had no separator requirement between repetitions, so a digit-free run split four ways in O(n^4) backtracking.
+  const start = Date.now();
+  texts(`ROMAN. RIC ${'.'.repeat(2900)}`);
+  assert.ok(Date.now() - start < 2000, 'a 2,900-character non-digit run after a key must not freeze the reader');
 });

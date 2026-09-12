@@ -15,23 +15,30 @@ const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
 // "Morrisson BnF 5/Cp/AV/12", "Recueil general 123", "Jongeward & Cribb 123", "Lindgren-Kovacs 123"). Any word at all would undo the sale guard
 // ("Price realized 1,200"), so both lists are closed.
 const DROPPED = String.raw`(?:\d+(?:st|nd|rd|th)|[Ee]ds?|[Vv]ols?|[Pp]arts?|[Pp]t)`;
-const KEPT = String.raw`(?:[&-]\s*\p{Lu}\p{L}+|\(?(?:[Pp]ls?|Eng|Engl|ISCH|BnF|Sidon|[Gg][ée]n[ée]rale?)\.?\)?)`;
+// An emission tag is part of the reference as a plate is: Bodenstedt numbers Mytilene by emission, so "Bodenstedt Em. 46" and "Bodenstedt 46" are
+// different coins in that book.
+const KEPT = String.raw`(?:[&-]\s*\p{Lu}\p{L}+|\(?(?:[Pp]ls?|Eng|Engl|ISCH|BnF|Sidon|Em|[Gg][ée]n[ée]rale?)\.?\)?)`;
 const INFIX = String.raw`(?:${DROPPED}\.?|${KEPT})`;
-const GAP = String.raw`(?:[\s.,-]*${INFIX}){0,2}[\s.,-]*`;
+// The separator between a key and its number is the house's own, not the catalogue's: a space at CNG, a hyphen glued on at Stephen Album
+// ("Pieper-2753", "Hendin-1188"), a hash with spaces round it at the Indian houses ("Emmett # 874"), a dot at the museums ("Paruck.285") and a colon
+// at a few ("SNAT-XIVc:336"). None of them is part of the number, and none of them makes a reference on its own.
+const SEPARATOR = String.raw`[\s.,:#-]`;
+const GAP = String.raw`(?:${SEPARATOR}*${INFIX}){0,2}${SEPARATOR}*`;
 // A number may carry one or two short letter tokens glued in front of it ("Diler Ab-123", "Fueg I.A.1"); a word and a space is no number ("Albert II. 2").
 const NUMBER = String.raw`(?:\p{Lu}\p{L}?[.-]){0,2}\d`;
 // A volume word carries a numeral of its own, as a plate key's does ("Hunter, vol. III, 45"); without one, a word key still needs its digit.
-const VOLUME = String.raw`(?:[\s.,-]*${DROPPED}\.?){1,2}[\s.,-]*[IVXL]+[\s.,-]+`;
+const VOLUME = String.raw`(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEPARATOR}*[IVXL]+${SEPARATOR}+`;
 const word = (key) => String.raw`${key}(?=(?:${GAP}|${VOLUME})${NUMBER})`;
 // A plain surname is a key only when its number is the whole reference: what usually follows a scholar's name in lot prose is the year of their book
 // ("Butcher 2004 notes 3 obverse dies"), not a catalogue number.
 const SURNAMES = new Set();
 const surname = (key) => { SURNAMES.add(key.toLowerCase()); return word(key); };
 // La Tour is cited by plate volume, so a numeral may stand between the key and the number ("LT XXII 1234").
-const plate = (key) => String.raw`${key}(?=${GAP}(?:[IVXL]+[\s.,-]+)?${NUMBER})`;
+const plate = (key) => String.raw`${key}(?=${GAP}(?:[IVXL]+${SEPARATOR}+)?${NUMBER})`;
 // A surname whose catalogue is cited by volume ("Lindgren III 456", "Varbanov I 1234") is guarded the same way, its numeral part of the number.
 const plateName = (key) => { SURNAMES.add(key.toLowerCase()); return plate(key); };
-// Two catalogues carry an auction house's name as well; the house's own first name in front of it is never the book.
+// Two catalogues carry an auction house's name as well; the house's own first name in front of it is never the book. The same lookbehind keeps a
+// second author from stealing the first author's reference ("Jongeward & Cribb 123" is Jongeward's, not Cribb's).
 const notHouse = (first, key) => String.raw`(?<!${first}\s)${key}`;
 // Longest first wherever one key opens another ("BMCRR" before "BMC", "MIBEC" before "MIB", "Sellwood" before "Sell."), and the single letters last.
 const KEYS = [
@@ -45,23 +52,29 @@ const KEYS = [
   surname('Prieur'), surname('McAlee'), plateName('Varbanov'), 'AMNG', plateName('Lindgren'), 'GIC', 'SGI', surname('Moushmov'), 'H&J',
   surname('Bellinger'), surname('Butcher'), surname('Spijkerman'), surname('Rosenberger'), surname('Kadman'), surname('Sofaer'), surname('Ziegler'),
   surname('Klose'), plateName('Recueil'), surname('Emmett'), surname('Milne'), surname('Dattari-Savio'), surname('Dattari'), surname('Geissen'), 'K&G',
-  surname('Curtis'), surname('Köln'), surname('Koeln'), surname('Koln'), surname('Christiansen'),
+  surname('Curtis'), surname('Köln'), surname('Koeln'), surname('Koln'), surname('Christiansen'), surname('Howgego'), surname('Pangerl'),
   // Judaea, then the Greek world, its collections and its hoard inventories.
   surname('Hendin'), surname('Meshorer'), 'TJC', 'AJC', 'GBC', surname('Mildenberg'), 'HN Italy', surname('Vlasto'), surname('Fischer-Bossert'),
   surname('Böhringer'), surname('Boehringer'), surname('Bohringer'), surname('Noe'), surname('Jenkins'), surname('Weber'), surname('Forrer'),
   surname('Pozzi'), surname('Jameson'),
   surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'), surname('Newell'), surname('Le Rider'),
   'ACGC', surname('Kraay'), surname('Grose'), 'ACIP', 'CNH', surname('Betlyon'), surname('Rouvier'), surname('Klein'), surname('Asyut'), 'IGCH',
-  surname('Carradice'),
+  surname('Carradice'), surname('Bodenstedt'), surname('Ashton'), surname('Draganov'), plateName('Von Fritze'), plateName('Karayotov'),
   // Seleucid and Ptolemaic, then the East: Parthia, the Sasanians, Bactria and their collections.
   'WSM', 'CSE', 'CPE', 'SMA', surname('Weiser'), surname('Sellwood'), String.raw`Sell\.?`, surname('Shore'), 'Göbl', 'Goebl', 'Gobl', 'SNS',
-  word('Sunrise'), surname('Senior'), surname('Alram'), surname('Nercessian'), surname('Jongeward'),
+  word('Sunrise'), surname('Senior'), surname('Alram'), surname('Nercessian'), surname('Jongeward'), surname('Lorber'), plateName('Schindel'),
+  // Cribb is Jongeward's co-author ("Jongeward & Cribb 123", "Jongeward-Cribb 123"); either join must leave the reference whole, as Jongeward's.
+  surname('Saeedi'), surname('Paruck'), surname('Vondrovec'), 'MACW', String.raw`(?<![&-]\s*)${surname('Cribb')}`, surname('Rosenfield'),
   // Byzantium and after, then the Celts and the Islamic world.
   'MIBEC', 'MIBE', 'MIB', notHouse('Rodolfo', surname('Ratto')), surname('Sommer'), surname('Füeg'), surname('Fueg'), surname('Morrisson'),
   surname('Grierson'), surname('Hahn'), surname('Tolstoi'), surname('Bendall'), 'MEC', word('COI'), surname('Metlich'), surname('Malloy'),
   surname('Metcalf'), surname('Hobbs'), surname('Scheers'), word('OTA'), surname('Mack'), surname('Dembski'), surname('Kostial'), surname('Sills'),
   'SCBI', plate('LT'), word('DT'), word('ABC'), word('VA'), notHouse('Stephen', surname('Album')), 'SICA', surname('Walker'), surname('Nicol'),
-  surname('Bernardi'), surname('Lavoix'), surname('Diler'),
+  surname('Bernardi'), surname('Lavoix'), surname('Diler'), 'MIRB', surname('Sabatier'), surname('Wroth'), surname('Van Arsdell'),
+  surname('Delestrée'), surname('Delestree'), 'SNAT', surname('Klat'), surname('Balog'), surname('Goodwin'), surname('Artuk'),
+  // Prieto y Vives (Los Reyes de Taifas) is a different book from Vives y Escudero, and dealers cite it in full: it must come first so its own number is
+  // attributed to it, not folded into a bare "Vives" row.
+  surname('Prieto y Vives'), surname('Vives'),
   // World and modern, beside the existing KM.
   surname('Friedberg'), surname('Davenport'), String.raw`Dav\.?`, surname('Bitkin'), 'Y#',
   // The rest of the older keys, the single letters last of all.
@@ -75,8 +88,10 @@ const KEY = new RegExp(String.raw`(?<![\p{L}\d])(?:Ref(?:erences?|s)?\.?\s*:\s*)
 const keyAt = (match) => /^\p{Lu}/u.test(match[2]);
 // Where references are separated: ";", ", ", ". ", " - ", "=" or a line break (a comma or dot inside a number, "HGC 12, 72" aside, never splits).
 const SEP = /\s*(?:;|,(?=\s)|\.(?=\s)|=|\n)\s*|\s+-\s+/y;
-// What follows a key: up to four words ("ANS", "IV.1", "(Antoninus Pius)"), the last token holding a digit, then brackets, "var." or "passim".
-const BODY = /^(?:\s*(?:[^\s()]+|\([^()]*\))){0,4}\s*[^\s()]*\d[^\s()]*(?:\s*\([^()]*\)|\s+(?:var\.?|passim)(?![\p{L}\d]))*/u;
+// What follows a key: up to four words ("ANS", "IV.1", "(Antoninus Pius)"), the last token holding a digit, then brackets, "var." or "passim". The
+// first token may sit straight after the key, but each later one must cost a space: two adjacent tokens with nothing between them is one token, not
+// two, and leaving that ambiguous is what let a long digit-free run (a rule of dots, an underscore run) split four ways in O(n^4) backtracking.
+const BODY = /^(?:\s*(?:[^\s()]+|\([^()]*\))){0,1}(?:\s+(?:[^\s()]+|\([^()]*\))){0,3}\s*[^\s()]*\d[^\s()]*(?:\s*\([^()]*\)|\s+(?:var\.?|passim)(?![\p{L}\d]))*/u;
 const WORDS = /^(?:\s*[^\s\d()]+){0,3}\s*$/u;
 // A weight, size, die axis or date after the references ("3.21g", "8 h", "AD 69-79") is not a number that carries one on.
 const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\.)\s/i;
@@ -104,8 +119,13 @@ const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
 // A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
 // volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").
-const NUMBER_ONLY = new RegExp(String.raw`^\s*(?:${KEPT}[\s.,-]*)?(?:[IVXL]+[\s.,-]+)?${NUMBER}[^\s()]*(?:,\s*\d[^\s()]*)*$`, 'u');
+const NUMBER_ONLY = new RegExp(String.raw`^\s*(?:${KEPT}${SEPARATOR}*)?(?:[IVXL]+${SEPARATOR}+)?${NUMBER}[^\s()]*(?:,\s*\d[^\s()]*)*$`, 'u');
 const numberOnly = (body) => NUMBER_ONLY.test(unpunctuate(body.replace(REMARKS, '').replace(EDITION, '').replace(VARIANT, '')));
+// The house's separator is read as the space it stands for, so what a guard weighs is the number alone: "Klat-2002" is as much a year as "Klat 2002".
+// A hyphen carrying a co-author is not a separator but the rest of the name ("Lindgren-Kovacs 123"), so a capital after it keeps it. A comma or a full
+// stop followed by a space is never a house's separator, though — SEP treats that same run as the boundary BETWEEN references, and "Agrippina Senior,
+// 37-41" or "Newell. 1938" would otherwise read as "Senior, 37-41" or "Newell 1938" the moment the run in front of them is stripped.
+const unseparate = (body) => body.replace(/^(?![.,]\s)[\s.:#-]+(?!\p{Lu})/u, ' ');
 const YEAR = /^\s*(?:1[5-9]\d\d|20\d\d|2100)$/;
 // A bare 1500-2100 number after a key may be the year of a book rather than a type number, and only evidence decides which. First, a typed catalogue
 // whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s and a Bopearachchi series is one or two digits, so a number
@@ -126,7 +146,7 @@ const publicationYear = (key, body, before, span) => YEAR.test(unpunctuate(body)
   && (OVER_RANGE.test(key) || CUE.test(before) || CITED.test(span.replace(/^\D*\d{4}/, '')));
 // A sale is not a catalogue: what follows a house's number is its lot ("Album 46, lot 1234", "Sear 25, lot 12"), never a second catalogue number. Only
 // the keys that are houses too are read that way, since a catalogue number followed by a lot number is still the catalogue ("RIC 972, lot 123").
-const SALE = /^[\s.,-]*\d[^\s;]*\s*,\s*lot\s+\d/i;
+const SALE = new RegExp(String.raw`^${SEPARATOR}*\d[^\s;]*\s*,\s*lot\s+\d`, 'iu');
 const HOUSE_KEY = /^(?:Album|Sear|Calic[oó]|Seaby|Ratto)$/i;
 // A key that is also a person or a firm is that name, not a catalogue, when a forename's initial ("David R. Sear certificate no. 12345") or a partner
 // ("Aureo & Calico 300", "Freeman & Sear 15") stands in front of it. Both are read here rather than inside KEY, whose i flag folds a capital into any
@@ -134,6 +154,9 @@ const HOUSE_KEY = /^(?:Album|Sear|Calic[oó]|Seaby|Ratto)$/i;
 // regnal or volume numeral is no initial ("Philip I. RIC 12", "RPC I. Sear 12"), and only a firm's own keys take the partner rule, so a run of
 // catalogues still reads as itself ("Sydenham and Crawford 443/1").
 const PERSON_KEY = /^(?:Sear|Calic[oó])$/i;
+// A countermark corpus is cited about the punch, not the host coin, so the host's ruler routinely stands AFTER it ("countermarked TIB IM (Howgego
+// 123) on an as of Augustus"). It alone must not end the search for that ruler, the way every other row's key does.
+const COUNTERMARK = /^(?:Howgego|Pangerl)$/i;
 const INITIAL = /(?<!\p{L})[ABEFGHJKNOPQRSTUWYZ]\.\s$/u;
 const PARTNER = /\p{L}\p{L}+\s(?:&|and)\s$/u;
 const personal = (key, before) => (PERSON_KEY.test(key) && INITIAL.test(before)) || (HOUSE_KEY.test(key) && PARTNER.test(before));
@@ -209,7 +232,7 @@ const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearach
 // number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
 // "Lot 23312", "Rome 79") ends it but not the run, so a later C or S still counts; other text ("NGC Choice VF 5/5", "Good VF", "AD 69-79") ends the run
 // too, which broken says.
-const GAP_HEAD = new RegExp(String.raw`^(?:[\s.,-]*${DROPPED}\.?){1,2}[\s.,-]*(?=(?:[IVXL]+[\s.,-]+)?${NUMBER})`, 'u');
+const GAP_HEAD = new RegExp(String.raw`^(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEPARATOR}*(?=(?:[IVXL]+${SEPARATOR}+)?${NUMBER})`, 'u');
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.replace(GAP_HEAD, ' ');
@@ -227,8 +250,10 @@ function pieceAfter(raw, typed = false) {
   return { body, broken };
 }
 
-// A reference as a search reads it: glued keys spaced ("RIC.112", "Sear-734"), "RIC²" as RIC, "V-1" as V.1, a range's first number, Pr as Price.
-const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(\p{L}[\p{L}/]*)[.-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
+// A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
+// a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
+// dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
+const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
   .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
 
 function normalise(written, key, cf) {
@@ -273,8 +298,9 @@ export function findReferences(input) {
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
-    const own = (!SURNAMES.has(match[2].toLowerCase()) || (numberOnly(body) && !(broken && YEAR.test(body))))
-      && !publicationYear(match[2], body, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before);
+    const number = unseparate(body);
+    const own = (!SURNAMES.has(match[2].toLowerCase()) || (numberOnly(number) && !(broken && YEAR.test(number))))
+      && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before);
     const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run,
       written: `${text.slice(keyStart, match.index + match[0].length)}${own ? body : ''}` };
     if (broken || opens) run += 1;
@@ -287,7 +313,7 @@ export function findReferences(input) {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
     return !seen.has(id) && seen.add(id);
   });
-  return { references, rulers: rulersIn(text.slice(0, kept[0]?.start ?? text.length)) };
+  return { references, rulers: rulersIn(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length)) };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
