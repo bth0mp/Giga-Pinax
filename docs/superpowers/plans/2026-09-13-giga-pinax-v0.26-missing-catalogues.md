@@ -638,3 +638,23 @@ zero lot hits anywhere; a `Zambaur \d+` rule would fire only on mistakes).
 The three names it clears as genuinely safe — **Bodenstedt**, **Desneux**, **Klat**, plus **Vondrovec** and **SNAT** — are already in the recommended
 set. What it removes is the temptation to add the other side of the list. And it confirms the appendix-1 conclusion: the separator and negative-citation
 rules are worth more than the names, because they apply to every key already in the file.
+
+### Checked, not assumed: the negative-citation and grade rules are already safe
+
+Run against the shipped 0.24 reader before writing any of it into the plan:
+
+| Pasted | Lists |
+| --- | --- |
+| `RIC -; Cohen 17.` | Cohen 17 |
+| `Hendin --; TJC 234.` | TJC 234 |
+| `Svoronos –; Sear 6829.` | Sear 6829 |
+| `RIC —. BMC 123.` | BMC 123 |
+| `Cohen -, RIC 972.` | RIC 972 |
+| `ex Miles collection. RIC 972.` | RIC 972 |
+| `Slg. Flesche 246. RIC 972.` | RIC 972 |
+| `RIC 972, VF, RRR.` | RIC 972 |
+| `Prieur 123, gVF.` | Prieur 123 |
+
+So no new machinery is needed for negatives, grades or provenance-prefixed names: a key with a dash where its number belongs already lists nothing, and
+the reference beside it is still read. What 0.26 must not do is add a key whose number shape is loose enough to break that. The separator work
+(`Pieper-2753`, `Deyell # 8a`) stands as the one real gap.
