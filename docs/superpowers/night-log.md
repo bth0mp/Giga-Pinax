@@ -152,3 +152,7 @@ Ordered by what protects him from a bad bid:
 9. **Outliers: compute, never apply.** 1.5x IQR flags ten genuine high-grade sales and drags the median down - it would make his complaint worse - and catches none of the wrong coins or forgeries on a poisoned page.
 
 Unverifiable tonight and worth watching on his first real run: no signed-in acsearch page has ever been seen by this code. The `Not counted:` line is the thing to read first.
+
+*Housekeeping: `2b3e7f2` swept the in-flight 0.26 edits to `docs/INSTALL.md` and `docs/ideas-backlog.md` into the audit commit, so that one commit
+advertises 0.26 while the manifests still read 0.25. The working tree was untouched and the release commit that follows makes it consistent. Stage
+explicit paths, not `-A -- docs`, while a build is running.*
