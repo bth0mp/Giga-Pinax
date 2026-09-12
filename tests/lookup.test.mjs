@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -79,6 +79,89 @@ test('nomismaSlugs lists referenced concepts in display order; nomismaLabel read
   assert.equal(nomismaLabel(json('nomisma-nero.jsonld'), 'nero'), 'Nero');
   assert.equal(nomismaLabel(json('nomisma-as.jsonld'), 'as'), 'As');
   assert.equal(nomismaLabel({}, 'nero'), null);
+});
+
+// Hand-written OCRE records for the portrait cases no fixture holds: the portraits of each side and the authorities, by slug.
+const record = (obverse, reverse = [], authority = ['vespasian']) => {
+  const uri = 'http://numismatics.org/ocre/id/ric.2_1(2).ves.972';
+  const portraits = (slugs) => slugs.map((slug) => ({ '@id': `http://nomisma.org/id/${slug}` }));
+  return { '@graph': [
+    { '@id': uri, 'skos:prefLabel': [{ '@value': 'RIC II, Part 1 (second edition) Vespasian 972', '@language': 'en' }], 'nmo:hasAuthority': portraits(authority) },
+    { '@id': `${uri}#obverse`, 'nmo:hasPortrait': portraits(obverse) },
+    { '@id': `${uri}#reverse`, 'nmo:hasPortrait': portraits(reverse) },
+  ] };
+};
+
+test('toCard keeps the obverse portrait as its own label, never the reverse one and never a bare slug', () => {
+  const labels = { vespasian: 'Vespasian', titus: 'Titus', denarius: 'Denarius', rome: 'Rome', ar: 'Silver', annona: 'Annona' };
+  const card = toCard(json('ocre-vespasian-972.jsonld'), 'ocre', labels);
+  assert.equal(card.portrait, 'Titus');
+  assert.equal(card.authority, 'Vespasian');
+  // The portrait is a root field, so the sides keep exactly the two keys the rest of the popup reads.
+  assert.deepEqual(card.obverse, { legend: 'T CAESAR VESPASIANVS', description: 'Head of Titus, laureate, right' });
+  assert.equal(toCard(json('ocre-nero-306.jsonld'), 'ocre', { nero: 'Nero' }).portrait, 'Nero');
+  assert.equal(toCard(json('ocre-titus-123.jsonld'), 'ocre', { titus: 'Titus' }).portrait, 'Titus');
+  // The reverse portrait is a deity: it is never read, whatever the obverse holds.
+  assert.equal(toCard(record([], ['annona']), 'ocre', labels).portrait, null);
+  // An unresolved label fails closed, so "Portrait of cornelia_salonina" can never render.
+  assert.equal(toCard(json('ocre-vespasian-972.jsonld'), 'ocre', {}).portrait, null);
+  // Joint types carry two of either: half an answer is no answer.
+  assert.equal(toCard(record(['leo_ii', 'zeno']), 'ocre', { leo_ii: 'Leo II', zeno: 'Zeno', vespasian: 'Vespasian' }).portrait, null);
+  assert.equal(toCard(record(['titus'], [], ['vespasian', 'titus']), 'ocre', labels).portrait, null);
+});
+
+test('portraitSlug reads the obverse portrait of a record, and nothing else', () => {
+  assert.equal(portraitSlug(json('ocre-vespasian-972.jsonld')), 'titus');
+  assert.equal(portraitSlug(json('ocre-nero-306.jsonld')), 'nero');
+  assert.equal(portraitSlug(record([], ['annona'])), null);
+  assert.equal(portraitSlug(record(['leo_ii', 'zeno'])), null);
+  assert.equal(portraitSlug({}), null);
+});
+
+test('filingNote explains a RIC filing only when the record says so, and is silent otherwise', () => {
+  const card = (label, authority, portrait = null, corpus = 'ocre') => ({ corpus, label, authority, portrait });
+  // The report: Titus 972 opens Vespasian 972, and the card now says why.
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Vespasian 972', 'Vespasian', 'Titus')), 'Portrait of Titus, listed under Vespasian.');
+  // The ordinary case says nothing at all.
+  assert.equal(filingNote(card('RIC I (second edition) Nero 306', 'Nero', 'Nero')), '');
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Titus 123', 'Titus', 'Titus')), '');
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Titus 123', 'Titus')), '');
+  // Case and spacing never make two names of one.
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Titus 123', 'Titus', ' titus ')), '');
+  // A deity or personification is never a name RIC files a section under.
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Domitian 759', 'Domitian', 'Apollo')), '');
+  assert.equal(filingNote(card('RIC IV Elagabalus 268', 'Elagabalus', 'Julia Maesa')), '');
+  // A mint volume files by mint, so no ruler is the section and the sentence must not claim one.
+  assert.equal(filingNote(card('RIC IX Siscia 38C', 'Valentinian II', 'Arcadius')), '');
+  assert.equal(filingNote(card('RIC VI Londinium 1a', 'Maximian', 'Diocletian')), '');
+  // A city personification heads a mint section, never a person's: the gate reads the ruler volumes only.
+  assert.equal(filingNote(card('RIC I (second edition) Clodius Macer 22', 'Clodius Macer', 'Carthage')), '');
+  // An authority whose nomisma label never resolved is a bare slug: the sentence prints RIC's own heading instead.
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Vespasian 972', 'vespasian', 'Titus')), 'Portrait of Titus, listed under Vespasian.');
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Vespasian 972', 'septimius_severus', 'Titus')), '');
+  // A parenthesised section is the heading the card already shows, so it is the one named.
+  assert.equal(filingNote(card('RIC V Gallienus (joint reign) 306', 'Gallienus', 'Salonina')),
+    'Portrait of Salonina, listed under Gallienus (joint reign). RIC V also has a Gallienus section.');
+  // A card the collector asked for, whose portrait is its own ruler, says nothing — even where the volume splits that reign in two. On its own the
+  // sibling sentence would sit under every one of RIC V's thousands of Gallienus types and answer a question he never asked.
+  assert.equal(filingNote(card('RIC V Gallienus 306', 'Gallienus', 'Gallienus')), '');
+  assert.equal(filingNote(card('RIC V Gallienus (joint reign) 306', 'Gallienus', 'Gallienus')), '');
+  assert.equal(filingNote(card('RIC X Zeno (East) 914', 'Zeno', 'Zeno')), '');
+  assert.equal(filingNote(card('RIC IV Gordian III (Caesar) 2', 'Gordian III', 'Gordian III')), '');
+  assert.equal(filingNote(card('RIC IV Gordian III 95', 'Gordian III', 'Gordian III')), '');
+  assert.equal(filingNote(card('RIC V Gallienus and Salonina 1', 'Gallienus', 'Gallienus')), '');
+  // An empress sits under her husband, but the nomisma name is not RIC's section name, so nothing can be said that RIC would recognise.
+  assert.equal(filingNote(card('RIC V Salonina (2) 93', 'Gallienus', 'Cornelia Salonina')), '');
+  // Both sentences share one paragraph, the portrait first.
+  assert.equal(filingNote(card('RIC V Gallienus 306', 'Gallienus', 'Salonina')),
+    'Portrait of Salonina, listed under Gallienus. RIC V also has a Gallienus (joint reign) section.');
+  // No sibling sentence either: a mint section, a volume without one, a name that does not split at " (".
+  assert.equal(filingNote(card('RIC VII Treveri 100', 'Constantine I', 'Constantine I')), '');
+  assert.equal(filingNote(card('RIC I (second edition) Nero 306', 'Nero', 'Nero')), '');
+  // Gates: only OCRE, only a label that reads back as RIC.
+  assert.equal(filingNote(card('RIC II, Part 1 (second edition) Vespasian 972', 'Vespasian', 'Titus', 'crro')), '');
+  assert.equal(filingNote(card('ric.2_1(2).ves.972', 'Vespasian', 'Titus')), '');
+  assert.equal(filingNote({ corpus: 'other', label: 'BCD Boiotia 174b', authority: null, portrait: null }), '');
 });
 
 function fakeFetch(routes) {
@@ -560,7 +643,7 @@ test('a reference no type rule reads is Other, whole, unless a supported catalog
 test('an Other reference is its own card, built without a request, and lookupById builds the same card for a Recent chip', async () => {
   const fetchImpl = fakeFetch({});
   const text = 'BCD Boiotia 174b; HGC 4, 1218';
-  const card = { id: text, corpus: 'other', label: text, authority: null, denomination: null, mint: null, material: null, dates: null,
+  const card = { id: text, corpus: 'other', label: text, authority: null, denomination: null, mint: null, material: null, dates: null, portrait: null,
     obverse: { legend: null, description: null }, reverse: { legend: null, description: null } };
   assert.deepEqual(buildQuery({ catalogue: 'Other', number: ' "BCD Boiotia  174b; HGC 4, 1218" ' }), { corpus: 'other', query: text });
   // Typed in the guided field, an Other reference is cleaned as the Reference box cleans it, so both give the same card, Recent chip and term.
@@ -876,6 +959,26 @@ test('rulers from a lot text search OCRE portrait and authority facets without a
   assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
   const titus1073 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-titus-1073.xml'), 'ocre/id/ric.2_1(2).ves.1073.jsonld': fixture('ocre-vespasian-1073.jsonld') });
   assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1073', rulers: ['Titus'] }, { fetchImpl: titus1073, cache: new Map() })).card?.id, 'ric.2_1(2).ves.1073');
+});
+
+test('an OCRE lookup resolves the obverse portrait label too, and only when it is not the authority already asked for', async () => {
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-titus-972.xml'), 'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'),
+    'nomisma.org/id/titus.jsonld': titus });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl, cache: new Map([['vespasian', 'Vespasian']]) });
+  assert.equal(result.card.portrait, 'Titus');
+  assert.equal(fetchImpl.calls.filter((url) => url.includes('nomisma.org/id/titus.jsonld')).length, 1);
+  // Portrait and authority share a slug on an ordinary type, so the request count is unchanged.
+  const nero = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-nero-306.xml'), 'ocre/id/ric.1(2).ner.306.jsonld': fixture('ocre-nero-306.jsonld'),
+    'nomisma.org/id/nero.jsonld': fixture('nomisma-nero.jsonld') });
+  const plain = await lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' }, { fetchImpl: nero, cache: new Map() });
+  assert.equal(plain.card.portrait, 'Nero');
+  assert.equal(nero.calls.filter((url) => url.includes('nomisma.org/id/nero.jsonld')).length, 1);
+  assert.equal(nero.calls.filter((url) => url.includes('nomisma.org/')).length, 4);
+  // Only OCRE files coins under an authority, so no other corpus asks for a portrait label.
+  const crro = fakeFetch({ 'crro/id/rrc-44.5.jsonld': fixture('crro-rrc-44-5.jsonld') });
+  await lookupById('crro', 'rrc-44.5', { fetchImpl: crro, cache: new Map() });
+  assert.equal(crro.calls.filter((url) => url.includes('roma.jsonld')).length, 0);
 });
 
 test('several rulers and a volume make one bracketed facet group, quote-safe, and several kept hits are offered with the rulers in the query', async () => {

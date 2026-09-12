@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
@@ -227,6 +227,9 @@ function updateCoinArchivesLink(card) {
   $('coinarchives-link').setAttribute('aria-label', term ? `Search CoinArchives for ${term}, opens a new tab` : 'Open CoinArchives, opens a new tab');
 }
 
+// What the live region says about a card: the filing note is the point of the feature, so it is spoken wherever the card is announced.
+const announcement = (card, ...rest) => [`Found ${card.label}.`, filingNote(card), ...rest].filter(Boolean).join(' ');
+
 function renderCard(card) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
@@ -235,6 +238,10 @@ function renderCard(card) {
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
   $('result-citation').hidden = !citation;
+  // Why RIC files this type where it does, when it has something to say; a quiet card shows nothing and moves nothing.
+  const filing = filingNote(card);
+  $('result-filing').textContent = filing;
+  $('result-filing').hidden = !filing;
   $('type-link').href = `https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`;
   $('type-link').setAttribute('aria-label', `View ${card.label} on numismatics.org, opens a new tab`);
   $('type-link').hidden = other;
@@ -258,7 +265,7 @@ function renderCard(card) {
   updateAcsearchLink();
   updateCoinArchivesLink(card);
   $('result').hidden = false;
-  announce(`Found ${card.label}.`);
+  announce(announcement(card));
 }
 
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
@@ -514,7 +521,7 @@ async function run(perform, note = '') {
     if (!term) {
       if (outcome.card.corpus === 'other') {
         showPricesNote(EMPTY_OTHER_MESSAGE, false);
-        announce(`Found ${outcome.card.label}. ${EMPTY_OTHER_MESSAGE}`);
+        announce(announcement(outcome.card, EMPTY_OTHER_MESSAGE));
       }
       return;
     }
@@ -523,7 +530,7 @@ async function run(perform, note = '') {
     if (granted) runPrices(term, currency, { remember: false });
     else {
       showPricesNote(ACCESS_HINT, false);
-      announce(`Found ${outcome.card.label}. ${ACCESS_HINT}`);
+      announce(announcement(outcome.card, ACCESS_HINT));
     }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);

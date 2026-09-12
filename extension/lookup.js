@@ -264,6 +264,15 @@ export function nomismaSlugs(jsonld) {
   return namedSlugs(main).filter(Boolean);
 }
 
+// The concept the obverse portrays, and only the obverse: a reverse nmo:hasPortrait is the type's deity (Annona on Vespasian 972), never the person
+// the coin is filed under. Null unless the side names exactly one, so a joint type (Leo II and Zeno) says nothing rather than half of it.
+export function portraitSlug(jsonld) {
+  const main = mainNode(jsonld);
+  const obverse = main && graphOf(jsonld).find((entry) => entry['@id'] === `${main['@id']}#obverse`);
+  const portraits = obverse?.['nmo:hasPortrait'] ?? [];
+  return portraits.length === 1 ? slugOf(portraits[0]) : null;
+}
+
 export function nomismaLabel(jsonld, slug) {
   const node = graphOf(jsonld).find((entry) => entry['@id'] === `nm:${slug}` || entry['@id'] === `${NOMISMA}${slug}` || entry['@id'] === `http://nomisma.org/id/${slug}`);
   return english(node?.['skos:prefLabel']);
@@ -279,6 +288,10 @@ export function toCard(jsonld, corpus, labels = {}) {
     return { legend: english(node['nmo:hasLegend']), description: english(node['dcterms:description']) };
   };
   const [authority, denomination, mint, material] = namedSlugs(main).map((slug) => (slug ? labels[slug] ?? slug : null));
+  // Only a type with one authority and one obverse portrait has a portrait to report, and the name never falls back to its slug: an unresolved label
+  // would print as "cornelia_salonina", so it fails closed to null instead.
+  const authorities = main['nmo:hasAuthority'] ?? main['nmo:hasIssuer'] ?? [];
+  const portrait = authorities.length === 1 ? portraitSlug(jsonld) : null;
   return {
     id,
     uri,
@@ -288,10 +301,54 @@ export function toCard(jsonld, corpus, labels = {}) {
     denomination,
     mint,
     material,
+    portrait: portrait && Object.hasOwn(labels, portrait) ? labels[portrait] : null,
     dates: formatDates(main['nmo:hasStartDate']?.[0]?.['@value'], main['nmo:hasEndDate']?.[0]?.['@value']),
     obverse: side('obverse'),
     reverse: side('reverse'),
   };
+}
+
+// The other sections of a volume that share this one's name before its parenthesis ("Zeno" and "Zeno (West)" for "Zeno (East)"), by the rulerKey rule
+// volumesOf uses. Never the card's own section.
+function siblingSections(volume, section) {
+  const base = (name) => norm(name).split(' (')[0];
+  const sections = Object.hasOwn(RIC_SECTIONS, volume) ? RIC_SECTIONS[volume] : [];
+  return sections.filter((name) => base(name) === base(section) && norm(name) !== norm(section));
+}
+
+// RIC VI–IX are filed by mint, so their sections are city names: a name known only there is a place, not a person RIC files coins under.
+const MINT_VOLUMES = new Set(['VI', 'VII', 'VIII', 'IX']);
+const namesASection = (name) => volumesOf(name).some((volume) => !MINT_VOLUMES.has(volume));
+
+const andList = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names.join(''));
+
+// Why a card is filed where it is, in at most two sentences, or '' — the answer for the great majority of cards, which must stay silent.
+// RIC files a Caesar's coins under the reigning emperor (Titus under Vespasian) and an empress's under her husband, which reads as a wrong result
+// until the card says so. It reports only what the record holds: no rank, no claim that the search was wrong, and no name RIC does not use itself.
+export function filingNote(card) {
+  if (card?.corpus !== 'ocre') return '';
+  const reference = parseReference(card.label);
+  if (reference?.catalogue !== 'RIC') return '';
+  const [portrait, authority] = [squash(card.portrait), squash(card.authority)];
+  const sentences = [];
+  // Only a card whose own section is the authority is filed under a ruler at all: RIC VI–IX file by mint, so there the authority heads no section and
+  // the claim would contradict the title above it. The section is also what is named — RIC's own spelling, never a slug nomisma failed to label.
+  const section = squash(reference.section);
+  const filedUnder = section && norm(section).split(' (')[0] === norm(authority);
+  // namesASection is the second gate: a name RIC itself heads a section with, in a volume filed by ruler. Deities and personifications (Apollo,
+  // Annona, Carthage), and names nomisma spells differently from RIC ("Cornelia Salonina"), fail it and stay off the card — never a guess.
+  if (portrait && filedUnder && norm(portrait) !== norm(authority) && namesASection(portrait)) {
+    sentences.push(`Portrait of ${portrait}, listed under ${section}.`);
+  }
+  const siblings = siblingSections(unquote(reference.volume), reference.section);
+  // Only on a card that already needs explaining. A volume splits a long reign into sections it names alike, so on its own this sentence would sit
+  // under every one of RIC V's Gallienus types and say nothing the collector asked about; after the portrait sentence it answers his next question.
+  // That the volume has another section is all it says: never that the section holds a coin with this number.
+  if (siblings.length > 0 && sentences.length > 0) {
+    const named = siblings.length > 1 ? `${andList(siblings)} sections` : `a ${siblings[0]} section`;
+    sentences.push(`RIC ${ocreVolume(reference.volume)} also has ${named}.`);
+  }
+  return sentences.join(' ');
 }
 
 // What a BIGR card carries beyond the record: the king as BIGR titles it and the Bopearachchi series, both null-safe when the citation was unreadable.
@@ -348,7 +405,10 @@ async function fetchCitation(id, fetchImpl, signal) {
 // The one path from a fetched record to a card, shared by lookupById and the SC direct fetch.
 // A BIGR card also carries its Bopearachchi citation: the one already read while verifying the hit, else fetched now (Recent chips, right-click).
 async function cardOutcome(jsonld, corpus, { fetchImpl, cache, signal, citation }) {
-  const labels = await resolveLabels(nomismaSlugs(jsonld), { fetchImpl, cache, signal });
+  // Only OCRE files a type under an authority a portrait can differ from, so only OCRE asks for the portrait's name: no request at all when it is the
+  // authority already asked for (the common case), one more parallel, cached, same-deadline one when it differs.
+  const slugs = [...new Set([...nomismaSlugs(jsonld), ...(corpus === 'ocre' ? [portraitSlug(jsonld)] : [])].filter(Boolean))];
+  const labels = await resolveLabels(slugs, { fetchImpl, cache, signal });
   const card = toCard(jsonld, corpus, labels);
   if (!card) return { status: 'network' };
   if (corpus === BIGR) card.bop = bopDetails(card.label, citation === undefined ? await fetchCitation(card.id, fetchImpl, signal) : citation);
@@ -356,7 +416,7 @@ async function cardOutcome(jsonld, corpus, { fetchImpl, cache, signal, citation 
 }
 
 // No type data, so no request: the text is the id and the label (a Recent chip stores both).
-const otherCard = (text) => ({ id: text, corpus: OTHER, label: text, authority: null, denomination: null, mint: null, material: null, dates: null,
+const otherCard = (text) => ({ id: text, corpus: OTHER, label: text, authority: null, denomination: null, mint: null, material: null, portrait: null, dates: null,
   obverse: { legend: null, description: null }, reverse: { legend: null, description: null } });
 
 export async function lookupById(corpus, id, options = {}) {
