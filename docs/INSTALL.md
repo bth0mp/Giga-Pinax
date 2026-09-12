@@ -6,7 +6,7 @@ The extension uses right-click actions for Giga lookup, highlighted research, an
 
 ## Install in Brave or Chrome
 
-1. Sign in to GitHub with an account that can access the private repository, then download the [latest Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip).
+1. Download the public [latest Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip). No GitHub account is required.
 2. Extract the ZIP into a folder you will keep.
 3. Open `brave://extensions` in Brave or `chrome://extensions` in Chrome.
 4. Turn on **Developer mode**.
@@ -15,13 +15,13 @@ The extension uses right-click actions for Giga lookup, highlighted research, an
 
 Brave grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` at install.
 
-**Already installed?** Open **Updates** in Giga Pinax and select **Download latest update**. After the ZIP downloads, replace the files in the same extracted folder, then select **Reload** at `brave://extensions` or `chrome://extensions`. Reopen the popup. Giga Pinax opens the download in your signed-in browser; it does not install the files silently.
+**Already installed?** Open **Updates** in Giga Pinax and select **Download latest update**. After the ZIP downloads, replace the files in the same extracted folder, then select **Reload** at `brave://extensions` or `chrome://extensions`. Reopen the popup. Giga Pinax opens the public download; it does not install the files silently.
 
 ## Test temporarily in Firefox
 
 Use Firefox 142 or later.
 
-1. Sign in to GitHub with an account that can access the private repository, then download the [latest Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-firefox.zip).
+1. Download the public [latest Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-firefox.zip). No GitHub account is required.
 2. Open `about:debugging` and select **This Firefox**.
 3. Select **Load Temporary Add-on**.
 4. Choose the downloaded ZIP.
@@ -33,11 +33,13 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 
 **Already installed temporarily?** Open **Updates** and select **Download latest update**, then load the downloaded unsigned ZIP again. Firefox removes a temporary installation on restart.
 
-The download button opens a fixed GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Use [View releases](https://github.com/bth0mp/Giga-Pinax/releases/latest) if GitHub needs you to sign in or you want to read the release notes.
+The download button opens a fixed public GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Use [View releases](https://github.com/bth0mp/Giga-Pinax/releases/latest) to read the release notes.
 
 ## Developer build
 
 End users do not need Python for the download-and-reload update above. To build from source, run `python scripts/build.py` from the repository root. The builder creates `dist/brave/`, `dist/firefox/`, versioned ZIPs such as `giga-pinax-brave-0.27.1.zip`, and byte-identical stable aliases named `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. A release must upload both stable aliases alongside the versioned archives so the in-extension download links remain valid. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+
+Maintainers should follow the [release publishing guide](RELEASING.md), including its short install section for every GitHub release body.
 
 GitHub's automatically generated **Source code** archives are repository snapshots and are not loadable extension packages.
 

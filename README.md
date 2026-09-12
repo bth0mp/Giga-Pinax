@@ -6,7 +6,7 @@ The workspace records lots, alternative priorities, planned and externally activ
 
 ## Install
 
-Download the release package for your browser from the [latest GitHub release](https://github.com/bth0mp/Giga-Pinax/releases/latest). This repository is private, so GitHub asks you to sign in with an account that has access. Extract the Chromium ZIP for Brave or Chrome; Firefox can load its unsigned ZIP temporarily. Follow [the installation guide](docs/INSTALL.md).
+Download the release package for your browser from the [latest GitHub release](https://github.com/bth0mp/Giga-Pinax/releases/latest). Downloads are public and require no GitHub account. Under **Assets**, choose the browser ZIP rather than GitHub's **Source code** archives. Extract the Chromium ZIP for Brave or Chrome; Firefox 142+ can load its unsigned ZIP temporarily. Follow [the installation guide](docs/INSTALL.md).
 
 For later releases, open **Updates** under the popup header and select **Download latest update**. The button downloads the stable package for your browser from the latest GitHub release. It does not silently install files: replace the files in the folder you already loaded and select **Reload** in Brave or Chrome, or load the latest unsigned ZIP again in Firefox.
 
