@@ -214,8 +214,6 @@ export function summarise(lots, currency) {
 }
 
 // How far to trust a median, by the sales it rests on. Never "Fair", which would read as a verdict on a checked price.
-export const medianStrength = (count) => (count >= 15 ? 'Solid' : count >= 5 ? 'Moderate' : 'Thin');
-
 // A bid or an asking price against the counted sales: how many sold strictly under it, and its multiple of the median.
 export const priceCheck = (summary, amount) => ({ below: summary.priced.filter((sale) => sale.amount < amount).length, count: summary.count, ratio: amount / summary.median });
 
@@ -325,7 +323,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
-  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} ${count === 1 ? 'sale' : 'sales'} (${medianStrength(count).toLowerCase()}) matching “${term}”`;
+  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const lines = [card.label, stats];
   // The date is page text, squashed so a copied line never splits.

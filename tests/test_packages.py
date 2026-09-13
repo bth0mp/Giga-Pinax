@@ -17,6 +17,8 @@ DIST = ROOT / "dist"
 
 ASSETS = {
     "background.js",
+    "bid-tools.css",
+    "bid-tools.js",
     "browser-api.js",
     "companion-popup.css",
     "companion-popup.js",
@@ -27,6 +29,7 @@ ASSETS = {
     "core/records.js",
     "core/reminders.js",
     "current-lot.js",
+    "design-tokens.css",
     "popup.html",
     "popup.css",
     "popup.js",
@@ -34,13 +37,18 @@ ASSETS = {
     "updates.css",
     "updates.js",
     "lookup.js",
+    "navigation.js",
     "preferences.js",
     "prices.js",
     "catalogues.js",
     "selection.js",
+    "settings.css",
+    "settings.html",
+    "settings.js",
     "lot.js",
     "sample-data.js",
     "source-launchers.js",
+    "source-menu.js",
     "store.js",
     "workspace.css",
     "workspace.html",
@@ -64,7 +72,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.27.2", manifest["version"])
+                self.assertEqual("0.28.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -93,10 +101,10 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(browser=browser):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(HOST_PERMISSIONS, manifest["host_permissions"])
-                self.assertEqual(
-                    {"storage", "activeTab", "scripting", "contextMenus", "alarms"},
-                    set(manifest["permissions"]),
-                )
+                expected = {"storage", "activeTab", "scripting", "contextMenus", "alarms"}
+                if browser == "brave":
+                    expected.add("sidePanel")
+                self.assertEqual(expected, set(manifest["permissions"]))
                 self.assertEqual(["notifications"], manifest["optional_permissions"])
                 for key in ("optional_host_permissions", "content_scripts", "offscreen"):
                     self.assertNotIn(key, manifest)
@@ -120,6 +128,10 @@ class ManifestTests(unittest.TestCase):
             {"searchTerms", "websiteContent"},
             set(gecko["data_collection_permissions"]["required"]),
         )
+
+    def test_manifests_declare_native_research_documents(self) -> None:
+        self.assertEqual("popup.html?panel=1", self.load_manifest("brave")["side_panel"]["default_path"])
+        self.assertEqual("popup.html?panel=1", self.load_manifest("firefox")["sidebar_action"]["default_panel"])
 
 
 class PackageBuildTests(unittest.TestCase):
@@ -145,7 +157,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.27.2.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.28.0.zip"
             for browser in ("brave", "firefox")
         }
         stable_zip_paths = {

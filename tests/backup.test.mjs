@@ -35,6 +35,26 @@ test('round-trips CHF money as its own exact minor-unit currency', () => {
   assert.deepEqual(restored.value.lots[0].activeBid.amount, { currency: 'CHF', minor: 10000 });
 });
 
+test('old schema-one backups load while optional presets and lot notes round-trip when present', () => {
+  const old = createEmptySnapshot(NOW);
+  assert.equal(validateBackup(exportBackup(old, NOW).value).ok, true);
+  const current = createEmptySnapshot(NOW);
+  current.preferences = {
+    schemaVersion: 1, revision: 0, currency: 'GBP', catalogue: 'RIC', number: '306',
+    volume: 'I', section: 'Nero', sampleMode: false, desktopAlertsEnabled: false,
+    housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }], createdAt: NOW, updatedAt: NOW,
+  };
+  current.lots.push({
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector',
+    title: 'Nero denarius', notes: 'Compare with the plated example.', sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const restored = validateBackup(exportBackup(current, NOW).value);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(restored.value.preferences.housePremiumPresets, current.preferences.housePremiumPresets);
+  assert.equal(restored.value.lots[0].notes, current.lots[0].notes);
+});
+
 test('validates the whole backup and rejects malformed, future, oversized, or invalid data', () => {
   assert.equal(validateBackup('{').error.code, 'invalid-json');
   assert.equal(validateBackup({ format: 'ancient-coin-auction-companion', schemaVersion: 2, exportedAt: NOW, data: {} }).error.code, 'unsupported-schema');

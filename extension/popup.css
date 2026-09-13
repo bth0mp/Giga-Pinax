@@ -1,29 +1,3 @@
-/* Porphyry: wine-purple on parchment, gold hairlines, serif headings. Light tokens on :root; the dark set is repeated for the system
-   scheme (unless the stored choice is light) and for a stored dark choice (theme.js sets data-theme before the first paint). */
-:root {
-  color-scheme: light;
-  --bg:#F7F2EA; --card:#FFFFFF; --soft:#F1E9DD; --ink:#2A1433; --muted:#7A6680; --line:#E4D6C6; --field:#9A8372;
-  --accent:#6B1F5C; --accent-hover:#5A184D; --on-accent:#FDF6EC; --accent-soft:#F1E4EE;
-  --gold:#9C7424; --gold-line:#D9C48F; --focus:#6B1F5C; --error:#A0283C; --shadow:0 1px 2px rgba(42,20,51,.06);
-  --font-ui:"Segoe UI",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
-  --font-serif:Georgia,"Iowan Old Style","Palatino Linotype",serif;
-  --font-mono:Consolas,"Liberation Mono",monospace;
-  font-family:var(--font-ui); color:var(--ink); background:var(--bg); font-synthesis:none;
-}
-@media (prefers-color-scheme:dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg:#140811; --card:#1F0E1B; --soft:#2A1526; --ink:#F3E6EE; --muted:#B99AAE; --line:#3E2238; --field:#8A6482;
-    --accent:#D8B25A; --accent-hover:#E4C271; --on-accent:#1A0A15; --accent-soft:#3B2036;
-    --gold:#D8B25A; --gold-line:#5C4622; --focus:#D8B25A; --error:#FFA6B3; --shadow:none;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg:#140811; --card:#1F0E1B; --soft:#2A1526; --ink:#F3E6EE; --muted:#B99AAE; --line:#3E2238; --field:#8A6482;
-  --accent:#D8B25A; --accent-hover:#E4C271; --on-accent:#1A0A15; --accent-soft:#3B2036;
-  --gold:#D8B25A; --gold-line:#5C4622; --focus:#D8B25A; --error:#FFA6B3; --shadow:none;
-}
 * {box-sizing:border-box;}
 [hidden] {display:none !important;}
 html,body {margin:0; padding:0;}
@@ -36,10 +10,13 @@ a:hover {text-decoration-thickness:2px;}
 p,h1,h2 {margin:0;}
 :focus-visible {outline:3px solid var(--focus); outline-offset:2px;}
 .popup {width:100%; max-height:600px; display:flex; flex-direction:column; overflow:hidden;}
-.popup-header {display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--gold-line); flex-shrink:0;}
-.brand-icon {border-radius:8px; flex-shrink:0;}
+.popup-header {display:flex; align-items:center; gap:9px; padding:11px 14px; border-top:3px solid var(--accent); border-bottom:1px solid var(--line); flex-shrink:0; background:var(--surface);}
+.brand-icon {border-radius:6px; flex-shrink:0; width:28px; height:28px;}
 h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:600; letter-spacing:0; color:var(--accent);}
 .popup-header p {font-size:11px; margin-top:2px; color:var(--muted);}
+.header-actions {margin-left:auto; display:flex; align-items:center; gap:10px;}
+.header-action,.header-actions summary {border:0; padding:5px 0; background:transparent; color:var(--accent); font-size:11px; font-weight:650; cursor:pointer;}
+.header-actions .sources-menu-body {position:absolute; z-index:20; top:calc(100% + 7px); right:0; border-radius:6px;}
 .icon-button {margin-left:auto; width:32px; height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink); flex-shrink:0;}
 .icon-button:hover {border-color:var(--accent); color:var(--accent);}
 .icon-button svg {width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
@@ -52,6 +29,10 @@ h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:
 .windowed body {width:auto; min-width:360px;}
 .windowed .popup {height:100vh; max-height:none;}
 .windowed .popup-scroll {flex-grow:1;}
+.panel-mode body {width:100%; min-width:320px;}
+.panel-mode .popup {height:100vh; max-height:none;}
+.panel-mode .popup-scroll {flex-grow:1;}
+.panel-mode #open-panel {display:none;}
 .reference-form {padding:12px 16px; border-bottom:1px solid var(--line);}
 label {display:block; font-size:12px; font-weight:600; margin-bottom:6px;}
 select,input {width:100%; height:36px; border:1px solid var(--field); border-radius:8px; background:var(--card); color:var(--ink); padding:0 10px; min-width:0; font-size:13px;}
@@ -64,6 +45,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* Look up sizes the column beside the box, so its width is fixed: "Looking up…" must not narrow the field being typed into. It carries no magnifier
    here, which is what buys the room for the wider busy label without taking characters off the placeholder. */
 .quick-row .search-row .primary-button {min-width:105px;}
+.refine-reference {margin-top:10px; border-top:1px solid var(--line);}
+.refine-reference > summary {padding:10px 0 8px; cursor:pointer; color:var(--accent); font-size:12px; font-weight:650;}
+.refine-reference[open] > summary {margin-bottom:3px;}
 .catalogue-row {display:grid; grid-template-columns:1fr 91px; gap:12px; margin-bottom:12px;}
 .catalogue-row select {font-weight:600;}
 .search-row {display:grid; grid-template-columns:minmax(60px,1fr) auto; gap:8px;}
@@ -93,7 +77,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* The chips are buttons, so their edge carries the same weight as the typed field's: --line reads as 1.3:1 against the page, --muted as 4.7:1 light and 7.7:1 dark. */
 .recent-list button {max-width:100%; border:1px solid var(--muted); border-radius:999px; background:var(--soft); color:var(--ink); font-size:11px; padding:5px 12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .recent-list button:hover {border-color:var(--accent); color:var(--accent);}
-.result {margin:12px 16px; padding:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);}
+.result {margin:0 16px; padding:16px 0 18px; background:transparent; border-bottom:1px solid var(--line);}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}
 .catalogue-code {font-family:var(--font-serif); font-size:16px; line-height:1.3; font-weight:600; letter-spacing:0; color:var(--accent); overflow-wrap:anywhere;}
 .type-heading p {font-size:11px; line-height:1.3; color:var(--muted); margin-top:4px;}
@@ -111,7 +95,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* The median sits right under the heading; without prices, the note takes its place. */
 .median-block,.prices-note {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
 .median-line {display:flex; align-items:baseline; gap:8px; margin-top:2px;}
-.median-line strong {font-family:var(--font-serif); font-size:44px; line-height:1.05; letter-spacing:-.02em; font-weight:400; color:var(--gold); font-variant-numeric:lining-nums tabular-nums;}
+.median-line strong {font-family:var(--font-serif); font-size:32px; line-height:1.1; letter-spacing:-.01em; font-weight:500; color:var(--ink); font-variant-numeric:lining-nums tabular-nums;}
 #median-currency {font-size:12px; font-weight:600; color:var(--muted);}
 .sale-strength {font-size:12px; font-weight:600; margin-top:4px;}
 .sale-period {font-size:11px; color:var(--muted); margin-top:6px;}
@@ -157,10 +141,11 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-list li span {color:var(--muted); min-width:0; overflow-wrap:anywhere;}
 .sale-list li strong {font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;}
 .price-note {font-size:11px; line-height:1.5; color:var(--muted); margin-top:8px;}
+.price-basis {font-size:11px; line-height:1.5; color:var(--muted); margin-top:5px;}
 .copy-button {padding:8px 0 0;}
 /* The two outside searches share a row when both labels fit (the right-click window); in the 400px popup they stack. */
 .search-links {margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;}
-.search-links a {flex:1 1 max-content; white-space:nowrap;}
+.search-links a {flex:0 1 auto; white-space:nowrap; font-size:12px;}
 .popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
 .popup-footer a {text-decoration:none; padding:4px 0;}
 .popup-footer a:hover {text-decoration:underline;}

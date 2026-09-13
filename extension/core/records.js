@@ -300,6 +300,7 @@ function lotResult(lot, path) {
     stringResult(lot.title, `${path}.title`, LIMITS.title),
     optionalString(lot, 'reference', path, LIMITS.shortText),
     optionalString(lot, 'lotNumber', path, LIMITS.shortText),
+    optionalString(lot, 'notes', path, LIMITS.notes, { nonEmpty: false }),
     sourceLinksResult(lot.sourceLinks, `${path}.sourceLinks`),
     bidHistoryResult(lot.bidHistory, `${path}.bidHistory`),
     outcomeResult(lot.outcome, `${path}.outcome`),
@@ -493,7 +494,7 @@ function preferencesResult(preferences, path) {
   if (preferences === null) return { ok: true, value: preferences };
   const object = objectResult(preferences, path);
   if (!object.ok) return object;
-  return firstFailure(
+  const common = firstFailure(
     integerResult(preferences.revision, `${path}.revision`),
     instantResult(preferences.createdAt, `${path}.createdAt`),
     instantResult(preferences.updatedAt, `${path}.updatedAt`),
@@ -512,6 +513,26 @@ function preferencesResult(preferences, path) {
       ? { ok: true, value: preferences.desktopAlertsEnabled }
       : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
   );
+  if (!common.ok) return common;
+  if (!OWN(preferences, 'housePremiumPresets')) return { ok: true, value: preferences };
+  const presets = arrayResult(preferences.housePremiumPresets, `${path}.housePremiumPresets`, 50);
+  if (!presets.ok) return presets;
+  const names = new Set();
+  for (let index = 0; index < preferences.housePremiumPresets.length; index += 1) {
+    const preset = preferences.housePremiumPresets[index];
+    const presetPath = `${path}.housePremiumPresets[${index}]`;
+    const object = objectResult(preset, presetPath);
+    if (!object.ok) return object;
+    const valid = firstFailure(
+      stringResult(preset.name, `${presetPath}.name`, LIMITS.shortText),
+      integerResult(preset.buyerPremiumBps, `${presetPath}.buyerPremiumBps`, { maximum: 10000 }),
+    );
+    if (!valid.ok) return valid;
+    const normalized = preset.name.trim().toLocaleLowerCase();
+    if (names.has(normalized)) return failure('duplicate-name', 'House premium names must be unique.', `${presetPath}.name`);
+    names.add(normalized);
+  }
+  return { ok: true, value: preferences };
 }
 
 export function validateDraftPayload(kind, payload, path = '') {

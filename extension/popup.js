@@ -1,9 +1,10 @@
 import { HOST_ORIGINS, INVISIBLE, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, medianStrength, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
+import { shouldRevealRefine } from './companion-popup.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -245,6 +246,7 @@ function showError(message, field) {
   $('form-error').textContent = message;
   $('form-error').hidden = false;
   if (field) $(field).setAttribute('aria-invalid', 'true');
+  if (shouldRevealRefine({ status: 'error' }, field)) $('refine-reference').open = true;
   if (lotNote) announce('');
 }
 
@@ -315,6 +317,7 @@ function renderCard(card) {
   updateAcsearchLink();
   updateCoinArchivesLink(card);
   $('result').hidden = false;
+  $('refine-reference').open = false;
   announce(announcement(card));
   revealAgain('result');
 }
@@ -343,6 +346,7 @@ function renderCandidates(candidates, corpus, partial) {
     return item;
   }));
   $('candidates').hidden = false;
+  if (shouldRevealRefine({ status: 'candidates' })) $('refine-reference').open = true;
   announce(`${candidates.length} possible matches. Choose one.`);
   revealAgain('candidates');
 }
@@ -468,10 +472,9 @@ function renderPrices(lots, currency, term, named = false) {
   for (const id of ['median-line', 'range-block', 'check-row', 'check-result', 'sale-details', 'copy-summary']) $(id).hidden = empty;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const strength = medianStrength(count);
   const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const none = `No sales with a price in the last ${period.years} years.`;
-  $('sale-strength').textContent = empty ? none : `${strength}: ${sales(count)}${years}`;
+  $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
   const trend = trendOf(lots, currency, now);
   $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
   $('sale-trend').hidden = !trend;
@@ -515,7 +518,7 @@ function renderPrices(lots, currency, term, named = false) {
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
-  $('announcement').textContent = empty ? none : `${heading} ${spoken} over ${sales(count)} (${strength.toLowerCase()}).`;
+  $('announcement').textContent = empty ? none : `${heading} ${spoken} from ${count} recorded ${count === 1 ? 'sale' : 'sales'}.`;
 }
 
 // Checked against the sales shown, never stored: blank shows nothing, text parsePrice can't read asks for an amount, and a readable one says how many
@@ -594,7 +597,7 @@ async function run(perform, note = '') {
     }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
-  else if (outcome.status === 'too-many') showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
+  else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
   else showError(NETWORK_MESSAGE);
 }
@@ -658,9 +661,11 @@ showStored();
 applyStoredTheme();
 syncThemeButton();
 // A window opened with ?window=1 (right-click, the pop-out button) can be resized: the page fills it (popup.css) and offers no pop-out of its own.
-const windowed = new URLSearchParams(location.search).get('window') === '1';
+const parameters = new URLSearchParams(location.search);
+const panel = parameters.get('panel') === '1';
+const windowed = parameters.get('window') === '1';
 document.documentElement.classList.toggle('windowed', windowed);
-$('pop-out').hidden = windowed;
+document.documentElement.classList.toggle('panel-mode', panel);
 
 // Lot text waits for Look up: parseReference would read only a piece of it into the fields.
 $('quick-reference').addEventListener('change', () => {

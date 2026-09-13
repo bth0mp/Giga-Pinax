@@ -238,6 +238,7 @@ test('validates concrete preferences, scheduler, alert, draft, and request-ledge
     section: 'Nero',
     sampleMode: false,
     desktopAlertsEnabled: false,
+    housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }],
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -283,6 +284,17 @@ test('validates concrete preferences, scheduler, alert, draft, and request-ledge
   assert.equal(validateSnapshot(snapshot).error.path, 'alerts[0].attemptedAt');
 
   snapshot.alerts[0].status = 'unknown';
+  assert.equal(validateSnapshot(snapshot).ok, false);
+});
+
+test('rejects duplicate or out-of-bounds house premium presets and oversized lot notes', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.preferences = { schemaVersion: 1, revision: 0, currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false, desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: ' cng ', buyerPremiumBps: 2200 }], createdAt: NOW, updatedAt: NOW };
+  assert.equal(validateSnapshot(snapshot).error.code, 'duplicate-name');
+  snapshot.preferences.housePremiumPresets = Array.from({ length: 51 }, (_, index) => ({ name: `House ${index}`, buyerPremiumBps: 0 }));
+  assert.equal(validateSnapshot(snapshot).error.code, 'collection-limit');
+  snapshot.preferences.housePremiumPresets = [];
+  snapshot.lots.push(makeLot(IDS.lotUsdKnown, { notes: 'x'.repeat(LIMITS.notes + 1) }));
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 

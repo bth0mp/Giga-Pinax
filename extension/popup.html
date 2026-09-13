@@ -7,39 +7,26 @@
   <title>Giga Pinax</title>
   <link rel="icon" href="icons/icon-32.png">
   <script src="theme.js"></script>
+  <link rel="stylesheet" href="design-tokens.css">
+  <link rel="stylesheet" href="bid-tools.css">
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="companion-popup.css">
-  <link rel="stylesheet" href="updates.css">
   <script src="popup.js" type="module"></script>
   <script src="companion-popup.js" type="module"></script>
-  <script src="updates.js" type="module"></script>
 </head>
 <body>
   <main class="popup">
     <header class="popup-header">
       <img class="brand-icon" src="icons/icon-48.png" width="32" height="32" alt="">
       <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
-      <button id="pop-out" class="icon-button" type="button" aria-label="Open in a window" title="Open in a window you can resize">
-        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
-      </button>
-      <button id="theme-toggle" class="icon-button" type="button" aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme">
-        <svg id="icon-moon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-        <svg id="icon-sun" aria-hidden="true" viewBox="0 0 24 24" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-      </button>
-    </header>
-    <details class="updates">
-      <summary>Updates</summary>
-      <div class="updates-body">
-        <p id="updates-version" class="updates-version"></p>
-        <p class="updates-copy">Download the latest public ZIP from GitHub. No account is needed.</p>
-        <div class="updates-actions">
-          <a id="updates-download" class="primary-button" href="https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip" target="_blank" rel="noopener noreferrer">Download latest update <span aria-hidden="true">↗</span></a>
-          <a class="updates-release-link" href="https://github.com/bth0mp/Giga-Pinax/releases/latest" target="_blank" rel="noopener noreferrer">View releases <span aria-hidden="true">↗</span></a>
-        </div>
-        <h2 id="updates-browser"></h2>
-        <p id="updates-instructions" class="updates-copy"></p>
+      <div class="header-actions">
+        <button id="open-panel" class="header-action" type="button">Panel</button>
+        <div id="sources-menu"></div>
+        <button id="open-settings" class="header-action" type="button">Settings</button>
       </div>
-    </details>
+      <button id="pop-out" type="button" hidden aria-hidden="true" tabindex="-1">Open in a window</button>
+      <button id="theme-toggle" type="button" hidden aria-hidden="true" tabindex="-1"><span id="icon-moon"></span><span id="icon-sun" hidden></span></button>
+    </header>
     <nav id="companion-tabs" class="companion-tabs" role="tablist" aria-label="Giga Pinax tools">
       <button id="companion-tab-research" type="button" role="tab" aria-selected="true" aria-controls="companion-panel-research">Research</button>
       <button id="companion-tab-calculator" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-calculator" tabindex="-1">Calculator</button>
@@ -48,59 +35,36 @@
     <section id="companion-panel-research" class="companion-tab-panel" role="tabpanel" aria-labelledby="companion-tab-research">
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
-        <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Titus 123 · RIC 972 · Price 23" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Type a whole reference, or use the fields below.</p></div>
-        <div class="catalogue-row">
+        <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p></div>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <details id="refine-reference" class="refine-reference">
+          <summary>Refine reference</summary>
+          <div class="catalogue-row">
           <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option><option value="Other">Other (prices only)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
-        </div>
-        <div id="ric-fields" class="ric-fields" hidden>
+          </div>
+          <div id="ric-fields" class="ric-fields" hidden>
           <div id="volume-field"><label for="ric-volume">Volume / edition</label><select id="ric-volume" name="volume"></select></div>
           <div><label id="section-label" for="ric-section">Ruler or mint section</label><input id="ric-section" name="section" list="section-options" maxlength="120" autocomplete="off" spellcheck="false"><datalist id="section-options"></datalist></div>
           <p id="ric-note" class="field-hint ric-note"></p>
-        </div>
-        <label id="reference-label" for="reference-number">Price number</label>
-        <input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error">
-        <p id="reference-help" class="field-hint">Example: Price 23</p>
-        <p id="form-error" class="form-error" role="alert" hidden></p>
-        <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Did you mean:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
+          </div>
+          <label id="reference-label" for="reference-number">Price number</label>
+          <input id="reference-number" name="reference" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="reference-help form-error">
+          <p id="reference-help" class="field-hint">Example: Price 23</p>
+          <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Choose a matching type:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
+        </details>
         <div id="lot-refs" class="candidates" hidden><p id="lot-refs-label" class="field-hint">Found in this text:</p><ul id="lot-list" class="candidate-list" aria-labelledby="lot-refs-label"></ul></div>
       </form>
-      <details class="coinarchives-pro">
-        <summary>CoinArchives Pro</summary>
-        <div class="coinarchives-pro-body">
-          <p>Already a subscriber? Sign in on CoinArchives, then search its Pro archive.</p>
-          <div class="coinarchives-pro-links">
-            <a class="coinarchives-pro-signin" href="https://pro.coinarchives.com/login.php" target="_blank" rel="noopener noreferrer">Sign in to CoinArchives Pro <span aria-hidden="true">↗</span></a>
-            <a href="https://pro.coinarchives.com/a/" target="_blank" rel="noopener noreferrer">Ancient coins <span aria-hidden="true">↗</span></a>
-            <a href="https://pro.coinarchives.com/w/" target="_blank" rel="noopener noreferrer">World coins <span aria-hidden="true">↗</span></a>
-          </div>
-          <p class="field-hint">Giga Pinax never handles your Pro credentials. The free CoinArchives search link remains available on each result.</p>
-        </div>
-      </details>
-      <details class="companion-current-lot">
-        <summary>Current page</summary>
-        <div class="companion-current-lot-body">
-          <button id="companion-capture-current" class="companion-outline-button" type="button">Capture current-page details</button>
-          <div id="companion-capture-editor" hidden>
-            <p id="companion-capture-source" class="field-hint"></p>
-            <div class="companion-field-pair"><label>Ruler<input id="companion-capture-ruler" maxlength="120"></label><label>Denomination<input id="companion-capture-denomination" maxlength="120"></label></div>
-            <div class="companion-field-pair"><label>Mint<input id="companion-capture-mint" maxlength="120"></label><label>Reference<input id="companion-capture-reference" maxlength="120"></label></div>
-            <div class="companion-capture-actions"><button id="companion-use-capture" class="companion-outline-button" type="button">Use in Reference</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime>Review in watchlist</button></div>
-          </div>
-          <p class="field-hint">Review every extracted field before lookup or saving.</p>
-        </div>
-      </details>
-      <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
         <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
           <div class="median-block"><fieldset id="period" class="period"><legend class="sr-only">Sales period</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
-            <p class="metric-label">Median hammer price</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
+            <p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
           <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="sale-list" class="sale-list"></ol></details>
-          <p id="price-note" class="price-note"></p>
+          <p id="price-note" class="price-note"></p><p class="price-basis">Basis: recorded acsearch hammer prices; buyer’s premium, tax and shipping excluded.</p>
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>
         </section>
         <p id="prices-note" class="prices-note" hidden><span id="prices-note-text"></span> <a id="signin-link" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" hidden>Sign in <span aria-hidden="true">↗</span></a></p>
@@ -113,10 +77,25 @@
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
         </dl></details>
-        <div class="search-links"><a id="acsearch-link" class="primary-button" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">Search on acsearch <span aria-hidden="true">↗</span></a><a id="coinarchives-link" class="primary-button" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">Search on CoinArchives <span aria-hidden="true">↗</span></a></div>
+        <div class="search-links"><a id="acsearch-link" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">acsearch results</a><a id="coinarchives-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results</a></div>
         <button id="companion-save-watchlist" class="companion-save-watchlist" type="button" data-companion-runtime disabled>Save reference to watchlist</button>
         <p class="field-hint">Saves the reference and type-page link for review. Session acsearch prices stay in this view.</p>
       </section>
+      <details class="companion-current-lot" open>
+        <summary>Current source</summary>
+        <div class="companion-current-lot-body">
+          <p class="source-intro">Bring the auction page you are viewing into this research document.</p>
+          <button id="companion-capture-current" class="companion-outline-button" type="button">Capture current page</button>
+          <div id="companion-capture-editor" hidden>
+            <p id="companion-capture-source" class="field-hint"></p>
+            <div class="companion-field-pair"><label>Ruler<input id="companion-capture-ruler" maxlength="120"></label><label>Denomination<input id="companion-capture-denomination" maxlength="120"></label></div>
+            <div class="companion-field-pair"><label>Mint<input id="companion-capture-mint" maxlength="120"></label><label>Reference<input id="companion-capture-reference" maxlength="120"></label></div>
+            <div class="companion-capture-actions"><button id="companion-use-capture" class="primary-button" type="button" disabled>Research coin</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime disabled>Save to watchlist</button></div>
+          </div>
+          <p class="field-hint">Review extracted fields before researching or saving.</p>
+        </div>
+      </details>
+      <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
@@ -124,21 +103,7 @@
     <footer class="popup-footer"><span>Type data: ANS OCRE, PELLA, CRRO, SCO &amp; BIGR (ODbL)</span><a href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="Open acsearch in a new tab">acsearch <span aria-hidden="true">↗</span></a></footer>
     </section>
     <section id="companion-panel-calculator" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-calculator" hidden>
-      <form id="companion-calculator-form" class="companion-card" novalidate>
-        <h2>Hammer + buyer’s premium</h2>
-        <p class="companion-intro">Calculate the auction total without tax, shipping, or currency conversion.</p>
-        <div class="companion-field-pair">
-          <label>Hammer<input id="companion-hammer" inputmode="decimal" autocomplete="off" placeholder="100.00"></label>
-          <label>Currency<select id="companion-calculator-currency"><option>USD</option><option>EUR</option><option>GBP</option><option>CHF</option></select></label>
-        </div>
-        <label>Buyer’s premium % <span class="companion-optional">optional</span><input id="companion-premium-percent" inputmode="decimal" autocomplete="off" placeholder="25"></label>
-        <p id="companion-calculator-error" class="form-error" role="alert" hidden></p>
-        <dl class="companion-calculator-result" aria-live="polite">
-          <div><dt>Buyer’s premium</dt><dd id="companion-premium-output">—</dd></div>
-          <div class="companion-total"><dt>Hammer + premium</dt><dd id="companion-total-output">—</dd></div>
-        </dl>
-        <p id="companion-calculator-note" class="field-hint"></p>
-      </form>
+      <div id="companion-bid-calculator" class="companion-card"></div>
     </section>
     <section id="companion-panel-watchlist" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-watchlist" hidden>
       <div class="companion-card">

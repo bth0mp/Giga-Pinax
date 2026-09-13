@@ -2,12 +2,38 @@ import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from '
 import { projectExposure } from './core/records.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
+import { mountBidCalculator } from './bid-tools.js';
+import { mountSourcesMenu } from './source-menu.js';
+import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
 const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 const bounded = (value, maximum) => typeof value === 'string'
   ? value.trim().replace(/\s+/g, ' ').slice(0, maximum)
   : '';
+
+export function documentMode(search = '') {
+  const parameters = new URLSearchParams(search);
+  const panel = parameters.get('panel') === '1';
+  const windowed = parameters.get('window') === '1';
+  return { panel, windowed, acceptsLookupMessages: windowed };
+}
+
+export function shouldRevealRefine(outcome, field = '') {
+  return outcome?.status === 'candidates' || outcome?.status === 'too-many'
+    || Boolean(field && ['catalogue', 'reference-number', 'ric-volume', 'ric-section'].includes(field));
+}
+
+export function captureControlsState(pending, hasDraft) {
+  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft };
+}
+
+export async function runVisibleAction(action, fallback) {
+  try {
+    const result = await action();
+    return result?.ok === false ? { ok: false, message: result.message || fallback } : { ok: true };
+  } catch (error) { return { ok: false, message: error?.message || fallback }; }
+}
 
 export function moveCompanionTab(current, key) {
   const index = Math.max(0, TABS.indexOf(current));
@@ -99,6 +125,19 @@ async function callExtension(receiver, method, ...args) {
   }));
 }
 
+export async function captureCurrentPage(api, call = callExtension) {
+  const tabs = await call(api?.tabs, 'query', { active: true, currentWindow: true });
+  const tab = tabs?.[0];
+  if (!tab?.id) throw new Error('The current page could not be read. Enter the fields manually.');
+  const fallback = { pageTitle: tab.title ?? '', pageUrl: tab.url ?? '', candidates: {} };
+  try {
+    const results = await call(api?.scripting, 'executeScript', {
+      target: { tabId: tab.id }, func: collectCurrentLotCandidates,
+    });
+    return results?.[0]?.result ?? fallback;
+  } catch { return fallback; }
+}
+
 async function initCompanionPopup() {
   const $ = (id) => document.getElementById(id);
   let bridge;
@@ -106,6 +145,11 @@ async function initCompanionPopup() {
   let snapshot = { lots: [], auctionEvents: [], alerts: [] };
   let safeCard = null;
   let captureDraft = null;
+  let captureRequestId = 0;
+  const mode = documentMode(location.search);
+  document.documentElement.classList.toggle('panel-mode', mode.panel);
+  document.documentElement.classList.toggle('windowed', mode.windowed);
+  mountSourcesMenu($('sources-menu'));
   try {
     bridge = await import('./browser-api.js');
     ({ initializeCompanionPreferences } = await import('./companion-preferences.js'));
@@ -137,22 +181,7 @@ async function initCompanionPopup() {
     });
   }
 
-  const renderCalculator = () => {
-    const view = buildCalculatorView({
-      hammerText: $('companion-hammer').value,
-      premiumPercentText: $('companion-premium-percent').value,
-      currency: $('companion-calculator-currency').value,
-      locale: navigator.language,
-    });
-    $('companion-calculator-error').hidden = !view.error;
-    $('companion-calculator-error').textContent = view.error?.message ?? '';
-    $('companion-premium-output').textContent = view.premium ? formatMoney(view.premium, navigator.language) : '—';
-    $('companion-total-output').textContent = view.total ? formatMoney(view.total, navigator.language) : '—';
-    $('companion-calculator-note').textContent = view.status === 'unknown-premium'
-      ? 'Buyer’s premium is unknown, so no total is shown.' : '';
-  };
-  $('companion-calculator-form').addEventListener('input', renderCalculator);
-  $('companion-calculator-form').addEventListener('submit', (event) => { event.preventDefault(); renderCalculator(); });
+  const calculator = mountBidCalculator($('companion-bid-calculator'), { compact: true });
 
   const renderSummary = () => {
     const summary = buildWatchlistSummary(snapshot);
@@ -183,11 +212,15 @@ async function initCompanionPopup() {
 
   const saveWatchlistDraft = async (payload) => {
     if (!bridge || !payload) return announce('Extension storage is unavailable.', true);
-    const command = { type: 'draft.save', requestId: bridge.newRequestId(), kind: 'current-lot', payload };
-    const reply = await bridge.sendCommand(command);
-    if (!reply.ok) return announce(reply.message, true);
+    const saved = await runVisibleAction(async () => {
+      const command = { type: 'draft.save', requestId: bridge.newRequestId(), kind: 'current-lot', payload };
+      const reply = await bridge.sendCommand(command);
+      if (!reply.ok) return reply;
+      const opened = await openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(reply.value.id)}`);
+      return opened?.ok === false ? opened : { ok: true };
+    }, 'Couldn’t save these details to the watchlist.');
+    if (!saved.ok) return announce(saved.message, true);
     announce('Watchlist details are ready to review.');
-    await openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(reply.value.id)}`);
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
 
@@ -200,27 +233,47 @@ async function initCompanionPopup() {
     }
     return draft;
   };
+  const captureFieldIds = ['ruler', 'denomination', 'mint', 'reference'].map((field) => `companion-capture-${field}`);
+  const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
+    const state = captureControlsState(pending, hasDraft);
+    $('companion-capture-editor').hidden = !state.editorVisible;
+    for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
+    $('companion-use-capture').disabled = state.actionsDisabled;
+    $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge;
+  };
+  for (const id of captureFieldIds) $(id).addEventListener('input', () => {
+    if (!captureDraft) captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
+    applyCaptureState(false, captureFieldIds.some((fieldId) => $(fieldId).value.trim()));
+  });
   $('companion-capture-current').addEventListener('click', async () => {
-    $('companion-capture-editor').hidden = false;
+    const requestId = ++captureRequestId;
+    const captureButton = $('companion-capture-current');
+    captureButton.disabled = true;
+    captureButton.textContent = 'Capturing…';
+    captureDraft = null;
+    applyCaptureState(true, false);
     try {
       const api = globalThis.browser ?? globalThis.chrome;
-      const tabs = await callExtension(api?.tabs, 'query', { active: true, currentWindow: true });
-      const tab = tabs?.[0];
-      if (!tab?.id) throw new Error('The current page could not be read. Enter the fields manually.');
-      let capture = { pageTitle: tab.title ?? '', pageUrl: tab.url ?? '', candidates: {} };
-      try {
-        const results = await callExtension(api?.scripting, 'executeScript', { target: { tabId: tab.id }, func: collectCurrentLotCandidates });
-        capture = results?.[0]?.result ?? capture;
-      } catch { /* title and URL remain available for an editable fallback */ }
+      const capture = await captureCurrentPage(api);
+      if (requestId !== captureRequestId) return;
       captureDraft = buildResearchDraft(capture);
       for (const field of ['ruler', 'denomination', 'mint', 'reference']) $(`companion-capture-${field}`).value = captureDraft[field]?.value ?? '';
       $('companion-capture-source').textContent = captureDraft.pageUrl ? `From ${captureDraft.pageTitle || captureDraft.pageUrl}` : 'Page extraction unavailable. Enter the fields manually.';
+      applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
       announce('Current-page details are ready to review.');
     } catch (error) {
-      captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
+      if (requestId !== captureRequestId) return;
+      captureDraft = null;
+      for (const id of captureFieldIds) $(id).value = '';
       $('companion-capture-source').textContent = error.message;
+      applyCaptureState(false, false);
       announce(error.message, true);
+    } finally {
+      if (requestId === captureRequestId) {
+        captureButton.disabled = false;
+        captureButton.textContent = 'Capture current page';
+      }
     }
   });
   $('companion-use-capture').addEventListener('click', () => {
@@ -228,17 +281,20 @@ async function initCompanionPopup() {
     if (!draft) return;
     $('quick-reference').value = buildResearchQuery(draft);
     $('quick-reference').dispatchEvent(new Event('input', { bubbles: true }));
-    $('quick-reference').focus();
-    announce('Reviewed fields copied to Reference. Select Look up when ready.');
+    $('reference-form').requestSubmit();
   });
   $('companion-capture-watchlist').addEventListener('click', () => {
     const draft = reviewedCapture();
     if (!draft) return;
     void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
   });
-  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) {
-    $(id).addEventListener('click', () => openExtensionPage('workspace.html#watchlist'));
-  }
+  const navigate = async (action, fallback) => {
+    const result = await runVisibleAction(action, fallback);
+    if (!result.ok) announce(result.message, true);
+  };
+  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.'));
+  $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
+  $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
   if (!bridge || !initializeCompanionPreferences) {
     $('companion-runtime-note').hidden = false;
@@ -248,13 +304,13 @@ async function initCompanionPopup() {
     if (reply.ok) {
       snapshot = reply.value;
       const currency = snapshot.preferences?.currency;
-      if (CURRENCIES.includes(currency)) $('companion-calculator-currency').value = currency;
-      renderSummary(); renderCalculator();
+      if (CURRENCIES.includes(currency)) calculator.setValues({ currency });
+      renderSummary();
     } else announce(reply.message, true);
     bridge.subscribeToSnapshots((incoming) => { snapshot = incoming; renderSummary(); });
   }
   activate('research');
-  renderCalculator(); renderSummary();
+  renderSummary();
 }
 
 if (typeof document !== 'undefined') void initCompanionPopup();

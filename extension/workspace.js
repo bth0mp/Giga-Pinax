@@ -2,6 +2,9 @@ import { computeStatistics } from './core/evidence.js';
 import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { projectExposure } from './core/records.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
+import { mountBidCalculator } from './bid-tools.js';
+import { mountSourcesMenu } from './source-menu.js';
+import { openSettings } from './navigation.js';
 
 const ROUTES = Object.freeze(['search', 'watchlist', 'auctions', 'bids', 'history']);
 const requestId = () => globalThis.crypto?.randomUUID?.() ?? `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -30,6 +33,56 @@ export const sameEditorIdentity = (submitted, current) => {
   const currentId = current?.id ?? null;
   return submittedId === null || currentId === null ? submitted === current : submittedId === currentId;
 };
+
+export function chooseSelectedLot(state, lotId, lots = []) {
+  if (lotId === null) return { selectedLotId: null, mode: 'list' };
+  if (!(lots ?? []).some((lot) => lot.id === lotId)) return state;
+  return { selectedLotId: lotId, mode: 'detail' };
+}
+
+export function filterWorkspaceLots(lots, query) {
+  const needle = String(query ?? '').trim().toLocaleLowerCase();
+  if (!needle) return [...(lots ?? [])];
+  return (lots ?? []).filter((lot) => [lot.title, lot.reference, lot.lotNumber]
+    .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
+}
+
+export function lotStatusLabel(lot) {
+  const status = lot?.outcome?.status;
+  if (status && status !== 'open') return ({ won: 'Won', lost: 'Lost', passed: 'Passed' })[status] ?? 'Closed';
+  if (lot?.activeBid) return 'Bid active';
+  if (lot?.plannedBid) return 'Bid planned';
+  return 'Watching';
+}
+
+export function buildLotUndoCommand(undo, newRequestId = requestId) {
+  if (!undo?.previous?.id || undo.previous.id !== undo?.saved?.id || !Number.isInteger(undo.saved.revision)) return null;
+  const { revision, dataClass, createdAt, updatedAt, ...lot } = structuredClone(undo.previous);
+  return buildLotSaveCommand({ ...lot, notes: lot.notes ?? '' }, undo.saved.revision, newRequestId);
+}
+
+export function selectionAfterLotSave(current, submitted, submittedVersion, currentVersion, savedId) {
+  if (submittedVersion !== currentVersion || current.selectedLotId !== submitted.selectedLotId || current.mode !== submitted.mode) return current;
+  return { selectedLotId: savedId, mode: 'detail' };
+}
+
+export function buildAttachEventCommand(record, auctionEventId, newRequestId = requestId) {
+  if (!record?.id || !Number.isInteger(record.revision) || !auctionEventId) return null;
+  const { revision, dataClass, createdAt, updatedAt, ...lot } = structuredClone(record);
+  return buildLotSaveCommand({ ...lot, auctionEventId }, revision, newRequestId);
+}
+
+const DETAIL_TABS = Object.freeze(['details', 'bid', 'reminders', 'outcome']);
+export function moveDetailTab(active, key) {
+  const index = Math.max(0, DETAIL_TABS.indexOf(active));
+  if (key === 'Home') return DETAIL_TABS[0];
+  if (key === 'End') return DETAIL_TABS.at(-1);
+  if (key === 'ArrowRight') return DETAIL_TABS[(index + 1) % DETAIL_TABS.length];
+  if (key === 'ArrowLeft') return DETAIL_TABS[(index - 1 + DETAIL_TABS.length) % DETAIL_TABS.length];
+  return active;
+}
+export const sameEventReturnContext = (submitted, current, submittedVersion, currentVersion) =>
+  submitted === current && submittedVersion === currentVersion;
 
 export function lotDraftToEditor(payload) {
   const bounded = (value, maximum) => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, maximum) : '';
@@ -175,7 +228,6 @@ export function buildBackupImportCommand(pendingImport, newRequestId = requestId
 async function initWorkspace() {
   const $ = (id) => document.getElementById(id);
   let bridge = null;
-  let backup = null;
   let initializeCompanionPreferences = null;
   let snapshot = { revision: 0, lots: [], auctionEvents: [], alternativeGroups: [], evidence: [], collectionEntries: [], alerts: [], recentCommands: [] };
   const dirtyEditors = new Set();
@@ -186,8 +238,12 @@ async function initWorkspace() {
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
   };
   let pendingSnapshot = null;
-  let pendingImport = null;
   let pendingRetry = null;
+  let selection = { selectedLotId: null, mode: 'list' };
+  let lastLotUndo = null;
+  let bidCalculator = null;
+  let eventReturnLot = null;
+  let activeDetailTab = 'details';
   let eventDraftId = null;
   let researchDraftId = null;
   let lotDraftId = null;
@@ -196,17 +252,32 @@ async function initWorkspace() {
   let lastEventPrecision = 'timed';
   try {
     bridge = await import('./browser-api.js');
-    backup = await import('./core/backup.js');
     ({ initializeCompanionPreferences } = await import('./companion-preferences.js'));
   } catch { /* standalone */ }
   if (typeof (globalThis.browser ?? globalThis.chrome)?.runtime?.sendMessage !== 'function') bridge = null;
-
   const text = (tag, value, className) => {
     const node = document.createElement(tag);
     node.textContent = value;
     if (className) node.className = className;
     return node;
   };
+  mountSourcesMenu($('source-menu'));
+  $('open-settings').addEventListener('click', () => void openSettings());
+  const detailPanels = {
+    details: $('lot-form'), bid: $('bid-form').closest('.detail-section'),
+    reminders: $('selected-reminders').closest('.detail-section'), outcome: $('outcome-form').closest('.detail-section'),
+  };
+  const detailTabs = document.createElement('div'); detailTabs.className = 'detail-tabs'; detailTabs.setAttribute('role', 'tablist'); detailTabs.setAttribute('aria-label', 'Coin record sections');
+  const tabButtons = new Map();
+  const showDetailTab = (name, focus = false) => {
+    if (!DETAIL_TABS.includes(name) || tabButtons.get(name)?.disabled) return;
+    activeDetailTab = name;
+    for (const tab of DETAIL_TABS) { const selected = tab === name; tabButtons.get(tab).setAttribute('aria-selected', String(selected)); tabButtons.get(tab).tabIndex = selected ? 0 : -1; detailPanels[tab].hidden = !selected; }
+    if (focus) tabButtons.get(name).focus();
+  };
+  for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
+  $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
+
   const announce = (message, error = false) => {
     $('workspace-status').textContent = message;
     $('workspace-status').classList.toggle('error', error);
@@ -261,6 +332,7 @@ async function initWorkspace() {
     announce('Saving…');
     const reply = await bridge.sendCommand(command);
     if (!reply.ok) {
+      if (editor === 'lot') { $('lot-action-status').textContent = reply.message; $('lot-action-status').classList.add('error'); }
       if (reply.code === 'conflict') $('conflict-note').hidden = false;
       if (reply.outcome === 'unknown') {
         const committed = await refresh();
@@ -270,7 +342,7 @@ async function initWorkspace() {
           if (committed) acceptIncoming(committed);
           pendingRetry = null; $('unknown-note').hidden = true;
           announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
-          return { ok: true, requestId: command.requestId, value: null };
+          return { ok: true, requestId: command.requestId, value: ledgerValue ?? null };
         }
         pendingRetry = { command, editor };
         $('unknown-note').hidden = false;
@@ -282,6 +354,7 @@ async function initWorkspace() {
     }
     const preserved = completeEditor(reply.value);
     await refresh();
+    if (editor === 'lot') $('lot-action-status').classList.remove('error');
     announce(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
     return reply;
   };
@@ -418,18 +491,21 @@ async function initWorkspace() {
   }
   function renderLots() {
     const list = $('lot-list'); list.replaceChildren();
-    fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'Unassigned');
-    fillSelect($('bid-form').elements.lotId, snapshot.lots ?? []);
-    fillSelect($('outcome-form').elements.lotId, snapshot.lots ?? []);
-    for (const lot of snapshot.lots ?? []) {
-      const card = text('article', '', 'record'); card.append(text('h3', lot.title));
-      card.append(text('p', [lot.reference, lot.lotNumber ? `Lot ${lot.lotNumber}` : '', lot.outcome?.status].filter(Boolean).join(' · ')));
-      if (lot.plannedBid) card.append(text('p', `Planned ${formatMoney(lot.plannedBid.amount)}${Number.isInteger(lot.plannedBid.buyerPremiumBps) ? ` + ${lot.plannedBid.buyerPremiumBps / 100}% BP` : ' · premium unknown'}`));
-      if (lot.activeBid) card.append(text('p', `Externally active ${formatMoney(lot.activeBid.amount)}${Number.isInteger(lot.activeBid.buyerPremiumBps) ? ` + ${lot.activeBid.buyerPremiumBps / 100}% BP` : ' · premium unknown'}`));
-      const edit = text('button', 'Edit'); edit.type = 'button';
-      edit.addEventListener('click', () => {
-        const form = $('lot-form'); const originalManualUrl = lot.sourceLinks?.find((link) => link.source === 'manual')?.url; beginEditor('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl }); form.elements.id.value = lot.id; form.elements.title.value = lot.title; form.elements.reference.value = lot.reference ?? ''; form.elements.lotNumber.value = lot.lotNumber ?? ''; form.elements.auctionEventId.value = lot.auctionEventId ?? ''; form.elements.sourceUrl.value = originalManualUrl ?? ''; document.querySelectorAll('[data-add-selected]').forEach((button) => { button.disabled = false; }); form.scrollIntoView({ behavior: 'smooth', block: 'start' }); form.elements.title.focus();
-      }); card.append(edit); list.append(card);
+    fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
+    const visibleLots = filterWorkspaceLots(snapshot.lots ?? [], $('lot-filter').value);
+    $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
+    if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
+    for (const lot of visibleLots) {
+      const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
+      const main = text('span', '', 'coin-row-main'); main.append(text('strong', lot.reference || lot.title), text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin')));
+      const event = (snapshot.auctionEvents ?? []).find((item) => item.id === lot.auctionEventId);
+      const meta = text('span', '', 'coin-row-meta'); meta.append(text('span', event ? `${event.name}${event.localDate ? `, ${event.localDate}` : ''}` : 'No auction'), text('span', lotStatusLabel(lot), 'row-status'));
+      const amounts = text('span', '', 'coin-row-bids');
+      if (lot.plannedBid) amounts.append(text('span', `Plan ${formatMoney(lot.plannedBid.amount)}`));
+      if (lot.activeBid) amounts.append(text('span', `Placed ${formatMoney(lot.activeBid.amount)}`));
+      row.append(main, meta, amounts);
+      row.addEventListener('click', () => selectLot(lot.id));
+      list.append(row);
     }
     const groups = $('group-list'); groups.replaceChildren();
     for (const group of snapshot.alternativeGroups ?? []) {
@@ -444,27 +520,81 @@ async function initWorkspace() {
         card.append(line);
       }
       const actions = text('div', '', 'actions');
-      const editGroup = text('button', 'Edit group name'); editGroup.type = 'button'; editGroup.addEventListener('click', () => { const form = $('group-form'); beginEditor('group', { id: group.id, revision: group.revision, record: structuredClone(group) }); form.elements.id.value = group.id; form.elements.name.value = group.name; form.elements.name.focus(); });
-      const add = text('button', 'Add selected lot'); add.type = 'button'; add.dataset.addSelected = ''; add.disabled = !$('lot-form').elements.id.value;
-      add.addEventListener('click', () => { const ids = [...members.map((lot) => lot.id), $('lot-form').elements.id.value].filter((id, index, all) => id && all.indexOf(id) === index); void send(buildGroupReorderCommand(group, ids, snapshot)); });
+      const editGroup = text('button', 'Edit group name'); editGroup.type = 'button'; editGroup.addEventListener('click', () => { const form = $('group-form'); form.hidden = false; beginEditor('group', { id: group.id, revision: group.revision, record: structuredClone(group) }); form.elements.id.value = group.id; form.elements.name.value = group.name; form.elements.name.focus(); });
+      const add = text('button', 'Add selected coin'); add.type = 'button'; add.dataset.addSelected = ''; add.disabled = !selection.selectedLotId;
+      add.addEventListener('click', () => { const ids = [...members.map((lot) => lot.id), selection.selectedLotId].filter((id, index, all) => id && all.indexOf(id) === index); void send(buildGroupReorderCommand(group, ids, snapshot)); });
       const remove = text('button', 'Remove group'); remove.type = 'button'; remove.addEventListener('click', () => { if (confirm(`Delete group “${group.name}”? Its lots will remain.`)) void send({ type: 'group.delete', requestId: requestId(), groupId: group.id, expectedRevision: group.revision }); });
       actions.append(editGroup, add, remove); card.append(actions); groups.append(card);
     }
-    if (!dirtyEditors.has('bid')) loadBidEditor();
-    if (!dirtyEditors.has('outcome')) loadOutcomeEditor();
+    renderSelectedLot();
   }
-  $('new-lot').addEventListener('click', () => { $('lot-form').reset(); $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); document.querySelectorAll('[data-add-selected]').forEach((button) => { button.disabled = true; }); $('lot-form').elements.title.focus(); });
+  const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
+  function selectLot(lotId, { focus = true } = {}) {
+    if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderLots(); if (focus) $('selected-title').focus?.(); return; }
+    if (lotId !== selection.selectedLotId && !canLeaveSelectedEditors()) return;
+    for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); }
+    selection = chooseSelectedLot(selection, lotId, snapshot.lots ?? []);
+    for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
+    showDetailTab('details');
+    if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
+    $('coin-workspace').dataset.mobileView = selection.mode;
+    renderLots();
+    if (focus) $('selected-title').focus?.();
+  }
+  function renderSelectedLot() {
+    const lot = (snapshot.lots ?? []).find((item) => item.id === selection.selectedLotId);
+    $('coin-empty').hidden = Boolean(lot) || selection.mode === 'detail'; $('coin-editor').hidden = !lot && selection.mode !== 'detail';
+    if (!lot) return;
+    for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
+    $('bid-form').disabled = false; $('outcome-form').disabled = false;
+    const f = $('lot-form').elements; const originalManualUrl = lot.sourceLinks?.find((link) => link.source === 'manual')?.url;
+    if (!dirtyEditors.has('lot')) { beginEditor('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl }); f.id.value = lot.id; f.title.value = lot.title; f.reference.value = lot.reference ?? ''; f.lotNumber.value = lot.lotNumber ?? ''; f.notes.value = lot.notes ?? ''; f.auctionEventId.value = lot.auctionEventId ?? ''; f.sourceUrl.value = originalManualUrl ?? ''; }
+    $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot);
+    $('delete-lot').hidden = false;
+    $('undo-lot').hidden = lastLotUndo?.saved?.id !== lot.id;
+    $('bid-form').elements.lotId.value = lot.id; $('outcome-form').elements.lotId.value = lot.id;
+    if (!dirtyEditors.has('bid')) loadBidEditor(lot); if (!dirtyEditors.has('outcome')) loadOutcomeEditor(lot);
+    const event = (snapshot.auctionEvents ?? []).find((item) => item.id === lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
+    attached.append(text('p', event ? `${event.name} · ${event.localDate}${event.localTime ? ` at ${event.localTime}` : ''}` : 'No auction is attached.'));
+    $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
+    const reminders = $('selected-reminders'); reminders.replaceChildren();
+    if (!event) reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
+    else for (const reminder of event.reminders ?? []) reminders.append(text('p', reminder.kind === 'offset' ? `${reminder.offsetMinutes} minutes before` : `${reminder.daysBefore ? 'Previous day' : 'Auction day'} at ${reminder.localTime}`, 'reminder-row'));
+  }
+  $('lot-filter').addEventListener('input', renderLots);
+  $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; for (const editor of ['bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); } selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
   $('lot-form').addEventListener('submit', (event) => {
     event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('lot') ?? { id: null, revision: null, record: null };
     const lot = { ...(basis.id ? { id: basis.id } : {}), title: f.title.value.trim(), sourceLinks: mergeLotSourceLinks(basis.record?.sourceLinks, f.sourceUrl.value, basis.originalManualUrl) };
     for (const key of ['reference', 'lotNumber', 'auctionEventId']) if (f[key].value) lot[key] = f[key].value;
+    lot.notes = f.notes.value;
+    const previous = basis.id ? structuredClone(basis.record) : null;
+    const submittedSelection = { ...selection }; const submittedVersion = editorVersions.get('lot') ?? 0;
     void send(buildLotSaveCommand(lot, basis.revision), 'lot').then((reply) => {
+      if (reply?.ok && reply.value?.id) {
+        selection = selectionAfterLotSave(selection, submittedSelection, submittedVersion, editorVersions.get('lot') ?? 0, reply.value.id);
+        if (selection.selectedLotId === reply.value.id && submittedVersion === (editorVersions.get('lot') ?? 0)) {
+          lastLotUndo = previous ? { previous, saved: structuredClone(reply.value) } : null;
+          $('undo-lot').hidden = !lastLotUndo;
+          $('lot-action-status').textContent = previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.'; renderLots();
+        }
+      }
       const draftId = draftToConsumeAfterLotSave(reply, lotDraftId);
       if (draftId) {
         lotDraftId = null;
         void send({ type: 'draft.consume', requestId: requestId(), draftId });
       }
     });
+  });
+  $('undo-lot').addEventListener('click', () => {
+    if (dirtyEditors.has('lot') && !confirm('Discard the unsaved detail changes and undo the last saved edit?')) return;
+    const command = buildLotUndoCommand(lastLotUndo);
+    const current = (snapshot.lots ?? []).find((lot) => lot.id === lastLotUndo?.saved?.id);
+    if (!command || current?.revision !== command.expectedRevision) { lastLotUndo = null; $('undo-lot').hidden = true; return announce('This coin changed after the edit, so it cannot be safely undone.', true); }
+    dirtyEditors.delete('lot');
+    void send(command).then((reply) => { if (reply?.ok) { lastLotUndo = null; $('undo-lot').hidden = true; $('lot-action-status').textContent = 'Last details edit undone.'; } });
   });
   $('delete-lot').addEventListener('click', () => { const basis = editorBases.get('lot'); if (basis?.id && confirm(`Remove “${basis.record.title}”?`)) void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot'); });
   $('group-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('group') ?? { id: null, revision: null }; void send({ type: 'group.save', requestId: requestId(), expectedRevision: basis.revision, group: { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim() } }, 'group'); });
@@ -474,20 +604,27 @@ async function initWorkspace() {
     const value = { amount: money.value }; if (form.premium.value.trim()) { const premium = parsePremiumPercent(form.premium.value, navigator.language); if (!premium.ok) return premium; value.buyerPremiumBps = premium.value; }
     return { ok: true, value };
   };
-  const loadBidEditor = () => {
-    const f = $('bid-form').elements; const lot = snapshot.lots.find((item) => item.id === f.lotId.value);
+  const loadBidEditor = (selectedLot) => {
+    const f = $('bid-form').elements; const lot = selectedLot ?? snapshot.lots.find((item) => item.id === f.lotId.value);
     beginEditor('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     const terms = lot?.plannedBid ?? lot?.activeBid; f.amount.value = moneyInputText(terms?.amount, navigator.language); f.currency.value = terms?.amount.currency ?? snapshot.preferences?.currency ?? 'USD'; f.premium.value = Number.isInteger(terms?.buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(terms.buyerPremiumBps / 100) : '';
+    bidCalculator?.setValues({ currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null });
   };
-  $('bid-form').elements.lotId.addEventListener('change', loadBidEditor);
+  bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps }) => {
+    const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = Number.isInteger(buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(buyerPremiumBps / 100) : '';
+    for (const control of [f.amount, f.currency, f.premium]) control.dispatchEvent(new Event('input', { bubbles: true }));
+  } });
   $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send({ type: action === 'place' ? 'bid.place' : 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, [action === 'place' ? 'activeBid' : 'plannedBid']: parsed.value }, 'bid'); });
   $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
 
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
-    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(text('p', `${event.eventKind} · ${event.localDate}${event.localTime ? ` ${event.localTime}` : ' · date only'} · ${event.timeZone}`)); const edit = text('button', 'Edit'); edit.type = 'button'; edit.addEventListener('click', () => { beginEditor('event', { id: event.id, revision: event.revision, record: structuredClone(event) }); populateEventForm(event); $('event-form').scrollIntoView(); }); card.append(edit); list.append(card); }
-    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); alerts.replaceChildren(...due.map((alert) => text('p', `${snapshot.auctionEvents.find((event) => event.id === alert.eventId)?.name ?? 'Auction'} · ${alert.status}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
+    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(text('p', `${event.localDate}${event.localTime ? ` at ${event.localTime}` : ' · date only'} · ${event.timeZone}`)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
+    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed' }; alerts.replaceChildren(...due.map((alert) => text('p', `${snapshot.auctionEvents.find((event) => event.id === alert.eventId)?.name ?? 'Auction'} · ${alertLabel[alert.status]}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
   }
+  const openEventEditor = (event) => { $('event-form').hidden = false; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; updatePrecision(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  $('new-event').addEventListener('click', () => openEventEditor(null));
+  $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); eventReturnLot = event ? null : structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); location.hash = '#auctions'; openEventEditor(event ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
     for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
@@ -514,10 +651,22 @@ async function initWorkspace() {
     lastEventPrecision = precision;
     updatePrecision();
   }); updatePrecision();
+  $('event-form').hidden = true;
   $('event-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('event') ?? { id: null, revision: null }; const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, f.precision.value === 'date-only'
     ? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value }
     : { firstEnabled: f.reminder24h.checked, firstValue: Number(f.reminder24hValue.value), secondEnabled: f.reminder1h.checked, secondValue: Number(f.reminder1hValue.value) });
-    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; if (!confirm(`Save ${eventDraft.name} on ${eventDraft.localDate}${eventDraft.localTime ? ` at ${eventDraft.localTime}` : ' as date only'} in ${eventDraft.timeZone}?`)) return; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => { if (reply?.ok && eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); } }); });
+    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; if (!confirm(`Save ${eventDraft.name} on ${eventDraft.localDate}${eventDraft.localTime ? ` at ${eventDraft.localTime}` : ' as date only'} in ${eventDraft.timeZone}?`)) return; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
+      if (!reply?.ok) return;
+      if (eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
+      if (submittedReturnLot && sameEventReturnContext(submittedReturnLot, eventReturnLot, submittedEventVersion, editorVersions.get('event') ?? 0)) {
+        const returnLot = submittedReturnLot; eventReturnLot = null;
+        const current = (snapshot.lots ?? []).find((lot) => lot.id === returnLot.id);
+        if (selection.selectedLotId !== returnLot.id || current?.revision !== returnLot.revision) return announce('Auction saved, but the coin changed before it could be attached. Attach it from coin details.', true);
+        const attach = buildAttachEventCommand(returnLot, reply.value?.id);
+        if (!attach) return announce('Auction saved, but its confirmed identity was unavailable. Attach it from coin details.', true);
+        void send(attach).then((attached) => { if (attached?.ok) { location.hash = '#watchlist'; announce('Auction saved and attached to the coin.'); } });
+      }
+    }); });
   $('delete-event').addEventListener('click', () => { const basis = editorBases.get('event'); if (basis?.id && confirm(`Remove “${basis.record.name}”?`)) void send({ type: 'event.delete', requestId: requestId(), eventId: basis.id, expectedRevision: basis.revision }, 'event'); });
   const displayedAlertIds = () => $('ack-alerts').dataset.ids.split(',').filter(Boolean);
   $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds() }));
@@ -529,7 +678,7 @@ async function initWorkspace() {
 
   function renderHistory() {
     const root = $('history-list'); root.replaceChildren();
-    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) { const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lot.outcome.status}`)); if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`)); if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)} (user-entered charged total)`)); card.append(text('p', `${lot.bidHistory?.length ?? 0} bid-history entries · personal/unverified`)); root.append(card); }
+    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) { const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`)); if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`)); if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)} (your recorded total)`)); card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card); }
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
     for (const entry of snapshot.collectionEntries ?? []) {
       const card = text('article', '', 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
@@ -538,22 +687,12 @@ async function initWorkspace() {
     }
   }
   const updateOutcomeVisibility = () => { const f = $('outcome-form').elements; const basis = editorBases.get('outcome'); $('passed-outcome').disabled = Boolean(basis?.record?.activeBid); $('reopen-choice').hidden = f.status.value !== 'open'; };
-  const loadOutcomeEditor = () => {
-    const f = $('outcome-form').elements; const lot = snapshot.lots.find((item) => item.id === f.lotId.value); beginEditor('outcome', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
+  const loadOutcomeEditor = (selectedLot) => {
+    const f = $('outcome-form').elements; const lot = selectedLot ?? snapshot.lots.find((item) => item.id === f.lotId.value); beginEditor('outcome', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     const draft = outcomeDraftForLot(lot, navigator.language); f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = false; f.acquisitionDate.value = ''; f.collectionNotes.value = ''; updateOutcomeVisibility();
   };
   $('outcome-form').addEventListener('change', (event) => { if (event.target.name === 'lotId') loadOutcomeEditor(); else if (event.target.name === 'status') updateOutcomeVisibility(); });
   $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
-
-  $('export-backup').addEventListener('click', () => { if (!backup) return; const exported = backup.exportBackup(snapshot, new Date().toISOString()); if (!exported.ok) return announce(exported.error.message, true); const blob = new Blob([exported.value], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `auction-companion-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href); announce('Backup exported.'); });
-  $('import-form').addEventListener('submit', async (event) => {
-    event.preventDefault(); if (!backup) return; const formElement = event.currentTarget; const file = $('import-file').files?.[0]; if (!file) return announce('Choose a backup file.', true); const currentSnapshot = snapshot; const expectedRevision = currentSnapshot.revision; const raw = await file.text(); const validated = backup.validateBackup(raw); if (!validated.ok) return announce(validated.error.message, true); const mode = new FormData(formElement).get('mode'); const preview = backup.previewImport(currentSnapshot, validated.value, mode); if (!preview.ok) return announce(preview.error.message, true); pendingImport = { document: raw, mode, preview: preview.value, expectedRevision };
-    const panel = $('import-preview'); panel.hidden = false; panel.replaceChildren(text('strong', `${mode === 'replace' ? 'Replace' : 'Merge'} preview at local revision ${expectedRevision}`), text('pre', JSON.stringify(preview.value.counts, null, 2)));
-    if (preview.value.conflicts.length) { panel.append(text('p', 'Resolve these stable-ID conflicts before importing:')); const list = document.createElement('ul'); for (const conflict of preview.value.conflicts) list.append(text('li', `${conflict.collection} · ${conflict.id} · ${conflict.reason}`)); panel.append(list); }
-    $('confirm-import').hidden = false; $('confirm-import').disabled = !preview.value.snapshot;
-    announce(preview.value.snapshot ? 'Import preview ready. No records changed.' : 'Import preview has conflicts and cannot be confirmed.', !preview.value.snapshot);
-  });
-  $('confirm-import').addEventListener('click', () => { if (!pendingImport?.preview.snapshot) return; if (pendingImport.mode === 'replace' && !confirm('Replace local records with the reviewed backup?')) return; void send(buildBackupImportCommand(pendingImport)).then((reply) => { if (reply?.ok) { pendingImport = null; $('confirm-import').hidden = true; } }); });
 
   function resetEditors() {
     for (const id of ['lot-form', 'group-form', 'bid-form', 'event-form', 'outcome-form', 'evidence-form']) $(id).reset();
@@ -564,7 +703,8 @@ async function initWorkspace() {
     if (!form) return;
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
-    if (editor === 'event') { lastEventPrecision = form.elements.precision.value; updatePrecision(); }
+    if (editor === 'event') { lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
+    if (editor === 'group') form.hidden = true;
   }
   async function loadRouteDraft() {
     if (!bridge) return;
@@ -575,6 +715,7 @@ async function initWorkspace() {
     const draft = reply.value;
     if (match[1] === 'event-draft') {
       eventDraftId = draft.id; beginEditor('event', { id: null, revision: null, record: null });
+      $('event-form').hidden = false;
       populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'standalone', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       dirtyEditors.add('event');
       announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
@@ -583,6 +724,7 @@ async function initWorkspace() {
       lotDraftId = draft.id;
       const values = lotDraftToEditor(draft.payload);
       const form = $('lot-form');
+      selection = { selectedLotId: null, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false;
       form.reset();
       form.elements.id.value = '';
       form.elements.title.value = values.title;

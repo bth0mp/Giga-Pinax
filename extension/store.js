@@ -66,7 +66,7 @@ function baseRecord(draft, context) {
 function preferenceFields(value, includeAlerts = false) {
   if (!value || typeof value !== 'object') return null;
   const result = {};
-  for (const key of ['currency', 'catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+  for (const key of ['currency', 'catalogue', 'number', 'volume', 'section', 'sampleMode', 'housePremiumPresets']) {
     if (own(value, key)) result[key] = value[key];
   }
   if (includeAlerts && own(value, 'desktopAlertsEnabled')) {
@@ -87,6 +87,7 @@ function lotFromDraft(draft, existing, context) {
   }, context);
   lot.title = draft.title;
   lot.sourceLinks = clone(draft.sourceLinks ?? []);
+  if (own(draft, 'notes')) lot.notes = draft.notes;
   for (const key of optional) {
     if (own(draft, key)) lot[key] = draft[key];
     else delete lot[key];

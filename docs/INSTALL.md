@@ -1,12 +1,12 @@
 # Install Giga Pinax
 
-Version **0.27.2** keeps the complete Giga Pinax catalogue, session acsearch workflow, Calculator, Watchlist, and local auction workspace. It adds a **CoinArchives Pro** section with direct sign-in, ancient-coin, and world-coin archive links for existing subscribers. The workspace records lots, alternatives, planned and externally active bids, reminders, outcomes, collection history, and manually entered comparables in USD, EUR, GBP, or CHF. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or companion backups.
+Version **0.28.0** keeps the complete Giga Pinax catalogue and local auction records while adding native side-panel research, a focused watchlist workspace, a reusable bid calculator, and a dedicated Settings page. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or backups.
 
 The extension uses right-click actions for Giga lookup, highlighted research, and auction confirmation. Current-page extraction runs only after your action and remains editable before saving. Optional desktop notifications are requested only when you enable them.
 
 ## Install in Brave or Chrome
 
-1. Download the public [latest Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-brave.zip). No GitHub account is required.
+1. Download the public [Giga Pinax 0.28.0 Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/download/v0.28.0/giga-pinax-brave-0.28.0.zip). No GitHub account is required.
 2. Extract the ZIP into a folder you will keep.
 3. Open `brave://extensions` in Brave or `chrome://extensions` in Chrome.
 4. Turn on **Developer mode**.
@@ -21,7 +21,7 @@ Brave grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` 
 
 Use Firefox 142 or later.
 
-1. Download the public [latest Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/latest/download/giga-pinax-firefox.zip). No GitHub account is required.
+1. Download the public [Giga Pinax 0.28.0 Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/download/v0.28.0/giga-pinax-firefox-0.28.0.zip). No GitHub account is required.
 2. Open `about:debugging` and select **This Firefox**.
 3. Select **Load Temporary Add-on**.
 4. Choose the downloaded ZIP.
@@ -33,11 +33,11 @@ Firefox removes a temporary add-on when Firefox restarts. Permanent installation
 
 **Already installed temporarily?** Open **Updates** and select **Download latest update**, then load the downloaded unsigned ZIP again. Firefox removes a temporary installation on restart.
 
-The download button opens a fixed public GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Use [View releases](https://github.com/bth0mp/Giga-Pinax/releases/latest) to read the release notes.
+The download button opens a fixed public GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Read the [0.28.0 release notes](https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.28.0) for this version.
 
 ## Developer build
 
-End users do not need Python for the download-and-reload update above. To build from source, run `python scripts/build.py` from the repository root. The builder creates `dist/brave/`, `dist/firefox/`, versioned ZIPs such as `giga-pinax-brave-0.27.2.zip`, and byte-identical stable aliases named `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. A release must upload both stable aliases alongside the versioned archives so the in-extension download links remain valid. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+End users do not need Python for the download-and-reload update above. To build from source, run `python scripts/build.py` from the repository root. The builder creates `dist/brave/`, `dist/firefox/`, versioned ZIPs such as `giga-pinax-brave-0.28.0.zip`, and byte-identical stable aliases named `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. A release must upload both stable aliases alongside the versioned archives so the in-extension download links remain valid. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 Maintainers should follow the [release publishing guide](RELEASING.md), including its short install section for every GitHub release body.
 

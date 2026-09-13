@@ -1,14 +1,14 @@
 # Giga Pinax
 
-A toolbar extension for desktop Brave and Firefox that looks up ancient coin types, shows session-only acsearch prices, calculates buyer’s premium, and keeps a local auction watchlist. Version **0.27.2** preserves Giga Pinax’s RIC, RRC, SC, Bop, Price, Sear, Krause and other catalogue workflows and adds direct CoinArchives Pro sign-in and archive links for existing subscribers.
+A desktop Brave, Chrome and Firefox extension for researching ancient coin types, reviewing session-only sale prices, and managing a local auction watchlist. Version **0.28.0** adds native side-panel research, a focused coin workspace, reusable bid and budget calculations, shared Sources, and one Settings page for appearance, bidding defaults, updates and backup/import.
 
 The workspace records lots, alternative priorities, planned and externally active bids, reminders, outcomes, collection history, and collector-entered comparables in USD, EUR, GBP, or CHF. It never places or cancels bids. A resolved reference can be sent to an editable watchlist draft, but fetched acsearch rows, prices, medians, and claims stay only in the current Research view.
 
-The 0.27.2 code, storage, packaging, accessibility, and browser audit is summarized in [the public audit report](docs/AUDIT-2026-09-12.md).
+The storage and pricing guarantees from the 0.27.2 audit remain in place; see [the 0.28 redesign audit](docs/AUDIT-2026-09-13.md) and [the 0.28.0 release notes](docs/RELEASE-0.28.0.md).
 
 ## Install
 
-Download the release package for your browser from the [latest GitHub release](https://github.com/bth0mp/Giga-Pinax/releases/latest). Downloads are public and require no GitHub account. Under **Assets**, choose the browser ZIP rather than GitHub's **Source code** archives. Extract the Chromium ZIP for Brave or Chrome; Firefox 142+ can load its unsigned ZIP temporarily. Follow [the installation guide](docs/INSTALL.md).
+Download the release package for your browser from the [Giga Pinax 0.28.0 release](https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.28.0). Downloads are public and require no GitHub account. Under **Assets**, choose the browser ZIP rather than GitHub's **Source code** archives. Extract the Chromium ZIP for Brave or Chrome; Firefox 142+ can load its unsigned ZIP temporarily. Follow [the installation guide](docs/INSTALL.md).
 
 For later releases, open **Updates** under the popup header and select **Download latest update**. The button downloads the stable package for your browser from the latest GitHub release. It does not silently install files: replace the files in the folder you already loaded and select **Reload** in Brave or Chrome, or load the latest unsigned ZIP again in Firefox.
 

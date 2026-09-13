@@ -259,6 +259,42 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
   assert.equal(read.value.id, state.drafts[0].id);
 });
 
+test('saves bounded unique house premiums and preserves them for older callers', () => {
+  const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
+    preferences: { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I', section: 'Nero', sampleMode: false },
+  }));
+  const saved = reduce(base.snapshot, command('preferences.save', {
+    expectedRevision: 0,
+    preferences: { housePremiumPresets: [{ name: 'Roma Numismatics', buyerPremiumBps: 2400 }] },
+  }));
+  assert.deepEqual(saved.value.housePremiumPresets, [{ name: 'Roma Numismatics', buyerPremiumBps: 2400 }]);
+  const legacy = reduce(saved.snapshot, command('preferences.save', {
+    expectedRevision: 1, preferences: { currency: 'EUR' },
+  }));
+  assert.deepEqual(legacy.value.housePremiumPresets, saved.value.housePremiumPresets);
+  const duplicate = applyCommand(legacy.snapshot, command('preferences.save', {
+    expectedRevision: 2,
+    preferences: { housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 1 }, { name: ' roma ', buyerPremiumBps: 2 }] },
+  }), context());
+  assert.equal(duplicate.ok, false);
+  assert.deepEqual(legacy.snapshot.preferences.housePremiumPresets, saved.value.housePremiumPresets);
+  const stale = applyCommand(legacy.snapshot, command('preferences.save', {
+    expectedRevision: 1, preferences: { housePremiumPresets: [] },
+  }), context());
+  assert.equal(stale.error.code, 'conflict');
+});
+
+test('lot save round-trips optional notes and preserves them when omitted', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Nero denarius', sourceLinks: [], notes: 'Check the reverse die.' },
+  }));
+  assert.equal(created.value.notes, 'Check the reverse die.');
+  const updated = reduce(created.snapshot, command('lot.save', {
+    expectedRevision: 0, lot: { id: created.value.id, title: 'Nero denarius, revised', sourceLinks: [] },
+  }));
+  assert.equal(updated.value.notes, 'Check the reverse die.');
+});
+
 test('current-lot draft authority accepts only editable watchlist fields', () => {
   const state = createEmptySnapshot(NOW);
   const accepted = reduce(state, command('draft.save', {

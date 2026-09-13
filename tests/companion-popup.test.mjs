@@ -7,9 +7,54 @@ import {
   buildWatchlistSummary,
   canSaveWatchlist,
   extensionRuntimeAvailable,
+  documentMode,
+  shouldRevealRefine,
+  captureCurrentPage,
+  captureControlsState,
+  runVisibleAction,
   moveCompanionTab,
   watchlistPayloadFromCapture,
 } from '../extension/companion-popup.js';
+
+test('capture controls prevent edits and stale actions while extraction is pending', () => {
+  assert.deepEqual(captureControlsState(true, true), { editorVisible: false, fieldsDisabled: true, actionsDisabled: true });
+  assert.deepEqual(captureControlsState(false, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: true });
+  assert.deepEqual(captureControlsState(false, true), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false });
+});
+
+test('navigation failures and thrown errors become visible action results', async () => {
+  assert.deepEqual(await runVisibleAction(async () => ({ ok: false, message: 'Blocked' }), 'Fallback'), { ok: false, message: 'Blocked' });
+  assert.deepEqual(await runVisibleAction(async () => { throw new Error('Closed'); }, 'Fallback'), { ok: false, message: 'Closed' });
+  assert.deepEqual(await runVisibleAction(async () => undefined, 'Fallback'), { ok: true });
+});
+
+test('native panels ignore pop-out routing while the window fallback accepts it', () => {
+  assert.deepEqual(documentMode('?panel=1'), { panel: true, windowed: false, acceptsLookupMessages: false });
+  assert.deepEqual(documentMode('?panel=1&window=1'), { panel: true, windowed: true, acceptsLookupMessages: true });
+  assert.deepEqual(documentMode('?window=1'), { panel: false, windowed: true, acceptsLookupMessages: true });
+  assert.deepEqual(documentMode(''), { panel: false, windowed: false, acceptsLookupMessages: false });
+});
+
+test('ambiguity and guided-field errors reveal refinement', () => {
+  assert.equal(shouldRevealRefine({ status: 'candidates' }), true);
+  assert.equal(shouldRevealRefine({ status: 'too-many' }), true);
+  assert.equal(shouldRevealRefine({ status: 'none' }, 'reference-number'), true);
+  assert.equal(shouldRevealRefine({ status: 'network' }), false);
+});
+
+test('current-page capture stays pinned to the tab selected at action start', async () => {
+  let target;
+  const api = {
+    tabs: { query: async () => [{ id: 27, title: 'Lot 27', url: 'https://auction.example/27' }] },
+    scripting: { executeScript: async (request) => {
+      target = request.target;
+      return [{ result: { pageTitle: 'Extracted lot', pageUrl: 'https://auction.example/27', candidates: {} } }];
+    } },
+  };
+  const capture = await captureCurrentPage(api, async (receiver, method, ...args) => receiver[method](...args));
+  assert.deepEqual(target, { tabId: 27 });
+  assert.equal(capture.pageUrl, 'https://auction.example/27');
+});
 
 test('companion tabs support click-order keyboard movement without side effects', () => {
   assert.equal(moveCompanionTab('research', 'ArrowRight'), 'calculator');

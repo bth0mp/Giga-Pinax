@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   CURRENCIES,
+  calculateMaximumHammer,
   calculatePremium,
   formatMoney,
   parseMoney,
@@ -10,6 +11,40 @@ import {
   sumMoney,
   validateMoney,
 } from '../extension/core/money.js';
+import { formatMinorInput } from '../extension/bid-tools.js';
+
+test('formats calculator inputs with the active locale decimal boundary', () => {
+  assert.equal(formatMinorInput(12345, 'en-US'), '123.45');
+  assert.equal(formatMinorInput(12345, 'de-DE'), '123,45');
+  assert.equal(formatMinorInput(null, 'de-DE'), '');
+});
+
+test('finds the maximal affordable hammer using the forward premium rounding', () => {
+  for (const [budget, bps, expected] of [
+    [{ currency: 'USD', minor: 12500 }, 2500, 10000],
+    [{ currency: 'GBP', minor: 2 }, 5000, 1],
+    [{ currency: 'EUR', minor: 100 }, 0, 100],
+    [{ currency: 'CHF', minor: 0 }, 3300, 0],
+  ]) {
+    const result = calculateMaximumHammer(budget, bps);
+    assert.equal(result.ok, true);
+    assert.equal(result.value.hammer.minor, expected);
+    assert.ok(calculatePremium(result.value.hammer, bps).value.hammerPlusPremium.minor <= budget.minor);
+    if (expected < Number.MAX_SAFE_INTEGER) {
+      const next = calculatePremium({ ...result.value.hammer, minor: expected + 1 }, bps);
+      assert.ok(!next.ok || next.value.hammerPlusPremium.minor > budget.minor);
+    }
+  }
+});
+
+test('maximum hammer rejects unknown premiums and unsafe inputs without coercion', () => {
+  const budget = { currency: 'USD', minor: 10000 };
+  for (const bps of [null, undefined, 2.5, -1, 10001]) {
+    assert.equal(calculateMaximumHammer(budget, bps).ok, false, String(bps));
+  }
+  assert.equal(calculateMaximumHammer({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 0).ok, true);
+  assert.equal(calculateMaximumHammer({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER + 1 }, 0).error.code, 'invalid-minor-units');
+});
 
 test('parses locale decimal money into exact integer minor units', () => {
   assert.deepEqual(parseMoney('100.25', 'USD', 'en-US'), {

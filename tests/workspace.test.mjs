@@ -21,6 +21,14 @@ import {
   applyActiveRoute,
   editorCompletion,
   sameEditorIdentity,
+  chooseSelectedLot,
+  filterWorkspaceLots,
+  lotStatusLabel,
+  buildLotUndoCommand,
+  selectionAfterLotSave,
+  buildAttachEventCommand,
+  moveDetailTab,
+  sameEventReturnContext,
 } from '../extension/workspace.js';
 
 test('workspace chooses only supported direct routes', () => {
@@ -144,6 +152,72 @@ test('a late save reply rebases only the same editor record', () => {
   assert.equal(sameEditorIdentity({ id: 'lot-a' }, { id: 'lot-a' }), true);
   assert.equal(sameEditorIdentity({ id: null }, { id: 'lot-b' }), false);
   assert.equal(sameEditorIdentity({ id: 'lot-a' }, { id: 'lot-b' }), false);
+});
+
+test('selected coin routing preserves one record across related editors', () => {
+  const lots = [{ id: 'lot-a' }, { id: 'lot-b' }];
+  const selected = chooseSelectedLot({ selectedLotId: 'lot-a', mode: 'detail' }, 'lot-b', lots);
+  assert.deepEqual(selected, { selectedLotId: 'lot-b', mode: 'detail' });
+  assert.equal(chooseSelectedLot(selected, 'missing', lots), selected);
+  assert.deepEqual(chooseSelectedLot(selected, null, lots), { selectedLotId: null, mode: 'list' });
+  assert.deepEqual(chooseSelectedLot({ selectedLotId: 'lot-a', mode: 'list' }, 'lot-a', lots), { selectedLotId: 'lot-a', mode: 'detail' });
+});
+
+test('coin filtering keeps selection context independent of visible rows', () => {
+  const lots = [
+    { id: 'a', title: 'Nero denarius', reference: 'RIC 306', lotNumber: '18' },
+    { id: 'b', title: 'Athens owl', reference: 'HGC 1597', lotNumber: '42' },
+  ];
+  assert.deepEqual(filterWorkspaceLots(lots, 'nero').map(({ id }) => id), ['a']);
+  assert.deepEqual(filterWorkspaceLots(lots, '42').map(({ id }) => id), ['b']);
+  assert.deepEqual(filterWorkspaceLots(lots, '  ').map(({ id }) => id), ['a', 'b']);
+});
+
+test('collector-facing lot status describes outcomes and bid state', () => {
+  assert.equal(lotStatusLabel({ outcome: { status: 'won' } }), 'Won');
+  assert.equal(lotStatusLabel({ outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 100 } } }), 'Bid active');
+  assert.equal(lotStatusLabel({ outcome: { status: 'open' }, plannedBid: { amount: { currency: 'GBP', minor: 100 } } }), 'Bid planned');
+  assert.equal(lotStatusLabel({ outcome: { status: 'open' } }), 'Watching');
+});
+
+test('undo restores captured lot details only at the saved revision', () => {
+  const previous = { id: 'lot-a', revision: 3, title: 'Before', notes: 'Old', sourceLinks: [] };
+  const command = buildLotUndoCommand({ previous, saved: { id: 'lot-a', revision: 4 } }, () => 'undo-1');
+  assert.deepEqual(command, {
+    type: 'lot.save', requestId: 'undo-1', expectedRevision: 4,
+    lot: { id: 'lot-a', title: 'Before', notes: 'Old', sourceLinks: [] },
+  });
+  assert.equal(buildLotUndoCommand({ previous, saved: { id: 'lot-b', revision: 4 } }, () => 'undo-2'), null);
+  assert.equal(buildLotUndoCommand({ previous: { id: 'lot-a', revision: 1, title: 'Old record', sourceLinks: [] }, saved: { id: 'lot-a', revision: 2 } }, () => 'undo-3').lot.notes, '');
+});
+
+test('a delayed lot save never retargets a newer selection or new draft', () => {
+  const submitted = { selectedLotId: 'lot-a', mode: 'detail' };
+  assert.deepEqual(selectionAfterLotSave(submitted, submitted, 4, 4, 'lot-a'), submitted);
+  assert.deepEqual(selectionAfterLotSave({ selectedLotId: 'lot-b', mode: 'detail' }, submitted, 4, 4, 'lot-a'), { selectedLotId: 'lot-b', mode: 'detail' });
+  assert.deepEqual(selectionAfterLotSave({ selectedLotId: null, mode: 'detail' }, submitted, 4, 5, 'lot-a'), { selectedLotId: null, mode: 'detail' });
+});
+
+test('new auction attachment uses the selected coin revision and preserves all details', () => {
+  const lot = { id: 'lot-a', revision: 8, dataClass: 'collector', createdAt: 'then', updatedAt: 'now', title: 'Coin', notes: '', sourceLinks: [] };
+  assert.deepEqual(buildAttachEventCommand(lot, 'event-b', () => 'attach-1'), {
+    type: 'lot.save', requestId: 'attach-1', expectedRevision: 8,
+    lot: { id: 'lot-a', title: 'Coin', notes: '', sourceLinks: [], auctionEventId: 'event-b' },
+  });
+});
+
+test('coin detail tabs support arrow, Home and End keyboard movement', () => {
+  assert.equal(moveDetailTab('details', 'ArrowRight'), 'bid');
+  assert.equal(moveDetailTab('details', 'ArrowLeft'), 'outcome');
+  assert.equal(moveDetailTab('reminders', 'Home'), 'details');
+  assert.equal(moveDetailTab('bid', 'End'), 'outcome');
+});
+
+test('auction return context belongs only to the editor submission that captured it', () => {
+  const lotA = { id: 'lot-a', revision: 2 };
+  assert.equal(sameEventReturnContext(lotA, lotA, 3, 3), true);
+  assert.equal(sameEventReturnContext(lotA, { id: 'lot-b', revision: 1 }, 3, 3), false);
+  assert.equal(sameEventReturnContext(lotA, lotA, 3, 4), false);
 });
 
 test('command builders use the background contract and complete group order', () => {
