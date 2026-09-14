@@ -361,7 +361,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (trend) lines.push(trendText(trend, money.format));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
-  if (card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
+  if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
   // Plain text for pasting: Intl puts no-break spaces in amounts such as "CHF 500".
   return lines.join('\n').replace(/[\u00a0\u202f]/g, ' ');
 }

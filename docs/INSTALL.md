@@ -1,6 +1,6 @@
-# Install Giga Pinax 0.29.0
+# Install Giga Pinax 0.29.2
 
-Giga Pinax 0.29.0 adds auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. It never places, changes or cancels bids.
+Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.29.2 makes acsearch price research independent of ANS catalogue availability. It never places, changes or cancels bids.
 
 Fetched acsearch rows and inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
@@ -33,7 +33,7 @@ If provider access is disabled in `about:addons`, selecting **Look up** or **Get
 
 ## First checks
 
-1. In **Research**, try `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2` or `Price 23`. Expand **Inspect sales** to exclude and restore a result for the current lookup.
+1. In **Research**, try `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2` or `Price 23`. Auction research starts from that reference while catalogue details load separately. If acsearch access is needed, select **Get prices** and sign in on acsearch with an account that includes hammer prices. Expand **Inspect sales** to exclude and restore a result for the current lookup.
 2. Open **Current source**, capture an auction page, review the extracted fields and auction context, then research it or save a draft. The workspace requires confirmation before creating the record.
 3. In **Calculator**, enter a hammer and buyer premium. Expand fees and increments to add shipping, percentage or fixed payment fees, budget, minimum bid and fixed increment.
 4. Open the auction workspace from **Watchlist**. Inspect the queues, select a coin, and edit auction identity, provenance, measurements, condition, external photo links and cost estimate.

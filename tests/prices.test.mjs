@@ -248,6 +248,14 @@ test('summaryText has no type link for a reference without type data', () => {
   ].join('\n'));
 });
 
+test('summaryText labels an unverified price query without inventing a type link', () => {
+  const summary = summarise([{ price: '200', date: '2026-01-01' }], 'USD');
+  assert.equal(summaryText({ label: 'RIC 972' }, summary, 'USD', 'RIC 972'), [
+    'RIC 972',
+    'Median hammer $200 · middle 50% $200–$200 · range $200–$200 · 1 recorded sale matching “RIC 972” · 2026',
+  ].join('\n'));
+});
+
 test('priceCheck counts the counted sales strictly under an amount and sets it against the median', () => {
   const amounts = ['90', '110', '135', '165', '180', '215', '245', '310', '450'];
   // A lot without a price and one in another currency are not sales the amount is checked against.

@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, pricePanelVisibility, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
@@ -39,9 +39,12 @@ let requestId = 0;
 let referenceRevision = 0;
 let priceRequestId = 0;
 let currentCard = null;
+let researchContext = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
 const priceCuration = createPriceCuration();
+const verifiedPriceCards = new WeakMap();
+const requestedPriceContexts = new WeakSet();
 let copiedTimer = 0;
 // The Recent label the arrow keys last put in the Reference box, by position (-1: none).
 let recalled = -1;
@@ -231,7 +234,7 @@ function clearOutput() {
   $('form-error').textContent = '';
   $('candidates').hidden = true;
   $('result').hidden = true;
-  $('catalogue-fallback').hidden = true;
+  $('research-prices').hidden = true;
   $('lookup-prompt').hidden = true;
   $('reference-number').removeAttribute('aria-invalid');
   $('quick-reference').removeAttribute('aria-invalid');
@@ -241,20 +244,10 @@ function clearOutput() {
   clearRicNote();
   lotNote = '';
   currentCard = null;
+  researchContext = null;
   globalThis.gigaPinaxWatchlistReference = null;
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: null }));
   clearPrices();
-}
-
-function showCatalogueFallback(reference) {
-  if (!reference) return false;
-  const acsearchTerm = defaultTerm(reference);
-  const coinarchivesTerm = coinArchivesTerm(reference);
-  if (!acsearchTerm || !coinarchivesTerm) return false;
-  $('fallback-acsearch-link').href = buildSearchUrl({ term: acsearchTerm, currency: $('currency').value, category: searchCategory(reference) });
-  $('fallback-coinarchives-link').href = coinArchivesUrl(coinarchivesTerm, coinArchivesSection(reference));
-  $('catalogue-fallback').hidden = false;
-  return true;
 }
 
 function catalogueFailureMessage(outcome, hasFallback) {
@@ -281,19 +274,66 @@ function setBusy(busy) {
 // A card's title stands in for an empty term, but only when the reference gives words at all: a chip stored before 0.22 from a pasted description
 // still opens its card, and searching that whole sentence as one phrase is what 0.22 stopped, so such a card searches neither site — both links
 // stay on the site's home page, as they are before a lookup.
-const cardFallbackTerm = () => (defaultTerm(currentReference()) ? currentCard?.label ?? '' : '');
+const cardFallbackTerm = () => researchContext?.label ?? '';
 
 function updateAcsearchLink() {
   const term = $('price-term').value.trim() || cardFallbackTerm();
   // The category follows the reference on the card, not the edited term: a Krause reference searches modern coins.
-  $('acsearch-link').href = term ? buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(currentReference()) }) : ACSEARCH_HOME;
+  $('acsearch-link').href = term ? buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(researchContext?.reference) }) : ACSEARCH_HOME;
 }
 
 // CoinArchives follows the reference on the card, never the edited acsearch term, whose quotes and brackets it can't read; only the user opens it.
-function updateCoinArchivesLink(card) {
-  const term = coinArchivesTerm(currentReference()) || (defaultTerm(currentReference()) ? card.label : '');
-  $('coinarchives-link').href = term ? coinArchivesUrl(term, coinArchivesSection(currentReference())) : COINARCHIVES_HOME;
+function updateCoinArchivesLink() {
+  const term = coinArchivesTerm(researchContext?.reference) || researchContext?.label || '';
+  $('coinarchives-link').href = term ? coinArchivesUrl(term, coinArchivesSection(researchContext?.reference)) : COINARCHIVES_HOME;
   $('coinarchives-link').setAttribute('aria-label', term ? `Search CoinArchives for ${term}, opens a new tab` : 'Open CoinArchives, opens a new tab');
+}
+
+function priceCard(context) {
+  return verifiedPriceCards.get(context) ?? { label: context.label };
+}
+
+function initialisePriceResearch(reference, identity = null) {
+  const term = defaultTerm(reference);
+  if (!term) return false;
+  clearPrices();
+  const chosen = identity ? chooseTerm(reference, rememberedTerm(preferences, identity)) : term;
+  researchContext = Object.freeze({ reference: Object.freeze({ ...reference }), label: buildQuery(reference).query, identity, term: chosen,
+    currency: $('currency').value, priceTicket: priceRequestId });
+  $('price-term').value = chosen;
+  updateAcsearchLink();
+  updateCoinArchivesLink();
+  $('research-prices').hidden = false;
+  return true;
+}
+
+function referenceFromCard(card) {
+  if (card.bop?.series) return { catalogue: 'Bop', number: card.bop.series, volume: '', section: card.bop.king ?? '' };
+  const parsed = parseReference(card.label);
+  if (parsed) return parsed;
+  if (card.corpus === 'pella') return { catalogue: 'Price', number: card.id.replace(/^price\./, ''), volume: '', section: '' };
+  return null;
+}
+
+function cardMatchesContext(card, context) {
+  const reference = referenceFromCard(card);
+  if (!reference) return false;
+  const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  if (field(reference.catalogue) !== field(context.reference.catalogue) || field(reference.number) !== field(context.reference.number)) return false;
+  if (reference.catalogue === 'RIC') return ['volume', 'section'].every((key) => field(reference[key]) === field(context.reference[key]));
+  if (reference.catalogue === 'Bop') return field(reference.section) === field(context.reference.section);
+  return true;
+}
+
+async function fetchAutomaticPrices() {
+  const context = researchContext;
+  const ticket = priceRequestId;
+  const { term, currency } = context ?? {};
+  if (!context) return;
+  const granted = await hasAcsearchAccess();
+  if (context !== researchContext || ticket !== priceRequestId) return;
+  if (!granted) { showPricesNote(ACCESS_HINT, false); return; }
+  runPrices(term, currency, { remember: false, context });
 }
 
 // What the live region says about a card: the filing note is the point of the feature, so it is spoken wherever the card is announced.
@@ -334,11 +374,6 @@ function renderCard(card) {
     pageUrl: other ? (rpc ?? '') : $('type-link').href,
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
-  const saved = rememberedTerm(preferences, card);
-  $('price-term').value = chooseTerm(currentReference(), saved);
-  clearPrices();
-  updateAcsearchLink();
-  updateCoinArchivesLink(card);
   $('result').hidden = false;
   $('refine-reference').open = false;
   announce(announcement(card));
@@ -363,7 +398,7 @@ function renderCandidates(candidates, corpus, partial) {
       // the popup; renderRecent keeps focus on a chip, and this keeps it on the box the choice came from.
       // preventScroll: without it the box is scrolled back into view, only for the card below to scroll away from it again — two movements for one click.
       $('quick-reference').focus({ preventScroll: true });
-      run(() => lookupById(corpus, id, { cache: labelCache }), '', parsed);
+      beginResearch(parsed, () => lookupById(corpus, id, { cache: labelCache }), '', { corpus, id, label: title });
     });
     item.append(button);
     return item;
@@ -382,7 +417,7 @@ function openRecent(entry) {
   $('quick-reference').value = '';
   const parsed = parseReference(entry.label);
   if (parsed) { fillFields(parsed); savePreferences(); }
-  run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }), '', parsed);
+  beginResearch(parsed, () => lookupById(entry.corpus, entry.id, { cache: labelCache }), '', entry);
 }
 
 // The lot list lives outside #candidates, so a lookup's clearOutput() leaves it above the card; only a new Reference, a guided edit, a catalogue
@@ -406,11 +441,15 @@ async function openLotReference(found, rulers, button, note = '') {
   const other = found.reference.catalogue === 'Other';
   if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
   const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
-  const allowed = await access;
-  if (pick !== lotPick) return;
-  if (!allowed && !other) { fail(PERMISSION_MESSAGE); return; }
   const reference = lotLookup(found, rulers);
-  run(() => lookupType(reference, { cache: labelCache }), note, reference);
+  beginResearch(reference, async () => {
+    const context = researchContext;
+    const allowed = await access;
+    if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
+    if (!allowed && !other) return { status: 'permission' };
+    if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
+    return lookupType(reference, { cache: labelCache });
+  }, note);
 }
 
 // Lot text lists every reference in it, in text order. A single type-data reference opens at once (the user's 0.18 decision), its row marked
@@ -481,7 +520,9 @@ function lotLink(sale, text) {
 // Draws the chosen period from the page's lots, with no request, as of the collector's own date: everything on the panel follows the period
 // except the trend and the last sale, which come from the whole page. A period without a counted sale keeps only the buttons, the trend and the
 // last sale. The announcement names a period other than All, and All too when the collector has just chosen it (named).
-function renderPrices(lots, currency, term, named = false) {
+function renderPrices(lots, currency, term, named = false, context = shownPrices?.context ?? researchContext,
+  card = shownPrices?.context === context ? shownPrices.card : priceCard(context)) {
+  if (!context) return;
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const now = localDay(new Date());
   const period = PERIODS.find((entry) => entry.value === preferences.period);
@@ -549,7 +590,7 @@ function renderPrices(lots, currency, term, named = false) {
     toggle.setAttribute('aria-label', `${excluded ? 'Include' : 'Exclude'} ${sale.title || `lot ${sale.id}`} ${excluded ? 'in' : 'from'} statistics`);
     toggle.addEventListener('click', () => {
       if (excluded) priceCuration.include(sale); else priceCuration.exclude(sale);
-      renderPrices(lots, currency, term, true);
+      renderPrices(lots, currency, term, true, context);
     });
     row.append(label, amount, toggle);
     return row;
@@ -558,7 +599,7 @@ function renderPrices(lots, currency, term, named = false) {
   $('price-note').textContent = page.capped
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
-  shownPrices = { card: currentCard, lots, currency, term, summary, extras: { period, last, trend } };
+  shownPrices = { context, card, lots, currency, term, summary, extras: { period, last, trend } };
   showCheck();
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
@@ -595,8 +636,14 @@ function showPricesError(message) {
   $('prices-error').hidden = false;
 }
 
-async function run(perform, note = '', failedReference = null) {
+function beginResearch(reference, perform, note = '', identity = null) {
   clearOutput();
+  const hasPrices = reference && initialisePriceResearch(reference, identity);
+  run(perform, note, reference);
+  if (hasPrices) fetchAutomaticPrices();
+}
+
+async function run(perform, note = '', failedReference = null) {
   markScroll();
   lotNote = note;
   const id = ++requestId;
@@ -618,56 +665,48 @@ async function run(perform, note = '', failedReference = null) {
     else if (outcome.card.corpus === 'pella' && !parseReference(outcome.card.label)) fillFields({ catalogue: 'Price', number: outcome.card.id.replace(/^price\./, ''), volume: '', section: '' });
     else if (title) fillFields(title);
     renderCard(outcome.card);
+    if (researchContext && cardMatchesContext(outcome.card, researchContext)) verifiedPriceCards.set(researchContext, outcome.card);
+    if (!researchContext) {
+      const reference = referenceFromCard(outcome.card);
+      if (reference && initialisePriceResearch(reference, outcome.card)) {
+        verifiedPriceCards.set(researchContext, outcome.card);
+        fetchAutomaticPrices();
+      }
+    }
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
     renderRecent();
-    // Same click, same guarded path as Get prices, but only when acsearch access is already granted (never prompts) and without remembering the term.
-    // Without access, the same guards decide whether to say how to allow it instead.
-    const term = $('price-term').value.trim();
-    const currency = $('currency').value;
-    const ticket = priceRequestId;
-    // A card with no term is an Other chip stored before 0.22, whose text is now prose: say why nothing is priced instead of leaving the box blank.
-    if (!term) {
-      if (outcome.card.corpus === 'other') {
-        showPricesNote(EMPTY_OTHER_MESSAGE, false);
-        announce(announcement(outcome.card, EMPTY_OTHER_MESSAGE));
-      }
-      return;
-    }
-    const granted = await hasAcsearchAccess();
-    if (id !== requestId || ticket !== priceRequestId) return;
-    if (granted) runPrices(term, currency, { remember: false });
-    else {
-      showPricesNote(ACCESS_HINT, false);
-      announce(announcement(outcome.card, ACCESS_HINT));
-    }
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
+  else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
+  else if (outcome.status === 'cancelled') return;
   else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
   else {
     if (revision !== referenceRevision) return;
-    const hasFallback = showCatalogueFallback(failedReference);
+    const hasFallback = Boolean(researchContext && failedReference);
     showError(catalogueFailureMessage(outcome, hasFallback));
   }
 }
 
-async function runPrices(term, currency, { remember = true } = {}) {
-  if (!currentCard) return;
-  if (remember) {
-    preferences = rememberTerm(preferences, currentCard, term);
+async function runPrices(term, currency, { remember = true, context = researchContext } = {}) {
+  if (!context || context !== researchContext) return;
+  const card = verifiedPriceCards.get(context) ?? context.identity;
+  if (remember && card && cardMatchesContext(card, context)) {
+    preferences = rememberTerm(preferences, card, term);
     savePreferences();
   }
+  requestedPriceContexts.add(context);
   updateAcsearchLink();
   clearPrices();
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
-  try { outcome = await fetchPrices({ term, currency, category: searchCategory(currentReference()) }); }
+  try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
-  if (id !== priceRequestId) return;
-  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term); revealAgain('result'); }
+  if (id !== priceRequestId || context !== researchContext) return;
+  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealAgain('research-prices'); }
   else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
@@ -732,17 +771,16 @@ $('quick-reference').addEventListener('keydown', (event) => {
   if (!step) return;
   event.preventDefault();
   referenceRevision += 1;
-  $('catalogue-fallback').hidden = true;
+  clearOutput();
   recalled = step.position;
   clearLot();
   $('quick-reference').value = step.text;
   $('quick-reference').setSelectionRange(step.text.length, step.text.length);
 });
-// Typing in the box answers a refusal that asked for exactly this, so the red line and the invalid mark go at the first keystroke. Not clearOutput():
-// that would tear down a card still being read and cancel a lookup in flight.
+// Typing begins a new reference, so neither an old catalogue answer nor its independent price research may arrive over it.
 $('quick-reference').addEventListener('input', () => {
   referenceRevision += 1;
-  $('catalogue-fallback').hidden = true;
+  clearOutput();
   recalled = -1;
   clearLot();
   clearRicNote();
@@ -783,7 +821,6 @@ $('catalogue').addEventListener('change', () => {
 });
 $('currency').addEventListener('change', () => {
   savePreferences();
-  $('catalogue-fallback').hidden = true;
   clearPrices();
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
@@ -846,13 +883,18 @@ $('reference-form').addEventListener('submit', async (event) => {
   // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
-  const revision = referenceRevision;
-  const request = requestId;
   const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   savePreferences();
-  if (!(await access) && !other) { if (revision === referenceRevision && request === requestId) { clearOutput(); showError(PERMISSION_MESSAGE); } return; }
-  if (revision !== referenceRevision || request !== requestId) return;
-  run(() => lookupType(reference, { cache: labelCache }), '', reference);
+  beginResearch(reference, async () => {
+    const context = researchContext;
+    const allowed = await access;
+    if (context !== researchContext) return { status: 'cancelled' };
+    if (!allowed && !other) return { status: 'permission' };
+    if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
+      runPrices(context.term, context.currency, { remember: false, context });
+    }
+    return lookupType(reference, { cache: labelCache });
+  });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
 $('check-amount').addEventListener('input', showCheck);
@@ -883,18 +925,20 @@ $('copy-summary').addEventListener('click', async () => {
 });
 $('prices-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!currentCard || $('prices-button').disabled) return;
+  const context = researchContext;
+  if (!context || $('prices-button').disabled) return;
   const term = $('price-term').value.trim();
   if (!term) { clearPrices(); showPricesError(EMPTY_TERM_MESSAGE); return; }
   const currency = $('currency').value;
   const access = requestHostAccess([ACSEARCH_ORIGIN]);
+  clearPrices();
   setPricesBusy(true);
   // Every change that bumps priceRequestId goes through clearPrices(), which also resets the button, so returning here never leaves it disabled.
   const ticket = priceRequestId;
   const allowed = await access;
   if (ticket !== priceRequestId) return;
   if (!allowed) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
-  runPrices(term, currency);
+  runPrices(term, currency, { context });
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));
 // Browsers fix a toolbar popup's size, so the pop-out shows the popup in a window you can resize and closes itself: the lookup window when one is open,
@@ -924,7 +968,7 @@ function openFrom(search) {
   const selected = queryFromSearch(search) || selectionQuery(new URLSearchParams(search).get('reference'));
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
-  else if (opened && CORPORA.includes(opened.corpus)) run(() => lookupById(opened.corpus, opened.id, { cache: labelCache }));
+  else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => lookupById(opened.corpus, opened.id, { cache: labelCache }));
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its

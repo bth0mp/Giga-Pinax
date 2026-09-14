@@ -1,6 +1,6 @@
 # Giga Pinax
 
-Giga Pinax 0.29.1 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+Giga Pinax 0.29.2 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
 
 Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
 
@@ -8,7 +8,7 @@ The 0.29 workspace adds auction page, house, sale and lot identity; duplicate ch
 
 Fetched acsearch rows remain in Research. Excluding a result updates the count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
 
-If the ANS catalogue service is unavailable, Giga Pinax identifies the server error and offers acsearch and CoinArchives searches for the failed reference where it can be read safely. These links open the external sites when selected; they do not verify the catalogue type or supply replacement type data. Select **Look up** again to retry the catalogue service.
+Price research starts from the entered reference independently of ANS catalogue lookup. With existing acsearch access, the extension fetches available hammer prices and calculates the median while catalogue details load separately. An ANS outage, missing match or request for a more specific type does not block price research. Prices still require an acsearch account with access to hammer prices; CoinArchives remains an external search link. Catalogue details arriving later do not replace the active price query or its curated results.
 
 Captured auction context follows a coin into Research and an editable watchlist draft. Saving from a result carries the resolved reference, type link and available captured auction context; saving from Current source carries the reviewed capture. The collector confirms the record in the workspace. Duplicate auction identity opens the existing coin rather than silently merging it.
 
