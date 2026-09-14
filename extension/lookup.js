@@ -362,7 +362,7 @@ const groupUrl = (corpus, ids) => `${ORIGIN}/${corpus}/apis/getNuds?identifiers=
 
 async function getText(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
   return response.text();
 }
 
@@ -378,6 +378,10 @@ function withTimeout(ms) {
   const timer = setTimeout(() => controller.abort(), ms);
   return { signal: controller.signal, done: () => clearTimeout(timer) };
 }
+
+const failureOutcome = (error) => error?.status === 429 ? { status: 'rate-limited', httpStatus: 429 }
+  : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
+    : { status: 'network' };
 
 export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal } = {}) {
   const labels = {};
@@ -427,8 +431,8 @@ export async function lookupById(corpus, id, options = {}) {
   try {
     const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
     return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal, citation });
-  } catch {
-    return { status: 'network' };
+  } catch (error) {
+    return failureOutcome(error);
   } finally {
     timer.done();
   }
@@ -629,8 +633,8 @@ export async function lookupType(reference, options = {}) {
       return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     }
     return found;
-  } catch {
-    return { status: 'network' };
+  } catch (error) {
+    return failureOutcome(error);
   } finally {
     timer.done();
   }

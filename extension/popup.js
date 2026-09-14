@@ -9,7 +9,8 @@ import { shouldRevealRefine } from './companion-popup.js';
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
 const LABELS_KEY = 'giga-pinax-labels-v1';
-const NETWORK_MESSAGE = 'Couldn’t reach numismatics.org. Check your connection and try again.';
+const CONNECTION_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later. You can still search auction results below.';
+const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
@@ -35,6 +36,7 @@ try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
 catch { $('storage-note').hidden = false; }
 let preferences = restorePreferences(rawPreferences);
 let requestId = 0;
+let referenceRevision = 0;
 let priceRequestId = 0;
 let currentCard = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
@@ -229,6 +231,7 @@ function clearOutput() {
   $('form-error').textContent = '';
   $('candidates').hidden = true;
   $('result').hidden = true;
+  $('catalogue-fallback').hidden = true;
   $('lookup-prompt').hidden = true;
   $('reference-number').removeAttribute('aria-invalid');
   $('quick-reference').removeAttribute('aria-invalid');
@@ -241,6 +244,24 @@ function clearOutput() {
   globalThis.gigaPinaxWatchlistReference = null;
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: null }));
   clearPrices();
+}
+
+function showCatalogueFallback(reference) {
+  if (!reference) return false;
+  const acsearchTerm = defaultTerm(reference);
+  const coinarchivesTerm = coinArchivesTerm(reference);
+  if (!acsearchTerm || !coinarchivesTerm) return false;
+  $('fallback-acsearch-link').href = buildSearchUrl({ term: acsearchTerm, currency: $('currency').value, category: searchCategory(reference) });
+  $('fallback-coinarchives-link').href = coinArchivesUrl(coinarchivesTerm, coinArchivesSection(reference));
+  $('catalogue-fallback').hidden = false;
+  return true;
+}
+
+function catalogueFailureMessage(outcome, hasFallback) {
+  const searches = hasFallback ? ' You can still search auction results below.' : '';
+  if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
+  if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
+  return hasFallback ? CONNECTION_MESSAGE : CONNECTION_ONLY_MESSAGE;
 }
 
 // Only a reference that wasn't found or read marks its field invalid; network and permission messages name no field.
@@ -342,7 +363,7 @@ function renderCandidates(candidates, corpus, partial) {
       // the popup; renderRecent keeps focus on a chip, and this keeps it on the box the choice came from.
       // preventScroll: without it the box is scrolled back into view, only for the card below to scroll away from it again — two movements for one click.
       $('quick-reference').focus({ preventScroll: true });
-      run(() => lookupById(corpus, id, { cache: labelCache }));
+      run(() => lookupById(corpus, id, { cache: labelCache }), '', parsed);
     });
     item.append(button);
     return item;
@@ -361,7 +382,7 @@ function openRecent(entry) {
   $('quick-reference').value = '';
   const parsed = parseReference(entry.label);
   if (parsed) { fillFields(parsed); savePreferences(); }
-  run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }));
+  run(() => lookupById(entry.corpus, entry.id, { cache: labelCache }), '', parsed);
 }
 
 // The lot list lives outside #candidates, so a lookup's clearOutput() leaves it above the card; only a new Reference, a guided edit, a catalogue
@@ -388,7 +409,8 @@ async function openLotReference(found, rulers, button, note = '') {
   const allowed = await access;
   if (pick !== lotPick) return;
   if (!allowed && !other) { fail(PERMISSION_MESSAGE); return; }
-  run(() => lookupType(lotLookup(found, rulers), { cache: labelCache }), note);
+  const reference = lotLookup(found, rulers);
+  run(() => lookupType(reference, { cache: labelCache }), note, reference);
 }
 
 // Lot text lists every reference in it, in text order. A single type-data reference opens at once (the user's 0.18 decision), its row marked
@@ -573,11 +595,12 @@ function showPricesError(message) {
   $('prices-error').hidden = false;
 }
 
-async function run(perform, note = '') {
+async function run(perform, note = '', failedReference = null) {
   clearOutput();
   markScroll();
   lotNote = note;
   const id = ++requestId;
+  const revision = referenceRevision;
   setBusy(true);
   let outcome;
   try { outcome = await perform(); }
@@ -622,7 +645,11 @@ async function run(perform, note = '') {
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
   else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
-  else showError(NETWORK_MESSAGE);
+  else {
+    if (revision !== referenceRevision) return;
+    const hasFallback = showCatalogueFallback(failedReference);
+    showError(catalogueFailureMessage(outcome, hasFallback));
+  }
 }
 
 async function runPrices(term, currency, { remember = true } = {}) {
@@ -704,6 +731,8 @@ $('quick-reference').addEventListener('keydown', (event) => {
   const step = recallStep(preferences.recent, recalled, $('quick-reference').value, event.key);
   if (!step) return;
   event.preventDefault();
+  referenceRevision += 1;
+  $('catalogue-fallback').hidden = true;
   recalled = step.position;
   clearLot();
   $('quick-reference').value = step.text;
@@ -712,6 +741,8 @@ $('quick-reference').addEventListener('keydown', (event) => {
 // Typing in the box answers a refusal that asked for exactly this, so the red line and the invalid mark go at the first keystroke. Not clearOutput():
 // that would tear down a card still being read and cancel a lookup in flight.
 $('quick-reference').addEventListener('input', () => {
+  referenceRevision += 1;
+  $('catalogue-fallback').hidden = true;
   recalled = -1;
   clearLot();
   clearRicNote();
@@ -736,6 +767,7 @@ $('quick-reference').addEventListener('paste', (event) => {
 // A new catalogue starts from its defaults: RIC from the first volume with its default section and number, so a remembered volume can't pair with a
 // section it lacks; Bop from its default king and number, keeping the hidden volume.
 $('catalogue').addEventListener('change', () => {
+  referenceRevision += 1;
   const catalogue = $('catalogue').value;
   // Choosing a catalogue is a deliberate move into the guided fields, which then answer for Look up with an empty Reference box.
   guidedTouched = true;
@@ -751,6 +783,7 @@ $('catalogue').addEventListener('change', () => {
 });
 $('currency').addEventListener('change', () => {
   savePreferences();
+  $('catalogue-fallback').hidden = true;
   clearPrices();
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
@@ -770,6 +803,7 @@ $('ric-volume').addEventListener('change', () => {
 });
 $('reference-form').addEventListener('input', (event) => {
   if (!['reference-number', 'ric-volume', 'ric-section'].includes(event.target.id)) return;
+  referenceRevision += 1;
   guidedTouched = true;
   clearRicNote();
   $('quick-reference').value = '';
@@ -811,10 +845,14 @@ $('reference-form').addEventListener('submit', async (event) => {
   const other = $('catalogue').value === 'Other';
   // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
+  const reference = currentReference();
+  const revision = referenceRevision;
+  const request = requestId;
   const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   savePreferences();
-  if (!(await access) && !other) { clearOutput(); showError(PERMISSION_MESSAGE); return; }
-  run(() => lookupType(currentReference(), { cache: labelCache }));
+  if (!(await access) && !other) { if (revision === referenceRevision && request === requestId) { clearOutput(); showError(PERMISSION_MESSAGE); } return; }
+  if (revision !== referenceRevision || request !== requestId) return;
+  run(() => lookupType(reference, { cache: labelCache }), '', reference);
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
 $('check-amount').addEventListener('input', showCheck);

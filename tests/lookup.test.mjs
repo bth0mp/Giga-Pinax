@@ -224,6 +224,27 @@ test('lookupType reports candidates, none, network and timeout outcomes', async 
   );
 });
 
+test('lookupType distinguishes a temporarily unavailable catalogue from a connection failure', async () => {
+  const unavailable = async () => ({ ok: false, status: 503, text: async () => '' });
+  const limited = async () => ({ ok: false, status: 429, text: async () => '' });
+
+  assert.deepEqual(
+    await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: unavailable }),
+    { status: 'unavailable', httpStatus: 503 },
+  );
+  assert.deepEqual(
+    await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: limited }),
+    { status: 'rate-limited', httpStatus: 429 },
+  );
+});
+
+test('lookupById distinguishes a temporarily unavailable catalogue from a missing record', async () => {
+  const unavailable = async () => ({ ok: false, status: 503, json: async () => ({}) });
+
+  assert.deepEqual(await lookupById('pella', 'price.23', { fetchImpl: unavailable }), { status: 'unavailable', httpStatus: 503 });
+  assert.deepEqual(await lookupById('pella', 'price.23', { fetchImpl: fakeFetch({}) }), { status: 'network' });
+});
+
 test('lookupType shares one deadline between the search and record requests', async () => {
   const fetchImpl = fakeFetch({
     'ocre/apis/search': fixture('ocre-search-nero-306.xml'),
@@ -736,7 +757,7 @@ test('an SC lookup fetches the SCO record directly, without a search', async () 
   assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 0);
 });
 
-test('a missing SC number suggests types with the same base number, and other failures are network errors', async () => {
+test('a missing SC number suggests types with the same base number, and service failures are unavailable', async () => {
   const sco = fakeFetch({ 'sco/apis/search?q=': fixture('sco-search-sc-1266.xml') });
   const near = await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: sco });
   assert.equal(near.status, 'candidates');
@@ -748,7 +769,7 @@ test('a missing SC number suggests types with the same base number, and other fa
   const unrelated = fakeFetch({ 'sco/apis/search?q=': '<feed><entry><title>Seleucid Coins (part 2) 1630.2b</title><id>sc.1.1630.2b</id></entry></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.9' }, { fetchImpl: unrelated }), { status: 'none', corpus: 'sco', query: 'SC 1266.9' });
   const failing = async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) });
-  assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.2' }, { fetchImpl: failing }), { status: 'network' });
+  assert.deepEqual(await lookupType({ catalogue: 'SC', number: '1266.2' }, { fetchImpl: failing }), { status: 'unavailable', httpStatus: 503 });
 });
 
 test('parseReference reads SCO titles so SC chips and suggestions fill the fields', () => {
@@ -916,10 +937,10 @@ test('with a king, several exact hits are offered by citation and BIGR number, a
   assert.deepEqual(nothing, { status: 'none', corpus: 'bigr', query: 'Bopearachchi 9D' });
 });
 
-test('Bop lookups report network errors for a failing search or a failed or timed-out verification, never "not found"', async () => {
+test('Bop lookups distinguish an unavailable search from failed or timed-out verification, never "not found"', async () => {
   const failing = async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) });
   const euthydemus = { catalogue: 'Bop', section: 'Euthydemus I', number: '24A' };
-  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: failing }), { status: 'network' });
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: failing }), { status: 'unavailable', httpStatus: 503 });
   // The search answers but getNuds fails (here 404, as a bare "|" would give 400): the hits could not be checked, which is an outage, not a miss.
   const searchOnly = fakeFetch({ 'bigr/apis/search?q=Euthydemus%20I%2024A': fixture('bigr-search-euthydemus-i-24a.xml') });
   assert.deepEqual(await lookupType(euthydemus, { fetchImpl: searchOnly }), { status: 'network' });
