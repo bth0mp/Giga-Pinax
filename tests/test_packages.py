@@ -25,6 +25,7 @@ ASSETS = {
     "companion-preferences.js",
     "core/backup.js",
     "core/evidence.js",
+    "core/lot-context.js",
     "core/money.js",
     "core/records.js",
     "core/reminders.js",
@@ -72,13 +73,13 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.28.0", manifest["version"])
+                self.assertEqual("0.29.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
                     manifest["commands"],
                 )
-                self.assertIn("RIC", manifest["description"])
+                self.assertIn("ancient coin", manifest["description"].lower())
                 self.assertNotIn("sample", manifest["description"].lower())
 
                 icon_paths = set(manifest["icons"].values())
@@ -157,7 +158,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.28.0.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.29.0.zip"
             for browser in ("brave", "firefox")
         }
         stable_zip_paths = {

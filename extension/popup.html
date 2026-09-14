@@ -63,7 +63,7 @@
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
-          <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="sale-list" class="sale-list"></ol></details>
+          <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="curation-controls"><span id="curation-count"></span><button id="reset-curation" class="text-button" type="button">Reset</button></div><ol id="sale-list" class="sale-list"></ol></details>
           <p id="price-note" class="price-note"></p><p class="price-basis">Basis: recorded acsearch hammer prices; buyer’s premium, tax and shipping excluded.</p>
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>
         </section>
@@ -90,7 +90,7 @@
             <p id="companion-capture-source" class="field-hint"></p>
             <div class="companion-field-pair"><label>Ruler<input id="companion-capture-ruler" maxlength="120"></label><label>Denomination<input id="companion-capture-denomination" maxlength="120"></label></div>
             <div class="companion-field-pair"><label>Mint<input id="companion-capture-mint" maxlength="120"></label><label>Reference<input id="companion-capture-reference" maxlength="120"></label></div>
-            <div class="companion-capture-actions"><button id="companion-use-capture" class="primary-button" type="button" disabled>Research coin</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime disabled>Save to watchlist</button></div>
+            <div class="companion-capture-actions"><button id="companion-use-capture" class="primary-button" type="button" disabled>Research coin</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime disabled>Save to watchlist</button><button id="companion-clear-auction-context" class="text-button" type="button">Clear auction context</button></div>
           </div>
           <p class="field-hint">Review extracted fields before researching or saving.</p>
         </div>

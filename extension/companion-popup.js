@@ -68,7 +68,54 @@ export function buildWatchlistDraftPayload(input) {
   if (title) payload.title = title;
   if (reference) payload.reference = reference;
   if (pageUrl) payload.pageUrl = pageUrl;
+  const contextPageUrl = bounded(input?.auctionContext?.pageUrl, 2048);
+  if (contextPageUrl) {
+    payload.auctionContext = { pageUrl: contextPageUrl };
+    const canonicalUrl = bounded(input?.auctionContext?.canonicalUrl, 2048);
+    if (canonicalUrl) payload.auctionContext.canonicalUrl = canonicalUrl;
+    for (const field of ['house', 'saleId', 'lotNumber']) {
+      const value = bounded(input?.auctionContext?.[field], 120);
+      if (value) payload.auctionContext[field] = value;
+    }
+  }
   return payload;
+}
+
+export function clearAuctionContextFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const { auctionContext, ...rest } = payload;
+  return rest;
+}
+
+export function replaceAuctionContextInPayload(payload, auctionContext) {
+  const clean = clearAuctionContextFromPayload(payload);
+  return clean && auctionContext ? { ...clean, auctionContext } : clean;
+}
+
+export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: send, openDraft }) {
+  let pending = null;
+  let retry = null;
+  return (payload) => {
+    if (pending) return pending;
+    if (!retry) retry = { requestId: makeRequestId(), payload, draftId: null };
+    pending = (async () => {
+      if (!retry.draftId) {
+        const reply = await send({ type: 'draft.save', requestId: retry.requestId, kind: 'current-lot', payload: retry.payload });
+        if (!reply?.ok) {
+          const outcome = reply.outcome ?? reply.error?.outcome;
+          if (outcome !== 'unknown') retry = null;
+          return reply;
+        }
+        retry.draftId = reply.value.id;
+      }
+      const opened = await openDraft(retry.draftId);
+      if (opened?.ok === false) return opened;
+      retry = null;
+      return { ok: true };
+    })().catch((error) => ({ ok: false, message: error?.message || 'Could not save these details.' }))
+      .finally(() => { pending = null; });
+    return pending;
+  };
 }
 
 export function canSaveWatchlist(hasRuntime, payload) {
@@ -88,6 +135,7 @@ export function watchlistPayloadFromCapture(draft) {
     title: title || draft?.pageTitle,
     reference: draft?.reference?.value,
     pageUrl: draft?.pageUrl,
+    auctionContext: Object.hasOwn(draft ?? {}, 'auctionContext') ? draft.auctionContext : (draft?.pageUrl ? { pageUrl: draft.pageUrl } : undefined),
   });
 }
 
@@ -145,6 +193,7 @@ async function initCompanionPopup() {
   let snapshot = { lots: [], auctionEvents: [], alerts: [] };
   let safeCard = null;
   let captureDraft = null;
+  let researchAuctionContext;
   let captureRequestId = 0;
   const mode = documentMode(location.search);
   document.documentElement.classList.toggle('panel-mode', mode.panel);
@@ -198,7 +247,7 @@ async function initCompanionPopup() {
     $('companion-save-watchlist').disabled = true;
   };
   addEventListener('giga-pinax-card', (event) => {
-    safeCard = buildWatchlistDraftPayload(event.detail);
+    safeCard = buildWatchlistDraftPayload({ ...event.detail, auctionContext: researchAuctionContext });
     $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
   });
   if (globalThis.gigaPinaxWatchlistReference) {
@@ -210,17 +259,28 @@ async function initCompanionPopup() {
     $(id)?.addEventListener('change', clearCard);
   }
 
+  const draftSaver = bridge && createDraftSaver({
+    newRequestId: bridge.newRequestId,
+    sendCommand: bridge.sendCommand,
+    openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
+  });
+  let draftSavePending = false;
   const saveWatchlistDraft = async (payload) => {
     if (!bridge || !payload) return announce('Extension storage is unavailable.', true);
-    const saved = await runVisibleAction(async () => {
-      const command = { type: 'draft.save', requestId: bridge.newRequestId(), kind: 'current-lot', payload };
-      const reply = await bridge.sendCommand(command);
-      if (!reply.ok) return reply;
-      const opened = await openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(reply.value.id)}`);
-      return opened?.ok === false ? opened : { ok: true };
-    }, 'Couldn’t save these details to the watchlist.');
-    if (!saved.ok) return announce(saved.message, true);
-    announce('Watchlist details are ready to review.');
+    if (draftSavePending) return;
+    draftSavePending = true;
+    $('companion-save-watchlist').disabled = true;
+    $('companion-capture-watchlist').disabled = true;
+    try {
+      const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
+      if (!saved.ok) return announce(saved.message, true);
+      announce('Watchlist details are ready to review.');
+    } finally {
+      draftSavePending = false;
+      $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+      const currentCapturePayload = watchlistPayloadFromCapture(reviewedCapture());
+      $('companion-capture-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), currentCapturePayload);
+    }
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
 
@@ -257,6 +317,11 @@ async function initCompanionPopup() {
       const capture = await captureCurrentPage(api);
       if (requestId !== captureRequestId) return;
       captureDraft = buildResearchDraft(capture);
+      researchAuctionContext = captureDraft.auctionContext;
+      safeCard = replaceAuctionContextInPayload(safeCard, researchAuctionContext);
+      if (globalThis.gigaPinaxWatchlistReference) {
+        globalThis.gigaPinaxWatchlistReference = replaceAuctionContextInPayload(globalThis.gigaPinaxWatchlistReference, researchAuctionContext);
+      }
       for (const field of ['ruler', 'denomination', 'mint', 'reference']) $(`companion-capture-${field}`).value = captureDraft[field]?.value ?? '';
       $('companion-capture-source').textContent = captureDraft.pageUrl ? `From ${captureDraft.pageTitle || captureDraft.pageUrl}` : 'Page extraction unavailable. Enter the fields manually.';
       applyCaptureState(false, true);
@@ -279,6 +344,7 @@ async function initCompanionPopup() {
   $('companion-use-capture').addEventListener('click', () => {
     const draft = reviewedCapture();
     if (!draft) return;
+    researchAuctionContext = draft.auctionContext;
     $('quick-reference').value = buildResearchQuery(draft);
     $('quick-reference').dispatchEvent(new Event('input', { bubbles: true }));
     $('reference-form').requestSubmit();
@@ -287,6 +353,18 @@ async function initCompanionPopup() {
     const draft = reviewedCapture();
     if (!draft) return;
     void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
+  });
+  $('companion-clear-auction-context').addEventListener('click', () => {
+    if (!captureDraft) return;
+    captureDraft = { ...captureDraft, auctionContext: null };
+    researchAuctionContext = null;
+    safeCard = clearAuctionContextFromPayload(safeCard);
+    if (globalThis.gigaPinaxWatchlistReference) {
+      globalThis.gigaPinaxWatchlistReference = clearAuctionContextFromPayload(globalThis.gigaPinaxWatchlistReference);
+    }
+    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-capture-source').textContent = 'Auction context cleared. Captured fields remain available for research.';
+    announce('Auction context cleared.');
   });
   const navigate = async (action, fallback) => {
     const result = await runVisibleAction(action, fallback);

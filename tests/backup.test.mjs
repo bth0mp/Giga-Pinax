@@ -55,6 +55,19 @@ test('old schema-one backups load while optional presets and lot notes round-tri
   assert.equal(restored.value.lots[0].notes, current.lots[0].notes);
 });
 
+test('schema-one backups round-trip optional lot auction metadata', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.lots.push({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector', title: 'Coin', sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+    auctionContext: { pageUrl: 'https://house.test/lot/1' },
+    coinDetails: { weightMg: 4100 },
+    provenanceNotes: [{ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', text: 'Sale', sourceUrl: 'https://source.test', recordedAt: NOW, auctionDate: '2026-09-12' }],
+    costEstimate: { currency: 'CHF', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 },
+  });
+  const restored = validateBackup(exportBackup(snapshot, NOW).value);
+  assert.equal(restored.ok, true);
+  assert.deepEqual(restored.value.lots[0], snapshot.lots[0]);
+});
+
 test('validates the whole backup and rejects malformed, future, oversized, or invalid data', () => {
   assert.equal(validateBackup('{').error.code, 'invalid-json');
   assert.equal(validateBackup({ format: 'ancient-coin-auction-companion', schemaVersion: 2, exportedAt: NOW, data: {} }).error.code, 'unsupported-schema');

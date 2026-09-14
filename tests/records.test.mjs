@@ -7,8 +7,17 @@ import {
   createEmptySnapshot,
   projectExposure,
   setOutcome,
+  validateDraftPayload,
   validateSnapshot,
 } from '../extension/core/records.js';
+
+test('capture and research drafts accept validated auction context', () => {
+  const auctionContext = { pageUrl: 'https://house.test/lot/1', house: 'House', saleId: 'S', lotNumber: '1' };
+  assert.equal(validateDraftPayload('current-lot', { target: 'watchlist', title: 'Coin', auctionContext }).ok, true);
+  assert.equal(validateDraftPayload('auction-capture', { rawText: 'Coin', pageUrl: 'https://house.test/lot/1', auctionContext }).ok, true);
+  assert.equal(validateDraftPayload('research-highlight', { rawText: 'Coin', auctionContext }).ok, true);
+  assert.equal(validateDraftPayload('auction-capture', { auctionContext: { pageUrl: 'file:///bad' } }).ok, false);
+});
 
 const NOW = '2026-09-12T12:00:00.000Z';
 const IDS = Object.freeze({

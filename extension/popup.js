@@ -1,8 +1,8 @@
 import { HOST_ORIGINS, INVISIBLE, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, pricePanelVisibility, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
-import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch } from './selection.js';
+import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { shouldRevealRefine } from './companion-popup.js';
 
@@ -39,6 +39,7 @@ let priceRequestId = 0;
 let currentCard = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
+const priceCuration = createPriceCuration();
 let copiedTimer = 0;
 // The Recent label the arrow keys last put in the Reference box, by position (-1: none).
 let recalled = -1;
@@ -205,6 +206,7 @@ function resetCopyLabel() {
 
 function clearPrices() {
   priceRequestId += 1;
+  priceCuration.reset();
   shownPrices = null;
   resetCopyLabel();
   $('prices-panel').hidden = true;
@@ -461,21 +463,27 @@ function renderPrices(lots, currency, term, named = false) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const now = localDay(new Date());
   const period = PERIODS.find((entry) => entry.value === preferences.period);
-  const page = summarise(lots, currency);
-  const summary = summarise(lotsInPeriod(lots, period.value, now), currency);
+  const eligibleLots = summarise(lots, currency).priced;
+  const includedLots = priceCuration.included(eligibleLots);
+  const page = summarise(includedLots, currency);
+  const summary = summarise(lotsInPeriod(includedLots, period.value, now), currency);
   const median = money.format(summary.median);
   $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
   $('median-currency').hidden = median.includes(currency);
   const { count, unpriced, total } = summary;
   const empty = count === 0;
-  for (const id of ['median-line', 'range-block', 'check-row', 'check-result', 'sale-details', 'copy-summary']) $(id).hidden = empty;
+  const visibility = pricePanelVisibility(count, eligibleLots.length);
+  for (const id of ['median-line', 'range-block', 'check-row', 'check-result', 'copy-summary']) $(id).hidden = !visibility.statistics;
+  $('sale-details').hidden = !visibility.curation;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  const none = `No sales with a price in the last ${period.years} years.`;
+  const counts = priceCuration.counts(eligibleLots);
+  const none = counts.included === 0 ? 'All sales are excluded. Reset to include them.'
+    : period.years ? `No sales with a price in the last ${period.years} years.` : 'No included sales have a recorded price.';
   $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
-  const trend = trendOf(lots, currency, now);
+  const trend = trendOf(includedLots, currency, now);
   $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
   $('sale-trend').hidden = !trend;
   const last = lastSale(page);
@@ -492,6 +500,8 @@ function renderPrices(lots, currency, term, named = false) {
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
+  $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
+  $('reset-curation').disabled = counts.excluded === 0;
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
   $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
@@ -501,13 +511,25 @@ function renderPrices(lots, currency, term, named = false) {
   $('range-box').style.width = `${span > 0 ? percent(summary.upperQuartile) - percent(summary.lowerQuartile) : 0}%`;
   $('range-median').style.left = `${percent(summary.median)}%`;
   $('sale-count').textContent = String(count);
-  $('sale-list').replaceChildren(...summary.priced.map((sale) => {
+  const displayed = summarise(lotsInPeriod(lots, period.value, now), currency).priced;
+  $('sale-list').replaceChildren(...displayed.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
     label.append(`${sale.date} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
-    row.append(label, amount);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'text-button sale-toggle';
+    const excluded = priceCuration.isExcluded(sale);
+    row.classList.toggle('excluded', excluded);
+    toggle.textContent = excluded ? 'Include' : 'Exclude';
+    toggle.setAttribute('aria-label', `${excluded ? 'Include' : 'Exclude'} ${sale.title || `lot ${sale.id}`} ${excluded ? 'in' : 'from'} statistics`);
+    toggle.addEventListener('click', () => {
+      if (excluded) priceCuration.include(sale); else priceCuration.exclude(sale);
+      renderPrices(lots, currency, term, true);
+    });
+    row.append(label, amount, toggle);
     return row;
   }));
   // About the page, whatever the period: it holds only the 100 most recent lots.
@@ -515,6 +537,7 @@ function renderPrices(lots, currency, term, named = false) {
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   shownPrices = { card: currentCard, lots, currency, term, summary, extras: { period, last, trend } };
+  showCheck();
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
@@ -847,6 +870,12 @@ $('pop-out').addEventListener('click', async () => {
   if (lookupLaunchSucceeded(reply)) window.close();
   else announce(reply?.message || 'Couldn’t open the lookup window. Try again.');
 });
+$('reset-curation').addEventListener('click', () => {
+  if (!shownPrices) return;
+  const { lots, currency, term } = shownPrices;
+  priceCuration.reset();
+  renderPrices(lots, currency, term, true);
+});
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);
 
@@ -854,7 +883,7 @@ darkScheme.addEventListener('change', syncThemeButton);
 // The pop-out's window names a card instead and reopens it like a Recent chip: with the fields stored alongside it, and without a permission request.
 // Either way the cursor then waits in the Reference box (Alt+Shift+G, type, Enter): Firefox popups can ignore autofocus.
 function openFrom(search) {
-  const selected = queryFromSearch(search);
+  const selected = queryFromSearch(search) || selectionQuery(new URLSearchParams(search).get('reference'));
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
   else if (opened && CORPORA.includes(opened.corpus)) run(() => lookupById(opened.corpus, opened.id, { cache: labelCache }));

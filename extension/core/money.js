@@ -167,6 +167,67 @@ export function calculateMaximumHammer(budget, buyerPremiumBps) {
   };
 }
 
+function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0) || value > maximum) {
+    return failure('invalid-option', `${key} must be ${positive ? 'a positive' : 'a non-negative'} safe integer.`, key);
+  }
+  return { ok: true, value };
+}
+
+export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
+  const checked = validateMoney(hammer);
+  if (!checked.ok) return checked;
+  const premium = calculatePremium(hammer, buyerPremiumBps);
+  if (!premium.ok) return premium;
+  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, ...options };
+  for (const key of ['shippingMinor', 'paymentFeeMinor']) {
+    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
+  }
+  const feeBps = optionInteger(values.paymentFeeBps, 'paymentFeeBps', { maximum: 10000 });
+  if (!feeBps.ok) return feeBps;
+  const base = BigInt(premium.value.hammerPlusPremium.minor) + BigInt(values.shippingMinor);
+  const percentageFee = (base * BigInt(values.paymentFeeBps) + 5000n) / 10000n;
+  const paymentFee = percentageFee + BigInt(values.paymentFeeMinor);
+  const total = base + paymentFee;
+  if ([base, paymentFee, total].some((value) => value > MAX_SAFE_BIGINT)) {
+    return failure('unsafe-money', 'Bid cost calculation is outside the supported integer range.');
+  }
+  const money = (minor) => ({ currency: hammer.currency, minor: Number(minor) });
+  return { ok: true, value: {
+    hammer: { ...hammer }, premium: premium.value.premium,
+    hammerPlusPremium: premium.value.hammerPlusPremium,
+    shipping: money(BigInt(values.shippingMinor)), paymentFee: money(paymentFee), total: money(total),
+  }};
+}
+
+export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
+  const checked = validateMoney(budget); if (!checked.ok) return checked;
+  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, ...options };
+  for (const key of ['shippingMinor', 'paymentFeeMinor', 'minimumBidMinor']) {
+    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
+  }
+  for (const [key, config] of [['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]]) {
+    const valid = optionInteger(values[key], key, config); if (!valid.ok) return valid;
+  }
+  const premiumCheck = calculatePremium({ currency: budget.currency, minor: 0 }, buyerPremiumBps);
+  if (!premiumCheck.ok) return premiumCheck;
+  const affordable = (minor) => {
+    const result = calculateBidCost({ currency: budget.currency, minor: Number(minor) }, buyerPremiumBps, values);
+    return result.ok && result.value.total.minor <= budget.minor;
+  };
+  const minimum = BigInt(values.minimumBidMinor);
+  const increment = BigInt(values.incrementMinor);
+  const firstIndex = minimum === 0n ? 1n : 0n;
+  if (!affordable(minimum + firstIndex * increment)) return failure('no-affordable-bid', 'No positive bid on this grid is affordable.');
+  let low = firstIndex;
+  let high = (BigInt(budget.minor) >= minimum ? (BigInt(budget.minor) - minimum) / increment + 1n : firstIndex + 1n);
+  while (low + 1n < high) {
+    const middle = (low + high) / 2n;
+    if (affordable(minimum + middle * increment)) low = middle; else high = middle;
+  }
+  return calculateBidCost({ currency: budget.currency, minor: Number(minimum + low * increment) }, buyerPremiumBps, values);
+}
+
 export function sumMoney(values, currency) {
   if (!CURRENCY_SET.has(currency)) {
     return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');

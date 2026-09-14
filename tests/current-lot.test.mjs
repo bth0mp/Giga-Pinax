@@ -26,7 +26,8 @@ test('collects bounded visible current-lot candidates with field provenance', ()
     getSelection() { return { toString: () => 'Nero silver denarius RIC 306' }; },
   };
   const result = collectCurrentLotCandidates(root, { href: 'https://auction.test/lot?lot=27' });
-  assert.equal(result.pageUrl, 'https://auction.test/lot?lot=27#detail');
+  assert.equal(result.pageUrl, 'https://auction.test/lot?lot=27');
+  assert.equal(result.canonicalUrl, 'https://auction.test/lot?lot=27#detail');
   assert.equal(result.candidates.ruler.value, 'Nero');
   assert.equal(result.candidates.denomination.value, 'AR denarius');
   assert.equal(result.candidates.mint.value, 'Rome');
@@ -35,10 +36,22 @@ test('collects bounded visible current-lot candidates with field provenance', ()
   assert.ok(result.rawText.length <= 3000);
 });
 
+test('capture freezes the actual auction URL and carries canonical identity separately', () => {
+  const draft = buildResearchDraft({
+    pageTitle: 'Lot 27', pageUrl: 'https://auction.test/lot/27?utm_source=x',
+    canonicalUrl: 'https://auction.test/archive/27', candidates: {},
+  }, { now: '2026-09-12T12:00:00.000Z', newId: () => 'draft-id' });
+  assert.deepEqual(draft.auctionContext, {
+    pageUrl: 'https://auction.test/lot/27?utm_source=x', canonicalUrl: 'https://auction.test/archive/27',
+  });
+  assert.equal(draft.pageUrl, 'https://auction.test/lot/27?utm_source=x');
+});
+
 test('builds an editable collector launcher draft without turning capture into evidence', () => {
   const draft = buildResearchDraft({
     pageTitle: 'Restricted auction page',
     pageUrl: 'https://auction.test/lot/27',
+    auctionContext: { pageUrl: 'https://auction.test/lot/27' },
     rawText: '',
     candidates: {},
   }, { now: '2026-09-12T12:00:00.000Z', newId: () => 'draft-id' });
@@ -48,6 +61,7 @@ test('builds an editable collector launcher draft without turning capture into e
     purpose: 'launcher-input',
     pageTitle: 'Restricted auction page',
     pageUrl: 'https://auction.test/lot/27',
+    auctionContext: { pageUrl: 'https://auction.test/lot/27' },
     capturedAt: '2026-09-12T12:00:00.000Z',
   });
   assert.equal(draft.observations, undefined);
@@ -67,4 +81,19 @@ test('bounds capture inputs and ignores uncertain or blank candidate values', ()
   assert.ok(draft.rawText.length <= 3000);
   assert.equal(draft.ruler, undefined);
   assert.ok(draft.mint.value.length <= 120);
+});
+
+test('fallback reference extraction preserves Crawford slash suffix and stops before following metadata', () => {
+  const nodes = [node('Republican denarius, Crawford 511/2b'), node('Mint: Rome')];
+  const root = { title: '', querySelector: () => null, querySelectorAll: () => nodes, getSelection: () => ({ toString: () => '' }) };
+  const result = collectCurrentLotCandidates(root, { href: 'https://auction.test/42' });
+  assert.equal(result.candidates.reference.value, 'Crawford 511/2b');
+  assert.equal(result.candidates.reference.value.includes('Mint'), false);
+});
+
+test('fallback reference extraction preserves a Roman volume and number without trailing prose', () => {
+  const nodes = [node('Hadrian denarius. RIC II 147. Rome mint.')];
+  const root = { title: '', querySelector: () => null, querySelectorAll: () => nodes, getSelection: () => ({ toString: () => '' }) };
+  const result = collectCurrentLotCandidates(root, { href: 'https://auction.test/147' });
+  assert.equal(result.candidates.reference.value, 'RIC II 147');
 });

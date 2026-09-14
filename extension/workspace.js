@@ -1,5 +1,5 @@
 import { computeStatistics } from './core/evidence.js';
-import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { calculateBidCost, calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { projectExposure } from './core/records.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
@@ -47,6 +47,104 @@ export function filterWorkspaceLots(lots, query) {
     .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
 }
 
+const OPEN_OUTCOME = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
+export function auctionTimeLabel(event) {
+  if (!event?.localDate) return 'Time unknown';
+  const kind = event.eventKind === 'lot-closes' ? 'Lot deadline' : event.eventKind === 'auction-day' ? 'Auction day' : 'Event starts';
+  if (event.precision === 'timed' && event.localTime) return `${kind} · ${event.localDate} at ${event.localTime} ${event.timeZone}`;
+  return `${kind} · ${event.localDate} (date only, ${event.timeZone})`;
+}
+
+export function auctionQueueForLots(lots, events, queue = 'all-open', now = new Date().toISOString()) {
+  const eventById = new Map((events ?? []).map((event) => [event.id, event]));
+  const nowMs = Date.parse(now);
+  const entries = (lots ?? []).map((lot, index) => ({ lot, event: eventById.get(lot.auctionEventId) ?? null, index }));
+  const matches = ({ lot, event }) => {
+    if (queue === 'all-coins') return true;
+    if (queue === 'completed') return !OPEN_OUTCOME(lot);
+    if (!OPEN_OUTCOME(lot)) return false;
+    if (queue === 'closing-soon') {
+      const eventMs = event?.precision === 'timed' ? Date.parse(event.startsAt) : NaN;
+      return Number.isFinite(eventMs) && eventMs >= nowMs && eventMs <= nowMs + 48 * 60 * 60 * 1000;
+    }
+    if (queue === 'needs-research') return !String(lot.reference ?? '').trim();
+    if (queue === 'planned') return Boolean(lot.plannedBid) && !lot.activeBid;
+    if (queue === 'active') return Boolean(lot.activeBid);
+    return true;
+  };
+  const sortKey = ({ event }) => event?.precision === 'timed' && Number.isFinite(Date.parse(event.startsAt))
+    ? [0, Date.parse(event.startsAt)] : event?.localDate ? [1, Date.parse(`${event.localDate}T00:00:00Z`)] : [2, 0];
+  return entries.filter(matches).sort((left, right) => {
+    const a = sortKey(left); const b = sortKey(right);
+    return a[0] - b[0] || a[1] - b[1] || left.index - right.index;
+  });
+}
+
+export function comparisonSelectionAfterToggle(selectedIds, lotId) {
+  const selected = [...new Set(selectedIds ?? [])];
+  if (selected.includes(lotId)) return selected.filter((id) => id !== lotId);
+  return selected.length >= 4 ? selected : [...selected, lotId];
+}
+
+export function comparisonPickerLabel(lot) {
+  const parts = [String(lot?.title ?? '').trim() || 'Untitled coin'];
+  const reference = String(lot?.reference ?? '').trim(); if (reference && reference !== parts[0]) parts.push(reference);
+  const context = lot?.auctionContext ?? {};
+  const identity = [context.house, context.saleId ? `sale ${context.saleId}` : '', context.lotNumber ? `lot ${context.lotNumber}` : ''].filter(Boolean).join(' ');
+  if (identity) parts.push(identity); else if (lot?.lotNumber) parts.push(`lot ${lot.lotNumber}`);
+  return parts.join(' · ');
+}
+
+export function comparisonProvenanceRows(notes) {
+  return (notes ?? []).map((note) => ({
+    id: note.id, text: note.text, sourceUrl: note.sourceUrl,
+    dateLabel: `${note.auctionDate ? `Auction date ${note.auctionDate} · ` : ''}Recorded ${String(note.recordedAt).slice(0, 10)}`,
+  }));
+}
+
+export function comparisonRows(lots, selectedIds) {
+  const byId = new Map((lots ?? []).map((lot) => [lot.id, lot]));
+  return (selectedIds ?? []).map((id) => byId.get(id)).filter(Boolean).map((lot) => {
+    const terminal = Boolean(lot.outcome?.status && lot.outcome.status !== 'open');
+    const bid = terminal ? null : lot.activeBid ?? lot.plannedBid ?? null;
+    const amount = terminal ? lot.outcome?.hammer ?? null : bid?.amount ?? null;
+    const amountRole = terminal ? 'Final hammer' : lot.activeBid ? 'Active maximum' : lot.plannedBid ? 'Planned maximum' : 'Saved amount';
+    const estimate = lot.costEstimate;
+    const estimateLabel = terminal ? '' : !estimate ? 'No saved fee estimate' : !amount || estimate.currency !== amount.currency
+      ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
+      : `${estimate.currency} fees: shipping ${((estimate.shippingMinor ?? 0) / 100).toFixed(2)} + fixed ${((estimate.paymentFeeMinor ?? 0) / 100).toFixed(2)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`;
+    let totalLabel = terminal ? '' : Number.isInteger(bid?.buyerPremiumBps) ? 'Estimated total unknown; recalculate fees' : 'Estimated total unknown; buyer premium not recorded';
+    if (!terminal && amount && Number.isInteger(bid?.buyerPremiumBps) && estimate?.currency === amount.currency) {
+      const calculated = calculateBidCost(amount, bid.buyerPremiumBps, estimate);
+      if (calculated.ok) totalLabel = `Estimated total ${calculated.value.total.currency} ${moneyInputText(calculated.value.total, 'en-US')}`;
+    }
+    const actualTotalLabel = terminal && lot.outcome?.actualInvoice ? `Actual invoice ${lot.outcome.actualInvoice.currency} ${moneyInputText(lot.outcome.actualInvoice, 'en-US')}` : '';
+    return { ...lot, amountLabel: amount ? `${amountRole} ${amount.currency} ${moneyInputText(amount, 'en-US')}` : terminal ? 'Final hammer not recorded' : 'No saved amount', estimateLabel, totalLabel, actualTotalLabel };
+  });
+}
+
+export function buildWorkspaceLotDraft(existing, values, originalManualUrl) {
+  const lot = { ...(existing?.id ? { id: existing.id } : {}), title: String(values.title ?? '').trim(), sourceLinks: mergeLotSourceLinks(existing?.sourceLinks, values.sourceUrl, originalManualUrl) };
+  for (const key of ['reference', 'lotNumber', 'auctionEventId']) if (values[key]) lot[key] = String(values[key]).trim();
+  lot.notes = String(values.notes ?? '');
+  const auctionContext = { pageUrl: String(values.auctionPageUrl ?? '').trim() };
+  for (const [field, key] of [['canonicalUrl', 'auctionCanonicalUrl'], ['house', 'auctionHouse'], ['saleId', 'auctionSaleId'], ['lotNumber', 'auctionLotNumber']]) {
+    const value = String(values[key] ?? '').trim(); if (value) auctionContext[field] = value;
+  }
+  if (auctionContext.pageUrl) lot.auctionContext = auctionContext;
+  else if (existing?.auctionContext) lot.auctionContext = null;
+  const photoUrls = [values.photoUrl1, values.photoUrl2].map((value) => String(value ?? '').trim()).filter(Boolean);
+  const coinDetails = { photoUrls };
+  const weightText = String(values.weightGrams ?? '').trim(); const weight = Number(weightText); if (weightText && (!Number.isFinite(weight) || weight < 0.001 || weight > 1000)) throw new RangeError('Enter a valid weight from 0.001 to 1000 grams.'); if (weightText) coinDetails.weightMg = Math.round(weight * 1000);
+  const diameterText = String(values.diameterMm ?? '').trim(); const diameter = Number(diameterText); if (diameterText && (!Number.isFinite(diameter) || diameter < 0.01 || diameter > 1000)) throw new RangeError('Enter a valid diameter from 0.01 to 1000 millimetres.'); if (diameterText) coinDetails.diameterHundredthsMm = Math.round(diameter * 100);
+  if (String(values.condition ?? '').trim()) coinDetails.condition = String(values.condition).trim();
+  if (photoUrls.length || coinDetails.weightMg || coinDetails.diameterHundredthsMm || coinDetails.condition) lot.coinDetails = coinDetails;
+  else if (existing?.coinDetails) lot.coinDetails = null;
+  if (Array.isArray(values.provenanceNotes)) lot.provenanceNotes = structuredClone(values.provenanceNotes);
+  if (existing?.costEstimate) lot.costEstimate = structuredClone(existing.costEstimate);
+  return lot;
+}
+
 export function lotStatusLabel(lot) {
   const status = lot?.outcome?.status;
   if (status && status !== 'open') return ({ won: 'Won', lost: 'Lost', passed: 'Passed' })[status] ?? 'Closed';
@@ -58,12 +156,20 @@ export function lotStatusLabel(lot) {
 export function buildLotUndoCommand(undo, newRequestId = requestId) {
   if (!undo?.previous?.id || undo.previous.id !== undo?.saved?.id || !Number.isInteger(undo.saved.revision)) return null;
   const { revision, dataClass, createdAt, updatedAt, ...lot } = structuredClone(undo.previous);
+  for (const key of ['auctionContext', 'coinDetails', 'provenanceNotes', 'costEstimate']) if (!Object.hasOwn(lot, key)) lot[key] = null;
   return buildLotSaveCommand({ ...lot, notes: lot.notes ?? '' }, undo.saved.revision, newRequestId);
 }
 
 export function selectionAfterLotSave(current, submitted, submittedVersion, currentVersion, savedId) {
   if (submittedVersion !== currentVersion || current.selectedLotId !== submitted.selectedLotId || current.mode !== submitted.mode) return current;
   return { selectedLotId: savedId, mode: 'detail' };
+}
+
+export function lotSaveFollowup(current, submitted, saved, editorPreserved, hasPrevious = true, interactionChanged = false) {
+  const sameSelection = current.selectedLotId === submitted.selectedLotId && current.mode === submitted.mode;
+  const savedMatches = submitted.selectedLotId === null || submitted.selectedLotId === saved?.id;
+  const completed = !editorPreserved && !interactionChanged && sameSelection && savedMatches && Boolean(saved?.id);
+  return { selection: completed && submitted.selectedLotId === null ? { selectedLotId: saved.id, mode: 'detail' } : current, offerUndo: completed && hasPrevious };
 }
 
 export function buildAttachEventCommand(record, auctionEventId, newRequestId = requestId) {
@@ -86,11 +192,13 @@ export const sameEventReturnContext = (submitted, current, submittedVersion, cur
 
 export function lotDraftToEditor(payload) {
   const bounded = (value, maximum) => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, maximum) : '';
-  return {
+  const result = {
     title: bounded(payload?.title, 200),
     reference: bounded(payload?.reference, 120),
     sourceUrl: bounded(payload?.pageUrl, 2048),
   };
+  if (payload?.auctionContext?.pageUrl) result.auctionContext = structuredClone(payload.auctionContext);
+  return result;
 }
 
 export function draftToConsumeAfterLotSave(reply, draftId) {
@@ -104,6 +212,12 @@ export function receiveWorkspaceSnapshot(state, snapshot) {
 
 export function buildLotSaveCommand(lot, expectedRevision, newRequestId = requestId) {
   return { type: 'lot.save', requestId: newRequestId(), expectedRevision, lot };
+}
+
+export function buildBidSaveCommand(action, basis, bid, costEstimate, newRequestId = requestId) {
+  const command = { type: action === 'place' ? 'bid.place' : 'bid.plan', requestId: newRequestId(), lotId: basis.id, expectedRevision: basis.revision, [action === 'place' ? 'activeBid' : 'plannedBid']: bid };
+  if (costEstimate?.currency === bid?.amount?.currency) command.costEstimate = structuredClone(costEstimate);
+  return command;
 }
 
 export function buildGroupReorderCommand(group, orderedLotIds, snapshot, newRequestId = requestId) {
@@ -240,8 +354,11 @@ async function initWorkspace() {
   let pendingSnapshot = null;
   let pendingRetry = null;
   let selection = { selectedLotId: null, mode: 'list' };
+  let comparisonSelection = [];
+  let lotInteractionGeneration = 0;
   let lastLotUndo = null;
   let bidCalculator = null;
+  let calculatorCostEstimate = null;
   let eventReturnLot = null;
   let activeDetailTab = 'details';
   let eventDraftId = null;
@@ -261,7 +378,22 @@ async function initWorkspace() {
     if (className) node.className = className;
     return node;
   };
+  const provenanceValues = () => [...$('provenance-editor').querySelectorAll('.provenance-row')].map((row) => ({
+    id: row.dataset.id || requestId(),
+    text: row.querySelector('[name="provenanceText"]').value.trim(),
+    sourceUrl: row.querySelector('[name="provenanceSourceUrl"]').value.trim(),
+    recordedAt: row.dataset.recordedAt || new Date().toISOString(),
+    ...(row.querySelector('[name="provenanceAuctionDate"]').value ? { auctionDate: row.querySelector('[name="provenanceAuctionDate"]').value } : {}),
+  })).filter((item) => item.text || item.sourceUrl);
+  const appendProvenanceEditor = (entry = {}) => {
+    const row = document.createElement('div'); row.className = 'provenance-row'; row.dataset.id = entry.id ?? requestId(); row.dataset.recordedAt = entry.recordedAt ?? new Date().toISOString();
+    row.innerHTML = '<label>Note<textarea name="provenanceText" maxlength="1000" required></textarea></label><label>Source URL<input name="provenanceSourceUrl" type="url" maxlength="2048" required></label><label>Auction date <span class="optional">optional</span><input name="provenanceAuctionDate" type="date"></label><div class="form-actions"><button class="quiet" type="button">Remove entry</button></div>';
+    row.querySelector('[name="provenanceText"]').value = entry.text ?? ''; row.querySelector('[name="provenanceSourceUrl"]').value = entry.sourceUrl ?? ''; row.querySelector('[name="provenanceAuctionDate"]').value = entry.auctionDate ?? '';
+    row.querySelector('button').addEventListener('click', () => { row.remove(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
+    $('provenance-editor').append(row);
+  };
   mountSourcesMenu($('source-menu'));
+  $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
   $('open-settings').addEventListener('click', () => void openSettings());
   const detailPanels = {
     details: $('lot-form'), bid: $('bid-form').closest('.detail-section'),
@@ -332,7 +464,13 @@ async function initWorkspace() {
     announce('Saving…');
     const reply = await bridge.sendCommand(command);
     if (!reply.ok) {
-      if (editor === 'lot') { $('lot-action-status').textContent = reply.message; $('lot-action-status').classList.add('error'); }
+      if (editor === 'lot') {
+        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(reply.message ?? 'The coin could not be saved.')); status.classList.add('error');
+        const existingLotId = reply.existingLotId ?? reply.error?.existingLotId;
+        if (reply.code === 'duplicate' && existingLotId) {
+          const open = text('button', 'Open existing coin', 'quiet'); open.type = 'button'; open.addEventListener('click', () => selectLot(existingLotId)); status.append(document.createTextNode(' '), open);
+        }
+      }
       if (reply.code === 'conflict') $('conflict-note').hidden = false;
       if (reply.outcome === 'unknown') {
         const committed = await refresh();
@@ -342,7 +480,7 @@ async function initWorkspace() {
           if (committed) acceptIncoming(committed);
           pendingRetry = null; $('unknown-note').hidden = true;
           announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
-          return { ok: true, requestId: command.requestId, value: ledgerValue ?? null };
+          return { ok: true, requestId: command.requestId, value: ledgerValue ?? null, editorPreserved: preserved };
         }
         pendingRetry = { command, editor };
         $('unknown-note').hidden = false;
@@ -356,15 +494,17 @@ async function initWorkspace() {
     await refresh();
     if (editor === 'lot') $('lot-action-status').classList.remove('error');
     announce(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
-    return reply;
+    return { ...reply, editorPreserved: preserved };
   };
 
   document.querySelectorAll('[data-editor]').forEach((form) => form.addEventListener('input', () => {
     const editor = form.dataset.editor;
+    if (editor === 'lot') lotInteractionGeneration += 1;
     dirtyEditors.add(editor);
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
   }));
   $('reload-snapshot').addEventListener('click', () => {
+    lotInteractionGeneration += 1;
     dirtyEditors.clear(); editorBases.clear(); editorVersions.clear(); resetEditors();
     if (pendingSnapshot) { snapshot = pendingSnapshot; pendingSnapshot = null; renderAll(); }
     else void refresh(true);
@@ -491,15 +631,17 @@ async function initWorkspace() {
   }
   function renderLots() {
     const list = $('lot-list'); list.replaceChildren();
+    const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id)); comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
-    const visibleLots = filterWorkspaceLots(snapshot.lots ?? [], $('lot-filter').value);
+    const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
       const main = text('span', '', 'coin-row-main'); main.append(text('strong', lot.reference || lot.title), text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin')));
       const event = (snapshot.auctionEvents ?? []).find((item) => item.id === lot.auctionEventId);
-      const meta = text('span', '', 'coin-row-meta'); meta.append(text('span', event ? `${event.name}${event.localDate ? `, ${event.localDate}` : ''}` : 'No auction'), text('span', lotStatusLabel(lot), 'row-status'));
+      const meta = text('span', '', 'coin-row-meta'); meta.append(text('span', event ? `${event.name} · ${auctionTimeLabel(event)}` : 'Time unknown'), text('span', lotStatusLabel(lot), 'row-status'));
       const amounts = text('span', '', 'coin-row-bids');
       if (lot.plannedBid) amounts.append(text('span', `Plan ${formatMoney(lot.plannedBid.amount)}`));
       if (lot.activeBid) amounts.append(text('span', `Placed ${formatMoney(lot.activeBid.amount)}`));
@@ -507,6 +649,16 @@ async function initWorkspace() {
       row.addEventListener('click', () => selectLot(lot.id));
       list.append(row);
     }
+    const picker = $('comparison-picker'); picker.replaceChildren();
+    const comparisonChoices = filterWorkspaceLots(snapshot.lots ?? [], $('lot-filter').value);
+    for (const lot of comparisonChoices) {
+      const label = document.createElement('label'); label.className = 'compare-choice';
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = comparisonSelection.includes(lot.id); checkbox.disabled = !checkbox.checked && comparisonSelection.length >= 4;
+      checkbox.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); renderLots(); });
+      label.append(checkbox, document.createTextNode(comparisonPickerLabel(lot))); picker.append(label);
+    }
+    $('comparison-count').textContent = `${comparisonSelection.length} selected · choose 2–4 coins`;
+    $('open-comparison').disabled = comparisonSelection.length < 2 || comparisonSelection.length > 4;
     const groups = $('group-list'); groups.replaceChildren();
     for (const group of snapshot.alternativeGroups ?? []) {
       const members = (snapshot.lots ?? []).filter((lot) => lot.alternativeGroupId === group.id).sort((a, b) => a.priority - b.priority);
@@ -532,6 +684,7 @@ async function initWorkspace() {
   function selectLot(lotId, { focus = true } = {}) {
     if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderLots(); if (focus) $('selected-title').focus?.(); return; }
     if (lotId !== selection.selectedLotId && !canLeaveSelectedEditors()) return;
+    if (lotId !== selection.selectedLotId) lotInteractionGeneration += 1;
     for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); }
     selection = chooseSelectedLot(selection, lotId, snapshot.lots ?? []);
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
@@ -548,8 +701,15 @@ async function initWorkspace() {
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
     $('bid-form').disabled = false; $('outcome-form').disabled = false;
     const f = $('lot-form').elements; const originalManualUrl = lot.sourceLinks?.find((link) => link.source === 'manual')?.url;
-    if (!dirtyEditors.has('lot')) { beginEditor('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl }); f.id.value = lot.id; f.title.value = lot.title; f.reference.value = lot.reference ?? ''; f.lotNumber.value = lot.lotNumber ?? ''; f.notes.value = lot.notes ?? ''; f.auctionEventId.value = lot.auctionEventId ?? ''; f.sourceUrl.value = originalManualUrl ?? ''; }
+    if (!dirtyEditors.has('lot')) {
+      beginEditor('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl }); f.id.value = lot.id; f.title.value = lot.title; f.reference.value = lot.reference ?? ''; f.lotNumber.value = lot.lotNumber ?? ''; f.notes.value = lot.notes ?? ''; f.auctionEventId.value = lot.auctionEventId ?? ''; f.sourceUrl.value = originalManualUrl ?? '';
+      const context = lot.auctionContext ?? {}; f.auctionPageUrl.value = context.pageUrl ?? ''; f.auctionCanonicalUrl.value = context.canonicalUrl ?? ''; f.auctionHouse.value = context.house ?? ''; f.auctionSaleId.value = context.saleId ?? ''; f.auctionLotNumber.value = context.lotNumber ?? '';
+      const details = lot.coinDetails ?? {}; f.weightGrams.value = details.weightMg ? String(details.weightMg / 1000) : ''; f.diameterMm.value = details.diameterHundredthsMm ? String(details.diameterHundredthsMm / 100) : ''; f.condition.value = details.condition ?? ''; f.photoUrl1.value = details.photoUrls?.[0] ?? ''; f.photoUrl2.value = details.photoUrls?.[1] ?? '';
+      $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
+    }
     $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot);
+    if (lot.auctionContext?.pageUrl) $('open-auction').href = lot.auctionContext.pageUrl; else $('open-auction').removeAttribute('href');
+    $('research-reference').disabled = !String(lot.reference ?? '').trim();
     $('delete-lot').hidden = false;
     $('undo-lot').hidden = lastLotUndo?.saved?.id !== lot.id;
     $('bid-form').elements.lotId.value = lot.id; $('outcome-form').elements.lotId.value = lot.id;
@@ -562,21 +722,52 @@ async function initWorkspace() {
     else for (const reminder of event.reminders ?? []) reminders.append(text('p', reminder.kind === 'offset' ? `${reminder.offsetMinutes} minutes before` : `${reminder.daysBefore ? 'Previous day' : 'Auction day'} at ${reminder.localTime}`, 'reminder-row'));
   }
   $('lot-filter').addEventListener('input', renderLots);
+  $('lot-queue').addEventListener('change', renderLots);
+  $('open-comparison').addEventListener('click', () => {
+    const grid = $('comparison-grid'); grid.replaceChildren();
+    for (const lot of comparisonRows(snapshot.lots ?? [], comparisonSelection)) {
+      const card = text('article', '', 'comparison-card'); card.append(text('h4', lot.title, 'comparison-title'));
+      if (lot.reference) card.append(text('p', lot.reference, 'comparison-reference'));
+      card.append(text('p', lot.amountLabel, 'comparison-amount'));
+      if (lot.actualTotalLabel) card.append(text('p', lot.actualTotalLabel, 'comparison-total'));
+      if (lot.estimateLabel) card.append(text('p', lot.estimateLabel, 'comparison-fees'));
+      if (lot.totalLabel) card.append(text('p', lot.totalLabel, 'comparison-total'));
+      const details = lot.coinDetails ?? {};
+      card.append(text('p', [details.weightMg ? `${(details.weightMg / 1000).toFixed(3)} g` : '', details.diameterHundredthsMm ? `${(details.diameterHundredthsMm / 100).toFixed(2)} mm` : '', details.condition ?? ''].filter(Boolean).join(' · ') || 'No physical details'));
+      for (const photoUrl of details.photoUrls ?? []) {
+        const host = (() => { try { return new URL(photoUrl).host; } catch { return 'external host'; } })();
+        card.append(text('p', `External image: ${host}`, 'field-note'));
+        const image = document.createElement('img'); image.alt = `${lot.title} collector-linked photo`; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.src = photoUrl;
+        image.addEventListener('error', () => { const fallback = text('div', 'Photo unavailable', 'photo-fallback'); image.replaceWith(fallback); }); card.append(image);
+      }
+      const provenance = comparisonProvenanceRows(lot.provenanceNotes);
+      if (provenance.length) {
+        const section = text('section', '', 'comparison-provenance'); section.append(text('h5', 'Sourced provenance'));
+        for (const entry of provenance) { const item = text('div', '', 'comparison-provenance-item'); item.append(text('p', entry.text), text('p', entry.dateLabel, 'comparison-provenance-date')); const source = text('a', 'Open provenance source'); source.href = entry.sourceUrl; source.target = '_blank'; source.rel = 'noopener noreferrer'; item.append(source); section.append(item); }
+        card.append(section);
+      }
+      grid.append(card);
+    }
+    $('comparison-dialog').showModal();
+  });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
-  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; for (const editor of ['bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); } selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotInteractionGeneration += 1; for (const editor of ['bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); } selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
+  $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
   $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
   $('lot-form').addEventListener('submit', (event) => {
     event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('lot') ?? { id: null, revision: null, record: null };
-    const lot = { ...(basis.id ? { id: basis.id } : {}), title: f.title.value.trim(), sourceLinks: mergeLotSourceLinks(basis.record?.sourceLinks, f.sourceUrl.value, basis.originalManualUrl) };
-    for (const key of ['reference', 'lotNumber', 'auctionEventId']) if (f[key].value) lot[key] = f[key].value;
-    lot.notes = f.notes.value;
+    let lot;
+    try { lot = buildWorkspaceLotDraft(basis.record, { title: f.title.value, reference: f.reference.value, lotNumber: f.lotNumber.value, notes: f.notes.value, auctionEventId: f.auctionEventId.value, sourceUrl: f.sourceUrl.value, auctionPageUrl: f.auctionPageUrl.value, auctionCanonicalUrl: f.auctionCanonicalUrl.value, auctionHouse: f.auctionHouse.value, auctionSaleId: f.auctionSaleId.value, auctionLotNumber: f.auctionLotNumber.value, weightGrams: f.weightGrams.value, diameterMm: f.diameterMm.value, condition: f.condition.value, photoUrl1: f.photoUrl1.value, photoUrl2: f.photoUrl2.value, provenanceNotes: provenanceValues() }, basis.originalManualUrl); }
+    catch (error) { return announce(error.message, true); }
     const previous = basis.id ? structuredClone(basis.record) : null;
-    const submittedSelection = { ...selection }; const submittedVersion = editorVersions.get('lot') ?? 0;
+    const submittedSelection = { ...selection }; const submittedInteractionGeneration = lotInteractionGeneration;
     void send(buildLotSaveCommand(lot, basis.revision), 'lot').then((reply) => {
       if (reply?.ok && reply.value?.id) {
-        selection = selectionAfterLotSave(selection, submittedSelection, submittedVersion, editorVersions.get('lot') ?? 0, reply.value.id);
-        if (selection.selectedLotId === reply.value.id && submittedVersion === (editorVersions.get('lot') ?? 0)) {
-          lastLotUndo = previous ? { previous, saved: structuredClone(reply.value) } : null;
+        const interactionChanged = submittedInteractionGeneration !== lotInteractionGeneration;
+        const followup = lotSaveFollowup(selection, submittedSelection, reply.value, reply.editorPreserved, Boolean(previous), interactionChanged); selection = followup.selection;
+        if (!reply.editorPreserved && !interactionChanged && selection.selectedLotId === reply.value.id) {
+          lastLotUndo = followup.offerUndo ? { previous, saved: structuredClone(reply.value) } : null;
           $('undo-lot').hidden = !lastLotUndo;
           $('lot-action-status').textContent = previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.'; renderLots();
         }
@@ -608,13 +799,15 @@ async function initWorkspace() {
     const f = $('bid-form').elements; const lot = selectedLot ?? snapshot.lots.find((item) => item.id === f.lotId.value);
     beginEditor('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     const terms = lot?.plannedBid ?? lot?.activeBid; f.amount.value = moneyInputText(terms?.amount, navigator.language); f.currency.value = terms?.amount.currency ?? snapshot.preferences?.currency ?? 'USD'; f.premium.value = Number.isInteger(terms?.buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(terms.buyerPremiumBps / 100) : '';
-    bidCalculator?.setValues({ currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null });
+    calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
+    bidCalculator?.setValues({ currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
   };
-  bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps }) => {
+  bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps, costEstimate }) => {
+    calculatorCostEstimate = costEstimate ?? null;
     const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = Number.isInteger(buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(buyerPremiumBps / 100) : '';
     for (const control of [f.amount, f.currency, f.premium]) control.dispatchEvent(new Event('input', { bubbles: true }));
   } });
-  $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send({ type: action === 'place' ? 'bid.place' : 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, [action === 'place' ? 'activeBid' : 'plannedBid']: parsed.value }, 'bid'); });
+  $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send(buildBidSaveCommand(action, basis, parsed.value, calculatorCostEstimate), 'bid'); });
   $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
 
   function renderEvents() {
@@ -721,6 +914,7 @@ async function initWorkspace() {
       announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
     } else if (match[1] === 'lot-draft') {
       if (draft.kind !== 'current-lot' || draft.payload?.target !== 'watchlist') return announce('This draft cannot be used for a watchlist lot.', true);
+      lotInteractionGeneration += 1;
       lotDraftId = draft.id;
       const values = lotDraftToEditor(draft.payload);
       const form = $('lot-form');
@@ -730,6 +924,12 @@ async function initWorkspace() {
       form.elements.title.value = values.title;
       form.elements.reference.value = values.reference;
       form.elements.sourceUrl.value = values.sourceUrl;
+      form.elements.auctionPageUrl.value = values.auctionContext?.pageUrl ?? '';
+      form.elements.auctionCanonicalUrl.value = values.auctionContext?.canonicalUrl ?? '';
+      form.elements.auctionHouse.value = values.auctionContext?.house ?? '';
+      form.elements.auctionSaleId.value = values.auctionContext?.saleId ?? '';
+      form.elements.auctionLotNumber.value = values.auctionContext?.lotNumber ?? '';
+      $('provenance-editor').replaceChildren();
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
       form.elements.title.focus();

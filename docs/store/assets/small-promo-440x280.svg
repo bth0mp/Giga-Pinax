@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280" role="img" aria-labelledby="title desc">
+  <title id="title">Giga Pinax</title>
+  <desc id="desc">Brand columns and rising line beside the words Ancient coin research and auction workflow.</desc>
+  <rect width="440" height="280" fill="#F7F0E6"/>
+  <rect x="28" y="28" width="112" height="112" rx="25" fill="#6B1F5C"/>
+  <rect x="53" y="53" width="62" height="10" rx="3" fill="#F1E7D8"/>
+  <rect x="60" y="63" width="10" height="52" fill="#F1E7D8"/>
+  <rect x="98" y="63" width="10" height="52" fill="#F1E7D8"/>
+  <path d="M47 112 66 99 83 106 103 83 122 88" fill="none" stroke="#E8BE5A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="164" y="68" fill="#34152E" font-family="Georgia, 'Times New Roman', serif" font-size="34" font-weight="700">Giga Pinax</text>
+  <text x="164" y="101" fill="#6B1F5C" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="1.2">ANCIENT COIN RESEARCH</text>
+  <line x1="28" y1="168" x2="412" y2="168" stroke="#D7C5B5"/>
+  <text x="28" y="207" fill="#34152E" font-family="Georgia, 'Times New Roman', serif" font-size="25">Research. Plan. Compare.</text>
+  <text x="28" y="238" fill="#604E58" font-family="Arial, sans-serif" font-size="16">A local auction and collection workflow</text>
+</svg>

@@ -86,6 +86,25 @@ test('lot deletion cannot discard a binding bid declaration', () => {
   assert.equal(result.error.code, 'validation');
 });
 
+test('bid plan and place atomically persist a matching calculator cost estimate', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Fee lot', sourceLinks: [] } }));
+  const estimate = { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 };
+  const planned = reduce(created.snapshot, command('bid.plan', { lotId: created.value.id, expectedRevision: 0, plannedBid: { amount: { currency: 'GBP', minor: 10000 } }, costEstimate: estimate }));
+  assert.deepEqual(planned.value.costEstimate, estimate);
+  const placed = reduce(planned.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 1, activeBid: { amount: { currency: 'GBP', minor: 12000 } }, costEstimate: { ...estimate, shippingMinor: 750 } }));
+  assert.equal(placed.value.costEstimate.shippingMinor, 750);
+});
+
+test('bid commands preserve an omitted estimate and reject a supplied estimate in another currency', () => {
+  const estimate = { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 };
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Fee lot', sourceLinks: [], costEstimate: estimate } }));
+  const preserved = reduce(created.snapshot, command('bid.plan', { lotId: created.value.id, expectedRevision: 0, plannedBid: { amount: { currency: 'GBP', minor: 10000 } } }));
+  assert.deepEqual(preserved.value.costEstimate, estimate);
+  const mismatched = applyCommand(preserved.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 1, activeBid: { amount: { currency: 'EUR', minor: 12000 } }, costEstimate: estimate }), context());
+  assert.equal(mismatched.error.code, 'validation');
+  assert.equal(mismatched.error.path, 'costEstimate.currency');
+});
+
 test('keeps group order compact and records planned, placed, revised, and cancelled bids', () => {
   let state = createEmptySnapshot(NOW);
   const group = reduce(state, command('group.save', { expectedRevision: null, group: { name: 'One owl' } }));
@@ -293,6 +312,53 @@ test('lot save round-trips optional notes and preserves them when omitted', () =
     expectedRevision: 0, lot: { id: created.value.id, title: 'Nero denarius, revised', sourceLinks: [] },
   }));
   assert.equal(updated.value.notes, 'Check the reverse die.');
+});
+
+test('lot metadata replaces, preserves on omission, and clears on explicit null', () => {
+  const metadata = {
+    auctionContext: { pageUrl: 'https://house.test/lot/9', canonicalUrl: 'https://house.test/lots/9', house: 'House', saleId: 'Sale', lotNumber: '9' },
+    coinDetails: { photoUrls: ['https://img.test/coin.jpg'], weightMg: 3450, diameterHundredthsMm: 1825, condition: 'VF' },
+    provenanceNotes: [{ id: '11111111-1111-4111-8111-111111111111', text: 'Old collection', sourceUrl: 'https://source.test/note', recordedAt: NOW, auctionDate: '2020-02-29' }],
+    costEstimate: { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 },
+  };
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Coin', sourceLinks: [], ...metadata } }));
+  const preserved = reduce(created.snapshot, command('lot.save', { expectedRevision: 0, lot: { id: created.value.id, title: 'Coin 2', sourceLinks: [] } }));
+  for (const key of Object.keys(metadata)) assert.deepEqual(preserved.value[key], metadata[key]);
+  const cleared = reduce(preserved.snapshot, command('lot.save', { expectedRevision: 1, lot: { id: created.value.id, title: 'Coin 3', sourceLinks: [], auctionContext: null, coinDetails: null, provenanceNotes: null, costEstimate: null } }));
+  for (const key of Object.keys(metadata)) assert.equal(Object.hasOwn(cleared.value, key), false);
+});
+
+test('lot save rejects malformed optional metadata', () => {
+  const result = applyCommand(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: {
+    title: 'Coin', sourceLinks: [], coinDetails: { photoUrls: ['https://a.test/1', 'https://a.test/2', 'https://a.test/3'] },
+  }}), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.path, 'lots[0].coinDetails.photoUrls');
+});
+
+test('serialized writer rejects duplicate lot races with the existing lot id', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const [first, duplicate] = await Promise.all([
+    writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'First', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/1?utm_source=a' } } })),
+    writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'Second', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/1#photo' } } })),
+  ]);
+  assert.equal(first.ok, true);
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.requestId.length > 0, true);
+  assert.equal(duplicate.code, 'duplicate');
+  assert.equal(duplicate.outcome, 'not-committed');
+  assert.deepEqual(duplicate.error, { code: 'duplicate', message: 'This auction lot is already saved.', existingLotId: first.value.id });
+  assert.equal(storage.read().lots.length, 1);
+});
+
+test('duplicate detection uses preserved auction context after revision validation', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'First', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/1' } } }));
+  const second = reduce(state.snapshot, command('lot.save', { expectedRevision: null, lot: { title: 'Second', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/2' } } }));
+  const conflict = applyCommand(second.snapshot, command('lot.save', { expectedRevision: 99, lot: { id: second.value.id, title: 'Changed', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/1' } } }), context());
+  assert.equal(conflict.error.code, 'conflict');
+  const duplicate = applyCommand(second.snapshot, command('lot.save', { expectedRevision: 0, lot: { id: second.value.id, title: 'Changed', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/lot/1' } } }), context());
+  assert.equal(duplicate.error.code, 'duplicate');
 });
 
 test('current-lot draft authority accepts only editable watchlist fields', () => {

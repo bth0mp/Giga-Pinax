@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   CURRENCIES,
   calculateMaximumHammer,
+  calculateAffordableBid,
+  calculateBidCost,
   calculatePremium,
   formatMoney,
   parseMoney,
@@ -11,6 +13,43 @@ import {
   sumMoney,
   validateMoney,
 } from '../extension/core/money.js';
+
+test('calculates full bid cost with half-up percentage fees', () => {
+  assert.deepEqual(calculateBidCost({ currency: 'GBP', minor: 10000 }, 2250, {
+    shippingMinor: 1000, paymentFeeBps: 300, paymentFeeMinor: 20,
+  }), { ok: true, value: {
+    hammer: { currency: 'GBP', minor: 10000 }, premium: { currency: 'GBP', minor: 2250 },
+    hammerPlusPremium: { currency: 'GBP', minor: 12250 }, shipping: { currency: 'GBP', minor: 1000 },
+    paymentFee: { currency: 'GBP', minor: 418 }, total: { currency: 'GBP', minor: 13668 },
+  }});
+});
+
+test('finds the highest affordable hammer on the configured bid grid', () => {
+  const result = calculateAffordableBid({ currency: 'EUR', minor: 15000 }, 2000, {
+    shippingMinor: 500, paymentFeeBps: 250, paymentFeeMinor: 50,
+    incrementMinor: 1000, minimumBidMinor: 2000,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.hammer.minor, 11000);
+  assert.ok(result.value.total.minor <= 15000);
+  assert.ok(calculateBidCost({ currency: 'EUR', minor: 12000 }, 2000, {
+    shippingMinor: 500, paymentFeeBps: 250, paymentFeeMinor: 50,
+  }).value.total.minor > 15000);
+});
+
+test('rejects fee overflow and reports when no positive grid bid is affordable', () => {
+  assert.equal(calculateBidCost({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 0, {
+    shippingMinor: 1,
+  }).error.code, 'unsafe-money');
+  assert.equal(calculateAffordableBid({ currency: 'USD', minor: 99 }, 0, {
+    minimumBidMinor: 100, incrementMinor: 10,
+  }).error.code, 'no-affordable-bid');
+  assert.equal(calculateAffordableBid({ currency: 'USD', minor: 95 }, 0, {
+    minimumBidMinor: 0, incrementMinor: 10,
+  }).value.hammer.minor, 90);
+  assert.equal(calculateAffordableBid({ currency: 'USD', minor: 100 }, 'unknown').error.code, 'invalid-basis-points');
+  assert.equal(calculateAffordableBid({ currency: 'USD', minor: 100 }, 0, { incrementMinor: 0 }).error.code, 'invalid-option');
+});
 import { formatMinorInput } from '../extension/bid-tools.js';
 
 test('formats calculator inputs with the active locale decimal boundary', () => {

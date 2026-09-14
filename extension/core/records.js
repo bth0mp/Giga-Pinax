@@ -204,6 +204,58 @@ function sourceLinksResult(links, path) {
   return { ok: true, value: links };
 }
 
+function auctionContextResult(value, path) {
+  const object = objectResult(value, path); if (!object.ok) return object;
+  return firstFailure(
+    urlResult(value.pageUrl, `${path}.pageUrl`), optionalUrl(value, 'canonicalUrl', path),
+    optionalString(value, 'house', path, LIMITS.shortText), optionalString(value, 'saleId', path, LIMITS.shortText),
+    optionalString(value, 'lotNumber', path, LIMITS.shortText),
+  );
+}
+
+function coinDetailsResult(value, path) {
+  const object = objectResult(value, path); if (!object.ok) return object;
+  if (OWN(value, 'photoUrls')) {
+    const photos = arrayResult(value.photoUrls, `${path}.photoUrls`, 2); if (!photos.ok) return photos;
+    for (let index = 0; index < value.photoUrls.length; index += 1) {
+      const result = urlResult(value.photoUrls[index], `${path}.photoUrls[${index}]`); if (!result.ok) return result;
+    }
+  }
+  return firstFailure(
+    OWN(value, 'weightMg') ? integerResult(value.weightMg, `${path}.weightMg`, { minimum: 1, maximum: 1000000 }) : { ok: true },
+    OWN(value, 'diameterHundredthsMm') ? integerResult(value.diameterHundredthsMm, `${path}.diameterHundredthsMm`, { minimum: 1, maximum: 100000 }) : { ok: true },
+    optionalString(value, 'condition', path, 1000),
+  );
+}
+
+function provenanceNotesResult(value, path) {
+  const array = arrayResult(value, path, 20); if (!array.ok) return array;
+  const ids = new Set();
+  for (let index = 0; index < value.length; index += 1) {
+    const note = value[index], notePath = `${path}[${index}]`;
+    const object = objectResult(note, notePath); if (!object.ok) return object;
+    const result = firstFailure(uuidResult(note.id, `${notePath}.id`), stringResult(note.text, `${notePath}.text`, 1000),
+      urlResult(note.sourceUrl, `${notePath}.sourceUrl`), instantResult(note.recordedAt, `${notePath}.recordedAt`),
+      OWN(note, 'auctionDate') ? dateResult(note.auctionDate, `${notePath}.auctionDate`) : { ok: true });
+    if (!result.ok) return result;
+    if (ids.has(note.id)) return failure('duplicate-id', 'Provenance note IDs must be unique.', `${notePath}.id`);
+    ids.add(note.id);
+  }
+  return { ok: true, value };
+}
+
+function costEstimateResult(value, path) {
+  const object = objectResult(value, path); if (!object.ok) return object;
+  if (!CURRENCIES.includes(value.currency)) return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', `${path}.currency`);
+  return firstFailure(
+    integerResult(value.shippingMinor, `${path}.shippingMinor`),
+    integerResult(value.paymentFeeBps, `${path}.paymentFeeBps`, { maximum: 10000 }),
+    integerResult(value.paymentFeeMinor, `${path}.paymentFeeMinor`),
+    integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
+    integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
+  );
+}
+
 function bidResult(bid, path, active) {
   const object = objectResult(bid, path);
   if (!object.ok) return object;
@@ -312,6 +364,10 @@ function lotResult(lot, path) {
   if (OWN(lot, 'priority')) checks.push(integerResult(lot.priority, `${path}.priority`, { minimum: 1 }));
   if (OWN(lot, 'plannedBid')) checks.push(bidResult(lot.plannedBid, `${path}.plannedBid`, false));
   if (OWN(lot, 'activeBid')) checks.push(bidResult(lot.activeBid, `${path}.activeBid`, true));
+  if (OWN(lot, 'auctionContext')) checks.push(auctionContextResult(lot.auctionContext, `${path}.auctionContext`));
+  if (OWN(lot, 'coinDetails')) checks.push(coinDetailsResult(lot.coinDetails, `${path}.coinDetails`));
+  if (OWN(lot, 'provenanceNotes')) checks.push(provenanceNotesResult(lot.provenanceNotes, `${path}.provenanceNotes`));
+  if (OWN(lot, 'costEstimate')) checks.push(costEstimateResult(lot.costEstimate, `${path}.costEstimate`));
   if (OWN(lot, 'collectionReviewReason')) {
     checks.push(enumResult(
       lot.collectionReviewReason,
@@ -544,8 +600,8 @@ export function validateDraftPayload(kind, payload, path = '') {
   if (!object.ok) return object;
 
   const allowed = kind === 'current-lot'
-    ? new Set(['target', 'title', 'reference', 'pageUrl'])
-    : new Set(['rawText', 'pageUrl']);
+    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext'])
+    : new Set(['rawText', 'pageUrl', 'auctionContext']);
   const unexpected = Object.keys(payload).find((key) => !allowed.has(key));
   if (unexpected) {
     return failure('unexpected-field', 'Draft payload contains an unsupported field.', `${payloadPath}.${unexpected}`);
@@ -559,6 +615,7 @@ export function validateDraftPayload(kind, payload, path = '') {
       optionalString(payload, 'title', payloadPath, 200),
       optionalString(payload, 'reference', payloadPath, LIMITS.shortText),
       optionalString(payload, 'pageUrl', payloadPath, LIMITS.url),
+      OWN(payload, 'auctionContext') ? auctionContextResult(payload.auctionContext, `${payloadPath}.auctionContext`) : { ok: true },
     );
     return fields.ok ? { ok: true, value: payload } : fields;
   }
@@ -566,6 +623,7 @@ export function validateDraftPayload(kind, payload, path = '') {
   const fields = firstFailure(
     optionalString(payload, 'rawText', payloadPath, 3000, { nonEmpty: false }),
     optionalString(payload, 'pageUrl', payloadPath, LIMITS.url, { nonEmpty: false }),
+    OWN(payload, 'auctionContext') ? auctionContextResult(payload.auctionContext, `${payloadPath}.auctionContext`) : { ok: true },
   );
   return fields.ok ? { ok: true, value: payload } : fields;
 }

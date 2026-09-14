@@ -213,6 +213,36 @@ export function summarise(lots, currency) {
   };
 }
 
+export function stableResultId(lot) {
+  if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `acsearch:${String(lot.id).trim()}`;
+  const source = [lot?.title, lot?.date, lot?.price].map((value) => String(value ?? '').trim()).join('\u001f');
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `acsearch:derived:${(hash >>> 0).toString(36)}`;
+}
+
+export function createPriceCuration() {
+  const excluded = new Set();
+  return {
+    exclude(lot) { excluded.add(stableResultId(lot)); },
+    include(lot) { excluded.delete(stableResultId(lot)); },
+    isExcluded(lot) { return excluded.has(stableResultId(lot)); },
+    included(lots) { return lots.filter((lot) => !excluded.has(stableResultId(lot))); },
+    counts(lots) {
+      const excludedCount = lots.reduce((count, lot) => count + Number(excluded.has(stableResultId(lot))), 0);
+      return { included: lots.length - excludedCount, excluded: excludedCount };
+    },
+    reset() { excluded.clear(); },
+  };
+}
+
+export function pricePanelVisibility(includedCount, eligibleCount) {
+  return { statistics: includedCount > 0, curation: eligibleCount > 0 };
+}
+
 // How far to trust a median, by the sales it rests on. Never "Fair", which would read as a verdict on a checked price.
 // A bid or an asking price against the counted sales: how many sold strictly under it, and its multiple of the median.
 export const priceCheck = (summary, amount) => ({ below: summary.priced.filter((sale) => sale.amount < amount).length, count: summary.count, ratio: amount / summary.median });

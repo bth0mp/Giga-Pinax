@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   buildCalculatorView,
@@ -14,6 +15,9 @@ import {
   runVisibleAction,
   moveCompanionTab,
   watchlistPayloadFromCapture,
+  createDraftSaver,
+  clearAuctionContextFromPayload,
+  replaceAuctionContextInPayload,
 } from '../extension/companion-popup.js';
 
 test('capture controls prevent edits and stale actions while extraction is pending', () => {
@@ -84,7 +88,82 @@ test('reviewed current-page fields become a minimal watchlist draft', () => {
     observations: [{ amount: 200 }], shownPrices: { median: 180 },
   }), {
     target: 'watchlist', title: 'Nero Denarius Rome', reference: 'RIC 306', pageUrl: 'https://auction.example/lot/27',
+    auctionContext: { pageUrl: 'https://auction.example/lot/27' },
   });
+});
+
+test('watchlist transfer preserves reviewed auction context', () => {
+  assert.deepEqual(buildWatchlistDraftPayload({
+    title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    auctionContext: { pageUrl: 'https://auction.example/27', canonicalUrl: 'https://auction.example/lots/27', house: 'CNG', saleId: '130', lotNumber: '27' },
+  }).auctionContext, { pageUrl: 'https://auction.example/27', canonicalUrl: 'https://auction.example/lots/27', house: 'CNG', saleId: '130', lotNumber: '27' });
+});
+
+test('clearing auction context rebuilds an existing card without losing its reference fields', () => {
+  assert.deepEqual(clearAuctionContextFromPayload({
+    target: 'watchlist', title: 'Nero denarius', reference: 'RIC 306',
+    pageUrl: 'https://auction.example/27', auctionContext: { pageUrl: 'https://auction.example/27' },
+  }), { target: 'watchlist', title: 'Nero denarius', reference: 'RIC 306', pageUrl: 'https://auction.example/27' });
+});
+
+test('a new capture replaces context on an already-built result card', () => {
+  const card = { target: 'watchlist', title: 'Nero', reference: 'RIC 306', auctionContext: { pageUrl: 'https://old.test/1' } };
+  assert.deepEqual(replaceAuctionContextInPayload(card, { pageUrl: 'https://new.test/2' }), {
+    target: 'watchlist', title: 'Nero', reference: 'RIC 306', auctionContext: { pageUrl: 'https://new.test/2' },
+  });
+});
+
+test('draft saver is single-flight and reuses request and draft identities across retries', async () => {
+  let sends = 0; let opens = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const save = createDraftSaver({
+    newRequestId: () => 'request-1',
+    sendCommand: async (command) => { sends += 1; assert.equal(command.requestId, 'request-1'); await gate; return { ok: true, value: { id: 'draft-1' } }; },
+    openDraft: async (id) => { opens += 1; assert.equal(id, 'draft-1'); return opens === 1 ? { ok: false, message: 'blocked' } : { ok: true }; },
+  });
+  const first = save({ title: 'Nero' });
+  assert.strictEqual(save({ title: 'Nero' }), first);
+  release();
+  assert.equal((await first).ok, false);
+  assert.equal((await save({ title: 'Nero' })).ok, true);
+  assert.equal(sends, 1);
+  assert.equal(opens, 2);
+});
+
+test('draft saver drops a definitely rejected payload so corrected input can use a fresh request', async () => {
+  const commands = [];
+  let next = 0;
+  const save = createDraftSaver({
+    newRequestId: () => `request-${++next}`,
+    sendCommand: async (command) => { commands.push(command); return commands.length === 1 ? { ok: false, error: { code: 'invalid' } } : { ok: true, value: { id: 'draft-2' } }; },
+    openDraft: async () => ({ ok: true }),
+  });
+  assert.equal((await save({ title: '' })).ok, false);
+  assert.equal((await save({ title: 'Corrected' })).ok, true);
+  assert.deepEqual(commands.map(({ requestId, payload }) => [requestId, payload.title]), [['request-1', ''], ['request-2', 'Corrected']]);
+});
+
+test('draft saver preserves request identity after an explicitly unknown storage outcome', async () => {
+  const requestIds = [];
+  let calls = 0;
+  const save = createDraftSaver({
+    newRequestId: () => 'request-unknown',
+    sendCommand: async (command) => {
+      requestIds.push(command.requestId); calls += 1;
+      return calls === 1 ? { ok: false, code: 'storage', outcome: 'unknown' } : { ok: true, value: { id: 'draft-known' } };
+    },
+    openDraft: async () => ({ ok: true }),
+  });
+  assert.equal((await save({ title: 'Nero' })).ok, false);
+  assert.equal((await save({ title: 'Changed but must not replace retry payload' })).ok, true);
+  assert.deepEqual(requestIds, ['request-unknown', 'request-unknown']);
+});
+
+test('both watchlist actions visibly share one synchronous pending guard', () => {
+  const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
+  assert.match(source, /if \(draftSavePending\) return;[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
+  assert.match(source, /finally \{[\s\S]*draftSavePending = false;[\s\S]*companion-save-watchlist[\s\S]*companion-capture-watchlist/);
 });
 
 test('calculator uses exact CHF minor units and clears unknown premium output', () => {

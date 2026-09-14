@@ -2,6 +2,7 @@ import { LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validate
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
+import { findDuplicateLot } from './core/lot-context.js';
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
@@ -24,9 +25,9 @@ function storageBytesWithReserve(snapshot, commandHeadroom = true) {
 }
 
 const ok = (value) => ({ ok: true, value });
-const fail = (code, message, path) => ({
+const fail = (code, message, path, existingLotId) => ({
   ok: false,
-  error: { code, message, ...(path === undefined ? {} : { path }) },
+  error: { code, message, ...(path === undefined ? {} : { path }), ...(existingLotId === undefined ? {} : { existingLotId }) },
 });
 const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
 
@@ -88,6 +89,11 @@ function lotFromDraft(draft, existing, context) {
   lot.title = draft.title;
   lot.sourceLinks = clone(draft.sourceLinks ?? []);
   if (own(draft, 'notes')) lot.notes = draft.notes;
+  for (const key of ['auctionContext', 'coinDetails', 'provenanceNotes', 'costEstimate']) {
+    if (!own(draft, key)) continue;
+    if (draft[key] === null) delete lot[key];
+    else lot[key] = clone(draft[key]);
+  }
   for (const key of optional) {
     if (own(draft, key)) lot[key] = draft[key];
     else delete lot[key];
@@ -230,12 +236,18 @@ function mutation(snapshot, command, context) {
       if (command.expectedRevision === null) {
         if (own(command.lot, 'id')) return fail('validation', 'New lots cannot supply a durable ID.', 'lot.id');
         value = lotFromDraft(command.lot, null, context);
-        next.lots.push(value);
       } else {
         const found = findRecord(next.lots, command.lot?.id, command.expectedRevision, 'lot');
         if (!found.ok) return found;
         value = lotFromDraft(command.lot, found.value.record, context);
+        const duplicate = findDuplicateLot(next.lots, value, value.id);
+        if (duplicate) return fail('duplicate', 'This auction lot is already saved.', undefined, duplicate.id);
         next.lots[found.value.index] = value;
+      }
+      if (command.expectedRevision === null) {
+        const duplicate = findDuplicateLot(next.lots, value);
+        if (duplicate) return fail('duplicate', 'This auction lot is already saved.', undefined, duplicate.id);
+        next.lots.push(value);
       }
       break;
     }
@@ -372,6 +384,14 @@ function mutation(snapshot, command, context) {
         if (!lot.activeBid) return fail('validation', 'This lot has no active bid to cancel.', 'lot.activeBid');
         appendBidHistory(lot, 'externally-cancelled', lot.activeBid, context);
         delete lot.activeBid;
+      }
+      if (command.type !== 'bid.cancel' && own(command, 'costEstimate')) {
+        const bid = command.type === 'bid.plan' ? command.plannedBid : command.activeBid;
+        if (command.costEstimate !== null && command.costEstimate?.currency !== bid?.amount?.currency) {
+          return fail('validation', 'Cost estimate currency must match the bid currency.', 'costEstimate.currency');
+        }
+        if (command.costEstimate === null) delete lot.costEstimate;
+        else lot.costEstimate = clone(command.costEstimate);
       }
       lot.revision += 1;
       lot.updatedAt = now;
@@ -769,6 +789,10 @@ export function createCommandWriter(storageArea, context) {
     working.recentCommands = working.recentCommands.filter(({ commandType }) => !INTERNAL_COMMANDS.has(commandType));
     const applied = applyCommand(working, command, context);
     if (!applied.ok) {
+      if (applied.error.code === 'duplicate') return {
+        ...errorReply(command, 'duplicate', 'not-committed', applied.error.message),
+        error: clone(applied.error),
+      };
       const code = ['conflict', 'unsupported'].includes(applied.error.code) ? applied.error.code : 'validation';
       return errorReply(command, code, 'not-committed', applied.error.message);
     }

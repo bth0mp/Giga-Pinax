@@ -1,94 +1,57 @@
-# Install Giga Pinax
+# Install Giga Pinax 0.29.0
 
-Version **0.28.0** keeps the complete Giga Pinax catalogue and local auction records while adding native side-panel research, a focused watchlist workspace, a reusable bid calculator, and a dedicated Settings page. Giga Pinax never places or cancels bids. Fetched acsearch rows, prices, medians, and claims stay only in the current Research view and never enter watchlist storage or backups.
+Giga Pinax 0.29.0 adds auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. It never places, changes or cancels bids.
 
-The extension uses right-click actions for Giga lookup, highlighted research, and auction confirmation. Current-page extraction runs only after your action and remains editable before saving. Optional desktop notifications are requested only when you enable them.
+Fetched acsearch rows and inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
-## Install in Brave or Chrome
+## Brave or Chrome
 
-1. Download the public [Giga Pinax 0.28.0 Chromium ZIP](https://github.com/bth0mp/Giga-Pinax/releases/download/v0.28.0/giga-pinax-brave-0.28.0.zip). No GitHub account is required.
-2. Extract the ZIP into a folder you will keep.
-3. Open `brave://extensions` in Brave or `chrome://extensions` in Chrome.
-4. Turn on **Developer mode**.
-5. Select **Load unpacked** and choose the folder that contains `manifest.json`.
-6. Open Giga Pinax from the extensions menu. Pin it if you want its button to remain on the toolbar.
+1. Open the public [Giga Pinax releases](https://github.com/bth0mp/Giga-Pinax/releases) and choose the latest release.
+2. Under **Assets**, download the versioned Brave ZIP, not a GitHub **Source code** archive. No GitHub account is required.
+3. Extract the ZIP into a folder you will keep.
+4. Open `brave://extensions` or `chrome://extensions`.
+5. Enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`.
+6. Open Giga Pinax from the extensions menu and pin it if desired.
 
-Brave grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` at install.
+The extension requests access to the HTTPS research providers `numismatics.org`, `nomisma.org` and `www.acsearch.info`. GitHub opens only when you request a release download. An external photo link may use HTTP or HTTPS; its server is contacted only when you open saved-coin comparison.
 
-**Already installed?** Open **Updates** in Giga Pinax and select **Download latest update**. After the ZIP downloads, replace the files in the same extracted folder, then select **Reload** at `brave://extensions` or `chrome://extensions`. Reopen the popup. Giga Pinax opens the public download; it does not install the files silently.
+To update, open **Settings**, find **Updates**, and select **Download latest update**. Replace the files in the same extracted folder, select **Reload** on the extensions page, and reopen Giga Pinax. The extension does not install files silently.
 
-## Test temporarily in Firefox
+## Temporary Firefox installation
 
 Use Firefox 142 or later.
 
-1. Download the public [Giga Pinax 0.28.0 Firefox ZIP](https://github.com/bth0mp/Giga-Pinax/releases/download/v0.28.0/giga-pinax-firefox-0.28.0.zip). No GitHub account is required.
-2. Open `about:debugging` and select **This Firefox**.
-3. Select **Load Temporary Add-on**.
-4. Choose the downloaded ZIP.
+1. Open the public [Giga Pinax releases](https://github.com/bth0mp/Giga-Pinax/releases) and choose the latest release.
+2. Under **Assets**, download the versioned Firefox ZIP.
+3. Open `about:debugging` and select **This Firefox**.
+4. Select **Load Temporary Add-on** and choose the downloaded ZIP.
 5. Open Giga Pinax from Firefox's extensions menu.
 
-Firefox normally grants access to `numismatics.org`, `nomisma.org` and `www.acsearch.info` when you install the extension. If you later turn that access off in about:addons, selecting **Look up** or **Get prices** asks for it again; if the popup closes while Firefox is asking, reopen it and select the same button.
+Firefox removes a temporary add-on when Firefox restarts. Permanent installation requires a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). To update a temporary installation, open **Settings** → **Updates**, download the latest ZIP, and load it again through `about:debugging`.
 
-Firefox removes a temporary add-on when Firefox restarts. Permanent installation needs a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/).
+If provider access is disabled in `about:addons`, selecting **Look up** or **Get prices** requests it again. If the popup closes during the permission prompt, reopen it and repeat the action.
 
-**Already installed temporarily?** Open **Updates** and select **Download latest update**, then load the downloaded unsigned ZIP again. Firefox removes a temporary installation on restart.
+## First checks
 
-The download button opens a fixed public GitHub release asset URL. It does not check versions in the background, contact the GitHub API, embed credentials, or install an update automatically. Read the [0.28.0 release notes](https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.28.0) for this version.
+1. In **Research**, try `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2` or `Price 23`. Expand **Inspect sales** to exclude and restore a result for the current lookup.
+2. Open **Current source**, capture an auction page, review the extracted fields and auction context, then research it or save a draft. The workspace requires confirmation before creating the record.
+3. In **Calculator**, enter a hammer and buyer premium. Expand fees and increments to add shipping, percentage or fixed payment fees, budget, minimum bid and fixed increment.
+4. Open the auction workspace from **Watchlist**. Inspect the queues, select a coin, and edit auction identity, provenance, measurements, condition, external photo links and cost estimate.
+5. Select two to four saved coins and open comparison. Photo servers are contacted at this point only; an unavailable image does not block comparison.
+6. Open **Settings** for **Appearance**, default currency, saved house premiums, **Updates**, and backup/import.
+
+CoinArchives free and Pro and RPC Online open only when selected. Giga Pinax does not receive credentials or import paid results. acsearch research uses your existing provider session; sign in on acsearch itself if your account is needed to see hammer prices.
 
 ## Developer build
 
-End users do not need Python for the download-and-reload update above. To build from source, run `python scripts/build.py` from the repository root. The builder creates `dist/brave/`, `dist/firefox/`, versioned ZIPs such as `giga-pinax-brave-0.28.0.zip`, and byte-identical stable aliases named `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. A release must upload both stable aliases alongside the versioned archives so the in-extension download links remain valid. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+End users do not need Python. From the repository root, `python scripts/build.py` creates unpacked `dist/brave/` and `dist/firefox/` directories, versioned Brave and Firefox ZIPs, and stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
-Maintainers should follow the [release publishing guide](RELEASING.md), including its short install section for every GitHub release body.
+A GitHub release includes five ZIP assets: versioned Brave, Chrome and Firefox packages plus both stable aliases. The versioned Chrome package is a byte-identical copy of the versioned Brave package. Every release body must include brief browser installation and update instructions. See [RELEASING.md](RELEASING.md).
 
-GitHub's automatically generated **Source code** archives are repository snapshots and are not loadable extension packages.
+GitHub's generated **Source code** archives are repository snapshots and are not loadable extension packages.
 
-## What to try
+## Remove or preserve records
 
-- Open the popup and switch among **Research**, **Calculator**, and **Watchlist**. Enter hammer **100.00** and buyer’s premium **25** to see **125.00** in any supported currency.
-- Resolve a reference, then select **Save reference to watchlist**. Review the prefilled lot in the workspace and select **Save lot**; nothing is created before that save.
-- Use **Current page** to capture ruler, denomination, mint, and reference from an auction page. Review or correct every field before using it.
-- Open the workspace to keep lots, auction reminders, externally active bids, outcomes, and saved comparables. The acsearch prices shown in Research are never copied into those records.
+Before removing or changing extension identity, use **Settings** → **Backup and import** → **Export backup** if the records matter. Backups exclude lookup preferences, theme, ANS label cache, browser sessions and live acsearch results.
 
-- Type **RIC I² Nero 306** in the Reference box and select **Look up**; the RIC fields fill in and the type resolves.
-- Select **RIC I² Nero 306** on any web page, right-click and choose **Look up “RIC I² Nero 306” in Giga Pinax**. Drag the window it opens to make it longer or wider.
-- With that window still open, right-click another reference, such as **Craw. 44/5** or a reference copied from an auction page: the same window looks it up and comes to the front, rather than a second window opening. Dealer abbreviations (**Craw.**, **Crawf.**), a trailing **;** and the hidden characters auction pages add are read.
-- Paste a whole lot description from biddr into the Reference box, such as **TITUS, AD 69-79. AR, Denarius. Rome. Obv: T CAESAR VESPASIANVS. Head of Titus, laureate, right. Rev: ANNONA AVG. Ref: RIC 972; Cohen 17; BMC 319.**, and select **Look up**: the three references are listed as **RIC 972 · Titus**, **Cohen 17 · prices only** and **BMC 319 · prices only**, and because only RIC has type data it opens at once as RIC II.1² Vespasian 972, Titus's denarius as Caesar, found from the ruler in the heading. Select **Cohen 17** to get its acsearch prices instead. Selecting the same text on biddr and right-clicking does the same in the lookup window. A lot with several RIC, RRC, SC, Bop or Price references fetches nothing until you pick one.
-- Select the window button (a square with an arrow) in the header: Giga Pinax opens on the type it was showing, in the window already open or in a new one, and you can drag that window to any size.
-- **Price 23**, then catalogue **RIC**, and type **Titus** in **Ruler or mint section**: it is suggested as you type, from every OCRE volume, and the volume becomes **II.1² (2nd ed.)** by itself, with a line under the fields saying so. Choose **RIC I² (2nd ed.)** instead and the ruler box empties, because Titus is not in that volume — the same line says that too. With number **123**, **Look up** finds RIC II.1² Titus 123. A blank volume or ruler means any.
-- **RIC 972** in the Reference box: a list of the six types numbered 972, from Vespasian (II.1²) to Zeno (X); choosing one sets the fields, and its acsearch search follows it (for example "Hadrian 972").
-- **RRC 44/5** — an anonymous Roman Republican denarius; its acsearch search starts as "Crawford 44/5".
-- **SC 1266.2** — a tetradrachm of Demetrius II from Antioch; **SC 1266.9** doesn't exist and offers **SC 1266** instead.
-- **Bop Euthydemus I 24A** — a bronze of Euthydemus I of Bactria; the card shows its BIGR type and the citation **Bopearachchi Euthydème I 24A**, and its acsearch search starts as `(Euthydemus Euthydemos) "Bopearachchi 24A"` — the king in both spellings and the citation as an exact phrase. **Bop 9C** alone lists every king with a 9C series to choose from; with the **King** left blank, a number alone does the same. Each lookup checks its matches against numismatics.org in one request; if that fails, the popup says it couldn't reach numismatics.org instead of "not found".
-- **BCD Boiotia 174b; HGC 4, 1218** — choose the catalogue **Other (prices only)** and type it in the reference field: neither has open type data, so the card says so, and acsearch is searched for the lots that cite either reference, each as an exact phrase: `("BCD Boiotia 174b" "HGC 4, 1218")`. Any other reference (SNG, Sear, RPC…) works the same way. Typed in the **Reference** box instead, a `;` list is listed reference by reference (prices-only rows, nothing fetched until you pick one), and a single RIC, RRC, SC, Bop or Price reference among them is looked up at once.
-- **RPC I 1234** — priced the same way, and the card also has an **RPC online ↗** link to that coin's page on RPC Online (**RPC V.2 1234** goes to part 2 of volume V). It opens only when you select it; Giga Pinax never contacts RPC itself.
-- **SG6829v** in the Reference box — a Sear *Greek Coins and Their Values* number with a variety `v`: it reads as **SG 6829 var.**, catalogue **Other (prices only)**, since no open type data carries Sear numbers, and acsearch is searched as `("Sear 6829" "SG 6829")`, the two ways dealers cite it. `SG 6829`, `SGCV 6829`, `GCV 6829` and `Sear Greek 6829` read as **SG 6829**, with the same acsearch search; in a pasted lot, `SG 6829v; SC 1` lists **SG 6829 · prices only · var.** and opens **SC 1**.
-- **Netherlands KM# 123** in the Reference box — a Krause & Mishler *Standard Catalog of World Coins* number, the reference for world and modern coins: it reads as catalogue **Other (prices only)**, since no open type data carries KM numbers, and acsearch is searched in its **Modern coins** category (not Ancients) as `Netherlands ("KM 123" "Krause/Mishler 123")` — the two spellings dealers cite, either of them. The same number is used in several countries, so the country you type in front is kept and makes the median far tighter; **KM# 123** alone searches all of them. `KM 123`, `KM#123`, `KM-123`, `KM.123`, `KM# 123.2a` and `KM# A123` all read as KM, and Krause's older Y numbering reads and searches the same way (`Y# 31`, `Russia Y# 59.3`, searched as `Russia ("Y 59.3" "Y# 59.3")`), and **Search on CoinArchives ↗** opens that site's **world** section for a KM reference. In the guided **Other** field, mixed with an ancient reference (`KM# 123; SG 6829`) the search stays in Ancients; typed in the Reference box the same text is listed reference by reference, each row searched on its own.
-- On any card, select **Search on CoinArchives ↗**, under **Search on acsearch ↗** in the toolbar popup and beside it in the right-click window: CoinArchives opens in a new tab on its own free search for the reference in plain words (`Sear 6829` for the card above, `Crawford 44/5` for **RRC 44/5**). It is only a link; Giga Pinax fetches nothing from CoinArchives.
-- If you already subscribe, expand **CoinArchives Pro** in Research or the workspace Search view. Sign in on CoinArchives, then choose its **Ancient coins** or **World coins** archive. These are direct links: Giga Pinax never handles your credentials, detects whether you are signed in, reads paid data, or transfers the current search automatically. The free CoinArchives search remains available on result cards and in the workspace launcher.
-- **Look up** fetches prices too. If you are not signed in on acsearch, the popup says so with a sign-in link; sign in with an account that includes hammer prices, then select **Get prices**.
-- If the popup says no hammer prices could be counted, it quotes up to five prices exactly as acsearch showed them — send that line so the price reader can learn the format.
-- Edit the acsearch search term (for example add the denomination) and select **Get prices** again; the term is remembered for that type.
-- **Titus 972** typed in the Reference box: RIC files it in the Vespasian section, so the search by ruler finds nothing and Giga Pinax tries the portrait once more, opening **RIC II, Part 1 (second edition) Vespasian 972** with the line below explaining it. When there is no such line to explain the other ruler, the type is offered as a choice instead of opened.
-- Select **Look up** with the Reference box empty on a freshly opened popup: nothing is looked up, and the popup says to type a reference — the number already in the guided field below was filled in by the tool, not by you. Fill that field in yourself, or choose a catalogue, and it answers for **Look up** as before.
-- After any lookup, the card scrolls into view by itself if it landed below the fold — unless you have scrolled the popup yourself in the meantime, or your system asks for reduced motion, in which case it jumps instead of gliding.
-- When RIC files a type under a different ruler from the one on its portrait, one line under the type's title says so, for example **Portrait of Titus, listed under Vespasian.** (RIC files a Caesar's coins in the reigning emperor's section). Where the volume splits that ruler in two, the same line adds which other section exists, for example **RIC V also has a Gallienus (joint reign) section.** — only after the first sentence, so an ordinary card stays quiet. It appears only when the portrait is a ruler RIC itself heads a section with and the card's own section is that ruler, so nothing shown doesn't mean the portrait is the section's ruler: a deity, a name nomisma spells differently, or a volume filed by mint (RIC VI–IX) all stay silent.
-- The period buttons and then the median hammer price sit right under the type's title, and the obverse and reverse are folded under **Obverse and reverse** (select it to open them). The line under the median says how far to trust it, for example **Solid: 22 sales, 2024–2026** — Thin for 1–4 sales, Moderate for 5–14, Solid for 15 or more — and, below the trend and **Last sale** lines, a line says how many matches it was drawn from.
-- Above the median, select **Last 2 years**: the median, the line saying how far to trust it, the middle 50%, the lowest and highest sale, **Check a price** (a typed amount stays and is checked again) and **Inspect sales** redraw from the sales already fetched, without asking acsearch again, and the matches line reads, for example, **Out of 12 matches from the last 2 years for “Nero 306”**. **Last 5 years** works the same way, and **All** brings back every sale. The choice is remembered the next time you open Giga Pinax. When no sale in the period has a price, the panel says **No sales with a price in the last 2 years.**
-- Under the median, a line compares the last 2 years with earlier sales, for example **Last 2 years: $250 median, up 18% on earlier sales ($212)**; within 5% it reads **about the same**. It appears only when both sides have at least 3 sales. Under it, **Last sale** shows the date and price of the most recent sale; select the date to open that lot on acsearch. Neither line changes with the period.
-- Under **Middle 50% of sales**, the panel prints the lowest and highest sale, for example **All 22 sales $81–$950**; a quarter of the sales lie above the middle 50%. Lots acsearch lists without a price are counted apart ("2 without a price") from prices the popup couldn't count.
-- Type a bid or an asking price, such as **500**, in **Check a price**: the line under it says how many of the counted sales it tops and its multiple of the median, for example "Higher than 16 of 23 sales, 1.6× the median", and a mark shows where it falls on the range bar; beyond the lowest or highest sale the mark waits at that end with an arrow pointing out. Nothing is stored, and a new lookup or currency starts it empty.
-- Expand **Inspect sales** to see each sale with a link to it on acsearch.
-- Select **Copy summary** at the bottom of the prices panel and paste it anywhere. With **Last 5 years** or **Last 2 years** chosen it names the period, and it carries the last sale and the trend too.
-- A number that doesn't exist, such as **RIC I² Nero 9999999**: the popup says it was not found rather than inventing a result.
-- **RIC I Nero 306** typed in the Reference box with the edition left out: a short "Did you mean" list offers the full reference, and choosing it sets the fields.
-- Close and reopen the popup: your last reference, currency and terms are remembered locally.
-- Select the sun or moon button in the header: the popup switches between its light and dark look and remembers the choice; until then it follows your system theme.
-- Look up two or three types, close and reopen the popup, and choose one from **Recent**. Or press the up arrow in the empty Reference box: your last reference comes back, each further press brings an older one and the down arrow goes back; press Enter to open it.
-- Press **Alt+Shift+G**, type a reference and press Enter: the cursor is already in the Reference box, so Giga Pinax works without the mouse. If nothing happens, the key is taken — set another at `brave://extensions/shortcuts` or in Firefox under Add-ons › ⚙ › Manage Extension Shortcuts.
-
-## Remove
-
-Before removal, export a companion JSON backup from the workspace if you need its records. The backup excludes Giga lookup preferences, theme, ANS label cache, sessions, and live acsearch results. Records from a different extension origin require explicit export there and import here.
-
-In Brave, open `brave://extensions` and select **Remove**. In Firefox, remove it from `about:debugging`, or close and restart Firefox.
+In Brave or Chrome, remove the extension from the extensions page. In Firefox, remove it from `about:debugging` or restart Firefox. Records created under another extension origin must be exported there and imported explicitly.

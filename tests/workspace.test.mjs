@@ -29,6 +29,15 @@ import {
   buildAttachEventCommand,
   moveDetailTab,
   sameEventReturnContext,
+  auctionQueueForLots,
+  auctionTimeLabel,
+  buildWorkspaceLotDraft,
+  comparisonSelectionAfterToggle,
+  comparisonRows,
+  buildBidSaveCommand,
+  comparisonPickerLabel,
+  comparisonProvenanceRows,
+  lotSaveFollowup,
 } from '../extension/workspace.js';
 
 test('workspace chooses only supported direct routes', () => {
@@ -185,10 +194,11 @@ test('undo restores captured lot details only at the saved revision', () => {
   const command = buildLotUndoCommand({ previous, saved: { id: 'lot-a', revision: 4 } }, () => 'undo-1');
   assert.deepEqual(command, {
     type: 'lot.save', requestId: 'undo-1', expectedRevision: 4,
-    lot: { id: 'lot-a', title: 'Before', notes: 'Old', sourceLinks: [] },
+    lot: { id: 'lot-a', title: 'Before', notes: 'Old', sourceLinks: [], auctionContext: null, coinDetails: null, provenanceNotes: null, costEstimate: null },
   });
   assert.equal(buildLotUndoCommand({ previous, saved: { id: 'lot-b', revision: 4 } }, () => 'undo-2'), null);
   assert.equal(buildLotUndoCommand({ previous: { id: 'lot-a', revision: 1, title: 'Old record', sourceLinks: [] }, saved: { id: 'lot-a', revision: 2 } }, () => 'undo-3').lot.notes, '');
+  assert.deepEqual(buildLotUndoCommand({ previous: { id: 'lot-a', revision: 1, title: 'Before', sourceLinks: [] }, saved: { id: 'lot-a', revision: 2, auctionContext: { pageUrl: 'https://a.test/1' } } }, () => 'undo-4').lot, { id: 'lot-a', title: 'Before', sourceLinks: [], notes: '', auctionContext: null, coinDetails: null, provenanceNotes: null, costEstimate: null });
 });
 
 test('a delayed lot save never retargets a newer selection or new draft', () => {
@@ -196,6 +206,16 @@ test('a delayed lot save never retargets a newer selection or new draft', () => 
   assert.deepEqual(selectionAfterLotSave(submitted, submitted, 4, 4, 'lot-a'), submitted);
   assert.deepEqual(selectionAfterLotSave({ selectedLotId: 'lot-b', mode: 'detail' }, submitted, 4, 4, 'lot-a'), { selectedLotId: 'lot-b', mode: 'detail' });
   assert.deepEqual(selectionAfterLotSave({ selectedLotId: null, mode: 'detail' }, submitted, 4, 5, 'lot-a'), { selectedLotId: null, mode: 'detail' });
+});
+
+test('ordinary existing lot saves offer undo while preserved input and selection changes do not', () => {
+  const submitted = { selectedLotId: 'lot-a', mode: 'detail' };
+  assert.deepEqual(lotSaveFollowup(submitted, submitted, { id: 'lot-a' }, false), { selection: submitted, offerUndo: true });
+  assert.deepEqual(lotSaveFollowup(submitted, submitted, { id: 'lot-a' }, true), { selection: submitted, offerUndo: false });
+  assert.deepEqual(lotSaveFollowup({ selectedLotId: 'lot-b', mode: 'detail' }, submitted, { id: 'lot-a' }, false), { selection: { selectedLotId: 'lot-b', mode: 'detail' }, offerUndo: false });
+  assert.deepEqual(lotSaveFollowup({ selectedLotId: null, mode: 'detail' }, { selectedLotId: null, mode: 'detail' }, { id: 'lot-new' }, false, false), { selection: { selectedLotId: 'lot-new', mode: 'detail' }, offerUndo: false });
+  assert.deepEqual(lotSaveFollowup({ selectedLotId: null, mode: 'detail' }, { selectedLotId: null, mode: 'detail' }, { id: 'lot-a' }, false, false, true), { selection: { selectedLotId: null, mode: 'detail' }, offerUndo: false });
+  assert.deepEqual(lotSaveFollowup(submitted, submitted, { id: 'lot-a' }, false, true, true), { selection: submitted, offerUndo: false });
 });
 
 test('new auction attachment uses the selected coin revision and preserves all details', () => {
@@ -255,4 +275,108 @@ test('event drafts require explicit precision and supply editable reminder defau
     { id: 'previous-day', kind: 'wall-time', daysBefore: 1, localTime: '09:00' },
     { id: 'auction-day', kind: 'wall-time', daysBefore: 0, localTime: '09:00' },
   ]);
+});
+
+test('auction queue classifies closing, research, bid and completed lots and sorts timed before date-only', () => {
+  const now = '2026-09-14T12:00:00.000Z';
+  const events = [
+    { id: 'later', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' },
+    { id: 'soon', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-14', localTime: '18:00', timeZone: 'UTC', startsAt: '2026-09-14T18:00:00.000Z' },
+    { id: 'day', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-14', timeZone: 'UTC' },
+  ];
+  const lots = [
+    { id: 'unknown', title: 'Unknown', outcome: { status: 'open' }, reference: 'RIC 1' },
+    { id: 'day', title: 'Day', auctionEventId: 'day', outcome: { status: 'open' }, reference: 'RIC 2' },
+    { id: 'later', title: 'Later', auctionEventId: 'later', outcome: { status: 'open' }, reference: 'RIC 3' },
+    { id: 'soon', title: 'Soon', auctionEventId: 'soon', outcome: { status: 'open' } },
+    { id: 'planned', title: 'Plan', plannedBid: { amount: { currency: 'GBP', minor: 100 } }, outcome: { status: 'open' } },
+    { id: 'active', title: 'Active', activeBid: { amount: { currency: 'GBP', minor: 100 } }, outcome: { status: 'open' } },
+    { id: 'done', title: 'Done', outcome: { status: 'lost' } },
+  ];
+  assert.deepEqual(auctionQueueForLots(lots, events, 'closing-soon', now).map(({ lot }) => lot.id), ['soon', 'later']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'needs-research', now).map(({ lot }) => lot.id), ['soon', 'planned', 'active']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'all-open', now).map(({ lot }) => lot.id), ['soon', 'later', 'day', 'unknown', 'planned', 'active']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'planned', now).map(({ lot }) => lot.id), ['planned']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'active', now).map(({ lot }) => lot.id), ['active']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'completed', now).map(({ lot }) => lot.id), ['done']);
+});
+
+test('auction labels distinguish a timed lot deadline from a date-only auction day', () => {
+  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Lot deadline · 2026-09-15 at 12:00 UTC');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Event starts · 2026-09-15 at 12:00 UTC');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-15', timeZone: 'UTC' }), 'Auction day · 2026-09-15 (date only, UTC)');
+});
+
+test('workspace detail save replaces optional metadata while preserving calculator cost estimate', () => {
+  const existing = {
+    id: 'lot-a', title: 'Old', sourceLinks: [{ source: 'manual', url: 'https://old.example/lot' }],
+    costEstimate: { currency: 'GBP', shippingMinor: 1200, paymentFeeBps: 250, paymentFeeMinor: 40, incrementMinor: 500, minimumBidMinor: 1000 },
+  };
+  const draft = buildWorkspaceLotDraft(existing, {
+    title: 'Coin', reference: 'RIC 10', notes: 'toned', auctionEventId: '', sourceUrl: 'https://new.example/lot',
+    auctionPageUrl: 'https://auction.example/lot/10', auctionCanonicalUrl: '', auctionHouse: 'Roma', auctionSaleId: '31', auctionLotNumber: '10',
+    weightGrams: '3.45', diameterMm: '18.2', condition: 'Very fine', photoUrl1: 'https://img.example/a.jpg', photoUrl2: '',
+    provenanceNotes: [{ id: 'p1', text: 'Collection A', sourceUrl: 'https://source.example/p1', recordedAt: '2026-09-14T12:00:00.000Z', auctionDate: '2010-01-02' }],
+  }, 'https://old.example/lot');
+  assert.deepEqual(draft.auctionContext, { pageUrl: 'https://auction.example/lot/10', house: 'Roma', saleId: '31', lotNumber: '10' });
+  assert.deepEqual(draft.coinDetails, { photoUrls: ['https://img.example/a.jpg'], weightMg: 3450, diameterHundredthsMm: 1820, condition: 'Very fine' });
+  assert.deepEqual(draft.provenanceNotes, [{ id: 'p1', text: 'Collection A', sourceUrl: 'https://source.example/p1', recordedAt: '2026-09-14T12:00:00.000Z', auctionDate: '2010-01-02' }]);
+  assert.deepEqual(draft.costEstimate, existing.costEstimate);
+});
+
+test('comparison selection is session-only, unique and bounded to four coins', () => {
+  assert.deepEqual(comparisonSelectionAfterToggle([], 'a'), ['a']);
+  assert.deepEqual(comparisonSelectionAfterToggle(['a'], 'a'), []);
+  assert.deepEqual(comparisonSelectionAfterToggle(['a', 'b', 'c', 'd'], 'e'), ['a', 'b', 'c', 'd']);
+  const rows = comparisonRows([{ id: 'a', title: 'A', plannedBid: { amount: { currency: 'GBP', minor: 1000 }, buyerPremiumBps: 2000 }, costEstimate: { currency: 'GBP', shippingMinor: 200, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }, { id: 'b', title: 'B', activeBid: { amount: { currency: 'EUR', minor: 2200 } }, costEstimate: { currency: 'GBP', shippingMinor: 300 } }], ['b', 'a']);
+  assert.deepEqual(rows.map((row) => [row.id, row.amountLabel]), [['b', 'Active maximum EUR 22.00'], ['a', 'Planned maximum GBP 10.00']]);
+  assert.deepEqual(rows.map((row) => row.estimateLabel), ['Fee estimate unavailable for EUR; recalculate', 'GBP fees: shipping 2.00 + fixed 0.00 + 0.00%']);
+  assert.deepEqual(rows.map((row) => row.totalLabel), ['Estimated total unknown; buyer premium not recorded', 'Estimated total GBP 14.00']);
+});
+
+test('comparison prioritizes terminal results over preserved plans and labels actual invoices separately', () => {
+  const rows = comparisonRows([
+    { id: 'won', title: 'Won', outcome: { status: 'won', hammer: { currency: 'USD', minor: 8000 }, actualInvoice: { currency: 'USD', minor: 9500 } }, plannedBid: { amount: { currency: 'USD', minor: 10000 }, buyerPremiumBps: 2000 }, costEstimate: { currency: 'USD', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } },
+    { id: 'lost', title: 'Lost', outcome: { status: 'lost', hammer: { currency: 'GBP', minor: 12000 } }, activeBid: { amount: { currency: 'GBP', minor: 9000 }, buyerPremiumBps: 2000 } },
+    { id: 'passed', title: 'Passed', outcome: { status: 'passed' }, plannedBid: { amount: { currency: 'EUR', minor: 7000 }, buyerPremiumBps: 1500 } },
+    { id: 'open', title: 'Open', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 6000 } }, costEstimate: { currency: 'CHF', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } },
+  ], ['won', 'lost', 'passed', 'open']);
+  assert.deepEqual(rows.map((row) => row.amountLabel), ['Final hammer USD 80.00', 'Final hammer GBP 120.00', 'Final hammer not recorded', 'Planned maximum CHF 60.00']);
+  assert.deepEqual(rows.map((row) => row.actualTotalLabel), ['Actual invoice USD 95.00', '', '', '']);
+  assert.deepEqual(rows.map((row) => row.totalLabel), ['', '', '', 'Estimated total unknown; buyer premium not recorded']);
+});
+
+test('comparison picker identifies same-reference coins by title and auction lot identity', () => {
+  assert.equal(comparisonPickerLabel({ title: 'Roman denarius · shortlist A', reference: 'Crawford 511/2b', auctionContext: { house: 'Roma', saleId: '31', lotNumber: '10' } }), 'Roman denarius · shortlist A · Crawford 511/2b · Roma sale 31 lot 10');
+  assert.equal(comparisonPickerLabel({ title: 'Roman denarius · shortlist B', reference: 'Crawford 511/2b', lotNumber: '22' }), 'Roman denarius · shortlist B · Crawford 511/2b · lot 22');
+  assert.equal(comparisonPickerLabel({ title: 'Athens owl' }), 'Athens owl');
+});
+
+test('comparison provenance distinguishes auction date from the date the collector recorded it', () => {
+  assert.deepEqual(comparisonProvenanceRows([
+    { id: 'p1', text: 'Ex Archer collection', sourceUrl: 'https://source.test/archer', recordedAt: '2026-09-14T12:00:00.000Z', auctionDate: '2012-05-03' },
+    { id: 'p2', text: 'Dealer ticket', sourceUrl: 'https://source.test/ticket', recordedAt: '2026-09-13T22:00:00.000Z' },
+  ]), [
+    { id: 'p1', text: 'Ex Archer collection', sourceUrl: 'https://source.test/archer', dateLabel: 'Auction date 2012-05-03 · Recorded 2026-09-14' },
+    { id: 'p2', text: 'Dealer ticket', sourceUrl: 'https://source.test/ticket', dateLabel: 'Recorded 2026-09-13' },
+  ]);
+});
+
+test('watchlist draft carries captured auction context into the editor', () => {
+  assert.deepEqual(lotDraftToEditor({ target: 'watchlist', title: 'Coin', reference: 'RIC 1', pageUrl: 'https://auction.example/lot', auctionContext: { pageUrl: 'https://auction.example/lot', house: 'Roma', saleId: '12', lotNumber: '4' } }), {
+    title: 'Coin', reference: 'RIC 1', sourceUrl: 'https://auction.example/lot',
+    auctionContext: { pageUrl: 'https://auction.example/lot', house: 'Roma', saleId: '12', lotNumber: '4' },
+  });
+});
+
+test('workspace bid command carries only a matching calculator estimate atomically', () => {
+  const bid = { amount: { currency: 'GBP', minor: 10000 }, buyerPremiumBps: 2000 };
+  const estimate = { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 };
+  assert.deepEqual(buildBidSaveCommand('plan', { id: 'lot-a', revision: 3 }, bid, estimate, () => 'bid-1'), { type: 'bid.plan', requestId: 'bid-1', lotId: 'lot-a', expectedRevision: 3, plannedBid: bid, costEstimate: estimate });
+  assert.equal(buildBidSaveCommand('place', { id: 'lot-a', revision: 3 }, { amount: { currency: 'EUR', minor: 10000 } }, estimate, () => 'bid-2').costEstimate, undefined);
+});
+
+test('workspace rejects malformed nonempty measurements instead of omitting them', () => {
+  assert.throws(() => buildWorkspaceLotDraft({ id: 'lot-a' }, { title: 'Coin', weightGrams: 'heavy', diameterMm: '' }), /valid weight/);
+  assert.throws(() => buildWorkspaceLotDraft({ id: 'lot-a' }, { title: 'Coin', weightGrams: '', diameterMm: 'wide' }), /valid diameter/);
 });

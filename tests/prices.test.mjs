@@ -1,10 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText } from '../extension/prices.js';
+import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
+import { readFileSync as readSource } from 'node:fs';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
+
+test('session curation uses stable IDs and one included set for every statistic', () => {
+  const lots = [
+    { id: 9, title: 'A', date: '2026-01-01', price: '100' },
+    { title: 'B', date: '2025-01-01', price: '300' },
+    { title: 'C', date: '2024-01-01', price: '-' },
+  ];
+  assert.equal(stableResultId(lots[0]), 'acsearch:9');
+  assert.equal(stableResultId(lots[1]), stableResultId({ ...lots[1] }));
+  const curation = createPriceCuration();
+  curation.exclude(lots[1]);
+  assert.deepEqual(curation.counts(lots), { included: 2, excluded: 1 });
+  assert.equal(summarise(curation.included(lots), 'USD').median, 100);
+  curation.reset();
+  assert.deepEqual(curation.counts(lots), { included: 3, excluded: 0 });
+});
+
+test('every curation redraw recalculates the entered price comparison', () => {
+  const source = readSource(new URL('../extension/popup.js', import.meta.url), 'utf8');
+  const render = source.slice(source.indexOf('function renderPrices('), source.indexOf('// Checked against the sales shown'));
+  assert.match(render, /shownPrices\s*=.*\n\s*showCheck\(\);/s);
+});
+
+test('all-excluded render hides statistics but keeps Inspect sales and Reset reachable', () => {
+  const lots = ['100', '200', '300', '1000'].map((price, id) => ({ id, price }));
+  const curation = createPriceCuration();
+  lots.forEach((lot) => curation.exclude(lot));
+  const included = curation.included(lots);
+  assert.deepEqual(pricePanelVisibility(summarise(included, 'USD').count, summarise(lots, 'USD').count), {
+    statistics: false, curation: true,
+  });
+  curation.reset();
+  assert.equal(summarise(curation.included(lots), 'USD').count, 4);
+});
 
 test('buildSearchUrl targets acsearch search with term, ancient category, currency and most-recent order', () => {
   assert.equal(buildSearchUrl({ term: ' Nero 306 ', currency: 'USD' }), 'https://www.acsearch.info/search.html?term=Nero+306&category=1&currency=usd&order=1');

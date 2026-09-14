@@ -10,8 +10,8 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     return true;
   };
   const pageTitle = limit(root?.title ?? '', 200);
-  const canonical = root?.querySelector?.('link[rel="canonical"]')?.href;
-  const pageUrl = limit(canonical || pageLocation?.href || '', 2048);
+  const canonicalUrl = limit(root?.querySelector?.('link[rel="canonical"]')?.href ?? '', 2048);
+  const pageUrl = limit(pageLocation?.href || '', 2048);
   const nodes = [...(root?.querySelectorAll?.('h1,h2,h3,dt,dd,th,td,label,[itemprop],.lot-title,.description') ?? [])]
     .slice(0, 120)
     .filter(visible);
@@ -42,12 +42,18 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     if (match) candidates.denomination = { value: limit(match[0], 120), provenance: selection && selection.includes(match[0]) ? 'selection' : 'visible-text' };
   }
   if (!candidates.reference) {
-    const match = /\b(RIC|RPC|Price|Crawford|Sear|BMC)\s+[A-Za-z0-9().\- ]{1,70}\b/i.exec(combined);
-    if (match) candidates.reference = { value: limit(match[0], 120), provenance: selection && selection.includes(match[0]) ? 'selection' : 'visible-text' };
+    for (const line of lines) {
+      const match = /\b(?:(?:RIC|RPC)\s+(?:[IVX]+(?:\.\d+)?\s+)?[A-Za-z0-9()./\-]+|(?:Price|Crawford|Sear|BMC)\s+[A-Za-z0-9()./\-]+)\b/i.exec(line.text);
+      if (match) {
+        candidates.reference = { value: limit(match[0], 120), provenance: line.provenance };
+        break;
+      }
+    }
   }
   return {
     pageTitle,
     pageUrl,
+    ...(canonicalUrl ? { canonicalUrl } : {}),
     rawText: limit(visibleLines.join('\n'), 3000),
     candidates,
     capturedSelection: selection || undefined,
@@ -71,6 +77,16 @@ export function buildResearchDraft(capture, context = {}) {
   if (rawText) draft.rawText = rawText;
   if (pageTitle) draft.pageTitle = pageTitle;
   if (pageUrl) draft.pageUrl = pageUrl;
+  if (pageUrl) {
+    const auctionContext = { pageUrl };
+    const canonicalUrl = bounded(capture?.canonicalUrl, 2048);
+    if (canonicalUrl) auctionContext.canonicalUrl = canonicalUrl;
+    for (const field of ['house', 'saleId', 'lotNumber']) {
+      const value = bounded(capture?.auctionContext?.[field], 120);
+      if (value) auctionContext[field] = value;
+    }
+    draft.auctionContext = auctionContext;
+  }
   draft.capturedAt = now;
   return draft;
 }

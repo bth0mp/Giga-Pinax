@@ -14,3 +14,9 @@ Under **Assets**, download the ZIP for your browser, not a **Source code** archi
 - **Updating Firefox:** Load the new Firefox ZIP again.
 
 Release assets must include three versioned browser packages (for example, `giga-pinax-brave-0.27.1.zip`, `giga-pinax-chrome-0.27.1.zip`, and `giga-pinax-firefox-0.27.1.zip`) plus `giga-pinax-brave.zip` and `giga-pinax-firefox.zip`. Make the versioned Chrome ZIP a byte-identical copy of the versioned Brave ZIP. The stable aliases keep the in-extension update links working; see [INSTALL.md](INSTALL.md) for the build details.
+
+For store releases, also verify the listing, privacy answers, reviewer notes and assets under [store](store/README.md) against the exact package. Keep the stable Firefox ID `giga-pinax@local.invalid`; Mozilla recommends a stable unique ID and does not require that the ID be a deliverable mailbox. Do not describe an unsigned GitHub ZIP as permanently installable in Firefox, and do not claim signing or publication until the relevant dashboard confirms it.
+
+The source has no license file. Do not select or state an open-source license, grant reuse rights, or accept a legal attestation on behalf of the publisher. Resolve any required store license field with the publisher before submission.
+
+The store screenshots must show the released UI at 1280×800 with private auction data and photo URLs removed. Chrome also requires the packaged 128×128 icon and 440×280 small promotional tile. The reproducible source and rendering instructions for the tile are in [store/assets](store/assets/README.md).
