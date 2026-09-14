@@ -44,6 +44,7 @@ ASSET_PATHS = (
     "updates.css",
     "updates.js",
     "lookup.js",
+    "local-catalogue.js",
     "navigation.js",
     "preferences.js",
     "prices.js",
@@ -102,6 +103,31 @@ def validated_output_root(candidate: Path) -> Path:
     return output_root
 
 
+def read_asset(relative_path: str) -> bytes:
+    source = EXTENSION_ROOT / relative_path
+    if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(EXTENSION_ROOT.resolve()):
+        raise ValueError(f"required extension asset is missing or unsafe: extension/{relative_path}")
+    return source.read_bytes()
+
+
+def local_catalogue_assets() -> tuple[str, ...]:
+    base = "data/ocre"
+    try:
+        metadata = json.loads(read_asset(f"{base}/metadata.json"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("cannot read bundled OCRE metadata") from error
+    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or metadata.get("corpus") != "ocre":
+        raise ValueError("unsupported bundled OCRE metadata")
+    shards = metadata.get("shards")
+    if not isinstance(shards, dict) or not shards:
+        raise ValueError("bundled OCRE metadata must name its shards")
+    for prefix, filename in shards.items():
+        if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?", prefix) or filename != f"records-{prefix}.json":
+            raise ValueError("unsafe bundled OCRE shard name")
+    return (f"{base}/metadata.json", f"{base}/index.json", f"{base}/NOTICE.txt",
+            *(f"{base}/{shards[prefix]}" for prefix in sorted(shards)))
+
+
 def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
     manifest_path = MANIFEST_ROOT / f"{browser}.json"
     try:
@@ -111,11 +137,8 @@ def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
         raise ValueError(f"cannot read {manifest_path.relative_to(PROJECT_ROOT)}: {error}") from error
 
     inputs = [("manifest.json", manifest_bytes)]
-    for relative_path in ASSET_PATHS:
-        source = EXTENSION_ROOT / relative_path
-        if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(EXTENSION_ROOT.resolve()):
-            raise ValueError(f"required extension asset is missing or unsafe: extension/{relative_path}")
-        inputs.append((relative_path, source.read_bytes()))
+    for relative_path in (*ASSET_PATHS, *local_catalogue_assets()):
+        inputs.append((relative_path, read_asset(relative_path)))
     return manifest, inputs
 
 

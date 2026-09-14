@@ -1,6 +1,6 @@
-# Install Giga Pinax 0.29.2
+# Install Giga Pinax 0.30.0
 
-Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.29.2 makes acsearch price research independent of ANS catalogue availability. It never places, changes or cancels bids.
+Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.30.0 adds bundled OCRE/RIC reference data; acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
 
 Fetched acsearch rows and inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
@@ -29,7 +29,7 @@ Use Firefox 142 or later.
 
 Firefox removes a temporary add-on when Firefox restarts. Permanent installation requires a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). To update a temporary installation, open **Settings** → **Updates**, download the latest ZIP, and load it again through `about:debugging`.
 
-If provider access is disabled in `about:addons`, selecting **Look up** or **Get prices** requests it again. If the popup closes during the permission prompt, reopen it and repeat the action.
+Bundled RIC results work even if ANS access is disabled in `about:addons`. If an online fallback needs access, select **Check online**; other catalogue lookups and **Get prices** request their respective provider access. If the popup closes during a permission prompt, reopen it and repeat the action.
 
 ## First checks
 
@@ -38,7 +38,7 @@ If provider access is disabled in `about:addons`, selecting **Look up** or **Get
 3. In **Calculator**, enter a hammer and buyer premium. Expand fees and increments to add shipping, percentage or fixed payment fees, budget, minimum bid and fixed increment.
 4. Open the auction workspace from **Watchlist**. Inspect the queues, select a coin, and edit auction identity, provenance, measurements, condition, external photo links and cost estimate.
 5. Select two to four saved coins and open comparison. Photo servers are contacted at this point only; an unavailable image does not block comparison.
-6. Open **Settings** for **Appearance**, default currency, saved house premiums, **Updates**, and backup/import.
+6. Open **Settings** for bundled catalogue coverage, **Appearance**, default currency, saved house premiums, **Updates**, and backup/import. Try `RIC II.1² Vespasian 972` with ANS access disabled to check a local type record. Prices still need internet access and an eligible acsearch session.
 
 CoinArchives free and Pro and RPC Online open only when selected. Giga Pinax does not receive credentials or import paid results. acsearch research uses your existing provider session; sign in on acsearch itself if your account is needed to see hammer prices.
 

@@ -38,6 +38,7 @@ ASSETS = {
     "updates.css",
     "updates.js",
     "lookup.js",
+    "local-catalogue.js",
     "navigation.js",
     "preferences.js",
     "prices.js",
@@ -73,7 +74,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.29.2", manifest["version"])
+                self.assertEqual("0.30.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -158,7 +159,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.29.2.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.30.0.zip"
             for browser in ("brave", "firefox")
         }
         stable_zip_paths = {
@@ -183,7 +184,10 @@ class PackageBuildTests(unittest.TestCase):
         )
         self.assertEqual("unrelated output", sentinel.read_text(encoding="utf-8"))
 
-        expected_paths = ASSETS | {"manifest.json"}
+        metadata = json.loads((ROOT / "extension/data/ocre/metadata.json").read_text(encoding="utf-8"))
+        data_paths = {"data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/NOTICE.txt"}
+        data_paths.update(f"data/ocre/{name}" for name in metadata["shards"].values())
+        expected_paths = ASSETS | data_paths | {"manifest.json"}
         for browser, zip_path in zip_paths.items():
             with self.subTest(browser=browser):
                 directory_paths = {
@@ -248,6 +252,45 @@ class ReplaceRetryTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 build.replace_with_retry(Path("staged.zip"), Path("dist.zip"))
         self.assertEqual(5, replace.call_count)
+
+
+class LocalCataloguePackageTests(unittest.TestCase):
+    def test_catalogue_assets_follow_only_validated_manifest_shards(self):
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data/ocre"
+            data.mkdir(parents=True)
+            metadata = {"schemaVersion": 1, "corpus": "ocre", "shards": {"2_1(2)": "records-2_1(2).json", "3": "records-3.json"}}
+            (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+            (data / "unrelated-private.json").write_text("{}", encoding="utf-8")
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                self.assertEqual(
+                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/NOTICE.txt", "data/ocre/records-2_1(2).json", "data/ocre/records-3.json"),
+                    build.local_catalogue_assets(),
+                )
+
+    def test_catalogue_manifest_rejects_unsafe_or_unsupported_shards(self):
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data/ocre"
+            data.mkdir(parents=True)
+            cases = [
+                {"schemaVersion": 2, "corpus": "ocre", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 1, "corpus": "crro", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"../secret": "records-../secret.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "../../secret.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "records-4.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": ["records-3.json"]},
+            ]
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                for metadata in cases:
+                    with self.subTest(metadata=metadata):
+                        (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+                        with self.assertRaises(ValueError):
+                            build.local_catalogue_assets()
 
 
 if __name__ == "__main__":

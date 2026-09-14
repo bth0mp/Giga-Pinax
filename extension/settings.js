@@ -4,6 +4,7 @@ import { formatMinorInput } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
+import { catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 let preferencesSnapshot;
@@ -83,6 +84,13 @@ async function load() {
   preferencesSnapshot = reply.value;
   render();
   $('save-settings').disabled = false;
+}
+
+async function loadCatalogueInfo() {
+  const metadata = await defaultLocalCatalogue?.metadata?.();
+  $('catalogue-coverage').textContent = catalogueMetadataText(metadata);
+  $('catalogue-source').href = metadata?.sourceUrl ?? 'https://numismatics.org/ocre/';
+  $('catalogue-license').href = metadata?.licenseUrl ?? 'https://opendatacommons.org/licenses/odbl/';
 }
 
 $('add-premium').addEventListener('click', () => $('premium-list').append(premiumRow()));
@@ -210,3 +218,4 @@ $('confirm-import').addEventListener('click', async () => {
 
 clearPreview();
 void load().catch((error) => status(error.message || 'Could not load settings.', true));
+void loadCatalogueInfo();

@@ -66,6 +66,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .ric-fields label {font-size:11px;}
 .form-error {color:var(--error); font-size:12px; line-height:1.5; padding-top:8px;}
 .candidates {padding-top:6px;}
+.source-badge {display:inline-block; margin:4px 0; padding:2px 7px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:11px;}
+.candidate-source {margin-left:7px; font-weight:500;}
 .candidate-list {list-style:none; margin:0; padding:0;}
 .candidate-list .text-button {display:block; width:100%; text-align:left; padding:8px 0; border-top:1px solid var(--line); overflow-wrap:anywhere;}
 /* The lot row whose type is on show: ink with an accent bar, so it reads as chosen without colour alone. */

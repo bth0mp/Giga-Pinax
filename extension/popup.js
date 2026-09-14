@@ -5,6 +5,7 @@ import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, vol
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { shouldRevealRefine } from './companion-popup.js';
+import { createLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -30,6 +31,7 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
+const ONLINE_MESSAGE = 'This type was not available in the local OCRE catalogue. Check online to search numismatics.org.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -104,6 +106,37 @@ const labelCache = {
     try { localStorage.setItem(LABELS_KEY, JSON.stringify(this.labels)); } catch { /* cache is optional */ }
   },
 };
+const localCatalogue = createLocalCatalogue({ cache: labelCache });
+
+async function hasHostAccess(origins) {
+  if (!api?.permissions?.contains) return true;
+  try { return (await api.permissions.contains({ origins })) === true; } catch { return false; }
+}
+
+async function localFirstType(reference) {
+  const ticket = requestId;
+  const context = researchContext;
+  const local = await lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: false });
+  if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
+  if (local.status !== 'online-required') return local;
+  const granted = await hasHostAccess([...HOST_ORIGINS]);
+  if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
+  if (granted) return lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true });
+  return { ...local, retry: () => lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+}
+
+async function localFirstId(corpus, id) {
+  if (corpus !== 'ocre') return lookupById(corpus, id, { cache: labelCache });
+  const ticket = requestId;
+  const context = researchContext;
+  const local = await lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: false });
+  if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
+  if (local.status !== 'online-required') return local;
+  const granted = await hasHostAccess([...HOST_ORIGINS]);
+  if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
+  if (granted) return lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true });
+  return { ...local, retry: () => lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+}
 
 // Light or dark: the popup follows the system scheme until the header button is used. That choice is stored under its own key as a bare
 // 'light' or 'dark' (theme.js applies it before the first paint; restoreTheme validates it here too, so anything else falls back to the system).
@@ -239,6 +272,9 @@ function clearOutput() {
   $('reference-number').removeAttribute('aria-invalid');
   $('quick-reference').removeAttribute('aria-invalid');
   $('announcement').textContent = '';
+  $('online-fallback').hidden = true;
+  $('online-fallback').disabled = false;
+  $('online-fallback').onclick = null;
   // A note about the fields as they were must not outlive a lookup that rewrites them. Both writers announce after their own clearOutput(), so this
   // never erases a line just written.
   clearRicNote();
@@ -343,6 +379,8 @@ function renderCard(card) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
   $('result-reference').textContent = card.label;
+  $('result-source').textContent = card.source === 'local' ? 'Local OCRE catalogue' : '';
+  $('result-source').hidden = card.source !== 'local';
   $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
@@ -383,12 +421,18 @@ function renderCard(card) {
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
 function renderCandidates(candidates, corpus, partial) {
   $('candidates-label').textContent = partial ? 'Choose a type:' : 'Did you mean:';
-  $('candidate-list').replaceChildren(...candidates.map(({ id, title }) => {
+  $('candidate-list').replaceChildren(...candidates.map(({ id, title, source }) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'text-button';
     button.textContent = title;
+    if (source === 'local') {
+      const badge = document.createElement('span');
+      badge.className = 'source-badge candidate-source';
+      badge.textContent = 'Local catalogue';
+      button.append(badge);
+    }
     // Like a Recent chip: the chosen title fills the guided fields, so the acsearch term follows the chosen type, not the mistyped one.
     button.addEventListener('click', () => {
       $('quick-reference').value = '';
@@ -398,7 +442,7 @@ function renderCandidates(candidates, corpus, partial) {
       // the popup; renderRecent keeps focus on a chip, and this keeps it on the box the choice came from.
       // preventScroll: without it the box is scrolled back into view, only for the card below to scroll away from it again — two movements for one click.
       $('quick-reference').focus({ preventScroll: true });
-      beginResearch(parsed, () => lookupById(corpus, id, { cache: labelCache }), '', { corpus, id, label: title });
+      beginResearch(parsed, () => localFirstId(corpus, id), '', { corpus, id, label: title });
     });
     item.append(button);
     return item;
@@ -417,7 +461,7 @@ function openRecent(entry) {
   $('quick-reference').value = '';
   const parsed = parseReference(entry.label);
   if (parsed) { fillFields(parsed); savePreferences(); }
-  beginResearch(parsed, () => lookupById(entry.corpus, entry.id, { cache: labelCache }), '', entry);
+  beginResearch(parsed, () => localFirstId(entry.corpus, entry.id), '', entry);
 }
 
 // The lot list lives outside #candidates, so a lookup's clearOutput() leaves it above the card; only a new Reference, a guided edit, a catalogue
@@ -440,15 +484,16 @@ async function openLotReference(found, rulers, button, note = '') {
   savePreferences();
   const other = found.reference.catalogue === 'Other';
   if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
-  const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   const reference = lotLookup(found, rulers);
+  const localRic = reference.catalogue === 'RIC';
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   beginResearch(reference, async () => {
     const context = researchContext;
-    const allowed = await access;
+    const allowed = localRic ? true : await access;
     if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
-    return lookupType(reference, { cache: labelCache });
+    return localRic ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
   }, note);
 }
 
@@ -679,6 +724,30 @@ async function run(perform, note = '', failedReference = null) {
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
+  else if (outcome.status === 'online-required') {
+    showError(ONLINE_MESSAGE);
+    const button = $('online-fallback');
+    button.hidden = false;
+    button.disabled = false;
+    button.onclick = async () => {
+      if (button.disabled) return;
+      const access = requestHostAccess([...HOST_ORIGINS]);
+      const owner = requestId;
+      const expectedRevision = referenceRevision;
+      const expectedContext = researchContext;
+      button.disabled = true;
+      const allowed = await access;
+      if (owner !== requestId || expectedRevision !== referenceRevision || expectedContext !== researchContext) return;
+      if (!allowed) {
+        button.disabled = false;
+        showError(PERMISSION_MESSAGE);
+        return;
+      }
+      button.hidden = true;
+      $('form-error').hidden = true;
+      run(outcome.retry, '', failedReference);
+    };
+  }
   else if (outcome.status === 'cancelled') return;
   else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
@@ -883,17 +952,18 @@ $('reference-form').addEventListener('submit', async (event) => {
   // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
-  const access = requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const localRic = reference.catalogue === 'RIC';
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
   savePreferences();
   beginResearch(reference, async () => {
     const context = researchContext;
-    const allowed = await access;
+    const allowed = localRic ? true : await access;
     if (context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
       runPrices(context.term, context.currency, { remember: false, context });
     }
-    return lookupType(reference, { cache: labelCache });
+    return localRic ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
   });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);
@@ -968,7 +1038,7 @@ function openFrom(search) {
   const selected = queryFromSearch(search) || selectionQuery(new URLSearchParams(search).get('reference'));
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
-  else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => lookupById(opened.corpus, opened.id, { cache: labelCache }));
+  else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its

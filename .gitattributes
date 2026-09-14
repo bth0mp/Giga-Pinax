@@ -1,0 +1,2 @@
+# Preserve deterministic generated data bytes and collapse large generated diffs.
+extension/data/ocre/*.json -text linguist-generated=true

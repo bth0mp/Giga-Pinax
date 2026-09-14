@@ -426,6 +426,12 @@ const otherCard = (text) => ({ id: text, corpus: OTHER, label: text, authority: 
 export async function lookupById(corpus, id, options = {}) {
   // A chip saved before 0.19 ("SG6829v") takes the SG spelling; any other id stays as saved, so its remembered term still matches.
   if (corpus === OTHER) return { status: 'ok', card: otherCard(otherNumber(id)) };
+  const { localProvider, online = true } = options;
+  if (corpus === 'ocre' && localProvider?.lookupById) {
+    const local = await localProvider.lookupById(corpus, id);
+    if (local?.status === 'ok') return local;
+    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, id };
+  }
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
   const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
   try {
@@ -532,9 +538,8 @@ function ricSearch({ number, volume, section }, rulers = []) {
 // when given, in RIC volume order. Only subtypes are dropped ("RIC V Gallienus 306: Subtype 1" reads as section "Gallienus 306: Subtype"); "Salonina
 // (2)" is a real section. A listed volume matches exactly; one OCRE does not list matches by numeral, and by part where OCRE divides it ("I" finds I²,
 // "V, Part 2" finds V). A ruler also keeps the sections OCRE splits it into ("Gallienus (joint reign)"). More hits than one page are too many to list.
-function pickRic(xml, reference) {
-  const entries = parseFeed(xml);
-  if (Number(xml.match(/<opensearch:totalResults>(\d+)</)?.[1] ?? 0) > entries.length) return { status: 'too-many' };
+export function pickRicEntries(entries, reference, total = entries.length) {
+  if (total > entries.length) return { status: 'too-many' };
   const [number, volume, ruler] = [spaced(ricNumber(reference.number)), unquote(reference.volume), norm(phrase(reference.section))];
   const exact = !volume || listed(volume);
   const [numeral, part] = shelf(volume);
@@ -550,6 +555,12 @@ function pickRic(xml, reference) {
   // One hit is the type only when it is what was typed; a sibling section, or the edition of a volume typed another way, is offered, never opened.
   if (kept.length === 1 && exact && (!ruler || norm(kept[0].hit.section) === ruler)) return { status: 'ok', entry: kept[0].entry };
   return { status: 'candidates', candidates: kept.map(({ entry }) => entry), partial: true };
+}
+
+function pickRic(xml, reference) {
+  const entries = parseFeed(xml);
+  const total = Number(xml.match(/<opensearch:totalResults>(\d+)</)?.[1] ?? entries.length);
+  return pickRicEntries(entries, reference, total);
 }
 
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
@@ -582,6 +593,12 @@ export async function lookupType(reference, options = {}) {
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
   if (corpus === OTHER) return { status: 'ok', card: otherCard(query) };
+  const { localProvider, online = true } = options;
+  if (corpus === 'ocre' && localProvider?.lookupType) {
+    const local = await localProvider.lookupType(reference);
+    if (local?.status === 'ok' || local?.status === 'candidates' || local?.status === 'too-many') return local;
+    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, query };
+  }
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));

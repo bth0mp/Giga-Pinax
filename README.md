@@ -1,10 +1,12 @@
 # Giga Pinax
 
-Giga Pinax 0.29.2 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+Giga Pinax 0.30.0 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
 
 Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
 
 The 0.29 workspace adds auction page, house, sale and lot identity; duplicate checks; closing-soon, research, planned, active and completed queues; provenance; measurements and condition; external photo URL links; reminders and outcomes; and comparison of two to four saved coins. The calculator includes buyer premium, shipping, percentage and fixed payment fees, and the highest affordable bid on a collector-entered fixed increment.
+
+Version 0.30 bundles 52,254 active Roman Imperial type records and 2,808 replacement redirects derived from the supplied OCRE RDF export. RIC searches check a local index and load the relevant details from packaged files. Local results need no ANS connection; missing records can use the existing online lookup. This snapshot does not cover Crawford/RRC, Price, Seleucid Coins or Bopearachchi. Settings identifies the bundled data and its coverage. The export's publication date is unknown, and unresolved Nomisma identifiers are not guessed. See [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
 
 Fetched acsearch rows remain in Research. Excluding a result updates the count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
 
@@ -34,7 +36,7 @@ For updates, open **Settings**, find **Updates**, and select **Download latest u
 
 Useful examples include `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2`, `Bop Euthydemus I 24A`, `Price 23`, `RPC I 1234`, `SG 6829`, and `Netherlands KM# 123`. Ambiguous references produce choices rather than an invented result. CoinArchives free and Pro and RPC Online are links opened only when selected; Giga Pinax does not receive credentials or import paid results.
 
-Core lookups contact `numismatics.org`, `nomisma.org` and `www.acsearch.info` over HTTPS. GitHub is contacted only for a user-requested release download. Explicit collector-supplied comparison photos may come from HTTP or HTTPS hosts. See [the privacy policy](docs/PRIVACY.md).
+Online lookups contact `numismatics.org`, `nomisma.org` and `www.acsearch.info` over HTTPS. Bundled RIC results do not contact ANS or Nomisma; independent auction-price research still contacts acsearch when enabled. GitHub is contacted only for a user-requested release download. Explicit collector-supplied comparison photos may come from HTTP or HTTPS hosts. See [the privacy policy](docs/PRIVACY.md).
 
 ## Development and release
 

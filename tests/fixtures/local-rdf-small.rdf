@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+         xmlns:skos="http://www.w3.org/2004/02/skos/core#"
+         xmlns:dcterms="http://purl.org/dc/terms/"
+         xmlns:void="http://rdfs.org/ns/void#"
+         xmlns:nmo="http://nomisma.org/ontology#">
+  <rdf:Description rdf:about="http://numismatics.org/ocre/id/ric.1.test.1#obverse">
+    <nmo:hasLegend>OBV ONE</nmo:hasLegend>
+    <dcterms:description xml:lang="fr">Portrait français</dcterms:description>
+    <dcterms:description xml:lang="en">English obverse</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/person_one"/>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/person_two"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.1.test.1">
+    <skos:prefLabel xml:lang="fr">Titre français</skos:prefLabel>
+    <skos:prefLabel xml:lang="en">RIC I Test 1</skos:prefLabel>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/authority_one"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/authority_two"/>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/ignored_issuer"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/denarius"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/aureus"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/rome"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasStartDate>-0009</nmo:hasStartDate>
+    <nmo:hasEndDate>0014</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/ocre/id/ric.1.test.1#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/ocre/id/ric.1.test.1#reverse"/>
+  </nmo:TypeSeriesItem>
+
+  <rdf:Description rdf:about="http://numismatics.org/ocre/id/ric.1.test.1#reverse">
+    <nmo:hasLegend>REV ONE</nmo:hasLegend>
+    <dcterms:description xml:lang="en">English reverse</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://example.test/not-a-nomisma-slug"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.2.test.2">
+    <skos:prefLabel xml:lang="en">RIC II Test 2</skos:prefLabel>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/issuer_only"/>
+  </nmo:TypeSeriesItem>
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.2.test.2">
+    <skos:prefLabel xml:lang="en">RIC II Test 2</skos:prefLabel>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/issuer_only"/>
+  </nmo:TypeSeriesItem>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.3.old.1">
+    <skos:prefLabel xml:lang="en">Old one</skos:prefLabel>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/ocre/id/ric.3.old.2"/>
+  </nmo:TypeSeriesItem>
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.3.old.2">
+    <skos:prefLabel xml:lang="en">Old two</skos:prefLabel>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/ocre/id/ric.3.current.3"/>
+  </nmo:TypeSeriesItem>
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.3.current.3">
+    <skos:prefLabel xml:lang="en">Current three</skos:prefLabel>
+  </nmo:TypeSeriesItem>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.4.cycle.1">
+    <skos:prefLabel xml:lang="en">Cycle one</skos:prefLabel>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/ocre/id/ric.4.cycle.2"/>
+  </nmo:TypeSeriesItem>
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.4.cycle.2">
+    <skos:prefLabel xml:lang="en">Cycle two</skos:prefLabel>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/ocre/id/ric.4.cycle.1"/>
+  </nmo:TypeSeriesItem>
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/ocre/id/ric.5.dangling.1">
+    <skos:prefLabel xml:lang="en">Dangling</skos:prefLabel>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/ocre/id/ric.5.absent.2"/>
+  </nmo:TypeSeriesItem>
+</rdf:RDF>

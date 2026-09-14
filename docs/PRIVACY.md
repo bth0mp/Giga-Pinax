@@ -12,7 +12,9 @@ The extension stores information you choose to save in browser extension storage
 
 ## Network requests
 
-When you request research, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
+RIC reference lookups first check OCRE data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Other catalogues use online services. Auction-price research remains independent and can contact acsearch even when the type record is local.
+
+When online research is requested, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
 
 - American Numismatic Society services at `numismatics.org` for public catalogue searches and type records;
 - Nomisma.org at `nomisma.org` for public numismatic terms and labels; and

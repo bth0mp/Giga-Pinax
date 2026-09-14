@@ -36,7 +36,7 @@
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
         <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p></div>
-        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <p id="form-error" class="form-error" role="alert" hidden></p><button id="online-fallback" class="quiet" type="button" hidden>Check online</button>
         <details id="refine-reference" class="refine-reference">
           <summary>Refine reference</summary>
           <div class="catalogue-row">
@@ -76,7 +76,7 @@
         <div class="search-links"><a id="acsearch-link" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">acsearch results</a><a id="coinarchives-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results</a></div>
       </section>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
-        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
         <details id="sides-details" class="sides-details"><summary><span>Obverse and reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>

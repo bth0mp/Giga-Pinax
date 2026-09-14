@@ -224,6 +224,23 @@ test('lookupType reports candidates, none, network and timeout outcomes', async 
   );
 });
 
+test('RIC lookup uses an injected local provider before remote requests', async () => {
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', source: 'local' };
+  const localProvider = { lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) };
+  const fetchImpl = () => { throw new Error('remote fetch must not run'); };
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' }, { localProvider, fetchImpl }), { status: 'ok', card });
+  assert.deepEqual(await lookupById('ocre', card.id, { localProvider, fetchImpl }), { status: 'ok', card });
+});
+
+test('RIC lookup can report that online fallback is required after a local miss or bundle failure', async () => {
+  const reference = { catalogue: 'RIC', volume: '', section: '', number: '99999' };
+  for (const status of ['none', 'unavailable']) {
+    const localProvider = { lookupType: async () => ({ status }), lookupById: async () => ({ status }) };
+    assert.deepEqual(await lookupType(reference, { localProvider, online: false }), { status: 'online-required', localStatus: status, corpus: 'ocre', query: 'RIC 99999' });
+    assert.deepEqual(await lookupById('ocre', 'ric.1(2).ner.306', { localProvider, online: false }), { status: 'online-required', localStatus: status, corpus: 'ocre', id: 'ric.1(2).ner.306' });
+  }
+});
+
 test('lookupType distinguishes a temporarily unavailable catalogue from a connection failure', async () => {
   const unavailable = async () => ({ ok: false, status: 503, text: async () => '' });
   const limited = async () => ({ ok: false, status: 429, text: async () => '' });
