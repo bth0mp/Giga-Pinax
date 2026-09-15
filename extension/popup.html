@@ -57,9 +57,10 @@
       </form>
       <section id="research-prices" class="research-prices card" aria-labelledby="research-prices-title" hidden>
         <h2 id="research-prices-title">Auction research</h2>
+        <fieldset id="period" class="period source-period"><legend class="sr-only">Sales period for auction sources</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
         <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
-          <div class="median-block"><fieldset id="period" class="period"><legend class="sr-only">Sales period</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
-            <p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
+          <h3 class="price-source-title">acsearch</h3>
+          <div class="median-block"><p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
@@ -74,6 +75,20 @@
           <p id="prices-error" class="form-error" role="alert" hidden></p>
         </form>
         <div class="search-links"><a id="acsearch-link" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer">acsearch results</a><a id="coinarchives-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results</a></div>
+        <section class="coinarchives-prices" aria-labelledby="coinarchives-prices-title">
+          <div class="coinarchives-heading"><div><h3 id="coinarchives-prices-title">CoinArchives</h3><p class="field-hint">Public auction results</p></div><button id="coinarchives-prices-button" class="secondary-button" type="button"><span id="coinarchives-prices-label">Get CoinArchives prices</span></button></div>
+          <p id="coinarchives-prices-error" class="form-error" role="alert" hidden></p>
+          <div id="coinarchives-prices-panel" hidden>
+            <p id="coinarchives-query" class="price-query"></p>
+            <p class="metric-label">Recorded hammer median</p><p id="coinarchives-median-line" class="coinarchives-median-line"><strong id="coinarchives-median"></strong><span id="coinarchives-median-currency"></span></p>
+            <p id="coinarchives-sample" class="sale-strength"></p>
+            <p id="coinarchives-counts" class="price-note"></p>
+            <p id="coinarchives-coverage" class="price-basis">Coverage: auctions added in the past 6 months; first 100 results.</p>
+            <p class="price-basis">Basis: public CoinArchives hammer prices; buyer’s premium, tax and shipping excluded. No currency conversion.</p>
+            <details id="coinarchives-details" class="sale-details"><summary><span>Inspect used prices</span><span class="sale-count"><span id="coinarchives-sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="coinarchives-sale-list" class="sale-list"></ol></details>
+            <a id="coinarchives-source-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results <span aria-hidden="true">↗</span></a>
+          </div>
+        </section>
       </section>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>

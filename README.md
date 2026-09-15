@@ -1,6 +1,6 @@
 # Giga Pinax
 
-Giga Pinax 0.30.1 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+Giga Pinax 0.31.0 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
 
 Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
 
@@ -10,9 +10,11 @@ Version 0.30 bundles 52,254 active Roman Imperial type records and 2,808 replace
 
 Version 0.30.1 adds verified people to the RIC ruler/mint suggestions, including those missing from the mint-organised volumes VI–IX. For example, choose **VII**, enter **Constantine II** and **287**, or paste the lot description containing `OCRE ric.7.lon.287`. The local lookup distinguishes the obverse portrait from the issuing authority. Verified Latin names such as **Constantinus II** are recognised too. See [release notes](docs/RELEASE-0.30.1.md).
 
-Fetched acsearch rows remain in Research. Excluding a result updates the count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
+Version 0.31 adds a separate CoinArchives public-results median. In Research, select **Get CoinArchives prices** and allow optional site access. The extension reads one public results page and counts eligible hammer prices in the selected original currency, excluding upcoming auctions and missing prices. It shows its own query, sample and coverage: auctions added in the past six months, up to the first 100 matches. Currency values and the two providers' results are never pooled. CoinArchives Pro remains an external link.
 
-Price research starts from the entered reference independently of ANS catalogue lookup. With existing acsearch access, the extension fetches available hammer prices and calculates the median while catalogue details load separately. An ANS outage, missing match or request for a more specific type does not block price research. Prices still require an acsearch account with access to hammer prices; CoinArchives remains an external search link. Catalogue details arriving later do not replace the active price query or its curated results.
+Fetched provider rows remain in Research. Excluding an acsearch result updates its count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
+
+Price research starts from the entered reference independently of ANS catalogue lookup. With existing acsearch access, the extension fetches available hammer prices and calculates the median while catalogue details load separately. An ANS outage, missing match or request for a more specific type does not block price research. acsearch prices require an account with access to hammer prices; CoinArchives public prices do not require a Pro account. Catalogue details arriving later do not replace the active price query or its curated results.
 
 Captured auction context follows a coin into Research and an editable watchlist draft. Saving from a result carries the resolved reference, type link and available captured auction context; saving from Current source carries the reviewed capture. The collector confirms the record in the workspace. Duplicate auction identity opens the existing coin rather than silently merging it.
 
@@ -36,9 +38,9 @@ For updates, open **Settings**, find **Updates**, and select **Download latest u
 - In a selected coin, edit auction identity, measurements, condition, two photo links, sourced provenance and cost estimate. **Open auction** and **Research reference** lead to separate destinations. Select two to four coins to compare their recorded fields and labelled currencies.
 - Open **Settings** from the header or workspace for **Appearance**, default currency, saved house premiums, **Updates**, and backup/import.
 
-Useful examples include `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2`, `Bop Euthydemus I 24A`, `Price 23`, `RPC I 1234`, `SG 6829`, and `Netherlands KM# 123`. Ambiguous references produce choices rather than an invented result. CoinArchives free and Pro and RPC Online are links opened only when selected; Giga Pinax does not receive credentials or import paid results.
+Useful examples include `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2`, `Bop Euthydemus I 24A`, `Price 23`, `RPC I 1234`, `SG 6829`, and `Netherlands KM# 123`. Ambiguous references produce choices rather than an invented result. CoinArchives Pro and RPC Online are external links opened only when selected; Giga Pinax does not receive their credentials or import their paid results.
 
-Online lookups contact `numismatics.org`, `nomisma.org` and `www.acsearch.info` over HTTPS. Bundled RIC results do not contact ANS or Nomisma; independent auction-price research still contacts acsearch when enabled. GitHub is contacted only for a user-requested release download. Explicit collector-supplied comparison photos may come from HTTP or HTTPS hosts. See [the privacy policy](docs/PRIVACY.md).
+Online lookups contact `numismatics.org`, `nomisma.org` and `www.acsearch.info` over HTTPS. CoinArchives price requests contact `www.coinarchives.com` only after a dedicated user action and optional permission grant. Bundled RIC results do not contact ANS or Nomisma; independent auction-price research still contacts acsearch when enabled. GitHub is contacted only for a user-requested release download. Explicit collector-supplied comparison photos may come from HTTP or HTTPS hosts. See [the privacy policy](docs/PRIVACY.md).
 
 ## Development and release
 

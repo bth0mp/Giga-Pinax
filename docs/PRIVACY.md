@@ -1,6 +1,6 @@
 # Giga Pinax Privacy Policy
 
-Effective date: 14 September 2026
+Effective date: 15 September 2026
 
 Giga Pinax is a browser extension for ancient-coin research and local auction and collection records. It has no Giga Pinax account, analytics, advertising or developer-operated data server. Questions may be filed publicly through [GitHub Issues](https://github.com/bth0mp/Giga-Pinax/issues). Do not include private auction, payment or collection information in a public issue.
 
@@ -17,18 +17,19 @@ RIC reference lookups first check OCRE data packaged inside the extension. A loc
 When online research is requested, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
 
 - American Numismatic Society services at `numismatics.org` for public catalogue searches and type records;
-- Nomisma.org at `nomisma.org` for public numismatic terms and labels; and
-- acsearch.info at `www.acsearch.info` for the requested session sale-result search, using your existing acsearch browser session when available.
+- Nomisma.org at `nomisma.org` for public numismatic terms and labels;
+- acsearch.info at `www.acsearch.info` for the requested session sale-result search, using your existing acsearch browser session when available; and
+- CoinArchives at `www.coinarchives.com` for one public results page when you explicitly request CoinArchives prices and grant optional access. This request omits credentials and does not access CoinArchives Pro.
 
 These providers receive the request and ordinary connection data such as an IP address and process it under their own terms and privacy practices. Search text may appear in request URLs and provider logs. Giga Pinax does not control provider retention.
 
-CoinArchives free and Pro, RPC Online and GitHub release controls open external pages only when you choose them. Giga Pinax does not receive CoinArchives credentials or import paid data. A GitHub request occurs when you choose a release or update download; the extension does not poll GitHub in the background.
+CoinArchives price research is requested separately from acsearch. It sends the CoinArchives query shown in Research, calculates a separate median from readable public hammer prices in the selected original currency, and keeps those rows in memory for the current research session. It does not download coin images or follow additional result pages. CoinArchives Pro, RPC Online and external source links open only when you choose them. Giga Pinax does not receive CoinArchives credentials or import paid CoinArchives data. A GitHub request occurs when you choose a release or update download; the extension does not poll GitHub in the background.
 
 When you open saved-coin comparison, Giga Pinax may load the external photo URL links you entered. Those photo servers can use HTTP or HTTPS and receive an ordinary image request, including connection data such as your IP address. Images are lazy-loaded with no referrer. Photo servers are not contacted when you import, list or edit a coin, and a failed image shows an unavailable-image fallback.
 
 ## Storage, retention and deletion
 
-Saved records and preferences remain in the browser's extension storage on your device. They are not uploaded or synced to the developer. Fetched acsearch rows and inclusion choices remain in the current research session and are not automatically added to durable collection evidence.
+Saved records and preferences remain in the browser's extension storage on your device. They are not uploaded or synced to the developer. Fetched acsearch and CoinArchives rows, and acsearch inclusion choices, remain in the current research session and are not automatically added to durable collection evidence or backups. Optional CoinArchives host access can be revoked through the browser's extension permissions controls.
 
 You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
 

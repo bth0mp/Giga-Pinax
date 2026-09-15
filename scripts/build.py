@@ -48,6 +48,7 @@ ASSET_PATHS = (
     "navigation.js",
     "preferences.js",
     "prices.js",
+    "coinarchives-prices.js",
     "catalogues.js",
     "ric-people.js",
     "selection.js",

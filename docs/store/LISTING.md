@@ -26,7 +26,7 @@ Features include:
 - provenance, measurements, condition, external photo URL links and two-to-four coin comparison; and
 - browser-local records with explicit JSON backup and import.
 
-Research terms are sent over HTTPS to `numismatics.org`, `nomisma.org` or `www.acsearch.info` when needed for the lookup. acsearch uses the collector's existing provider session. CoinArchives free and Pro and RPC Online are external links opened only when selected; Giga Pinax does not receive credentials or import paid results. GitHub is contacted when the collector chooses a release download.
+Research terms are sent over HTTPS to `numismatics.org`, `nomisma.org` or `www.acsearch.info` when needed for the lookup. acsearch uses the collector's existing provider session. A separate **Get CoinArchives prices** action requests optional access to `www.coinarchives.com` and reads one public results page without credentials. Its median uses only the selected original currency and identifies the public archive's coverage and result limit. CoinArchives Pro and RPC Online remain external links; Giga Pinax does not receive their credentials or import their paid results. GitHub is contacted when the collector chooses a release download.
 
 Saved records stay in browser extension storage. Giga Pinax stores external photo URL links, not photo binaries. A collector-specified HTTP or HTTPS photo server is contacted only after saved-coin comparison opens, and each image is lazy-loaded without a referrer. Fetched acsearch rows and curation remain session-only.
 

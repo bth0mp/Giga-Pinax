@@ -42,6 +42,7 @@ ASSETS = {
     "navigation.js",
     "preferences.js",
     "prices.js",
+    "coinarchives-prices.js",
     "catalogues.js",
     "ric-people.js",
     "selection.js",
@@ -75,7 +76,7 @@ class ManifestTests(unittest.TestCase):
                 manifest = self.load_manifest(browser)
                 self.assertEqual(3, manifest["manifest_version"])
                 self.assertEqual("Giga Pinax", manifest["name"])
-                self.assertEqual("0.30.1", manifest["version"])
+                self.assertEqual("0.31.0", manifest["version"])
                 self.assertEqual("popup.html", manifest["action"]["default_popup"])
                 self.assertEqual(
                     {"_execute_action": {"suggested_key": {"default": "Alt+Shift+G"}, "description": "Open Giga Pinax"}},
@@ -109,7 +110,8 @@ class ManifestTests(unittest.TestCase):
                     expected.add("sidePanel")
                 self.assertEqual(expected, set(manifest["permissions"]))
                 self.assertEqual(["notifications"], manifest["optional_permissions"])
-                for key in ("optional_host_permissions", "content_scripts", "offscreen"):
+                self.assertEqual(["https://www.coinarchives.com/*"], manifest["optional_host_permissions"])
+                for key in ("content_scripts", "offscreen"):
                     self.assertNotIn(key, manifest)
                 self.assertNotIn("tabs", manifest["permissions"])
 
@@ -160,7 +162,7 @@ class PackageBuildTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
 
         zip_paths = {
-            browser: DIST / f"giga-pinax-{browser}-0.30.1.zip"
+            browser: DIST / f"giga-pinax-{browser}-0.31.0.zip"
             for browser in ("brave", "firefox")
         }
         stable_zip_paths = {

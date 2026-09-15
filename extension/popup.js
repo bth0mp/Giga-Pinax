@@ -5,6 +5,7 @@ import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, s
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { shouldRevealRefine } from './companion-popup.js';
+import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,7 @@ const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const ACSEARCH_HOME = 'https://www.acsearch.info/';
+const COINARCHIVES_ORIGIN = 'https://www.coinarchives.com/*';
 const COINARCHIVES_HOME = 'https://www.coinarchives.com/';
 const EMPTY_OTHER_MESSAGE = 'Enter a reference, such as “BCD Boiotia 174b”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
@@ -44,6 +46,8 @@ let currentCard = null;
 let researchContext = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
+let shownCoinArchivesPrices = null;
+let coinArchivesRequestId = 0;
 const priceCuration = createPriceCuration();
 const verifiedPriceCards = new WeakMap();
 const requestedPriceContexts = new WeakSet();
@@ -242,7 +246,7 @@ function resetCopyLabel() {
   $('copy-summary').textContent = 'Copy summary';
 }
 
-function clearPrices() {
+function clearAcsearchPrices() {
   priceRequestId += 1;
   priceCuration.reset();
   shownPrices = null;
@@ -257,6 +261,22 @@ function clearPrices() {
   $('prices-note').hidden = true;
   $('signin-link').hidden = true;
   setPricesBusy(false);
+}
+
+function clearCoinArchivesPrices() {
+  coinArchivesRequestId += 1;
+  shownCoinArchivesPrices = null;
+  $('coinarchives-prices-panel').hidden = true;
+  $('coinarchives-prices-error').hidden = true;
+  $('coinarchives-prices-error').textContent = '';
+  $('coinarchives-details').open = false;
+  $('coinarchives-prices-button').disabled = false;
+  $('coinarchives-prices-label').textContent = 'Get CoinArchives prices';
+}
+
+function clearPrices() {
+  clearAcsearchPrices();
+  clearCoinArchivesPrices();
 }
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
@@ -652,6 +672,88 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('announcement').textContent = empty ? none : `${heading} ${spoken} from ${count} recorded ${count === 1 ? 'sale' : 'sales'}.`;
 }
 
+function setCoinArchivesBusy(busy) {
+  $('coinarchives-prices-button').disabled = busy;
+  $('coinarchives-prices-label').textContent = busy ? 'Fetching…' : 'Get CoinArchives prices';
+}
+
+const coinArchivesCounts = (outcome, currency) => {
+  const otherCurrencies = Object.entries(outcome.availableCurrencyCounts ?? {}).filter(([code]) => code !== currency)
+    .map(([code, count]) => `${count} ${code}`).join(', ');
+  const excluded = outcome.excluded ?? {};
+  return [`${outcome.matchedCount} public results matched · ${outcome.renderedCount} rendered`, `${outcome.selectedLots.length} completed ${currency} prices available`,
+    otherCurrencies && `Other currencies not converted: ${otherCurrencies}`, excluded.unpriced && `${excluded.unpriced} unpriced`,
+    excluded.upcoming && `${excluded.upcoming} upcoming`, excluded.toBePosted && `${excluded.toBePosted} price${excluded.toBePosted === 1 ? '' : 's'} to be posted`,
+    excluded.malformedPrice && `${excluded.malformedPrice} unreadable price${excluded.malformedPrice === 1 ? '' : 's'}`,
+    excluded.malformedDate && `${excluded.malformedDate} unreadable date${excluded.malformedDate === 1 ? '' : 's'}`,
+    excluded.futureDate && `${excluded.futureDate} future-dated`, excluded.duplicateId && `${excluded.duplicateId} duplicate ${excluded.duplicateId === 1 ? 'row' : 'rows'}`,
+    excluded.conflictingId && `${excluded.conflictingId} conflicting ${excluded.conflictingId === 1 ? 'row' : 'rows'}`].filter(Boolean).join(' · ');
+};
+
+function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false) {
+  if (!shown || shown.context !== researchContext) return;
+  const { outcome, currency, context } = shown;
+  const period = PERIODS.find((entry) => entry.value === preferences.period);
+  const used = lotsInPeriod(outcome.selectedLots, period.value, localDay(new Date()));
+  const summary = summarise(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
+  summary.priced = used;
+  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const median = summary.count ? money.format(summary.median) : '—';
+  for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
+  $('coinarchives-query').textContent = `Query: ${outcome.term}`;
+  $('coinarchives-median').textContent = summary.count ? median : '';
+  $('coinarchives-median-line').hidden = summary.count === 0;
+  $('coinarchives-median-currency').textContent = summary.count && !median.includes(currency) ? currency : '';
+  const dates = used.map(({ date }) => date).sort();
+  const formatDate = (date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+  const dateSpan = dates.length ? `, ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
+  $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}${dateSpan}`
+    : `${period.label}: No recorded sales in this period.`;
+  $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
+  $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
+  $('coinarchives-sale-count').textContent = String(summary.count);
+  $('coinarchives-details').hidden = summary.count === 0;
+  $('coinarchives-sale-list').replaceChildren(...summary.priced.map((sale) => {
+    const row = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = sale.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = `${sale.date} · ${sale.title || `Lot ${sale.id}`}`;
+    const amount = document.createElement('strong');
+    amount.textContent = money.format(sale.amount);
+    row.append(link, amount);
+    return row;
+  }));
+  $('coinarchives-source-link').href = outcome.url;
+  $('coinarchives-prices-error').hidden = true;
+  $('coinarchives-prices-panel').hidden = false;
+  shownCoinArchivesPrices = { context, outcome, currency, summary };
+  if (named) $('announcement').textContent = summary.count
+    ? `${period.label}: CoinArchives median ${median} from ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}.`
+    : 'CoinArchives: No recorded sales in this period.';
+}
+
+function showCoinArchivesError(message) {
+  shownCoinArchivesPrices = null;
+  $('coinarchives-prices-panel').hidden = true;
+  $('coinarchives-prices-error').textContent = message;
+  $('coinarchives-prices-error').hidden = false;
+  $('announcement').textContent = message;
+}
+
+function coinArchivesFailure(outcome, currency) {
+  if (outcome.status === 'empty') return `CoinArchives returned no public results for “${outcome.term}”.`;
+  if (outcome.status === 'closest') return `CoinArchives showed a different closest search instead of “${outcome.term}”. Open the results to review it.`;
+  if (outcome.status === 'no-currency') {
+    const available = Object.entries(outcome.availableCurrencyCounts ?? {}).map(([code, count]) => `${count} ${code}`).join(', ');
+    return `No completed public sales in ${currency}.${available ? ` Available without conversion: ${available}.` : ''}`;
+  }
+  if (outcome.status === 'unpriced') return 'CoinArchives returned public results, but no completed sales with a recorded hammer price.';
+  if (outcome.status === 'layout') return 'CoinArchives results could not be read. Open the public results to review them.';
+  return 'Couldn’t reach CoinArchives. Check your connection and try again.';
+}
+
 // Checked against the sales shown, never stored: blank shows nothing, text parsePrice can't read asks for an amount, and a readable one says how many
 // sales it tops and its multiple of the median. Its marker sits where it falls on the lowest–highest line, or at an end with a caret pointing out.
 // A period without a counted sale hides the check and has nothing to weigh it against.
@@ -767,7 +869,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   }
   requestedPriceContexts.add(context);
   updateAcsearchLink();
-  clearPrices();
+  clearAcsearchPrices();
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
@@ -971,10 +1073,12 @@ $('check-amount').addEventListener('input', showCheck);
 $('period').addEventListener('change', (event) => {
   preferences = { ...preferences, period: event.target.value };
   savePreferences();
-  if (!shownPrices) return;
-  resetCopyLabel();
-  renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term, true);
-  showCheck();
+  if (shownPrices) {
+    resetCopyLabel();
+    renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term, true);
+    showCheck();
+  }
+  if (shownCoinArchivesPrices) renderCoinArchivesPrices(shownCoinArchivesPrices, true);
 });
 // writeText is the first call in the click, so it keeps the user gesture; a missing clipboard API throws here and is reported like a refusal.
 // Success relabels the button for 2 seconds; a newer copy restarts the timer, and clearPrices() puts the label back at once.
@@ -997,17 +1101,45 @@ $('prices-form').addEventListener('submit', async (event) => {
   const context = researchContext;
   if (!context || $('prices-button').disabled) return;
   const term = $('price-term').value.trim();
-  if (!term) { clearPrices(); showPricesError(EMPTY_TERM_MESSAGE); return; }
+  if (!term) { clearAcsearchPrices(); showPricesError(EMPTY_TERM_MESSAGE); return; }
   const currency = $('currency').value;
   const access = requestHostAccess([ACSEARCH_ORIGIN]);
-  clearPrices();
+  clearAcsearchPrices();
   setPricesBusy(true);
   // Every change that bumps priceRequestId goes through clearPrices(), which also resets the button, so returning here never leaves it disabled.
   const ticket = priceRequestId;
   const allowed = await access;
   if (ticket !== priceRequestId) return;
-  if (!allowed) { clearPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
+  if (!allowed) { clearAcsearchPrices(); showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
   runPrices(term, currency, { context });
+});
+$('coinarchives-prices-button').addEventListener('click', async () => {
+  const context = researchContext;
+  if (!context || $('coinarchives-prices-button').disabled) return;
+  const access = requestHostAccess([COINARCHIVES_ORIGIN]);
+  const ticket = ++coinArchivesRequestId;
+  const term = coinArchivesTerm(context.reference) || context.label;
+  const section = coinArchivesSection(context.reference);
+  const currency = $('currency').value;
+  $('coinarchives-prices-error').hidden = true;
+  setCoinArchivesBusy(true);
+  const allowed = await access;
+  if (ticket !== coinArchivesRequestId || context !== researchContext) return;
+  if (!allowed) {
+    setCoinArchivesBusy(false);
+    showCoinArchivesError('Giga Pinax needs permission to contact CoinArchives for public prices. Select “Get CoinArchives prices” again to allow it.');
+    return;
+  }
+  let outcome;
+  try { outcome = await fetchCoinArchivesPrices({ term, section, currency }); }
+  catch { outcome = { status: 'network', term, section }; }
+  if (ticket !== coinArchivesRequestId || context !== researchContext) return;
+  setCoinArchivesBusy(false);
+  if (outcome.status === 'ok') {
+    shownCoinArchivesPrices = { context, outcome, currency };
+    renderCoinArchivesPrices();
+    revealAgain('research-prices');
+  } else showCoinArchivesError(coinArchivesFailure(outcome, currency));
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));
 // Browsers fix a toolbar popup's size, so the pop-out shows the popup in a window you can resize and closes itself: the lookup window when one is open,

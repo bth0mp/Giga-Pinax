@@ -157,7 +157,7 @@ export function chooseTerm(reference, saved) {
   return term;
 }
 
-// CoinArchives is only a link the collector opens (nothing is fetched), and its search takes plain words, so acsearch's quotes and either-or
+// CoinArchives links and explicit public-price requests use plain words, so acsearch's quotes and either-or
 // brackets never carry over: RRC, SC and Price already search as plain words; RIC is its acsearch term with a number's bracket opened, keeping
 // the word OCRE tells types apart by ("266 (aureus)" as "266 aureus"); Bop is the king and series (the old v0.12 term); an Other reference is its
 // first searchable ";" part, cleaned as for acsearch, an SG part as "Sear N", the way most dealers cite it.

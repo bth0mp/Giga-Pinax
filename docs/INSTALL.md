@@ -1,10 +1,12 @@
-# Install Giga Pinax 0.30.1
+# Install Giga Pinax 0.31.0
 
 Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.30.0 adds bundled OCRE/RIC reference data; acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
 
 Version 0.30.1 expands RIC ruler suggestions and fixes lookups in mint-organised volumes. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**. The included catalogue resolves **RIC VII Londinium 287** locally. Updating only requires replacing the extension files and reloading as described below.
 
-Fetched acsearch rows and inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
+Version 0.31.0 adds a separate CoinArchives public-results median. After a lookup, select **Get CoinArchives prices** and allow optional site access. It uses public hammer prices in the selected currency, with the archive's recent-additions and first-100-results limits shown alongside the sample. CoinArchives Pro remains a link to its own site.
+
+Fetched acsearch and CoinArchives rows and acsearch inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
 ## Brave or Chrome
 
@@ -15,7 +17,7 @@ Fetched acsearch rows and inclusion choices stay in the current Research session
 5. Enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`.
 6. Open Giga Pinax from the extensions menu and pin it if desired.
 
-The extension requests access to the HTTPS research providers `numismatics.org`, `nomisma.org` and `www.acsearch.info`. GitHub opens only when you request a release download. An external photo link may use HTTP or HTTPS; its server is contacted only when you open saved-coin comparison.
+The extension requests access to the HTTPS research providers `numismatics.org`, `nomisma.org` and `www.acsearch.info`. Access to `www.coinarchives.com` is optional and requested when you select **Get CoinArchives prices**. GitHub opens only when you request a release download. An external photo link may use HTTP or HTTPS; its server is contacted only when you open saved-coin comparison.
 
 To update, open **Settings**, find **Updates**, and select **Download latest update**. Replace the files in the same extracted folder, select **Reload** on the extensions page, and reopen Giga Pinax. The extension does not install files silently.
 
@@ -42,7 +44,7 @@ Bundled RIC results work even if ANS access is disabled in `about:addons`. If an
 5. Select two to four saved coins and open comparison. Photo servers are contacted at this point only; an unavailable image does not block comparison.
 6. Open **Settings** for bundled catalogue coverage, **Appearance**, default currency, saved house premiums, **Updates**, and backup/import. Try `RIC II.1² Vespasian 972` with ANS access disabled to check a local type record. Prices still need internet access and an eligible acsearch session.
 
-CoinArchives free and Pro and RPC Online open only when selected. Giga Pinax does not receive credentials or import paid results. acsearch research uses your existing provider session; sign in on acsearch itself if your account is needed to see hammer prices.
+CoinArchives public prices load only when you select **Get CoinArchives prices** and grant optional access. CoinArchives Pro and RPC Online remain external links. Giga Pinax does not receive their credentials or import their paid results. acsearch research uses your existing provider session; sign in on acsearch itself if your account is needed to see hammer prices.
 
 ## Developer build
 

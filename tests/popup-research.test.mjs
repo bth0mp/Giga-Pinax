@@ -11,6 +11,7 @@ import * as selection from '../extension/selection.js';
 import * as lot from '../extension/lot.js';
 import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
+import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
 
 const deferred = () => {
   let resolve;
@@ -58,7 +59,7 @@ class TestElement {
   setSelectionRange() {}
 }
 
-async function loadPopup({ permissionRequest, priceFetch, localProvider = null, permissionContains = async () => true }) {
+async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null, permissionContains = async () => true }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -87,9 +88,10 @@ async function loadPopup({ permissionRequest, priceFetch, localProvider = null, 
   window.open = () => {};
   window.close = () => {};
   const sandbox = {
-    ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue,
+    ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue, ...coinArchivesPrices,
     createLocalCatalogue: () => localProvider,
     fetchPrices: priceFetch,
+    fetchCoinArchivesPrices: coinArchivesFetch,
     browser,
     document,
     window,
@@ -119,6 +121,125 @@ const oneSale = {
   status: 'ok',
   lots: [{ id: 'sale-1', title: 'Price 23', date: '2025-01-01', price: '120' }],
 };
+
+const coinArchivesSale = {
+  status: 'ok', source: 'coinarchives-public', term: 'Price 23', section: 'a', url: 'https://www.coinarchives.com/a/results.php?search=Price+23&s=0',
+  matchedCount: 3, renderedCount: 3, cap: 100, capped: false,
+  lots: [{ id: 'ca-1', title: 'Auction 1, Lot 2', date: '2025-02-01', price: 'USD 150', amount: 150, currency: 'USD', url: 'https://www.coinarchives.com/a/lotviewer.php?LotID=1', source: 'coinarchives' }],
+  selectedLots: [{ id: 'ca-1', title: 'Auction 1, Lot 2', date: '2025-02-01', price: 'USD 150', amount: 150, currency: 'USD', url: 'https://www.coinarchives.com/a/lotviewer.php?LotID=1', source: 'coinarchives' }],
+  summary: { count: 1, median: 150, earliest: 2025, latest: 2025 }, availableCurrencyCounts: { EUR: 1, USD: 1 },
+  excluded: { upcoming: 1, toBePosted: 0, unpriced: 1, malformedPrice: 0, malformedDate: 0, futureDate: 0, duplicateId: 0, conflictingId: 0 }, dateSpan: { earliest: '2025-02-01', latest: '2025-02-01' },
+};
+
+test('CoinArchives prices require a dedicated click and render a separate public-source median', async () => {
+  const permission = deferred();
+  let calls = 0;
+  let requestedOrigins;
+  const popup = await loadPopup({
+    permissionRequest: ({ origins }) => { requestedOrigins = origins; return permission.promise; },
+    permissionContains: async ({ origins }) => !origins.includes('https://www.coinarchives.com/*'),
+    priceFetch: async () => oneSale,
+    coinArchivesFetch: async () => { calls += 1; return coinArchivesSale; },
+  });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(calls, 0);
+  const click = popup.element('coinarchives-prices-button').emit('click');
+  assert.equal([...requestedOrigins].join(','), 'https://www.coinarchives.com/*');
+  assert.equal(calls, 0);
+  permission.resolve(true);
+  await click;
+  await settle();
+  assert.equal(calls, 1);
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, false);
+  assert.match(popup.element('coinarchives-median').textContent, /150/);
+  assert.match(popup.element('coinarchives-sample').textContent, /1 recorded sale.*2025/);
+  assert.match(popup.element('coinarchives-coverage').textContent, /added in the past 6 months.*first 100 results/i);
+  assert.match(popup.element('coinarchives-counts').textContent, /Other currencies not converted: 1 EUR.*1 unpriced.*1 upcoming/);
+  assert.equal(popup.element('prices-panel').hidden, false);
+  popup.element('price-term').value = 'edited only for acsearch';
+  await popup.element('price-term').emit('input');
+  assert.equal(popup.element('coinarchives-query').textContent, 'Query: Price 23');
+});
+
+test('CoinArchives refresh does not reset acsearch exclusions', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const exclude = popup.element('sale-list').children[0].children[2];
+  await exclude.emit('click');
+  assert.equal(popup.element('curation-count').textContent, '0 included · 1 excluded');
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('curation-count').textContent, '0 included · 1 excluded');
+});
+
+test('CoinArchives period redraw never displays a zero median and a failed retry cannot resurrect old results', async () => {
+  let attempt = 0;
+  const old = { ...coinArchivesSale, selectedLots: coinArchivesSale.selectedLots.map((sale) => ({ ...sale, date: '2020-02-01' })) };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    coinArchivesFetch: async () => (++attempt === 1 ? old : { ...coinArchivesSale, status: 'network' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  popup.element('period').elements[2].checked = true;
+  await popup.element('period').emit('change', { target: { value: '2y' } });
+  assert.equal(popup.element('coinarchives-median-line').hidden, true);
+  assert.match(popup.element('coinarchives-sample').textContent, /No recorded sales in this period/);
+  assert.equal(popup.element('announcement').textContent, 'CoinArchives: No recorded sales in this period.');
+  await popup.element('coinarchives-prices-button').emit('click');
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+  await popup.element('period').emit('change', { target: { value: 'all' } });
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+});
+
+test('a denied or failed CoinArchives request leaves acsearch results and its edited term intact', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => false, priceFetch: async () => oneSale, coinArchivesFetch: async () => { throw new Error('must not fetch'); } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('price-term').value = 'edited acsearch term';
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(popup.element('price-term').value, 'edited acsearch term');
+  assert.match(popup.element('coinarchives-prices-error').textContent, /permission/i);
+});
+
+test('a reference edit prevents a delayed CoinArchives result from rendering', async () => {
+  const result = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: () => result.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const click = popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  result.resolve(coinArchivesSale);
+  await click;
+  await settle();
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+});
+
+test('a currency change prevents a delayed old-currency CoinArchives result from rendering', async () => {
+  const result = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: () => result.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const click = popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  popup.element('currency').value = 'GBP';
+  await popup.element('currency').emit('change');
+  result.resolve(coinArchivesSale);
+  await click;
+  await settle();
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+});
 
 test('guided lookup starts and displays prices while catalogue permission is still pending', async () => {
   const ans = deferred();

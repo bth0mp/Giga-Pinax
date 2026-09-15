@@ -153,6 +153,19 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .search-links a {flex:0 1 auto; white-space:nowrap; font-size:12px;}
 .research-prices {padding:16px;}
 .research-prices h2 {font-size:14px; margin:0 0 4px;}
+.source-period {margin-top:10px;}
+.price-source-title,.coinarchives-prices h3 {font-size:13px; margin:0;}
+.coinarchives-prices {margin-top:16px; padding-top:14px; border-top:1px solid var(--gold-line);}
+.coinarchives-heading {display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.coinarchives-heading .field-hint {margin:2px 0 0;}
+.coinarchives-heading button {flex:0 0 auto;}
+.secondary-button {min-height:34px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--accent); font-size:11px; font-weight:650;}
+.secondary-button[disabled] {opacity:.6; cursor:progress;}
+.price-query {font-size:11px; color:var(--muted); margin:12px 0 8px; overflow-wrap:anywhere;}
+.coinarchives-median-line {display:flex; align-items:baseline; gap:5px; margin:2px 0;}
+.coinarchives-median-line strong {font-family:var(--font-serif); font-size:26px; line-height:1; font-weight:700; color:var(--ink);}
+#coinarchives-median-currency {font-size:12px; color:var(--muted);}
+#coinarchives-source-link {display:inline-block; margin-top:10px; font-size:12px;}
 .popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
 .popup-footer a {text-decoration:none; padding:4px 0;}
 .popup-footer a:hover {text-decoration:underline;}
