@@ -1,6 +1,6 @@
 # Giga Pinax
 
-Giga Pinax 0.31.0 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+Giga Pinax 0.31.1 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
 
 Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
 
@@ -11,6 +11,8 @@ Version 0.30 bundles 52,254 active Roman Imperial type records and 2,808 replace
 Version 0.30.1 adds verified people to the RIC ruler/mint suggestions, including those missing from the mint-organised volumes VI–IX. For example, choose **VII**, enter **Constantine II** and **287**, or paste the lot description containing `OCRE ric.7.lon.287`. The local lookup distinguishes the obverse portrait from the issuing authority. Verified Latin names such as **Constantinus II** are recognised too. See [release notes](docs/RELEASE-0.30.1.md).
 
 Version 0.31 adds a separate CoinArchives public-results median. In Research, select **Get CoinArchives prices** and allow optional site access. The extension reads one public results page and counts eligible hammer prices in the selected original currency, excluding upcoming auctions and missing prices. It shows its own query, sample and coverage: auctions added in the past six months, up to the first 100 matches. Currency values and the two providers' results are never pooled. CoinArchives Pro remains an external link.
+
+Version 0.31.1 fixes **Refine reference** searches. With the top search box empty, select the catalogue and enter its reference fields, then select **Search** or press Enter in a field. RIC volume and ruler fields work the same way, including restored valid values. Old text left in the top box no longer overrides a newly refined reference. Native top-box lookup safety remains in place. See [release notes](docs/RELEASE-0.31.1.md).
 
 Fetched provider rows remain in Research. Excluding an acsearch result updates its count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
 

@@ -1,10 +1,12 @@
-# Install Giga Pinax 0.31.0
+# Install Giga Pinax 0.31.1
 
 Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.30.0 adds bundled OCRE/RIC reference data; acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
 
 Version 0.30.1 expands RIC ruler suggestions and fixes lookups in mint-organised volumes. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**. The included catalogue resolves **RIC VII Londinium 287** locally. Updating only requires replacing the extension files and reloading as described below.
 
 Version 0.31.0 adds a separate CoinArchives public-results median. After a lookup, select **Get CoinArchives prices** and allow optional site access. It uses public hammer prices in the selected currency, with the archive's recent-additions and first-100-results limits shown alongside the sample. CoinArchives Pro remains a link to its own site.
+
+Version 0.31.1 restores direct searches from **Refine reference**. Leave the top box empty, choose a catalogue, fill its reference fields, and select **Search** or press Enter in a field. For RIC, the volume and ruler fields participate in the same search. Restored valid field values also work, while stale text in the top box no longer replaces the refined reference.
 
 Fetched acsearch and CoinArchives rows and acsearch inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
@@ -19,7 +21,7 @@ Fetched acsearch and CoinArchives rows and acsearch inclusion choices stay in th
 
 The extension requests access to the HTTPS research providers `numismatics.org`, `nomisma.org` and `www.acsearch.info`. Access to `www.coinarchives.com` is optional and requested when you select **Get CoinArchives prices**. GitHub opens only when you request a release download. An external photo link may use HTTP or HTTPS; its server is contacted only when you open saved-coin comparison.
 
-To update, open **Settings**, find **Updates**, and select **Download latest update**. Replace the files in the same extracted folder, select **Reload** on the extensions page, and reopen Giga Pinax. The extension does not install files silently.
+To update, open **Settings**, find **Updates**, and select **Download latest update**. Download and extract the new Brave ZIP, replace the files in the same extracted folder, select **Reload** on `brave://extensions` or `chrome://extensions`, and reopen Giga Pinax. The extension does not install files silently.
 
 ## Temporary Firefox installation
 
@@ -31,7 +33,7 @@ Use Firefox 142 or later.
 4. Select **Load Temporary Add-on** and choose the downloaded ZIP.
 5. Open Giga Pinax from Firefox's extensions menu.
 
-Firefox removes a temporary add-on when Firefox restarts. Permanent installation requires a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). To update a temporary installation, open **Settings** → **Updates**, download the latest ZIP, and load it again through `about:debugging`.
+Firefox removes a temporary unsigned add-on when Firefox restarts. Permanent installation requires a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). To update a temporary installation on Firefox 142 or later, open **Settings** → **Updates**, download the latest Firefox ZIP, and load it again through `about:debugging`.
 
 Bundled RIC results work even if ANS access is disabled in `about:addons`. If an online fallback needs access, select **Check online**; other catalogue lookups and **Get prices** request their respective provider access. If the popup closes during a permission prompt, reopen it and repeat the action.
 

@@ -59,7 +59,8 @@ class TestElement {
   setSelectionRange() {}
 }
 
-async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null, permissionContains = async () => true }) {
+async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
+  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -70,6 +71,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   element('reference-number').value = '23';
   element('period').elements = ['all', '5y', '2y'].map((value) => Object.assign(new TestElement(), { value }));
   element('ric-volume').selectedOptions = [{ label: 'Any volume' }];
+  element('reference-form').reportValidity = () => formValidity;
 
   const document = {
     activeElement: null,
@@ -92,6 +94,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     createLocalCatalogue: () => localProvider,
     fetchPrices: priceFetch,
     fetchCoinArchivesPrices: coinArchivesFetch,
+    lookupType: lookupTypeImpl,
     browser,
     document,
     window,
@@ -114,7 +117,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element };
+  return { element, document };
 }
 
 const oneSale = {
@@ -130,6 +133,65 @@ const coinArchivesSale = {
   summary: { count: 1, median: 150, earliest: 2025, latest: 2025 }, availableCurrencyCounts: { EUR: 1, USD: 1 },
   excluded: { upcoming: 1, toBePosted: 0, unpriced: 1, malformedPrice: 0, malformedDate: 0, futureDate: 0, duplicateId: 0, conflictingId: 0 }, dateSpan: { earliest: '2025-02-01', latest: '2025-02-01' },
 };
+
+test('the refined Search submits restored fields with an empty or stale top Reference', async () => {
+  const lookedUp = [];
+  const card = { id: 'rrc-234.1', corpus: 'crro', label: 'RRC 234/1', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'ok', card }; } });
+  popup.element('catalogue').value = 'RRC';
+  popup.element('reference-number').value = '234/1';
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  await settle();
+  assert.equal(popup.element('quick-reference').value, '');
+  assert.equal(lookedUp.length, 1);
+  assert.equal(lookedUp[0].catalogue, 'RRC');
+  assert.equal(lookedUp[0].number, '234/1');
+});
+
+test('Enter in a refined text input uses refined fields even when restored fields were untouched', async () => {
+  const lookedUp = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'none', corpus: 'crro', query: 'RRC 234/1' }; } });
+  popup.element('catalogue').value = 'RRC';
+  popup.element('reference-number').value = '234/1';
+  popup.document.activeElement = popup.element('reference-number');
+  await popup.element('reference-form').emit('submit');
+  assert.equal(lookedUp.length, 1);
+  assert.equal(lookedUp[0].number, '234/1');
+});
+
+test('refined Search validates before requesting permission or fetching', async () => {
+  let permissions = 0, lookups = 0;
+  const popup = await loadPopup({ permissionRequest: async () => { permissions += 1; return true; }, priceFetch: async () => ({ status: 'empty' }), formValidity: false,
+    lookupTypeImpl: async () => { lookups += 1; return { status: 'network' }; } });
+  popup.element('catalogue').value = 'RRC';
+  popup.element('reference-number').value = '';
+  await popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  assert.equal(permissions, 0);
+  assert.equal(lookups, 0);
+});
+
+test('refined and quick submitters share busy state while keeping empty quick submission safe', async () => {
+  const lookupResult = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: () => lookupResult.promise });
+  popup.element('catalogue').value = 'RRC';
+  popup.element('reference-number').value = '234/1';
+  const submission = popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  await settle();
+  assert.equal(popup.element('lookup-button').disabled, true);
+  assert.equal(popup.element('refine-lookup-button').disabled, true);
+  assert.equal(popup.element('lookup-label').textContent, 'Looking up…');
+  assert.equal(popup.element('refine-lookup-label').textContent, 'Searching…');
+  lookupResult.resolve({ status: 'none', corpus: 'crro', query: 'RRC 234/1' });
+  await submission;
+  const safe = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  safe.element('quick-reference').value = '';
+  await safe.element('reference-form').emit('submit', { submitter: safe.element('lookup-button') });
+  assert.match(safe.element('form-error').textContent, /Type a reference/i);
+});
 
 test('CoinArchives prices require a dedicated click and render a separate public-source median', async () => {
   const permission = deferred();

@@ -56,6 +56,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .primary-button:hover {background:var(--accent-hover);}
 .primary-button svg {width:16px; height:16px; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; fill:none;}
 .primary-button[disabled] {opacity:.6; cursor:progress;}
+.refine-lookup-button {width:100%; margin-top:10px;}
 .field-hint {font-size:11px; line-height:1.4; color:var(--muted); margin-top:6px;}
 .ric-fields {display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); column-gap:12px; row-gap:4px; margin-bottom:12px;}
 /* What the tool changed by itself, under the fields it changed. Its line is always there, empty or not, so the message never moves the fields. */

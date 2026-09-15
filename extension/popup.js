@@ -324,7 +324,9 @@ function showError(message, field) {
 
 function setBusy(busy) {
   $('lookup-button').disabled = busy;
+  $('refine-lookup-button').disabled = busy;
   $('lookup-label').textContent = busy ? 'Looking up…' : 'Look up';
+  $('refine-lookup-label').textContent = busy ? 'Searching…' : 'Search';
 }
 
 // A card's title stands in for an empty term, but only when the reference gives words at all: a chip stored before 0.22 from a pasted description
@@ -1030,18 +1032,24 @@ $('reference-form').addEventListener('input', (event) => {
 });
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or "Price P1", would read as lot text.
-  const entry = preferences.recent[recalled];
-  if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
-  // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.
-  if (isLot($('quick-reference').value)) { showLot($('quick-reference').value); return; }
-  // The button sits beside the Reference box, so an empty box looks up nothing: the stored or example number below it was never typed, and looking it
-  // up would open a coin nobody asked about. Fields the collector has chosen or edited himself still answer for it.
-  if (!$('quick-reference').value.trim() && !guidedTouched) { clearOutput(); showError(EMPTY_QUICK_MESSAGE, 'quick-reference'); return; }
+  const activeRefinedInput = ['ric-section', 'reference-number'].includes(document.activeElement?.id);
+  const refinedSubmit = event.submitter?.id === 'refine-lookup-button' || activeRefinedInput;
+  if (refinedSubmit) {
+    $('quick-reference').value = '';
+  } else {
+    // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or "Price P1", would read as lot text.
+    const entry = preferences.recent[recalled];
+    if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
+    // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.
+    if (isLot($('quick-reference').value)) { showLot($('quick-reference').value); return; }
+    // The button sits beside the Reference box, so an empty box looks up nothing: the stored or example number below it was never typed, and looking it
+    // up would open a coin nobody asked about. Fields the collector has chosen or edited himself still answer for it.
+    if (!$('quick-reference').value.trim() && !guidedTouched) { clearOutput(); showError(EMPTY_QUICK_MESSAGE, 'quick-reference'); return; }
+  }
   clearLot();
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
-  if (!applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
+  if (!refinedSubmit && !applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
   if (!$('reference-form').reportValidity()) {
     $('form-error').hidden = true;
     $('form-error').textContent = '';
