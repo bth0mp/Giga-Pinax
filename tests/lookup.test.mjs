@@ -132,8 +132,8 @@ test('filingNote explains a RIC filing only when the record says so, and is sile
   assert.equal(filingNote(card('RIC II, Part 1 (second edition) Domitian 759', 'Domitian', 'Apollo')), '');
   assert.equal(filingNote(card('RIC IV Elagabalus 268', 'Elagabalus', 'Julia Maesa')), '');
   // A mint volume files by mint, so no ruler is the section and the sentence must not claim one.
-  assert.equal(filingNote(card('RIC IX Siscia 38C', 'Valentinian II', 'Arcadius')), '');
-  assert.equal(filingNote(card('RIC VI Londinium 1a', 'Maximian', 'Diocletian')), '');
+  assert.equal(filingNote(card('RIC IX Siscia 38C', 'Valentinian II', 'Arcadius')), 'Portrait of Arcadius; issuing authority Valentinian II.');
+  assert.equal(filingNote(card('RIC VI Londinium 1a', 'Maximian', 'Diocletian')), 'Portrait of Diocletian; issuing authority Maximian.');
   // A city personification heads a mint section, never a person's: the gate reads the ruler volumes only.
   assert.equal(filingNote(card('RIC I (second edition) Clodius Macer 22', 'Clodius Macer', 'Carthage')), '');
   // An authority whose nomisma label never resolved is a bare slug: the sentence prints RIC's own heading instead.
@@ -1011,6 +1011,29 @@ test('a typed ruler and number that OCRE files elsewhere retries once on the por
   assert.equal(any.calls.filter((url) => url.includes('/apis/search')).length, 2);
 });
 
+test('parseReference accepts verified mint-volume people and Latin aliases without a volume', () => {
+  assert.deepEqual(parseReference('RIC Constantine II 287'), { catalogue: 'RIC', number: '287', volume: '', section: 'Constantine II' });
+  assert.deepEqual(parseReference('RIC Constantinus II 287'), { catalogue: 'RIC', number: '287', volume: '', section: 'Constantinus II' });
+  assert.equal(parseReference('RIC Constantine IIII 287'), null);
+});
+
+test('a verified person typed in a mint-organised volume uses canonical person facets', async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(String(url));
+    return { ok: true, text: async () => '<feed><opensearch:totalResults>0</opensearch:totalResults></feed>' };
+  };
+  await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Constantinus II', number: '287' }, { fetchImpl });
+  assert.equal(calls.length, 1);
+  assert.match(decodeURIComponent(calls[0]), /portrait_facet:\"Constantine II\"/);
+  assert.doesNotMatch(decodeURIComponent(calls[0]), /title:\"RIC VII Constantinus II 287\"/);
+});
+
+test('a mint-filed card explains a verified obverse portrait distinct from its issuing authority', () => {
+  assert.equal(filingNote({ corpus: 'ocre', label: 'RIC VII Londinium 287', authority: 'Constantine I', portrait: 'Constantine II' }),
+    'Portrait of Constantine II; issuing authority Constantine I.');
+});
+
 test('a portrait-facet hit the card cannot explain is offered, never opened, and a retry that finds nothing keeps the original miss', async () => {
   // No portrait label resolves, so the card would say nothing about the other ruler: the collector chooses instead.
   const fetchImpl = fakeFetch({ 'portrait_facet': fixture('ocre-search-titus-972.xml'), 'ocre/apis/search': '<feed></feed>',
@@ -1064,14 +1087,24 @@ test('rulers from a lot text search OCRE portrait and authority facets without a
   const facets = '(typeNumber:"972" OR typeNumber:972_*) AND (portrait_facet:"Titus" OR authority_facet:"Titus")';
   const routes = { 'ocre/apis/search': fixture('ocre-search-titus-972.xml'), 'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld') };
   const fetchImpl = fakeFetch(routes);
-  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl, cache: new Map() });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl, cache: new Map([['titus', 'Titus']]) });
   assert.equal(result.status, 'ok');
   // Titus as Caesar sits in the Vespasian section, which a section filter would drop.
   assert.equal(result.card.label, 'RIC II, Part 1 (second edition) Vespasian 972');
   assert.equal(fetchImpl.calls[0], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent(facets)}`);
   assert.equal(fetchImpl.calls.filter((url) => url.includes('/apis/search')).length, 1);
   const titus1073 = fakeFetch({ 'ocre/apis/search': fixture('ocre-search-titus-1073.xml'), 'ocre/id/ric.2_1(2).ves.1073.jsonld': fixture('ocre-vespasian-1073.jsonld') });
-  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1073', rulers: ['Titus'] }, { fetchImpl: titus1073, cache: new Map() })).card?.id, 'ric.2_1(2).ves.1073');
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1073', rulers: ['Titus'] }, { fetchImpl: titus1073, cache: new Map([['titus', 'Titus']]) })).card?.id, 'ric.2_1(2).ves.1073');
+});
+
+test('a lot ruler facet hit opens only when the card verifies its authority or obverse portrait', async () => {
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  const fetchImpl = fakeFetch({ 'portrait_facet': fixture('ocre-search-titus-972.xml'),
+    'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'), 'nomisma.org/id/titus.jsonld': titus });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Domitian'] },
+    { fetchImpl, cache: new Map([['vespasian', 'Vespasian']]) });
+  assert.equal(result.status, 'candidates');
+  assert.deepEqual(result.candidates, [{ id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' }]);
 });
 
 test('an OCRE lookup resolves the obverse portrait label too, and only when it is not the authority already asked for', async () => {

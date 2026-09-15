@@ -8,7 +8,9 @@ The supplied file contains Roman Imperial type records and their descriptions. I
 
 `extension/data/ocre/metadata.json` identifies the source SHA-256, byte size, record counts, replacement handling and generated files. Source identifiers retain their exact case. Explicit replacement links are followed only when they resolve to an available canonical record. Unresolved or cyclic replacements do not produce an invented active card. Conflicting repeated records or side descriptions are withheld and recorded in the metadata; affected references can use the online fallback.
 
-RDF values preserve multiple authorities, denominations, materials and mints. Nomisma concept labels are absent from this export. Existing verified label-cache values may improve presentation; unresolved identifiers remain identifiers. Missing legends, descriptions and dates remain absent.
+RDF values preserve multiple authorities, denominations, materials and mints. Nomisma concept labels and classes are absent from the OCRE export. A separate, checked-in aggregate RDF snapshot supplies labels and classes for the 272 Nomisma concepts referenced as an authority or obverse portrait. `ric-people.js` includes the 214 concepts that Nomisma classifies as `foaf:Person`; it excludes 58 deities, personifications, groups and other concepts. Canonical names are English preferred labels. English and Latin preferred or alternate labels are search aliases. Missing legends, descriptions and dates remain absent.
+
+The concept snapshot was retrieved on 15 September 2026 with one request to Nomisma's documented [`getRdf` aggregate API](https://nomisma.org/documentation/apis/), rather than one request per identifier. Its SHA-256 is `0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e`. Nomisma publishes its concepts under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The generated module records the endpoint, snapshot hash, generation date and inclusion counts. Volume membership is derived from active OCRE authority and obverse-portrait links; it helps suggest searches but does not alter RIC's catalogue sections or claim that every source link is historically correct.
 
 ## Runtime
 
@@ -22,7 +24,14 @@ The developer converter is `scripts/import_rdf.py`. It uses Python's standard li
 
 ```powershell
 python scripts/import_rdf.py "Numismatics.org RDF/nomisma.rdf" extension/data/ocre --generated-on 2026-09-14
+python scripts/import_people.py generate extension/data/ocre scripts/data/nomisma-ocre-concepts.rdf extension/ric-people.js --generated-on 2026-09-15
 python scripts/build.py
 ```
 
-Use the actual conversion date when producing a new snapshot. The raw source folder is ignored by Git; the compact data and converter are committed so release builds do not need the 117 MB source file. End users only install or reload the extension.
+Use the actual conversion date when producing a new snapshot. To deliberately refresh the checked-in Nomisma snapshot, make one aggregate request before generation:
+
+```powershell
+python scripts/import_people.py fetch extension/data/ocre scripts/data/nomisma-ocre-concepts.rdf
+```
+
+The raw OCRE source folder is ignored by Git; the compact data, filtered Nomisma snapshot and converters are committed so release builds do not need the 117 MB source file or network access. End users only install or reload the extension.

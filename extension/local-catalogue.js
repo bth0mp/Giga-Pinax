@@ -1,4 +1,6 @@
 import { formatDates, pickRicEntries } from './lookup.js';
+import { isRicPerson, ricPeople } from './catalogues.js';
+import { RIC_PEOPLE } from './ric-people.js';
 
 const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const shardPrefix = (id) => String(id).split('.')[1] ?? '';
@@ -9,11 +11,13 @@ function labelFor(values, cache) {
   return cache?.get?.(values[0]) ?? values[0];
 }
 
+const PEOPLE_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person.name]));
+
 export function packedRecordToCard(record, cache = new Map()) {
   if (!record || typeof record.i !== 'string' || typeof record.l !== 'string') return null;
-  const authority = labelFor(record.a, cache);
+  const authority = labelFor(record.a, { get: (id) => cache?.get?.(id) ?? PEOPLE_BY_ID.get(id) });
   const portraits = record.o?.p;
-  const portrait = record.a?.length === 1 && portraits?.length === 1 ? cache?.get?.(portraits[0]) ?? null : null;
+  const portrait = record.a?.length === 1 && portraits?.length === 1 ? cache?.get?.(portraits[0]) ?? PEOPLE_BY_ID.get(portraits[0]) ?? null : null;
   const side = (value = {}) => ({ legend: typeof value.l === 'string' ? value.l : null, description: typeof value.d === 'string' ? value.d : null });
   return {
     id: record.i, uri: `https://numismatics.org/ocre/id/${encodeURIComponent(record.i)}`, corpus: 'ocre', label: record.l,
@@ -71,6 +75,20 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     const card = packedRecordToCard(record, cache);
     return card ? { status: 'ok', card } : { status: 'none', corpus: 'ocre' };
   };
+  const recordById = async (id) => {
+    const meta = await loadMetadata();
+    const canonical = meta.aliases[id] ?? id;
+    const records = await shard(shardPrefix(canonical), meta);
+    const record = records?.[canonical];
+    if (record && record.i !== canonical) throw new Error('Invalid local OCRE record id');
+    return record ?? null;
+  };
+  const personIds = (reference) => {
+    const names = isRicPerson(reference.section) ? [reference.section] : (Array.isArray(reference.rulers) ? reference.rulers : []);
+    return new Set(names.flatMap((name) => ricPeople(name).map(({ id }) => id)));
+  };
+  const hasPerson = (record, ids) => [...(record?.a ?? []), ...(record?.o?.p ?? [])].some((id) => ids.has(id));
+  const citationReference = (reference) => ({ ...reference, section: isRicPerson(reference.section) ? '' : reference.section, id: undefined, rulers: undefined });
   return {
     async lookupById(corpus, id) {
       if (corpus !== 'ocre') return null;
@@ -80,6 +98,27 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       if (reference?.catalogue !== 'RIC') return null;
       try {
         await loadMetadata();
+        const people = personIds(reference);
+        if (typeof reference.id === 'string') {
+          const hinted = await recordById(reference.id);
+          const citation = hinted && pickRicEntries([{ id: hinted.i, title: hinted.l }], citationReference(reference));
+          if (citation?.status === 'ok' && (people.size === 0 || hasPerson(hinted, people))) return await byId(reference.id);
+        }
+        if (people.size > 0) {
+          const citationRef = citationReference(reference);
+          const picked = pickRicEntries(await indexEntries(), citationRef);
+          const entries = picked.status === 'ok' ? [picked.entry] : (picked.candidates ?? []);
+          if (entries.length === 0) return { ...picked, corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
+          const matched = [];
+          for (const entry of entries) if (hasPerson(await recordById(entry.id), people)) matched.push(entry);
+          if (matched.length > 0) {
+            const final = pickRicEntries(matched, citationRef);
+            if (final.status === 'ok') return await byId(final.entry.id);
+            return { ...final, candidates: final.candidates?.map((entry) => ({ ...entry, source: 'local' })), corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
+          }
+          const candidates = entries.map((entry) => ({ ...entry, source: 'local' }));
+          return { status: 'candidates', candidates, partial: true, personMismatch: true, corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
+        }
         let picked = pickRicEntries(await indexEntries(), reference);
         let broadened = false;
         if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await indexEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }

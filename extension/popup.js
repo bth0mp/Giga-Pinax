@@ -1,7 +1,7 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, pricePanelVisibility, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, selectOptions, volumeFor, volumesOf } from './catalogues.js';
+import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { shouldRevealRefine } from './companion-popup.js';
@@ -419,8 +419,8 @@ function renderCard(card) {
 }
 
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
-function renderCandidates(candidates, corpus, partial) {
-  $('candidates-label').textContent = partial ? 'Choose a type:' : 'Did you mean:';
+function renderCandidates(candidates, corpus, partial, personMismatch = false) {
+  $('candidates-label').textContent = personMismatch ? 'No matching ruler found locally. Other types with this reference:' : partial ? 'Choose a type:' : 'Did you mean:';
   $('candidate-list').replaceChildren(...candidates.map(({ id, title, source }) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
@@ -722,7 +722,7 @@ async function run(perform, note = '', failedReference = null) {
     savePreferences();
     renderRecent();
   }
-  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial);
+  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
   else if (outcome.status === 'online-required') {
     showError(ONLINE_MESSAGE);
@@ -900,8 +900,7 @@ $('currency').addEventListener('change', () => {
 $('ric-volume').addEventListener('change', () => {
   const volume = $('ric-volume').value;
   const ruler = visible('ric-section');
-  const volumes = volumesOf(ruler);
-  if (RIC_VOLUMES.some((option) => option.value === volume) && volumes.length > 0 && !volumes.includes(volume)) {
+  if (sectionMismatch(ruler, volume)) {
     $('ric-section').value = '';
     ricChanged(`Ruler cleared: ${ruler.trim()} is not in ${$('ric-volume').selectedOptions[0].label}.`);
   }

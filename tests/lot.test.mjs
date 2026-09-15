@@ -96,12 +96,44 @@ test('a typed reference ends at its first number: a second one after a comma is 
 
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
-  assert.deepEqual(rulers, [['Titus'], ['Titus'], [], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
+  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
   assert.deepEqual(findReferences('Claudius with Nero, as Caesar. RIC 107').rulers, ['Claudius', 'Nero']);
   assert.deepEqual(findReferences('Divus Vespasian. Struck under Titus. RIC 357').rulers, ['Vespasian', 'Titus']);
   // A mint is a RIC section too, but not a person; a name after the first reference is not the lot's ruler.
   assert.deepEqual(findReferences('Rome. Denarius. RIC 972 (Titus); Hadrian').rulers, []);
   assert.deepEqual(findReferences('SEVERUS ALEXANDER. RIC 12').rulers, ['Severus Alexander']);
+});
+
+test('a mint-volume lot keeps its RIC citation clean and carries a strict matching OCRE id hint', () => {
+  const text = 'Rome Roman Empire 323 - 324 PLON AE Nummus - Constantinus II (BEATA TRANQVILLITAS) Bronze Londinium Mint 3.22g XF RIC VII 287 OCRE ric.7.lon.287; Condition XF.';
+  const lot = findReferences(text);
+  assert.deepEqual(lot.rulers, ['Constantine II']);
+  assert.equal(lot.references.length, 1);
+  assert.equal(lot.references[0].text, 'RIC VII 287');
+  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
+    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287',
+  });
+  assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC VII 287 · Constantine II');
+});
+
+test('an arbitrary or malformed OCRE token is never carried as a record hint', () => {
+  for (const text of ['Constantinus II. RIC VII 287 OCRE ../ric.7.lon.287', 'Constantinus II. RIC VII 287 OCRE ric.7.lon.287/evil']) {
+    assert.equal(lotLookup(findReferences(text).references[0], ['Constantine II']).id, undefined);
+  }
+});
+
+test('several distinct OCRE ids disable the hint, and an ambiguous Latin person alias keeps every identity', () => {
+  const several = findReferences('Constantine II. RIC VII 287 OCRE ric.7.lon.287; OCRE ric.7.rom.287');
+  assert.equal(lotLookup(several.references[0], several.rulers).id, undefined);
+  assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, ['Valerian', 'Valerian II']);
+  assert.deepEqual(findReferences('Valerian II. RIC 1').rulers, ['Valerian II']);
+});
+
+test('a mint section keeps the lot ruler so an id hint must satisfy both', () => {
+  const lot = findReferences('Constantinus II. RIC VII Londinium 287 OCRE ric.7.lon.287');
+  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
+    catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287',
+  });
 });
 
 test('these never read as a reference', () => {
@@ -195,7 +227,7 @@ test('a regnal numeral, "Magnus" and an "as Augustus" title never make another p
   assert.deepEqual(rulers('Claudius II RIC 36'), ['Claudius Gothicus']);
   assert.deepEqual(rulers('Divus Claudius II. Antoninianus. RIC 266'), ['Claudius Gothicus']);
   assert.deepEqual(rulers('Claudius, 41-54. As, Rome. RIC I 66; Cohen 84.'), ['Claudius']);
-  assert.deepEqual(rulers('Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.'), []);
+  assert.deepEqual(rulers('Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.'), ['Magnus Maximus']);
   assert.ok(!rulers('Philip II, as Augustus, 247-249. Sestertius, Rome. RIC 268; Cohen 1.').includes('Augustus'));
   assert.ok(!rulers('Carinus, as Augustus, 283-285. Antoninianus, Lugdunum. RIC 306.').includes('Augustus'));
   assert.deepEqual(rulers('Titus, as Augustus, AD 79-81. Denarius. RIC 112.'), ['Titus']);

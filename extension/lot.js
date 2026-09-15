@@ -1,5 +1,6 @@
 import { INVISIBLE, kmNumber, parseReference, sgNumber } from './lookup.js';
 import { RIC_SECTIONS, volumesOf } from './catalogues.js';
+import { RIC_PEOPLE } from './ric-people.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -187,23 +188,36 @@ const depths = (text) => {
 const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
-// RIC persons, as their sections name them (volumes I–V and X; VI–IX are mints), without the groups and joint sections a heading never names alone.
-const PERSON = /^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
-// How dealers write a section's person otherwise.
-const SPELLINGS = Object.freeze({ 'Claudius Gothicus': String.raw`Claudius\s+II(?:\s+Gothicus)?` });
-const RULERS = Object.freeze([...new Set(Object.entries(RIC_SECTIONS).filter(([volume]) => !['VI', 'VII', 'VIII', 'IX'].includes(volume))
-  .flatMap(([, sections]) => sections.map((section) => section.split(' (')[0])).filter((name) => !PERSON.test(name)))]
-  .sort((a, b) => b.length - a.length)
-  .map((name) => [name, new RegExp(`(?<!\\p{L})(?:${[...name.split('/').map((part) => part.replace(/[.]/g, '\\.').replace(/ /g, '\\s+')), SPELLINGS[name]]
-    .filter(Boolean).join('|')})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'giu')]));
+const regexText = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+const NON_PERSON_SECTION = /^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
+const SECTION_SPELLINGS = Object.freeze({ 'Claudius Gothicus': ['Claudius II', 'Claudius II Gothicus'] });
+const sectionPeople = [...new Set(Object.entries(RIC_SECTIONS).filter(([volume]) => !['VI', 'VII', 'VIII', 'IX'].includes(volume))
+  .flatMap(([, sections]) => sections.map((section) => section.split(' (')[0])).filter((name) => !NON_PERSON_SECTION.test(name)))];
+const rulerLabels = [
+  ...sectionPeople.flatMap((name) => [...name.split('/'), ...(SECTION_SPELLINGS[name] ?? [])].map((label) => ({ name, label, preferred: true }))),
+  ...RIC_PEOPLE.flatMap((person) => [...new Set([person.name, ...person.aliases])].map((label) => ({ name: person.name, label }))),
+];
+const labelGroups = new Map();
+for (const row of rulerLabels) {
+  const key = row.label.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!labelGroups.has(key)) labelGroups.set(key, []);
+  labelGroups.get(key).push(row);
+}
+const RULERS = Object.freeze([...labelGroups.values()].map((rows) => {
+  const preferred = rows.filter((row) => row.preferred);
+  const exact = rows.filter(({ name, label }) => name.toLowerCase() === label.toLowerCase());
+  const names = [...new Set((preferred.length > 0 ? preferred : exact.length > 0 ? exact : rows).map(({ name }) => name))];
+  const label = rows[0].label;
+  return [names, label, new RegExp(`(?<!\\p{L})(?:${regexText(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'giu')];
+}).sort((a, b) => b[1].length - a[1].length));
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
 function rulersIn(text) {
-  let rest = text.replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b|\bMagnus\s+Maximus\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  let rest = text.replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
   const found = [];
-  for (const [name, pattern] of RULERS) rest = rest.replace(pattern, (match, offset) => { found.push([offset, name]); return ' '.repeat(match.length); });
+  for (const [names, , pattern] of RULERS) rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
   return [...new Set(found.sort((a, b) => a[0] - b[0]).map(([, name]) => name))];
 }
 
@@ -235,7 +249,7 @@ const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearach
 const GAP_HEAD = new RegExp(String.raw`^(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEPARATOR}*(?=(?:[IVXL]+${SEPARATOR}+)?${NUMBER})`, 'u');
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
-  const span = raw.replace(GAP_HEAD, ' ');
+  const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
@@ -281,6 +295,9 @@ function normalise(written, key, cf) {
 // Every catalogue reference in a lot description, in text order without duplicates, and the RIC rulers named before the first of them.
 export function findReferences(input) {
   const text = withoutProvenance(clean(input));
+  const hintPattern = /\bOCRE\s+(ric\.[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?(?:\.[A-Za-z0-9_*()-]+){2,})(?![A-Za-z0-9_*().\/-])/g;
+  const hints = [...text.matchAll(hintPattern)].map((match) => match[1]);
+  const hint = new Set(hints).size === 1 ? hints[0] : '';
   const depth = depths(text);
   const all = runOn(text, [...text.matchAll(KEY)].filter(keyAt));
   const listed = ({ index }) => {
@@ -309,7 +326,12 @@ export function findReferences(input) {
   const longer = new Set(pieces.filter((piece) => piece.key.length > 1).map((piece) => piece.run));
   const kept = pieces.filter((piece) => /\d/.test(piece.written) && !ORDINAL_ONLY.test(piece.written) && (piece.key.length > 1 || longer.has(piece.run)));
   const seen = new Set();
-  const references = kept.map((piece) => normalise(piece.written, piece.key, piece.cf)).filter(({ reference: { catalogue, volume, section, number } }) => {
+  const normalised = kept.map((piece) => normalise(piece.written, piece.key, piece.cf));
+  if (hint && normalised.filter(({ reference }) => reference.catalogue === 'RIC').length === 1) {
+    const found = normalised.find(({ reference }) => reference.catalogue === 'RIC');
+    found.reference = { ...found.reference, id: hint };
+  }
+  const references = normalised.filter(({ reference: { catalogue, volume, section, number } }) => {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
     return !seen.has(id) && seen.add(id);
   });
@@ -331,7 +353,8 @@ export const isLot = (text) => looksLikeLot(text)
 
 // A lot row looks up its parsed reference, never the row itself. Only a RIC reference without a ruler of its own borrows the text's rulers (the facet
 // search); "(Elagabalus)" in the reference keeps today's path.
-const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && !reference.section && rulers.length > 0;
+const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && rulers.length > 0
+  && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume));
 export const lotLookup = (found, rulers) => (borrowsRulers(found, rulers) ? { ...found.reference, rulers } : found.reference);
 export const lotLabel = (found, rulers) => [found.text, borrowsRulers(found, rulers) && rulers[0], !found.typed && 'prices only', found.cf && 'cf.',
   found.variant && 'var.'].filter(Boolean).join(' · ');

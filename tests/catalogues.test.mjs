@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
@@ -30,7 +30,7 @@ test('the twelve RIC volumes are in RIC order, and every volume and section roun
 });
 
 test('RIC_RULERS holds every ruler and mint section of every volume once, in code-unit order', () => {
-  assert.equal(RIC_RULERS.length, 150);
+  assert.equal(RIC_RULERS.length, new Set([...Object.values(RIC_SECTIONS).flat(), ...RIC_RULERS]).size);
   assert.ok(Object.isFrozen(RIC_RULERS));
   assert.deepEqual([...RIC_RULERS], [...RIC_RULERS].sort());
   assert.equal(new Set(RIC_RULERS).size, RIC_RULERS.length);
@@ -76,6 +76,17 @@ test('volumeFor keeps a volume that has the ruler, else takes its only volume, e
   assert.equal(volumeFor('Theodosius II', I2), 'X');
   for (const unknown of ['', 'hello', 'Tit', 'constructor', '__proto__']) assert.equal(volumeFor(unknown, 'IV'), 'IV', unknown);
   assert.equal(volumeFor('Hermaeus', ''), '');
+});
+
+test('mint-volume people are suggested and canonicalised without changing section volume semantics', () => {
+  assert.ok(RIC_RULERS.includes('Constantine II'));
+  assert.equal(isRicPerson('Constantinus II'), true);
+  assert.equal(canonicalRicPerson('Constantinus II'), 'Constantine II');
+  assert.deepEqual(volumesOf('Constantine II'), []);
+  assert.equal(volumeFor('Constantine II', 'VII'), 'VII');
+  assert.equal(volumeFor('Constantine III', 'VII'), 'VII');
+  assert.equal(sectionMismatch('Constantine III', 'VII'), false);
+  assert.equal(sectionMismatch('Titus', 'I (2nd edition)'), true);
 });
 
 test('the 48 BIGR kings are in code-unit order without the data typos', () => {

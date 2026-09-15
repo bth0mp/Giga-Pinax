@@ -1,6 +1,8 @@
-# Install Giga Pinax 0.30.0
+# Install Giga Pinax 0.30.1
 
 Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.30.0 adds bundled OCRE/RIC reference data; acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
+
+Version 0.30.1 expands RIC ruler suggestions and fixes lookups in mint-organised volumes. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**. The included catalogue resolves **RIC VII Londinium 287** locally. Updating only requires replacing the extension files and reloading as described below.
 
 Fetched acsearch rows and inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 

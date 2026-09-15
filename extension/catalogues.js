@@ -1,3 +1,5 @@
+import { RIC_PEOPLE } from './ric-people.js';
+
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
 //   SELECT ?l WHERE { ?t a nmo:TypeSeriesItem ; skos:prefLabel ?l . FILTER(STRSTARTS(STR(?l), "RIC ")) }
@@ -89,13 +91,23 @@ export const BIGR_KINGS = Object.freeze([
 
 // Every distinct section across the volumes (the rulers, and the mints of VI–IX), in code-unit order: the Ruler suggestions, and the only rulers
 // a reference without a volume may name.
-export const RIC_RULERS = Object.freeze([...new Set(Object.values(RIC_SECTIONS).flat())].sort());
+export const RIC_RULERS = Object.freeze([...new Set([...Object.values(RIC_SECTIONS).flat(), ...RIC_PEOPLE.map(({ name }) => name)])].sort());
 
 // A blank volume means any: a RIC number is then listed from every volume (that has the ruler, when one is given).
 export const ANY_VOLUME = Object.freeze({ value: '', label: 'Any volume' });
 export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 
 const rulerKey = (ruler) => String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+export function ricPeople(name) {
+  const wanted = rulerKey(name);
+  return wanted ? RIC_PEOPLE.filter((person) => [person.name, ...person.aliases].some((label) => rulerKey(label) === wanted)) : [];
+}
+
+export const isRicPerson = (name) => ricPeople(name).length > 0;
+export function canonicalRicPerson(name) {
+  const people = ricPeople(name);
+  return people.length === 1 ? people[0].name : '';
+}
 
 // The volumes whose sections include a ruler, ignoring case and spacing; none for a blank or unknown one. A ruler OCRE splits into sections is also
 // known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). The lists are searched, never indexed by the
@@ -109,9 +121,16 @@ export function volumesOf(ruler) {
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).
 export function volumeFor(ruler, current) {
+  if (current && ['VI', 'VII', 'VIII', 'IX'].includes(current) && isRicPerson(ruler)) return current;
   const volumes = volumesOf(ruler);
   if (volumes.length === 0 || volumes.includes(current)) return current;
   return volumes.length === 1 ? volumes[0] : ANY_VOLUME.value;
+}
+
+export function sectionMismatch(name, volume) {
+  if (['VI', 'VII', 'VIII', 'IX'].includes(volume) && isRicPerson(name)) return false;
+  const volumes = volumesOf(name);
+  return RIC_VOLUMES.some((option) => option.value === volume) && volumes.length > 0 && !volumes.includes(volume);
 }
 
 // The options a select shows for a value: the list, plus the value itself, last, when it is not listed, so a parsed "IV, Part 1" or a stored volume

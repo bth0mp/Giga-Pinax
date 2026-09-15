@@ -1,4 +1,5 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { canonicalRicPerson } from './catalogues.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -133,8 +134,11 @@ export function searchCategory(reference) {
 }
 
 // A RIC term drops OCRE's split-section parenthetical ("Leo I (East)", "Gallienus (joint reign)"): acsearch would require a word dealers rarely write.
-export function defaultTerm({ catalogue, number, section }) {
-  if (catalogue === 'RIC') return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '')} ${squash(number)}`);
+export function defaultTerm({ catalogue, number, section, rulers }) {
+  if (catalogue === 'RIC') {
+    const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
+    return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
+  }
   if (catalogue === 'Other') return otherTerm(number);
   if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
   if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);

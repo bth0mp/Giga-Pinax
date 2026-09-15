@@ -6,19 +6,27 @@ import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from 
 const metadata = {
   schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
-  shards: { '1(2)': 'records-1(2).json', '2_1(2)': 'records-2_1(2).json' },
+  shards: { '1(2)': 'records-1(2).json', '2_1(2)': 'records-2_1(2).json', '7': 'records-7.json' },
 };
 const index = { schemaVersion: 1, entries: [
   ['ric.1(2).ner.306', 'RIC I (second edition) Nero 306'],
   ['ric.2_1(2).ves.972', 'RIC II, Part 1 (second edition) Vespasian 972'],
+  ['ric.7.ar.287', 'RIC VII Arelate 287'],
+  ['ric.7.lon.287', 'RIC VII Londinium 287'],
+  ['ric.7.lug.287', 'RIC VII Lugdunum 287'],
+  ['ric.7.rom.287', 'RIC VII Rome 287'],
 ] };
 const records = {
   'ric.1(2).ner.306': { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], m: ['rome'], x: ['ae'], s: '0062', e: '0068', o: { l: 'NERO', d: 'Head of Nero', p: ['nero'] }, r: { d: 'Temple' } },
   'ric.2_1(2).ves.972': { i: 'ric.2_1(2).ves.972', l: 'RIC II, Part 1 (second edition) Vespasian 972', a: ['vespasian'], d: ['denarius', 'aureus'], o: { p: ['titus'] }, r: {} },
+  'ric.7.ar.287': { i: 'ric.7.ar.287', l: 'RIC VII Arelate 287', a: ['constantine_i'], o: { p: ['constantine_i'] }, r: {} },
+  'ric.7.lon.287': { i: 'ric.7.lon.287', l: 'RIC VII Londinium 287', a: ['constantine_i'], o: { p: ['constantine_ii'] }, r: {} },
+  'ric.7.lug.287': { i: 'ric.7.lug.287', l: 'RIC VII Lugdunum 287', a: ['constantine_i'], o: { p: ['constantius_ii'] }, r: {} },
+  'ric.7.rom.287': { i: 'ric.7.rom.287', l: 'RIC VII Rome 287', a: ['licinius'], o: { p: ['licinius'] }, r: {} },
 };
 
 function fixtureFetch(overrides = {}) {
-  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, ...overrides };
+  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(String(url));
@@ -62,6 +70,33 @@ test('lookupById respects aliases and caches metadata, index and shards', async 
   assert.equal(fetchImpl.calls.filter((url) => url.endsWith('records-1(2).json')).length, 1);
 });
 
+test('mint-volume person lookup filters authority and obverse portraits before opening a type', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const result = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Constantine II', number: '287' });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.id, 'ric.7.lon.287');
+});
+
+test('a local person miss labels broader same-reference candidates honestly', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const result = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Constantine III', number: '287' });
+  assert.equal(result.status, 'candidates');
+  assert.equal(result.personMismatch, true);
+  assert.equal(result.candidates.length, 4);
+});
+
+test('a strict id hint opens only when it matches the parsed citation and explicit mint', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: '', number: '287', id: 'ric.7.lon.287' })).card.id, 'ric.7.lon.287');
+  const conflicting = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Rome', number: '287', id: 'ric.7.lon.287' });
+  assert.equal(conflicting.card.id, 'ric.7.rom.287');
+  const wrongPerson = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantius II'], id: 'ric.7.lon.287' });
+  assert.equal(wrongPerson.card.id, 'ric.7.lug.287');
+  const mintAndWrongPerson = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287', rulers: ['Constantius II'], id: 'ric.7.lon.287' });
+  assert.equal(mintAndWrongPerson.status, 'candidates');
+  assert.equal(mintAndWrongPerson.personMismatch, true);
+});
+
 test('missing and corrupt bundles fail closed and never claim a catalogue miss', async () => {
   const missing = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': new Error('missing') }), baseUrl: 'moz-extension://test/data/ocre/' });
   assert.equal((await missing.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1' })).status, 'unavailable');
@@ -76,7 +111,7 @@ test('packed cards use verified cached labels and omit ambiguous summaries and p
   assert.equal(card.denomination, null);
   assert.equal(card.portrait, 'Titus');
   assert.equal(packedRecordToCard({ ...records['ric.2_1(2).ves.972'], a: ['vespasian', 'titus'] }, cache).portrait, null);
-  assert.equal(packedRecordToCard(records['ric.2_1(2).ves.972'], new Map()).portrait, null);
+  assert.equal(packedRecordToCard(records['ric.2_1(2).ves.972'], new Map()).portrait, 'Titus');
 });
 
 test('catalogue metadata reports actual coverage and separates generation from unknown publication date', () => {

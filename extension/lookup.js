@@ -1,4 +1,4 @@
-import { RIC_SECTIONS, RIC_VOLUMES, volumesOf } from './catalogues.js';
+import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, volumesOf } from './catalogues.js';
 
 export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https://nomisma.org/*']);
 export const TIMEOUT_MS = 15000;
@@ -149,7 +149,7 @@ function readType(value) {
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
-  if (!any || (ruler && volumesOf(ruler).length === 0)) return null;
+  if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
   return { catalogue: 'RIC', number: any[3], volume: '', section: ruler };
 }
 
@@ -339,6 +339,10 @@ export function filingNote(card) {
   // Annona, Carthage), and names nomisma spells differently from RIC ("Cornelia Salonina"), fail it and stay off the card — never a guess.
   if (portrait && filedUnder && norm(portrait) !== norm(authority) && namesASection(portrait)) {
     sentences.push(`Portrait of ${portrait}, listed under ${section}.`);
+  }
+  if (portrait && authority && MINT_VOLUMES.has(unquote(reference.volume)) && norm(portrait) !== norm(authority)
+    && isRicPerson(portrait) && isRicPerson(authority)) {
+    sentences.push(`Portrait of ${portrait}; issuing authority ${authority}.`);
   }
   const siblings = siblingSections(unquote(reference.volume), reference.section);
   // Only on a card that already needs explaining. A volume splits a long reign into sections it names alike, so on its own this sentence would sit
@@ -566,7 +570,7 @@ function pickRic(xml, reference) {
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
 // hold OCRE's names: "Gaius/Caligula" whole (either half finds nothing), and Claudius Gothicus as "Claudius II Gothicus".
 const FACET_NAMES = Object.freeze({ 'Claudius Gothicus': 'Claudius II Gothicus' });
-const facetName = (name) => phrase(FACET_NAMES[squash(name)] ?? String(name ?? ''));
+const facetName = (name) => phrase(FACET_NAMES[squash(name)] ?? (canonicalRicPerson(name) || String(name ?? '')));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
   .map(facetName).filter(Boolean))];
 
@@ -603,11 +607,16 @@ export async function lookupType(reference, options = {}) {
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
   // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text.
-  const rulers = corpus === 'ocre' && !phrase(reference.section) ? rulersOf(reference) : [];
+  const rulers = corpus === 'ocre' && (!phrase(reference.section) || MINT_VOLUMES.has(unquote(reference.volume))) ? rulersOf(reference) : [];
   const shown = rulers.length ? `${query} (${rulers.join(', ')})` : query;
   try {
     let picked;
-    if (corpus === BIGR) {
+    let byPortrait = false;
+    const mintPerson = corpus === 'ocre' && MINT_VOLUMES.has(unquote(reference.volume)) && isRicPerson(reference.section);
+    if (mintPerson) {
+      picked = await pickPortrait(reference, feed);
+      byPortrait = picked.status === 'ok' || picked.status === 'candidates';
+    } else if (corpus === BIGR) {
       picked = await pickBop(built, search, fetchImpl, timer.signal);
     } else if (rulers.length) {
       picked = await pickRulers(reference, rulers, feed);
@@ -632,8 +641,7 @@ export async function lookupType(reference, options = {}) {
     // A typed ruler and number that OCRE files under another emperor (Titus as Caesar under Vespasian) finds nothing by section, so ask the portrait
     // facet once before giving up — the answer the lot path has always had. Only its hits are taken: anything else leaves the original miss standing.
     // A section naming two people ("Leo II and Zeno") is skipped: no facet holds one, so the request could only ever come back empty.
-    let byPortrait = false;
-    if (picked.status === 'none' && corpus === 'ocre' && rulers.length === 0 && namesASection(phrase(reference.section)) && !/\band\b/i.test(reference.section)) {
+    if (!mintPerson && picked.status === 'none' && corpus === 'ocre' && rulers.length === 0 && (namesASection(phrase(reference.section)) || isRicPerson(reference.section)) && !/\band\b/i.test(reference.section)) {
       // A second chance never downgrades the answer already in hand: a 5xx or a dropped connection here leaves the miss standing rather than turning a
       // clean "not found" into "couldn't reach numismatics.org".
       try {
@@ -643,6 +651,12 @@ export async function lookupType(reference, options = {}) {
     }
     if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
+    if (rulers.length && found.status === 'ok') {
+      const asked = rulers.map(norm);
+      if (![found.card.authority, found.card.portrait].some((name) => asked.includes(norm(name)))) {
+        return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+      }
+    }
     // A coin from another ruler opens only when the card says why it is filed there AND the portrait it names is the ruler that was typed: the portrait
     // facet carries reverse portraits too, so a hit can be a third ruler's coin whose obverse happens to head the section. Anything else is offered.
     const typed = [reference.section, facetName(reference.section)].map((name) => norm(squash(name)));

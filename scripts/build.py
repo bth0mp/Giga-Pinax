@@ -49,6 +49,7 @@ ASSET_PATHS = (
     "preferences.js",
     "prices.js",
     "catalogues.js",
+    "ric-people.js",
     "selection.js",
     "settings.css",
     "settings.html",

@@ -1,12 +1,14 @@
 # Giga Pinax
 
-Giga Pinax 0.30.0 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+Giga Pinax 0.30.1 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
 
 Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
 
 The 0.29 workspace adds auction page, house, sale and lot identity; duplicate checks; closing-soon, research, planned, active and completed queues; provenance; measurements and condition; external photo URL links; reminders and outcomes; and comparison of two to four saved coins. The calculator includes buyer premium, shipping, percentage and fixed payment fees, and the highest affordable bid on a collector-entered fixed increment.
 
 Version 0.30 bundles 52,254 active Roman Imperial type records and 2,808 replacement redirects derived from the supplied OCRE RDF export. RIC searches check a local index and load the relevant details from packaged files. Local results need no ANS connection; missing records can use the existing online lookup. This snapshot does not cover Crawford/RRC, Price, Seleucid Coins or Bopearachchi. Settings identifies the bundled data and its coverage. The export's publication date is unknown, and unresolved Nomisma identifiers are not guessed. See [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+
+Version 0.30.1 adds verified people to the RIC ruler/mint suggestions, including those missing from the mint-organised volumes VI–IX. For example, choose **VII**, enter **Constantine II** and **287**, or paste the lot description containing `OCRE ric.7.lon.287`. The local lookup distinguishes the obverse portrait from the issuing authority. Verified Latin names such as **Constantinus II** are recognised too. See [release notes](docs/RELEASE-0.30.1.md).
 
 Fetched acsearch rows remain in Research. Excluding a result updates the count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
 

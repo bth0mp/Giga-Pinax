@@ -1,2 +1,4 @@
 # Preserve deterministic generated data bytes and collapse large generated diffs.
 extension/data/ocre/*.json -text linguist-generated=true
+extension/ric-people.js -text linguist-generated=true
+scripts/data/nomisma-ocre-concepts.rdf -text -whitespace linguist-vendored=true

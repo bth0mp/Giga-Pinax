@@ -14,3 +14,13 @@ monograms, images and auction-price data. The converter and editable derived
 data are provided at https://github.com/bth0mp/Giga-Pinax .
 Conversion instructions:
 https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
+
+RIC ruler suggestions also use a filtered derivative of Nomisma.org concept
+data retrieved through the aggregate getRdf API. Nomisma concepts are available
+under Creative Commons Attribution 3.0:
+https://creativecommons.org/licenses/by/3.0/
+
+Nomisma source: https://nomisma.org/
+Aggregate API documentation: https://nomisma.org/documentation/apis/
+The source snapshot hash, date and inclusion counts are recorded in
+ric-people.js and docs/LOCAL-CATALOGUE.md.

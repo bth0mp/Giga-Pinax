@@ -248,6 +248,12 @@ test('summaryText has no type link for a reference without type data', () => {
   ].join('\n'));
 });
 
+test('defaultTerm uses one verified RIC person from a mint-volume lot to disambiguate the number', () => {
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II'] }), 'Constantine II 287');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantinus II'] }), 'Constantine II 287');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II', 'Licinius'] }), '287');
+});
+
 test('summaryText labels an unverified price query without inventing a type link', () => {
   const summary = summarise([{ price: '200', date: '2026-01-01' }], 'USD');
   assert.equal(summaryText({ label: 'RIC 972' }, summary, 'USD', 'RIC 972'), [
