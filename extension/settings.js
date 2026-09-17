@@ -92,6 +92,11 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   remove.className = 'quiet';
   remove.textContent = 'Remove';
   remove.addEventListener('click', () => row.remove());
+  // The button sits in the same grid as the fields, under a blank caption line of its own, so that
+  // it stays level with the inputs however tall a field's error grows.
+  const removeField = document.createElement('div');
+  removeField.className = 'premium-remove';
+  removeField.append(remove);
   const currency = document.createElement('select');
   currency.className = 'premium-ladder-currency';
   for (const code of CURRENCIES) {
@@ -114,7 +119,7 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
     'Optional. One tier per line: the amount the tier starts at, a colon, then the step from there. Copy the tiers from this house’s published terms — Giga Pinax ships no house’s ladder.');
   currencyField.classList.add('premium-ladder-field');
   ladderField.classList.add('premium-ladder-field');
-  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), remove, currencyField, ladderField);
+  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, currencyField, ladderField);
   return row;
 }
 
