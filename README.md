@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bth0mp/Giga-Pinax/actions/workflows/ci.yml/badge.svg)](https://github.com/bth0mp/Giga-Pinax/actions/workflows/ci.yml)
 
-Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin references and what they sell for. Type a catalogue reference or paste a whole lot description, and it resolves the type, fetches the recent hammer prices your own provider sessions can see, works out what a bid really costs, and keeps the result in a local watchlist beside your own notes, photos and provenance. It has no account, no analytics and no server of its own, and it never places, changes or cancels a bid.
+Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin references and what they sell for. Type a catalogue reference or paste a whole lot description, and it resolves the type, fetches recent hammer prices — from acsearch using your own signed-in session, and from CoinArchives' public results using no session at all — works out what a bid really costs, and keeps the result in a local watchlist beside your own notes, photos and provenance. It has no account, no analytics and no server of its own, and it never places, changes or cancels a bid.
 
 ![The Giga Pinax auction workspace, showing the workflow queue beside a selected coin](docs/store/assets/01-workspace-1280x800.png)
 
@@ -46,6 +46,8 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 | `github.com` | Only when you choose a release or update download. |
 | Your own photo hosts | Only once saved-coin comparison opens, for the external photo URLs you entered. |
 
+Links Giga Pinax offers but you open yourself — a CoinArchives Pro or acsearch search page, an RPC Online type page, an OCRE type page at the ANS, the auction page a saved coin came from — are ordinary browser navigations in a new tab, not requests the extension makes, so they carry whatever that site already knows about your browser and nothing from the extension.
+
 There is no account, no analytics and no developer-operated server; saved records never leave your browser unless you export them. Full details are in the [privacy policy](docs/PRIVACY.md).
 
 ## Development
@@ -63,7 +65,7 @@ npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 
 ## Data attribution
 
-The bundled Roman Imperial type database is derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/), and the ruler and mint labels from [Nomisma.org](https://nomisma.org/) under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+The bundled Roman Imperial type database is derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The RIC ruler suggestions — the ruler names and aliases the extension recognises and offers — come from a filtered derivative of [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
 
 ## License
 
