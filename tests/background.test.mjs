@@ -353,9 +353,53 @@ test('a reconcile nobody asked for says so when it fails instead of stopping the
   assert.equal(logged.length, 1, 'and the reason is in the log for a bug report');
   assert.match(logged[0], /reconcile/i);
 
-  // Retired the same way every other warning is: the collector opening an extension page.
+  // This is not the capture warning and is not retired by what retires that one. The collector opening a page, and a
+  // capture that works, both used to clear it - before the reminders it stopped had gone anywhere.
   await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
   for (let index = 0; index < 8; index += 1) await flush();
+  assert.equal(badges.at(-1), '!', 'the reminders are still stopped, so the warning still stands');
+  assert.equal(titles.at(-1), RECONCILE_FAILURE_TITLE);
+
+  listeners.clicked[0]({
+    menuItemId: 'auction-companion:research-selection', selectionText: 'Nero denarius, Rome', pageUrl: 'https://house.test/sale',
+  });
+  for (let index = 0; index < 10; index += 1) await flush();
+  assert.equal(badges.at(-1), '!', 'a capture that works answers the capture warning, not this one');
+  assert.equal(titles.at(-1), RECONCILE_FAILURE_TITLE);
+
+  // Its own condition: a reconcile that works again.
+  await wake();
+  assert.notEqual(badges.at(-1), '!');
+  assert.equal(titles.at(-1), '');
+});
+
+// Each warning stands until its own condition is met, so answering one must not take the other off the toolbar.
+test('a capture failure under a standing reconcile failure leaves the reconcile warning up', async () => {
+  const intact = structuredClone(stored[STORAGE_KEY]);
+  stored[STORAGE_KEY].lots = 'not a list';
+  const realError = console.error;
+  console.error = () => {};
+  try {
+    await wake();
+    assert.equal(titles.at(-1), RECONCILE_FAILURE_TITLE);
+    storageSetFails = true;
+    listeners.clicked[0]({
+      menuItemId: 'auction-companion:track-auction', selectionText: 'Nero denarius, Rome', pageUrl: 'https://house.test/sale',
+    });
+    for (let index = 0; index < 8; index += 1) await flush();
+    storageSetFails = false;
+    assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE, 'the newer failure is what the tooltip explains');
+
+    // The collector opens a page: the capture warning is answered, the reconcile's is not, so the badge stays.
+    await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+    for (let index = 0; index < 8; index += 1) await flush();
+    assert.equal(badges.at(-1), '!');
+    assert.equal(titles.at(-1), RECONCILE_FAILURE_TITLE, 'and the tooltip goes back to the one still standing');
+  } finally {
+    console.error = realError;
+    stored[STORAGE_KEY] = intact;
+  }
+  await wake();
   assert.notEqual(badges.at(-1), '!');
   assert.equal(titles.at(-1), '');
 });

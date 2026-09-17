@@ -44,12 +44,19 @@ const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace
 // no page. One that fails stops every reminder, and until this it did so in silence.
 const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
 let captureFailed = false;
+let captureFailureTitle = '';
+// A reconcile that failed is a different failure from a capture that was not saved, and has a different way out: the
+// capture warning is retired by the next capture that works or by the collector opening a page, while the reminders
+// stay stopped until a reconcile works again. Sharing one flag let a later capture clear a warning nobody had seen.
+let reconcileFailed = false;
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
 // only lasts the ~30 s until the worker idles out, so the flag is read back from the badge the
 // browser still shows. Without it a restart's own reconcile wipes the `!` and then declines to
 // clear the title, stranding it for the rest of the session. A module cannot await at the top
 // level and still register its listeners synchronously, so the recovery is awaited where it is read.
+// The badge does not say which of the two warnings left it, so a restart takes it for the capture one; a reconcile that
+// is still failing puts its own warning back on the next reconcile, which every startup and every save runs.
 const captureFailureRecovered = (async () => {
   try {
     if (await invokeExtensionMethod(api.action.getBadgeText, api.action, {}) === '!') captureFailed = true;
@@ -79,7 +86,7 @@ async function showBadge(text) {
 
 async function showDueBadge(state) {
   await captureFailureRecovered;
-  if (captureFailed) return;
+  if (captureFailed || reconcileFailed) return;
   const dueEvents = new Set(state.alerts
     .filter(({ status }) => ['due', 'claimed', 'delivered'].includes(status))
     .map(({ eventId }) => eventId));
@@ -139,9 +146,10 @@ async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
   if (!reply.ok) {
     console.error('Giga Pinax: the scheduler reconcile failed.', reply.message);
-    await showCaptureFailure(RECONCILE_FAILURE_TITLE);
+    await showReconcileFailure();
     return reply;
   }
+  await clearReconcileFailure();
   await setAlarm(reply.value.nextWakeAt);
   // One read serves both the badge and delivery: an idle wake must not re-read the whole root.
   const state = await snapshot();
@@ -228,8 +236,7 @@ api.runtime.onStartup.addListener(() => {
 // No workspace is open when a context menu is used, so the badge is the only place a capture
 // that never arrived can be seen without asking for a further permission. The badge on its own
 // says nothing, so the toolbar tooltip carries the explanation and what to do about it.
-async function showCaptureFailure(title) {
-  captureFailed = true;
+async function showWarning(title) {
   try {
     await showBadge('!');
     await invokeExtensionMethod(api.action.setTitle, api.action, { title });
@@ -238,18 +245,41 @@ async function showCaptureFailure(title) {
   }
 }
 
-// The next capture that works, or the collector opening any extension page, retires the warning.
-async function clearCaptureFailure() {
-  await captureFailureRecovered;
-  if (!captureFailed) return;
-  captureFailed = false;
+async function showCaptureFailure(title) {
+  captureFailed = true;
+  captureFailureTitle = title;
+  await showWarning(title);
+}
+
+async function showReconcileFailure() {
+  reconcileFailed = true;
+  await showWarning(RECONCILE_FAILURE_TITLE);
+}
+
+// An empty title falls back to the manifest's own, so the tooltip is restored rather than blanked - unless the other
+// warning is still standing, in which case the toolbar goes back to explaining that one.
+async function retireWarning(standingTitle) {
   try {
-    // An empty title falls back to the manifest's own, so the tooltip is restored, not blanked.
-    await invokeExtensionMethod(api.action.setTitle, api.action, { title: '' });
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title: standingTitle });
     await refreshBadge();
   } catch {
     // The stale badge outliving its cause is better than a failed command reply.
   }
+}
+
+// The next capture that works, or the collector opening any extension page, retires the capture warning.
+async function clearCaptureFailure() {
+  await captureFailureRecovered;
+  if (!captureFailed) return;
+  captureFailed = false;
+  await retireWarning(reconcileFailed ? RECONCILE_FAILURE_TITLE : '');
+}
+
+// The reminders are stopped until a reconcile works, so that is the only thing that retires this one.
+async function clearReconcileFailure() {
+  if (!reconcileFailed) return;
+  reconcileFailed = false;
+  await retireWarning(captureFailed ? captureFailureTitle : '');
 }
 
 async function runMenuAction(info) {
