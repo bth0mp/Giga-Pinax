@@ -700,7 +700,9 @@ function mutation(snapshot, command, context) {
       if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
       const preview = previewImport(snapshot, validated.value, command.mode);
       if (!preview.ok) return fail('validation', preview.error.message, preview.error.path);
-      if (!preview.value.snapshot || preview.value.conflicts.length) {
+      // A conflict the merge could not settle keeps the local row and is reported in the preview;
+      // it no longer holds back the records that did merge.
+      if (!preview.value.snapshot) {
         return fail('conflict', 'Import conflicts must be resolved before committing.', 'document');
       }
       const imported = clone(preview.value.snapshot);

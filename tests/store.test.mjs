@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
+import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -765,6 +766,55 @@ test('backup import replaces through the same validated root mutation', () => {
   }));
   assert.equal(imported.snapshot.alternativeGroups[0].name, 'Imported');
   assert.equal(imported.snapshot.revision, 1);
+});
+
+test('a merge import folds a duplicated auction lot into the local one and leaves it editable', () => {
+  const auctionContext = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+  const lot = (id, title) => ({
+    id, revision: 0, dataClass: 'collector', title, sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], auctionContext, createdAt: NOW, updatedAt: NOW,
+  });
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(), 'Nero denarius'));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(), 'Nero denarius from the other install'));
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.equal(imported.snapshot.lots.length, 1);
+  assert.equal(imported.snapshot.lots[0].title, 'Nero denarius');
+  const saved = reduce(imported.snapshot, command('lot.save', {
+    expectedRevision: 0,
+    lot: { id: imported.snapshot.lots[0].id, title: 'Nero denarius, retoned', sourceLinks: [], auctionContext },
+  }));
+  assert.equal(saved.value.title, 'Nero denarius, retoned');
+});
+
+test('a merge import commits with the local rows a conflict kept', () => {
+  const observation = {
+    id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'collector', retrievedAt: NOW,
+    houseSaleId: 'Sale 10', auctionHouse: 'House', auctionDate: '2026-01-02', lotNumber: '9',
+    priceBasis: 'hammer', amount: { currency: 'EUR', minor: 12000 },
+  };
+  const row = { ...deduplicateEvidence([observation]).value.evidence[0], revision: 0, createdAt: NOW, updatedAt: NOW };
+  const current = createEmptySnapshot(NOW);
+  current.evidence.push(row);
+  const incoming = createEmptySnapshot(NOW);
+  const conflicting = structuredClone(row);
+  conflicting.id = uuid();
+  conflicting.observations[0].id = uuid();
+  conflicting.observations[0].amount.minor = 14000;
+  conflicting.resolved.hammer.minor = 14000;
+  incoming.evidence.push(conflicting);
+  incoming.alternativeGroups.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Imported', createdAt: NOW, updatedAt: NOW,
+  });
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.evidence, [row]);
+  assert.equal(imported.snapshot.alternativeGroups.length, 1, 'one conflict no longer blocks the rest');
+  assert.equal(imported.value.counts.keptLocal, 1);
 });
 
 test('adds manual evidence through authority metadata and resolves a conflicting retained claim', () => {
