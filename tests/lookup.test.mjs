@@ -1329,13 +1329,28 @@ test('a comma after the RIC volume is read, wherever the volume names its part o
     ['RIC II.3, 2345', ric('II, Part 3', '', '2345')],
     ['RIC I², Nero 306', ric('I (2nd edition)', 'Nero', '306')],
   ]) assert.deepEqual(parseReference(text), expected, text);
-  // A volume and its part, both spelled with commas, and the number after them.
+  // A volume and its part, both spelled with commas, and the number after them — but only where RIC really divides that volume so.
   assert.deepEqual(parseReference('RIC V, 2, 123'), ric('V, Part 2', '', '123'));
-  assert.deepEqual(parseReference('RIC IV, 1, 123a'), ric('IV, Part 1', '', '123a'));
   // A volume with nothing after the comma is still no reference, and a volume written in Arabic numerals takes no comma at all: "RIC 5, 6" and
   // "RIC 1,2" are two numbers a dealer listed, never volume V number 6.
   for (const text of ['RIC III,', 'RIC II, Titus', 'RIC 5, 6', 'RIC 1,2']) assert.equal(parseReference(text), null, text);
   assert.deepEqual(parseReference('RIC 5 6'), ric('V', '', '6'));
+});
+
+// "RIC III, 2, 3" is two of RIC III's numbers, not a Part 2 the book never had: a comma is how dealers list numbers, so a part joined on with one is
+// read only where RIC really divides the volume that way. The volume's own punctuation ("IV.1", "II.3") is unambiguous and is left alone.
+test('a part written after a comma is read only for a volume RIC really divides', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const text of ['RIC III, 2, 3', 'RIC X, 2, 123', 'RIC II, 2, 123', 'RIC IV, 1, 123a', 'RIC VII, 2, 12']) assert.equal(parseReference(text), null, text);
+  // The two divisions the data evidences: OCRE's own II, Part 1 and II, Part 3, and the V.1/V.2 dealers cite although OCRE merges them.
+  for (const [text, expected] of [['RIC II, 1, 123', ric('II, Part 1', '', '123')], ['RIC II, 3, 123', ric('II, Part 3', '', '123')],
+    ['RIC V, 1, 123', ric('V, Part 1', '', '123')], ['RIC V, 2, 123', ric('V, Part 2', '', '123')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // A part the volume itself carries is the citation's own spelling and is read whatever volume it names.
+  assert.deepEqual(parseReference('RIC IV.1, 123a'), ric('IV, Part 1', '', '123a'));
+  assert.deepEqual(parseReference('RIC IV-1 123'), ric('IV, Part 1', '', '123'));
+  assert.deepEqual(parseReference('RIC IV part 1 123'), ric('IV, Part 1', '', '123'));
 });
 
 // One reference typed into the Reference box is read by the rules a lot row is read by, so the same text gives the same reference either way.

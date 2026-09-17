@@ -76,12 +76,18 @@ const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\
 // and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
 // comma: dealers punctuate a volume the way they punctuate HGC's ("RIC III, 394a" beside "HGC 4, 1218"). Both separators are a fixed run at one place,
 // so neither alternative can be entered twice and the pattern stays linear.
-const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./,]\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
 // No volume: "RIC 972", "RIC Titus 123" or a bare "Titus 123", the number as above. The ruler must be one OCRE has, or the name of one it splits
 // into sections ("Theodosius II" for its East and West), checked by volumesOf, so "RIC hello 5", "RIC XI Nero 1" and "Euthydemus I 24A" stay unread,
 // and a number alone needs the RIC prefix.
 const RIC_ANY_VOLUME = /^(?:RIC(?![a-z])\s*(?:([^\d\s].*?)\s+)?|([^\d\s].*?)\s+)(\d\S*(?: \([^)]*\))?)$/i;
 const MAX_REFERENCE = 120;
+// The parts RIC's own volume division gives a numeral, as this repository evidences it and no further: RIC_VOLUMES (catalogues.js) lists II, Part 1
+// and II, Part 3 as volumes of their own, the bundled OCRE titles and ids carry a part for no other numeral, and nothing here says how the rest of
+// the set is bound. RIC V is the one addition, settled before this table existed: dealers cite V.1 and V.2, and OCRE merges the two into one V, so
+// both are read and the lookup asks for V entire. A part outside the table is not this book's, so the citation carrying it is left unread.
+const VOLUME_PARTS = new Map([['II', new Set(['1', '3'])], ['V', new Set(['1', '2'])]]);
+export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String(numeral).toUpperCase())?.has(part));
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
 // is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
@@ -231,11 +237,14 @@ function readClean(value) {
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
-    const [, numeral, part, edition, section = '', number] = ric;
+    const [, numeral, mark, part, edition, section = '', number] = ric;
     // A volume written in Arabic numerals takes no comma after it. The Roman spelling is the one RIC is bound and cited under, and it alone is
     // punctuated the way HGC's volume is; "RIC 5, 6" and "RIC 1,2" are two numbers a dealer listed under one key, not volume V number 6.
     if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
     const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
+    // A comma is also how a dealer lists numbers, so a part joined on with one is read only where RIC really divides that volume: "RIC III, 2, 3" is
+    // two of RIC III's numbers. The volume's own punctuation ("IV.1", "II.3", "IV part 1") says part and nothing else, and is read whatever it names.
+    if (part && mark === ',' && !realVolumePart(roman, part)) return null;
     const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
     return ricReference(number, volume, section);
   }

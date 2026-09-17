@@ -850,9 +850,13 @@ test('a comma between a RIC volume and its number keeps the reference whole', ()
   assert.deepEqual(texts('Hadrian. RIC II.3, 2345, 2346.'), ['RIC II.3, 2345']);
   // A volume, its part and its number, each parted by a comma. Read as "RIC V 2" this opened Probus 2, a coin the dealer never cited.
   assert.deepEqual(only('Probus. RIC V, 2, 123').reference, { catalogue: 'RIC', volume: 'V, Part 2', section: '', number: '123' });
-  assert.deepEqual(only('Caracalla. RIC IV, 1, 123a.').reference, { catalogue: 'RIC', volume: 'IV, Part 1', section: '', number: '123a' });
-  // Only a part that volume really has: OCRE divides II into its 1st and 3rd parts and no other, so "RIC II, 2" is nobody's reference.
-  assert.deepEqual(texts('Trajan. RIC II, 2, 123'), []);
+  assert.deepEqual(only('Trajan. RIC II, 1, 123').reference, { catalogue: 'RIC', volume: 'II, Part 1', section: '', number: '123' });
+  // Only a part the volume really has, since a comma is also how a dealer lists numbers: "RIC III, 2, 3" is two of RIC III's numbers, and the
+  // Reference box must read these the same way, which is to say not at all.
+  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 1, 123a']) {
+    assert.deepEqual(texts(`Trajan. ${text}`), [], text);
+    assert.equal(parseReference(text), null, text);
+  }
   // A part written with a space is the dealer's number, not a part: "RIC II 1" is volume II number 1, and the 2 after it is another type.
   assert.deepEqual(texts('Trajan. RIC II 1, 2'), ['RIC II 1']);
 });
