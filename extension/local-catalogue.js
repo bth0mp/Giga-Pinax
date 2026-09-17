@@ -108,7 +108,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     // A number index built against another index still lists positions that resolve, and the lookup would quietly miss
     // whatever the two disagree about. The count it carries is what tells the two apart.
     if (index.entryCount !== entries.length || index.entryCount !== meta.activeRecordCount) throw new Error('Invalid local OCRE number index');
-    const numbers = index.numbers;
+    const { numbers } = index;
     return [...new Set(keys.flatMap((key) => numbers[key] ?? []))].sort((a, b) => a - b).map((position) => {
       const entry = Number.isInteger(position) && position >= 0 ? entries[position] : undefined;
       if (!entry) throw new Error('Invalid local OCRE number index');
