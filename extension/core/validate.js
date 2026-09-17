@@ -32,10 +32,12 @@ export function dateParts(value) {
 
 export const isIsoDate = (value) => dateParts(value) !== null;
 
-// The date a whole number of days from this one, or null where this one is no date.
+// The date a whole number of days from this one, or null where this one is no date, or where the shift lands outside the
+// range a Date holds: a crafted day count is the bound check's to refuse, not this arithmetic's to throw over.
 export function shiftDate(value, days) {
   const parts = dateParts(value);
-  return parts ? new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)).toISOString().slice(0, 10) : null;
+  const shifted = parts ? new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)) : null;
+  return shifted !== null && Number.isFinite(shifted.valueOf()) ? shifted.toISOString().slice(0, 10) : null;
 }
 
 // A UTC instant exactly as toISOString writes it. The round trip settles the whole shape; the four leading digits are

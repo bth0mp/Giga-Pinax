@@ -297,6 +297,23 @@ test('event save rejects a reminder whose wall time does not exist in the confir
   assert.equal(result.error.path, 'event.reminders[0].localTime');
 });
 
+// A reminder that far before its event has no date to resolve at all: it must be refused as an out-of-bound day count, not shift the calendar past
+// the range a Date can hold and crash the writer.
+test('event save refuses an absurd daysBefore as an ordinary validation failure', () => {
+  for (const daysBefore of [1e9, 366, -1e9, Number.MAX_SAFE_INTEGER]) {
+    const result = applyCommand(createEmptySnapshot(NOW), command('event.save', {
+      expectedRevision: null,
+      event: {
+        name: 'Far off', eventKind: 'auction-day', precision: 'date-only',
+        localDate: '2026-02-10', timeZone: 'Europe/London', reminderScope: 'standalone',
+        reminders: [{ kind: 'wall-time', daysBefore, localTime: '09:00' }],
+      },
+    }), context());
+    assert.equal(result.ok, false, String(daysBefore));
+    assert.equal(result.error.code, 'validation', String(daysBefore));
+  }
+});
+
 test('a stored event whose start instant drifted from its local fields still loads', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.auctionEvents.push({
