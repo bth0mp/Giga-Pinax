@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fetchCoinArchivesPrices, parseCoinArchivesPublic } from '../extension/coinarchives-prices.js';
+import { coinArchivesUrl, localDay } from '../extension/prices.js';
 
 const row = (id, date, price, title = `Auction, Lot ${id}`, description = '') => `<tr id="${id}"><td><a class='R' href='lotviewer.php?LotID=${id}&amp;AucID=7&amp;Lot=${id}&amp;Val=x'><div class="auctiontitle">${title}</div><span class="lottext">${description}</span></a></td><td><nobr>${date}</nobr></td><td class="price">${price}</td><td></td></tr>`;
 const page = (rows, count = rows.length) => `<div class="resultsinfo"><span class="headertext">Your search for <b>'test</b>' matched ${count} lots from auctions added in the last six months.</span><br>Only the first 100 results are shown.</div><table class='results'>${rows.join('')}</table>`;
 const options = { term: 'test', section: 'a', currency: 'USD', now: new Date('2026-09-15T00:00:00Z') };
+// A request that never answers. Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
+const stall = (url, { signal }) => new Promise((resolve, reject) => {
+  const alive = setTimeout(resolve, 1000);
+  signal.addEventListener('abort', () => { clearTimeout(alive); reject(signal.reason); });
+});
 
 test('parses only strict realized-price cells and keeps native currencies', () => {
   const result = parseCoinArchivesPublic(page([
@@ -70,6 +76,41 @@ test('rejects zero and unsafe realized amounts before selecting lots', () => {
   assert.equal(result.status, 'unpriced');
   assert.equal(result.excluded.malformedPrice, 2);
   assert.equal(result.lots.length, 0);
+});
+
+test('decodes every character reference once, so an escaped entity stays text', () => {
+  const result = parseCoinArchivesPublic(page([
+    row('1', '1 Sep 2026', '10&nbsp;USD', 'Ash &amp;quot;Two&amp;quot; &#039;three&#x27; &lt;b&gt;'),
+  ]), options);
+  assert.equal(result.lots[0].title, 'Ash &quot;Two&quot; \'three\' <b>');
+});
+
+// A browser reports the address it fetched with every character percent-encoded, so an apostrophe in the term reads as a redirect until both are
+// normalised the same way.
+test('an apostrophe in the term is no redirect', async () => {
+  const term = "O'Brien 12";
+  const html = page([row('1', '1 Sep 2026', '10&nbsp;USD')]).replace("<b>'test</b>", "<b>'O&#039;Brien 12</b>");
+  const served = new URL(coinArchivesUrl(term, 'a')).href;
+  const fetchImpl = async () => ({ ok: true, status: 200, url: served, headers: new Headers({ 'content-type': 'text/html' }),
+    arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const result = await fetchCoinArchivesPrices({ term, section: 'a', currency: 'USD' }, { fetchImpl, now: options.now });
+  assert.equal(result.status, 'ok');
+});
+
+// The cutoff is the collector's own day, as it is for acsearch: for part of every day away from UTC the UTC date is another day, so a lot he can still
+// see as today's was posted as future-dated, or tomorrow's counted as sold.
+test('a lot is future-dated by the local calendar day, not the UTC one', () => {
+  const day = (date) => `${date.getUTCDate()} Sep ${date.getUTCFullYear()}`;
+  const midnight = new Date(2026, 8, 15);
+  const tomorrow = new Date(Date.UTC(2026, 8, 16));
+  assert.equal(parseCoinArchivesPublic(page([row('1', day(localDay(midnight)), '10&nbsp;USD')]), { ...options, now: midnight }).status, 'ok');
+  const late = new Date(2026, 8, 15, 23, 59);
+  assert.equal(parseCoinArchivesPublic(page([row('1', day(tomorrow), '10&nbsp;USD')]), { ...options, now: late }).excluded.futureDate, 1);
+});
+
+test('a stalled request is cut off by its own timeout', async () => {
+  const result = await fetchCoinArchivesPrices({ term: 'x', section: 'a', currency: 'USD' }, { fetchImpl: stall, timeoutMs: 20 });
+  assert.equal(result.reason, 'timeout');
 });
 
 test('fetches one bounded public page without credentials or redirects', async () => {

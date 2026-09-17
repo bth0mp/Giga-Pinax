@@ -197,7 +197,11 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'network' });
-  const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+  // Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
+  const hang = (url, { signal }) => new Promise((resolve, reject) => {
+    const alive = setTimeout(resolve, 1000);
+    signal.addEventListener('abort', () => { clearTimeout(alive); reject(new Error('aborted')); });
+  });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
 });
 

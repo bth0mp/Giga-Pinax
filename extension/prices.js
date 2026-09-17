@@ -317,10 +317,8 @@ export function lastSale(summary) {
 
 export async function fetchPrices({ term, currency, category }, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: controller.signal, credentials: 'include', cache: 'no-store' });
+    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
     const html = await response.text();
     const lots = extractLots(html);
@@ -336,8 +334,6 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     return { status: 'ok', summary, lots: page };
   } catch {
     return { status: 'network' };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
