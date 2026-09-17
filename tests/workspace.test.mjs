@@ -22,6 +22,9 @@ import {
   editorsWithChangedBasis,
   conflictNoteMessage,
   planCommit,
+  lotFormValues,
+  bidFormValues,
+  mergeRebasedFields,
   commandExpectedRevisions,
   eventAttachDecision,
   selectionAfterSnapshot,
@@ -280,6 +283,70 @@ test('a group reorder carries every coin revision it claimed, so its own writes 
   }));
   assert.deepEqual(plan.conflicts, []);
   assert.equal(plan.bases.get('lot').revision, 8);
+});
+
+test('an auction attached while the details form is dirty survives that form’s next save', () => {
+  const before = { id: 'lot-a', revision: 3, title: 'Nero denarius', notes: 'Check the mint', sourceLinks: [] };
+  const attached = { ...before, revision: 4, auctionEventId: 'event-a' };
+  // The collector was still typing in the details form when "Add auction" committed the attachment.
+  const typed = { ...lotFormValues(before), notes: 'Check the mint mark and the reverse legend' };
+  const plan = planCommit(commitInput({
+    editor: null, submittedRevisions: { 'lot-a': 3 }, value: attached,
+    lots: [attached], auctionEvents: [{ id: 'event-a', revision: 0 }],
+    bases: [['lot', { id: 'lot-a', revision: 3, record: before }]], dirty: ['lot'], versions: [['lot', 4]],
+  }));
+  assert.deepEqual(plan.merge, ['lot'], 'the rebased dirty editor is named for the merge');
+  assert.equal(plan.bases.get('lot').revision, 4);
+  const rebased = plan.bases.get('lot').record;
+  const fields = mergeRebasedFields(lotFormValues(before), lotFormValues(rebased), typed);
+  assert.deepEqual(fields, { auctionEventId: 'event-a' });
+  const draft = buildWorkspaceLotDraft(rebased, { ...typed, ...fields }, plan.bases.get('lot').originalManualUrl);
+  assert.equal(draft.auctionEventId, 'event-a', 'the next save keeps the attachment');
+  assert.equal(draft.notes, 'Check the mint mark and the reverse legend', 'and the unsaved edits');
+});
+
+test('a rebased form follows committed data only in the fields the collector left alone', () => {
+  const before = { id: 'lot-a', revision: 3, title: 'Nero', reference: 'RIC 306', lotNumber: '12', notes: '', sourceLinks: [] };
+  const committed = { ...before, revision: 4, reference: 'RIC 307', lotNumber: '15' };
+  const typed = { ...lotFormValues(before), reference: 'RIC 306 var', notes: 'Mine' };
+  // `reference` moved on both sides, so the collector's text stays; `notes` is theirs alone.
+  assert.deepEqual(mergeRebasedFields(lotFormValues(before), lotFormValues(committed), typed), { lotNumber: '15' });
+  assert.deepEqual(mergeRebasedFields(lotFormValues(before), lotFormValues(before), typed), {});
+});
+
+test('a settled outcome moves the bid form’s untouched fields but not the typed premium', () => {
+  const bidding = { id: 'lot-a', revision: 3, activeBid: { amount: { currency: 'EUR', minor: 15000 }, buyerPremiumBps: 2000 } };
+  const settled = { id: 'lot-a', revision: 4, outcome: { status: 'won' } };
+  const typed = { ...bidFormValues(bidding, 'en-US', 'USD'), premium: '22.5' };
+  const plan = planCommit(commitInput({
+    editor: 'outcome', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 1,
+    value: settled, lots: [settled],
+    bases: [['bid', { id: 'lot-a', revision: 3, record: bidding }], ['outcome', { id: 'lot-a', revision: 3 }]],
+    dirty: ['bid'], versions: [['outcome', 1]],
+  }));
+  assert.deepEqual(plan.merge, ['bid']);
+  assert.deepEqual(mergeRebasedFields(bidFormValues(bidding, 'en-US', 'USD'), bidFormValues(settled, 'en-US', 'USD'), typed), {
+    amount: '', currency: 'USD',
+  });
+});
+
+test('the details form reads the same values the merge compares', () => {
+  const lot = {
+    id: 'lot-a', revision: 2, title: 'Nero', reference: 'RIC 306', lotNumber: '12', notes: 'kept',
+    auctionEventId: 'event-a', sourceLinks: [{ source: 'manual', url: 'https://example.test/lot' }],
+    auctionContext: { pageUrl: 'https://house.test/lot/12', house: 'House' },
+    coinDetails: { weightMg: 3400, diameterHundredthsMm: 1850, condition: 'VF', photoUrls: ['https://photo.test/a.jpg'] },
+  };
+  assert.deepEqual(lotFormValues(lot), {
+    id: 'lot-a', title: 'Nero', reference: 'RIC 306', lotNumber: '12', notes: 'kept', auctionEventId: 'event-a',
+    sourceUrl: 'https://example.test/lot', auctionPageUrl: 'https://house.test/lot/12', auctionCanonicalUrl: '',
+    auctionHouse: 'House', auctionSaleId: '', auctionLotNumber: '', weightGrams: '3.4', diameterMm: '18.5',
+    condition: 'VF', photoUrl1: 'https://photo.test/a.jpg', photoUrl2: '',
+  });
+  assert.deepEqual(bidFormValues({ plannedBid: { amount: { currency: 'GBP', minor: 1234 }, buyerPremiumBps: 2050 } }, 'en-US', 'USD'), {
+    amount: '12.34', currency: 'GBP', premium: '20.5',
+  });
+  assert.deepEqual(bidFormValues(null, 'en-US', 'CHF'), { amount: '', currency: 'CHF', premium: '' });
 });
 
 test('commands name the records they claim to replace', () => {

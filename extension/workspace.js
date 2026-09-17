@@ -146,6 +146,56 @@ export function buildWorkspaceLotDraft(existing, values, originalManualUrl) {
   return lot;
 }
 
+// The one reading of a coin into the details form: the populate path and the rebase merge have to
+// agree on what a record puts in every field, or the merge cannot tell a collector's edit from it.
+// ponytail: provenance rows are a repeating subtree, not a field, so they are populated but never merged.
+export function lotFormValues(lot) {
+  const context = lot?.auctionContext ?? {};
+  const details = lot?.coinDetails ?? {};
+  return {
+    id: lot?.id ?? '',
+    title: lot?.title ?? '',
+    reference: lot?.reference ?? '',
+    lotNumber: lot?.lotNumber ?? '',
+    notes: lot?.notes ?? '',
+    auctionEventId: lot?.auctionEventId ?? '',
+    sourceUrl: lot?.sourceLinks?.find((link) => link.source === 'manual')?.url ?? '',
+    auctionPageUrl: context.pageUrl ?? '',
+    auctionCanonicalUrl: context.canonicalUrl ?? '',
+    auctionHouse: context.house ?? '',
+    auctionSaleId: context.saleId ?? '',
+    auctionLotNumber: context.lotNumber ?? '',
+    weightGrams: details.weightMg ? String(details.weightMg / 1000) : '',
+    diameterMm: details.diameterHundredthsMm ? String(details.diameterHundredthsMm / 100) : '',
+    condition: details.condition ?? '',
+    photoUrl1: details.photoUrls?.[0] ?? '',
+    photoUrl2: details.photoUrls?.[1] ?? '',
+  };
+}
+
+export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
+  const terms = lot?.plannedBid ?? lot?.activeBid;
+  return {
+    amount: moneyInputText(terms?.amount, locale),
+    currency: terms?.amount?.currency ?? fallbackCurrency,
+    premium: Number.isInteger(terms?.buyerPremiumBps)
+      ? new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 2 }).format(terms.buyerPremiumBps / 100)
+      : '',
+  };
+}
+
+// A dirty form rebased from the record it was populated from onto a newer one: every field the
+// collector has not touched follows the new record, and every field they did touch is theirs.
+export function mergeRebasedFields(valuesFromOldRecord, valuesFromNewRecord, currentValues) {
+  const fields = {};
+  for (const [field, value] of Object.entries(valuesFromNewRecord ?? {})) {
+    const current = currentValues?.[field];
+    if (current !== (valuesFromOldRecord ?? {})[field] || current === value) continue;
+    fields[field] = value;
+  }
+  return fields;
+}
+
 export function lotStatusLabel(lot) {
   const status = lot?.outcome?.status;
   if (status && status !== 'open') return ({ won: 'Won', lost: 'Lost', passed: 'Passed' })[status] ?? 'Closed';
@@ -264,6 +314,7 @@ export function planCommit({
   const nextDirty = new Set(dirty);
   const repopulate = [];
   const reset = [];
+  const merge = [];
   const replaced = { ...(submittedRevisions ?? {}) };
   if (submittedBasis?.id && Number.isInteger(submittedBasis.revision)) replaced[submittedBasis.id] = submittedBasis.revision;
 
@@ -284,8 +335,11 @@ export function planCommit({
     const basis = nextBases.get(other);
     if (!basis?.id || replaced[basis.id] !== basis.revision) continue;
     const record = isStoredRecord(value) && value.id === basis.id ? value : editorRecord(snapshot, other, basis.id);
-    if (record) rebase(other, record);
-    else if (snapshotFresh) blank(other);
+    if (record) {
+      rebase(other, record);
+      // A form with unsaved input cannot be repopulated, so it is merged field by field instead.
+      if (nextDirty.has(other)) merge.push(other);
+    } else if (snapshotFresh) blank(other);
   }
 
   let preserved = false;
@@ -294,6 +348,7 @@ export function planCommit({
     if (preserved) {
       // The form keeps what the collector typed while the save was in flight, on top of the
       // committed record rather than on top of the revision it replaced.
+      if (isStoredRecord(value) && nextBases.get(editor)?.record) merge.push(editor);
       if (isStoredRecord(value)) rebase(editor, value);
       nextDirty.add(editor);
     } else {
@@ -308,7 +363,7 @@ export function planCommit({
   }
 
   return {
-    bases: nextBases, versions: new Map(versions), dirty: nextDirty, repopulate, reset, preserved,
+    bases: nextBases, versions: new Map(versions), dirty: nextDirty, repopulate, reset, merge, preserved,
     conflicts: snapshotFresh ? editorsWithChangedBasis(snapshot, nextDirty, nextBases, pending) : null,
   };
 }
@@ -599,14 +654,38 @@ async function initWorkspace() {
     else if (editor === 'event') { $('event-form').hidden = false; populateEventForm(record); }
     else if (editor === 'group') populateGroupForm(record);
   };
+  // Only the forms a command of this page can change behind the collector's back are merged: the
+  // outcome form is written by `lot.outcome.set` alone, which is its own save.
+  const editorFormValues = {
+    lot: (record) => lotFormValues(record),
+    bid: (record) => bidFormValues(record, navigator.language, snapshot.preferences?.currency ?? 'USD'),
+  };
+  // A dirty form cannot be repopulated, but leaving it on the record it was populated from lets its
+  // next save undo the commit: each field the collector has not touched follows the new record.
+  const mergeRebasedEditor = (editor, previousRecord, incoming) => {
+    const readValues = editorFormValues[editor];
+    const record = editorBases.get(editor)?.record;
+    if (!readValues || !record || !previousRecord) return;
+    const elements = $(`${editor}-form`).elements;
+    // The merged auction may be one this very commit created, so the select needs its option
+    // before the value can hold; the render that follows repeats this harmlessly.
+    if (editor === 'lot') fillSelect(elements.auctionEventId, incoming?.auctionEvents ?? [], 'No auction attached');
+    const before = readValues(previousRecord);
+    const current = Object.fromEntries(Object.keys(before).map((field) => [field, elements[field].value]));
+    // Assigning a value fires no input event, so the dirty flag and edit version stay where the
+    // collector left them.
+    for (const [field, value] of Object.entries(mergeRebasedFields(before, readValues(record), current))) elements[field].value = value;
+  };
   // A committed command decides what happens to every open editor in one place; the page only
   // carries that decision out.
-  const applyPlan = (plan) => {
+  const applyPlan = (plan, incoming = snapshot) => {
+    const merges = plan.merge.map((editor) => [editor, editorBases.get(editor)?.record ?? null]);
     editorBases.clear(); for (const [editor, basis] of plan.bases) editorBases.set(editor, basis);
     editorVersions.clear(); for (const [editor, version] of plan.versions) editorVersions.set(editor, version);
     dirtyEditors.clear(); for (const editor of plan.dirty) dirtyEditors.add(editor);
     for (const editor of plan.reset) resetEditor(editor);
     for (const editor of plan.repopulate) populateEditor(editor);
+    for (const [editor, previousRecord] of merges) mergeRebasedEditor(editor, previousRecord, incoming);
     if (plan.conflicts) showConflictNote(conflictNoteMessage(plan.conflicts));
   };
   // `beforeRender` applies the commit that produced this snapshot, so the page renders the editors
@@ -635,7 +714,7 @@ async function initWorkspace() {
         bases: editorBases, versions: editorVersions, dirty: dirtyEditors,
       });
       preserved = plan.preserved;
-      applyPlan(plan);
+      applyPlan(plan, incoming);
     };
     // A refreshed snapshot decides the editors; when the refresh itself failed the commit is still
     // applied, against what this page already has, so a saved form is never left blank.
@@ -923,10 +1002,8 @@ async function initWorkspace() {
     if (focus) $('selected-title').focus?.();
   }
   function populateLotForm(lot) {
-    const f = $('lot-form').elements; const originalManualUrl = lot.sourceLinks?.find((link) => link.source === 'manual')?.url;
-    f.id.value = lot.id; f.title.value = lot.title; f.reference.value = lot.reference ?? ''; f.lotNumber.value = lot.lotNumber ?? ''; f.notes.value = lot.notes ?? ''; f.auctionEventId.value = lot.auctionEventId ?? ''; f.sourceUrl.value = originalManualUrl ?? '';
-    const context = lot.auctionContext ?? {}; f.auctionPageUrl.value = context.pageUrl ?? ''; f.auctionCanonicalUrl.value = context.canonicalUrl ?? ''; f.auctionHouse.value = context.house ?? ''; f.auctionSaleId.value = context.saleId ?? ''; f.auctionLotNumber.value = context.lotNumber ?? '';
-    const details = lot.coinDetails ?? {}; f.weightGrams.value = details.weightMg ? String(details.weightMg / 1000) : ''; f.diameterMm.value = details.diameterHundredthsMm ? String(details.diameterHundredthsMm / 100) : ''; f.condition.value = details.condition ?? ''; f.photoUrl1.value = details.photoUrls?.[0] ?? ''; f.photoUrl2.value = details.photoUrls?.[1] ?? '';
+    const f = $('lot-form').elements;
+    for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
   }
   function renderSelectedLot() {
@@ -1035,7 +1112,8 @@ async function initWorkspace() {
   };
   function populateBidForm(lot) {
     const f = $('bid-form').elements;
-    const terms = lot?.plannedBid ?? lot?.activeBid; f.amount.value = moneyInputText(terms?.amount, navigator.language); f.currency.value = terms?.amount.currency ?? snapshot.preferences?.currency ?? 'USD'; f.premium.value = Number.isInteger(terms?.buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(terms.buyerPremiumBps / 100) : '';
+    const terms = lot?.plannedBid ?? lot?.activeBid;
+    for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
     bidCalculator?.setValues({ lotId: lot?.id ?? null, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
   }
