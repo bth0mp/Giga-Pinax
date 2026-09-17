@@ -804,6 +804,69 @@ test('searchesReference asks whether the term still searches the card’s own ci
   assert.equal(searchesReference('anything', { catalogue: 'Other', number: 'Rare', section: '' }), true);
 });
 
+// 0.32 review, round 2: the term was tested by substring, so a search for another type that begins with the same digits switched the filter on and
+// judged its rows against a reference nobody searched for.
+test('searchesReference reads the number as a whole token, edition mark and all', () => {
+  const price23 = { catalogue: 'Price', number: '23' };
+  assert.equal(searchesReference('"Price 230"', price23), false);
+  assert.equal(searchesReference('Price 2300', price23), false);
+  assert.equal(searchesReference('Price 23a', price23), false);
+  assert.equal(searchesReference('Price 23.5 g', price23), false);
+  assert.equal(searchesReference('Alexander "Price 23" Amphipolis', price23), true);
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
+  assert.equal(searchesReference('Nero "RIC 3061"', nero), false);
+  assert.equal(searchesReference('Nero "RIC 306"', nero), true);
+  // The collector may keep the edition mark the default term leaves out; it is still his card's own citation.
+  assert.equal(searchesReference('Nero "RIC I² 306"', nero), true);
+  assert.equal(searchesReference('Nero "RIC² 306"', nero), true);
+});
+
+// 0.32 review, round 2: the intervening words were counted, not read. A ruler's own regnal numeral ended the match, a volume's part mark ended it,
+// and another catalogue's key did not — so "RIC I, Cohen 306" was counted as a sale of RIC 306.
+test('citesReference reads a ruler’s numeral, a volume part, and stops at another catalogue', () => {
+  const leo = { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' };
+  assert.equal(citesReference('Leo I. Solidus. RIC X Leo I 605.', leo), true);
+  assert.equal(citesReference('Constantine II. RIC VII Constantine II 12.', { catalogue: 'RIC', number: '12', volume: 'VII' }), true);
+  assert.equal(citesReference('Philip I. Antoninianus. RIC IV Philip I 27.', { catalogue: 'RIC', number: '27', volume: 'IV' }), true);
+  // A volume's part, however the dealer punctuates it, against a card whose volume names none.
+  const severus = { catalogue: 'RIC', number: '266', volume: 'IV', section: 'Septimius Severus' };
+  for (const cited of ['RIC IV-1 266', 'RIC IV/1 266', 'RIC IV, part I, 266', 'RIC IV.1 266']) {
+    assert.equal(citesReference(`Septimius Severus. Denarius. ${cited}. VF.`, severus), true, cited);
+  }
+  assert.equal(citesReference('Aurelian. Antoninianus. RIC V/1, 12.', { catalogue: 'RIC', number: '12', volume: 'V' }), true);
+  assert.equal(citesReference('Nero. As. RIC I (2) 306.', { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' }), true);
+  // A card on a volume with a part takes that part's citations, and no other's.
+  const titus = { catalogue: 'RIC', number: '123', volume: 'II, Part 1 (2nd edition)', section: 'Titus' };
+  for (const cited of ['RIC II, Part 1, 123', 'RIC II.1² 123', 'RIC II-1 123', 'RIC II/1 123', 'RIC II² 123']) {
+    assert.equal(citesReference(`Titus. Denarius. ${cited}. VF.`, titus), true, cited);
+  }
+  const hadrian = { catalogue: 'RIC', number: '123', volume: 'II, Part 3 (2nd edition)', section: 'Hadrian' };
+  assert.equal(citesReference('Hadrian. Denarius. RIC II.3 123.', hadrian), true);
+  assert.equal(citesReference('Hadrian. Denarius. RIC II.1 123.', hadrian), false);
+  // Another catalogue's key between the two ends the match: what follows is that catalogue's number, not RIC's.
+  const ric306 = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  for (const line of ['Not in RIC. Cohen 306.', 'Unlisted in RIC, BMCRE 306.', 'RIC unlisted, Cohen 306', 'RIC I, Cohen 306', 'RIC I and BMC 306']) {
+    assert.equal(citesReference(line, ric306), false, line);
+  }
+  assert.equal(citesReference('Nero. As. RIC I Nero 306.', ric306), true);
+});
+
+// A number that turns out to be money, a measurement or a die axis is not a catalogue number, whatever key stands in front of it.
+test('citesReference never reads an amount, a unit or a die axis as the number', () => {
+  const price23 = { catalogue: 'Price', number: '23' };
+  for (const line of ['Opening Price 23', 'Start Price 23', 'Reserve Price 23', 'Asking Price 23', 'Sale Price 23', 'Estimated Price 23',
+    'Price 23 AUD', 'Price 23 Euro', 'Price 23 Euros', 'Price 23 US$', 'Price 23,- EUR', 'Price 23.- CHF', 'Price 23.00', 'Price 23,50',
+    'Price 23.5 g', 'Price (23 mm)']) {
+    assert.equal(citesReference(line, price23), false, line);
+  }
+  assert.equal(citesReference('Macedon. Tetradrachm. Price 23. Very Fine.', price23), true);
+  // A number followed by "h" is the die axis a dealer prints beside the weight.
+  const sc12 = { catalogue: 'SC', number: '12' };
+  assert.equal(citesReference('Antiochos. AE. Rev: large SC, 12 h.', sc12), false);
+  assert.equal(citesReference('Antiochos. AE. SC 12 h.', sc12), false);
+  assert.equal(citesReference('Antiochos. AE. SC 12. Very Fine.', sc12), true);
+});
+
 // 75,000 characters of repeated lowercase marks took the reviewer's machine 948 ms, because every match sliced the description again.
 test('a long description is read once and quickly', () => {
   const long = `Fine. ${'ss ss ss '.repeat(8000)}`;

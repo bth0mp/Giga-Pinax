@@ -178,10 +178,20 @@ export function defaultTerm(reference) {
 // ("Müller 5") is looking for something else, and every row he found is counted.
 export const citationPhrases = (reference) => (defaultTerm(reference).match(/"[^"]*"/g) ?? []).map((quoted) => quoted.slice(1, -1));
 export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
+// An edition mark the collector kept on the key or the volume ("RIC I² 306") still searches the card's own citation; the default term leaves it out.
+const TERM_MARK = String.raw`(?:[²³]|\(\d\)|\d)?`;
+// A phrase as the term must still hold it: every word of it, the number last and whole. "Price 230" and "RIC 3061" are searches for another type,
+// and so is a number a decimal part continues ("Price 23.5").
+const searchPattern = (phrase) => {
+  const words = squash(phrase).split(' ');
+  const body = words.map((word, index) => (index === words.length - 1 ? escaped(word)
+    : escaped(word.replace(/,$/, '')) + TERM_MARK + (word.endsWith(',') ? ',' : ''))).join('\\s*');
+  return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'iu');
+};
 export function searchesReference(term, reference) {
-  const phrases = citationPhrases(reference).map((phrase) => phrase.toLowerCase());
-  const text = squash(term).toLowerCase();
-  return phrases.length === 0 || phrases.some((phrase) => text.includes(phrase));
+  const phrases = citationPhrases(reference);
+  const text = squash(term);
+  return phrases.length === 0 || phrases.some((phrase) => searchPattern(phrase).test(text));
 }
 
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
@@ -282,25 +292,46 @@ const citationNumber = ({ catalogue, number }) => {
 // Between the key and the number: the punctuation and the bracket dealers put there ("Cited as RIC I, 306", "RIC (306)"). No colon, no dash and no
 // semicolon — those start the next citation on the line.
 const SEP = String.raw`[\s.,(]*`;
-// An edition or part mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC II.1 306".
-const EDITION = String.raw`(?:[²³]|\(\d\)|\.\d|\d)?`;
-// A ruler or an edition spelled out, between the volume and the number: plain words, or a bracketed phrase of them, each with an optional comma.
-// A word holding a digit or ending in a full stop is another citation's, so "RIC -; C. 306" and "RIC 12; Cohen 306" stop here. A bare Roman numeral
-// is never a word: it is a volume, and which volumes count is decided above.
+// An edition mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC I (2) 306".
+const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\d)?`;
+// The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
+// really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
+const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
+// A ruler or an edition spelled out, between the volume and the number: plain words, or a bracketed phrase of them, each with an optional comma, and
+// a ruler may carry his own regnal numeral ("RIC X Leo I 605"). A word holding a digit or ending in a full stop is another citation's, so
+// "RIC -; C. 306" and "RIC 12; Cohen 306" stop here. A bare Roman numeral is never a word of its own: it is a volume, and which volumes count is
+// decided above.
 const NUMERAL = String.raw`[IVXLC]+`;
-const WORD = String.raw`(?:\([\p{L} ]+\)|(?!${NUMERAL}(?![\p{L}\d]))\p{L}+)`;
-const RULERS = String.raw`(?:${WORD},?\s+){0,4}`;
+const WORD = String.raw`(?:\([\p{L} ]+\)|(?!(?:${NUMERAL}|${OTHER_KEYS.join('|')})(?![\p{L}\d]))\p{L}+)`;
+const RULERS = String.raw`(?:${WORD}(?:\s+${NUMERAL}(?![\p{L}\d]))?,?\s+){0,4}`;
+// A volume published in parts, as the dealer punctuates it: "RIC IV-1", "RIC IV/1", "RIC II.1", "RIC IV, part I,".
+const PART_NUMERALS = Object.freeze({ 1: 'I', 2: 'II', 3: 'III', 4: 'IV' });
+const partPattern = (forms) => String.raw`(?:[-/.](?:${forms})|,?\s*[Pp]art\s+(?:${forms}),?)?`;
 // A full-number range that ends at the number ("RIC 305-306"); one that starts at it ("RIC 306-307") already ends at a character no number may hold.
 const RANGE = String.raw`(?:\d+\s*[-–]\s*)?`;
-// A line about money, not about a type: the key carries one of these words in front of it, or the number is an amount in a currency.
-const PRICE_WORDS = ['starting', 'hammer', 'estimate', 'realized', 'realised'];
-const CURRENCY = String.raw`(?!\s?(?:(?:USD|EUR|GBP|CHF)(?![\p{L}\d])|[$€£]))`;
+// A line about money, not about a type: the key carries one of these words in front of it, or the number is an amount, a measurement or a die axis.
+const PRICE_WORDS = ['starting', 'start', 'opening', 'reserve', 'asking', 'sale', 'hammer', 'estimate', 'estimated', 'realized', 'realised'];
+const CURRENCY = String.raw`(?:USD|EUR|GBP|CHF|AUD)(?![\p{L}\d])|[Ee]uros?(?![\p{L}\d])|US\$|[$€£]`;
+// The weight, the diameter and the die axis a dealer prints beside a lot's number.
+const UNIT = String.raw`(?:mm|cm|gr|g|h)(?![\p{L}\d])`;
+const NOT_AMOUNT = String.raw`(?![.,][\d-])(?!\s?(?:${CURRENCY}))(?!\s(?:${UNIT}))`;
+
+// The part of a volume the card names ("II, Part 1", "II.1"), which the dealer may write as a digit or as a numeral. A card whose volume names no
+// part takes a citation with any part, but a card that names one takes only its own: volume II part 1's 123 is not part 3's.
+function volumeParts(volume) {
+  const part = /\bpart\s+([\dIVX]+)/i.exec(volume)?.[1] ?? /^[IVXLC]+[./-](\d)/.exec(volume)?.[1] ?? '';
+  if (!part) return String.raw`\d|[IVX]{1,4}`;
+  const other = PART_NUMERALS[part] ?? Object.keys(PART_NUMERALS).find((digit) => PART_NUMERALS[digit] === part.toUpperCase()) ?? '';
+  return [...new Set([part, other].filter(Boolean))].map(escaped).join('|');
+}
 
 // Only RIC carries a volume, and only its own: a card on volume I is not cited by "RIC II 306", while a card without a volume takes any numeral.
 function between({ catalogue, volume }) {
   if (catalogue !== 'RIC') return SEP;
-  const numeral = /^[IVXLC]+/.exec(squash(volume))?.[0] ?? '';
-  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${SEP})?${RULERS}${SEP}`;
+  const text = squash(volume);
+  const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
+  const part = partPattern(volumeParts(text));
+  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${part}${EDITION}${SEP})?${RULERS}${SEP}`;
 }
 
 // Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
@@ -321,7 +352,7 @@ export function citesReference(description, reference) {
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${RANGE}(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${CURRENCY}`;
+    + `${between(reference)}${RANGE}(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
   return new RegExp(pattern, 'u').test(text);
 }
 
