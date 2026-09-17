@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SCHEMA_VERSION } from '../extension/core/records.js';
+import { STORAGE_KEY } from '../extension/store.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
 const listeners = {
@@ -13,6 +14,7 @@ const badges = [];
 const titles = [];
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
+const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
 const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
@@ -300,6 +302,34 @@ test('a worker restarted after a failed capture leaves the warning standing', as
   await new Promise((resolve) => restarted({ type: 'snapshot.get', requestId: crypto.randomUUID() }, {}, resolve));
   for (let index = 0; index < 12; index += 1) await flush();
   assert.notEqual(badges.at(-1), '!', 'the recovered warning must still be retired by a later capture');
+  assert.equal(titles.at(-1), '');
+});
+
+// A reconcile the collector did not ask for has no reply anybody reads: an alarm, an install, or the one that follows a
+// save. When it failed, the reminders simply stopped and nothing anywhere said so.
+test('a reconcile nobody asked for says so when it fails instead of stopping the reminders in silence', async () => {
+  const intact = structuredClone(stored[STORAGE_KEY]);
+  // A root the repair cannot rescue: every command that reads it fails, including the reconcile.
+  stored[STORAGE_KEY].lots = 'not a list';
+  const logged = [];
+  const realError = console.error;
+  console.error = (...args) => { logged.push(args.map(String).join(' ')); };
+  try {
+    listeners.alarms[0]({ name: 'auction-companion:scheduler' });
+    for (let index = 0; index < 12; index += 1) await flush();
+  } finally {
+    console.error = realError;
+    stored[STORAGE_KEY] = intact;
+  }
+  assert.equal(badges.at(-1), '!');
+  assert.equal(titles.at(-1), RECONCILE_FAILURE_TITLE, 'the badge alone does not say what went wrong');
+  assert.equal(logged.length, 1, 'and the reason is in the log for a bug report');
+  assert.match(logged[0], /reconcile/i);
+
+  // Retired the same way every other warning is: the collector opening an extension page.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  for (let index = 0; index < 8; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!');
   assert.equal(titles.at(-1), '');
 });
 

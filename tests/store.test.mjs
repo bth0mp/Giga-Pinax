@@ -776,6 +776,92 @@ test('linked-event reminders exist only while at least one linked lot stays open
   assert.equal(state.snapshot.alerts.length, 0);
 });
 
+// The store the collector already has must open, whatever a crafted backup or an older build left in it. A revision no
+// write could have counted to, and an event whose reminder falls outside the instants a record can hold, each made every
+// later reconcile fail validation - and the background swallowed that, so the reminders simply stopped.
+test('a root carrying an uncountable revision and an underivable reminder still opens, reconciles and exports', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push({
+    id: uuid(), revision: Number.MAX_SAFE_INTEGER, dataClass: 'collector', title: 'Nero denarius',
+    sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const reminderId = uuid();
+  stored.auctionEvents.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Year zero sale', eventKind: 'auction-starts',
+    precision: 'timed', localDate: '2026-10-01', localTime: '00:00', timeZone: 'UTC',
+    startsAt: '0000-01-01T00:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: reminderId, kind: 'offset', offsetMinutes: 60 }], createdAt: NOW, updatedAt: NOW,
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.lots.length, 1, 'the coin is still there');
+  assert.equal(opened.value.auctionEvents.length, 1, 'and so is the sale');
+  assert.equal(opened.value.lots[0].revision, 0, 'counted again from a number the arithmetic can hold');
+
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true, reconciled.message);
+  const after = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(after.value.lots.length, 1);
+  assert.equal(after.value.auctionEvents.length, 1);
+  // The one reminder that cannot be spelled as an instant has no alert; nothing else is affected.
+  assert.deepEqual(after.value.alerts, []);
+  assert.equal(exportBackup(after.value, NOW).ok, true);
+});
+
+// A replace takes the other install's records, not its schedule: that is derived again from the events it just took.
+// Adopting the file's scheduler carried a wake time, and a revision, that belong to a store this one no longer is.
+test('a replace import starts the schedule again instead of adopting the file’s', () => {
+  const current = createEmptySnapshot(NOW);
+  current.scheduler = { revision: 4, nextWakeAt: '2026-09-20T09:00:00.000Z', lastReconciledAt: NOW };
+  const incoming = createEmptySnapshot(NOW);
+  incoming.scheduler = { revision: 900, nextWakeAt: '2030-01-01T00:00:00.000Z', lastReconciledAt: NOW };
+  const eventId = uuid();
+  const reminderId = uuid();
+  incoming.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', name: 'Imported sale', eventKind: 'auction-starts',
+    precision: 'timed', localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+    startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: reminderId, kind: 'offset', offsetMinutes: 60 }], createdAt: NOW, updatedAt: NOW,
+  });
+  incoming.alerts.push({
+    id: uuid(), revision: 3, dataClass: 'collector', triggerId: `${eventId}:${reminderId}:2026-10-10T11:00:00.000Z`,
+    eventId, eventRevision: 0, reminderId, triggerAt: '2026-10-10T11:00:00.000Z',
+    status: 'acknowledged', acknowledgedAt: NOW, createdAt: NOW, updatedAt: NOW,
+  });
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.scheduler, { revision: 0, nextWakeAt: null, lastReconciledAt: null });
+  // The acknowledgement is kept: its reminder came with the file, so the reconcile derives the same trigger again.
+  assert.equal(imported.snapshot.alerts.length, 1);
+  assert.equal(imported.snapshot.alerts[0].status, 'acknowledged');
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  assert.equal(reconciled.snapshot.alerts[0].status, 'acknowledged');
+});
+
+// Every command that changes the schedule is followed by a reconcile that is not part of it. A command whose own
+// projection could not be reconciled used to commit and leave the reconcile failing from then on, with nobody to tell.
+test('a command whose reconcile would be invalid is refused rather than committed', () => {
+  const current = createEmptySnapshot(NOW);
+  current.scheduler = { revision: LIMITS.revision, nextWakeAt: null, lastReconciledAt: null };
+  const result = applyCommand(current, command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'validation');
+  assert.match(result.error.message, /reminders could not be scheduled/i);
+  assert.equal(current.auctionEvents.length, 0);
+});
+
 test('backup import replaces through the same validated root mutation', () => {
   const current = createEmptySnapshot(NOW);
   const incoming = createEmptySnapshot(NOW);

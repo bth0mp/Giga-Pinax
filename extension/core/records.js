@@ -24,6 +24,10 @@ export const LIMITS = Object.freeze({
   url: 2048,
   draftPayloadBytes: 10000,
   commandReplyBytes: 100000,
+  // A revision is only ever compared and counted up, so the ceiling is the highest number the next count is still an
+  // exact integer from: at 2^53-1 the increment is no longer one, and a root carrying it made every later save and every
+  // reconcile fail validation for good. 2^52 writes is a number no collector reaches.
+  revision: 2 ** 52,
 });
 
 const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -143,7 +147,7 @@ function commonRecord(record, path, { dataClass = true } = {}) {
   if (!object.ok) return object;
   const checks = [
     uuidResult(record.id, `${path}.id`),
-    integerResult(record.revision, `${path}.revision`),
+    integerResult(record.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(record.createdAt, `${path}.createdAt`),
     instantResult(record.updatedAt, `${path}.updatedAt`),
   ];
@@ -540,7 +544,7 @@ function preferencesResult(preferences, path) {
   const object = objectResult(preferences, path);
   if (!object.ok) return object;
   const common = firstFailure(
-    integerResult(preferences.revision, `${path}.revision`),
+    integerResult(preferences.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(preferences.createdAt, `${path}.createdAt`),
     instantResult(preferences.updatedAt, `${path}.updatedAt`),
     preferences.schemaVersion === SCHEMA_VERSION
@@ -639,7 +643,7 @@ function alertResult(alert, path) {
   const checks = [
     stringResult(alert.triggerId, `${path}.triggerId`, 500),
     uuidResult(alert.eventId, `${path}.eventId`),
-    integerResult(alert.eventRevision, `${path}.eventRevision`),
+    integerResult(alert.eventRevision, `${path}.eventRevision`, { maximum: LIMITS.revision }),
     uuidResult(alert.reminderId, `${path}.reminderId`),
     instantResult(alert.triggerAt, `${path}.triggerAt`),
     enumResult(alert.status, ALERT_STATES, `${path}.status`),
@@ -666,7 +670,7 @@ function schedulerResult(scheduler, path) {
   const object = objectResult(scheduler, path);
   if (!object.ok) return object;
   return firstFailure(
-    integerResult(scheduler.revision, `${path}.revision`),
+    integerResult(scheduler.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(scheduler.nextWakeAt, `${path}.nextWakeAt`, { nullable: true }),
     instantResult(scheduler.lastReconciledAt, `${path}.lastReconciledAt`, { nullable: true }),
   );
@@ -838,6 +842,22 @@ export function quarantineInvalidRecords(stored, now) {
   if (!object.ok) return object;
   let root;
   try { root = structuredClone(stored); } catch { return failure('invalid-record', 'Stored data cannot be copied.', 'snapshot'); }
+
+  // A revision at or past the ceiling is restarted rather than condemned: the number is only ever compared and counted
+  // up, so a root that carries one - an older build's, or a crafted backup's - must still open with all its records,
+  // and every later write has to count from somewhere the arithmetic can hold. Nothing below the ceiling is touched.
+  const restartRevision = (host, key) => {
+    if (typeof host?.[key] === 'number' && host[key] >= LIMITS.revision) host[key] = 0;
+  };
+  restartRevision(root.preferences, 'revision');
+  restartRevision(root.scheduler, 'revision');
+  for (const { key } of COLLECTIONS) {
+    if (!Array.isArray(root[key])) continue;
+    for (const record of root[key]) {
+      restartRevision(record, 'revision');
+      restartRevision(record, 'eventRevision');
+    }
+  }
 
   const quarantine = [];
   const hosts = new Map();

@@ -39,6 +39,9 @@ let menuQueue = Promise.resolve();
 // the due count until the collector has had a chance to see it.
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
+// Most reconciles are nobody's request - an alarm, an install, the one that follows a save - so their reply is read by
+// no page. One that fails stops every reminder, and until this it did so in silence.
+const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
 let captureFailed = false;
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
@@ -133,7 +136,11 @@ async function deliverOverdue(plan, state) {
 
 async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
-  if (!reply.ok) return reply;
+  if (!reply.ok) {
+    console.error('Giga Pinax: the scheduler reconcile failed.', reply.message);
+    await showCaptureFailure(RECONCILE_FAILURE_TITLE);
+    return reply;
+  }
   await setAlarm(reply.value.nextWakeAt);
   // One read serves both the badge and delivery: an idle wake must not re-read the whole root.
   const state = await snapshot();

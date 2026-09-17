@@ -1,4 +1,4 @@
-import { dateParts, failure, shiftDate } from './validate.js';
+import { dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
 
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const FORMATTERS = new Map();
@@ -92,6 +92,10 @@ export function deriveReminderTriggers(events, _now) {
         if (!resolved.ok) continue;
         triggerAt = resolved.value.startsAt;
       } else continue;
+      // An offset taken off a date near the start of the era lands outside the years an ISO instant can spell, and the
+      // expanded form Date gives back is no timestamp an alert may hold. Skipped like an unresolvable wall time: one
+      // reminder is lost rather than every reminder in the store, which is what a snapshot that cannot validate costs.
+      if (!isIsoInstant(triggerAt)) continue;
       triggers.push({
         // The identity deliberately excludes the event revision: editing an event must not
         // discard the acknowledgements and snoozes the collector already gave its reminders.

@@ -578,6 +578,55 @@ test('validates concrete preferences, scheduler, alert, draft, and request-ledge
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 
+// A revision is only ever compared and counted up, so a number that cannot be counted up exactly is not one: at
+// 2^53-1 the next write is no longer a safe integer, and a crafted backup that planted one made every later save and
+// every reconcile fail validation for good. The ceiling leaves 2^52 writes of headroom, which nobody reaches.
+test('a revision no write could reach is refused wherever one is stored', () => {
+  const above = LIMITS.revision + 1;
+  const snapshot = snapshotWith(makeLot());
+  snapshot.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'GBP', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+  };
+  snapshot.alerts.push({
+    id: '77777777-7777-4777-8777-777777777777', revision: 0, dataClass: 'collector',
+    triggerId: `${IDS.eventUsd}:88888888-8888-4888-8888-888888888888:2026-10-01T08:00:00.000Z`,
+    eventId: IDS.eventUsd, eventRevision: 0, reminderId: '88888888-8888-4888-8888-888888888888',
+    triggerAt: '2026-10-01T08:00:00.000Z', status: 'pending', createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.auctionEvents[0].reminders.push({ id: '88888888-8888-4888-8888-888888888888', kind: 'wall-time', daysBefore: 0, localTime: '09:00' });
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  for (const [path, set] of [
+    ['lots[0].revision', (value) => { snapshot.lots[0].revision = value; }],
+    ['preferences.revision', (value) => { snapshot.preferences.revision = value; }],
+    ['scheduler.revision', (value) => { snapshot.scheduler.revision = value; }],
+    ['alerts[0].eventRevision', (value) => { snapshot.alerts[0].eventRevision = value; }],
+  ]) {
+    set(above);
+    assert.equal(validateSnapshot(snapshot).error.path, path);
+    set(LIMITS.revision);
+    assert.equal(validateSnapshot(snapshot).ok, true, path);
+    set(0);
+  }
+});
+
+// A root that was valid yesterday has to load today, so the repair restarts a revision at or past the ceiling instead
+// of condemning the record that carries it: the collector keeps their coins, and every later write counts again from a
+// number the arithmetic can hold.
+test('a stored revision at or past the ceiling is restarted by the repair, not quarantined', () => {
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { revision: Number.MAX_SAFE_INTEGER }));
+  snapshot.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision: LIMITS.revision, currency: 'GBP', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+  };
+  snapshot.scheduler.revision = Number.MAX_SAFE_INTEGER;
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true, rescued.error?.message);
+  assert.equal(rescued.value.lots.length, 1, 'the coin is still there');
+  assert.equal(rescued.value.lots[0].revision, 0);
+  assert.equal(rescued.value.preferences.revision, 0);
+  assert.equal(rescued.value.scheduler.revision, 0);
+  assert.equal(rescued.value.quarantine, undefined, 'nothing had to be set aside');
+});
+
 test('rejects duplicate or out-of-bounds house premium presets and oversized lot notes', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.preferences = { schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'USD', desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: ' cng ', buyerPremiumBps: 2200 }], createdAt: NOW, updatedAt: NOW };

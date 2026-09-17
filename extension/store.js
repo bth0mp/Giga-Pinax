@@ -746,6 +746,12 @@ function mutation(snapshot, command, context) {
       reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
     });
     projected.recentCommands = projected.recentCommands.slice(-200);
+    // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
+    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is.
+    const projectedValid = validateSnapshot(projected);
+    if (!projectedValid.ok) {
+      return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
+    }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
       return fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
     }

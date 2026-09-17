@@ -273,6 +273,11 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   const summary = { outgoing: counts(current), incoming: counts(incoming) };
   if (mode === 'replace') {
     const snapshot = exportableSnapshot(incoming);
+    // The schedule belongs to the install, not to the file: the reconcile that follows the import derives it again from
+    // the events just taken, so the file's wake time and its revision - counted in a store this one no longer is - are
+    // not adopted. The alerts stay, so an acknowledgement survives wherever its reminder came with the file.
+    snapshot.scheduler = { revision: 0, nextWakeAt: null, lastReconciledAt: null };
+    dropStaleAlerts(snapshot);
     return { ok: true, value: { mode, counts: summary, conflicts: [], duplicates: [], snapshot, requiresConfirmation: true } };
   }
 
