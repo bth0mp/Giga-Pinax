@@ -4,7 +4,7 @@ import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recal
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { shouldRevealRefine } from './companion-popup.js';
+import { documentMode, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 
@@ -957,9 +957,8 @@ showStored();
 applyStoredTheme();
 syncThemeButton();
 // A window opened with ?window=1 (right-click, the pop-out button) can be resized: the page fills it (popup.css) and offers no pop-out of its own.
-const parameters = new URLSearchParams(location.search);
-const panel = parameters.get('panel') === '1';
-const windowed = parameters.get('window') === '1';
+// What this document is, and whether it is the one a right-click's lookup should reach: documentMode answers both, for this page and its companion half.
+const { panel, windowed, acceptsLookupMessages } = documentMode(location.search);
 document.documentElement.classList.toggle('windowed', windowed);
 document.documentElement.classList.toggle('panel-mode', panel);
 
@@ -1247,7 +1246,7 @@ window.addEventListener('storage', (event) => {
 // and this window's older copy is never saved over the sender's Recent list, terms and currency.
 // The panel fallback (panel=1&window=1) stands in for a sidebar the browser wouldn't open, so it never takes a lookup: only the lookup window answers,
 // and a right-click made while just the fallback is open opens a lookup window of its own.
-if (windowed && !panel) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
   if (message?.type !== LOOKUP_MESSAGE) return false;
   const search = new URL(String(message.url), location.href).search;
   const opened = cardFromSearch(search);
