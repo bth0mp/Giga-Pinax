@@ -83,7 +83,16 @@ test('builds an editable collector launcher draft without turning capture into e
     capturedAt: '2026-09-12T12:00:00.000Z',
   });
   assert.equal(draft.observations, undefined);
-  assert.equal(buildResearchQuery({ ruler: { value: 'Nero' }, denomination: { value: 'denarius' }, reference: { value: 'RIC 306' } }), 'Nero denarius RIC 306');
+});
+
+test('the research query is a reference the Reference box can read, or nothing at all', () => {
+  assert.equal(buildResearchQuery({ ruler: { value: 'Nero' }, denomination: { value: 'denarius' }, mint: { value: 'Rome' }, reference: { value: 'RIC 306' } }), 'RIC 306');
+  assert.equal(buildResearchQuery({ ruler: { value: 'Nero' }, denomination: { value: 'denarius' }, reference: { value: '306' } }), 'Nero 306');
+  assert.equal(buildResearchQuery({ reference: { value: 'BCD Boiotia 174b' } }), 'BCD Boiotia 174b');
+  for (const draft of [null, {}, { ruler: { value: 'Nero' } }, { reference: { value: '306' } },
+    { ruler: { value: 'Rome' }, denomination: { value: 'denarius' } }]) {
+    assert.equal(buildResearchQuery(draft), '', JSON.stringify(draft));
+  }
 });
 
 test('bounds capture inputs and ignores uncertain or blank candidate values', () => {

@@ -26,8 +26,10 @@ export function shouldRevealRefine(outcome, field = '') {
     || Boolean(field && ['catalogue', 'reference-number', 'ric-volume', 'ric-section'].includes(field));
 }
 
-export function captureControlsState(pending, hasDraft) {
-  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft };
+// Research coin needs a query as well as a draft: a capture that gave no readable reference has fields to edit and can still be saved to the watchlist,
+// but nothing to look up.
+export function captureControlsState(pending, hasDraft, researchable = hasDraft) {
+  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft, researchDisabled: pending || !hasDraft || !researchable };
 }
 
 export async function runVisibleAction(action, fallback) {
@@ -175,17 +177,42 @@ async function callExtension(receiver, method, ...args) {
   }));
 }
 
-export async function captureCurrentPage(api, call = callExtension) {
-  const tabs = await call(api?.tabs, 'query', { active: true, currentWindow: true });
+// The toolbar popup and the side panel belong to a browser window, so its active tab is the page being looked at. The lookup window is the extension's
+// own window, whose active tab is this page: the tab to read is the last browser window's instead.
+export function captureTabQuery(mode) {
+  return mode?.windowed ? { active: true, lastFocusedWindow: true, windowType: 'normal' } : { active: true, currentWindow: true };
+}
+
+// Only a page the extension may inject into: settings pages, the extension's own pages and local files answer a query like any other tab, and reading
+// them is neither allowed nor an auction lot.
+export function capturableTab(tabs) {
   const tab = tabs?.[0];
-  if (!tab?.id) throw new Error('The current page could not be read. Enter the fields manually.');
-  const fallback = { pageTitle: tab.title ?? '', pageUrl: tab.url ?? '', candidates: {} };
+  if (!Number.isInteger(tab?.id)) return null;
+  try { return ['http:', 'https:'].includes(new URL(String(tab.url ?? '')).protocol) ? tab : null; }
+  catch { return null; }
+}
+
+export const CAPTURE_UNREADABLE = 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.';
+export const CAPTURE_NO_REFERENCE = 'No catalogue reference was found on this page. Add one below, such as “RIC 306”, or type it in the Reference box.';
+const PANEL_ACCESS_HINT = 'The Giga Pinax toolbar button grants access to the page you are on.';
+export const captureFailureMessage = (mode) => mode?.panel ? `${CAPTURE_UNREADABLE} ${PANEL_ACCESS_HINT}` : CAPTURE_UNREADABLE;
+
+// A page that cannot be read leaves no context behind: a tab title and address kept from a refused injection would name a page nothing was read from,
+// and would be saved to the watchlist as the lot's own.
+export async function captureCurrentPage(api, call = callExtension, mode = { panel: false, windowed: false }) {
+  const refuse = () => new Error(captureFailureMessage(mode));
+  let tabs;
+  try { tabs = await call(api?.tabs, 'query', captureTabQuery(mode)); }
+  catch { throw refuse(); }
+  const tab = capturableTab(tabs);
+  if (!tab) throw refuse();
+  let results;
   try {
-    const results = await call(api?.scripting, 'executeScript', {
-      target: { tabId: tab.id }, func: collectCurrentLotCandidates,
-    });
-    return results?.[0]?.result ?? fallback;
-  } catch { return fallback; }
+    results = await call(api?.scripting, 'executeScript', { target: { tabId: tab.id }, func: collectCurrentLotCandidates });
+  } catch { throw refuse(); }
+  const capture = results?.[0]?.result;
+  if (!capture) throw refuse();
+  return capture;
 }
 
 async function initCompanionPopup() {
@@ -296,15 +323,23 @@ async function initCompanionPopup() {
     return draft;
   };
   const captureFieldIds = ['ruler', 'denomination', 'mint', 'reference'].map((field) => `companion-capture-${field}`);
+  // The reason Research coin is disabled belongs where the fields are being edited, and beside the Reference box the lookup would have answered in.
+  const showCaptureError = (message) => {
+    $('companion-capture-error').textContent = message;
+    $('companion-capture-error').hidden = !message;
+    $('form-error').textContent = message;
+    $('form-error').hidden = !message;
+  };
   const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
-    const state = captureControlsState(pending, hasDraft);
+    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())));
     $('companion-capture-editor').hidden = !state.editorVisible;
     for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
-    $('companion-use-capture').disabled = state.actionsDisabled;
+    $('companion-use-capture').disabled = state.researchDisabled;
     $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge;
   };
   for (const id of captureFieldIds) $(id).addEventListener('input', () => {
     if (!captureDraft) captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
+    showCaptureError('');
     applyCaptureState(false, captureFieldIds.some((fieldId) => $(fieldId).value.trim()));
   });
   $('companion-capture-current').addEventListener('click', async () => {
@@ -313,10 +348,11 @@ async function initCompanionPopup() {
     captureButton.disabled = true;
     captureButton.textContent = 'Capturing…';
     captureDraft = null;
+    showCaptureError('');
     applyCaptureState(true, false);
     try {
       const api = globalThis.browser ?? globalThis.chrome;
-      const capture = await captureCurrentPage(api);
+      const capture = await captureCurrentPage(api, undefined, mode);
       if (requestId !== captureRequestId) return;
       captureDraft = buildResearchDraft(capture);
       researchAuctionContext = captureDraft.auctionContext;
@@ -328,7 +364,11 @@ async function initCompanionPopup() {
       $('companion-capture-source').textContent = captureDraft.pageUrl ? `From ${captureDraft.pageTitle || captureDraft.pageUrl}` : 'Page extraction unavailable. Enter the fields manually.';
       applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
-      announce('Current-page details are ready to review.');
+      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.');
+      else {
+        showCaptureError(CAPTURE_NO_REFERENCE);
+        announce(CAPTURE_NO_REFERENCE, true);
+      }
     } catch (error) {
       if (requestId !== captureRequestId) return;
       captureDraft = null;

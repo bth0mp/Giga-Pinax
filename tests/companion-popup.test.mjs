@@ -12,6 +12,8 @@ import {
   shouldRevealRefine,
   captureCurrentPage,
   captureControlsState,
+  captureTabQuery,
+  capturableTab,
   runVisibleAction,
   moveCompanionTab,
   watchlistPayloadFromCapture,
@@ -21,9 +23,10 @@ import {
 } from '../extension/companion-popup.js';
 
 test('capture controls prevent edits and stale actions while extraction is pending', () => {
-  assert.deepEqual(captureControlsState(true, true), { editorVisible: false, fieldsDisabled: true, actionsDisabled: true });
-  assert.deepEqual(captureControlsState(false, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: true });
-  assert.deepEqual(captureControlsState(false, true), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false });
+  assert.equal(captureControlsState(true, true).editorVisible, false);
+  assert.equal(captureControlsState(true, true).fieldsDisabled, true);
+  assert.equal(captureControlsState(false, false).actionsDisabled, true);
+  assert.equal(captureControlsState(false, true).actionsDisabled, false);
 });
 
 test('navigation failures and thrown errors become visible action results', async () => {
@@ -49,8 +52,9 @@ test('ambiguity and guided-field errors reveal refinement', () => {
 
 test('current-page capture stays pinned to the tab selected at action start', async () => {
   let target;
+  const queries = [];
   const api = {
-    tabs: { query: async () => [{ id: 27, title: 'Lot 27', url: 'https://auction.example/27' }] },
+    tabs: { query: async (query) => { queries.push(query); return [{ id: 27, title: 'Lot 27', url: 'https://auction.example/27' }]; } },
     scripting: { executeScript: async (request) => {
       target = request.target;
       return [{ result: { pageTitle: 'Extracted lot', pageUrl: 'https://auction.example/27', candidates: {} } }];
@@ -58,7 +62,44 @@ test('current-page capture stays pinned to the tab selected at action start', as
   };
   const capture = await captureCurrentPage(api, async (receiver, method, ...args) => receiver[method](...args));
   assert.deepEqual(target, { tabId: 27 });
+  assert.deepEqual(queries, [{ active: true, currentWindow: true }]);
   assert.equal(capture.pageUrl, 'https://auction.example/27');
+});
+
+test('the lookup window captures the browser window it was opened from, not itself', () => {
+  assert.deepEqual(captureTabQuery({ panel: false, windowed: false }), { active: true, currentWindow: true });
+  assert.deepEqual(captureTabQuery({ panel: true, windowed: false }), { active: true, currentWindow: true });
+  assert.deepEqual(captureTabQuery({ panel: true, windowed: true }), { active: true, lastFocusedWindow: true, windowType: 'normal' });
+  assert.deepEqual(captureTabQuery({ panel: false, windowed: true }), { active: true, lastFocusedWindow: true, windowType: 'normal' });
+});
+
+test('only an http or https tab is capturable', () => {
+  assert.equal(capturableTab([{ id: 3, url: 'https://auction.example/27' }])?.id, 3);
+  assert.equal(capturableTab([{ id: 3, url: 'http://auction.example/27' }])?.id, 3);
+  for (const tabs of [undefined, [], [{ id: 3 }], [{ url: 'https://auction.example/27' }], [{ id: 3, url: 'about:newtab' }],
+    [{ id: 3, url: 'moz-extension://test/popup.html?window=1' }], [{ id: 3, url: 'file:///C:/lot.html' }]]) {
+    assert.equal(capturableTab(tabs), null, JSON.stringify(tabs));
+  }
+});
+
+test('an unreadable page stores nothing and says where the extension can read one', async () => {
+  const unreadable = { tabs: { query: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] }, scripting: { executeScript: async () => assert.fail('must not inject') } };
+  const refused = { tabs: { query: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }] },
+    scripting: { executeScript: async () => { throw new Error('Cannot access contents of the page'); } } };
+  const call = async (receiver, method, ...args) => receiver[method](...args);
+  for (const api of [unreadable, refused]) {
+    await assert.rejects(captureCurrentPage(api, call, { panel: false, windowed: false }),
+      { message: 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.' });
+  }
+  await assert.rejects(captureCurrentPage(unreadable, call, { panel: true, windowed: false }),
+    (error) => error.message.startsWith('This page can\'t be read.') && /toolbar button/.test(error.message));
+});
+
+test('Research coin waits for a query the Reference box can read', () => {
+  assert.deepEqual(captureControlsState(true, true, true), { editorVisible: false, fieldsDisabled: true, actionsDisabled: true, researchDisabled: true });
+  assert.deepEqual(captureControlsState(false, true, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false, researchDisabled: true });
+  assert.deepEqual(captureControlsState(false, true, true), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false, researchDisabled: false });
+  assert.deepEqual(captureControlsState(false, false, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: true, researchDisabled: true });
 });
 
 test('companion tabs support click-order keyboard movement without side effects', () => {

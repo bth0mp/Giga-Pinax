@@ -1,3 +1,5 @@
+import { parseReference } from './lookup.js';
+
 // Injected into the auction page by scripting.executeScript, so it stands alone: every helper it uses is defined inside it, and everything it reads is
 // the page's own text, which the page controls. ponytail: no per-auction-house selector table - none of the houses' markup is verified here, so the
 // same structured data, metadata and visible text are read on every page.
@@ -147,10 +149,14 @@ export function buildResearchDraft(capture, context = {}) {
   return draft;
 }
 
+// The Reference box reads one catalogue reference, so a captured description is no query: "Nero AR denarius Rome RIC 306" reads as nothing and would
+// look up nothing. The captured reference answers when it reads on its own, else its ruler with it ("Nero 306"); with neither, there is nothing to
+// research and Research coin stays disabled rather than sending an error back.
 export function buildResearchQuery(draft) {
-  return ['ruler', 'denomination', 'mint', 'reference']
-    .map((field) => bounded(draft?.[field]?.value, 120))
-    .filter(Boolean)
-    .join(' ')
-    .slice(0, 400);
+  const reference = bounded(draft?.reference?.value, 120);
+  const ruler = bounded(draft?.ruler?.value, 120);
+  for (const candidate of [reference, ruler && reference ? `${ruler} ${reference}` : '']) {
+    if (candidate && parseReference(candidate)) return candidate;
+  }
+  return '';
 }
