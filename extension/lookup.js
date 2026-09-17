@@ -547,8 +547,11 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const [number, volume, ruler] = [spaced(ricNumber(reference.number)), unquote(reference.volume), norm(phrase(reference.section))];
   const exact = !volume || listed(volume);
   const [numeral, part] = shelf(volume);
+  // A dealer writes the numeral a volume is bound under, not the title OCRE splits it into: "RIC II" is II, II.1² and II.3², "RIC IV" only IV. So a
+  // bare numeral asks for its whole family, and a volume that names a part or an edition asks for itself.
+  const family = Boolean(numeral) && norm(volume) === numeral;
   const onShelf = ([n, p]) => n === numeral && (!part || !DIVIDED.has(n) || p === part);
-  const inVolume = (hit) => (exact ? !volume || norm(hit.volume) === norm(volume) : onShelf(shelf(hit.volume)));
+  const inVolume = (hit) => (exact && !family ? !volume || norm(hit.volume) === norm(volume) : onShelf(shelf(hit.volume)));
   const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`);
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
   const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title) }))
@@ -556,9 +559,13 @@ export function pickRicEntries(entries, reference, total = entries.length) {
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));
   if (kept.length === 0) return { status: 'none' };
+  // The volume as typed first: the rest of the family is only offered when that volume holds nothing the ruler asked for, and then it is offered,
+  // since the coin is not in the volume the dealer wrote.
+  const own = family && ruler ? kept.filter(({ hit }) => norm(hit.volume) === norm(volume)) : kept;
+  const chosen = own.length > 0 ? own : kept;
   // One hit is the type only when it is what was typed; a sibling section, or the edition of a volume typed another way, is offered, never opened.
-  if (kept.length === 1 && exact && (!ruler || norm(kept[0].hit.section) === ruler)) return { status: 'ok', entry: kept[0].entry };
-  return { status: 'candidates', candidates: kept.map(({ entry }) => entry), partial: true };
+  if (own.length > 0 && chosen.length === 1 && exact && (!ruler || norm(chosen[0].hit.section) === ruler)) return { status: 'ok', entry: chosen[0].entry };
+  return { status: 'candidates', candidates: chosen.map(({ entry }) => entry), partial: true };
 }
 
 function pickRic(xml, reference) {

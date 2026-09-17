@@ -6,7 +6,7 @@ import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from 
 const metadata = {
   schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
-  shards: { '1(2)': 'records-1(2).json', '2_1(2)': 'records-2_1(2).json', '7': 'records-7.json' },
+  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '7': 'records-7.json' },
 };
 const index = { schemaVersion: 1, entries: [
   ['ric.1(2).ner.306', 'RIC I (second edition) Nero 306'],
@@ -15,6 +15,8 @@ const index = { schemaVersion: 1, entries: [
   ['ric.7.lon.287', 'RIC VII Londinium 287'],
   ['ric.7.lug.287', 'RIC VII Lugdunum 287'],
   ['ric.7.rom.287', 'RIC VII Rome 287'],
+  ['ric.2.tr.720', 'RIC II Trajan 720'],
+  ['ric.2_1(2).dom.720', 'RIC II, Part 1 (second edition) Domitian 720'],
 ] };
 const records = {
   'ric.1(2).ner.306': { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], m: ['rome'], x: ['ae'], s: '0062', e: '0068', o: { l: 'NERO', d: 'Head of Nero', p: ['nero'] }, r: { d: 'Temple' } },
@@ -23,10 +25,12 @@ const records = {
   'ric.7.lon.287': { i: 'ric.7.lon.287', l: 'RIC VII Londinium 287', a: ['constantine_i'], o: { p: ['constantine_ii'] }, r: {} },
   'ric.7.lug.287': { i: 'ric.7.lug.287', l: 'RIC VII Lugdunum 287', a: ['constantine_i'], o: { p: ['constantius_ii'] }, r: {} },
   'ric.7.rom.287': { i: 'ric.7.rom.287', l: 'RIC VII Rome 287', a: ['licinius'], o: { p: ['licinius'] }, r: {} },
+  'ric.2.tr.720': { i: 'ric.2.tr.720', l: 'RIC II Trajan 720', a: ['trajan'], o: { p: ['trajan'] }, r: {} },
+  'ric.2_1(2).dom.720': { i: 'ric.2_1(2).dom.720', l: 'RIC II, Part 1 (second edition) Domitian 720', a: ['domitian'], o: { p: ['domitian'] }, r: {} },
 };
 
 function fixtureFetch(overrides = {}) {
-  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
+  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(String(url));
@@ -118,4 +122,28 @@ test('catalogue metadata reports actual coverage and separates generation from u
   assert.equal(catalogueMetadataText({ recordCount: 56116, activeRecordCount: 55990, generatedOn: '2026-09-14', publicationDate: null }),
     '55,990 active types from 56,116 OCRE records. Local files generated 14 September 2026. Source publication date unknown.');
   assert.equal(catalogueMetadataText(null), 'Local OCRE catalogue unavailable.');
+});
+
+test('a plain volume numeral finds the part of its family that has the ruler, and never answers with another ruler', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  // RIC II has no Domitian, II.1² does: the family's hit is the coin, and Trajan 720 is never the answer to a Domitian reference.
+  const domitian = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Domitian', number: '720' });
+  assert.equal(domitian.status, 'ok');
+  assert.equal(domitian.card.id, 'ric.2_1(2).dom.720');
+  // A ruler in no part of the family leaves the family's other sections as choices, never as the one result.
+  const missing = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Otho', number: '720' });
+  assert.equal(missing.status, 'candidates');
+  assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2.tr.720', 'ric.2_1(2).dom.720']);
+});
+
+test('the local fallback broadens the volume before the section, and a section it had to drop is only ever offered', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  // A mint heads sections in RIC VI-IX alike: the same mint in another volume is a far better answer than another mint in the volume asked for.
+  const mint = await local.lookupType({ catalogue: 'RIC', volume: 'VIII', section: 'Londinium', number: '287' });
+  assert.equal(mint.status, 'candidates');
+  assert.deepEqual(mint.candidates.map((entry) => entry.id), ['ric.7.lon.287']);
+  // Only when no volume has the section is the section dropped, and then its one hit is a choice, not the answer.
+  const dropped = await local.lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Ostia', number: '306' });
+  assert.equal(dropped.status, 'candidates');
+  assert.deepEqual(dropped.candidates.map((entry) => entry.id), ['ric.1(2).ner.306']);
 });

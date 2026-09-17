@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -1261,4 +1261,27 @@ test('a citation listing several numbers under one catalogue is still read', () 
   // Prose is alphabetic where a run of numbers is not, so it is still refused, and so is a sentence that ends on a number.
   assert.equal(searchablePart('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago'), false);
   assert.equal(searchablePart('a lovely old cabinet piece bought in Vienna in 2014'), false);
+});
+
+// A plain numeral is the volume a dealer writes; OCRE shelves the same numeral under several titles ("II", "II, Part 1 (second edition)").
+test('a plain volume numeral reaches every volume of its family, the volume as typed first', () => {
+  const entry = (id, title) => ({ id, title });
+  const trajan972 = entry('ric.2.tr.972', 'RIC II Trajan 972');
+  const vespasian972 = entry('ric.2_1(2).ves.972', 'RIC II, Part 1 (second edition) Vespasian 972');
+  const hadrian972 = entry('ric.2_3(2).hdn.972', 'RIC II, Part 3 (second edition) Hadrian 972');
+  const domitian720 = entry('ric.2_1(2).dom.720', 'RIC II, Part 1 (second edition) Domitian 720');
+  const trajan720 = entry('ric.2.tr.720', 'RIC II Trajan 720');
+  // "RIC II 972" is in no OCRE title, but II.1² and II.3² both hold the number: they are offered, never one of them opened.
+  assert.deepEqual(pickRicEntries([vespasian972, hadrian972], parseReference('RIC II 972')),
+    { status: 'candidates', candidates: [vespasian972, hadrian972], partial: true });
+  // A ruler the volume as typed does not have is looked for in the rest of the family, and offered because the volume was not the one typed.
+  assert.deepEqual(pickRicEntries([domitian720, trajan720], parseReference('RIC II Domitian 720')),
+    { status: 'candidates', candidates: [domitian720], partial: true });
+  // The volume as typed wins when it has the ruler asked for: II Trajan 972 opens although II.1² also holds 972.
+  assert.deepEqual(pickRicEntries([trajan972, vespasian972], parseReference('RIC II Trajan 972')), { status: 'ok', entry: trajan972 });
+  // A volume that names its part or edition still asks for itself alone.
+  assert.deepEqual(pickRicEntries([vespasian972, hadrian972], parseReference('RIC II.3 Hadrian 972')),
+    { status: 'candidates', candidates: [hadrian972], partial: true });
+  assert.deepEqual(pickRicEntries([trajan972, vespasian972, hadrian972], parseReference('RIC 972')),
+    { status: 'candidates', candidates: [trajan972, vespasian972, hadrian972], partial: true });
 });

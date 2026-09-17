@@ -121,6 +121,9 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         }
         let picked = pickRicEntries(await indexEntries(), reference);
         let broadened = false;
+        // The section the collector asked for is what he is looking at: a volume is broadened before it, so the same mint or ruler in another volume
+        // comes before another section of the volume he typed. A section dropped altogether leaves other rulers' coins, which are choices, never the answer.
+        if (picked.status === 'none' && reference.section && reference.volume) { picked = pickRicEntries(await indexEntries(), { ...reference, volume: '' }); broadened = picked.status !== 'none'; }
         if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await indexEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
         if (picked.status === 'ok' && (broadened || reference.rulers?.length)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
         if (picked.candidates) picked.candidates = picked.candidates.map((entry) => ({ ...entry, source: 'local' }));
