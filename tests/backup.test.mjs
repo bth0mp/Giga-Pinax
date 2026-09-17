@@ -77,7 +77,12 @@ test('old schema-one backups load while optional presets and lot notes round-tri
   current.preferences = {
     schemaVersion: 1, revision: 0, currency: 'GBP', catalogue: 'RIC', number: '306',
     volume: 'I', section: 'Nero', sampleMode: false, desktopAlertsEnabled: false,
-    housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }], createdAt: NOW, updatedAt: NOW,
+    housePremiumPresets: [
+      { name: 'CNG', buyerPremiumBps: 2250 },
+      // A ladder is in the house's own currency, which is not the collector's default one here.
+      { name: 'Nomos', buyerPremiumBps: 2000, incrementLadder: { currency: 'CHF', tiers: [{ from: 0, step: 500 }, { from: 10000, step: 1000 }] } },
+    ],
+    createdAt: NOW, updatedAt: NOW,
   };
   current.lots.push({
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector',

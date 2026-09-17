@@ -1,4 +1,4 @@
-import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
+import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
 
@@ -599,6 +599,11 @@ function preferencesResult(preferences, path) {
     const valid = firstFailure(
       stringResult(preset.name, `${presetPath}.name`, LIMITS.shortText),
       integerResult(preset.buyerPremiumBps, `${presetPath}.buyerPremiumBps`, { maximum: 10000 }),
+      // The ladder is optional: a preset saved before this version simply has no such key, which is
+      // why the stored shape needs no migration step of its own.
+      OWN(preset, 'incrementLadder')
+        ? validateIncrementLadder(preset.incrementLadder, `${presetPath}.incrementLadder`)
+        : { ok: true, value: undefined },
     );
     if (!valid.ok) return valid;
     const normalized = preset.name.trim().toLocaleLowerCase();

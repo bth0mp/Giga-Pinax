@@ -1,7 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { importWithSafetyCopy } from '../extension/core/backup.js';
+
+// The presets editor is built by a page that cannot run outside the extension, so what it writes
+// into the row is read here from its source, as the popup's own alert rule is.
+const settingsSource = readFileSync(new URL('../extension/settings.js', import.meta.url), 'utf8');
+
+test('a preset control is named by its field and described by its hint and its error', () => {
+  assert.match(settingsSource, /premiumField\('Increment tiers', ladder,/);
+  // The hint is a description, not part of the control's name: a textarea called "Increment tiers,
+  // one tier per line: the amount the tier starts at…" is read out in full every time it is reached.
+  assert.match(settingsSource, /label\.append\(caption, control\);/);
+  assert.match(settingsSource, /control\.setAttribute\('aria-describedby', \[\.\.\.describedBy, error\.id\]\.join\(' '\)\);/);
+  assert.doesNotMatch(settingsSource, /ladderLabel\.append\([^)]*Hint/);
+});
+
+// A placeholder inside a named house's row reads as that house's own schedule. Nothing in the box
+// may look like numbers a collector could take for the tiers.
+test('the empty tiers box shows the shape of a line, not numbers that could pass for a ladder', () => {
+  assert.match(settingsSource, /ladder\.placeholder = 'from: step';/);
+  assert.doesNotMatch(settingsSource, /placeholder = '\d/);
+});
+
+// One announcement per error: the row's own alert, beside the field it is about.
+test('a refused preset row is announced once, beside the field, not again in the page status', () => {
+  assert.match(settingsSource, /\.premium-error'\)\.textContent = field\.error\.message;/);
+  assert.match(settingsSource, /if \(!presets\.ok\) \{\s*status\(''\);\s*return;/);
+  assert.doesNotMatch(settingsSource, /throw new Error\(`House /);
+});
 
 const COPY = { text: '{"copy":true}', name: 'giga-pinax-before-import-2026-09-12T12-00-00.000Z.json' };
 const RAW = { text: '{"raw":true}', name: 'giga-pinax-raw-2026-09-12T12-00-00.000Z.json' };

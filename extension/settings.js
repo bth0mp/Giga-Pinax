@@ -3,8 +3,8 @@ import {
   importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineLines,
   quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
-import { parsePremiumPercent } from './core/money.js';
-import { formatMinorInput } from './bid-tools.js';
+import { CURRENCIES } from './core/money.js';
+import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
@@ -42,33 +42,91 @@ function clearPreview() {
   $('import-conflicts').replaceChildren();
 }
 
+let premiumFieldSequence = 0;
+
+// One field of a preset row: its label, the sentence that explains it and the place its own error
+// is shown. The hint stays outside the label so the control's accessible name is the field's name
+// and nothing longer; both the hint and the error are reached through aria-describedby.
+function premiumField(labelText, control, hintText = '') {
+  premiumFieldSequence += 1;
+  const field = document.createElement('div');
+  field.className = 'premium-field';
+  const label = document.createElement('label');
+  const caption = document.createElement('span');
+  caption.textContent = labelText;
+  label.append(caption, control);
+  field.append(label);
+  const describedBy = [];
+  if (hintText) {
+    const hint = document.createElement('p');
+    hint.className = 'premium-hint';
+    hint.id = `premium-hint-${premiumFieldSequence}`;
+    hint.textContent = hintText;
+    field.append(hint);
+    describedBy.push(hint.id);
+  }
+  const error = document.createElement('p');
+  error.className = 'premium-error';
+  error.id = `premium-error-${premiumFieldSequence}`;
+  error.setAttribute('role', 'alert');
+  control.setAttribute('aria-describedby', [...describedBy, error.id].join(' '));
+  field.append(error);
+  return field;
+}
+
 function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   const row = document.createElement('div');
   row.className = 'premium-row';
-  const nameLabel = document.createElement('label');
-  nameLabel.textContent = 'Auction house';
   const name = document.createElement('input');
   name.className = 'premium-name';
   name.maxLength = 120;
   name.value = item.name;
-  nameLabel.append(name);
-  const bpsLabel = document.createElement('label');
-  bpsLabel.textContent = 'Premium %';
   const bps = document.createElement('input');
   bps.className = 'premium-value';
   bps.type = 'text';
   bps.inputMode = 'decimal';
   bps.placeholder = 'e.g. 22.50';
   bps.value = formatMinorInput(item.buyerPremiumBps, navigator.language);
-  bpsLabel.append(bps);
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'quiet';
   remove.textContent = 'Remove';
   remove.addEventListener('click', () => row.remove());
-  row.append(nameLabel, bpsLabel, remove);
+  // The button sits in the same grid as the fields, under a blank caption line of its own, so that
+  // it stays level with the inputs however tall a field's error grows.
+  const removeField = document.createElement('div');
+  removeField.className = 'premium-remove';
+  removeField.append(remove);
+  const currency = document.createElement('select');
+  currency.className = 'premium-ladder-currency';
+  for (const code of CURRENCIES) {
+    const option = document.createElement('option');
+    option.value = code;
+    option.textContent = code;
+    currency.append(option);
+  }
+  currency.value = item.incrementLadder?.currency ?? $('currency').value;
+  const ladder = document.createElement('textarea');
+  ladder.className = 'premium-ladder';
+  ladder.rows = 4;
+  // Giga Pinax ships no house's schedule, and a plausible-looking example inside a named house's
+  // row would read as that house's own tiers, so the empty box shows the shape of a line instead.
+  ladder.placeholder = 'from: step';
+  ladder.value = formatIncrementLadder(item.incrementLadder?.tiers);
+  const currencyField = premiumField('Ladder currency', currency,
+    'The currency this house’s increments are written in. The tiers apply while the calculator is set to that currency.');
+  const ladderField = premiumField('Increment tiers', ladder,
+    'Optional. One tier per line: the amount the tier starts at, a colon, then the step from there. Copy the tiers from this house’s published terms — Giga Pinax ships no house’s ladder.');
+  currencyField.classList.add('premium-ladder-field');
+  ladderField.classList.add('premium-ladder-field');
+  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, currencyField, ladderField);
   return row;
 }
+
+const PRESET_FIELD_CLASS = {
+  name: 'premium-name', premium: 'premium-value', ladder: 'premium-ladder',
+  ladderCurrency: 'premium-ladder-currency',
+};
 
 function renderDataHealth(entries) {
   quarantined = Array.isArray(entries) ? entries : [];
@@ -91,18 +149,32 @@ function render() {
 }
 
 function collectPresets() {
-  const values = [];
-  for (const [index, row] of [...document.querySelectorAll('.premium-row')].entries()) {
-    const name = row.querySelector('.premium-name').value.trim();
-    const parsed = parsePremiumPercent(
-      row.querySelector('.premium-value').value,
-      navigator.language,
-    );
-    if (!name) throw new Error(`House ${index + 1} needs a name.`);
-    if (!parsed.ok) throw new Error(`House ${index + 1}: ${parsed.error.message}`);
-    values.push({ name, buyerPremiumBps: parsed.value });
+  const rows = [...document.querySelectorAll('.premium-row')];
+  for (const row of rows) {
+    for (const error of row.querySelectorAll('.premium-error')) error.textContent = '';
+    for (const control of row.querySelectorAll('input, select, textarea')) control.removeAttribute('aria-invalid');
   }
-  return values;
+  const values = [];
+  for (const row of rows) {
+    const field = presetFromFields({
+      name: row.querySelector('.premium-name').value,
+      premiumText: row.querySelector('.premium-value').value,
+      ladderText: row.querySelector('.premium-ladder').value,
+      ladderCurrency: row.querySelector('.premium-ladder-currency').value,
+    }, { locale: navigator.language });
+    if (field.ok) {
+      values.push(field.value);
+      continue;
+    }
+    // The message belongs beside the field it is about, and that alert is the one announcement:
+    // the same sentence in the page status line would be read out a second time.
+    const control = row.querySelector(`.${PRESET_FIELD_CLASS[field.error.field]}`);
+    control.closest('.premium-field').querySelector('.premium-error').textContent = field.error.message;
+    control.setAttribute('aria-invalid', 'true');
+    control.focus();
+    return { ok: false };
+  }
+  return { ok: true, value: values };
 }
 
 async function load() {
@@ -152,12 +224,16 @@ $('save-settings').addEventListener('click', async () => {
   button.disabled = true;
   try {
     const presets = collectPresets();
+    if (!presets.ok) {
+      status('');
+      return;
+    }
     const theme = $('theme').value;
     const reply = await bridge.sendCommand({
       type: 'preferences.save',
       requestId: bridge.newRequestId(),
       expectedRevision: preferencesSnapshot.preferences.revision,
-      preferences: { currency: $('currency').value, housePremiumPresets: presets },
+      preferences: { currency: $('currency').value, housePremiumPresets: presets.value },
     });
     if (!reply.ok) {
       throw new Error(reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.');

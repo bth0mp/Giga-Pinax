@@ -526,6 +526,28 @@ test('rejects duplicate or out-of-bounds house premium presets and oversized lot
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 
+test('a house preset may carry an optional increment ladder that older data simply lacks', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  const preferences = { schemaVersion: 1, revision: 0, currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false, desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }], createdAt: NOW, updatedAt: NOW };
+  snapshot.preferences = preferences;
+  // The field is optional, so a root written before this version needs no migration to validate.
+  assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
+  const ladder = (tiers, currency = 'EUR') => { preferences.housePremiumPresets[0].incrementLadder = { currency, tiers }; };
+  ladder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]);
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  // The tiers are in the house's own currency, which the calculator's currency need not match.
+  ladder([{ from: 0, step: 500 }], 'JPY');
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.currency');
+  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }];
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder');
+  ladder([{ from: 100, step: 500 }]);
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.tiers[0].from');
+  ladder([{ from: 0, step: 500 }, { from: 10000, step: 0 }]);
+  assert.equal(validateSnapshot(snapshot).error.code, 'invalid-ladder');
+  ladder([]);
+  assert.equal(validateSnapshot(snapshot).ok, false);
+});
+
 test('durable current-lot drafts cannot contain fetched provider results', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.drafts.push({
