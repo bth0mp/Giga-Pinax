@@ -691,8 +691,9 @@ async function initWorkspace() {
     else if (editor === 'event') { $('event-form').hidden = false; populateEventForm(record); }
     else if (editor === 'group') populateGroupForm(record);
   };
-  // Only the forms a command of this page can change behind the collector's back are merged: the
-  // outcome form is written by `lot.outcome.set` alone, which is its own save.
+  // Only the forms another command of this page can change behind the collector's back are merged.
+  // The outcome form's fields are written by `lot.outcome.set` alone, and the auction and group
+  // forms' by `event.save` and `group.save` — each of those is that form's own save.
   const editorFormValues = {
     lot: (record) => lotFormValues(record),
     bid: (record) => bidFormValues(record, navigator.language, snapshot.preferences?.currency ?? 'USD'),
