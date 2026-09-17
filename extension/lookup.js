@@ -156,7 +156,7 @@ export function parseReference(text, clean = true) {
 
 // The remark a dealer hangs on a corrected number ("RIC II 123 corr.") is no part of it. Its brothers "var." and the bracketed remarks are REMARKS
 // and VARIANT above; unwrap has already taken the full stop off the end.
-const CORRECTION = /\s+corr\.?$/i;
+export const CORRECTION = /\s+corr\.?$/i;
 // The marks the clean-up above reads: a bracket or sentence punctuation to drop, a house's own separator or a "²" to respell, a hyphen that opens a
 // range, a word a dealer hangs on a number, or the "Pr" that is Price. One class, matched once, in place of running the whole chain.
 const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;

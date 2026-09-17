@@ -1,4 +1,4 @@
-import { EDITION, INVISIBLE, kmNumber, parseReference, REMARKS, sectionBracket, sgNumber, VARIANT } from './lookup.js';
+import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, sectionBracket, sgNumber, VARIANT } from './lookup.js';
 import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, RIC_VOLUMES, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -337,7 +337,7 @@ function pieceAfter(raw, typed = false) {
 
 function normalise(written, key, cf) {
   const variant = VARIANT.test(written);
-  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, ''));
+  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
   const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
   if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
@@ -349,7 +349,9 @@ function normalise(written, key, cf) {
   const section = sectionBracket(text);
   const ric = /^RIC/i.test(key);
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
-  const parsed = parseReference(text);
+  // The row's own text has had its remarks, edition, variety and correction taken off already, so the reference is read from it with the shared
+  // clean-up switched off: each row is cleaned once, not once here and again inside parseReference.
+  const parsed = parseReference(readable(text), false);
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
   const reference = type ? parsed : { catalogue: 'Other', number: text, volume: '', section: '' };

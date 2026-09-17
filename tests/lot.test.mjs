@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { parseReference } from '../extension/lookup.js';
 import { defaultTerm } from '../extension/prices.js';
 
 const LOTS = [
@@ -902,6 +903,15 @@ test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abb
 });
 
 // A mint is a place, so its other name is only ever a section: Nomisma titles the concept "Trier" and keeps "Treveri" beside it.
+// One clean-up, applied once: a lot row runs it and hands parseReference the result, instead of both of them running the same chain over the same
+// text. Either way round the two paths must read the same reference out of the same words.
+test('a lot row and the same reference typed into the box read alike', () => {
+  for (const text of ['RIC 268 (Elagabalus)', 'RIC 972 var.', 'RIC II 123 corr.', 'RIC.112', 'RIC II.3, 2345', 'RIC 12-13', 'RIC II Trajan 12 (Rome)',
+    'RIC 266 (aureus)', 'RIC II², 972', 'RIC IV-1 123']) {
+    assert.deepEqual(findReferences(`Denarius. ${text}`).references[0].reference, parseReference(text), text);
+  }
+});
+
 test('a mint written by the name on the map today is RIC\'s own section, and no ruler at all', () => {
   const lot = findReferences('Constantine I. Follis. RIC VII Trier 12.');
   assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Treveri', number: '12' });
