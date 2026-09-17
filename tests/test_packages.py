@@ -314,7 +314,10 @@ class LocalCataloguePackageTests(unittest.TestCase):
                 {"schemaVersion": 1, "corpus": "sco", "shards": {"sc": [{"file": "records-sc.json", "from": ""}]}}), encoding="utf-8")
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 self.assertEqual(
-                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/numbers.json", "data/ocre/NOTICE.txt",
+                    # The two files extension/data holds for every corpus at once come first: the shared Nomisma labels
+                    # and the notice that attributes them.
+                    ("data/NOTICE.txt", "data/nomisma-labels.json",
+                     "data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/numbers.json", "data/ocre/NOTICE.txt",
                      "data/ocre/records-2_1(2).json", "data/ocre/records-3.a.json", "data/ocre/records-3.b.json",
                      "data/sco/metadata.json", "data/sco/index.json", "data/sco/NOTICE.txt", "data/sco/records-sc.json"),
                     build.local_catalogue_assets(),
@@ -332,6 +335,37 @@ class LocalCataloguePackageTests(unittest.TestCase):
                 (root / "data/bigr").mkdir()
                 with self.assertRaises(ValueError):
                     build.local_catalogue_assets()
+
+    def test_a_file_under_extension_data_that_is_no_shared_asset_is_refused(self):
+        # Only the shared label file and its notice live beside the corpus directories; anything else left there would
+        # otherwise travel in the package without a single check over it.
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "data/ocre").mkdir(parents=True)
+            (root / "data/ocre/metadata.json").write_text(json.dumps(
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.json", "from": ""}]}}), encoding="utf-8")
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                for name in build.SHARED_DATA_FILES:
+                    (root / "data" / name).write_text("{}", encoding="utf-8")
+                self.assertIn("data/nomisma-labels.json", build.local_catalogue_assets())
+                (root / "data/notes.json").write_text("{}", encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    build.local_catalogue_assets()
+
+    def test_the_bundled_labels_must_be_what_the_tracked_snapshot_generates(self):
+        build = load_build_script()
+        # The real bundle first: what is checked in is what --write-labels writes today.
+        build.check_label_data()
+        labels = EXTENSION / "data" / "nomisma-labels.json"
+        original = labels.read_bytes()
+        self.addCleanup(labels.write_bytes, original)
+        for damaged in (b'{"schemaVersion":1,"labels":{}}\n',
+                        json.dumps({"schemaVersion": 1, "labels": {**json.loads(original)["labels"], "ar": "Gold"}},
+                                   ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"):
+            labels.write_bytes(damaged)
+            with self.assertRaises(ValueError):
+                build.check_label_data()
 
     def test_catalogue_manifest_rejects_unsafe_or_unsupported_shards(self):
         build = load_build_script()

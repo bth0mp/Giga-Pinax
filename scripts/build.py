@@ -127,12 +127,19 @@ def importer():
 _IMPORTER = None
 
 
+# The two files extension/data holds itself rather than inside a corpus directory: the Nomisma labels every corpus
+# shares, and the notice that attributes them. Anything else there is still an entry the build refuses to package.
+SHARED_DATA_FILES = ("NOTICE.txt", "nomisma-labels.json")
+
+
 def bundled_corpora() -> tuple[str, ...]:
     """Every corpus directory under extension/data, so the package carries what is checked in and nothing else."""
     root = EXTENSION_ROOT / "data"
     known = importer().CORPORA
     corpora = []
     for path in sorted(root.iterdir()):
+        if not path.is_symlink() and path.is_file() and path.name in SHARED_DATA_FILES:
+            continue
         if path.is_symlink() or not path.is_dir() or path.name not in known:
             raise ValueError(f"unexpected entry under extension/data: {path.name}")
         corpora.append(path.name)
@@ -177,7 +184,35 @@ def catalogue_assets(corpus: str) -> tuple[str, ...]:
 
 
 def local_catalogue_assets() -> tuple[str, ...]:
-    return tuple(path for corpus in bundled_corpora() for path in catalogue_assets(corpus))
+    corpora = bundled_corpora()
+    shared = tuple(f"data/{name}" for name in SHARED_DATA_FILES)
+    return shared + tuple(path for corpus in corpora for path in catalogue_assets(corpus))
+
+
+def check_label_data() -> None:
+    """The bundled Nomisma labels must be what the tracked snapshot and the records beside it generate. A label file
+    that has drifted from either would put a name on a card that no source published for that concept."""
+    snapshot_path = PROJECT_ROOT / "scripts" / "data" / importer().LABEL_FILE
+    try:
+        snapshot = json.loads(snapshot_path.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read the tracked Nomisma label snapshot: {error}") from error
+
+    def read_corpus(name: str):
+        if name not in bundled_corpora():
+            return None
+
+        def read(file_name: str, name: str = name) -> object:
+            try:
+                return json.loads(read_asset(f"data/{name}/{file_name}"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError(f"cannot read the bundled {name} data: {error}") from error
+        return read
+
+    slugs = importer().bundled_slugs(read_corpus)
+    payload = importer().json_bytes(importer().label_payload(snapshot, slugs))
+    if read_asset(f"data/{importer().LABEL_FILE}") != payload:
+        raise ValueError("the bundled Nomisma labels are stale: rerun python scripts/import_rdf.py --write-labels")
 
 
 def check_catalogue_data() -> None:
@@ -307,6 +342,7 @@ def stale_release_zips(output_root: Path, version: str) -> list[Path]:
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
     version = check_manifest_versions()
     check_catalogue_data()
+    check_label_data()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     try:
