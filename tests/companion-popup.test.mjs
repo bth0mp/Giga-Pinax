@@ -75,13 +75,16 @@ class TestElement {
 }
 
 let loaded = 0;
+// The element map of the page that holds the document, until the next one takes it over.
+let started = null;
 // Starts the real page: its own document, its own extension replies, and the card event the result panel sends it once it is running.
 async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = false, search = '',
   currency = 'USD', currencyChanges = [] }) {
   // A start-up reads globalThis.document where it resumes, not where it began, so a page still
   // starting when this one takes the document over would finish inside it and answer for it - the
-  // wait below would end on that page's word rather than this one's. They settle in a few turns.
-  for (let tick = 0; tick < 100; tick += 1) await settle();
+  // wait below would then end on that page's word rather than this one's. The page before this one
+  // has the document until it has had its last word in it.
+  for (let tick = 0; started && tick < 200 && started('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -111,6 +114,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
+  started = element;
   await import(`../extension/companion-popup.js?start=${++loaded}`);
   // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
   for (let tick = 0; tick < 100 && element('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
