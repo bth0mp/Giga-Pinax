@@ -428,6 +428,34 @@ test('workspace bid command carries only a matching calculator estimate atomical
   assert.equal(buildBidSaveCommand('place', { id: 'lot-a', revision: 3 }, { amount: { currency: 'EUR', minor: 10000 } }, estimate, () => 'bid-2').costEstimate, undefined);
 });
 
+const workspaceSource = () => readFileSync(new URL('../extension/workspace.js', import.meta.url), 'utf8');
+
+test('filtering coins redraws the list alone, debounced, and leaves the open editors untouched', () => {
+  const source = workspaceSource();
+  assert.match(source, /\$\('lot-filter'\)\.addEventListener\('input', \(\) => \{\s*clearTimeout\(filterTimer\);\s*filterTimer = setTimeout\(renderCoinList, 150\);/);
+  const coinList = /function renderCoinList\(\)[\s\S]*?\n  \}/.exec(source)[0];
+  for (const forbidden of ['comparison-picker', 'group-list', 'renderSelectedLot', 'beginEditor']) {
+    assert.equal(coinList.includes(forbidden), false, forbidden);
+  }
+  assert.match(source, /eventsById = new Map\(/);
+  assert.equal(/\(snapshot\.auctionEvents \?\? \[\]\)\.find\(/.test(coinList), false);
+});
+
+test('an unattended hash change never pulls the focus back to the navigation', () => {
+  const source = workspaceSource();
+  assert.match(source, /const setRoute = \(focusLink = false\) =>/);
+  assert.match(source, /if \(focusLink\) document\.querySelector\(`\[data-route="\$\{active\}"\]`\)\?\.focus/);
+  assert.match(source, /addEventListener\('hashchange', \(\) => \{ const fromNav = routeChangeFromNav; routeChangeFromNav = false; setRoute\(fromNav\); \}\);/);
+});
+
+test('an unreachable background worker leaves the record and the retry request intact', () => {
+  const source = workspaceSource();
+  assert.match(source, /const WORKER_UNREACHABLE = "The extension's background worker could not be reached\. Reload this page and check the record before retrying\.";/);
+  assert.match(source, /try \{ reply = await bridge\.sendCommand\(command\); \}\s*catch \{[\s\S]*?pendingRetry = \{ command, editor \};[\s\S]*?announce\(WORKER_UNREACHABLE, true\);/);
+  assert.match(source, /try \{ reply = await bridge\.getSnapshot\(\); \}\s*catch \{ announce\(WORKER_UNREACHABLE, true\); return; \}/);
+  assert.match(source, /addEventListener\('beforeunload', \(event\) => \{\s*if \(!dirtyEditors\.size\) return;/);
+});
+
 test('the bid calculator sits outside the bid form so Enter in it cannot save a plan', () => {
   const markup = readFileSync(new URL('../extension/workspace.html', import.meta.url), 'utf8');
   const bidForm = /<form id="bid-form"[\s\S]*?<\/form>/.exec(markup);
