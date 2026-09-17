@@ -30,8 +30,8 @@ export const CATALOGUES = Object.freeze({
     help: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' }),
 });
 // A row by the catalogue a collector chose, or by the corpus a lookup answered about; null for anything else, so untrusted
-// text ("constructor") names no catalogue.
-export const catalogueOf = (name) => (Object.hasOwn(CATALOGUES, name) ? CATALOGUES[name] : null);
+// text ("constructor") names no catalogue and nothing that merely reads as a name (["RIC"]) is coerced into one.
+export const catalogueOf = (name) => (typeof name === 'string' && Object.hasOwn(CATALOGUES, name) ? CATALOGUES[name] : null);
 const BY_CORPUS = new Map(Object.values(CATALOGUES).map((entry) => [entry.corpus, entry]));
 export const catalogueForCorpus = (corpus) => BY_CORPUS.get(corpus) ?? null;
 // The corpora a Recent chip, or the pop-out's window, may reopen.

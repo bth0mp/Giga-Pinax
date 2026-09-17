@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { CATALOGUES, RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, catalogueForCorpus, catalogueOf, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
@@ -107,6 +107,22 @@ test('selectOptions lists the entries and appends an unlisted, non-blank value a
   assert.equal(selectOptions(RIC_VOLUMES, 'II, Part 1 (2nd edition)').length, 12);
   assert.equal(selectOptions(VOLUME_OPTIONS, '').length, 13);
   assert.equal(selectOptions(VOLUME_OPTIONS, 'IV, Part 1').length, 14);
+});
+
+// The catalogue a collector chose arrives from stored preferences and from a captured page, so it is whatever JSON held: the accessors read a string
+// key of their own table and nothing else, and never coerce a wrapper into one ("['RIC']" is not RIC).
+test('catalogueOf and catalogueForCorpus answer for a string key of the table only', () => {
+  for (const name of Object.keys(CATALOGUES)) assert.equal(catalogueOf(name), CATALOGUES[name]);
+  for (const name of [['RIC'], null, undefined, 23, { toString: () => 'RIC' }, 'constructor', '__proto__', 'toString', 'hasOwnProperty', 'price', '']) {
+    assert.equal(catalogueOf(name), null, JSON.stringify(name) ?? String(name));
+  }
+  for (const corpus of ['pella', 'ocre', 'crro', 'sco', 'bigr', 'other']) assert.equal(catalogueForCorpus(corpus)?.corpus, corpus);
+  for (const corpus of [['pella'], null, undefined, 23, { toString: () => 'pella' }, 'constructor', '__proto__', 'toString', 'PELLA', '']) {
+    assert.equal(catalogueForCorpus(corpus), null, JSON.stringify(corpus) ?? String(corpus));
+  }
+  // A lookup for an unknown catalogue is Price's, as it always was: a wrapped name must not reach RIC's row.
+  assert.deepEqual(buildQuery({ catalogue: ['RIC'], number: '23' }), { corpus: 'pella', query: 'Price 23' });
+  assert.deepEqual(buildQuery({ catalogue: 'constructor', number: '23' }), { corpus: 'pella', query: 'Price 23' });
 });
 
 // Nomisma files a ruler's name in every language it has; only the English and Latin spellings are ones a dealer writes, and the importer folds
