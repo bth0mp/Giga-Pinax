@@ -530,6 +530,37 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   assert.equal(storage.read().recentCommands.length, 0);
 });
 
+test('a root with one corrupt lot still loads, exports, and keeps the lot quarantined', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const keep = {
+    id: uuid(), revision: 0, dataClass: 'collector', title: 'Sound lot', sourceLinks: [],
+    bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  };
+  const corrupt = { ...structuredClone(keep), id: uuid(), outcome: { status: 'maybe' } };
+  stored.lots.push(keep, corrupt);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.lots.map(({ id }) => id), [keep.id]);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record.id]),
+    [['lots', corrupt.id]]);
+  assert.equal(reply.revision, 0);
+  assert.equal(storage.read().lots.length, 2, 'a read must not rewrite storage');
+  assert.equal(JSON.parse(exportBackup(reply.value, NOW).value).data.quarantine.length, 1);
+
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Added later', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true);
+  assert.deepEqual(storage.read().quarantine.map(({ record }) => record), [corrupt]);
+  assert.equal(storage.read().lots.length, 2);
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().quarantine.length, 1);
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });

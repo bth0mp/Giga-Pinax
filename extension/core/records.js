@@ -725,6 +725,39 @@ function recentCommandResult(command, path) {
   return { ok: true, value: command };
 }
 
+const COLLECTIONS = [
+  { key: 'lots', maximum: LIMITS.lots, validator: lotResult },
+  { key: 'auctionEvents', maximum: LIMITS.auctionEvents, validator: eventResult },
+  { key: 'alternativeGroups', maximum: LIMITS.alternativeGroups, validator: groupResult },
+  { key: 'evidence', maximum: LIMITS.evidenceObservations, validator: evidenceResult },
+  { key: 'collectionEntries', maximum: LIMITS.collectionEntries, validator: collectionEntryResult },
+  { key: 'drafts', maximum: LIMITS.drafts, validator: draftResult },
+  { key: 'alerts', maximum: LIMITS.alerts, validator: alertResult },
+  { key: 'recentCommands', maximum: LIMITS.recentCommands, validator: recentCommandResult },
+];
+
+function quarantineEntryResult(entry, path) {
+  const object = objectResult(entry, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    stringResult(entry.collection, `${path}.collection`, LIMITS.shortText),
+    stringResult(entry.reason, `${path}.reason`, LIMITS.shortText),
+    instantResult(entry.quarantinedAt, `${path}.quarantinedAt`),
+    OWN(entry, 'record') ? { ok: true, value: entry.record } : failure('missing-record', 'A quarantined entry keeps its record.', `${path}.record`),
+  );
+}
+
+function quarantineResult(entries, path) {
+  // The bin has no count of its own: the 5 MiB root bound is what caps it.
+  const array = arrayResult(entries, path, Number.MAX_SAFE_INTEGER);
+  if (!array.ok) return array;
+  for (let index = 0; index < entries.length; index += 1) {
+    const result = quarantineEntryResult(entries[index], `${path}[${index}]`);
+    if (!result.ok) return result;
+  }
+  return { ok: true, value: entries };
+}
+
 function validateCollection(snapshot, key, maximum, validator) {
   const array = arrayResult(snapshot[key], key, maximum);
   if (!array.ok) return array;
@@ -775,6 +808,102 @@ export function migrateSnapshot(stored) {
   return value;
 }
 
+// One record that stops validating must never lock the collector out of the rest of their data.
+// Each record is validated on its own; a failing one is set aside verbatim in `quarantine` and
+// references to it are repaired by the cheapest step that keeps the root valid: an optional
+// reference is cleared, while a record whose required reference is gone follows it into the bin.
+// Nothing is ever dropped, and a root that is unusable even then is reported as a failure so the
+// caller can fall back to its existing storage error.
+export function quarantineInvalidRecords(stored, now) {
+  const instant = instantResult(now, 'now');
+  if (!instant.ok) return instant;
+  const object = objectResult(stored, 'snapshot');
+  if (!object.ok) return object;
+  let root;
+  try { root = structuredClone(stored); } catch { return failure('invalid-record', 'Stored data cannot be copied.', 'snapshot'); }
+
+  const quarantine = [];
+  const setAside = (collection, record, reason) => quarantine.push({ collection, record, reason, quarantinedAt: now });
+  if (OWN(root, 'quarantine')) {
+    const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];
+    for (const entry of entries) {
+      if (quarantineEntryResult(entry, 'quarantine').ok) quarantine.push(entry);
+      else setAside('quarantine', entry, 'invalid-entry');
+    }
+  }
+
+  for (const { key, maximum, validator } of COLLECTIONS) {
+    if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);
+    const kept = [];
+    const ids = new Set();
+    for (const record of root[key]) {
+      const id = record?.id ?? record?.requestId;
+      const result = validator(record, key);
+      let reason = null;
+      if (!result.ok) reason = result.error.code;
+      else if (ids.has(id)) reason = 'duplicate-id';
+      else if (kept.length >= maximum) reason = 'collection-limit';
+      if (reason) {
+        setAside(key, record, reason);
+        continue;
+      }
+      ids.add(id);
+      kept.push(record);
+    }
+    root[key] = kept;
+  }
+
+  let observations = 0;
+  root.evidence = root.evidence.filter((row) => {
+    observations += row.observations.length;
+    if (observations <= LIMITS.evidenceObservations) return true;
+    setAside('evidence', row, 'collection-limit');
+    return false;
+  });
+
+  const events = new Map(root.auctionEvents.map((event) => [event.id, event]));
+  const groups = new Set(root.alternativeGroups.map((group) => group.id));
+  for (const lot of root.lots) {
+    if (OWN(lot, 'auctionEventId') && !events.has(lot.auctionEventId)) delete lot.auctionEventId;
+    if (OWN(lot, 'alternativeGroupId') && !groups.has(lot.alternativeGroupId)) {
+      delete lot.alternativeGroupId;
+      delete lot.priority;
+    }
+  }
+  const lots = new Map(root.lots.map((lot) => [lot.id, lot]));
+  root.collectionEntries = root.collectionEntries.filter((entry) => {
+    const lot = lots.get(entry.lotId);
+    if (lot && lot.collectionEntryId === entry.id) return true;
+    // A collection entry without its lot has no valid shape, so it follows the lot into the bin.
+    setAside('collectionEntries', entry, 'foreign-key');
+    return false;
+  });
+  const entryIds = new Set(root.collectionEntries.map(({ id }) => id));
+  for (const lot of root.lots) {
+    if (OWN(lot, 'collectionEntryId') && !entryIds.has(lot.collectionEntryId)) delete lot.collectionEntryId;
+  }
+  root.alerts = root.alerts.filter((alert) => {
+    const event = events.get(alert.eventId);
+    if (event?.reminders.some(({ id }) => id === alert.reminderId)) return true;
+    setAside('alerts', alert, 'foreign-key');
+    return false;
+  });
+
+  const members = new Map();
+  for (const lot of root.lots) {
+    if (!OWN(lot, 'alternativeGroupId')) continue;
+    members.set(lot.alternativeGroupId, [...(members.get(lot.alternativeGroupId) ?? []), lot]);
+  }
+  for (const group of members.values()) {
+    group.sort((left, right) => (left.priority - right.priority) || left.id.localeCompare(right.id));
+    group.forEach((lot, index) => { lot.priority = index + 1; });
+  }
+
+  if (quarantine.length) root.quarantine = quarantine;
+  const valid = validateSnapshot(root);
+  return valid.ok ? { ok: true, value: root } : valid;
+}
+
 export function validateSnapshot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;
@@ -786,20 +915,12 @@ export function validateSnapshot(value) {
     instantResult(value.updatedAt, 'updatedAt'),
     preferencesResult(value.preferences, 'preferences'),
     schedulerResult(value.scheduler, 'scheduler'),
+    OWN(value, 'quarantine') ? quarantineResult(value.quarantine, 'quarantine') : { ok: true },
   );
   if (!header.ok) return header;
 
-  const collections = [
-    validateCollection(value, 'lots', LIMITS.lots, lotResult),
-    validateCollection(value, 'auctionEvents', LIMITS.auctionEvents, eventResult),
-    validateCollection(value, 'alternativeGroups', LIMITS.alternativeGroups, groupResult),
-    validateCollection(value, 'evidence', LIMITS.evidenceObservations, evidenceResult),
-    validateCollection(value, 'collectionEntries', LIMITS.collectionEntries, collectionEntryResult),
-    validateCollection(value, 'drafts', LIMITS.drafts, draftResult),
-    validateCollection(value, 'alerts', LIMITS.alerts, alertResult),
-    validateCollection(value, 'recentCommands', LIMITS.recentCommands, recentCommandResult),
-  ];
-  const collectionFailure = firstFailure(...collections);
+  const collectionFailure = firstFailure(...COLLECTIONS.map(({ key, maximum, validator }) =>
+    validateCollection(value, key, maximum, validator)));
   if (!collectionFailure.ok) return collectionFailure;
 
   const events = new Map(value.auctionEvents.map((event) => [event.id, event]));

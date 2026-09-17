@@ -1,6 +1,6 @@
 import {
-  LIMITS, createEmptySnapshot, migrateSnapshot, setOutcome, validateDraftPayload, validateEventLocalTimes,
-  validateSnapshot,
+  LIMITS, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords, setOutcome, validateDraftPayload,
+  validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -713,6 +713,10 @@ function mutation(snapshot, command, context) {
       }
       const imported = clone(preview.value.snapshot);
       imported.recentCommands = command.mode === 'merge' ? clone(snapshot.recentCommands) : [];
+      // Quarantine is a recovery bin rather than live data, so no import discards what is in it.
+      const rescued = new Map([...(snapshot.quarantine ?? []), ...(imported.quarantine ?? [])]
+        .map((entry) => [JSON.stringify(entry), entry]));
+      if (rescued.size) imported.quarantine = [...rescued.values()];
       for (const key of Object.keys(next)) delete next[key];
       Object.assign(next, imported);
       value = { mode: command.mode, counts: preview.value.counts };
@@ -819,7 +823,13 @@ export function createCommandWriter(storageArea, context) {
     }
     let stored = migrateSnapshot(raw);
     const current = validateSnapshot(stored);
-    if (!current.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
+    if (!current.ok) {
+      // Continue with the records that still validate; the rest wait in quarantine for the
+      // collector. The repair reaches storage with the next write, not with this read.
+      const rescued = quarantineInvalidRecords(stored, getNow(context));
+      if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
+      stored = rescued.value;
+    }
 
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };

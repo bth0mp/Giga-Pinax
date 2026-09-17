@@ -7,6 +7,7 @@ import {
   createEmptySnapshot,
   migrateSnapshot,
   projectExposure,
+  quarantineInvalidRecords,
   setOutcome,
   validateDraftPayload,
   validateEventLocalTimes,
@@ -105,6 +106,89 @@ test('the migration hook passes a current-version root through untouched', () =>
   assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
   assert.deepEqual(migrateSnapshot({ schemaVersion: SCHEMA_VERSION + 1 }), { schemaVersion: SCHEMA_VERSION + 1 });
   assert.equal(migrateSnapshot(null), null);
+});
+
+test('quarantine sets aside only the records that stopped validating', () => {
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown), makeLot(IDS.lotUsdUnknown));
+  snapshot.lots[1].outcome = { status: 'maybe' };
+  assert.equal(validateSnapshot(snapshot).ok, false);
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.lots.map(({ id }) => id), [IDS.lotUsdKnown]);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'lots', record: snapshot.lots[1], reason: 'invalid-enum', quarantinedAt: NOW,
+  }]);
+  assert.deepEqual(quarantineInvalidRecords(snapshot, NOW).value.quarantine[0].record, snapshot.lots[1]);
+});
+
+test('quarantine clears optional references and follows required ones', () => {
+  const snapshot = snapshotWith(
+    makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventUsd, alternativeGroupId: IDS.group, priority: 1 }),
+    makeLot(IDS.lotEur, { alternativeGroupId: IDS.group, priority: 2 }),
+    makeLot(IDS.lotUsdUnknown, { collectionEntryId: IDS.collection }),
+  );
+  snapshot.alternativeGroups.push({
+    id: IDS.group, revision: 0, dataClass: 'collector', name: 'One coin', createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.collectionEntries.push({
+    id: IDS.collection, revision: 0, dataClass: 'collector', lotId: IDS.lotUsdUnknown,
+    title: 'Acquired', acquisitionDate: '2026-09-12', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.alerts.push({
+    id: IDS.history, revision: 0, dataClass: 'collector',
+    triggerId: `${IDS.eventUsd}:${IDS.history}:${NOW}`, eventId: IDS.eventUsd, eventRevision: 0,
+    reminderId: IDS.history, triggerAt: NOW, status: 'pending', createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.auctionEvents[0].eventKind = 'bring-your-own';
+  snapshot.lots[2].title = '';
+  snapshot.alternativeGroups[0].name = 42;
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.quarantine.map(({ collection }) => collection).sort(),
+    ['alerts', 'alternativeGroups', 'auctionEvents', 'collectionEntries', 'lots']);
+  const [linked] = rescued.value.lots;
+  assert.equal(Object.hasOwn(linked, 'auctionEventId'), false, 'an unknown event is an optional link');
+  assert.equal(Object.hasOwn(linked, 'alternativeGroupId'), false);
+  assert.equal(Object.hasOwn(linked, 'priority'), false);
+  assert.equal(rescued.value.lots.length, 2);
+});
+
+test('quarantine compacts the priorities left behind by a rescued group member', () => {
+  const snapshot = snapshotWith(
+    makeLot(IDS.lotUsdKnown, { alternativeGroupId: IDS.group, priority: 1 }),
+    makeLot(IDS.lotEur, { alternativeGroupId: IDS.group, priority: 2 }),
+    makeLot(IDS.lotChf, { alternativeGroupId: IDS.group, priority: 3 }),
+  );
+  snapshot.alternativeGroups.push({
+    id: IDS.group, revision: 0, dataClass: 'collector', name: 'Pick one', createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.lots[1].revision = -1;
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.lots.map(({ priority }) => priority), [1, 2]);
+});
+
+test('quarantine reports an unusable root instead of guessing at its shape', () => {
+  const snapshot = snapshotWith(makeLot());
+  snapshot.scheduler = 'gone';
+  assert.equal(quarantineInvalidRecords(snapshot, NOW).ok, false);
+  const missing = snapshotWith(makeLot());
+  delete missing.lots;
+  assert.equal(quarantineInvalidRecords(missing, NOW).ok, false);
+  assert.equal(quarantineInvalidRecords(createEmptySnapshot(NOW), 'noon').ok, false);
+});
+
+test('a validated root carries its quarantine and rejects a malformed entry', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.quarantine = [{ collection: 'lots', record: { id: 'kept' }, reason: 'invalid-id', quarantinedAt: NOW }];
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  snapshot.quarantine = [{ collection: 'lots', record: { id: 'kept' }, reason: 'invalid-id' }];
+  assert.equal(validateSnapshot(snapshot).ok, false);
+  snapshot.quarantine = 'lost';
+  assert.equal(validateSnapshot(snapshot).ok, false);
 });
 
 test('alert capacity covers every supported event reminder', () => {
