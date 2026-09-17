@@ -19,6 +19,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # The packages are named from the manifests, so a tag that disagrees would upload
+      # giga-pinax-brave-<manifest version>.zip to a release named after a different one. Fail before building.
+      - name: Check the tag matches the manifest version
+        run: |
+          manifest_version="$(python -c 'import json; print(json.load(open("manifests/brave.json"))["version"])')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$manifest_version" != "$tag_version" ]; then
+            echo "tag $GITHUB_REF_NAME carries version $tag_version, but manifests/brave.json says $manifest_version" >&2
+            exit 1
+          fi
       # Pinned: tests/test_icons.py compares the committed PNGs with a fresh render, so the renderer must not move.
       - name: Install Pillow for the icon render test
         run: python -m pip install --disable-pip-version-check pillow==12.3.0
