@@ -7,6 +7,11 @@ export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // clear a pretty-printed copy of a full store, while the store's own 5 MiB bound still decides what
 // the resulting snapshot may hold.
 export const MAX_BACKUP_BYTES = 16 * 1024 * 1024;
+// The rescue file says on its face that it is one, so an import can turn it away by name rather
+// than by whatever its unvalidated contents happen to trip over first.
+export const RAW_EXPORT_KIND = 'raw-rescue';
+const RAW_EXPORT_REFUSAL =
+  'This is a raw rescue file, not a backup. Use Export backup to make a file that can be imported.';
 // A write time beyond the export that carries it is a skewed clock or a hand-edited file, and a
 // file that claims to have been exported in the future does not get to raise that ceiling either.
 const MAX_EXPORT_SKEW_MS = 24 * 60 * 60 * 1000;
@@ -94,10 +99,13 @@ export function validateBackup(document) {
     );
   }
   if (!canonicalInstant(value.exportedAt)) return fail('invalid-timestamp', 'Export time is invalid.', 'exportedAt');
+  if (value.kind === RAW_EXPORT_KIND) return fail('raw-rescue-file', RAW_EXPORT_REFUSAL, 'kind');
   const data = migrateSnapshot(clone(value.data));
   if (!data || typeof data !== 'object') return fail('invalid-document', 'Backup data is missing.', 'data');
+  // Only a raw copy of storage carries the request ledger, so a rescue file taken before the
+  // marker existed is still turned away as one rather than for the IDs it happens to hold.
   if (Array.isArray(data.recentCommands) && data.recentCommands.length) {
-    return fail('private-ledger', 'Backup must not contain recent request IDs.', 'data.recentCommands');
+    return fail('raw-rescue-file', RAW_EXPORT_REFUSAL, 'data.recentCommands');
   }
   data.recentCommands = [];
   data.drafts = [];
@@ -533,6 +541,7 @@ export function quarantineDocument(entries, now) {
 export function rawExportDocument(raw, now) {
   return JSON.stringify({
     format: BACKUP_FORMAT,
+    kind: RAW_EXPORT_KIND,
     schemaVersion: Number.isSafeInteger(raw?.schemaVersion) ? raw.schemaVersion : SCHEMA_VERSION,
     exportedAt: now,
     data: raw,

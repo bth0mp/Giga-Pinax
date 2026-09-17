@@ -711,6 +711,26 @@ test('the raw export copies stored data verbatim, unsaved drafts and all', () =>
   assert.equal(JSON.parse(rawExportDocument(null, NOW)).data, null);
 });
 
+test('a raw rescue file is refused as a backup and says which file to use instead', () => {
+  const refusal = 'This is a raw rescue file, not a backup. Use Export backup to make a file that can be imported.';
+  const marked = validateBackup(rawExportDocument(createEmptySnapshot(NOW), NOW));
+  assert.equal(marked.ok, false);
+  assert.equal(marked.error.message, refusal);
+
+  // A rescue file taken before the marker existed still carries the request ledger a backup never
+  // has, so it is recognised by that too.
+  const older = JSON.parse(rawExportDocument({
+    ...createEmptySnapshot(NOW), recentCommands: [{ requestId: 'retry-id' }],
+  }, NOW));
+  delete older.kind;
+  const ledger = validateBackup(older);
+  assert.equal(ledger.ok, false);
+  assert.equal(ledger.error.message, refusal);
+
+  // A backup this build wrote is still a backup.
+  assert.equal(validateBackup(exportBackup(createEmptySnapshot(NOW), NOW).value).ok, true);
+});
+
 test('backup file names carry an instant a file system accepts', () => {
   assert.equal(backupFileName('giga-pinax-before-import', NOW), 'giga-pinax-before-import-2026-09-12T12-00-00.000Z.json');
 });
