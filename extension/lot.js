@@ -1,5 +1,5 @@
 import { EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, ricSection, sectionBracket, sgNumber, VARIANT } from './lookup.js';
-import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
+import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, RIC_VOLUMES, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -282,7 +282,25 @@ const GAP_HEAD = new RegExp(String.raw`^(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEP
 // A RIC volume is not the reference's number, however many digits it carries: "RIC II.3, 2345" and "RIC II², 972" are one reference each, the comma
 // standing where a space could, while "Price 3949, 3950" is still two. The numeral, an optional part and an optional second-edition mark, and nothing
 // else: each group matches one fixed run, so the test is linear.
-const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]?\s*(?:part\s*)?\d)?\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\))?\s*$/i;
+// A part is only a part when a mark says so ("II.3", "II, 3", "II part 3"); a plain space carries the dealer's number instead, so "RIC II 1, 2" is
+// volume II number 1 and the 2 after it is another type.
+const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]\s*(?:part\s*)?\d|\s+part\s*\d)?\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\))?\s*$/i;
+// A volume and a part written as two chunks ("RIC V, 2, 123"): the number is the chunk after them.
+const VOLUME_PART = /^\s*(?:vol\.?\s*)?([IVX]+)\s*,\s*(\d)\s*$/i;
+// The parts OCRE lists for each volume numeral, read off RIC_VOLUMES: II has a 1st and a 3rd, and every other volume is whole, so its part is no
+// distinction OCRE makes and the volume is read entire. A numeral RIC does divide, asked for a part it has no edition of ("RIC II, 2"), is nobody's
+// reference — and read as "RIC II 2" it opened a coin the dealer never cited.
+const VOLUME_PARTS = new Map();
+for (const { value } of RIC_VOLUMES) {
+  const [, numeral, part] = value.match(/^([IVX]+)(?:, Part (\d))?/) ?? [];
+  if (!numeral) continue;
+  if (!VOLUME_PARTS.has(numeral)) VOLUME_PARTS.set(numeral, new Set());
+  if (part) VOLUME_PARTS.get(numeral).add(part);
+}
+const realVolumePart = (numeral, part) => {
+  const parts = VOLUME_PARTS.get(numeral.toUpperCase());
+  return Boolean(parts) && (parts.size === 0 || parts.has(part));
+};
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
@@ -294,9 +312,15 @@ function pieceAfter(raw, typed = false) {
     const piece = unpunctuate(text);
     if (!piece) continue;
     if (!/^(?:\d|\p{Lu}\p{L}*\s+\d)/u.test(piece) || piece.match(BODY)?.[0] !== piece || MEASURE.test(piece)) { broken = true; break; }
-    // A typed key takes one number after its volume, and no more: the second is another type.
-    if (/^\d/.test(piece) && !ended) { body += `${sep}${piece}`; ended = typed; }
-    else ended = true;
+    // A typed key takes one number after its volume, and no more: the second is another type. A volume whose part is a chunk of its own waits for
+    // one chunk longer, and only for a part that volume really has — otherwise the whole reference is unread rather than half read.
+    if (/^\d/.test(piece) && !ended) {
+      const joined = `${body}${sep}${piece}`;
+      const part = VOLUME_PART.exec(joined);
+      if (part && !realVolumePart(part[1], part[2])) return { body: '', broken: true };
+      body = joined;
+      ended = typed && !part;
+    } else ended = true;
   }
   return { body, broken };
 }

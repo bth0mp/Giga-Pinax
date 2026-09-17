@@ -846,6 +846,13 @@ test('a comma between a RIC volume and its number keeps the reference whole', ()
   assert.deepEqual(texts('Trajan denarius. RIC II, 123; BMC 45.'), ['RIC II, 123', 'BMC 45']);
   // The volume still ends the reference when no number follows it, and a second number after the first is another type.
   assert.deepEqual(texts('Hadrian. RIC II.3, 2345, 2346.'), ['RIC II.3, 2345']);
+  // A volume, its part and its number, each parted by a comma. Read as "RIC V 2" this opened Probus 2, a coin the dealer never cited.
+  assert.deepEqual(only('Probus. RIC V, 2, 123').reference, { catalogue: 'RIC', volume: 'V, Part 2', section: '', number: '123' });
+  assert.deepEqual(only('Caracalla. RIC IV, 1, 123a.').reference, { catalogue: 'RIC', volume: 'IV, Part 1', section: '', number: '123a' });
+  // Only a part that volume really has: OCRE divides II into its 1st and 3rd parts and no other, so "RIC II, 2" is nobody's reference.
+  assert.deepEqual(texts('Trajan. RIC II, 2, 123'), []);
+  // A part written with a space is the dealer's number, not a part: "RIC II 1" is volume II number 1, and the 2 after it is another type.
+  assert.deepEqual(texts('Trajan. RIC II 1, 2'), ['RIC II 1']);
 });
 
 test('rulers are read from the heading alone: not from a legend, not from what the coin pictures', () => {

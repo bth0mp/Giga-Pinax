@@ -188,6 +188,9 @@ function readType(text, clean = true) {
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
     const [, numeral, part, edition, section = '', number] = ric;
+    // A volume written in Arabic numerals takes no comma after it. The Roman spelling is the one RIC is bound and cited under, and it alone is
+    // punctuated the way HGC's volume is; "RIC 5, 6" and "RIC 1,2" are two numbers a dealer listed under one key, not volume V number 6.
+    if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
     const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
     const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
     return { catalogue: 'RIC', number, volume, section };

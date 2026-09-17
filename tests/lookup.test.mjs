@@ -1311,8 +1311,13 @@ test('a comma after the RIC volume is read, wherever the volume names its part o
     ['RIC II.3, 2345', ric('II, Part 3', '', '2345')],
     ['RIC I², Nero 306', ric('I (2nd edition)', 'Nero', '306')],
   ]) assert.deepEqual(parseReference(text), expected, text);
-  // A volume with nothing after the comma is still no reference.
-  for (const text of ['RIC III,', 'RIC II, Titus']) assert.equal(parseReference(text), null, text);
+  // A volume and its part, both spelled with commas, and the number after them.
+  assert.deepEqual(parseReference('RIC V, 2, 123'), ric('V, Part 2', '', '123'));
+  assert.deepEqual(parseReference('RIC IV, 1, 123a'), ric('IV, Part 1', '', '123a'));
+  // A volume with nothing after the comma is still no reference, and a volume written in Arabic numerals takes no comma at all: "RIC 5, 6" and
+  // "RIC 1,2" are two numbers a dealer listed, never volume V number 6.
+  for (const text of ['RIC III,', 'RIC II, Titus', 'RIC 5, 6', 'RIC 1,2']) assert.equal(parseReference(text), null, text);
+  assert.deepEqual(parseReference('RIC 5 6'), ric('V', '', '6'));
 });
 
 // One reference typed into the Reference box is read by the rules a lot row is read by, so the same text gives the same reference either way.
