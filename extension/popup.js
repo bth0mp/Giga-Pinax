@@ -620,8 +620,8 @@ function filterLines(periodLots, curation, { name, denomination, citing, uncited
 function renderPriceFilters() {
   const shown = shownPrices ?? shownCoinArchivesPrices;
   const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched);
-  // Only the acsearch panel filters on the denomination, so only its rows can offer the toggle.
-  const denomination = shownPrices?.denomination ?? '';
+  // Both panels filter on the denomination the verified card carries, so either may be the one offering the toggle.
+  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || '';
   $('citing-row').hidden = !citing;
   $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
   $('citing-filter').checked = onlyCiting;
@@ -809,8 +809,14 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   // Readable or not is a fact about the page CoinArchives returned, as on the acsearch panel, so a period of it may still hold no citation at all.
   const uncited = searched && outcome.selectedLots.length > 0 && !outcome.selectedLots.some((sale) => citesReference(sale.description, reference));
   const citing = searched && onlyCiting && !uncited;
-  const passes = { citing: (sale) => citesReference(sale.description, reference) };
-  coinArchivesCuration.filter((sale) => (citing && !passes.citing(sale) ? 'not-cited' : null));
+  // The denomination toggle governs this median too: it is the verified card's own word, and the card is the same one the acsearch panel reads. A
+  // public row whose page carried no lot text says nothing about its denomination either, and nothing here is ever dropped on missing data.
+  const denomination = filterableDenomination(priceCard(context).denomination);
+  const wanted = onlyDenomination ? denomination : '';
+  const passes = { citing: (sale) => citesReference(sale.description, reference),
+    denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
+  coinArchivesCuration.filter((sale) => (citing && !passes.citing(sale) ? 'not-cited'
+    : wanted && !passes.denomination(sale) ? 'other-denomination' : null));
   const used = coinArchivesCuration.included(periodLots);
   const summary = summarise(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = used;
@@ -828,7 +834,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
-  const filters = filterLines(periodLots, coinArchivesCuration, { name, citing, uncited, passes });
+  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
   const counts = coinArchivesCuration.counts(periodLots);
@@ -867,7 +873,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   $('coinarchives-source-link').href = outcome.url;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-panel').hidden = false;
-  shownCoinArchivesPrices = { context, outcome, currency, summary, searched };
+  shownCoinArchivesPrices = { context, outcome, currency, summary, searched, denomination };
   renderPriceFilters();
   const left = filters.length ? ` ${spokenFilters(filters)}` : '';
   if (named) $('announcement').textContent = summary.count
@@ -878,6 +884,8 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
 function showCoinArchivesError(message) {
   shownCoinArchivesPrices = null;
   $('coinarchives-prices-panel').hidden = true;
+  // The toggles above both panels follow the one that has just gone: a failed re-fetch left the citation switch on screen with no rows behind it.
+  renderPriceFilters();
   $('coinarchives-prices-error').textContent = message;
   $('coinarchives-prices-error').hidden = false;
   $('announcement').textContent = message;
@@ -1300,8 +1308,9 @@ $('pop-out').addEventListener('click', async () => {
   if (lookupLaunchSucceeded(reply)) window.close();
   else announce(reply?.message || 'Couldn’t open the lookup window. Try again.');
 });
-// Both toggles are remembered for this view only, never stored, and each governs both providers, so the two medians are always drawn from the same
-// rule: changing one redraws both panels. A new lookup puts the citation filter back on; a re-fetch or a period keeps what the collector set.
+// Both toggles are remembered for this view only, never stored, and each governs both providers — the citation filter and the denomination alike —
+// so the two medians are drawn from the same rule and changing one redraws both panels. A new lookup puts the citation filter back on; a re-fetch or
+// a period keeps what the collector set.
 const redrawPrices = () => {
   if (shownPrices) {
     const { lots, currency, term } = shownPrices;

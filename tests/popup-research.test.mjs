@@ -763,3 +763,59 @@ test('the CoinArchives median leaves out a public row that does not cite the ref
   await popup.element('period').emit('change', { target: { value: '5y' } });
   assert.match(popup.element('coinarchives-median').textContent, /250/);
 });
+
+// 0.32 review, round 3: the denomination toggle stands above both panels and says "Only results naming …", but it filtered acsearch alone. It now
+// governs the public median too, with its own count under that panel, and a public row whose page carried no lot text is never dropped on the
+// missing data — the rule the citation filter already follows there.
+test('the denomination toggle governs the public panel too, and never drops a row with no text', async () => {
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+  const publicLot = (id, amount, description) => ({ id, title: `Auction, Lot ${id}`, description, date: '2025-02-01', price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('ca-1', 100, 'Macedon. Tetradrachm. Price 23. VF'), publicLot('ca-2', 900, 'Macedon. Drachm. Price 23. VF'),
+    publicLot('ca-3', 200, '')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card }),
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.match(popup.element('coinarchives-median').textContent, /200/);
+  assert.equal(popup.element('coinarchives-cited').hidden, true);
+  popup.element('denomination-filter').checked = true;
+  await popup.element('denomination-filter').emit('change');
+  assert.match(popup.element('coinarchives-median').textContent, /150/);
+  assert.equal(popup.element('coinarchives-cited').textContent, '2 of 3 results name “tetradrachm”');
+  // The same hand-include semantics: the drachm can be counted back, and the count beside the median follows.
+  const toggle = popup.element('coinarchives-sale-list').children[1].children[2];
+  assert.equal(toggle.textContent, 'Include');
+  await toggle.emit('click');
+  assert.match(popup.element('coinarchives-median').textContent, /200/);
+  // Nothing is left out any more, so the line goes — the rule the acsearch panel's own filter lines already follow.
+  assert.equal(popup.element('coinarchives-cited').hidden, true);
+  popup.element('denomination-filter').checked = false;
+  await popup.element('denomination-filter').emit('change');
+  assert.equal(popup.element('coinarchives-cited').hidden, true);
+});
+
+// 0.32 review, round 3: a failed re-fetch cleared the public panel's state without redrawing the toggles above it, so the citation switch stayed on
+// screen with no rows left behind it.
+test('a failed CoinArchives re-fetch takes the toggles down with the panel', async () => {
+  const publicLot = { id: 'ca-1', title: 'Auction, Lot 1', description: 'Macedon. Tetradrachm. Price 23. VF', date: '2025-02-01', price: 'USD 150',
+    amount: 150, currency: 'USD', url: 'https://www.coinarchives.com/a/lotviewer.php?LotID=1', source: 'coinarchives' };
+  let failing = false;
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    coinArchivesFetch: async () => (failing ? { status: 'layout', term: 'Price 23' } : { ...coinArchivesSale, lots: [publicLot], selectedLots: [publicLot] }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('price-filters').hidden, false);
+  failing = true;
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+  assert.equal(popup.element('price-filters').hidden, true);
+});
