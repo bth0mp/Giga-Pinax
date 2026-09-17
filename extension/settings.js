@@ -1,6 +1,7 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importCountsText, importIssueLines, previewImport,
-  quarantineDocument, quarantineLines, quarantineSummaryText, rawExportDocument, validateBackup,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText,
+  importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineLines,
+  quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
 import { parsePremiumPercent } from './core/money.js';
 import { formatMinorInput } from './bid-tools.js';
@@ -115,33 +116,26 @@ async function load() {
   $('save-settings').disabled = false;
 }
 
-// A replace throws away everything local, so a copy of it reaches disk first. If that copy cannot
-// be written, the raw export is offered in its place and the collector has to say so a second time.
-async function saveSafetyCopy() {
-  try {
-    const latest = await bridge.getSnapshot();
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
-    const now = new Date().toISOString();
-    const result = exportBackup(latest.value, now);
-    if (!result.ok) throw new Error(result.error.message);
-    download(result.value, backupFileName('giga-pinax-before-import', now));
-    status('Saved a copy of your current records before importing.');
-    return true;
-  } catch (error) {
-    let offered = 'A raw copy of the stored data could not be downloaded either.';
-    try {
-      await exportRaw();
-      offered = 'A raw copy of the stored data was downloaded instead.';
-    } catch { /* the confirmation says so */ }
-    return confirm(`A safety copy of your current records could not be saved: ${error.message}\n\n${offered}\n\nReplace local records anyway?`);
-  }
+// The file the import would overwrite the current records with, ready to hand to the browser.
+async function safetyCopyFile() {
+  const latest = await bridge.getSnapshot();
+  if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+  const now = new Date().toISOString();
+  const result = exportBackup(latest.value, now);
+  if (!result.ok) throw new Error(result.error.message);
+  return { text: result.value, name: backupFileName('giga-pinax-before-import', now) };
 }
 
-async function exportRaw() {
+async function rawFile() {
   const reply = await bridge.sendCommand({ type: 'snapshot.raw', requestId: bridge.newRequestId() });
   if (!reply?.ok) throw new Error(reply?.message || 'Could not read local storage.');
   const now = new Date().toISOString();
-  download(rawExportDocument(reply.value, now), backupFileName('giga-pinax-raw', now));
+  return { text: rawExportDocument(reply.value, now), name: backupFileName('giga-pinax-raw', now) };
+}
+
+async function exportRaw() {
+  const file = await rawFile();
+  download(file.text, file.name);
 }
 
 async function loadCatalogueInfo() {
@@ -245,7 +239,9 @@ $('import-form').addEventListener('submit', async (event) => {
       expectedRevision: currentSnapshot.revision,
     };
     $('import-counts').textContent = importCountsText(result.value);
-    $('import-conflicts').replaceChildren(...importIssueLines(result.value).map((line) => {
+    // Untrusted text from a backup file, so every line is written as text and never as markup.
+    const lines = [...importChangeLines(result.value), ...importIssueLines(result.value)];
+    $('import-conflicts').replaceChildren(...lines.map((line) => {
       const item = document.createElement('li');
       item.textContent = line;
       return item;
@@ -264,28 +260,40 @@ $('import-form').addEventListener('submit', async (event) => {
 $('confirm-import').addEventListener('click', async () => {
   const pending = pendingImport;
   if (!pending?.preview.snapshot || pending.generation !== previewGeneration) return;
-  if (pending.mode === 'replace') {
-    if (!confirm('Replace local records with this backup?')) return;
-    if (!await saveSafetyCopy()) return;
-  }
+  if (pending.mode === 'replace' && !confirm('Replace local records with this backup?')) return;
+  // Disabled before anything is downloaded or sent, so a second click cannot issue a second copy
+  // and a second command.
   $('confirm-import').disabled = true;
+  // A merge that replaces even one record overwrites a body this install never saw, so it earns
+  // the same copy on disk as a replace does.
+  const overwrites = pending.mode === 'replace' || pending.preview.counts.updated > 0;
+  const send = () => bridge.sendCommand({
+    type: 'backup.import',
+    requestId: bridge.newRequestId(),
+    expectedRevision: pending.expectedRevision,
+    mode: pending.mode,
+    document: pending.document,
+  });
+  let copied = '';
   try {
-    const reply = await bridge.sendCommand({
-      type: 'backup.import',
-      requestId: bridge.newRequestId(),
-      expectedRevision: pending.expectedRevision,
-      mode: pending.mode,
-      document: pending.document,
-    });
-    if (!reply.ok) throw new Error(reply.message || 'Local data changed. Preview the import again.');
+    const result = overwrites
+      ? await importWithSafetyCopy({ exportCopy: safetyCopyFile, exportRaw: rawFile, download, confirm, send })
+      : { sent: true, copied: null, reply: await send() };
+    // A page cannot see a download land, so the wording claims only what it did.
+    copied = result.copied ? `Download of a safety copy started: ${result.copied}. ` : '';
+    if (!result.sent) {
+      $('confirm-import').disabled = false;
+      return status(`${copied}Import cancelled. Nothing was changed.`);
+    }
+    if (!result.reply?.ok) throw new Error(result.reply?.message || 'Local data changed. Preview the import again.');
     clearPreview();
-    status('Backup imported.');
+    status(`${copied}Backup imported.`);
     // The imported records are this page's own state too, and an open workspace picks the same
     // write up through its storage subscription.
-    await load().catch((error) => status(`Backup imported, but this page could not reload: ${error.message}`, true));
+    await load().catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
   } catch (error) {
     clearPreview();
-    status(error.message || 'Could not import the backup. Preview it again.', true);
+    status(`${copied}${error.message || 'Could not import the backup. Preview it again.'}`, true);
   }
 });
 
