@@ -1,5 +1,5 @@
 import { computeStatistics } from './core/evidence.js';
-import { calculateBidCost, calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { projectExposure } from './core/records.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';

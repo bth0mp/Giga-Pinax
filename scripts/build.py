@@ -72,6 +72,11 @@ ASSET_PATHS = (
     "icons/icon-48.png",
     "icons/icon-128.png",
 )
+# The two files a package carries at its root: the browser's manifest, and the licence the code is published under.
+# A store reviewer and a collector who unzips a package both look at the root for the licence, and nothing under
+# extension/ is it, so it is named here rather than being smuggled into the extension asset list.
+LICENSE_SOURCE = PROJECT_ROOT / "LICENSE"
+PACKAGE_ROOT_FILES = ("manifest.json", "LICENSE.txt")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
@@ -268,7 +273,9 @@ def check_manifest_versions() -> str:
 def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
     manifest_bytes, manifest = read_manifest(browser)
 
-    inputs = [("manifest.json", manifest_bytes)]
+    if LICENSE_SOURCE.is_symlink() or not LICENSE_SOURCE.is_file():
+        raise ValueError("required package file is missing or unsafe: LICENSE")
+    inputs = [("manifest.json", manifest_bytes), ("LICENSE.txt", LICENSE_SOURCE.read_bytes())]
     for relative_path in (*ASSET_PATHS, *local_catalogue_assets()):
         inputs.append((relative_path, read_asset(relative_path)))
     return manifest, inputs

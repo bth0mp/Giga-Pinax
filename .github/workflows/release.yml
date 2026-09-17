@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Nothing here pushes, and the job runs on a tag anybody with write access can move: the checkout leaves no
+          # credential in .git/config for a later step, or a compromised one, to push with.
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -45,7 +49,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          # A published release is somebody's decision and its assets are what people have already downloaded: this job
+          # only ever fills a draft. A tag re-pushed at a published release uploads nothing and says why.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "release $GITHUB_REF_NAME is already published; refusing to replace its assets" >&2
+              exit 1
+            fi
+          else
             gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes 'Draft release. Add the notes and the install instructions from docs/RELEASING.md, then publish.'
           fi
           gh release upload "$GITHUB_REF_NAME" dist/giga-pinax-*.zip --clobber

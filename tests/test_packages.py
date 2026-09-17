@@ -106,6 +106,20 @@ class ManifestTests(unittest.TestCase):
 
 
 class AssetCoverageTests(unittest.TestCase):
+    def test_every_package_carries_the_code_licence_at_its_root(self) -> None:
+        """The MIT licence the code is published under travels with it: a store reviewer and a collector who unzips a
+        package both look at the root for it, and nothing under extension/ is that licence."""
+        build = load_build_script()
+        licence = (ROOT / "LICENSE").read_bytes()
+        self.assertIn(b"MIT License", licence)
+        for browser in build.BROWSERS:
+            with self.subTest(browser=browser):
+                _, inputs = build.load_inputs(browser)
+                packaged = dict(inputs)
+                self.assertEqual(licence, packaged.get("LICENSE.txt"))
+        # It is the one packaged file that is not under extension/, and the build names it as such.
+        self.assertEqual(("manifest.json", "LICENSE.txt"), build.PACKAGE_ROOT_FILES)
+
     def test_the_package_carries_every_file_under_extension(self) -> None:
         present = {path.relative_to(EXTENSION).as_posix() for path in EXTENSION.rglob("*") if path.is_file()}
         packaged = packaged_paths()
@@ -165,7 +179,7 @@ class PackageBuildTests(unittest.TestCase):
             )
             self.assertEqual("unrelated output", sentinel.read_text(encoding="utf-8"))
 
-            expected_paths = packaged_paths() | {"manifest.json"}
+            expected_paths = packaged_paths() | set(build.PACKAGE_ROOT_FILES)
             for browser in build.BROWSERS:
                 with self.subTest(browser=browser):
                     directory = output_root / browser
