@@ -59,7 +59,6 @@ ASSET_PATHS = (
     "settings.html",
     "settings.js",
     "lot.js",
-    "sample-data.js",
     "source-launchers.js",
     "source-menu.js",
     "store.js",

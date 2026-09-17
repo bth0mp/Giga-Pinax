@@ -45,6 +45,8 @@ class TestElement {
     const event = { target: this, preventDefault() {}, ...detail };
     return Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)));
   }
+  // As the other half of the page reaches this one: the same listeners, run synchronously.
+  dispatchEvent(event) { void this.emit(event?.type); return true; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   querySelectorAll() { return []; }
@@ -63,7 +65,7 @@ class TestElement {
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
-  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [] }) {
+  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map() }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -114,7 +116,10 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     document,
     window,
     globalThis: null,
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => (stored.has(key) ? stored.get(key) : null),
+      setItem: (key, value) => { stored.set(key, String(value)); },
+    },
     location: { search, href: `moz-extension://test/popup.html${search}` },
     navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
@@ -132,7 +137,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard };
+  return { element, document, writes, clipboard, stored };
 }
 
 const oneSale = {
@@ -971,4 +976,88 @@ test('a failed CoinArchives re-fetch takes the toggles down with the panel', asy
   await settle();
   assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
   assert.equal(popup.element('price-filters').hidden, true);
+});
+
+// One home for the default currency: the snapshot preference the background keeps. Local storage
+// keeps a display cache of the last choice beside it, because a lookup window opens, looks up and
+// prices before the bridge can answer: without the cache that research runs in whatever currency the
+// profile held before the upgrade, however often the collector has changed it since.
+const PREFERENCES_CACHE_KEY = 'giga-pinax-preferences-v1';
+const cachedCurrency = (stored) => JSON.parse(stored.get(PREFERENCES_CACHE_KEY)).currency;
+const seeded = (currency) => new Map([[PREFERENCES_CACHE_KEY,
+  JSON.stringify({ currency, catalogue: 'Price', number: '23' })]]);
+const priceTwentyThree = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+
+async function chooseCurrency(stored, currency) {
+  const popup = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  popup.element('currency').value = currency;
+  await popup.element('currency').emit('change');
+  return popup;
+}
+
+test('a chosen currency is cached, and the next window prices in it before the bridge answers', async () => {
+  const stored = seeded('USD');
+  await chooseCurrency(stored, 'EUR');
+  assert.equal(cachedCurrency(stored), 'EUR');
+
+  const fetched = [];
+  const reopened = await loadPopup({ stored, search: '?window=1&q=Price%2023', permissionRequest: async () => true,
+    priceFetch: async (request) => { fetched.push(request.currency); return { status: 'empty' }; },
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
+  await settle();
+  await settle();
+  assert.equal(reopened.element('currency').value, 'EUR');
+  assert.deepEqual(fetched, ['EUR']);
+});
+
+test('a lookup handed to an open window keeps the cached currency', async () => {
+  const stored = seeded('USD');
+  await chooseCurrency(stored, 'EUR');
+
+  const fetched = [];
+  const messageListeners = [];
+  const open = await loadPopup({ stored, search: '?window=1&q=Price%2023', messageListeners, permissionRequest: async () => true,
+    priceFetch: async (request) => { fetched.push(request.currency); return { status: 'empty' }; },
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
+  await settle();
+  await settle();
+  messageListeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, null, () => {});
+  await settle();
+  await settle();
+  assert.equal(open.element('currency').value, 'EUR');
+  assert.deepEqual(fetched, ['EUR', 'EUR']);
+});
+
+// The snapshot still wins when it answers, but it is applied the way a collector's own choice is, so
+// the prices already fetched under the cached currency go, the acsearch link follows, and the cache
+// records what is now shown.
+test('a stored preference arriving late switches the select, the cache and the prices already shown', async () => {
+  const stored = seeded('EUR');
+  const fetched = [];
+  const popup = await loadPopup({ stored, search: '?window=1&q=Price%2023', permissionRequest: async () => true,
+    priceFetch: async (request) => { fetched.push(request.currency); return oneSale; },
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, ['EUR']);
+  assert.equal(popup.element('prices-panel').hidden, false);
+
+  assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), true);
+  assert.equal(popup.element('currency').value, 'GBP');
+  assert.equal(cachedCurrency(stored), 'GBP');
+  assert.equal(popup.element('prices-panel').hidden, true);
+  assert.match(popup.element('acsearch-link').href, /currency=gbp/);
+  assert.equal(popup.element('announcement').textContent, 'Currency set to GBP.');
+
+  // The stored value the select already shows is not a change: nothing is cleared and nothing is said.
+  popup.element('announcement').textContent = '';
+  assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), false);
+  assert.equal(popup.element('announcement').textContent, '');
+});
+
+test('a profile whose bridge never answers keeps the chosen currency across sessions', async () => {
+  const stored = seeded('USD');
+  await chooseCurrency(stored, 'GBP');
+  const later = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  assert.equal(later.element('currency').value, 'GBP');
 });

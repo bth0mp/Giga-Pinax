@@ -193,6 +193,11 @@ function currentReference() {
     volume: $('ric-volume').value, section: visible('ric-section') };
 }
 
+// The default currency is stored in the durable root, written through the background bridge by the
+// companion half of this page. The copy kept here is a display cache: a lookup window opens, looks
+// up and prices before that bridge can answer, and it has to do so in the currency last chosen
+// rather than one the profile held before the durable root existed. The stored preference still
+// wins once it arrives (companion-popup.js), which puts it back through the change handler below.
 function savePreferences() {
   preferences = { ...preferences, ...currentReference(), currency: $('currency').value };
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences)); }

@@ -12,7 +12,7 @@ test('corrupt or missing preferences fall back to Price 23 in USD', () => {
 });
 
 test('saved preferences are constrained, trimmed to 120 characters and stripped of unknown keys', () => {
-  const saved = restorePreferences(JSON.stringify({ currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true }));
+  const saved = restorePreferences(JSON.stringify({ currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', nickname: 'owl' }));
   assert.deepEqual(saved, { currency: 'EUR', catalogue: 'RIC', number: '306A', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] });
   const invalid = restorePreferences(JSON.stringify({ currency: 'BTC', catalogue: 'RPC', number: {}, volume: 'x'.repeat(200) }));
   assert.equal(invalid.currency, 'USD');

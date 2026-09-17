@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
-import { exportBackup } from '../extension/core/backup.js';
+import { BACKUP_FORMAT, exportBackup } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -318,7 +318,7 @@ test('a stored event whose start instant drifted from its local fields still loa
 
 test('migrates preferences once and bounds shared drafts by expiry and count', () => {
   let state = createEmptySnapshot(NOW);
-  const prefs = { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true };
+  const prefs = { currency: 'GBP' };
   const migrated = reduce(state, command('preferences.migrateIfAbsent', { preferences: prefs }));
   state = migrated.snapshot;
   const again = reduce(state, command('preferences.migrateIfAbsent', { preferences: { ...prefs, currency: 'EUR' } }));
@@ -338,7 +338,7 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
 
 test('saves bounded unique house premiums and preserves them for older callers', () => {
   const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
-    preferences: { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I', section: 'Nero', sampleMode: false },
+    preferences: { currency: 'GBP' },
   }));
   const saved = reduce(base.snapshot, command('preferences.save', {
     expectedRevision: 0,
@@ -451,6 +451,10 @@ test('preference migration ignores client-owned metadata', () => {
   assert.equal(prefs.value.revision, 0);
   assert.equal('id' in prefs.value, false);
   assert.equal(prefs.value.createdAt, NOW);
+  // The research form is the popup's own, not the durable root's: a caller still sending it is ignored.
+  for (const key of ['catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+    assert.equal(key in prefs.value, false, key);
+  }
 });
 
 test('rejects invalid commands without mutating the supplied snapshot', () => {
@@ -552,7 +556,7 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   const writer = createCommandWriter(storage, context());
   const reply = await writer.commitCommand(command('snapshot.get'));
   assert.equal(reply.ok, true);
-  assert.equal(reply.value.schemaVersion, 1);
+  assert.equal(reply.value.schemaVersion, SCHEMA_VERSION);
   assert.equal(storage.read().recentCommands.length, 0);
 });
 
@@ -1184,4 +1188,218 @@ test('failed notification delivery expires without another retry after event rel
   const expired = reduce(state, command('scheduler.reconcile'), { now: () => '2026-09-12T12:15:00.001Z', newId: uuid });
   assert.equal(expired.snapshot.alerts[0].status, 'missed');
   assert.equal(expired.value.nextWakeAt, null);
+});
+
+// Sample mode is gone, but a row a build that had it could have written must not take the store
+// down with it. It never counted towards a median while it existed, so it is not quietly relabelled
+// as the collector's own: it is set aside verbatim, where Data health shows it and a backup keeps it.
+test('a stored evidence row still marked as sample is set aside rather than lost or counted', async () => {
+  const observation = {
+    id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'sample', retrievedAt: NOW,
+    houseSaleId: 'Sale 10', auctionHouse: 'House', auctionDate: '2026-01-02', lotNumber: '9',
+    priceBasis: 'hammer', amount: { currency: 'EUR', minor: 12000 },
+  };
+  const sample = {
+    id: uuid(), revision: 0, dataClass: 'sample', observations: [observation],
+    saleIdentity: { auctionHouse: 'House', houseSaleId: 'Sale 10', lotNumber: '9' },
+    inclusion: 'included',
+    resolved: { priceBasis: 'hammer', hammer: { currency: 'EUR', minor: 12000 }, resolution: 'source-agreement' },
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const stored = createEmptySnapshot(NOW);
+  stored.evidence.push(sample);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.evidence, []);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record]),
+    [['evidence', sample]]);
+});
+
+// A whole root as the 0.31.1 build left it in storage - written by that build, with the research
+// form in its preferences, a preset with an increment ladder and one without, two lots (one with an
+// outcome and a collection entry), an event with two reminders and the alerts they produced, a piece
+// of evidence, a group, a draft, a row that build had already set aside, and its request ledger.
+// Copied from what that writer produced rather than shaped to suit the migration.
+const V1_ROOT = Object.freeze({
+  schemaVersion: 1,
+  revision: 10,
+  updatedAt: NOW,
+  preferences: {
+    schemaVersion: 1, revision: 1, currency: 'GBP',
+    catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true,
+    desktopAlertsEnabled: true, createdAt: NOW, updatedAt: NOW,
+    housePremiumPresets: [
+      { name: 'CNG', buyerPremiumBps: 2000, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 10000, step: 1000 }] } },
+      { name: 'Roma', buyerPremiumBps: 2400 },
+    ],
+  },
+  lots: [
+    { id: '00000000-0000-4000-8000-000000000010', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      title: 'Athens owl', sourceLinks: [{ source: 'manual', url: 'https://example.test/lot' }], bidHistory: [],
+      outcome: { status: 'open' }, outcomeHistory: [], notes: 'nice', auctionEventId: '00000000-0000-4000-8000-000000000006' },
+    { id: '00000000-0000-4000-8000-000000000012', revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      title: 'Won coin', sourceLinks: [], bidHistory: [],
+      outcome: { status: 'won', hammer: { currency: 'EUR', minor: 12000 }, verification: 'personal-unverified' },
+      outcomeHistory: [{ id: '996e6cc2-190e-5d13-b922-ed9df65bb00a', from: 'open', to: 'won', recordedAt: NOW }],
+      collectionEntryId: '00000000-0000-4000-8000-000000000014' },
+  ],
+  auctionEvents: [
+    { id: '00000000-0000-4000-8000-000000000006', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      name: 'Near sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:10',
+      timeZone: 'UTC', startsAt: '2026-09-12T12:10:00.000Z', reminderScope: 'standalone',
+      reminders: [
+        { kind: 'offset', offsetMinutes: 20, id: '00000000-0000-4000-8000-000000000007' },
+        { kind: 'offset', offsetMinutes: 5, id: '00000000-0000-4000-8000-000000000008' },
+      ] },
+  ],
+  alternativeGroups: [
+    { id: '00000000-0000-4000-8000-000000000004', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, name: 'One owl' },
+  ],
+  evidence: [
+    { id: 'a798446e-60c6-43d3-9601-b89ad69d8991', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      saleIdentity: { auctionHouse: 'House', houseSaleId: 'Sale 7', lotNumber: '14' },
+      observations: [{ id: '00000000-0000-4000-8000-000000000017', queryId: '00000000-0000-4000-8000-000000000015',
+        source: 'manual', dataClass: 'collector', retrievedAt: NOW, houseSaleId: 'Sale 7', auctionHouse: 'House',
+        auctionDate: '2026-01-02', lotNumber: '14', priceBasis: 'hammer', amount: { currency: 'GBP', minor: 10000 } }],
+      inclusion: 'included',
+      resolved: { priceBasis: 'hammer', hammer: { currency: 'GBP', minor: 10000 }, resolution: 'source-agreement' } },
+  ],
+  collectionEntries: [
+    { id: '00000000-0000-4000-8000-000000000014', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      lotId: '00000000-0000-4000-8000-000000000012', title: 'Won coin', acquisitionDate: '2026-09-12',
+      sourceLinks: [], hammer: { currency: 'EUR', minor: 12000 } },
+  ],
+  drafts: [
+    { id: '00000000-0000-4000-8000-000000000022', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      kind: 'auction-capture', payload: { rawText: 'Auction x' }, expiresAt: '2026-09-12T12:30:00.000Z' },
+  ],
+  alerts: [
+    { id: '00000000-0000-4000-8000-000000000019', revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      triggerId: '00000000-0000-4000-8000-000000000006:00000000-0000-4000-8000-000000000007:2026-09-12T11:50:00.000Z',
+      eventId: '00000000-0000-4000-8000-000000000006', eventRevision: 0,
+      reminderId: '00000000-0000-4000-8000-000000000007', triggerAt: '2026-09-12T11:50:00.000Z', status: 'due' },
+    { id: '00000000-0000-4000-8000-000000000020', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      triggerId: '00000000-0000-4000-8000-000000000006:00000000-0000-4000-8000-000000000008:2026-09-12T12:05:00.000Z',
+      eventId: '00000000-0000-4000-8000-000000000006', eventRevision: 0,
+      reminderId: '00000000-0000-4000-8000-000000000008', triggerAt: '2026-09-12T12:05:00.000Z', status: 'pending' },
+  ],
+  scheduler: { revision: 1, nextWakeAt: '2026-09-12T12:05:00.000Z', lastReconciledAt: NOW },
+  recentCommands: [
+    { requestId: '00000000-0000-4000-8000-000000000009', commandType: 'group.save', revision: 3, committedAt: NOW,
+      reply: { ok: true, requestId: '00000000-0000-4000-8000-000000000009', revision: 3, value: { name: 'One owl' } } },
+    { requestId: '00000000-0000-4000-8000-000000000021', commandType: 'draft.save', revision: 10, committedAt: NOW,
+      reply: { ok: true, requestId: '00000000-0000-4000-8000-000000000021', revision: 10, value: { kind: 'auction-capture' } } },
+  ],
+  quarantine: [
+    { collection: 'lots', record: { id: 'not-a-uuid', title: 42 }, reason: 'invalid-string', quarantinedAt: NOW },
+  ],
+});
+
+// The five keys the research form kept in the durable root, which version two drops.
+const RESEARCH_FORM_KEYS = ['catalogue', 'number', 'volume', 'section', 'sampleMode'];
+
+function versionTwoOf(root) {
+  const migrated = structuredClone(root);
+  migrated.schemaVersion = 2;
+  migrated.preferences.schemaVersion = 2;
+  for (const key of RESEARCH_FORM_KEYS) delete migrated.preferences[key];
+  return migrated;
+}
+
+// Storage that says how often it was written to, and with what: migration is a read-time repair, so
+// a start-up on a version 1 root must not be a write at all, and the write that does come must be
+// the one whole root this store has always set.
+function countingStorage(initial) {
+  const storage = memoryStorage(initial);
+  const sets = [];
+  return {
+    ...storage,
+    sets,
+    async set(items) { sets.push(structuredClone(items[STORAGE_KEY])); return storage.set(items); },
+  };
+}
+
+test('a stored version one root migrates on read, keeps every record, and is rewritten once', async () => {
+  const storage = countingStorage(V1_ROOT);
+  const writer = createCommandWriter(storage, context());
+
+  // The rescue copy is the stored bytes, before any repair: a collector who exports it here gets
+  // what the older build wrote.
+  const raw = await writer.commitCommand(command('snapshot.raw'));
+  assert.deepEqual(raw.value, V1_ROOT);
+
+  const read = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(read.ok, true, read.message);
+  assert.deepEqual(read.value, versionTwoOf(V1_ROOT));
+  // Reading is not writing, and a migration is not an edit: nothing was stored and no revision moved.
+  assert.deepEqual(storage.sets, []);
+  assert.deepEqual(storage.read(), V1_ROOT);
+  assert.equal(read.revision, V1_ROOT.revision);
+
+  // The first real write is what puts version two in storage - as one whole-root set, with the five
+  // research-form keys gone and every collection exactly as the older build left it.
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Added later', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(storage.sets.length, 1);
+  const stored = storage.read();
+  const expected = versionTwoOf(V1_ROOT);
+  expected.revision = V1_ROOT.revision + 1;
+  expected.lots.push(stored.lots.at(-1));
+  expected.recentCommands.push(stored.recentCommands.at(-1));
+  assert.deepEqual(stored, expected);
+  assert.deepEqual(storage.sets[0], stored);
+  assert.equal(stored.lots.at(-1).title, 'Added later');
+  assert.equal(stored.recentCommands.at(-1).commandType, 'lot.save');
+
+  // The page that read the older root holds its preferences revision; migration did not move it, so
+  // the save it was already composing still lands.
+  const preferences = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: V1_ROOT.preferences.revision, preferences: { currency: 'EUR' },
+  }));
+  assert.equal(preferences.ok, true, preferences.message);
+  assert.equal(preferences.value.currency, 'EUR');
+  assert.equal(preferences.value.revision, V1_ROOT.preferences.revision + 1);
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in preferences.value, false, key);
+});
+
+// The same root as a file, which is how it arrives from an install still on the older build.
+const versionOneDocument = () => JSON.stringify({
+  format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW,
+  data: { ...structuredClone(V1_ROOT), recentCommands: [], drafts: [] },
+});
+
+test('a version one backup document imports through the writer, replacing or merging', async () => {
+  const replaced = createCommandWriter(countingStorage(createEmptySnapshot(NOW)), context());
+  const replace = await replaced.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: versionOneDocument(),
+  }));
+  assert.equal(replace.ok, true, replace.message);
+  const after = await replaced.commitCommand(command('snapshot.get'));
+  assert.equal(after.value.schemaVersion, SCHEMA_VERSION);
+  assert.deepEqual(after.value.preferences.housePremiumPresets, V1_ROOT.preferences.housePremiumPresets);
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in after.value.preferences, false, key);
+  for (const collection of ['lots', 'auctionEvents', 'evidence', 'collectionEntries', 'alternativeGroups']) {
+    assert.deepEqual(after.value[collection], V1_ROOT[collection], collection);
+  }
+
+  // A merge keeps this install's own preferences, so the older file's research form has no way back in.
+  const local = createEmptySnapshot(NOW);
+  local.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'CHF', desktopAlertsEnabled: false,
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const merged = createCommandWriter(countingStorage(local), context());
+  const merge = await merged.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: versionOneDocument(),
+  }));
+  assert.equal(merge.ok, true, merge.message);
+  const folded = await merged.commitCommand(command('snapshot.get'));
+  assert.equal(folded.value.preferences.currency, 'CHF');
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in folded.value.preferences, false, key);
+  assert.deepEqual(folded.value.lots, V1_ROOT.lots);
 });

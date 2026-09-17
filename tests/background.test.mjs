@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { SCHEMA_VERSION } from '../extension/core/records.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
 const listeners = {
@@ -87,7 +88,7 @@ test('combined background ignores lookup-window messages and accepts companion c
 
   const rawReply = await send({ type: 'snapshot.raw', requestId: crypto.randomUUID() });
   assert.equal(rawReply.ok, true);
-  assert.equal(rawReply.value.schemaVersion, 1);
+  assert.equal(rawReply.value.schemaVersion, SCHEMA_VERSION);
 });
 
 test('Giga showInWindow opens a window when the combined background declines its message', async () => {
@@ -169,7 +170,7 @@ test('enabling desktop alerts reconciles and delivers an already-due reminder', 
   const localTime = starts.toISOString().slice(11, 16);
   const migrated = await send({
     type: 'preferences.migrateIfAbsent', requestId: crypto.randomUUID(),
-    preferences: { currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false },
+    preferences: { currency: 'USD' },
   });
   const event = await send({
     type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,

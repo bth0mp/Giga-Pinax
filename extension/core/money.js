@@ -142,41 +142,6 @@ export function calculatePremium(hammer, buyerPremiumBps) {
   };
 }
 
-export function calculateMaximumHammer(budget, buyerPremiumBps) {
-  const checked = validateMoney(budget);
-  if (!checked.ok) return checked;
-  if (!Number.isInteger(buyerPremiumBps) || buyerPremiumBps < 0 || buyerPremiumBps > 10000) {
-    return failure(
-      'invalid-basis-points',
-      'Buyer premium basis points must be an integer from 0 through 10,000.',
-      'buyerPremiumBps',
-    );
-  }
-
-  const affordable = (minor) => {
-    const premium = (minor * BigInt(buyerPremiumBps) + 5000n) / 10000n;
-    return minor + premium <= BigInt(budget.minor);
-  };
-  let low = 0n;
-  let high = BigInt(budget.minor) + 1n;
-  while (low + 1n < high) {
-    const middle = (low + high) / 2n;
-    if (affordable(middle)) low = middle;
-    else high = middle;
-  }
-  const hammer = { currency: budget.currency, minor: Number(low) };
-  const forward = calculatePremium(hammer, buyerPremiumBps);
-  if (!forward.ok) return forward;
-  return {
-    ok: true,
-    value: {
-      hammer,
-      premium: forward.value.premium,
-      hammerPlusPremium: forward.value.hammerPlusPremium,
-    },
-  };
-}
-
 export const MAX_INCREMENT_TIERS = 20;
 
 // A tier the collector typed on a numbered list is easier to point at by its number than by an
@@ -348,23 +313,3 @@ export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
   return calculateBidCost({ currency: budget.currency, minor: hammer }, buyerPremiumBps, values);
 }
 
-export function sumMoney(values, currency) {
-  if (!CURRENCY_SET.has(currency)) {
-    return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
-  }
-  if (!Array.isArray(values)) return failure('invalid-money-list', 'Money values must be an array.');
-
-  let total = 0n;
-  for (let index = 0; index < values.length; index += 1) {
-    const checked = validateMoney(values[index]);
-    if (!checked.ok) return { ...checked, error: { ...checked.error, path: `[${index}]` } };
-    if (values[index].currency !== currency) {
-      return failure('currency-mismatch', 'Money values cannot be summed across currencies.', `[${index}].currency`);
-    }
-    total += BigInt(values[index].minor);
-    if (total > MAX_SAFE_BIGINT) {
-      return failure('unsafe-money', 'Money sum is outside the supported integer range.');
-    }
-  }
-  return { ok: true, value: { currency, minor: Number(total) } };
-}

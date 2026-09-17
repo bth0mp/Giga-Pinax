@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   CURRENCIES,
   MAX_INCREMENT_TIERS,
-  calculateMaximumHammer,
   calculateAffordableBid,
   calculateBidCost,
   calculatePremium,
@@ -12,7 +11,6 @@ import {
   nextBidOnLadder,
   parseMoney,
   parsePremiumPercent,
-  sumMoney,
   validateIncrementLadder,
   validateLadderTiers,
   validateMoney,
@@ -272,33 +270,6 @@ test('formats calculator inputs with the active locale decimal boundary', () => 
   assert.equal(formatMinorInput(null, 'de-DE'), '');
 });
 
-test('finds the maximal affordable hammer using the forward premium rounding', () => {
-  for (const [budget, bps, expected] of [
-    [{ currency: 'USD', minor: 12500 }, 2500, 10000],
-    [{ currency: 'GBP', minor: 2 }, 5000, 1],
-    [{ currency: 'EUR', minor: 100 }, 0, 100],
-    [{ currency: 'CHF', minor: 0 }, 3300, 0],
-  ]) {
-    const result = calculateMaximumHammer(budget, bps);
-    assert.equal(result.ok, true);
-    assert.equal(result.value.hammer.minor, expected);
-    assert.ok(calculatePremium(result.value.hammer, bps).value.hammerPlusPremium.minor <= budget.minor);
-    if (expected < Number.MAX_SAFE_INTEGER) {
-      const next = calculatePremium({ ...result.value.hammer, minor: expected + 1 }, bps);
-      assert.ok(!next.ok || next.value.hammerPlusPremium.minor > budget.minor);
-    }
-  }
-});
-
-test('maximum hammer rejects unknown premiums and unsafe inputs without coercion', () => {
-  const budget = { currency: 'USD', minor: 10000 };
-  for (const bps of [null, undefined, 2.5, -1, 10001]) {
-    assert.equal(calculateMaximumHammer(budget, bps).ok, false, String(bps));
-  }
-  assert.equal(calculateMaximumHammer({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 0).ok, true);
-  assert.equal(calculateMaximumHammer({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER + 1 }, 0).error.code, 'invalid-minor-units');
-});
-
 test('parses locale decimal money into exact integer minor units', () => {
   assert.deepEqual(parseMoney('100.25', 'USD', 'en-US'), {
     ok: true,
@@ -414,25 +385,6 @@ test('rejects invalid basis points and premium arithmetic overflow', () => {
     calculatePremium({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 1).error.code,
     'unsafe-money',
   );
-});
-
-test('sums only one currency and guards the stored integer range', () => {
-  assert.deepEqual(
-    sumMoney([
-      { currency: 'EUR', minor: 100 },
-      { currency: 'EUR', minor: 225 },
-    ], 'EUR'),
-    { ok: true, value: { currency: 'EUR', minor: 325 } },
-  );
-  assert.deepEqual(sumMoney([], 'GBP'), {
-    ok: true,
-    value: { currency: 'GBP', minor: 0 },
-  });
-  assert.equal(sumMoney([{ currency: 'USD', minor: 1 }], 'EUR').error.code, 'currency-mismatch');
-  assert.equal(sumMoney([
-    { currency: 'USD', minor: Number.MAX_SAFE_INTEGER },
-    { currency: 'USD', minor: 1 },
-  ], 'USD').error.code, 'unsafe-money');
 });
 
 test('formats stored minor units without changing their currency', () => {

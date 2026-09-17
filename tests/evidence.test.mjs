@@ -52,7 +52,6 @@ const filters = Object.freeze({
   fromDate: '2000-01-01',
   toDate: '2026-12-31',
   sources: ['manual'],
-  mode: 'live',
 });
 
 test('normalizes source URLs without erasing lot identity', () => {
@@ -143,17 +142,16 @@ test('deduplicates a mapped cross-provider event while retaining every claim and
   });
 });
 
-test('keeps later events, weak identities, and sample observations separate', () => {
+test('keeps later events and weak identities separate', () => {
   const common = { title: 'same presumed specimen', reference: 'RIC 1' };
   const result = deduplicateEvidence([
     observation('event-1', { ...common, houseSaleId: 'Sale A' }),
     observation('event-2', { ...common, houseSaleId: 'Sale B', auctionDate: '2025-05-06' }),
     observation('weak-1', { ...common, houseSaleId: undefined }),
     observation('weak-2', { ...common, houseSaleId: undefined }),
-    observation('sample-1', { ...common, houseSaleId: 'Sale A', dataClass: 'sample' }),
   ]);
   assert.equal(result.ok, true);
-  assert.equal(result.value.evidence.length, 5);
+  assert.equal(result.value.evidence.length, 4);
   assert.deepEqual(result.value.mergedObservationIds, []);
 });
 
@@ -200,7 +198,7 @@ test('deduplication emits stable UUID-form evidence IDs', () => {
   assert.equal(first, second);
 });
 
-test('validates complete durable sale evidence and rejects sample or malformed claims in live mode', () => {
+test('validates complete durable sale evidence and rejects sample or malformed claims', () => {
   const valid = {
     id: '10000000-0000-4000-8000-000000000001',
     dataClass: 'authorized',
@@ -242,14 +240,12 @@ test('validates complete durable sale evidence and rejects sample or malformed c
   assert.equal(validateSaleEvidence({ ...valid, inclusion: 'other' }).ok, false);
   assert.equal(validateSaleEvidence({ ...valid, resolved: { ...valid.resolved, resolution: 'guessed' } }).ok, false);
   assert.equal(validateSaleEvidence({ ...valid, resolved: { ...valid.resolved, hammer: { currency: 'USD', minor: 999 } } }).ok, false);
-
-  const sample = {
+  // A row a build with sample mode could have written is no longer a supported data class, and the
+  // observation inside it is refused for the same reason.
+  assert.equal(validateSaleEvidence({
     ...valid,
-    id: 'sample-row',
-    dataClass: 'sample',
-    observations: [{ ...valid.observations[0], id: 'sample-observation', queryId: 'sample-query', source: 'manual', dataClass: 'sample' }],
-  };
-  assert.equal(validateSaleEvidence(sample, { mode: 'sample' }).ok, true);
+    observations: [{ ...valid.observations[0], dataClass: 'sample' }],
+  }).error.path, 'observations[0].dataClass');
 });
 
 test('computes the specified median-of-halves statistics from integer minor units', () => {
@@ -357,41 +353,23 @@ test('computes each supported currency independently', () => {
   }
 });
 
-test('isolates fictional samples from live evidence and carries provenance and coverage', () => {
-  const sample = evidence('sample', 100, {
-    dataClass: 'sample',
-    observation: { dataClass: 'sample', queryId: 'sample-query', retrievedAt: '2026-09-10T00:00:00.000Z' },
-  });
+test('carries the provenance and coverage of the rows it counted', () => {
   const live = evidence('live', 200);
-  const liveResult = computeStatistics([sample, live], filters);
-  assert.deepEqual(liveResult.includedIds, ['live']);
-  assert.deepEqual(liveResult.excluded, [{ id: 'sample', reason: 'sample-data' }]);
-  assert.equal(liveResult.fictional, false);
-  assert.deepEqual(liveResult.provenance.queryIds, ['query-1']);
-  assert.deepEqual(liveResult.provenance.retrievedAt, [observedAt]);
-
-  const sampleResult = computeStatistics([sample, live], { ...filters, mode: 'sample' });
-  assert.deepEqual(sampleResult.includedIds, ['sample']);
-  assert.deepEqual(sampleResult.excluded, [{ id: 'live', reason: 'not-sample-data' }]);
-  assert.equal(sampleResult.fictional, true);
-  assert.deepEqual(sampleResult.coverage, {
+  const result = computeStatistics([live], filters);
+  assert.deepEqual(result.includedIds, ['live']);
+  assert.deepEqual(result.provenance.queryIds, ['query-1']);
+  assert.deepEqual(result.provenance.retrievedAt, [observedAt]);
+  assert.deepEqual(result.coverage, {
     availableSources: ['manual'],
     unavailableSources: [],
     conflicts: 0,
-    exclusionCounts: { 'not-sample-data': 1 },
-    incomplete: true,
+    exclusionCounts: {},
+    incomplete: false,
   });
-});
 
-test('does not report sample-only sources or provenance as live coverage', () => {
-  const sample = evidence('sample-ca', 100, {
-    dataClass: 'sample',
-    observation: { source: 'coinarchives', dataClass: 'sample', queryId: 'sample-query' },
-  });
-  const result = computeStatistics([sample], { ...filters, sources: ['coinarchives'] });
-  assert.deepEqual(result.coverage.availableSources, []);
-  assert.deepEqual(result.coverage.unavailableSources, ['coinarchives']);
-  assert.deepEqual(result.provenance, { queryIds: [], retrievedAt: [] });
+  const otherSource = computeStatistics([live], { ...filters, sources: ['coinarchives'] });
+  assert.deepEqual(otherSource.coverage.availableSources, []);
+  assert.deepEqual(otherSource.coverage.unavailableSources, ['coinarchives']);
 });
 
 test('a collector-selected resolution follows its chosen observation through filters', () => {
@@ -425,7 +403,6 @@ test('reports invalid filters in one consistent StatisticsResult shape', () => {
     [{ ...filters, fromDate: '01/01/2020' }, 'filters.fromDate'],
     [{ ...filters, toDate: '1999-12-31' }, 'filters.dateRange'],
     [{ ...filters, sources: [] }, 'filters.sources'],
-    [{ ...filters, mode: 'other' }, 'filters.mode'],
   ];
   for (const [badFilters, path] of invalidCases) {
     const result = computeStatistics([], badFilters);

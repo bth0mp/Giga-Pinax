@@ -2,7 +2,7 @@ import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } 
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
   lots: 5000,
   auctionEvents: 500,
@@ -557,7 +557,7 @@ function evidenceResult(evidence, path) {
     LIMITS.evidenceObservations,
   );
   if (!observations.ok) return observations;
-  const validated = validateSaleEvidence(evidence, { mode: 'live' });
+  const validated = validateSaleEvidence(evidence);
   if (validated.ok) return validated;
   const nestedPath = validated.error.path ? `${path}.${validated.error.path}` : path;
   return { ok: false, error: { ...validated.error, path: nestedPath } };
@@ -575,13 +575,6 @@ function preferencesResult(preferences, path) {
       ? { ok: true, value: preferences.schemaVersion }
       : failure('unsupported-schema', 'Preferences schema version is unsupported.', `${path}.schemaVersion`),
     enumResult(preferences.currency, new Set(CURRENCIES), `${path}.currency`),
-    enumResult(preferences.catalogue, new Set(['Price', 'RIC']), `${path}.catalogue`),
-    stringResult(preferences.number, `${path}.number`, LIMITS.shortText, { nonEmpty: false }),
-    stringResult(preferences.volume, `${path}.volume`, LIMITS.shortText, { nonEmpty: false }),
-    stringResult(preferences.section, `${path}.section`, LIMITS.shortText, { nonEmpty: false }),
-    typeof preferences.sampleMode === 'boolean'
-      ? { ok: true, value: preferences.sampleMode }
-      : failure('invalid-boolean', 'Expected a boolean.', `${path}.sampleMode`),
     typeof preferences.desktopAlertsEnabled === 'boolean'
       ? { ok: true, value: preferences.desktopAlertsEnabled }
       : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
@@ -830,8 +823,24 @@ export function createEmptySnapshot(now) {
 // Stored roots pass through here before validation, so one place brings an older stored shape up
 // to the current one. Each step is keyed by the version it migrates from and never by
 // SCHEMA_VERSION itself, which is what ends the walk.
-// ponytail: a single linear chain of steps; version 1 is the first shape, so it is still empty.
-const MIGRATIONS = new Map();
+// ponytail: a single linear chain of steps, each one hand-written; there is no down-migration.
+const MIGRATIONS = new Map([
+  // Version 2 took the research form out of the durable root. The catalogue, number, volume and
+  // section belong to the popup's own form, which already keeps them in its local storage, and
+  // sample mode is gone entirely; the currency, the house premiums and the alert switch stay,
+  // because more than one view reads them. Nothing outside those five keys is touched, and a
+  // nested version that does not read as the one being migrated is left for validation to judge.
+  [1, (value) => {
+    value.schemaVersion = 2;
+    if (isObject(value.preferences)) {
+      for (const key of ['catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+        delete value.preferences[key];
+      }
+      if (value.preferences.schemaVersion === 1) value.preferences.schemaVersion = 2;
+    }
+    return value;
+  }],
+]);
 
 export function migrateSnapshot(stored) {
   if (!isObject(stored)) return stored;

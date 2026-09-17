@@ -211,11 +211,6 @@ export function buildLotUndoCommand(undo, newRequestId = requestId) {
   return buildLotSaveCommand({ ...lot, notes: lot.notes ?? '' }, undo.saved.revision, newRequestId);
 }
 
-export function selectionAfterLotSave(current, submitted, submittedVersion, currentVersion, savedId) {
-  if (submittedVersion !== currentVersion || current.selectedLotId !== submitted.selectedLotId || current.mode !== submitted.mode) return current;
-  return { selectedLotId: savedId, mode: 'detail' };
-}
-
 export function lotSaveFollowup(current, submitted, saved, editorPreserved, hasPrevious = true, interactionChanged = false) {
   const sameSelection = current.selectedLotId === submitted.selectedLotId && current.mode === submitted.mode;
   const savedMatches = submitted.selectedLotId === null || submitted.selectedLotId === saved?.id;
@@ -554,10 +549,6 @@ export function reminderControlsForPrecision(reminders, precision) {
   return { firstEnabled: Boolean(first), firstValue: first?.offsetMinutes ?? 1440, secondEnabled: Boolean(second), secondValue: second?.offsetMinutes ?? 60 };
 }
 
-export function buildBackupImportCommand(pendingImport, newRequestId = requestId) {
-  return { type: 'backup.import', requestId: newRequestId(), expectedRevision: pendingImport.expectedRevision, mode: pendingImport.mode, document: pendingImport.document };
-}
-
 async function initWorkspace() {
   const $ = (id) => document.getElementById(id);
   let bridge = null;
@@ -884,7 +875,7 @@ async function initWorkspace() {
     if (!queryIds.includes(selectedQueryId)) selectedQueryId = activeQuery.id;
     querySelect.value = selectedQueryId;
     const evidenceRows = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId);
-    const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources(), mode: 'live' };
+    const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources() };
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
@@ -1246,7 +1237,7 @@ async function initWorkspace() {
   $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds() }));
   $('snooze-alerts').addEventListener('click', () => void send({ type: 'alert.snooze', requestId: requestId(), triggerIds: displayedAlertIds(), snoozedUntil: new Date(Date.now() + 15 * 60_000).toISOString() }));
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
-  $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, catalogue: current.catalogue, number: current.number, volume: current.volume, section: current.section, sampleMode: current.sampleMode, desktopAlertsEnabled: allowed } }); });
+  $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 
   function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', formatMoney({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${formatMoney({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${formatMoney({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
 

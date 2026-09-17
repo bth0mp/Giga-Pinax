@@ -2,7 +2,7 @@ import { CURRENCIES, validateMoney } from './money.js';
 
 const SOURCES = Object.freeze(['coinarchives', 'acsearch', 'manual', 'authorized-import']);
 const SOURCE_SET = new Set(SOURCES);
-const DATA_CLASSES = new Set(['collector', 'authorized', 'sample']);
+const DATA_CLASSES = new Set(['collector', 'authorized']);
 const PRICE_BASES = new Set(['hammer', 'hammer-plus-bp', 'estimate', 'unsold', 'missing']);
 const TRACKING_PARAMETERS = new Set(['gclid', 'fbclid']);
 const CONFLICT_FIELD_ORDER = [
@@ -65,13 +65,7 @@ function validateObservation(observation, index, options = {}) {
     return failure('invalid-source', 'Evidence source is not supported.', `${base}.source`);
   }
   if (!DATA_CLASSES.has(observation.dataClass)) {
-    return failure('invalid-data-class', 'Evidence data must be collector, authorized, or sample.', `${base}.dataClass`);
-  }
-  if (options.mode === 'live' && observation.dataClass === 'sample') {
-    return failure('sample-data', 'Sample evidence cannot enter live records.', `${base}.dataClass`);
-  }
-  if (options.mode === 'sample' && observation.dataClass !== 'sample') {
-    return failure('live-data', 'Live evidence cannot enter a sample row.', `${base}.dataClass`);
+    return failure('invalid-data-class', 'Evidence data must be collector or authorized.', `${base}.dataClass`);
   }
   if (!isIsoInstant(observation.retrievedAt)) {
     return failure('invalid-instant', 'Retrieval time must be an ISO timestamp.', `${base}.retrievedAt`);
@@ -197,11 +191,10 @@ function makeEvidence(group, key) {
   const first = group[0];
   const conflicts = conflictFields(group);
   const collectorExcluded = group.find((item) => item.collectorExcluded === true);
-  const dataClass = group.every((item) => item.dataClass === 'sample')
-    ? 'sample'
-    : group.some((item) => item.dataClass === 'collector') ? 'collector' : 'authorized';
+  const dataClass = group.some((item) => item.dataClass === 'collector') ? 'collector' : 'authorized';
   const row = {
-    id: stableUuid(`${dataClass === 'sample' ? 'sample' : 'live'}:${key ?? first.id}`),
+    // The `live:` prefix is what every stored row's ID was derived through, so it stays.
+    id: stableUuid(`live:${key ?? first.id}`),
     dataClass,
     ...(key ? {
       saleIdentity: {
@@ -237,30 +230,25 @@ function makeEvidence(group, key) {
   return row;
 }
 
-export function validateSaleEvidence(value, { mode = 'live' } = {}) {
-  if (!['live', 'sample'].includes(mode)) return failure('invalid-mode', 'Evidence validation mode must be live or sample.', 'mode');
+export function validateSaleEvidence(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-evidence', 'Sale evidence must be an object.', 'evidence');
-  if (typeof value.id !== 'string' || !value.id || (mode === 'live' && !UUID_PATTERN.test(value.id))) {
+  if (typeof value.id !== 'string' || !value.id || !UUID_PATTERN.test(value.id)) {
     return failure('invalid-id', 'Durable sale evidence ID must be a UUID string.', 'evidence.id');
   }
-  if (!DATA_CLASSES.has(value.dataClass)
-      || (mode === 'live' && value.dataClass === 'sample')
-      || (mode === 'sample' && value.dataClass !== 'sample')) {
-    return failure('invalid-data-class', 'Evidence data class does not match its validation mode.', 'evidence.dataClass');
+  if (!DATA_CLASSES.has(value.dataClass)) {
+    return failure('invalid-data-class', 'Evidence data class is not supported.', 'evidence.dataClass');
   }
   if (!Array.isArray(value.observations) || value.observations.length === 0 || value.observations.length > 50) {
     return failure('invalid-observations', 'Sale evidence must retain 1 through 50 observations.', 'evidence.observations');
   }
   const seen = new Set();
   for (let index = 0; index < value.observations.length; index += 1) {
-    const checked = validateObservation(value.observations[index], index, { mode, requireUuid: mode === 'live' });
+    const checked = validateObservation(value.observations[index], index, { requireUuid: true });
     if (!checked.ok) return checked;
     if (seen.has(value.observations[index].id)) return failure('duplicate-observation-id', 'Observation IDs must be unique.', `observations[${index}].id`);
     seen.add(value.observations[index].id);
   }
-  const derivedDataClass = mode === 'sample'
-    ? 'sample'
-    : value.observations.some((item) => item.dataClass === 'collector') ? 'collector' : 'authorized';
+  const derivedDataClass = value.observations.some((item) => item.dataClass === 'collector') ? 'collector' : 'authorized';
   if (value.dataClass !== derivedDataClass) return failure('invalid-data-class', 'Evidence data class must reflect its retained observations.', 'evidence.dataClass');
 
   if (value.saleIdentity !== undefined) {
@@ -346,8 +334,7 @@ export function deduplicateEvidence(observations) {
   const groups = new Map();
   for (const observation of observations) {
     const keyResult = sameEventKey(observation);
-    const bucket = observation.dataClass === 'sample' ? 'sample' : 'live';
-    const groupKey = keyResult.ok ? `${bucket}:${keyResult.value}` : `weak:${observation.id}`;
+    const groupKey = keyResult.ok ? `live:${keyResult.value}` : `weak:${observation.id}`;
     const group = groups.get(groupKey) ?? { key: keyResult.ok ? keyResult.value : null, observations: [] };
     group.observations.push(observation);
     groups.set(groupKey, group);
@@ -373,8 +360,6 @@ function emptyStatistics(filters, validationError = null) {
     priceBasis: 'hammer',
     dateWindow: { fromDate: filters?.fromDate ?? null, toDate: filters?.toDate ?? null },
     sources,
-    mode: filters?.mode ?? 'live',
-    fictional: filters?.mode === 'sample',
     count: 0,
     median: null,
     lowerQuartile: null,
@@ -396,7 +381,6 @@ function validateFilters(filters) {
   if (!Array.isArray(filters.sources) || filters.sources.length === 0 || filters.sources.some((source) => !SOURCE_SET.has(source))) {
     return { code: 'invalid-sources', message: 'Choose at least one supported source.', path: 'filters.sources' };
   }
-  if (filters.mode !== undefined && !['live', 'sample'].includes(filters.mode)) return { code: 'invalid-mode', message: 'Mode must be live or sample.', path: 'filters.mode' };
   return null;
 }
 
@@ -422,9 +406,6 @@ export function computeStatistics(evidence, filters) {
   if (!Array.isArray(evidence)) return emptyStatistics(filters, { code: 'invalid-evidence', message: 'Evidence must be an array.', path: 'evidence' });
 
   const result = emptyStatistics(filters);
-  const mode = filters.mode ?? 'live';
-  result.mode = mode;
-  result.fictional = mode === 'sample';
   const selectedSources = new Set(filters.sources);
   const observedSelectedSources = new Set();
   const included = [];
@@ -433,8 +414,7 @@ export function computeStatistics(evidence, filters) {
 
   for (const row of evidence) {
     const observations = Array.isArray(row?.observations) ? row.observations : [];
-    const modeObservations = observations.filter((item) => mode === 'sample' ? item.dataClass === 'sample' : item.dataClass !== 'sample');
-    for (const item of modeObservations) {
+    for (const item of observations) {
       if (typeof item.queryId === 'string' && item.queryId) queryIds.add(item.queryId);
       if (isIsoInstant(item.retrievedAt)) retrievedAt.add(item.retrievedAt);
       if (selectedSources.has(item.source)) observedSelectedSources.add(item.source);
@@ -447,8 +427,6 @@ export function computeStatistics(evidence, filters) {
     const filterObservations = selectedResolutionObservation ? [selectedResolutionObservation] : observations;
     if (!row || typeof row.id !== 'string' || !row.id) reason = 'invalid-evidence';
     else if (row.inclusion === 'excluded') reason = basisReason(row);
-    else if (mode === 'live' && row.dataClass === 'sample') reason = 'sample-data';
-    else if (mode === 'sample' && row.dataClass !== 'sample') reason = 'not-sample-data';
     else if (row.resolved?.resolution === 'collector-selected-observation' && !selectedResolutionObservation) reason = 'conflict';
     else if (!filterObservations.some((item) => selectedSources.has(item.source))) reason = 'source-filter';
     else if (!filterObservations.length || filterObservations.some((item) => item.auctionDate < filters.fromDate || item.auctionDate > filters.toDate)) reason = 'date';

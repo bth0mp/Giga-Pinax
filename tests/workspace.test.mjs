@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 
 import {
   buildExposureSections,
-  buildBackupImportCommand,
   buildGroupReorderCommand,
   buildLotSaveCommand,
   commandWasCommitted,
@@ -39,7 +38,6 @@ import {
   filterWorkspaceLots,
   lotStatusLabel,
   buildLotUndoCommand,
-  selectionAfterLotSave,
   buildAttachEventCommand,
   moveDetailTab,
   sameEventReturnContext,
@@ -144,13 +142,6 @@ test('switching event precision initializes that reminder kind without changing 
   });
   assert.deepEqual(reminderControlsForPrecision(createEventDraft('timed').reminders, 'timed'), {
     firstEnabled: true, firstValue: 1440, secondEnabled: true, secondValue: 60,
-  });
-});
-
-test('import confirmation uses the revision that was actually previewed', () => {
-  const pending = { expectedRevision: 7, mode: 'merge', document: '{"schemaVersion":1}' };
-  assert.deepEqual(buildBackupImportCommand(pending, () => 'req-import'), {
-    type: 'backup.import', requestId: 'req-import', expectedRevision: 7, mode: 'merge', document: pending.document,
   });
 });
 
@@ -504,13 +495,6 @@ test('undo restores captured lot details only at the saved revision', () => {
   assert.equal(buildLotUndoCommand({ previous, saved: { id: 'lot-b', revision: 4 } }, () => 'undo-2'), null);
   assert.equal(buildLotUndoCommand({ previous: { id: 'lot-a', revision: 1, title: 'Old record', sourceLinks: [] }, saved: { id: 'lot-a', revision: 2 } }, () => 'undo-3').lot.notes, '');
   assert.deepEqual(buildLotUndoCommand({ previous: { id: 'lot-a', revision: 1, title: 'Before', sourceLinks: [] }, saved: { id: 'lot-a', revision: 2, auctionContext: { pageUrl: 'https://a.test/1' } } }, () => 'undo-4').lot, { id: 'lot-a', title: 'Before', sourceLinks: [], notes: '', auctionContext: null, coinDetails: null, provenanceNotes: null, costEstimate: null });
-});
-
-test('a delayed lot save never retargets a newer selection or new draft', () => {
-  const submitted = { selectedLotId: 'lot-a', mode: 'detail' };
-  assert.deepEqual(selectionAfterLotSave(submitted, submitted, 4, 4, 'lot-a'), submitted);
-  assert.deepEqual(selectionAfterLotSave({ selectedLotId: 'lot-b', mode: 'detail' }, submitted, 4, 4, 'lot-a'), { selectedLotId: 'lot-b', mode: 'detail' });
-  assert.deepEqual(selectionAfterLotSave({ selectedLotId: null, mode: 'detail' }, submitted, 4, 5, 'lot-a'), { selectedLotId: null, mode: 'detail' });
 });
 
 test('ordinary existing lot saves offer undo while preserved input and selection changes do not', () => {
