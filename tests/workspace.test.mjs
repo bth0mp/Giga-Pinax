@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   buildExposureSections,
@@ -374,6 +375,14 @@ test('workspace bid command carries only a matching calculator estimate atomical
   const estimate = { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 };
   assert.deepEqual(buildBidSaveCommand('plan', { id: 'lot-a', revision: 3 }, bid, estimate, () => 'bid-1'), { type: 'bid.plan', requestId: 'bid-1', lotId: 'lot-a', expectedRevision: 3, plannedBid: bid, costEstimate: estimate });
   assert.equal(buildBidSaveCommand('place', { id: 'lot-a', revision: 3 }, { amount: { currency: 'EUR', minor: 10000 } }, estimate, () => 'bid-2').costEstimate, undefined);
+});
+
+test('the bid calculator sits outside the bid form so Enter in it cannot save a plan', () => {
+  const markup = readFileSync(new URL('../extension/workspace.html', import.meta.url), 'utf8');
+  const bidForm = /<form id="bid-form"[\s\S]*?<\/form>/.exec(markup);
+  assert.ok(bidForm, 'the bid form is present');
+  assert.equal(bidForm[0].includes('workspace-calculator'), false);
+  assert.ok(markup.includes('id="workspace-calculator"'), 'the calculator is still mounted');
 });
 
 test('workspace rejects malformed nonempty measurements instead of omitting them', () => {
