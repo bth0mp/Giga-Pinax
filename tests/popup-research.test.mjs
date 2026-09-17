@@ -54,13 +54,16 @@ class TestElement {
   toggleAttribute(name, force) { this[name] = force; }
   getBoundingClientRect() { return { top: 0 }; }
   scrollIntoView() {}
-  focus() {}
+  focus() { this.focused = true; }
   reportValidity() { return true; }
   setSelectionRange() {}
+  // As a browser does for Enter in a field and for the tool's own submissions: the same handler runs, with no submitter button.
+  requestSubmit(submitter) { return this.emit('submit', { submitter }); }
 }
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
-  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true }) {
+  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
+  session = new Map(), messageListeners = [] }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -80,11 +83,14 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     querySelector: (selector) => selector === '.popup-scroll' ? element('popup-scroll') : null,
     createElement: () => new TestElement(),
   };
+  if (focusedId) document.activeElement = element(focusedId);
   const browser = {
     permissions: {
       request: permissionRequest,
       contains: permissionContains,
     },
+    runtime: { onMessage: { addListener: (listener) => messageListeners.push(listener) } },
+    windows: { getCurrent: async () => ({ id: 7 }) },
   };
   const window = new TestElement('window');
   window.open = () => {};
@@ -100,7 +106,12 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     window,
     globalThis: null,
     localStorage: { getItem: () => null, setItem() {} },
-    location: { search: '', href: 'moz-extension://test/popup.html' },
+    sessionStorage: {
+      getItem: (key) => session.get(key) ?? null,
+      setItem(key, value) { session.set(key, String(value)); },
+      removeItem(key) { session.delete(key); },
+    },
+    location: { search, href: `moz-extension://test/popup.html${search}` },
     navigator: { clipboard: { writeText: async () => {} } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
@@ -156,10 +167,59 @@ test('Enter in a refined text input uses refined fields even when restored field
     lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'none', corpus: 'crro', query: 'RRC 234/1' }; } });
   popup.element('catalogue').value = 'RRC';
   popup.element('reference-number').value = '234/1';
-  popup.document.activeElement = popup.element('reference-number');
+  await popup.element('reference-number').emit('keydown', { key: 'Enter' });
   await popup.element('reference-form').emit('submit');
   assert.equal(lookedUp.length, 1);
   assert.equal(lookedUp[0].number, '234/1');
+});
+
+// Where the cursor happens to be is not a choice of search: the right-click's lookup is submitted by the tool itself, and reading it as a refined
+// search threw the selection away and looked up the stored fields instead.
+test('a right-click lookup is never read as a refined search, wherever focus was left', async () => {
+  for (const focusedId of ['ric-section', 'reference-number']) {
+    const lookedUp = [];
+    const popup = await loadPopup({ search: '?q=RIC%20I%C2%B2%20Nero%20306', focusedId, permissionRequest: async () => true,
+      priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'network' }; } });
+    await settle();
+    assert.equal(popup.element('quick-reference').value, 'RIC I² Nero 306', focusedId);
+    assert.equal(lookedUp.length, 1, focusedId);
+    assert.equal(lookedUp[0].section, 'Nero', focusedId);
+    assert.equal(lookedUp[0].number, '306', focusedId);
+    // Alt+Shift+G, type, Enter: the cursor waits in the Reference box whatever the lookup did.
+    assert.equal(popup.element('quick-reference').focused, true, focusedId);
+  }
+});
+
+// Firefox closes the popup over its own permission prompt, taking the typed reference with it; "select Look up again" only works if it is still there.
+test('a reference typed before a permission prompt is waiting when the popup opens again', async () => {
+  const session = new Map();
+  const popup = await loadPopup({ session, permissionRequest: async () => false, priceFetch: async () => ({ status: 'empty' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
+  await reopened.element('reference-form').emit('submit');
+  await settle();
+  const afterLookup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  assert.equal(afterLookup.element('quick-reference').value, '');
+});
+
+test('only the lookup window answers a lookup sent to an open window', async () => {
+  const fallback = [];
+  await loadPopup({ search: '?panel=1&window=1', messageListeners: fallback, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  assert.deepEqual(fallback, []);
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  assert.equal(listeners.length, 1);
+  const answers = [];
+  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, (answer) => answers.push(answer)), true);
+  await settle();
+  assert.equal(popup.element('quick-reference').value, 'Price 23');
+  assert.equal(answers.length, 1);
+  assert.equal(answers[0].windowId, 7);
 });
 
 test('refined Search validates before requesting permission or fetching', async () => {

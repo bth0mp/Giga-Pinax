@@ -825,6 +825,8 @@ async function run(perform, note = '', failedReference = null) {
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
     renderRecent();
+    // The lookup it was kept for has answered.
+    forgetPendingReference();
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
@@ -896,9 +898,26 @@ async function hasAcsearchAccess() {
   catch { return false; }
 }
 
+// Firefox closes the popup over its own permission prompt, taking what was typed with it, and "select Look up again" then has nothing to look up. The
+// Reference box is kept for this browsing session alone - never on disk, and never past the window - and put back when the popup opens again.
+const PENDING_KEY = 'giga-pinax-pending-reference-v1';
+function rememberPendingReference() {
+  try { globalThis.sessionStorage?.setItem(PENDING_KEY, $('quick-reference').value); }
+  catch { /* the prompt still opens; only the refill is lost */ }
+}
+function forgetPendingReference() {
+  try { globalThis.sessionStorage?.removeItem(PENDING_KEY); }
+  catch { /* nothing was kept */ }
+}
+function pendingReference() {
+  try { return selectionQuery(globalThis.sessionStorage?.getItem(PENDING_KEY)); }
+  catch { return ''; }
+}
+
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
 function requestHostAccess(origins) {
   if (!api?.permissions?.request) return Promise.resolve(true);
+  rememberPendingReference();
   let pending;
   try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
   return Promise.resolve(pending).catch(() => {
@@ -1030,10 +1049,17 @@ $('reference-form').addEventListener('input', (event) => {
   }
   savePreferences();
 });
+// Enter in a guided field is a refined search, and says so here rather than being guessed at from the focus when the form is submitted: a submission the
+// tool makes itself - a right-click's lookup, the captured coin's Research coin - leaves the cursor wherever it was, and reading that as a refined search
+// threw away the very reference it was sent to look up.
+let refinedEnter = false;
+for (const id of ['ric-section', 'reference-number']) {
+  $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') refinedEnter = true; });
+}
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const activeRefinedInput = ['ric-section', 'reference-number'].includes(document.activeElement?.id);
-  const refinedSubmit = event.submitter?.id === 'refine-lookup-button' || activeRefinedInput;
+  const refinedSubmit = event.submitter?.id === 'refine-lookup-button' || refinedEnter;
+  refinedEnter = false;
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
@@ -1178,6 +1204,9 @@ function openFrom(search) {
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
   else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
+  // Nothing was sent here, so a reference a permission prompt interrupted is put back in the box, where Look up is waiting for it. It looks up nothing
+  // by itself: the prompt was the answer to the last Look up, and this one is his to press.
+  else if (!$('quick-reference').value) $('quick-reference').value = pendingReference();
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its
