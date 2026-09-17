@@ -14,6 +14,7 @@ import {
   parsePremiumPercent,
   sumMoney,
   validateIncrementLadder,
+  validateLadderTiers,
   validateMoney,
 } from '../extension/core/money.js';
 
@@ -80,19 +81,37 @@ test('affordable bids stay within budget, on the grid and maximal across randomi
   }
 });
 
-test('an increment ladder is ordered, anchored at zero and bounded', () => {
-  assert.equal(validateIncrementLadder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]).ok, true);
-  assert.equal(validateIncrementLadder([]).error.code, 'invalid-ladder');
-  assert.equal(validateIncrementLadder('0: 5').error.code, 'invalid-ladder');
-  assert.equal(validateIncrementLadder([{ from: 100, step: 5 }]).error.path, 'incrementLadder[0].from');
-  assert.equal(validateIncrementLadder([{ from: 0, step: 0 }]).error.path, 'incrementLadder[0].step');
-  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: 0, step: 10 }]).error.path, 'incrementLadder[1].from');
-  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: -1, step: 10 }]).error.path, 'incrementLadder[1].from');
-  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: 10, step: 1.5 }]).error.path, 'incrementLadder[1].step');
+test('a ladder\'s tiers are ordered, anchored at zero and bounded, and name the tier at fault', () => {
+  assert.equal(validateLadderTiers([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]).ok, true);
+  assert.equal(validateLadderTiers([]).error.code, 'invalid-ladder');
+  assert.equal(validateLadderTiers('0: 5').error.code, 'invalid-ladder');
+  assert.equal(validateLadderTiers([{ from: 100, step: 5 }]).error.path, 'tiers[0].from');
+  assert.equal(validateLadderTiers([{ from: 0, step: 0 }]).error.path, 'tiers[0].step');
+  assert.equal(validateLadderTiers([{ from: 0, step: 5 }, { from: 0, step: 10 }]).error.path, 'tiers[1].from');
+  assert.equal(validateLadderTiers([{ from: 0, step: 5 }, { from: -1, step: 10 }]).error.path, 'tiers[1].from');
+  assert.equal(validateLadderTiers([{ from: 0, step: 5 }, { from: 10, step: 1.5 }]).error.path, 'tiers[1].step');
+  // The tier at fault is reported, so a caller that read the tiers off a numbered list does not
+  // have to pick the number back out of the error path.
+  assert.equal(validateLadderTiers([{ from: 100, step: 5 }]).error.tier, 0);
+  assert.equal(validateLadderTiers([{ from: 0, step: 5 }, { from: 10, step: 1.5 }]).error.tier, 1);
+  assert.equal(validateLadderTiers([{ from: 0, step: 5 }, 'x', { from: 20, step: 5 }]).error.tier, 1);
   const tooMany = Array.from({ length: MAX_INCREMENT_TIERS + 1 }, (_, index) => ({ from: index * 100, step: 10 }));
-  assert.equal(validateIncrementLadder(tooMany).error.code, 'invalid-ladder');
-  assert.equal(validateIncrementLadder(tooMany.slice(0, MAX_INCREMENT_TIERS)).ok, true);
-  assert.equal(validateIncrementLadder(null, 'preset.ladder').error.path, 'preset.ladder');
+  assert.equal(validateLadderTiers(tooMany).error.code, 'invalid-ladder');
+  assert.equal(validateLadderTiers(tooMany.slice(0, MAX_INCREMENT_TIERS)).ok, true);
+  assert.equal(validateLadderTiers(null, 'preset.tiers').error.path, 'preset.tiers');
+});
+
+// A house's schedule is written in that house's own money, so the currency travels with the tiers
+// rather than being read off whatever the calculator happens to be set to.
+test('a stored increment ladder carries the currency its tiers are written in', () => {
+  const tiers = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }];
+  assert.deepEqual(validateIncrementLadder({ currency: 'EUR', tiers }), { ok: true, value: { currency: 'EUR', tiers } });
+  assert.equal(validateIncrementLadder({ tiers }).error.path, 'incrementLadder.currency');
+  assert.equal(validateIncrementLadder({ currency: 'JPY', tiers }).error.path, 'incrementLadder.currency');
+  assert.equal(validateIncrementLadder({ currency: 'eur', tiers }).error.code, 'unsupported-currency');
+  assert.equal(validateIncrementLadder({ currency: 'EUR', tiers: [{ from: 100, step: 5 }] }, 'preset.ladder').error.path, 'preset.ladder.tiers[0].from');
+  assert.equal(validateIncrementLadder(tiers).error.path, 'incrementLadder');
+  assert.equal(validateIncrementLadder(null).error.code, 'invalid-ladder');
 });
 
 test('the next bid on a ladder rounds up, never down, and lands on a tier boundary', () => {

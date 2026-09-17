@@ -179,6 +179,14 @@ export function calculateMaximumHammer(budget, buyerPremiumBps) {
 
 export const MAX_INCREMENT_TIERS = 20;
 
+// A tier the collector typed on a numbered list is easier to point at by its number than by an
+// error path, so a tier's failure says which tier it was.
+function tierFailure(index, message, path) {
+  const result = failure('invalid-ladder', message, path);
+  result.error.tier = index;
+  return result;
+}
+
 // Every rule of a ladder except the anchor at zero. The fixed increment field is the one-tier case
 // of the same code, and its one tier is anchored at the collector's minimum bid instead.
 function ladderShape(tiers, path) {
@@ -190,27 +198,40 @@ function ladderShape(tiers, path) {
     const tier = tiers[index];
     const tierPath = `${path}[${index}]`;
     if (!tier || typeof tier !== 'object' || Array.isArray(tier)) {
-      return failure('invalid-ladder', 'Each tier must be a from and a step.', tierPath);
+      return tierFailure(index, 'Each tier must be a from and a step.', tierPath);
     }
     if (!Number.isSafeInteger(tier.from) || tier.from < 0 || tier.from <= previousFrom) {
-      return failure('invalid-ladder', 'Each tier must start above the tier before it.', `${tierPath}.from`);
+      return tierFailure(index, 'Each tier must start above the tier before it.', `${tierPath}.from`);
     }
     if (!Number.isSafeInteger(tier.step) || tier.step < 1) {
-      return failure('invalid-ladder', 'Each tier needs a step greater than zero.', `${tierPath}.step`);
+      return tierFailure(index, 'Each tier needs a step greater than zero.', `${tierPath}.step`);
     }
     previousFrom = tier.from;
   }
   return { ok: true, value: tiers };
 }
 
-// A stored ladder is the house's own schedule as the collector copied it: the first tier starts at
-// zero so that every bid falls in exactly one tier.
-export function validateIncrementLadder(tiers, path = 'incrementLadder') {
+// The house's own schedule as the collector copied it: the first tier starts at zero so that every
+// bid falls in exactly one tier.
+export function validateLadderTiers(tiers, path = 'tiers') {
   const shape = ladderShape(tiers, path);
   if (!shape.ok) return shape;
   return tiers[0].from === 0
     ? { ok: true, value: tiers }
-    : failure('invalid-ladder', 'The first tier must start at 0.', `${path}[0].from`);
+    : tierFailure(0, 'The first tier must start at 0.', `${path}[0].from`);
+}
+
+// A stored ladder keeps the currency its tiers are written in: the schedule is in the house's own
+// money, which is not always the currency the calculator is set to.
+export function validateIncrementLadder(ladder, path = 'incrementLadder') {
+  if (!ladder || typeof ladder !== 'object' || Array.isArray(ladder)) {
+    return failure('invalid-ladder', 'An increment ladder needs a currency and its tiers.', path);
+  }
+  if (!CURRENCY_SET.has(ladder.currency)) {
+    return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', `${path}.currency`);
+  }
+  const tiers = validateLadderTiers(ladder.tiers, `${path}.tiers`);
+  return tiers.ok ? { ok: true, value: ladder } : tiers;
 }
 
 // The tier a bid falls in: the last one that starts at or below it.
@@ -301,7 +322,7 @@ export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
     ? [{ from: values.minimumBidMinor, step: values.incrementMinor }]
     : values.ladder;
   if (values.ladder !== undefined) {
-    const valid = validateIncrementLadder(values.ladder, 'ladder');
+    const valid = validateLadderTiers(values.ladder, 'ladder');
     if (!valid.ok) return valid;
   }
   const premiumCheck = calculatePremium({ currency: budget.currency, minor: 0 }, buyerPremiumBps);

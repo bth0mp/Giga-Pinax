@@ -532,13 +532,19 @@ test('a house preset may carry an optional increment ladder that older data simp
   snapshot.preferences = preferences;
   // The field is optional, so a root written before this version needs no migration to validate.
   assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
-  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }];
+  const ladder = (tiers, currency = 'EUR') => { preferences.housePremiumPresets[0].incrementLadder = { currency, tiers }; };
+  ladder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]);
   assert.equal(validateSnapshot(snapshot).ok, true);
-  preferences.housePremiumPresets[0].incrementLadder = [{ from: 100, step: 500 }];
-  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder[0].from');
-  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }, { from: 10000, step: 0 }];
+  // The tiers are in the house's own currency, which the calculator's currency need not match.
+  ladder([{ from: 0, step: 500 }], 'JPY');
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.currency');
+  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }];
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder');
+  ladder([{ from: 100, step: 500 }]);
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.tiers[0].from');
+  ladder([{ from: 0, step: 500 }, { from: 10000, step: 0 }]);
   assert.equal(validateSnapshot(snapshot).error.code, 'invalid-ladder');
-  preferences.housePremiumPresets[0].incrementLadder = [];
+  ladder([]);
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 
