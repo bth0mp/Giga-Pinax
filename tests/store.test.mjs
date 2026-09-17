@@ -7,6 +7,8 @@ import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
+const LATER = '2026-09-13T12:00:00.000Z';
+const LATEST = '2026-09-14T12:00:00.000Z';
 let nextId = 1;
 const uuid = () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, '0')}`;
 const context = () => ({ now: () => NOW, newId: uuid });
@@ -817,6 +819,95 @@ test('a merge import commits with the local rows a conflict kept', () => {
   assert.equal(imported.value.counts.keptLocal, 1);
 });
 
+test('a merge import survives a reminder the other install replaced', () => {
+  const event = {
+    name: 'Sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-10',
+    localTime: '12:00', timeZone: 'Europe/London', reminderScope: 'standalone',
+    reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+  };
+  let local = reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event })).snapshot;
+  local = reduce(local, command('scheduler.reconcile')).snapshot;
+  assert.equal(local.alerts.length, 1);
+
+  // The other install starts from the same records and rewrites the reminder, so the ID the local
+  // alert was derived from no longer exists anywhere in the backup.
+  const saved = local.auctionEvents[0];
+  let other = structuredClone(local);
+  other = reduce(other, command('event.save', {
+    expectedRevision: saved.revision,
+    event: { ...event, id: saved.id, reminders: [{ kind: 'offset', offsetMinutes: 120 }] },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATER).value,
+  }), { now: () => LATER, newId: uuid });
+  assert.deepEqual(imported.snapshot.auctionEvents[0].reminders[0].offsetMinutes, 120);
+  assert.deepEqual(imported.snapshot.alerts, [], 'the stale alert is dropped, not the whole import');
+  // The reconcile that follows an import derives the schedule again from the merged events.
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'), { now: () => LATER, newId: uuid });
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  assert.equal(reconciled.snapshot.alerts[0].reminderId, imported.snapshot.auctionEvents[0].reminders[0].id);
+});
+
+test('a merge import takes the collection history the other install recorded', () => {
+  const auctionContext = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+  const local = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Nero denarius', sourceLinks: [], auctionContext },
+  })).snapshot;
+  const saved = local.lots[0];
+  const other = reduce(structuredClone(local), command('lot.outcome.set', {
+    lotId: saved.id, expectedRevision: saved.revision,
+    outcome: { status: 'won', hammer: { currency: 'USD', minor: 50000 } },
+    addToCollection: { title: 'Nero denarius', acquisitionDate: '2026-09-13', sourceLinks: [] },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATER).value,
+  }), { now: () => LATER, newId: uuid });
+  const [merged] = imported.snapshot.lots;
+  assert.equal(merged.outcome.status, 'won');
+  assert.equal(merged.collectionEntryId, other.lots[0].collectionEntryId);
+  assert.deepEqual(
+    imported.snapshot.collectionEntries.map(({ id }) => id),
+    other.collectionEntries.map(({ id }) => id),
+  );
+  assert.equal(imported.value.counts.added, 1);
+  // A won lot that already carries its entry cannot be added to the collection twice.
+  const twice = applyCommand(imported.snapshot, command('lot.outcome.set', {
+    lotId: merged.id, expectedRevision: merged.revision, outcome: merged.outcome,
+    addToCollection: { title: 'again', acquisitionDate: '2026-09-13', sourceLinks: [] },
+  }), context());
+  assert.equal(twice.ok, false);
+});
+
+test('a lot the merge replaced refuses a save holding the pre-merge revision', () => {
+  const shared = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Shared', sourceLinks: [] },
+  })).snapshot;
+  const id = shared.lots[0].id;
+  // Both installs edit the same lot from the same starting revision, so the counters end up equal
+  // and only the write times tell them apart.
+  const local = reduce(structuredClone(shared), command('lot.save', {
+    expectedRevision: 0, lot: { id, title: 'Desktop edit', sourceLinks: [], notes: 'desktop notes' },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+  const other = reduce(structuredClone(shared), command('lot.save', {
+    expectedRevision: 0, lot: { id, title: 'Laptop edit', sourceLinks: [] },
+  }), { now: () => LATEST, newId: uuid }).snapshot;
+  // What an editor opened before the import still holds.
+  const basis = local.lots[0].revision;
+  assert.equal(basis, other.lots[0].revision, 'per-install counters agree by accident');
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATEST).value,
+  }), { now: () => LATEST, newId: uuid });
+  assert.equal(imported.snapshot.lots[0].title, 'Laptop edit');
+  assert.equal(imported.snapshot.lots[0].notes, undefined, 'the backup replaced the local body');
+  const stale = applyCommand(imported.snapshot, command('lot.save', {
+    expectedRevision: basis, lot: { id, title: 'Desktop edit', sourceLinks: [] },
+  }), context());
+  assert.equal(stale.ok, false, 'a stale editor must be told, not allowed to save over the backup');
+  assert.equal(stale.error.code, 'conflict');
+});
 
 test('an imported root keeps only the keys the snapshot knows', () => {
   const data = createEmptySnapshot(NOW);

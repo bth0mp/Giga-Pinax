@@ -17,8 +17,9 @@ const COLLECTIONS = [
 // at, and collection entries after the lots they pair with.
 const MERGED_COLLECTIONS = ['auctionEvents', 'alternativeGroups', 'evidence', 'lots', 'collectionEntries'];
 const CONFLICT_SENTENCES = {
-  'same-sale-collision': 'the same sale with different numbers, kept local',
-  'lot-not-merged': 'attached to a lot this merge did not take, skipped',
+  'same-sale-collision': 'is the same sale with different numbers, kept local',
+  'lot-not-merged': 'is attached to a lot this merge did not take, skipped',
+  'entry-kept-local': 'arrived for a lot that already has a collection entry here, kept local',
 };
 const fail = (code, message, path) => ({ ok: false, error: { code, message, ...(path ? { path } : {}) } });
 const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
@@ -100,11 +101,28 @@ function evidenceBody(row) {
   return body;
 }
 
-// The collector's own row wins a tie: a backup never silently overwrites what is in front of them.
+// Revision counters are per install: each one starts at zero and counts that install's own writes,
+// so "higher revision" says nothing about which body is later. The later write wins instead, and a
+// tie keeps the collector's own row: a backup never silently overwrites what is in front of them.
 function incomingWins(local, record) {
-  if (record.revision !== local.revision) return record.revision > local.revision;
-  if (record.updatedAt !== local.updatedAt) return record.updatedAt > local.updatedAt;
-  return false;
+  return record.updatedAt > local.updatedAt;
+}
+
+// A row this merge replaced carries a revision stamped past both sides, so on a re-import the only
+// difference left is that stamp. It is this install's own bookkeeping, not content the backup
+// would restore, so it is not reported as a kept-local difference.
+function sameExceptRevision(local, record) {
+  return equal({ ...local, revision: 0 }, { ...record, revision: 0 });
+}
+
+// Every line the collector reads names the record, not only the collection it came from.
+function recordLabel(record) {
+  for (const key of ['title', 'name']) {
+    if (typeof record?.[key] === 'string' && record[key].trim()) return record[key];
+  }
+  const sale = record?.saleIdentity;
+  if (sale) return `${sale.auctionHouse} ${sale.houseSaleId} lot ${sale.lotNumber}`;
+  return record?.id ?? 'unnamed record';
 }
 
 function saleKey(row) {
@@ -131,6 +149,48 @@ function compactPriorities(snapshot, localLotIds) {
       (left.priority - right.priority) || left.id.localeCompare(right.id));
     group.forEach((lot, index) => { lot.priority = index + 1; });
   }
+}
+
+// A lot and its collection entry must name each other and no two lots may claim one entry, or the
+// merged root is invalid and nothing at all imports. Local lots are first in the list, so a local
+// pairing is the one that survives a clash.
+function repairCollectionPairs(snapshot, conflicts, reviewEntries) {
+  const entriesById = new Map(snapshot.collectionEntries.map((entry) => [entry.id, entry]));
+  const claimed = new Set();
+  for (const lot of snapshot.lots) {
+    if (!own(lot, 'collectionEntryId')) continue;
+    const entry = entriesById.get(lot.collectionEntryId);
+    if (!entry || entry.lotId !== lot.id || claimed.has(entry.id)) {
+      delete lot.collectionEntryId;
+      delete lot.collectionReviewReason;
+      continue;
+    }
+    claimed.add(entry.id);
+    if (reviewEntries.has(entry.id) && entry.reviewReason !== 'source-lot-no-longer-won') {
+      entry.reviewReason = 'source-lot-no-longer-won';
+      // The review is a change to the entry, so a holder of the old row is asked again. The write
+      // time stays: a preview has no clock, and this install's row is the later one either way.
+      entry.revision += 1;
+    }
+  }
+  snapshot.collectionEntries = snapshot.collectionEntries.filter((entry) => {
+    if (claimed.has(entry.id)) return true;
+    conflicts.push({
+      collection: 'collectionEntries', id: entry.id, title: recordLabel(entry), reason: 'lot-not-merged',
+    });
+    return false;
+  });
+}
+
+// Alerts are the collector's local schedule and are kept verbatim, but the merge can take an event
+// that no longer carries the reminder one of them was derived from. The reconcile that follows an
+// import derives the schedule again, so a stale alert is dropped rather than failing the merge and
+// leaving the collector with no import at all.
+function dropStaleAlerts(snapshot) {
+  const remindersByEvent = new Map(snapshot.auctionEvents.map((event) =>
+    [event.id, new Set(event.reminders.map(({ id }) => id))]));
+  snapshot.alerts = snapshot.alerts.filter((alert) =>
+    remindersByEvent.get(alert.eventId)?.has(alert.reminderId) === true);
 }
 
 // Quarantine is a recovery bin rather than live data, so a merge unions both bins and drops only
@@ -166,9 +226,25 @@ export function previewImport(current, incoming, mode) {
   snapshot.recentCommands = [];
   const conflicts = [];
   const duplicates = [];
+  const updates = [];
+  const keptLocal = [];
   const tally = { added: 0, updated: 0, keptLocal: 0, skippedDuplicate: 0, quarantine: 0 };
+  // Entries only count once it is known which of them survived the pairing repair, or a re-merge
+  // would report adding the same entry again every time.
+  const entryOutcomes = new Map();
+  const reviewEntries = new Set();
+  const change = (key, record, local) => ({
+    collection: key,
+    id: record.id,
+    title: recordLabel(record),
+    localUpdatedAt: local.updatedAt,
+    incomingUpdatedAt: record.updatedAt,
+  });
   for (const key of MERGED_COLLECTIONS) {
     const rows = snapshot[key];
+    const counted = key === 'collectionEntries'
+      ? (id, outcome) => entryOutcomes.set(id, outcome)
+      : (id, outcome) => { tally[outcome] += 1; };
     const indexById = new Map(rows.map((record, index) => [record.id, index]));
     const evidenceBySale = key === 'evidence'
       ? new Map(rows.flatMap((row) => {
@@ -176,25 +252,42 @@ export function previewImport(current, incoming, mode) {
         return sale ? [[sale, row]] : [];
       }))
       : null;
+    // Lots are merged before the entries that pair with them, so this map is already final.
+    const lotsById = key === 'collectionEntries'
+      ? new Map(snapshot.lots.map((lot) => [lot.id, lot])) : null;
     for (const record of incoming[key]) {
       const at = indexById.get(record.id);
       if (at !== undefined) {
         const local = rows[at];
-        if (equal(local, record)) { tally.keptLocal += 1; continue; }
+        if (equal(local, record)) { counted(record.id, 'keptLocal'); continue; }
         // An entry that names another lot would leave both pairs half-linked, so it stays put.
         const moved = key === 'collectionEntries' && record.lotId !== local.lotId;
-        if (moved) conflicts.push({ collection: key, id: record.id, reason: 'lot-not-merged' });
-        // Everything else is settled by revision, then date, then in the local row's favour.
-        if (moved || !incomingWins(local, record)) { tally.keptLocal += 1; continue; }
+        if (moved) conflicts.push({ collection: key, id: record.id, title: recordLabel(record), reason: 'lot-not-merged' });
+        // Everything else is settled by write time, then in the local row's favour.
+        if (moved || !incomingWins(local, record)) {
+          if (!moved && !sameExceptRevision(local, record)) keptLocal.push(change(key, local, record));
+          counted(record.id, 'keptLocal');
+          continue;
+        }
         const merged = clone(record);
-        // Which collection entry a lot is paired with is local bookkeeping the other install cannot
-        // know about, so an incoming lot that wins still inherits the local pairing.
-        if (key === 'lots') {
-          if (own(local, 'collectionEntryId')) merged.collectionEntryId = local.collectionEntryId;
-          else delete merged.collectionEntryId;
+        // The replaced body is content this install never saw, so the row is stamped past both
+        // counters: an open editor or a queued command holding the old one is answered with a
+        // conflict instead of saving over what the backup brought.
+        merged.revision = Math.max(local.revision, record.revision) + 1;
+        if (key === 'lots' && own(local, 'collectionEntryId')) {
+          // Collection history is the one link the other install cannot know about, so the local
+          // pairing stays and the backup's own entry is listed rather than dropped in silence.
+          merged.collectionEntryId = local.collectionEntryId;
+          if (merged.outcome?.status !== 'won') {
+            // The other install settled this lot away from won. `lot.outcome.set` would ask what to
+            // do with the entry, so the merge raises exactly that review rather than deciding.
+            merged.collectionReviewReason = 'source-lot-no-longer-won';
+            reviewEntries.add(local.collectionEntryId);
+          }
         }
         rows[at] = merged;
-        tally.updated += 1;
+        updates.push(change(key, record, local));
+        counted(record.id, 'updated');
         continue;
       }
       if (evidenceBySale) {
@@ -203,17 +296,29 @@ export function previewImport(current, incoming, mode) {
         if (sameSale) {
           if (equal(evidenceBody(sameSale), evidenceBody(record))) tally.skippedDuplicate += 1;
           else {
-            conflicts.push({ collection: key, id: record.id, reason: 'same-sale-collision' });
+            conflicts.push({ collection: key, id: record.id, title: recordLabel(record), reason: 'same-sale-collision' });
             tally.keptLocal += 1;
           }
           continue;
         }
       }
       if (key === 'lots') {
+        // ponytail: one scan of the merged lots per incoming lot with a new ID. Lot identity lives
+        // in lot-context.js and is not exposed as a key, so indexing it here would mean a second
+        // copy of the rule. Ceiling: 2,500 local against 2,500 new lots takes about two seconds,
+        // paid once in the settings page's preview and once again in the worker.
         const duplicate = findDuplicateLot(rows, record);
         if (duplicate) {
-          duplicates.push({ id: record.id, title: duplicate.title });
+          duplicates.push({ id: record.id, title: recordLabel(record), duplicateOf: recordLabel(duplicate) });
           tally.skippedDuplicate += 1;
+          continue;
+        }
+      }
+      if (lotsById) {
+        const lot = lotsById.get(record.lotId);
+        if (lot && own(lot, 'collectionEntryId') && lot.collectionEntryId !== record.id) {
+          conflicts.push({ collection: key, id: record.id, title: recordLabel(record), reason: 'entry-kept-local' });
+          tally.keptLocal += 1;
           continue;
         }
       }
@@ -224,20 +329,20 @@ export function previewImport(current, incoming, mode) {
         const sale = saleKey(copied);
         if (sale) evidenceBySale.set(sale, copied);
       }
-      tally.added += 1;
+      counted(copied.id, 'added');
     }
   }
   // Settings stay the collector's own. Two fresh installs write the same values at different times
   // with different revisions, which is bookkeeping rather than a disagreement worth reporting.
   if (current.preferences === null) snapshot.preferences = clone(incoming.preferences);
 
-  const lotsById = new Map(snapshot.lots.map((lot) => [lot.id, lot]));
-  snapshot.collectionEntries = snapshot.collectionEntries.filter((entry) => {
-    const lot = lotsById.get(entry.lotId);
-    if (lot && lot.collectionEntryId === entry.id) return true;
-    conflicts.push({ collection: 'collectionEntries', id: entry.id, reason: 'lot-not-merged' });
-    return false;
-  });
+  repairCollectionPairs(snapshot, conflicts, reviewEntries);
+  const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
+  for (const [id, outcome] of entryOutcomes) {
+    if (survivors.has(id)) tally[outcome] += 1;
+  }
+  const attached = (row) => row.collection !== 'collectionEntries' || survivors.has(row.id);
+  dropStaleAlerts(snapshot);
   compactPriorities(snapshot, new Set(current.lots.map(({ id }) => id)));
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);
 
@@ -245,7 +350,16 @@ export function previewImport(current, incoming, mode) {
   if (!valid.ok) return fail('merge-invalid', valid.error.message, valid.error.path);
   return {
     ok: true,
-    value: { mode, counts: { ...summary, ...tally }, conflicts, duplicates, snapshot, requiresConfirmation: true },
+    value: {
+      mode,
+      counts: { ...summary, ...tally },
+      conflicts,
+      duplicates,
+      updates: updates.filter(attached),
+      keptLocal: keptLocal.filter(attached),
+      snapshot,
+      requiresConfirmation: true,
+    },
   };
 }
 
@@ -261,9 +375,21 @@ export function importCountsText(preview) {
 
 export function importIssueLines(preview) {
   return [
-    ...(preview.duplicates ?? []).map(({ title }) => `lots: duplicate of ${title}`),
-    ...(preview.conflicts ?? []).map(({ collection, reason }) =>
-      `${collection}: ${CONFLICT_SENTENCES[reason] ?? reason}`),
+    ...(preview.duplicates ?? []).map(({ title, duplicateOf }) =>
+      `lots: "${title}" is a duplicate of "${duplicateOf}", skipped`),
+    ...(preview.conflicts ?? []).map(({ collection, title, reason }) =>
+      `${collection}: "${title}" ${CONFLICT_SENTENCES[reason] ?? reason}`),
+  ];
+}
+
+// Nothing is replaced or passed over in silence: every record the import would take from the backup
+// and every one it would keep is named, with the write time each side claims.
+export function importChangeLines(preview) {
+  return [
+    ...(preview.updates ?? []).map(({ collection, title, localUpdatedAt, incomingUpdatedAt }) =>
+      `${collection}: "${title}" is replaced by the backup's copy (backup ${incomingUpdatedAt}, local ${localUpdatedAt})`),
+    ...(preview.keptLocal ?? []).map(({ collection, title, localUpdatedAt, incomingUpdatedAt }) =>
+      `${collection}: "${title}" keeps the local copy (local ${localUpdatedAt}, backup ${incomingUpdatedAt})`),
   ];
 }
 

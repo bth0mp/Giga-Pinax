@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createEmptySnapshot } from '../extension/core/records.js';
+import { createEmptySnapshot, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importCountsText, importIssueLines, previewImport,
-  quarantineDocument, quarantineLines, quarantineSummaryText, rawExportDocument, validateBackup,
+  BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
+  importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
+  quarantineSummaryText, rawExportDocument, validateBackup,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -95,7 +96,7 @@ test('validates the whole backup and rejects malformed, future, oversized, or in
   assert.equal(validateBackup(invalid).ok, false);
 });
 
-test('merge preview deduplicates equal IDs and settles differences by revision, date, then local', () => {
+test('merge preview skips equal IDs and settles differences by updatedAt, then local', () => {
   const current = createEmptySnapshot(NOW);
   current.alternativeGroups.push(group('11111111-1111-4111-8111-111111111111'));
   const equal = structuredClone(current);
@@ -104,24 +105,48 @@ test('merge preview deduplicates equal IDs and settles differences by revision, 
   assert.equal(equalPreview.value.conflicts.length, 0);
   assert.equal(equalPreview.value.snapshot.alternativeGroups.length, 1);
   assert.equal(equalPreview.value.counts.keptLocal, 1);
+  assert.deepEqual(importChangeLines(equalPreview.value), [], 'an identical record is not a change');
 
-  const newer = structuredClone(current);
-  newer.alternativeGroups[0].name = 'Roman';
-  newer.alternativeGroups[0].revision = 1;
-  const won = previewImport(current, newer, 'merge');
+  // Revision counters are per install and say nothing across two of them, so even a far higher one
+  // loses to an equal write time.
+  const higherRevision = structuredClone(current);
+  higherRevision.alternativeGroups[0].name = 'Roman';
+  higherRevision.alternativeGroups[0].revision = 9;
+  const tie = previewImport(current, higherRevision, 'merge');
+  assert.equal(tie.value.snapshot.alternativeGroups[0].name, 'Greek');
+  assert.equal(tie.value.counts.keptLocal, 1);
+  assert.deepEqual(importChangeLines(tie.value), [
+    `alternativeGroups: "Greek" keeps the local copy (local ${NOW}, backup ${NOW})`,
+  ]);
+
+  const later = structuredClone(higherRevision);
+  later.alternativeGroups[0].revision = 0;
+  later.alternativeGroups[0].updatedAt = LATER;
+  const won = previewImport(current, later, 'merge');
   assert.equal(won.value.snapshot.alternativeGroups[0].name, 'Roman');
   assert.equal(won.value.counts.updated, 1);
+  assert.deepEqual(importChangeLines(won.value), [
+    `alternativeGroups: "Roman" is replaced by the backup's copy (backup ${LATER}, local ${NOW})`,
+  ]);
+});
 
-  const sameRevision = structuredClone(newer);
-  sameRevision.alternativeGroups[0].revision = 0;
-  const kept = previewImport(current, sameRevision, 'merge');
-  assert.equal(kept.value.snapshot.alternativeGroups[0].name, 'Greek', 'a tie goes to the local row');
-  assert.equal(kept.value.counts.keptLocal, 1);
+test('a record the merge replaces is stamped past both revisions so stale holders conflict', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { revision: 4, title: 'Local' }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { revision: 2, title: 'From the backup', updatedAt: LATER }));
+  const first = previewImport(current, incoming, 'merge');
+  assert.equal(first.ok, true, first.error?.message);
+  assert.equal(first.value.snapshot.lots[0].title, 'From the backup');
+  assert.equal(first.value.snapshot.lots[0].revision, 5, 'past the higher of the two revisions');
 
-  const later = structuredClone(sameRevision);
-  later.alternativeGroups[0].updatedAt = LATER;
-  const byDate = previewImport(current, later, 'merge');
-  assert.equal(byDate.value.snapshot.alternativeGroups[0].name, 'Roman');
+  // Re-importing the same backup must still change nothing: the stamp is not a difference the
+  // backup could restore, so it is neither taken nor listed.
+  const again = previewImport(first.value.snapshot, incoming, 'merge');
+  assert.equal(again.value.counts.updated, 0);
+  assert.equal(again.value.counts.added, 0);
+  assert.deepEqual(importChangeLines(again.value), []);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(first.value.snapshot));
 });
 
 test('replace preview reports exact outgoing and incoming collection counts', () => {
@@ -179,8 +204,12 @@ test('merge preview reports canonical same-sale evidence under different stable 
   const preview = previewImport(current, incoming, 'merge');
   assert.equal(preview.ok, true);
   assert.deepEqual(preview.value.conflicts[0], {
-    collection: 'evidence', id: incoming.evidence[0].id, reason: 'same-sale-collision',
+    collection: 'evidence', id: incoming.evidence[0].id, title: 'House Sale 10 lot 9',
+    reason: 'same-sale-collision',
   });
+  assert.deepEqual(importIssueLines(preview.value), [
+    'evidence: "House Sale 10 lot 9" is the same sale with different numbers, kept local',
+  ]);
   // A conflict keeps the local row and no longer blocks the rest of the import.
   assert.equal(preview.value.snapshot.evidence.length, 1);
   assert.deepEqual(preview.value.snapshot.evidence[0], row);
@@ -269,11 +298,13 @@ test('merge skips an incoming lot that is the same auction lot under a new ID', 
   assert.equal(preview.value.snapshot.lots.length, 1);
   assert.equal(preview.value.snapshot.lots[0].id, uuid(1));
   assert.equal(preview.value.counts.skippedDuplicate, 1);
-  assert.deepEqual(preview.value.duplicates, [{ id: uuid(2), title: 'Nero denarius' }]);
-  assert.equal(
-    importIssueLines(preview.value).includes('lots: duplicate of Nero denarius'),
-    true,
-  );
+  assert.deepEqual(preview.value.duplicates, [
+    { id: uuid(2), title: 'Nero denarius (backup)', duplicateOf: 'Nero denarius' },
+  ]);
+  // The line names the record that was skipped, not only the collection it came from.
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (backup)" is a duplicate of "Nero denarius", skipped',
+  ]);
 });
 
 test('merge is idempotent and adds unseen records once', () => {
@@ -342,12 +373,151 @@ test('merge never breaks the mutual link between a lot and its collection entry'
   assert.equal(preview.value.conflicts[0].collection, 'collectionEntries');
 });
 
+test('a merge never lets two lots claim one collection entry', () => {
+  const entry = (id, lotId) => ({
+    id, revision: 0, dataClass: 'collector', lotId, title: 'Nero denarius',
+    acquisitionDate: '2026-09-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { collectionEntryId: uuid(50) }));
+  current.collectionEntries.push(entry(uuid(50), uuid(1)));
+  // The other install gave the same entry ID to a different lot.
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(2), { collectionEntryId: uuid(50) }));
+  incoming.collectionEntries.push(entry(uuid(50), uuid(2)));
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.equal(validateSnapshot(preview.value.snapshot).ok, true, 'the merged root must stay valid');
+  const claimants = preview.value.snapshot.lots.filter((row) => row.collectionEntryId === uuid(50));
+  assert.deepEqual(claimants.map(({ id }) => id), [uuid(1)], 'the local pairing is the one kept');
+});
+
+test('a merge takes the backup lot with its collection entry when the local lot has none', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius' }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), {
+    title: 'Nero denarius', updatedAt: LATER, outcome: { status: 'won' },
+    collectionEntryId: uuid(2),
+  }));
+  incoming.collectionEntries.push({
+    id: uuid(2), revision: 0, dataClass: 'collector', lotId: uuid(1), title: 'Nero denarius',
+    acquisitionDate: '2026-09-13', sourceLinks: [], createdAt: LATER, updatedAt: LATER,
+  });
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.equal(preview.value.snapshot.lots[0].collectionEntryId, uuid(2));
+  assert.equal(preview.value.snapshot.collectionEntries.length, 1);
+  assert.equal(preview.value.counts.added, 1, 'the entry is added, not filtered out');
+  assert.deepEqual(importIssueLines(preview.value), [], 'nothing was left behind to report');
+
+  // Counting entries only after the filter keeps the second run's counts at zero.
+  const again = previewImport(preview.value.snapshot, incoming, 'merge');
+  assert.equal(again.value.counts.added, 0);
+  assert.equal(again.value.counts.updated, 0);
+});
+
+test('a merge keeps the local collection entry and raises the review the store would', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { outcome: { status: 'won' }, collectionEntryId: uuid(2) }));
+  current.collectionEntries.push({
+    id: uuid(2), revision: 0, dataClass: 'collector', lotId: uuid(1), title: 'Nero denarius',
+    acquisitionDate: '2026-09-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  // The other install corrected the lot to lost and took its own entry away.
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { outcome: { status: 'lost' }, updatedAt: LATER }));
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.equal(merged.outcome.status, 'lost');
+  assert.equal(merged.collectionEntryId, uuid(2), 'the collection history stays');
+  assert.equal(merged.collectionReviewReason, 'source-lot-no-longer-won');
+  assert.equal(preview.value.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+});
+
+test('a backup entry for a lot that already has one is kept local and said so', () => {
+  const entry = (id, lotId, title) => ({
+    id, revision: 0, dataClass: 'collector', lotId, title,
+    acquisitionDate: '2026-09-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { outcome: { status: 'won' }, collectionEntryId: uuid(2) }));
+  current.collectionEntries.push(entry(uuid(2), uuid(1), 'Nero denarius'));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { outcome: { status: 'won' }, collectionEntryId: uuid(3), updatedAt: LATER }));
+  incoming.collectionEntries.push(entry(uuid(3), uuid(1), 'Nero denarius (laptop)'));
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.equal(preview.value.snapshot.lots[0].collectionEntryId, uuid(2));
+  assert.deepEqual(preview.value.snapshot.collectionEntries.map(({ id }) => id), [uuid(2)]);
+  assert.deepEqual(importIssueLines(preview.value), [
+    'collectionEntries: "Nero denarius (laptop)" arrived for a lot that already has a collection entry here, kept local',
+  ]);
+  assert.equal(preview.value.counts.added, 0);
+});
+
+test('a second merge of the same backup changes nothing and reports nothing added or updated', () => {
+  const observation = {
+    id: uuid(60), queryId: uuid(61), source: 'manual', dataClass: 'collector', retrievedAt: NOW,
+    houseSaleId: 'Sale 11', auctionHouse: 'House', auctionDate: '2026-01-02',
+    lotNumber: '3', priceBasis: 'hammer', amount: { currency: 'EUR', minor: 9000 },
+  };
+  const evidenceRow = {
+    ...deduplicateEvidence([observation]).value.evidence[0], revision: 0, createdAt: NOW, updatedAt: NOW,
+  };
+  const context = (lotNumber) => ({
+    house: 'CNG', saleId: 'Triton XXIX', lotNumber, pageUrl: `https://house.test/lot/${lotNumber}`,
+  });
+  const current = createEmptySnapshot(NOW);
+  current.alternativeGroups.push(group(uuid(10)));
+  current.lots.push(
+    lot(uuid(11), { title: 'Shared lot', alternativeGroupId: uuid(10), priority: 1 }),
+    lot(uuid(12), { title: 'Nero denarius', auctionContext: context('42') }),
+  );
+
+  const incoming = createEmptySnapshot(NOW);
+  incoming.alternativeGroups.push(group(uuid(10)));
+  incoming.evidence.push(evidenceRow);
+  incoming.lots.push(
+    // updated: same ID, written later on the other install
+    lot(uuid(11), { title: 'Shared lot, retoned', alternativeGroupId: uuid(10), priority: 1, updatedAt: LATER }),
+    // skipped duplicate: the same auction lot under a new ID, won and in that install's collection
+    lot(uuid(13), {
+      title: 'Nero denarius (laptop)', auctionContext: context('42'),
+      outcome: { status: 'won' }, collectionEntryId: uuid(14),
+    }),
+    // added
+    lot(uuid(15), { title: 'Attic tetradrachm', auctionContext: context('77') }),
+  );
+  incoming.collectionEntries.push({
+    id: uuid(14), revision: 0, dataClass: 'collector', lotId: uuid(13), title: 'Nero denarius',
+    acquisitionDate: '2026-09-13', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+
+  const first = previewImport(current, incoming, 'merge');
+  assert.equal(first.ok, true, first.error?.message);
+  assert.equal(first.value.counts.added, 2, 'the new lot and the evidence row');
+  assert.equal(first.value.counts.updated, 1);
+  assert.equal(first.value.counts.skippedDuplicate, 1);
+
+  const again = previewImport(first.value.snapshot, incoming, 'merge');
+  assert.equal(again.ok, true, again.error?.message);
+  assert.equal(again.value.counts.added, 0);
+  assert.equal(again.value.counts.updated, 0);
+  assert.equal(
+    JSON.stringify(again.value.snapshot),
+    JSON.stringify(first.value.snapshot),
+    'the second merge leaves the snapshot byte-identical',
+  );
+});
+
 test('the import summary counts every outcome the merge reached', () => {
   const preview = {
     mode: 'merge',
     counts: { outgoing: { lots: 2 }, incoming: { lots: 3 }, added: 1, updated: 1, keptLocal: 1, skippedDuplicate: 1, quarantine: 0 },
-    conflicts: [{ collection: 'evidence', id: uuid(1), reason: 'same-sale-collision' }],
-    duplicates: [{ id: uuid(2), title: 'Nero denarius' }],
+    conflicts: [{ collection: 'evidence', id: uuid(1), title: 'Sale 10', reason: 'same-sale-collision' }],
+    duplicates: [{ id: uuid(2), title: 'Nero denarius (backup)', duplicateOf: 'Nero denarius' }],
   };
   const text = importCountsText(preview);
   assert.equal(text.includes('Local: 2 records. Backup: 3 records.'), true);
@@ -356,8 +526,8 @@ test('the import summary counts every outcome the merge reached', () => {
   assert.equal(text.includes('keeps 1 local'), true);
   assert.equal(text.includes('skips 1 duplicate'), true);
   assert.deepEqual(importIssueLines(preview), [
-    'lots: duplicate of Nero denarius',
-    'evidence: the same sale with different numbers, kept local',
+    'lots: "Nero denarius (backup)" is a duplicate of "Nero denarius", skipped',
+    'evidence: "Sale 10" is the same sale with different numbers, kept local',
   ]);
   const replace = { mode: 'replace', counts: { outgoing: { lots: 2 }, incoming: { lots: 3 } }, conflicts: [], duplicates: [] };
   assert.equal(importCountsText(replace), 'Local: 2 records. Backup: 3 records. Replaces everything local.');
