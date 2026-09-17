@@ -213,10 +213,11 @@ export function validateIncrementLadder(tiers, path = 'incrementLadder') {
     : failure('invalid-ladder', 'The first tier must start at 0.', `${path}[0].from`);
 }
 
-function tierAt(tiers, minor) {
+// The tier a bid falls in: the last one that starts at or below it.
+function tierIndexAt(tiers, minor) {
   let index = 0;
   while (index + 1 < tiers.length && tiers[index + 1].from <= minor) index += 1;
-  return tiers[index];
+  return index;
 }
 
 // The smallest bid on the ladder at or above `minor`, which is `minor` itself when it already sits
@@ -224,18 +225,19 @@ function tierAt(tiers, minor) {
 // which is on the grid by definition.
 function nextOnLadder(tiers, minor) {
   const floored = Math.max(minor, tiers[0].from);
-  const tier = tierAt(tiers, floored);
-  const remainder = (floored - tier.from) % tier.step;
+  const index = tierIndexAt(tiers, floored);
+  const { from, step } = tiers[index];
+  const remainder = (floored - from) % step;
   if (remainder === 0) return floored;
-  const candidate = floored + (tier.step - remainder);
-  const nextTier = tiers[tiers.indexOf(tier) + 1];
+  const candidate = floored + (step - remainder);
+  const nextTier = tiers[index + 1];
   return nextTier ? Math.min(candidate, nextTier.from) : candidate;
 }
 
 // The highest bid on the ladder at or below `minor`, which is never below the tier it falls in.
 function previousOnLadder(tiers, minor) {
-  const tier = tierAt(tiers, minor);
-  return tier.from + Math.floor((minor - tier.from) / tier.step) * tier.step;
+  const { from, step } = tiers[tierIndexAt(tiers, minor)];
+  return from + Math.floor((minor - from) / step) * step;
 }
 
 // A minimum bid the house's schedule does not allow is rounded up, never down: a bid below the grid

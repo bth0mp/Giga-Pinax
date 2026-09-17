@@ -215,7 +215,7 @@ export function mountBidCalculator(
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s terms. Tax is excluded.',
+    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected. Tax is excluded.',
   });
   const ladderNote = el('p', { className: 'bid-calculator-ladder', hidden: true });
   const status = el('p', {
@@ -259,14 +259,13 @@ export function mountBidCalculator(
     });
     if ([...preset.options].some(({ value }) => value === selected)) preset.value = selected;
   };
-  // While a house ladder is in use the fixed increment has nothing to say, so it is taken out of
-  // reach rather than left to look as if it still applied.
+  // The fixed increment field stays editable while a ladder is in use — it is still what a lot's
+  // saved cost estimate carries — so the note says which of the two the bid is standing on.
   const renderLadder = () => {
-    increment.disabled = Boolean(ladder);
     ladderNote.hidden = !ladder;
     if (!ladder) return;
     const tiers = `${ladder.tiers.length} increment ${ladder.tiers.length === 1 ? 'tier' : 'tiers'}`;
-    ladderNote.textContent = `${ladder.name}: ${tiers} you entered in Settings. The fixed increment is ignored while this ladder is in use.`;
+    ladderNote.textContent = `${ladder.name}: ${tiers} you entered in Settings. Bids follow those tiers, not the fixed increment.`;
   };
   const selectedPreset = () => (preset.value === ''
     ? null
