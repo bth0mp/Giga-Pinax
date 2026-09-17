@@ -5,6 +5,7 @@ import {
   LIMITS,
   SCHEMA_VERSION,
   createEmptySnapshot,
+  migrateSnapshot,
   projectExposure,
   setOutcome,
   validateDraftPayload,
@@ -96,6 +97,14 @@ test('creates the complete version 1 durable root contract', () => {
     recentCommands: [],
   });
   assert.equal(validateSnapshot(createEmptySnapshot(NOW)).ok, true);
+});
+
+test('the migration hook passes a current-version root through untouched', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  assert.equal(migrateSnapshot(snapshot), snapshot);
+  assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
+  assert.deepEqual(migrateSnapshot({ schemaVersion: SCHEMA_VERSION + 1 }), { schemaVersion: SCHEMA_VERSION + 1 });
+  assert.equal(migrateSnapshot(null), null);
 });
 
 test('alert capacity covers every supported event reminder', () => {

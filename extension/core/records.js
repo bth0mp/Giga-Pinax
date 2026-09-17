@@ -760,6 +760,21 @@ export function createEmptySnapshot(now) {
   };
 }
 
+// Stored roots pass through here before validation, so one place brings an older stored shape up
+// to the current one. Each step is keyed by the version it migrates from and never by
+// SCHEMA_VERSION itself, which is what ends the walk.
+// ponytail: a single linear chain of steps; version 1 is the first shape, so it is still empty.
+const MIGRATIONS = new Map();
+
+export function migrateSnapshot(stored) {
+  if (!isObject(stored)) return stored;
+  let value = stored;
+  for (let step = MIGRATIONS.get(value.schemaVersion); step; step = MIGRATIONS.get(value.schemaVersion)) {
+    value = step(structuredClone(value));
+  }
+  return value;
+}
+
 export function validateSnapshot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;

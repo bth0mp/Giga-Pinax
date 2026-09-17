@@ -1,5 +1,6 @@
 import {
-  LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validateEventLocalTimes, validateSnapshot,
+  LIMITS, createEmptySnapshot, migrateSnapshot, setOutcome, validateDraftPayload, validateEventLocalTimes,
+  validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -798,13 +799,14 @@ export function createCommandWriter(storageArea, context) {
         typeof command.requestId !== 'string') {
       return errorReply(command, 'validation', 'not-committed', 'Command type and request ID are required.');
     }
-    let stored;
+    let raw;
     try {
       const result = await storageArea.get(STORAGE_KEY);
-      stored = result?.[STORAGE_KEY] ?? createEmptySnapshot(getNow(context));
+      raw = result?.[STORAGE_KEY] ?? createEmptySnapshot(getNow(context));
     } catch (error) {
       return errorReply(command, 'storage', 'not-committed', error.message || 'Unable to read local storage.');
     }
+    let stored = migrateSnapshot(raw);
     const current = validateSnapshot(stored);
     if (!current.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
 
