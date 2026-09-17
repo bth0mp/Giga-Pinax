@@ -455,6 +455,13 @@ export function gradeMedians(lots, currency) {
 }
 export const gradeText = ({ bucket, median, count }, format) => `${bucket}: median ${format(median)} (${count})`;
 
+// How much of the counted sample the buckets say nothing about: a bucket of three beside a median of forty is a thin reading unless the panel says
+// how many rows carry no grade a dealer wrote. Nothing to say when every row is graded.
+export function ungradedText(lots) {
+  const without = lots.filter((entry) => gradeOfLot(entry) === null).length;
+  return without ? `${without} of ${lots.length} ${lots.length === 1 ? 'result carries' : 'results carry'} no grade` : '';
+}
+
 // A row's id within one provider's results; both providers are curated now, so which one a row came from is the caller's to say.
 export function stableResultId(lot, provider) {
   if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `${provider}:${String(lot.id).trim()}`;
@@ -483,6 +490,8 @@ export function createPriceCuration(provider) {
     exclude(lot) { byHand.set(stableResultId(lot, provider), true); },
     include(lot) { byHand.set(stableResultId(lot, provider), false); },
     isExcluded(lot) { return reasonFor(lot) !== null; },
+    // Whether the collector himself counted this row, whatever a filter says of it: such a row counts in the filter's own "N of M".
+    includedByHand(lot) { return byHand.get(stableResultId(lot, provider)) === false; },
     included(lots) { return lots.filter((lot) => reasonFor(lot) === null); },
     counts(lots) {
       const excluded = lots.reduce((count, lot) => count + Number(reasonFor(lot) !== null), 0);
@@ -616,7 +625,7 @@ export const quoteList = (texts) => texts.map(quote).join(', ');
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [] } = {}) {
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '' } = {}) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
@@ -629,6 +638,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (last) lines.push(`Last sale ${squash(last.date)} · ${money.format(last.amount)}`);
   if (trend) lines.push(trendText(trend, money.format));
   lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
+  if (ungraded) lines.push(ungraded);
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);

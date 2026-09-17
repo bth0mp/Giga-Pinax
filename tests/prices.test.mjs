@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
+import { buildSearchUrl, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -1019,6 +1019,11 @@ test('gradeMedians reports only a bucket resting on at least three counted sales
   assert.deepEqual(gradeMedians(lots, 'USD'), [{ bucket: 'VF', median: 200, count: 3 }]);
   assert.deepEqual(gradeMedians([], 'USD'), []);
   assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF: median $180 (9)');
+  // What the buckets leave unsaid: a row the dealer graded nothing at all.
+  const plain = lot('400', '01.01.2024', 'g', 'Nero. As. RIC 306.');
+  assert.equal(ungradedText([...lots, plain]), '1 of 7 results carry no grade');
+  assert.equal(ungradedText([plain]), '1 of 1 result carries no grade');
+  assert.equal(ungradedText(lots), '');
 });
 
 // A description was read four times over at every redraw, once per bucket. The page reads it once, when it arrives, and the grade travels with the lot.
@@ -1057,10 +1062,13 @@ test('curation drops a row the filters name, until the collector says otherwise'
 
 test('summaryText carries what the filters left out and the median of each grade', () => {
   const summary = summarise([lot('100', '01.01.2024', 'a'), lot('300', '01.01.2024', 'b')], 'USD');
-  const extras = { filters: ['39 of 55 results cite this reference'], grades: [{ bucket: 'VF', median: 180, count: 9 }, { bucket: 'EF', median: 400, count: 3 }] };
+  // The lines the panel shows, in the panel's own words: the filter counts name the reference, and the grade medians say what they leave unsaid.
+  const extras = { filters: ['39 of 55 results cite Price 23'], grades: [{ bucket: 'VF', median: 180, count: 9 }, { bucket: 'EF', median: 400, count: 3 }],
+    ungraded: '27 of 39 results carry no grade' };
   assert.deepEqual(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"', extras).split('\n').slice(2), [
-    '39 of 55 results cite this reference',
+    '39 of 55 results cite Price 23',
     'VF: median $180 (9)',
     'EF: median $400 (3)',
+    '27 of 39 results carry no grade',
   ]);
 });

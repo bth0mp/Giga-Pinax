@@ -633,6 +633,111 @@ test('a redraw takes the verified card, so Copy summary heads the text with its 
   assert.match(popup.clipboard[1], /^Price 23 \(Babylon\)\n/);
 });
 
+// 0.32 review, round 2: "is the page's text readable at all" is a fact about the page, not about a period of it. A page of citations whose last two
+// years happen to hold two strangers was counted whole, with the message that said nothing on the page named the reference.
+const daysAgo = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+test('a period without a citing row is explained, not counted whole', async () => {
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Tetradrachm. Price 23. VF'),
+    citingSale('s3', '500', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s4', '700', 'Alexander III. Tetradrachm. Price 3014. VF'),
+    citingSale('s5', '900', 'Alexander III. Tetradrachm. Price 3014. VF')];
+  // The three citations sold years ago; only the two strangers are inside the last two years.
+  for (const [index, date] of [daysAgo(1500), daysAgo(1400), daysAgo(1300), daysAgo(30), daysAgo(20)].entries()) lots[index].date = date;
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  // The N of M line counts the period's own rows, so a page-wide count cannot stand in for it.
+  assert.equal(popup.element('cited-count').textContent, '3 of 5 results cite Price 23');
+  assert.match(popup.element('median-amount').textContent, /300/);
+  await popup.element('period').emit('change', { target: { value: '2y' } });
+  assert.equal(popup.element('cited-count').textContent, '0 of 2 results cite Price 23');
+  assert.equal(popup.element('sale-strength').textContent, 'No results are counted. Include one under Inspect sales.');
+  // The filter is still on, and still says so: its state is the collector's, not the period's.
+  assert.equal(popup.element('citing-filter').checked, true);
+  assert.equal(popup.element('citing-row').hidden, false);
+});
+
+// A row put back by hand and taken out again is out of the median, so it is out of the count beside it: it never cited the reference.
+test('a row excluded by hand is no longer counted as a citation', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const toggle = () => popup.element('sale-list').children[1].children[2];
+  await toggle().emit('click');
+  assert.equal(popup.element('cited-count').hidden, true);
+  await toggle().emit('click');
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
+});
+
+// 0.32 review, round 2: the toggles sat inside the acsearch panel, so a collector who fetched only the public CoinArchives prices — the signed-out
+// path — had no way to switch the citation filter off.
+test('the toggles stand above both panels and one state governs both', async () => {
+  const publicLot = (id, amount, description) => ({ id, title: `Auction, Lot ${id}`, description, date: '2025-02-01', price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('ca-1', 150, 'Macedon. Tetradrachm. Price 23. VF'), publicLot('ca-2', 950, 'Macedon. Tetradrachm. Price 3014. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  // No acsearch results at all: the toggle is still there, because the public panel has rows it applies to.
+  assert.equal(popup.element('prices-panel').hidden, true);
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('price-filters').hidden, false);
+  assert.equal(popup.element('citing-row').hidden, false);
+  assert.equal(popup.element('citing-filter').checked, true);
+  assert.match(popup.element('coinarchives-median').textContent, /150/);
+  popup.element('citing-filter').checked = false;
+  await popup.element('citing-filter').emit('change');
+  assert.match(popup.element('coinarchives-median').textContent, /550/);
+  assert.equal(popup.element('coinarchives-cited').hidden, true);
+});
+
+// The state is the collector's until he looks up another coin: a re-fetch of the same reference keeps it, and both panels are redrawn with it.
+test('the citation toggle survives a re-fetch and resets on a new lookup', async () => {
+  const publicLot = (id, amount, description) => ({ id, title: `Auction, Lot ${id}`, description, date: '2025-02-01', price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('ca-1', 150, 'Macedon. Tetradrachm. Price 23. VF'), publicLot('ca-2', 950, 'Macedon. Tetradrachm. Price 3014. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales,
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  popup.element('citing-filter').checked = false;
+  await popup.element('citing-filter').emit('change');
+  // One state, both panels: neither median is filtered any more.
+  assert.match(popup.element('median-amount').textContent, /200/);
+  assert.match(popup.element('coinarchives-median').textContent, /550/);
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('citing-filter').checked, false);
+  assert.match(popup.element('median-amount').textContent, /200/);
+  // Another coin is another question: the filter comes back on.
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('citing-filter').checked, true);
+});
+
+// A bucket resting on three sales beside a median resting on twelve says nothing about the other nine unless the panel says how many carry no grade.
+test('the grade medians say how much of the sample carries no grade', async () => {
+  const graded = (id, price, grade) => citingSale(id, price, `Alexander III. Tetradrachm. Price 23. ${grade}`);
+  const lots = [graded('s1', '100', 'Very Fine'), graded('s2', '200', 'gVF'), graded('s3', '300', 'VF'), graded('s4', '900', 'Ex Slg. Müller')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('ungraded-count').hidden, false);
+  assert.equal(popup.element('ungraded-count').textContent, '1 of 4 results carry no grade');
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /\nVF: median \$200 \(3\)\n1 of 4 results carry no grade/);
+});
+
 // A public row the filter leaves out is still a sale the collector may know is his type: it stays listed, and counting it is one click, as on acsearch.
 test('the CoinArchives median leaves out a public row that does not cite the reference, and takes it back by hand', async () => {
   const publicLot = (id, amount, description) => ({ id, title: `Auction, Lot ${id}`, description, date: '2025-02-01', price: `USD ${amount}`, amount,
