@@ -279,12 +279,14 @@ $('confirm-import').addEventListener('click', async () => {
     const result = overwrites
       ? await importWithSafetyCopy({ exportCopy: safetyCopyFile, exportRaw: rawFile, download, confirm, send })
       : { sent: true, copied: null, reply: await send() };
-    // A page cannot see a download land, so the wording claims only what it did.
+    // A page cannot see a download land, so the wording claims only what it did. It is written down
+    // before anything can throw, so a command that failed still reports the copy that was made.
     copied = result.copied ? `Download of a safety copy started: ${result.copied}. ` : '';
     if (!result.sent) {
       $('confirm-import').disabled = false;
       return status(`${copied}Import cancelled. Nothing was changed.`);
     }
+    if (result.error) throw result.error;
     if (!result.reply?.ok) throw new Error(result.reply?.message || 'Local data changed. Preview the import again.');
     clearPreview();
     status(`${copied}Backup imported.`);

@@ -79,6 +79,17 @@ test('a download the browser refuses counts as a failed copy, not as a saved one
   assert.equal(result.copied, null, 'no copy may be reported when the download threw');
 });
 
+test('a command that throws is handed back with the copy that did reach the browser', async () => {
+  const { calls, deps } = harness({
+    send: async () => { calls.push('send'); throw new Error('port closed'); },
+  });
+  const result = await importWithSafetyCopy(deps);
+  assert.deepEqual(calls, ['exportCopy', `download:${COPY.name}`, 'send']);
+  assert.equal(result.copied, COPY.name, 'the page can still say which file it downloaded');
+  assert.equal(result.error.message, 'port closed');
+  assert.equal(result.reply, undefined);
+});
+
 test('a refused command is reported without claiming the import happened', async () => {
   const { deps } = harness({ send: async () => ({ ok: false, message: 'Local data changed.' }) });
   const result = await importWithSafetyCopy(deps);
