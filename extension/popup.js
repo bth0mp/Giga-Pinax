@@ -6,7 +6,7 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
-import { createLocalCatalogue } from './local-catalogue.js';
+import { LOCAL_CORPORA, createLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -144,7 +144,7 @@ async function localFirstType(reference) {
 }
 
 async function localFirstId(corpus, id) {
-  if (corpus !== 'ocre') return lookupById(corpus, id, { cache: labelCache });
+  if (localCatalogue?.serves(corpus) !== true) return lookupById(corpus, id, { cache: labelCache });
   const ticket = requestId;
   const context = researchContext;
   const local = await lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: false });
@@ -425,7 +425,8 @@ function renderCard(card) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
   $('result-reference').textContent = card.label;
-  $('result-source').textContent = card.source === 'local' ? 'Local OCRE catalogue' : '';
+  // The card names the catalogue it came out of, so a collector reading "Local PELLA catalogue" knows which bundle answered.
+  $('result-source').textContent = card.source === 'local' ? `Local ${LOCAL_CORPORA[card.corpus].label} catalogue` : '';
   $('result-source').hidden = card.source !== 'local';
   $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
@@ -531,15 +532,17 @@ async function openLotReference(found, rulers, button, note = '') {
   const other = found.reference.catalogue === 'Other';
   if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
   const reference = lotLookup(found, rulers);
-  const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
+  // A corpus the package carries answers without a request, so nothing is asked of the browser before the lookup;
+  // one it does not carry (Bopearachchi, whose citations only the online records hold) needs access as it always did.
+  const bundled = localCatalogue?.serves(buildQuery(reference).corpus) === true;
+  const access = bundled ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   beginResearch(reference, async () => {
     const context = researchContext;
-    const allowed = localRic ? true : await access;
+    const allowed = bundled ? true : await access;
     if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
-    return localRic ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
   }, note);
 }
 
@@ -1269,18 +1272,20 @@ $('reference-form').addEventListener('submit', async (event) => {
   // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
-  const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
+  // A corpus the package carries answers without a request, so nothing is asked of the browser before the lookup;
+  // one it does not carry (Bopearachchi, whose citations only the online records hold) needs access as it always did.
+  const bundled = localCatalogue?.serves(buildQuery(reference).corpus) === true;
+  const access = bundled ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   savePreferences();
   beginResearch(reference, async () => {
     const context = researchContext;
-    const allowed = localRic ? true : await access;
+    const allowed = bundled ? true : await access;
     if (context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
       runPrices(context.term, context.currency, { remember: false, context });
     }
-    return localRic ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
   });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);

@@ -532,10 +532,11 @@ export async function lookupById(corpus, id, options = {}) {
   // A chip saved before 0.19 ("SG6829v") takes the SG spelling; any other id stays as saved, so its remembered term still matches.
   if (corpus === OTHER) return { status: 'ok', card: otherCard(otherNumber(id)) };
   const { localProvider, online = true } = options;
-  if (corpus === 'ocre' && localProvider?.lookupById) {
-    const local = await localProvider.lookupById(corpus, id);
-    if (local?.status === 'ok') return local;
-    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, id };
+  // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
+  const local = localProvider?.lookupById ? await localProvider.lookupById(corpus, id) : null;
+  if (local) {
+    if (local.status === 'ok') return local;
+    if (!online) return { status: 'online-required', localStatus: local.status, corpus, id };
   }
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
   const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
@@ -555,7 +556,8 @@ const scBase = (number) => referenceNumber('SC', number).split('.')[0];
 // CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group;
 // SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
-function inGroup(entries, corpus, reference) {
+// The bundled catalogue filters its own index by the same rule, so the near misses it offers are the ones this offers.
+export function inGroup(entries, corpus, reference) {
   if (corpus === 'sco') {
     const base = `${SCO_ID}${scBase(reference.number)}`;
     return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
@@ -737,10 +739,11 @@ export async function lookupType(given, options = {}) {
   const { corpus, query, id } = built;
   if (corpus === OTHER) return { status: 'ok', card: otherCard(query) };
   const { localProvider, online = true } = options;
-  if (corpus === 'ocre' && localProvider?.lookupType) {
-    const local = await localProvider.lookupType(reference);
-    if (local?.status === 'ok' || local?.status === 'candidates' || local?.status === 'too-many') return local;
-    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, query };
+  // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
+  const local = localProvider?.lookupType ? await localProvider.lookupType(reference) : null;
+  if (local) {
+    if (local.status === 'ok' || local.status === 'candidates' || local.status === 'too-many') return local;
+    if (!online) return { status: 'online-required', localStatus: local.status, corpus, query };
   }
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
-import { lookupType, parseReference } from '../extension/lookup.js';
+import { lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
 
 const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
 const metadata = {
@@ -62,7 +62,7 @@ function fixtureFetch(overrides = {}) {
 
 test('local catalogue resolves exact RIC titles without loading an unrelated shard', async () => {
   const fetchImpl = fixtureFetch();
-  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/ocre/', cache: new Map([['nero', 'Nero'], ['as', 'As'], ['rome', 'Rome'], ['ae', 'Bronze']]) });
+  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/', cache: new Map([['nero', 'Nero'], ['as', 'As'], ['rome', 'Rome'], ['ae', 'Bronze']]) });
   const result = await local.lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
   assert.equal(result.status, 'ok');
   assert.equal(result.card.id, 'ric.1(2).ner.306');
@@ -72,7 +72,7 @@ test('local catalogue resolves exact RIC titles without loading an unrelated sha
 
 test('local catalogue preserves RIC partial, suffix, volume and sibling candidate rules', async () => {
   const fetchImpl = fixtureFetch();
-  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/' });
   const partial = await local.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' });
   assert.equal(partial.status, 'ok');
   assert.equal(partial.card.id, 'ric.2_1(2).ves.972');
@@ -81,7 +81,7 @@ test('local catalogue preserves RIC partial, suffix, volume and sibling candidat
 
 test('lookupById respects aliases and caches metadata, index and shards', async () => {
   const fetchImpl = fixtureFetch();
-  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl, baseUrl: 'moz-extension://test/data/' });
   const first = await local.lookupById('ocre', 'ric.1(2).ner.306-old');
   const second = await local.lookupById('ocre', 'ric.1(2).ner.306');
   assert.equal(first.card.id, 'ric.1(2).ner.306');
@@ -91,14 +91,14 @@ test('lookupById respects aliases and caches metadata, index and shards', async 
 });
 
 test('mint-volume person lookup filters authority and obverse portraits before opening a type', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   const result = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Constantine II', number: '287' });
   assert.equal(result.status, 'ok');
   assert.equal(result.card.id, 'ric.7.lon.287');
 });
 
 test('a local person miss labels broader same-reference candidates honestly', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   const result = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Constantine III', number: '287' });
   assert.equal(result.status, 'candidates');
   assert.equal(result.personMismatch, true);
@@ -106,7 +106,7 @@ test('a local person miss labels broader same-reference candidates honestly', as
 });
 
 test('a strict id hint opens only when it matches the parsed citation and explicit mint', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: '', number: '287', id: 'ric.7.lon.287' })).card.id, 'ric.7.lon.287');
   const conflicting = await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Rome', number: '287', id: 'ric.7.lon.287' });
   assert.equal(conflicting.card.id, 'ric.7.rom.287');
@@ -118,9 +118,9 @@ test('a strict id hint opens only when it matches the parsed citation and explic
 });
 
 test('missing and corrupt bundles fail closed and never claim a catalogue miss', async () => {
-  const missing = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': new Error('missing') }), baseUrl: 'moz-extension://test/data/ocre/' });
+  const missing = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': new Error('missing') }), baseUrl: 'moz-extension://test/data/' });
   assert.equal((await missing.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1' })).status, 'unavailable');
-  const corrupt = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': { schemaVersion: 2 } }), baseUrl: 'moz-extension://test/data/ocre/' });
+  const corrupt = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': { schemaVersion: 2 } }), baseUrl: 'moz-extension://test/data/' });
   assert.equal((await corrupt.lookupById('ocre', 'ric.1(2).ner.306')).status, 'unavailable');
   // numbers.json decides which titles a number is read from, so a bundle whose number index is missing, foreign or pointing outside the index it
   // was built for must fail closed. "none" from any of these would tell a collector the coin is not in RIC when only the file is wrong.
@@ -132,7 +132,7 @@ test('missing and corrupt bundles fail closed and never claim a catalogue miss',
     // Past "z" there is no letter left to name a part, and fromCharCode would carry on into punctuation.
     { 'metadata.json': { ...metadata, shards: { ...metadata.shards, 3: Array.from({ length: 27 }, (value, position) => (
       { file: `records-3.${String.fromCharCode(97 + position)}.json`, from: position === 0 ? '' : `ric.3.x.${String(position).padStart(3, '0')}` })) } } }]) {
-    const local = createLocalCatalogue({ fetchImpl: fixtureFetch(override), baseUrl: 'moz-extension://test/data/ocre/' });
+    const local = createLocalCatalogue({ fetchImpl: fixtureFetch(override), baseUrl: 'moz-extension://test/data/' });
     const result = await local.lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
     assert.equal(result.status, 'unavailable', JSON.stringify(override));
   }
@@ -149,13 +149,21 @@ test('packed cards use verified cached labels and omit ambiguous summaries and p
 });
 
 test('catalogue metadata reports actual coverage and separates generation from unknown publication date', () => {
-  assert.equal(catalogueMetadataText({ recordCount: 56116, activeRecordCount: 55990, generatedOn: '2026-09-14', publicationDate: null }),
+  assert.equal(catalogueMetadataText({ corpus: 'ocre', recordCount: 56116, activeRecordCount: 55990, generatedOn: '2026-09-14', publicationDate: null }),
     '55,990 active types from 56,116 OCRE records. Local files generated 14 September 2026. Source publication date unknown.');
-  assert.equal(catalogueMetadataText(null), 'Local OCRE catalogue unavailable.');
+  assert.equal(catalogueMetadataText({ corpus: 'crro', recordCount: 2602, activeRecordCount: 2602, generatedOn: '2026-09-17', publicationDate: null }),
+    '2,602 active types from 2,602 CRRO records. Local files generated 17 September 2026. Source publication date unknown.');
+  // A corpus bundled in part says so, in the words the importer recorded beside the count, so the panel cannot claim
+  // coverage the data does not have.
+  assert.equal(catalogueMetadataText({ corpus: 'pella', recordCount: 7229, activeRecordCount: 4573, generatedOn: '2026-09-17', publicationDate: null,
+    excluded: { count: 2656, reason: 'only Price numbers are cited', byGroup: {} } }),
+  '4,573 active types from 7,229 PELLA records, leaving out 2,656 (only Price numbers are cited). Local files generated 17 September 2026. Source publication date unknown.');
+  assert.equal(catalogueMetadataText(null), 'Local catalogue unavailable.');
+  assert.equal(catalogueMetadataText({ corpus: 'bigr', recordCount: 1, activeRecordCount: 1 }), 'Local catalogue unavailable.');
 });
 
 test('a plain volume numeral finds the part of its family that has the ruler, and never answers with another ruler', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   // RIC II has no Domitian, II.1² does: the family's hit is found and offered, since II.1² numbers Domitian's coins its own way and the dealer
   // wrote II. Trajan 720 is never the answer to a Domitian reference.
   const domitian = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Domitian', number: '720' });
@@ -178,7 +186,7 @@ test('a plain volume numeral finds the part of its family that has the ruler, an
 // RIC heads a section "Philip I", but no person is called that: read as a ruler the name reached neither OCRE's facets nor the local index, and a
 // numberless "RIC 27b" then offered two dozen coins. Read as the section it is, with the volume that section implies, it is one coin.
 test('a heading name RIC heads a section with is passed as that section, not as a person', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   const lot = findReferences('Philip I. AR Antoninianus. Rome. RIC 27b; RSC 9.');
   assert.deepEqual(lot.rulers, ['Philip I']);
   const reference = lotLookup(lot.references[0], lot.rulers);
@@ -189,7 +197,7 @@ test('a heading name RIC heads a section with is passed as that section, not as 
 });
 
 test('the local fallback broadens the volume before the section, and a section it had to drop is only ever offered', async () => {
-  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
   // A mint heads sections in RIC VI-IX alike: the same mint in another volume is a far better answer than another mint in the volume asked for.
   const mint = await local.lookupType({ catalogue: 'RIC', volume: 'VIII', section: 'Londinium', number: '287' });
   assert.equal(mint.status, 'candidates');
@@ -208,7 +216,7 @@ test('a failed bundle load is retried, never remembered', async () => {
     if (failing) { failures.delete(failing); throw new Error(`offline: ${failing}`); }
     return fetchImpl(url);
   };
-  const local = createLocalCatalogue({ fetchImpl: once, baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: once, baseUrl: 'moz-extension://test/data/' });
   const reference = { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' };
   // One dropped request each for the metadata, the two index files (asked for together) and the shard; a cached
   // rejection would make any of them permanent.
@@ -222,20 +230,27 @@ test('a failed bundle load is retried, never remembered', async () => {
 // The bundled catalogue itself, not the fixture above: what a heading's ruler costs only shows against OCRE's own numbering, where one man's name
 // stands inside another's. Every file is served as the package serves it, parsed once here, and numbers.json is what keeps the sweep to a few
 // seconds. Skipped where the bundle is not checked out.
-const BUNDLE = fileURLToPath(new URL('../extension/data/ocre/', import.meta.url));
-const skip = existsSync(`${BUNDLE}index.json`) ? false : 'extension/data/ocre is not bundled here';
+const BUNDLE = fileURLToPath(new URL('../extension/data/', import.meta.url));
+const skip = existsSync(`${BUNDLE}ocre/index.json`) ? false : 'extension/data is not bundled here';
 const files = new Map();
-const bundleJson = (name) => {
-  if (!files.has(name)) files.set(name, JSON.parse(readFileSync(`${BUNDLE}${name}`, 'utf8')));
-  return files.get(name);
+// A bundled file by the path the package serves it under, "<corpus>/<name>".
+const bundleJson = (path) => {
+  if (!files.has(path)) files.set(path, JSON.parse(readFileSync(`${BUNDLE}${path}`, 'utf8')));
+  return files.get(path);
 };
+const bundlePath = (url) => decodeURIComponent(String(url)).split('/').slice(-2).join('/');
+// Every file served as the package serves it, and every request recorded, so a test can say what a lookup cost.
+const asked = [];
 const bundle = createLocalCatalogue({
-  baseUrl: 'moz-extension://test/data/ocre/',
+  baseUrl: 'moz-extension://test/data/',
   fetchImpl: async (url) => {
-    const name = decodeURIComponent(String(url).split('/').pop());
-    return { ok: true, status: 200, json: async () => bundleJson(name) };
+    asked.push(bundlePath(url));
+    return { ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) };
   },
 });
+// What the last lookup read, and the slate wiped for the next one. The catalogue keeps every file it has parsed, so
+// only the first lookup of a corpus records anything; a test that counts requests asks for its own catalogue.
+const readFiles = () => asked.splice(0);
 // Every coin a heading opens on its own over RIC numbers 1 to 400, read exactly as a pasted lot is read.
 async function openedOver(heading) {
   const opened = [];
@@ -251,11 +266,11 @@ async function openedOver(heading) {
 // Who is on a coin, as the record itself says: its authorities and its obverse portraits. The card names neither where a type has two authorities
 // (RIC V's joint reigns), and it is the record the person filter reads anyway.
 const shardPartOf = (id) => {
-  const parts = bundleJson('metadata.json').shards[String(id).split('.')[1]] ?? [];
+  const parts = bundleJson('ocre/metadata.json').shards[String(id).split('.')[1]] ?? [];
   return parts.reduce((chosen, part) => (part.from <= id ? part : chosen), parts[0]);
 };
 const peopleOn = (id) => {
-  const record = bundleJson(shardPartOf(id)?.file)?.records?.[id];
+  const record = bundleJson(`ocre/${shardPartOf(id)?.file}`)?.records?.[id];
   return [...(record?.a ?? []), ...(record?.o?.p ?? [])];
 };
 const opensOnly = (opened, ids, heading) => {
@@ -317,9 +332,9 @@ test('over the bundled catalogue, guided fields naming a mint by its modern name
 // the wrong list, or in none, would hide a coin from every lookup for that number.
 // The key is the runtime's own, not a copy of it, so that a change to the way a lookup keys a number is caught here rather than in the field.
 test('every bundled title is listed under the number parseReference reads in it', { skip }, () => {
-  const { entries } = bundleJson('index.json');
+  const { entries } = bundleJson('ocre/index.json');
   const listed = new Map();
-  for (const [key, positions] of Object.entries(bundleJson('numbers.json').numbers)) {
+  for (const [key, positions] of Object.entries(bundleJson('ocre/numbers.json').numbers)) {
     for (const position of positions) {
       assert.equal(listed.has(position), false, `position ${position} is listed twice`);
       listed.set(position, key);
@@ -340,12 +355,12 @@ test('every bundled title is listed under the number parseReference reads in it'
 // order, which is the scan the lookup made before numbers.json existed. Whole answers are compared, cards and candidates and all, so a reference
 // whose entries the pre-filter narrowed differently cannot come out looking the same.
 const scanned = createLocalCatalogue({
-  baseUrl: 'moz-extension://test/data/ocre/',
+  baseUrl: 'moz-extension://test/data/',
   fetchImpl: async (url) => {
-    const name = decodeURIComponent(String(url).split('/').pop());
-    if (name !== 'numbers.json') return { ok: true, status: 200, json: async () => bundleJson(name) };
-    const everyPosition = bundleJson('index.json').entries.map((entry, position) => position);
-    return { ok: true, status: 200, json: async () => ({ ...bundleJson(name), numbers: new Proxy({}, { get: () => everyPosition }) }) };
+    const path = bundlePath(url);
+    if (path !== 'ocre/numbers.json') return { ok: true, status: 200, json: async () => bundleJson(path) };
+    const everyPosition = bundleJson('ocre/index.json').entries.map((entry, position) => position);
+    return { ok: true, status: 200, json: async () => ({ ...bundleJson(path), numbers: new Proxy({}, { get: () => everyPosition }) }) };
   },
 });
 const lotReference = (text) => {
@@ -390,23 +405,22 @@ test('the number index answers every shape of reference exactly as a scan of the
 });
 
 test('a split volume is read from the part its id falls in, and no index is touched for it', { skip }, async () => {
-  const asked = [];
+  const read = [];
   const local = createLocalCatalogue({
-    baseUrl: 'moz-extension://test/data/ocre/',
+    baseUrl: 'moz-extension://test/data/',
     fetchImpl: async (url) => {
-      const name = decodeURIComponent(String(url).split('/').pop());
-      asked.push(name);
-      return { ok: true, status: 200, json: async () => bundleJson(name) };
+      read.push(bundlePath(url));
+      return { ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) };
     },
   });
   // RIC V is the one volume over the 4 MiB cap: the first id of its second part, and the id before it, must come from their own files.
-  const [first, second] = bundleJson('metadata.json').shards['5'].map((part) => part.file);
-  const boundary = bundleJson('metadata.json').shards['5'][1].from;
-  const before = Object.keys(bundleJson(first).records).at(-1);
+  const [first, second] = bundleJson('ocre/metadata.json').shards['5'].map((part) => part.file);
+  const boundary = bundleJson('ocre/metadata.json').shards['5'][1].from;
+  const before = Object.keys(bundleJson(`ocre/${first}`).records).at(-1);
   assert.equal((await local.lookupById('ocre', boundary)).card.id, boundary);
-  assert.deepEqual(asked, ['metadata.json', second]);
+  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`]);
   assert.equal((await local.lookupById('ocre', before)).card.id, before);
-  assert.deepEqual(asked, ['metadata.json', second, first]);
+  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`, `ocre/${first}`]);
   assert.equal((await local.lookupById('ocre', 'ric.5.nobody.1')).status, 'none');
 });
 
@@ -418,8 +432,125 @@ test('the shards a person filter needs are loaded together, not one after anothe
     waiting.push(() => resolve(barrier(url)));
     if (waiting.length === 3) for (const release of waiting.splice(0)) release();
   }) : barrier(url));
-  const local = createLocalCatalogue({ fetchImpl: held, baseUrl: 'moz-extension://test/data/ocre/' });
+  const local = createLocalCatalogue({ fetchImpl: held, baseUrl: 'moz-extension://test/data/' });
   const result = await local.lookupType({ catalogue: 'RIC', volume: '', section: 'Trajan', number: '720' });
   assert.equal(result.status, 'ok');
   assert.equal(result.card.id, 'ric.2.tr.720');
+});
+
+// CRRO, PELLA and SCO, over the data the package really carries. A card these answer must be the card the online path
+// builds from the same record, and a reference the online path resolves today must reach the same record here.
+const jsonld = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+const PARITY = [
+  ['crro', 'rrc-44.5', 'crro-rrc-44-5.jsonld'],
+  ['crro', 'rrc-1.1', 'crro-rrc-1-1.jsonld'],
+  ['pella', 'price.23', 'pella-price-23.jsonld'],
+  ['sco', 'sc.1.1266.2', 'sco-sc-1-1266-2.jsonld'],
+];
+
+test('a local card is field for field the card the online path builds from the same record', { skip }, async () => {
+  for (const [corpus, id, name] of PARITY) {
+    const record = jsonld(name);
+    // Both sides are given the same resolved labels: the online path fetches them from Nomisma and the local path takes
+    // them from the label cache those fetches fill, so this compares the two readings of the record and not what
+    // either side happened to be allowed to reach.
+    const slugs = [...nomismaSlugs(record), ...(portraitSlug(record) ? [portraitSlug(record)] : [])];
+    const labels = Object.fromEntries(slugs.map((slug) => [slug, `Name of ${slug}`]));
+    const online = toCard(record, corpus, labels);
+    const cached = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', cache: new Map(Object.entries(labels)),
+      fetchImpl: async (url) => ({ ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) }) });
+    const { card } = await cached.lookupById(corpus, id);
+    // source is the one field the online card has no opinion about: it is how the popup says which bundle answered.
+    assert.equal(card.source, 'local');
+    assert.deepEqual({ ...card, source: undefined }, { ...online, source: undefined }, `${corpus} ${id}`);
+    // With no label for anything, both sides fall back to the identifier the record carries and neither invents one.
+    assert.deepEqual({ ...(await bundle.lookupById(corpus, id)).card, source: undefined },
+      { ...toCard(record, corpus, {}), source: undefined }, `${corpus} ${id} unlabelled`);
+  }
+});
+
+test('a bundled reference is answered without one request to numismatics.org', { skip }, async () => {
+  // Any request off the package is a failure here, not a fallback: a local hit must need no host permission at all.
+  const refuse = async (url) => { throw new Error(`no network lookup should happen: ${url}`); };
+  for (const [reference, id] of [[parseReference('Crawford 44/5'), 'rrc-44.5'], [parseReference('Price 23'), 'price.23'],
+    [parseReference('SC 1266.2'), 'sc.1.1266.2'], [parseReference('RIC I (2nd edition) Nero 306'), 'ric.1(2).ner.306']]) {
+    const found = await lookupType(reference, { localProvider: bundle, fetchImpl: refuse, online: true });
+    assert.equal(found.status, 'ok', JSON.stringify(reference));
+    assert.equal(found.card.id, id);
+    assert.equal(found.card.source, 'local');
+  }
+});
+
+test('each reference shape is answered from the bundle as the online path answers it', { skip }, async () => {
+  // Exact: the title the reference is, or the identifier it names outright.
+  for (const [text, id] of [['RRC 1/1', 'rrc-1.1'], ['Cr. 44/5', 'rrc-44.5'], ['RRC 98B', 'rrc-98b'],
+    ['Price 23', 'price.23'], ['SC 1266.2', 'sc.1.1266.2'], ['SC 1266', 'sc.1.1266']]) {
+    const found = await bundle.lookupType(parseReference(text));
+    assert.equal(found.status, 'ok', text);
+    assert.equal(found.card.id, id, text);
+  }
+  // A number the base group has near misses for is offered, out of the group the online base-number search is filtered to.
+  const sc = await bundle.lookupType(parseReference('SC 1266.9'));
+  assert.deepEqual([sc.status, sc.candidates.map((entry) => entry.id), sc.corpus, sc.query],
+    ['candidates', ['sc.1.1266', 'sc.1.1266.2'], 'sco', 'SC 1266.9']);
+  assert.ok(sc.candidates.every((entry) => entry.source === 'local'));
+  const rrc = await bundle.lookupType(parseReference('RRC 1/9'));
+  assert.deepEqual([rrc.status, rrc.candidates.map((entry) => entry.id)], ['candidates', ['rrc-1.1']]);
+  // More near misses than a "did you mean" may list, and a number no group has: both are a local miss, and lookupType
+  // falls back to the online catalogue rather than reporting that the type does not exist.
+  for (const text of ['RRC 44/99', 'Price 999999', 'SC 999999']) {
+    assert.equal((await bundle.lookupType(parseReference(text))).status, 'none', text);
+  }
+});
+
+test('a lookup loads only the corpus it asks about, and never an index it does not need', { skip }, async () => {
+  const read = [];
+  const local = createLocalCatalogue({
+    baseUrl: 'moz-extension://test/data/',
+    fetchImpl: async (url) => {
+      read.push(bundlePath(url));
+      return { ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) };
+    },
+  });
+  // A popup that has only opened reads nothing; a Bopearachchi reference is not bundled and reads nothing either.
+  assert.deepEqual(read, []);
+  assert.equal(await local.lookupType(parseReference('Bop Euthydemus I 24A')), null);
+  assert.equal(await local.lookupById('bigr', 'bigr.euthydemus_i.13.1'), null);
+  assert.deepEqual(read, []);
+  // An SC reference names its record, so the index is never read for it.
+  assert.equal((await local.lookupType(parseReference('SC 1266.2'))).card.id, 'sc.1.1266.2');
+  assert.deepEqual(read.splice(0), ['sco/metadata.json', 'sco/records-sc.json']);
+  // A Price reference is a title, so it reads that corpus's index and its shard, and nothing of any other corpus.
+  assert.equal((await local.lookupType(parseReference('Price 23'))).card.id, 'price.23');
+  assert.deepEqual(read.splice(0).sort(), ['pella/index.json', 'pella/metadata.json', 'pella/records-price.json']);
+  assert.equal((await local.lookupById('crro', 'rrc-44.5')).card.id, 'rrc-44.5');
+  assert.deepEqual(read.splice(0), ['crro/metadata.json', 'crro/records-rrc.json']);
+});
+
+test('a damaged corpus fails closed, and a dropped request is retried', { skip }, async () => {
+  for (const [corpus, broken] of [['crro', 'crro/metadata.json'], ['pella', 'pella/index.json'], ['sco', 'sco/records-sc.json']]) {
+    const local = createLocalCatalogue({
+      baseUrl: 'moz-extension://test/data/',
+      fetchImpl: async (url) => (bundlePath(url) === broken ? { ok: false, status: 404, json: async () => ({}) }
+        : { ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) }),
+    });
+    // Never "none": a file the package should carry and does not says nothing about whether the coin is catalogued.
+    const reference = { crro: 'RRC 44/5', pella: 'Price 99999999', sco: 'SC 1266.2' }[corpus];
+    assert.equal((await local.lookupType(parseReference(reference))).status, 'unavailable', broken);
+  }
+  // One dropped request for each of the three files a CRRO reference reads — the index it is matched against, the
+  // metadata that names the shard, and the shard — then the same reference answered: a remembered rejection would
+  // leave the bundle unusable for the life of the page.
+  const failures = new Set(['crro/metadata.json', 'crro/index.json', 'crro/records-rrc.json']);
+  const once = async (url) => {
+    const path = bundlePath(url);
+    if (failures.delete(path)) throw new Error(`offline: ${path}`);
+    return { ok: true, status: 200, json: async () => bundleJson(path) };
+  };
+  const retried = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', fetchImpl: once });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).status, 'unavailable', String(attempt));
+  }
+  assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).card.id, 'rrc-44.5');
+  assert.equal(failures.size, 0);
 });

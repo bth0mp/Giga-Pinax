@@ -498,7 +498,7 @@ test('RIC local hit neither requests nor waits for ANS permission', async () => 
     permissionRequest: async () => { requested += 1; return false; },
     permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 306' }),
-    localProvider: { lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
   });
   popup.element('quick-reference').value = 'RIC I² Nero 306';
   await popup.element('reference-form').emit('submit');
@@ -514,7 +514,7 @@ test('RIC local miss offers an explicit online permission button', async () => {
   const popup = await loadPopup({
     permissionRequest: async () => { requested += 1; return false; }, permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 99999' }),
-    localProvider: { lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 99999';
   await popup.element('reference-form').emit('submit');
@@ -534,7 +534,7 @@ test('editing cancels a delayed online permission retry', async () => {
   const popup = await loadPopup({
     permissionRequest: () => permission.promise, permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 1' }),
-    localProvider: { lookupType: async () => (++localCalls === 1 ? { status: 'none' } : { status: 'ok', card }), lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => (++localCalls === 1 ? { status: 'none' } : { status: 'ok', card }), lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 1';
   await popup.element('reference-form').emit('submit');
@@ -555,7 +555,7 @@ test('editing during the granted-permission check prevents an obsolete online fa
   const popup = await loadPopup({
     permissionRequest: async () => true, permissionContains: () => contains.promise,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 1' }),
-    localProvider: { lookupType: async () => { localCalls += 1; return { status: 'none' }; }, lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => { localCalls += 1; return { status: 'none' }; }, lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 1';
   const submission = popup.element('reference-form').emit('submit');
