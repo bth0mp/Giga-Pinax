@@ -102,6 +102,13 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 #median-currency {font-size:12px; font-weight:600; color:var(--muted);}
 .sale-strength {font-size:12px; font-weight:600; margin-top:4px;}
 .sale-period {font-size:11px; color:var(--muted); margin-top:6px;}
+/* What the filters left out, under the median, and the denomination toggle above it. */
+.sale-filtered {font-size:11px; color:var(--muted); margin-top:4px;}
+.denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px;}
+.denomination-row input {margin:0; flex-shrink:0;}
+/* A median per dealer grade, under the range it splits up. */
+.grade-medians {list-style:none; padding:0; margin:6px 0 0;}
+.grade-medians li {font-size:11px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
 .sale-trend,.last-sale {font-size:12px; margin-top:4px; font-variant-numeric:tabular-nums;}
 /* The sales period: three pills like the Recent chips, the chosen one filled with the accent. Each radio covers its pill unseen, so it stays
    focusable and clickable, and its focus ring is drawn on the pill. The fieldset places its hidden legend: placed by the page instead, the

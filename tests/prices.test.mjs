@@ -790,3 +790,13 @@ test('curation drops a row the filters name, until the collector says otherwise'
   assert.deepEqual(curation.counts(lots), { included: 1, excluded: 1 });
   assert.equal(curation.reasonFor(stranger), 'not-cited');
 });
+
+test('summaryText carries what the filters left out and the median of each grade', () => {
+  const summary = summarise([lot('100', '01.01.2024', 'a'), lot('300', '01.01.2024', 'b')], 'USD');
+  const extras = { filters: ['39 of 55 results cite this reference'], grades: [{ bucket: 'VF', median: 180, count: 9 }, { bucket: 'EF', median: 400, count: 3 }] };
+  assert.deepEqual(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"', extras).split('\n').slice(2), [
+    '39 of 55 results cite this reference',
+    'VF: median $180 (9)',
+    'EF: median $400 (3)',
+  ]);
+});

@@ -49,6 +49,16 @@ test('classifies incomplete and malformed rows without using descriptions', () =
   assert.deepEqual(result.excluded, { upcoming: 1, toBePosted: 1, unpriced: 1, malformedPrice: 1, malformedDate: 1, futureDate: 1, duplicateId: 0, conflictingId: 0 });
 });
 
+// The lot text travels with the lot, so the same citation filter can read a public row as it reads an acsearch one.
+test('a lot carries the description the row shows', () => {
+  const result = parseCoinArchivesPublic(page([
+    row('1', '1 Sep 2026', '10&nbsp;USD', 'Auction, Lot 1', 'Macedon. Tetradrachm. Price 23. Very Fine.'),
+    row('2', '2 Sep 2026', '20&nbsp;USD'),
+  ]), options);
+  assert.equal(result.lots.find(({ id }) => id === '1').description, 'Macedon. Tetradrachm. Price 23. Very Fine.');
+  assert.equal(result.lots.find(({ id }) => id === '2').description, '');
+});
+
 test('fails closed for closest matches and result-count layout drift', () => {
   assert.equal(parseCoinArchivesPublic('<p>Closest matches</p>', options).status, 'closest');
   assert.equal(parseCoinArchivesPublic(page([row('1', '1 Sep 2026', '10&nbsp;USD')], 2), options).status, 'layout');

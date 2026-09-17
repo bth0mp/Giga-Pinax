@@ -59,6 +59,9 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
     const lotUrl = new URL(href, `${ORIGIN}/${section}/`);
     const title = text(link[2]);
     if (!title || lotUrl.origin !== ORIGIN || lotUrl.pathname !== `/${section}/lotviewer.php` || lotUrl.searchParams.get('LotID') !== id || !lotUrl.searchParams.get('AucID') || !lotUrl.searchParams.get('Lot') || !lotUrl.searchParams.get('Val')) return { ...result, status: 'layout', reason: 'link' };
+    // ponytail: the lot text is read from the one element that carries it; a page that ever renamed it leaves every description empty, which the
+    // citation filter reads as "nothing to judge by" and counts the row.
+    const description = text(/<span\b[^>]*class=["']lottext["'][^>]*>([\s\S]*?)<\/span>/i.exec(body)?.[1] ?? '');
     const rawPrice = text(priceCell[1]);
     const rawDate = text(dateCell[1]);
     const fingerprint = JSON.stringify({ title, date: rawDate, price: rawPrice, url: lotUrl.href });
@@ -73,7 +76,7 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
     if (date > localDay(new Date(now)).toISOString().slice(0, 10)) { candidates.push({ id, fingerprint, exclusion: 'futureDate' }); continue; }
     const amount = Number(priceMatch[1].replaceAll(',', ''));
     if (!Number.isSafeInteger(amount) || amount <= 0) { candidates.push({ id, fingerprint, exclusion: 'malformedPrice' }); continue; }
-    candidates.push({ id, fingerprint, lot: { id, title, date, price: `${priceMatch[1]} ${priceMatch[2]}`, amount, currency: priceMatch[2], url: lotUrl.href, source: 'coinarchives' } });
+    candidates.push({ id, fingerprint, lot: { id, title, description, date, price: `${priceMatch[1]} ${priceMatch[2]}`, amount, currency: priceMatch[2], url: lotUrl.href, source: 'coinarchives' } });
   }
 
   const byId = new Map();

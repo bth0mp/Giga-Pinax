@@ -54,13 +54,13 @@ class TestElement {
   toggleAttribute(name, force) { this[name] = force; }
   getBoundingClientRect() { return { top: 0 }; }
   scrollIntoView() {}
-  focus() {}
+  focus() { this.focused = (this.focused ?? 0) + 1; }
   reportValidity() { return true; }
   setSelectionRange() {}
 }
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
-  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true }) {
+  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, clipboard = [] }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -101,7 +101,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     globalThis: null,
     localStorage: { getItem: () => null, setItem() {} },
     location: { search: '', href: 'moz-extension://test/popup.html' },
-    navigator: { clipboard: { writeText: async () => {} } },
+    navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
@@ -117,7 +117,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document };
+  return { element, document, clipboard };
 }
 
 const oneSale = {
@@ -447,4 +447,101 @@ test('changing currency prevents a delayed old-currency result from rendering', 
 
   assert.equal(popup.element('prices-panel').hidden, true);
   assert.equal(popup.element('median-amount').textContent, '');
+});
+
+// 0.32: acsearch answers with every lot holding the words, so a row that never cites the reference is left out of the median by default. It stays in
+// Inspect sales, can be counted by hand like any other row, and Reset puts the default back.
+const citingSale = (id, price, description) => ({ id, title: `Lot ${id}`, date: '2025-01-01', price, description });
+const mixedSales = {
+  status: 'ok',
+  lots: [citingSale('s1', '100', 'Macedon, Alexander III. Tetradrachm. Price 23. Very Fine.'),
+    citingSale('s2', '300', 'Macedon, Alexander III. Tetradrachm (4.23 g). Price 3014. Very Fine.')],
+};
+
+test('a result that does not cite the reference is left out of the median and counted', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('median-amount').textContent, /100/);
+  assert.equal(popup.element('cited-count').hidden, false);
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite this reference');
+  assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
+  assert.match(popup.element('announcement').textContent, /1 of 2 results cite this reference/);
+  const toggle = popup.element('sale-list').children[1].children[2];
+  assert.equal(toggle.textContent, 'Include');
+  await toggle.emit('click');
+  assert.match(popup.element('median-amount').textContent, /200/);
+  // The redrawn row keeps the keyboard where it was.
+  assert.equal(popup.element('sale-list').children[1].children[2].focused, 1);
+  await popup.element('reset-curation').emit('click');
+  assert.match(popup.element('median-amount').textContent, /100/);
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite this reference');
+});
+
+test('the denomination toggle is offered by the verified card and filters on its own word', async () => {
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Drachm. Price 23. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, false);
+  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  assert.equal(popup.element('denomination-filter').checked, false);
+  assert.match(popup.element('median-amount').textContent, /200/);
+  popup.element('denomination-filter').checked = true;
+  await popup.element('denomination-filter').emit('change');
+  assert.match(popup.element('median-amount').textContent, /100/);
+  assert.match(popup.element('cited-count').textContent, /1 of 2 results name “tetradrachm”/);
+  popup.element('denomination-filter').checked = false;
+  await popup.element('denomination-filter').emit('change');
+  assert.match(popup.element('median-amount').textContent, /200/);
+  assert.equal(popup.element('cited-count').hidden, true);
+});
+
+test('a median per grade appears once a bucket rests on three sales', async () => {
+  const graded = (id, price, grade) => citingSale(id, price, `Alexander III. Tetradrachm. Price 23. ${grade}`);
+  const lots = [graded('s1', '100', 'Very Fine'), graded('s2', '200', 'gVF'), graded('s3', '300', 'VF'), graded('s4', '900', 'Extremely Fine')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('grade-medians').hidden, false);
+  assert.deepEqual(popup.element('grade-medians').children.map((line) => line.textContent), ['VF: median $200 (3)']);
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /\nVF: median \$200 \(3\)/);
+});
+
+test('a redraw takes the verified card, so Copy summary heads the text with its label', async () => {
+  const looked = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, lookupTypeImpl: () => looked.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  const submission = popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /^Price 23\n/);
+  looked.resolve({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23 (Babylon)', obverse: {}, reverse: {} } });
+  await submission;
+  await settle();
+  await popup.element('period').emit('change', { target: { value: 'all' } });
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[1], /^Price 23 \(Babylon\)\n/);
+});
+
+test('the CoinArchives median leaves out a public row that does not cite the reference', async () => {
+  const publicLot = (id, amount, description) => ({ id, title: `Auction, Lot ${id}`, description, date: '2025-02-01', price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('ca-1', 150, 'Macedon. Tetradrachm. Price 23. VF'), publicLot('ca-2', 950, 'Macedon. Tetradrachm. Price 3014. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.match(popup.element('coinarchives-median').textContent, /150/);
+  assert.match(popup.element('coinarchives-counts').textContent, /1 not citing this reference/);
+  assert.equal(popup.element('coinarchives-sale-list').children.length, 1);
 });

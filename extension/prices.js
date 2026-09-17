@@ -490,17 +490,19 @@ export const quoteList = (texts) => texts.map(quote).join(', ');
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend } = {}) {
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [] } = {}) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  const lines = [card.label, stats];
+  // What the filters left out, then the sales themselves, then the median of each grade the panel shows.
+  const lines = [card.label, stats, ...filters];
   // The date is page text, squashed so a copied line never splits.
   if (last) lines.push(`Last sale ${squash(last.date)} · ${money.format(last.amount)}`);
   if (trend) lines.push(trendText(trend, money.format));
+  lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
