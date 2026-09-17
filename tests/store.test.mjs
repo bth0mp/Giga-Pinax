@@ -811,6 +811,111 @@ test('a root carrying an uncountable revision and an underivable reminder still 
   assert.equal(exportBackup(after.value, NOW).ok, true);
 });
 
+// A root and a document are held to different ceilings. Validation still accepts 2^52, because a store that already
+// carries it has to open; but a record stopped there could never be written to again, so nothing is taken IN above the
+// usable ceiling, and a stored root above it is counted again from zero.
+const rootWithRevisions = (revision) => {
+  const snapshot = createEmptySnapshot(NOW);
+  const lotId = uuid();
+  snapshot.lots.push({
+    id: lotId, revision, dataClass: 'collector', title: 'Nero denarius', sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision, currency: 'USD', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+  };
+  return { snapshot, lotId };
+};
+
+test('a backup carrying a revision no write could have produced is refused whole, in either mode', async () => {
+  for (const revision of [LIMITS.revision, LIMITS.usableRevision + 1]) {
+    for (const mode of ['replace', 'merge']) {
+      const storage = memoryStorage(createEmptySnapshot(NOW));
+      const writer = createCommandWriter(storage, context());
+      const { snapshot } = rootWithRevisions(revision);
+      const refused = await writer.commitCommand(command('backup.import', {
+        expectedRevision: 0, mode, document: exportBackup(snapshot, NOW).value,
+      }));
+      assert.equal(refused.ok, false, `${mode} at ${revision}`);
+      assert.match(refused.message, /crafted or corrupt/i);
+      assert.deepEqual(storage.read().lots, [], 'nothing of the file reached storage');
+    }
+  }
+});
+
+test('a backup at the usable ceiling imports, and what it carries can still be saved', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const { snapshot, lotId } = rootWithRevisions(LIMITS.usableRevision);
+  const imported = await writer.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(snapshot, NOW).value,
+  }));
+  assert.equal(imported.ok, true, imported.message);
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: LIMITS.usableRevision,
+    lot: { id: lotId, title: 'Nero denarius, retoned', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(saved.value.revision, LIMITS.usableRevision + 1);
+  const currency = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: LIMITS.usableRevision, preferences: { currency: 'EUR' },
+  }));
+  assert.equal(currency.ok, true, currency.message);
+});
+
+test('a stored root at the ceiling opens, is written to again and exports', async () => {
+  const { snapshot, lotId } = rootWithRevisions(LIMITS.revision);
+  const storage = memoryStorage(snapshot);
+  const writer = createCommandWriter(storage, context());
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+  let opened;
+  try {
+    opened = await writer.commitCommand(command('snapshot.get'));
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.lots.length, 1, 'the coin is still there');
+  assert.equal(opened.value.lots[0].revision, 0, 'counted again from a number every later write can hold');
+  assert.equal(opened.value.preferences.revision, 0);
+  assert.equal(warnings.length, 1, 'one line for a support request, naming what was restarted');
+  assert.match(warnings[0], /lots/);
+  assert.match(warnings[0], new RegExp(lotId));
+
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: 0, lot: { id: lotId, title: 'Nero denarius, retoned', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(storage.read().lots[0].revision, 1, 'the restart reached storage with the write');
+  assert.equal(storage.read().preferences.revision, 0);
+
+  // Idempotent: the root it wrote has nothing left to restart, so the next load says nothing.
+  warnings.length = 0;
+  console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+  let after;
+  try {
+    after = await writer.commitCommand(command('snapshot.get'));
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.deepEqual(warnings, []);
+  assert.equal(exportBackup(after.value, NOW).ok, true);
+});
+
+test('an ordinary root is read, not rewritten, on load', async () => {
+  const { snapshot } = rootWithRevisions(3);
+  const options = {};
+  const storage = memoryStorage(snapshot, options);
+  const writer = createCommandWriter(storage, context());
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(opened.value.lots[0].revision, 3);
+  assert.equal(opened.value.preferences.revision, 3);
+  assert.equal(options.setCalled, undefined, 'a load is still a read');
+  assert.deepEqual(storage.read(), structuredClone(snapshot));
+});
+
 // A replace takes the other install's records, not its schedule: that is derived again from the events it just took.
 // Adopting the file's scheduler carried a wake time, and a revision, that belong to a store this one no longer is.
 test('a replace import starts the schedule again instead of adopting the file’s', () => {

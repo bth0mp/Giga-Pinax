@@ -1,4 +1,4 @@
-import { LIMITS, SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
+import { LIMITS, SCHEMA_VERSION, migrateSnapshot, unusableRevisions, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, own } from './validate.js';
@@ -107,6 +107,17 @@ export function validateBackup(document) {
   data.drafts = [];
   const valid = validateSnapshot(data);
   if (!valid.ok) return failure(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
+  // Validation accepts every revision a stored root may carry, including ones no export ever wrote. Those are turned
+  // away here rather than restarted as a stored one is: a record taken in above the usable ceiling would be refused by
+  // its own next save, and there is no reason to take it in at all.
+  const unusable = unusableRevisions(data);
+  if (unusable.length) {
+    return failure(
+      'invalid-record',
+      'This backup carries a revision no Giga Pinax write could have produced, so the file is crafted or corrupt. Import a file made by Export backup.',
+      `data.${unusable[0].collection}`,
+    );
+  }
   exportTimes.set(data, value.exportedAt);
   return { ok: true, value: data };
 }
