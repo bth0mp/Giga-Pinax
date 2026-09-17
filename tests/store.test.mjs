@@ -1189,3 +1189,31 @@ test('failed notification delivery expires without another retry after event rel
   assert.equal(expired.snapshot.alerts[0].status, 'missed');
   assert.equal(expired.value.nextWakeAt, null);
 });
+
+// Sample mode is gone, but a row a build that had it could have written must not take the store
+// down with it. It never counted towards a median while it existed, so it is not quietly relabelled
+// as the collector's own: it is set aside verbatim, where Data health shows it and a backup keeps it.
+test('a stored evidence row still marked as sample is set aside rather than lost or counted', async () => {
+  const observation = {
+    id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'sample', retrievedAt: NOW,
+    houseSaleId: 'Sale 10', auctionHouse: 'House', auctionDate: '2026-01-02', lotNumber: '9',
+    priceBasis: 'hammer', amount: { currency: 'EUR', minor: 12000 },
+  };
+  const sample = {
+    id: uuid(), revision: 0, dataClass: 'sample', observations: [observation],
+    saleIdentity: { auctionHouse: 'House', houseSaleId: 'Sale 10', lotNumber: '9' },
+    inclusion: 'included',
+    resolved: { priceBasis: 'hammer', hammer: { currency: 'EUR', minor: 12000 }, resolution: 'source-agreement' },
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const stored = createEmptySnapshot(NOW);
+  stored.evidence.push(sample);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.evidence, []);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record]),
+    [['evidence', sample]]);
+});

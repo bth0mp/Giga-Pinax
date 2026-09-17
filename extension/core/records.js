@@ -557,7 +557,7 @@ function evidenceResult(evidence, path) {
     LIMITS.evidenceObservations,
   );
   if (!observations.ok) return observations;
-  const validated = validateSaleEvidence(evidence, { mode: 'live' });
+  const validated = validateSaleEvidence(evidence);
   if (validated.ok) return validated;
   const nestedPath = validated.error.path ? `${path}.${validated.error.path}` : path;
   return { ok: false, error: { ...validated.error, path: nestedPath } };

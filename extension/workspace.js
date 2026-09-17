@@ -884,7 +884,7 @@ async function initWorkspace() {
     if (!queryIds.includes(selectedQueryId)) selectedQueryId = activeQuery.id;
     querySelect.value = selectedQueryId;
     const evidenceRows = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId);
-    const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources(), mode: 'live' };
+    const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources() };
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
