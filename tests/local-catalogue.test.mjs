@@ -147,3 +147,35 @@ test('the local fallback broadens the volume before the section, and a section i
   assert.equal(dropped.status, 'candidates');
   assert.deepEqual(dropped.candidates.map((entry) => entry.id), ['ric.1(2).ner.306']);
 });
+
+test('a failed bundle load is retried, never remembered', async () => {
+  const failures = new Set(['metadata.json', 'index.json', 'records-1(2).json']);
+  const fetchImpl = fixtureFetch();
+  const once = async (url) => {
+    const failing = [...failures].find((name) => String(url).endsWith(name));
+    if (failing) { failures.delete(failing); throw new Error(`offline: ${failing}`); }
+    return fetchImpl(url);
+  };
+  const local = createLocalCatalogue({ fetchImpl: once, baseUrl: 'moz-extension://test/data/ocre/' });
+  const reference = { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' };
+  // One dropped request each for the metadata, the index and the shard; a cached rejection would make any of them permanent.
+  for (let attempt = 0; attempt < 3; attempt += 1) assert.equal((await local.lookupType(reference)).status, 'unavailable', String(attempt));
+  const found = await local.lookupType(reference);
+  assert.equal(found.status, 'ok');
+  assert.equal(found.card.id, 'ric.1(2).ner.306');
+  assert.equal(failures.size, 0);
+});
+
+test('the shards a person filter needs are loaded together, not one after another', async () => {
+  const waiting = [];
+  const barrier = fixtureFetch();
+  // Every shard request is held until both are in flight: loaded one after another, this lookup could never finish.
+  const held = (url) => (String(url).includes('records-') ? new Promise((resolve) => {
+    waiting.push(() => resolve(barrier(url)));
+    if (waiting.length === 2) for (const release of waiting.splice(0)) release();
+  }) : barrier(url));
+  const local = createLocalCatalogue({ fetchImpl: held, baseUrl: 'moz-extension://test/data/ocre/' });
+  const result = await local.lookupType({ catalogue: 'RIC', volume: '', section: 'Trajan', number: '720' });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.card.id, 'ric.2.tr.720');
+});
