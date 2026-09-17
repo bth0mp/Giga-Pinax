@@ -70,6 +70,26 @@ test('the fixture page reads as two citations of another type, and the grades th
   assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'FDC/Mint State']);
 });
 
+// A page is untrusted text off the network, and every retry parses the whole slice from the marker again: half a
+// megabyte of nothing but terminators took seconds with the popup's own thread. Bounded by the size read and the number
+// of retries, so a hostile page costs a miss rather than a frozen popup.
+test('a page made of nothing but array terminators is given up on, not chewed through', () => {
+  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2)}"}];`;
+  for (const bytes of [64 * 1024, 512 * 1024]) {
+    const started = performance.now();
+    assert.equal(extractLots(terminators(bytes)), null);
+    const spent = performance.now() - started;
+    assert.ok(spent < 1000, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
+  }
+  // A page with more results text than any reply carries is read up to the bound and no further.
+  const started = performance.now();
+  assert.equal(extractLots(`${' '.repeat(4 * 1024 * 1024)}acsearch.initSearchResults = [];`), null);
+  assert.ok(performance.now() - started < 1000);
+  // The handful a real page's descriptions carry is still read through.
+  const inside = `acsearch.initSearchResults = [{"id":"1","title":"${'see [RIC 306]; '.repeat(20)}"}];`;
+  assert.equal(extractLots(inside)?.length, 1);
+});
+
 test('extractLots survives "];" inside descriptions and rejects pages without the array', () => {
   const page = '<script>acsearch.initSearchResults = [{"id":1,"title":"A","description":"see [RIC 306]; nice","date":"01.02.2023","price":"1,200","last":false}]; acsearch.x=1;</script>';
   assert.deepEqual(extractLots(page), [{ id: '1', title: 'A', date: '01.02.2023', price: '1,200', description: 'see [RIC 306]; nice' }]);

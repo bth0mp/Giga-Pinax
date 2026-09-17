@@ -168,3 +168,23 @@ test('cancels a response stream as soon as its body exceeds the byte limit', asy
   assert.equal(result.reason, 'too-large');
   assert.equal(cancelled, true);
 });
+
+// The page is untrusted text off the network and the popup's own thread reads it. Each of these shapes made a pattern
+// re-scan the rest of the page from every start it found: half a megabyte of them cost between two and thirty-five
+// seconds. They are refused as a layout the parser does not know, promptly.
+test('a page shaped to make the parser re-scan it is refused promptly, not chewed through', () => {
+  const header = '<span class="headertext">Your search for <b>x</b> matched 5 lots from auctions added in the last six months.</span>';
+  const fill = (unit) => unit.repeat(Math.floor((512 * 1024) / unit.length));
+  for (const [name, html] of [
+    ['start tags that never close', fill('<span ')],
+    ['class attributes that never close', fill("<span class='")],
+    ['row start tags that never close', header + fill("<tr id='1' ")],
+    ['rows that never end', header + fill("<tr id='1'>")],
+  ]) {
+    const started = performance.now();
+    const result = parseCoinArchivesPublic(html, { term: 'x', currency: 'USD' });
+    const spent = performance.now() - started;
+    assert.equal(result.status, 'layout', name);
+    assert.ok(spent < 1000, `${name} took ${spent.toFixed(0)} ms`);
+  }
+});
