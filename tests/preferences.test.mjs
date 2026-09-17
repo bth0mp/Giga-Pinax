@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { CURRENCIES } from '../extension/core/money.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] };
 

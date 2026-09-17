@@ -1,11 +1,10 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
 import { canonicalRicPerson } from './catalogues.js';
+import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
 const MARKER = 'acsearch.initSearchResults = ';
-
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
 // category is acsearch's own: '1' Ancient coins, '2' Modern coins. Ancients is the default, as it was before Krause.
 export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
@@ -565,12 +564,7 @@ export function ungradedText(lots) {
 export function stableResultId(lot, provider) {
   if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `${provider}:${String(lot.id).trim()}`;
   const source = [lot?.title, lot?.date, lot?.price].map((value) => String(value ?? '').trim()).join('\u001f');
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${provider}:derived:${(hash >>> 0).toString(36)}`;
+  return `${provider}:derived:${fnv32(source).toString(36)}`;
 }
 
 // What the statistics rest on: the filters leave a row out by default and say why, and the collector's own decisions override them either way.

@@ -1,4 +1,5 @@
 import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
+import { squash } from './core/validate.js';
 
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
@@ -101,7 +102,7 @@ export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 // "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name. Almost every name asked for is plain ASCII, which has no
 // diacritics to strip and no decomposition to do, and this runs once per bundled title.
 export function rulerKey(ruler) {
-  const text = String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const text = squash(ruler).toLowerCase();
   return /^[\x20-\x7e]*$/.test(text) ? text : text.normalize('NFD').replace(/\p{M}+/gu, '');
 }
 

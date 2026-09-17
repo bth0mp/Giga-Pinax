@@ -1,3 +1,4 @@
+import { squash } from './core/validate.js';
 import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
@@ -26,7 +27,6 @@ export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https:/
 export const TIMEOUT_MS = 15000;
 
 const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 // The hidden characters dealer pages add (soft hyphens, zero-width and direction marks, bidi controls, word joiners, a byte order mark) would split a
 // copied reference inside a word; parseReference and a right-click selection drop them first. NBSP and other Unicode spaces are squashed as spaces.

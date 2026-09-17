@@ -1,7 +1,7 @@
 import { PERIODS } from './prices.js';
+import { CURRENCIES } from './core/money.js';
 
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
-export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
 // The section field is the RIC ruler or mint section for RIC and the king for Bop; a catalogue change resets it like the number.
 export const DEFAULT_SECTION = Object.freeze({ RIC: 'Nero', Bop: 'Euthydemus I' });

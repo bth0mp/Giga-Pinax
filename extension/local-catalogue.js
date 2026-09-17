@@ -1,8 +1,8 @@
 import { buildQuery, formatDates, inGroup, otherVolumePart, pickMatch, pickRicEntries } from './lookup.js';
 import { isRicPerson, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
+import { squash } from './core/validate.js';
 
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 // Every corpus bundled inside the package, and the three things that differ between them: the URI its records are
 // published under, the shard group an identifier falls in, and what a valid group name looks like. ANS writes CRRO,
 // PELLA and SCO identifiers over http in both their RDF and their JSON-LD, so that is what a local card says and it is
