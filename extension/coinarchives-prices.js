@@ -13,7 +13,9 @@ const decode = (value) => value.replace(/&(#\d{1,7}|#[xX][\da-fA-F]{1,6}|[a-zA-Z
   return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
 });
 const text = (html) => decode(String(html).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
-const normalizedQuery = (value) => text(value).toLocaleLowerCase('en-US');
+// The term quotes the citation as an exact phrase; the echo keeps the quotes, but a page that shows the same search without them is that search, not
+// a different one, so they are left out of the comparison.
+const normalizedQuery = (value) => text(value).replaceAll('"', '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
 const nativeSummary = (lots, currency) => {
   const summary = summarise(lots.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = lots;

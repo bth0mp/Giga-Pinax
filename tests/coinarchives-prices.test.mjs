@@ -59,6 +59,15 @@ test('does not attribute a different displayed query to the requested term', () 
   assert.equal(parseCoinArchivesPublic(html, options).status, 'closest');
 });
 
+// The term is quoted so the search is the citation, not the words in it; the echo comes back with the quotes, but a page that drops them is showing
+// the same search, not a different one.
+test('an echoed query that differs only in its quotes is the requested one', () => {
+  const html = page([row('1', '1 Sep 2026', '10&nbsp;USD')]);
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", '<b>\'"Price 23"</b>'), { ...options, term: '"Price 23"' }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", "<b>'Price 23</b>"), { ...options, term: '"Price 23"' }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", "<b>'Price 24</b>"), { ...options, term: '"Price 23"' }).status, 'closest');
+});
+
 test('quarantines duplicate and conflicting lot identifiers', () => {
   const same = row('1', '1 Sep 2026', '10&nbsp;USD');
   const result = parseCoinArchivesPublic(page([same, same, row('2', '2 Sep 2026', '20&nbsp;USD'), row('2', '3 Sep 2026', '30&nbsp;USD'), row('3', '4 Sep 2026', '40&nbsp;USD'), row('3', '4 Sep 2026', 'To Be<br>Posted&nbsp;')]), options);

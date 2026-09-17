@@ -104,12 +104,26 @@ test('parsePrice never joins two numbers: marks only at the ends, one separator 
 });
 
 test('defaultTerm builds the acsearch term from the guided reference', () => {
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
-  assert.equal(defaultTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');
-  // OCRE's split-section parenthetical would make acsearch require "East", "Caesar"… that dealers rarely write; the number's own stays.
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I 605');
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Gallienus (joint reign)', number: '123' }), 'Gallienus 123');
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Septimius Severus', number: '266 (aureus)' }), 'Septimius Severus 266 (aureus)');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero "RIC 306"');
+  assert.equal(defaultTerm({ catalogue: 'Price', number: ' 23 ' }), '"Price 23"');
+  // OCRE's split-section parenthetical would make acsearch require "East", "Caesar"… that dealers rarely write; the number's own stays, outside the
+  // phrase, as the word OCRE tells two types apart by.
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I "RIC 605"');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Gallienus (joint reign)', number: '123' }), 'Gallienus "RIC 123"');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Septimius Severus', number: '266 (aureus)' }), 'Septimius Severus aureus "RIC 266"');
+});
+
+// 0.32: a bare "Price 23" matched every lot holding the words, so "Price 3014" and "4.23 g" were medianed as this type's sales. Every typed catalogue
+// reference is now the exact phrases dealers cite it with, offered either-or as Bop, Sear Greek and Krause already were.
+test('a typed catalogue reference searches as the exact phrases dealers cite it with', () => {
+  assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), '"Price 23"');
+  assert.equal(defaultTerm({ catalogue: 'SC', number: 'SC 1266.2' }), '("SC 1266.2" "Seleucid Coins 1266.2")');
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: ' 44/5 ' }), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
+  // The number must sit next to a RIC key; the volume numeral goes inside the phrases without its edition mark, since dealers cite "RIC I", not "RIC I²".
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' }), 'Nero ("RIC 306" "RIC I 306" "RIC I, 306")');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Titus', number: '123', volume: 'II, Part 1 (2nd edition)' }), 'Titus ("RIC 123" "RIC II 123" "RIC II, 123")');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', volume: 'VII', rulers: ['Constantine II'] }), 'Constantine II ("RIC 287" "RIC VII 287" "RIC VII, 287")');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Nero', number: '306', volume: '' }), 'Nero "RIC 306"');
 });
 
 const lot = (price, date = '01.01.2024', id = '1') => ({ id, title: `Lot ${id}`, date, price });
@@ -205,14 +219,14 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
 });
 
-test('defaultTerm uses Crawford wording for RRC, which acsearch lists far more often', () => {
-  assert.equal(defaultTerm({ catalogue: 'RRC', number: ' 44/5 ' }), 'Crawford 44/5');
+test('defaultTerm leads on Crawford wording for RRC, which acsearch lists far more often', () => {
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: ' 44/5 ' }).startsWith('("Crawford 44/5"'), true);
 });
 
 test('defaultTerm ignores a typed catalogue prefix', () => {
-  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'RRC 44/5' }), 'Crawford 44/5');
-  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), 'Crawford 44/5');
-  assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), 'Price 23');
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'RRC 44/5' }), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
+  assert.equal(defaultTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
+  assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), '"Price 23"');
 });
 
 test('summarise lists up to five raw prices it could not count, skipping blanks, * and digit-free markers', () => {
@@ -253,9 +267,9 @@ test('summaryText has no type link for a reference without type data', () => {
 });
 
 test('defaultTerm uses one verified RIC person from a mint-volume lot to disambiguate the number', () => {
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II'] }), 'Constantine II 287');
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantinus II'] }), 'Constantine II 287');
-  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II', 'Licinius'] }), '287');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II'] }), 'Constantine II "RIC 287"');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantinus II'] }), 'Constantine II "RIC 287"');
+  assert.equal(defaultTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II', 'Licinius'] }), '"RIC 287"');
 });
 
 test('summaryText labels an unverified price query without inventing a type link', () => {
@@ -321,23 +335,27 @@ test('an SG part is searched as both "Sear N" and "SG N", either-or, with any ot
   assert.equal(defaultTerm(other('Sear 6829')), '"Sear 6829"');
 });
 
-test('coinArchivesTerm gives plain words for every catalogue, with no acsearch quotes or brackets', () => {
-  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero 306');
-  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I 605');
-  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Hadrian', number: '266 (aureus)' }), 'Hadrian 266 aureus');
-  assert.equal(coinArchivesTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), 'Crawford 44/5');
-  assert.equal(coinArchivesTerm({ catalogue: 'SC', number: 'SC 1266.2' }), 'SC 1266.2');
-  assert.equal(coinArchivesTerm({ catalogue: 'Price', number: ' 23 ' }), 'Price 23');
-  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '20' }), 'Hermaeus Bopearachchi 20');
-  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Euthydemus I', number: 'Bop 24a' }), 'Euthydemus Bopearachchi 24A');
+// CoinArchives has no either-or group but it honours a double-quoted phrase, so its term is the acsearch term with each group cut to the spelling
+// dealers cite most.
+test('coinArchivesTerm quotes the catalogue phrase and offers one spelling of it', () => {
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: ' Nero ', number: '306' }), 'Nero "RIC 306"');
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' }), 'Nero "RIC 306"');
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605' }), 'Leo I "RIC 605"');
+  assert.equal(coinArchivesTerm({ catalogue: 'RIC', section: 'Hadrian', number: '266 (aureus)' }), 'Hadrian aureus "RIC 266"');
+  assert.equal(coinArchivesTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), '"Crawford 44/5"');
+  assert.equal(coinArchivesTerm({ catalogue: 'SC', number: 'SC 1266.2' }), '"SC 1266.2"');
+  assert.equal(coinArchivesTerm({ catalogue: 'Price', number: ' 23 ' }), '"Price 23"');
+  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '20' }), 'Hermaeus "Bopearachchi 20"');
+  assert.equal(coinArchivesTerm({ catalogue: 'Bop', section: 'Euthydemus I', number: 'Bop 24a' }), 'Euthydemus "Bopearachchi 24A"');
   const other = (number) => ({ catalogue: 'Other', number, section: '' });
-  assert.equal(coinArchivesTerm(other('SG 6829 var.')), 'Sear 6829');
-  assert.equal(coinArchivesTerm(other('SG 6829a; SC 1')), 'Sear 6829a');
-  assert.equal(coinArchivesTerm(other('SGCV 6829')), 'Sear 6829');
-  assert.equal(coinArchivesTerm(other('SG6829v')), 'Sear 6829');
-  assert.equal(coinArchivesTerm(other('SG 6829v (this coin)')), 'Sear 6829');
-  assert.equal(coinArchivesTerm(other('BCD Boiotia 174b; HGC 4, 1218')), 'BCD Boiotia 174b');
-  assert.equal(coinArchivesTerm(other('“[SNG Cop 123]” (this coin); BMC 4')), 'SNG Cop 123');
+  assert.equal(coinArchivesTerm(other('SG 6829 var.')), '"Sear 6829"');
+  assert.equal(coinArchivesTerm(other('SG 6829a; SC 1')), '"Sear 6829a"');
+  assert.equal(coinArchivesTerm(other('SGCV 6829')), '"Sear 6829"');
+  assert.equal(coinArchivesTerm(other('SG6829v')), '"Sear 6829"');
+  assert.equal(coinArchivesTerm(other('SG 6829v (this coin)')), '"Sear 6829"');
+  assert.equal(coinArchivesTerm(other('BCD Boiotia 174b; HGC 4, 1218')), '"BCD Boiotia 174b"');
+  assert.equal(coinArchivesTerm(other('“[SNG Cop 123]” (this coin); BMC 4')), '"SNG Cop 123"');
+  assert.equal(coinArchivesTerm(other('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago')), '');
 });
 
 test('coinArchivesUrl encodes the words into a CoinArchives search address', () => {
@@ -357,8 +375,8 @@ test('summaryText collapses whitespace inside a quoted raw price so a copied lin
   assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, summary, 'USD', 'Crawford 1/1').split('\n')[2], 'Not counted: “1.200,- €”');
 });
 
-test('defaultTerm uses SC wording for Seleucid Coins', () => {
-  assert.equal(defaultTerm({ catalogue: 'SC', number: 'SC 1266.2' }), 'SC 1266.2');
+test('defaultTerm offers both Seleucid Coins spellings', () => {
+  assert.equal(defaultTerm({ catalogue: 'SC', number: '1266.2' }), '("SC 1266.2" "Seleucid Coins 1266.2")');
 });
 
 test('quoted uncounted prices are squashed of control characters and capped at 40 characters', () => {
@@ -536,10 +554,23 @@ test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop def
   assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '"Bopearachchi 9C"');
   assert.equal(chooseTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '' }, 'Hermaeus Bopearachchi'), '(Hermaeus Hermaios) Bopearachchi');
   const nero = { catalogue: 'RIC', section: 'Nero', number: '306' };
-  assert.equal(chooseTerm(nero, 'Nero 306'), 'Nero 306');
   assert.equal(chooseTerm(nero, 'Nero 306 denarius'), 'Nero 306 denarius');
-  assert.equal(chooseTerm(nero, ''), 'Nero 306');
-  assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, undefined), 'Price 23');
+  assert.equal(chooseTerm(nero, ''), 'Nero "RIC 306"');
+  assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, undefined), '"Price 23"');
+});
+
+// The unquoted default of 0.31 and before was stored under the type whenever Get prices ran, so it would hide the exact-phrase default for good;
+// it counts as unsaved, as the v0.12 Bop default does. Anything else the collector saved still wins.
+test('chooseTerm drops a remembered term that is only the old unquoted default', () => {
+  assert.equal(chooseTerm({ catalogue: 'RIC', section: 'Nero', number: '306' }, 'Nero 306'), 'Nero "RIC 306"');
+  assert.equal(chooseTerm({ catalogue: 'RIC', section: 'Leo I (East)', number: '605', volume: 'X' }, ' Leo I  605 '), 'Leo I ("RIC 605" "RIC X 605" "RIC X, 605")');
+  assert.equal(chooseTerm({ catalogue: 'RIC', section: '', number: '287', rulers: ['Constantine II'] }, 'Constantine II 287'), 'Constantine II "RIC 287"');
+  assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, 'Price 23'), '"Price 23"');
+  assert.equal(chooseTerm({ catalogue: 'RRC', number: '44/5' }, 'Crawford 44/5'), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
+  assert.equal(chooseTerm({ catalogue: 'SC', number: '1266.2' }, 'SC 1266.2'), '("SC 1266.2" "Seleucid Coins 1266.2")');
+  // Anything the collector typed himself stays, including a narrowed old default.
+  assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, 'Price 23 tetradrachm'), 'Price 23 tetradrachm');
+  assert.equal(chooseTerm({ catalogue: 'RRC', number: '44/5' }, 'RRC 44/5'), 'RRC 44/5');
 });
 
 // Krause (0.20): a KM reference is modern, so it searches acsearch's category 2 and CoinArchives' world section, in both spellings dealers cite.
@@ -583,9 +614,9 @@ test('buildSearchUrl carries the category it is given', () => {
 
 test('a KM reference links to CoinArchives world section in plain words', () => {
   const other = (number) => ({ catalogue: 'Other', number, section: '' });
-  assert.equal(coinArchivesTerm(other('Netherlands KM# 123')), 'Netherlands KM 123');
-  assert.equal(coinArchivesTerm(other('KM# 123.2a')), 'KM 123.2a');
-  assert.equal(coinArchivesTerm(other('Württemberg KM# 123')), 'Württemberg KM 123');
+  assert.equal(coinArchivesTerm(other('Netherlands KM# 123')), 'Netherlands "KM 123"');
+  assert.equal(coinArchivesTerm(other('KM# 123.2a')), '"KM 123.2a"');
+  assert.equal(coinArchivesTerm(other('Württemberg KM# 123')), 'Württemberg "KM 123"');
   assert.equal(coinArchivesSection(other('KM# 123')), 'w');
   assert.equal(coinArchivesSection(other('Württemberg KM# 123')), 'w');
   // The section follows the part the term was built from, not acsearch's stricter all-KM rule: the link searches "KM 123", which /a/ can never hold.
@@ -613,8 +644,8 @@ test('a Y# reference searches world coins exactly as KM does', () => {
   // Mixed with an ancient reference it stays in Ancients, as KM does, while the link follows the first part: Y first opens /w/, SG first /a/.
   assert.equal(searchCategory(other('Y# 31; SG 6829')), '1');
   assert.equal(coinArchivesSection(other('Y# 31; SG 6829')), 'w');
-  assert.equal(coinArchivesTerm(other('Russia Y# 59.3')), 'Russia Y 59.3');
-  assert.equal(coinArchivesTerm(other('Y# 31')), 'Y 31');
+  assert.equal(coinArchivesTerm(other('Russia Y# 59.3')), 'Russia "Y 59.3"');
+  assert.equal(coinArchivesTerm(other('Y# 31')), '"Y 31"');
   assert.equal(coinArchivesSection(other('Y# 31')), 'w');
   assert.equal(coinArchivesSection(other('SG 6829; Y# 31')), 'a');
 });
@@ -639,7 +670,7 @@ test('a citation listing several numbers under one catalogue is still searched',
   const other = (number) => ({ catalogue: 'Other', number, section: '' });
   assert.equal(defaultTerm(other('SNG von Aulock 5960, 5961, 5962, 5963, 5964')), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
   assert.equal(defaultTerm(other('HGC 4, 1218, 1219, 1220, 1221, 1222, 1223')), '"HGC 4, 1218, 1219, 1220, 1221, 1222, 1223"');
-  assert.equal(coinArchivesTerm(other('SNG Copenhagen 12, 13, 14, 15, 16, 17')), 'SNG Copenhagen 12, 13, 14, 15, 16, 17');
+  assert.equal(coinArchivesTerm(other('SNG Copenhagen 12, 13, 14, 15, 16, 17')), '"SNG Copenhagen 12, 13, 14, 15, 16, 17"');
 });
 
 // A term saved before 0.22 for what is now prose would fetch the whole sentence again when its chip reopens, so it is dropped with the default.

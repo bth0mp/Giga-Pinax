@@ -329,7 +329,7 @@ test('guided lookup starts and displays prices while catalogue permission is sti
   await submission;
   assert.equal(popup.element('prices-panel').hidden, false);
   assert.match(popup.element('median-amount').textContent, /120/);
-  assert.equal(popup.element('price-term').value, 'Price 23');
+  assert.equal(popup.element('price-term').value, '"Price 23"');
 });
 
 test('RIC local hit neither requests nor waits for ANS permission', async () => {

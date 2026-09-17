@@ -91,6 +91,13 @@ const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '')
   .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
   .filter(searchablePart).map((part) => sgNumber(part) ?? part);
 
+// One exact phrase, and the either-or group of several: acsearch's own (a b) for "any of these". A repeated spelling is offered once.
+const phrase = (...words) => `"${squash(words.join(' '))}"`;
+const group = (phrases) => {
+  const offered = [...new Set(phrases)];
+  return offered.length > 1 ? `(${offered.join(' ')})` : offered[0] ?? '';
+};
+
 // A Sear Greek part as parseReference normalises it ("SG 6829", "SG 6829 var.", "SG 6829a"); dealers write "Sear 6829" as often as "SG 6829", and a
 // variant is listed under its type's number, so both phrases go without "var.". The first group is N.
 const SG_PART = /^SG (\d+[a-uw-z]?)(?: var\.)?$/i;
@@ -115,15 +122,14 @@ const kmPart = (part) => {
 function otherTerm(number) {
   const parts = otherParts(number);
   const kms = parts.map(kmPart);
-  const phrases = [...new Set(parts.flatMap((part, index) => {
+  const phrases = parts.flatMap((part, index) => {
     const km = kms[index];
-    if (km) return km.key === 'Y' ? [`"Y ${km.number}"`, `"Y# ${km.number}"`] : [`"KM ${km.number}"`, `"Krause/Mishler ${km.number}"`];
+    if (km) return km.key === 'Y' ? [phrase('Y', km.number), phrase('Y#', km.number)] : [phrase('KM', km.number), phrase('Krause/Mishler', km.number)];
     const sg = SG_PART.exec(part);
-    return sg ? [`"Sear ${sg[1]}"`, `"SG ${sg[1]}"`] : [`"${part}"`];
-  }))];
-  const group = phrases.length > 1 ? `(${phrases.join(' ')})` : phrases[0] ?? '';
+    return sg ? [phrase('Sear', sg[1]), phrase('SG', sg[1])] : [phrase(part)];
+  });
   const country = allKm(kms) && kms.every((km) => km.country === kms[0].country) ? kms[0].country : '';
-  return squash(`${country} ${group}`);
+  return squash(`${country} ${group(phrases)}`);
 }
 
 // Only a reference whose searchable parts are all Krause (KM or Y) is certainly modern; one mixed with an ancient catalogue stays in Ancients.
@@ -133,44 +139,69 @@ export function searchCategory(reference) {
   return allKm(otherParts(reference.number).map(kmPart)) ? '2' : '1';
 }
 
-// A RIC term drops OCRE's split-section parenthetical ("Leo I (East)", "Gallienus (joint reign)"): acsearch would require a word dealers rarely write.
-export function defaultTerm({ catalogue, number, section, rulers }) {
-  if (catalogue === 'RIC') {
-    const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
-    return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
-  }
+// The ruler or mint section is a plain required word, as it always was: dealers put it in the lot title, away from the citation. A RIC term drops
+// OCRE's split-section parenthetical ("Leo I (East)", "Gallienus (joint reign)"), which acsearch would then require and dealers rarely write, while a
+// number's own parenthetical ("266 (aureus)") is the word OCRE tells two types apart by and stays as a plain word too: acsearch finds nothing for a
+// phrase holding a bracket. The number itself must sit next to a RIC key, so the volume numeral goes inside the phrases, without the edition mark
+// dealers leave out ("RIC I²" is cited "RIC I"); with no volume there is only one phrase to offer.
+function ricTerm({ number, section, volume, rulers }) {
+  const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
+  const [, digits = '', aside = ''] = /^(\S*)(?:\s*\(([^)]*)\))?$/.exec(squash(number)) ?? [];
+  const numeral = /^[IVX]+/.exec(squash(volume))?.[0] ?? '';
+  const keyed = digits ? group([phrase('RIC', digits), ...(numeral ? [phrase('RIC', numeral, digits), phrase(`RIC ${numeral},`, digits)] : [])]) : 'RIC';
+  return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${aside} ${keyed}`);
+}
+
+// acsearch ANDs bare words anywhere in a lot, so a bare "Price 23" matched "Price 3014" and "4.23 g" and medianed them as this type's sales. Every
+// typed reference is the exact phrases dealers cite it with, offered either-or, as Bop, Sear Greek and Krause already were: Price is cited one way
+// only (acsearch ignores a comma inside a phrase, so "Price, 23" needs no phrase of its own), Seleucid Coins is written short and spelled out, and
+// Crawford's number is written under three keys.
+export function defaultTerm(reference) {
+  const { catalogue, number, section } = reference;
+  if (catalogue === 'RIC') return ricTerm(reference);
   if (catalogue === 'Other') return otherTerm(number);
-  if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
-  if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
+  if (catalogue === 'RRC') {
+    const digits = referenceNumber('RRC', number);
+    return group([phrase('Crawford', digits), phrase('Cr.', digits), phrase('RRC', digits)]);
+  }
+  if (catalogue === 'SC') {
+    const digits = referenceNumber('SC', number);
+    return group([phrase('SC', digits), phrase('Seleucid Coins', digits)]);
+  }
   if (catalogue === 'Bop') return bopTerm(section, number);
-  return squash(`Price ${referenceNumber('Price', number)}`);
+  return phrase('Price', referenceNumber('Price', number));
 }
 
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
 // a remembered term that is exactly that old default counts as unsaved. Anything else the collector saved still wins.
 const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
+// The same for the unquoted defaults of 0.31 and before, which 0.32's exact phrases replace: the bare ruler and number, "Price 23", "Crawford 44/5",
+// "SC 1266.2". An Other reference has searched as phrases since 0.19, so it has no old default to retire.
+function oldDefaultTerm(reference) {
+  const { catalogue, number, section, rulers } = reference;
+  if (catalogue === 'Bop') return oldBopTerm(reference);
+  if (catalogue === 'RIC') {
+    const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
+    return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
+  }
+  if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
+  if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
+  if (catalogue === 'Price') return squash(`Price ${referenceNumber('Price', number)}`);
+  return '';
+}
 export function chooseTerm(reference, saved) {
   const term = squash(saved);
   // A term saved before 0.22 for text now read as prose is that whole sentence: it would search acsearch for it again, so it goes with the default.
   const none = reference.catalogue === 'Other' && !defaultTerm(reference);
-  if (!term || none || (reference.catalogue === 'Bop' && term === oldBopTerm(reference))) return defaultTerm(reference);
+  if (!term || none || term === oldDefaultTerm(reference)) return defaultTerm(reference);
   return term;
 }
 
-// CoinArchives links and explicit public-price requests use plain words, so acsearch's quotes and either-or
-// brackets never carry over: RRC, SC and Price already search as plain words; RIC is its acsearch term with a number's bracket opened, keeping
-// the word OCRE tells types apart by ("266 (aureus)" as "266 aureus"); Bop is the king and series (the old v0.12 term); an Other reference is its
-// first searchable ";" part, cleaned as for acsearch, an SG part as "Sear N", the way most dealers cite it.
-export function coinArchivesTerm(reference) {
-  if (reference.catalogue === 'Bop') return oldBopTerm(reference);
-  if (reference.catalogue === 'RIC') return squash(defaultTerm(reference).replace(/[()[\]{}]/g, ' '));
-  if (reference.catalogue !== 'Other') return defaultTerm(reference);
-  const [first = ''] = otherParts(reference.number);
-  const km = kmPart(first);
-  if (km) return squash(`${km.country} ${km.key} ${km.number}`);
-  const sg = SG_PART.exec(first);
-  return sg ? `Sear ${sg[1]}` : first;
-}
+// CoinArchives honours a double-quoted phrase and echoes it back unchanged (checked live: '"Price 23"' matched 64 lots where the bare words matched
+// 4,856 through "Starting price", and 'Nero "RIC 306"' matched 4), but it has no either-or group. So its term is the acsearch term with every group
+// cut to its first member — the spelling dealers cite most, and the first searchable ";" part of an Other reference.
+export const coinArchivesTerm = (reference) =>
+  squash(defaultTerm(reference).replace(/\(([^()]*)\)/g, (whole, offered) => offered.match(/"[^"]*"|\S+/)?.[0] ?? ''));
 
 // CoinArchives keeps world and modern coins in its own section; ancients are /a/. The section follows the part coinArchivesTerm built the link from,
 // not acsearch's stricter all-Krause rule: a mixed reference opening on KM searches "KM 123", which /a/ can never hold.
