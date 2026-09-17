@@ -21,6 +21,7 @@ MANIFEST_ROOT = PROJECT_ROOT / "manifests"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "dist"
 
 BROWSERS = ("brave", "firefox")
+CHROME_TWIN = "brave"  # Chrome loads the Brave package unchanged, so its release asset is a byte-identical copy.
 ASSET_PATHS = (
     "background.js",
     "bid-tools.css",
@@ -130,13 +131,33 @@ def local_catalogue_assets() -> tuple[str, ...]:
             *(f"{base}/{shards[prefix]}" for prefix in sorted(shards)))
 
 
-def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
+def read_manifest(browser: str) -> tuple[bytes, dict]:
     manifest_path = MANIFEST_ROOT / f"{browser}.json"
     try:
         manifest_bytes = manifest_path.read_bytes()
-        manifest = json.loads(manifest_bytes)
+        return manifest_bytes, json.loads(manifest_bytes)
     except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"cannot read {manifest_path.relative_to(PROJECT_ROOT)}: {error}") from error
+        raise ValueError(f"cannot read manifests/{browser}.json: {error}") from error
+
+
+def manifest_version(manifest: dict, browser: str) -> str:
+    version = manifest.get("version")
+    if not isinstance(version, str) or not re.fullmatch(r"\d+(?:\.\d+){0,3}", version):
+        raise ValueError(f"manifests/{browser}.json has no valid version")
+    return version
+
+
+def agreed_version() -> str:
+    # One release carries one version: manifests that disagree would ship packages a collector cannot tell apart.
+    versions = {browser: manifest_version(read_manifest(browser)[1], browser) for browser in BROWSERS}
+    if len(set(versions.values())) > 1:
+        listed = ", ".join(f"{browser} {version}" for browser, version in sorted(versions.items()))
+        raise ValueError(f"manifest versions disagree: {listed}")
+    return versions[BROWSERS[0]]
+
+
+def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
+    manifest_bytes, manifest = read_manifest(browser)
 
     inputs = [("manifest.json", manifest_bytes)]
     for relative_path in (*ASSET_PATHS, *local_catalogue_assets()):
@@ -156,9 +177,7 @@ def write_deterministic_zip(destination: Path, inputs: list[tuple[str, bytes]]) 
 
 def stage_browser(stage_root: Path, browser: str) -> tuple[Path, Path, str]:
     manifest, inputs = load_inputs(browser)
-    version = manifest.get("version")
-    if not isinstance(version, str) or not re.fullmatch(r"\d+(?:\.\d+){0,3}", version):
-        raise ValueError(f"manifests/{browser}.json has no valid version")
+    version = manifest_version(manifest, browser)
 
     staged_directory = stage_root / browser
     for archive_path, data in inputs:
@@ -197,6 +216,7 @@ def replace_with_retry(source: Path, destination: Path, attempts: int = 5) -> No
 
 
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
+    agreed_version()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     staged: list[tuple[str, Path, Path, str]] = []
@@ -209,13 +229,18 @@ def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
         for browser, staged_directory, staged_zip, version in staged:
             destination_directory = output_root / browser
             destination_zip = output_root / f"giga-pinax-{browser}-{version}.zip"
-            stable_destination_zip = output_root / f"giga-pinax-{browser}.zip"
-            staged_stable_zip = stage_root / f"giga-pinax-{browser}-stable.zip"
-            shutil.copyfile(staged_zip, staged_stable_zip)
+            # Copies of the same bytes: the stable alias the update buttons resolve, and Chrome's own release asset.
+            copies = [(stage_root / f"giga-pinax-{browser}-stable.zip", output_root / f"giga-pinax-{browser}.zip")]
+            if browser == CHROME_TWIN:
+                chrome_zip = f"giga-pinax-chrome-{version}.zip"
+                copies.append((stage_root / chrome_zip, output_root / chrome_zip))
+            for staged_copy, _ in copies:
+                shutil.copyfile(staged_zip, staged_copy)
             replace_known_directory(staged_directory, destination_directory, output_root)
             replace_with_retry(staged_zip, destination_zip)
-            replace_with_retry(staged_stable_zip, stable_destination_zip)
-            results.extend((destination_directory, destination_zip, stable_destination_zip))
+            for staged_copy, destination_copy in copies:
+                replace_with_retry(staged_copy, destination_copy)
+            results.extend((destination_directory, destination_zip, *(destination for _, destination in copies)))
         return results
     finally:
         if stage_root.exists():
