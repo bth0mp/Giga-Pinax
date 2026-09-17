@@ -202,6 +202,34 @@ test('draft saver preserves request identity after an explicitly unknown storage
   assert.deepEqual(requestIds, ['request-unknown', 'request-unknown']);
 });
 
+test('a retained retry belongs to its own coin, and an answerless send is not read for an outcome', async () => {
+  const sent = [];
+  let replies;
+  const save = createDraftSaver({
+    newRequestId: () => `request-${sent.length + 1}`,
+    sendCommand: async (command) => { sent.push(command); return replies[sent.length - 1]; },
+    openDraft: async () => ({ ok: true }),
+  });
+  replies = [{ ok: false, code: 'storage', outcome: 'unknown' }, { ok: true, value: { id: 'draft-2' } }];
+  assert.equal((await save({ reference: 'RIC 306', pageUrl: 'https://auction.example/27' })).ok, false);
+  // Another lot, not a retry of the first: the second save must not quietly store the coin the first one held.
+  assert.equal((await save({ reference: 'RRC 234/1', pageUrl: 'https://auction.example/44' })).ok, true);
+  assert.deepEqual(sent.map(({ requestId, payload }) => [requestId, payload.reference]), [['request-1', 'RIC 306'], ['request-2', 'RRC 234/1']]);
+
+  replies = [undefined, { ok: true, value: { id: 'draft-3' } }];
+  sent.length = 0;
+  const silent = createDraftSaver({ newRequestId: () => 'request-silent', sendCommand: async () => { sent.push(1); return replies[sent.length - 1]; }, openDraft: async () => ({ ok: true }) });
+  assert.equal((await silent({ reference: 'RIC 306' })).ok, false);
+  assert.equal((await silent({ reference: 'RIC 306' })).ok, true);
+});
+
+test('a companion start-up that cannot reach storage still leaves a usable page', () => {
+  const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
+  // Blocked site data makes even reading localStorage throw, and a rejected or absent snapshot reply must not become an unhandled rejection.
+  assert.match(source, /void initCompanionPopup\(\)\.catch\(/);
+  assert.match(source, /storage-note'\)[\s\S]*hidden = false/);
+});
+
 test('both watchlist actions visibly share one synchronous pending guard', () => {
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
   assert.match(source, /if \(draftSavePending\) return;[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
