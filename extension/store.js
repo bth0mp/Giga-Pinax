@@ -700,7 +700,9 @@ function mutation(snapshot, command, context) {
       if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
       const preview = previewImport(snapshot, validated.value, command.mode);
       if (!preview.ok) return fail('validation', preview.error.message, preview.error.path);
-      if (!preview.value.snapshot || preview.value.conflicts.length) {
+      // A conflict the merge could not settle keeps the local row and is reported in the preview;
+      // it no longer holds back the records that did merge.
+      if (!preview.value.snapshot) {
         return fail('conflict', 'Import conflicts must be resolved before committing.', 'document');
       }
       const imported = clone(preview.value.snapshot);
@@ -709,8 +711,18 @@ function mutation(snapshot, command, context) {
       const rescued = new Map([...(snapshot.quarantine ?? []), ...(imported.quarantine ?? [])]
         .map((entry) => [JSON.stringify(entry), entry]));
       if (rescued.size) imported.quarantine = [...rescued.values()];
+      // Only the root keys the snapshot has are copied, one at a time: `Object.assign` would run a
+      // backup's own `"__proto__"` key through the setter and replace the live root's prototype,
+      // and any other key a hand-edited file carries would settle into storage unvalidated.
+      const rootKeys = [
+        'schemaVersion', 'revision', 'updatedAt', 'preferences', 'scheduler', 'quarantine',
+        'lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries',
+        'drafts', 'alerts', 'recentCommands',
+      ];
       for (const key of Object.keys(next)) delete next[key];
-      Object.assign(next, imported);
+      for (const key of rootKeys) {
+        if (Object.prototype.hasOwnProperty.call(imported, key)) next[key] = imported[key];
+      }
       value = { mode: command.mode, counts: preview.value.counts };
       break;
     }
