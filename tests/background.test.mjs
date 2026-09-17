@@ -50,6 +50,8 @@ globalThis.browser = {
     onAlarm: { addListener(listener) { listeners.alarms.push(listener); } },
   },
   action: {
+    // The browser keeps the badge across worker restarts, so the fake reports the last one set.
+    async getBadgeText() { return badges.at(-1) ?? ''; },
     async setBadgeText({ text }) { badges.push(text); },
     async setBadgeBackgroundColor() {},
     async setTitle({ title }) { titles.push(title); },
@@ -279,6 +281,23 @@ test('a capture that fails on a cold wake keeps its badge', async () => {
   storageSetFails = false;
   assert.equal(badges.at(-1), '!', 'the waking reconcile wiped the only sign of a lost capture');
   assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
+});
+
+// A worker idles out about thirty seconds after the click that woke it, while the browser keeps
+// the badge and the tooltip, so the flag has to be read back from the toolbar rather than assumed.
+test('a worker restarted after a failed capture leaves the warning standing', async () => {
+  badges.push('!');
+  titles.push(CAPTURE_FAILURE_TITLE);
+  await import(`../extension/background.js?restart=${Date.now()}`);
+  for (let index = 0; index < 40; index += 1) await flush();
+  assert.equal(badges.at(-1), '!', 'the restarted worker wiped a warning the browser still showed');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
+
+  const restarted = listeners.messages.at(-1);
+  await new Promise((resolve) => restarted({ type: 'snapshot.get', requestId: crypto.randomUUID() }, {}, resolve));
+  for (let index = 0; index < 12; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'the recovered warning must still be retired by a later capture');
+  assert.equal(titles.at(-1), '');
 });
 
 test.after(() => { delete globalThis.browser; });

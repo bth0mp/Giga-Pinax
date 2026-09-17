@@ -40,6 +40,19 @@ let menuQueue = Promise.resolve();
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 let captureFailed = false;
 
+// The browser keeps the badge and the toolbar title across worker restarts, but module memory
+// only lasts the ~30 s until the worker idles out, so the flag is read back from the badge the
+// browser still shows. Without it a restart's own reconcile wipes the `!` and then declines to
+// clear the title, stranding it for the rest of the session. A module cannot await at the top
+// level and still register its listeners synchronously, so the recovery is awaited where it is read.
+const captureFailureRecovered = (async () => {
+  try {
+    if (await invokeExtensionMethod(api.action.getBadgeText, api.action, {}) === '!') captureFailed = true;
+  } catch {
+    // A toolbar that will not report its badge leaves the warning to the next failure.
+  }
+})();
+
 function commit(command) {
   return writer.commitCommand(command);
 }
@@ -60,6 +73,7 @@ async function showBadge(text) {
 }
 
 async function showDueBadge(state) {
+  await captureFailureRecovered;
   if (captureFailed) return;
   const dueEvents = new Set(state.alerts
     .filter(({ status }) => ['due', 'claimed', 'delivered'].includes(status))
@@ -213,6 +227,7 @@ async function showCaptureFailure() {
 
 // The next capture that works, or the collector opening any extension page, retires the warning.
 async function clearCaptureFailure() {
+  await captureFailureRecovered;
   if (!captureFailed) return;
   captureFailed = false;
   try {
