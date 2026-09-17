@@ -318,7 +318,7 @@ test('a stored event whose start instant drifted from its local fields still loa
 
 test('migrates preferences once and bounds shared drafts by expiry and count', () => {
   let state = createEmptySnapshot(NOW);
-  const prefs = { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true };
+  const prefs = { currency: 'GBP' };
   const migrated = reduce(state, command('preferences.migrateIfAbsent', { preferences: prefs }));
   state = migrated.snapshot;
   const again = reduce(state, command('preferences.migrateIfAbsent', { preferences: { ...prefs, currency: 'EUR' } }));
@@ -338,7 +338,7 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
 
 test('saves bounded unique house premiums and preserves them for older callers', () => {
   const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
-    preferences: { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I', section: 'Nero', sampleMode: false },
+    preferences: { currency: 'GBP' },
   }));
   const saved = reduce(base.snapshot, command('preferences.save', {
     expectedRevision: 0,
@@ -451,6 +451,10 @@ test('preference migration ignores client-owned metadata', () => {
   assert.equal(prefs.value.revision, 0);
   assert.equal('id' in prefs.value, false);
   assert.equal(prefs.value.createdAt, NOW);
+  // The research form is the popup's own, not the durable root's: a caller still sending it is ignored.
+  for (const key of ['catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+    assert.equal(key in prefs.value, false, key);
+  }
 });
 
 test('rejects invalid commands without mutating the supplied snapshot', () => {
@@ -552,7 +556,7 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   const writer = createCommandWriter(storage, context());
   const reply = await writer.commitCommand(command('snapshot.get'));
   assert.equal(reply.ok, true);
-  assert.equal(reply.value.schemaVersion, 1);
+  assert.equal(reply.value.schemaVersion, SCHEMA_VERSION);
   assert.equal(storage.read().recentCommands.length, 0);
 });
 

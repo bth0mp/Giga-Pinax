@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createEmptySnapshot, validateSnapshot } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
@@ -49,7 +49,7 @@ test('exports a versioned UTF-8 JSON document without the request ledger', () =>
   assert.equal(result.ok, true);
   const document = JSON.parse(result.value);
   assert.equal(document.format, 'ancient-coin-auction-companion');
-  assert.equal(document.schemaVersion, 1);
+  assert.equal(document.schemaVersion, SCHEMA_VERSION);
   assert.equal(document.exportedAt, NOW);
   assert.deepEqual(document.data.recentCommands, []);
   assert.equal(result.value.includes('secret-retry-id'), false);
@@ -70,13 +70,12 @@ test('round-trips CHF money as its own exact minor-unit currency', () => {
   assert.deepEqual(restored.value.lots[0].activeBid.amount, { currency: 'CHF', minor: 10000 });
 });
 
-test('old schema-one backups load while optional presets and lot notes round-trip when present', () => {
+test('backups load while optional presets and lot notes round-trip when present', () => {
   const old = createEmptySnapshot(NOW);
   assert.equal(validateBackup(exportBackup(old, NOW).value).ok, true);
   const current = createEmptySnapshot(NOW);
   current.preferences = {
-    schemaVersion: 1, revision: 0, currency: 'GBP', catalogue: 'RIC', number: '306',
-    volume: 'I', section: 'Nero', sampleMode: false, desktopAlertsEnabled: false,
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'GBP', desktopAlertsEnabled: false,
     housePremiumPresets: [
       { name: 'CNG', buyerPremiumBps: 2250 },
       // A ladder is in the house's own currency, which is not the collector's default one here.
@@ -95,7 +94,7 @@ test('old schema-one backups load while optional presets and lot notes round-tri
   assert.equal(restored.value.lots[0].notes, current.lots[0].notes);
 });
 
-test('schema-one backups round-trip optional lot auction metadata', () => {
+test('backups round-trip optional lot auction metadata', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.lots.push({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector', title: 'Coin', sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
     auctionContext: { pageUrl: 'https://house.test/lot/1' },
@@ -110,10 +109,10 @@ test('schema-one backups round-trip optional lot auction metadata', () => {
 
 test('validates the whole backup and rejects malformed, future, oversized, or invalid data', () => {
   assert.equal(validateBackup('{').error.code, 'invalid-json');
-  assert.equal(validateBackup({ format: 'ancient-coin-auction-companion', schemaVersion: 2, exportedAt: NOW, data: {} }).error.code, 'unsupported-schema');
+  assert.equal(validateBackup({ format: 'ancient-coin-auction-companion', schemaVersion: SCHEMA_VERSION + 1, exportedAt: NOW, data: {} }).error.code, 'unsupported-schema');
   assert.equal(validateBackup('x'.repeat(MAX_BACKUP_BYTES + 1)).error.code, 'file-too-large');
   const invalid = {
-    format: 'ancient-coin-auction-companion', schemaVersion: 1, exportedAt: NOW,
+    format: 'ancient-coin-auction-companion', schemaVersion: SCHEMA_VERSION, exportedAt: NOW,
     data: { ...createEmptySnapshot(NOW), revision: -1 },
   };
   assert.equal(validateBackup(invalid).ok, false);
@@ -334,15 +333,34 @@ test('a five-thousand-lot store exports compact and its pretty-printed backup st
 
 test('a backup written by an older schema migrates instead of being refused', () => {
   const data = createEmptySnapshot(NOW);
-  const document = { format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW, data: { ...data, schemaVersion: 0 } };
+  const document = { format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW, data: { ...data, schemaVersion: 0 } };
   // No migration step exists from version 0, so it still fails - but on the migrated data, not on
   // the document header.
   assert.equal(validateBackup(document).error.path, 'data.schemaVersion');
 });
 
+test('a version one backup imports into this version', () => {
+  const data = createEmptySnapshot(NOW);
+  data.schemaVersion = 1;
+  data.preferences = {
+    schemaVersion: 1, revision: 2, currency: 'CHF', catalogue: 'RIC', number: '306',
+    volume: 'I (2nd edition)', section: 'Nero', sampleMode: true, desktopAlertsEnabled: true,
+    housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }],
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const restored = validateBackup({ format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW, data });
+  assert.equal(restored.ok, true, restored.error?.message);
+  assert.equal(restored.value.schemaVersion, SCHEMA_VERSION);
+  assert.deepEqual(restored.value.preferences, {
+    schemaVersion: SCHEMA_VERSION, revision: 2, currency: 'CHF', desktopAlertsEnabled: true,
+    housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }],
+    createdAt: NOW, updatedAt: NOW,
+  });
+});
+
 test('a newer backup says what to do, and a header version below one is refused outright', () => {
   const data = createEmptySnapshot(NOW);
-  const document = { format: BACKUP_FORMAT, schemaVersion: 2, exportedAt: NOW, data };
+  const document = { format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION + 1, exportedAt: NOW, data };
   assert.equal(
     validateBackup(document).error.message,
     'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',
@@ -359,8 +377,7 @@ test('a newer backup says what to do, and a header version below one is refused 
 
 test('merge keeps local preferences and alerts, whatever bookkeeping the backup carries', () => {
   const preferences = {
-    schemaVersion: 1, revision: 0, currency: 'GBP', catalogue: 'RIC', number: '306',
-    volume: 'I', section: 'Nero', sampleMode: false, desktopAlertsEnabled: false,
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'GBP', desktopAlertsEnabled: false,
     createdAt: NOW, updatedAt: NOW,
   };
   const current = createEmptySnapshot(NOW);
@@ -703,7 +720,7 @@ test('set-aside records are summarized, listed and downloadable on their own', (
 
 test('the raw export copies stored data verbatim, unsaved drafts and all', () => {
   const raw = {
-    schemaVersion: 1, revision: 4, lots: 'not a list',
+    schemaVersion: SCHEMA_VERSION, revision: 4, lots: 'not a list',
     drafts: [{ id: uuid(1), payload: { rawText: 'RIC 306' } }],
     recentCommands: [{ requestId: 'retry-id' }],
   };

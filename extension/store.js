@@ -1,6 +1,6 @@
 import {
-  LIMITS, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords, setOutcome, validateDraftPayload,
-  validateEventLocalTimes, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords, setOutcome,
+  validateDraftPayload, validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -73,7 +73,7 @@ function baseRecord(draft, context) {
 function preferenceFields(value, includeAlerts = false) {
   if (!value || typeof value !== 'object') return null;
   const result = {};
-  for (const key of ['currency', 'catalogue', 'number', 'volume', 'section', 'sampleMode', 'housePremiumPresets']) {
+  for (const key of ['currency', 'housePremiumPresets']) {
     if (own(value, key)) result[key] = value[key];
   }
   if (includeAlerts && own(value, 'desktopAlertsEnabled')) {
@@ -227,7 +227,7 @@ function mutation(snapshot, command, context) {
       const preferences = preferenceFields(command.preferences);
       if (!preferences) return fail('validation', 'Preferences are required.', 'preferences');
       next.preferences = {
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         revision: 0,
         ...clone(preferences),
         desktopAlertsEnabled: false,

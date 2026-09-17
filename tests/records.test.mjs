@@ -80,10 +80,10 @@ function snapshotWith(...lots) {
   return snapshot;
 }
 
-test('creates the complete version 1 durable root contract', () => {
-  assert.equal(SCHEMA_VERSION, 1);
+test('creates the complete version 2 durable root contract', () => {
+  assert.equal(SCHEMA_VERSION, 2);
   assert.deepEqual(createEmptySnapshot(NOW), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     revision: 0,
     updatedAt: NOW,
     preferences: null,
@@ -106,6 +106,74 @@ test('the migration hook passes a current-version root through untouched', () =>
   assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
   assert.deepEqual(migrateSnapshot({ schemaVersion: SCHEMA_VERSION + 1 }), { schemaVersion: SCHEMA_VERSION + 1 });
   assert.equal(migrateSnapshot(null), null);
+});
+
+// The version 1 preferences record, exactly as a profile written by the previous build holds it.
+const VERSION_ONE_PREFERENCES = Object.freeze({
+  schemaVersion: 1,
+  revision: 4,
+  currency: 'GBP',
+  catalogue: 'RIC',
+  number: '306',
+  volume: 'I (2nd edition)',
+  section: 'Nero',
+  sampleMode: true,
+  desktopAlertsEnabled: true,
+  housePremiumPresets: [
+    { name: 'CNG', buyerPremiumBps: 2000, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }] } },
+    { name: 'Roma', buyerPremiumBps: 2400 },
+  ],
+  createdAt: NOW,
+  updatedAt: NOW,
+});
+
+function versionOneSnapshot() {
+  const stored = createEmptySnapshot(NOW);
+  stored.schemaVersion = 1;
+  stored.preferences = structuredClone(VERSION_ONE_PREFERENCES);
+  return stored;
+}
+
+test('version two drops the research form from preferences and keeps everything else', () => {
+  const stored = versionOneSnapshot();
+  const migrated = migrateSnapshot(stored);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
+  assert.deepEqual(migrated.preferences, {
+    schemaVersion: SCHEMA_VERSION,
+    revision: 4,
+    currency: 'GBP',
+    desktopAlertsEnabled: true,
+    housePremiumPresets: [
+      { name: 'CNG', buyerPremiumBps: 2000, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }] } },
+      { name: 'Roma', buyerPremiumBps: 2400 },
+    ],
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  assert.equal(validateSnapshot(migrated).ok, true);
+  // Pure: the stored root the caller still holds is not the one that was rewritten.
+  assert.deepEqual(stored.preferences, VERSION_ONE_PREFERENCES);
+  assert.equal(stored.schemaVersion, 1);
+  // Idempotent: a root already at this version is returned as it stands.
+  assert.equal(migrateSnapshot(migrated), migrated);
+});
+
+test('version two migrates a root that never wrote preferences', () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.schemaVersion = 1;
+  const migrated = migrateSnapshot(stored);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
+  assert.equal(migrated.preferences, null);
+  assert.equal(validateSnapshot(migrated).ok, true);
+});
+
+test('preferences carrying the older keys are migrated rather than quarantined', () => {
+  const stored = versionOneSnapshot();
+  stored.lots.push(makeLot(IDS.lotUsdKnown));
+  const repaired = quarantineInvalidRecords(migrateSnapshot(stored), NOW);
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.value.quarantine, undefined);
+  assert.equal(repaired.value.preferences.currency, 'GBP');
 });
 
 test('quarantine sets aside only the records that stopped validating', () => {
@@ -457,14 +525,9 @@ test('requires lot and collection-entry links to name each other', () => {
 test('validates concrete preferences, scheduler, alert, draft, and request-ledger records', () => {
   const snapshot = snapshotWith(makeLot());
   snapshot.preferences = {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     revision: 0,
     currency: 'GBP',
-    catalogue: 'RIC',
-    number: '306',
-    volume: 'I (2nd edition)',
-    section: 'Nero',
-    sampleMode: false,
     desktopAlertsEnabled: false,
     housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2250 }],
     createdAt: NOW,
@@ -517,7 +580,7 @@ test('validates concrete preferences, scheduler, alert, draft, and request-ledge
 
 test('rejects duplicate or out-of-bounds house premium presets and oversized lot notes', () => {
   const snapshot = createEmptySnapshot(NOW);
-  snapshot.preferences = { schemaVersion: 1, revision: 0, currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false, desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: ' cng ', buyerPremiumBps: 2200 }], createdAt: NOW, updatedAt: NOW };
+  snapshot.preferences = { schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'USD', desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: ' cng ', buyerPremiumBps: 2200 }], createdAt: NOW, updatedAt: NOW };
   assert.equal(validateSnapshot(snapshot).error.code, 'duplicate-name');
   snapshot.preferences.housePremiumPresets = Array.from({ length: 51 }, (_, index) => ({ name: `House ${index}`, buyerPremiumBps: 0 }));
   assert.equal(validateSnapshot(snapshot).error.code, 'collection-limit');
@@ -528,7 +591,7 @@ test('rejects duplicate or out-of-bounds house premium presets and oversized lot
 
 test('a house preset may carry an optional increment ladder that older data simply lacks', () => {
   const snapshot = createEmptySnapshot(NOW);
-  const preferences = { schemaVersion: 1, revision: 0, currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false, desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }], createdAt: NOW, updatedAt: NOW };
+  const preferences = { schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'USD', desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }], createdAt: NOW, updatedAt: NOW };
   snapshot.preferences = preferences;
   // The field is optional, so a root written before this version needs no migration to validate.
   assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
