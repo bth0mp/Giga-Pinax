@@ -113,6 +113,15 @@ const own = (label, person) => {
   if (!PEOPLE_BY_NAME.get(label).includes(person)) PEOPLE_BY_NAME.get(label).push(person);
 };
 for (const person of RIC_PEOPLE) for (const label of new Set([person.name, ...person.aliases].map(rulerKey))) own(label, person);
+// A spelling that IS a person's own name — the English prefLabel Nomisma titles him with — is his and nobody else's, whoever else carries it as an
+// alias, and the widening below never touches it: a dealer who writes "Germanicus" means Germanicus, not Nero Claudius Drusus Germanicus, and
+// "Licinius" is Licinius, not Publius Licinius Egnatius Gallienus.
+const OWN_NAME = new Set();
+for (const person of RIC_PEOPLE) {
+  const label = rulerKey(person.name);
+  PEOPLE_BY_NAME.set(label, OWN_NAME.has(label) ? [...PEOPLE_BY_NAME.get(label), person] : [person]);
+  OWN_NAME.add(label);
+}
 
 // The people each spelling names outright, before any is widened below: a numeral is read against these, never against a widened one.
 const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label, [...people]]));
@@ -120,12 +129,12 @@ const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label
 const SECTION_NAMES = new Set(Object.values(RIC_SECTIONS).flat().flatMap((name) => [rulerKey(name), rulerKey(name.split(' (')[0])]));
 const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelsOf = (person) => [person.name, ...person.aliases].map(rulerKey);
-// A bare one-word name is a nomen or a cognomen at least as often as it is one man: "Severus" stands in Septimius Severus, Severus Alexander,
-// Severus II and Libius Severus alike, and "Licinius" in Gallienus's own Latin name. Such a name means every person carrying it as a whole word in
-// an English or Latin label, or in a RIC section, so it is offered and never resolved to one of them. A one-word name RIC heads a section with
-// ("Nero", "Titus", "Valerian") is settled by RIC's own usage and keeps the person it names.
+// A bare one-word name NOBODY is called is a nomen or a cognomen rather than one man: "Sextus" is a praenomen two emperors carry, "Valerianus" the
+// Latin name of both Valerians. Such a spelling means every person carrying it as a whole word in an English or Latin label, or in a RIC section, so
+// it is offered and never resolved to one of them. A one-word name that is somebody's own name, or one RIC heads a section with ("Nero", "Salonina"),
+// is settled by that and keeps the person it names.
 for (const [label, people] of [...PEOPLE_BY_NAME]) {
-  if (label.includes(' ') || SECTION_NAMES.has(label)) continue;
+  if (label.includes(' ') || OWN_NAME.has(label) || SECTION_NAMES.has(label)) continue;
   const word = new RegExp(String.raw`(?<![\p{L}\d])${escaped(label)}(?![\p{L}\d])`, 'u');
   const sharing = RIC_PEOPLE.filter((person) => !people.includes(person) && labelsOf(person).some((text) => word.test(text)));
   const sections = [...SECTION_NAMES].filter((name) => word.test(name)).flatMap((name) => PEOPLE_BY_NAME.get(name) ?? []);
