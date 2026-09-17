@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citesReference, extractLots, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
+import { buildSearchUrl, citesReference, extractLots, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -706,9 +706,11 @@ test('citesReference asks for the catalogue key next to the number, as a whole t
   assert.equal(citesReference('Starting price 23 EUR. No reference given.', price23), false);
   assert.equal(citesReference('PRICE 23, this coin.', price23), true);
   const ric306 = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
-  for (const cited of ['Nero. As. RIC 306.', 'RIC I 306; BMC 227.', 'Cited as RIC I, 306.', 'RIC I² 306, rare.', 'RIC II.1 306.', 'RIC 306 var.']) {
+  // "RIC II.1 306" was read as this type until the review: the card is volume I, and volume II's 306 is another coin. Only the card's own numeral counts.
+  for (const cited of ['Nero. As. RIC 306.', 'RIC I 306; BMC 227.', 'Cited as RIC I, 306.', 'RIC I² 306, rare.', 'RIC I.1 306.', 'RIC 306 var.']) {
     assert.equal(citesReference(cited, ric306), true, cited);
   }
+  assert.equal(citesReference('RIC II.1 306.', ric306), false);
   for (const other of ['Nero. Dupondius (4.23 g). RIC 3061.', 'RIC 306a, a different obverse.', 'RIC 30.', 'Sold with 306 other lots.']) {
     assert.equal(citesReference(other, ric306), false, other);
   }
@@ -721,6 +723,80 @@ test('citesReference asks for the catalogue key next to the number, as a whole t
   assert.equal(citesReference('Anything at all.', { catalogue: 'Other', number: 'HGC 4, 1218' }), true);
   assert.equal(citesReference('', price23), true);
   assert.equal(citesReference(undefined, price23), true);
+});
+
+// 0.32 review: the filter was probed with the text dealers actually write and misjudged rows both ways. A row wrongly in or wrongly out of the
+// statistics moves the median a collector bids on, so every spelling below is asserted.
+test('citesReference reads a suffix letter in either case, as the catalogues themselves do', () => {
+  assert.equal(citesReference('Euthydemus I. Tetradrachm. Bopearachchi 24a.', { catalogue: 'Bop', number: 'Bop 24A' }), true);
+  assert.equal(citesReference('Nero. As. RIC 22a.', { catalogue: 'RIC', number: '22A' }), true);
+  assert.equal(citesReference('Nero. As. RIC 22A.', { catalogue: 'RIC', number: '22a' }), true);
+  assert.equal(citesReference('Seleucid Coins 1266.2A, this coin.', { catalogue: 'SC', number: '1266.2a' }), true);
+  // A dealer writes a decimal point as a comma as readily as a full stop.
+  assert.equal(citesReference('Antiochos III. Drachm. SC 1266,2.', { catalogue: 'SC', number: '1266.2' }), true);
+  // A lettered number is its own type: it is cited on its own and never stands for the plain one, as "RIC 306a" never did.
+  assert.equal(citesReference('Macedon. Tetradrachm. Price 23a.', { catalogue: 'Price', number: '23' }), false);
+  assert.equal(citesReference('Seleucid Coins 1266.2a.', { catalogue: 'SC', number: '1266.2' }), false);
+});
+
+test('citesReference knows every key and volume spelling dealers write', () => {
+  const rrc = { catalogue: 'RRC', number: '44/5' };
+  for (const key of ['Cr 44/5', 'Cr. 44/5', 'Craw. 44/5', 'Crawf. 44/5', 'Crawford 44/5', 'RRC 44/5']) {
+    assert.equal(citesReference(`Roman Republic. Denarius. ${key}. Very Fine.`, rrc), true, key);
+  }
+  const ric306 = { catalogue: 'RIC', number: '306' };
+  for (const cited of ['RIC² 306', 'RIC2 306', 'RIC I(2) 306', 'RIC I² 306', 'R.I.C. 306', 'RIC (306)',
+    'RIC I (second edition) Nero 306', 'RIC I Nero 306', 'RIC I, Nero 306', 'RIC 305-306', 'RIC 306-307']) {
+    assert.equal(citesReference(`Nero. As, Rome. ${cited}. Very Fine.`, ric306), true, cited);
+  }
+  // A ruler or a spelled-out edition may stand between the volume and the number, but nothing holding a digit, a dash, a semicolon or a full stop:
+  // those belong to another citation on the same line.
+  for (const other of ['RIC -; C. 306', 'RIC 12; Cohen 306']) assert.equal(citesReference(`Nero. As. ${other}.`, ric306), false, other);
+  // With no volume on the card any numeral counts; with one, only that volume's, whatever edition mark it carries.
+  assert.equal(citesReference('Nero. As. RIC II 306.', ric306), true);
+  const volumeOne = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  assert.equal(citesReference('Nero. As. RIC II 306.', volumeOne), false);
+  assert.equal(citesReference('Nero. As. RIC I² 306.', volumeOne), true);
+});
+
+test('citesReference never reads a price line as a citation', () => {
+  const price23 = { catalogue: 'Price', number: '23' };
+  const price100 = { catalogue: 'Price', number: '100' };
+  assert.equal(citesReference('Macedon. Tetradrachm. Price 23. Very Fine.', price23), true);
+  for (const [line, reference] of [['Starting Price: 100 EUR', price100], ['Price: 100 USD', price100], ['STARTING PRICE 23 EUR', price23],
+    ['Price 23 EUR', price23], ['Hammer Price 100', price100], ['Price realized 100', price100]]) {
+    assert.equal(citesReference(line, reference), false, line);
+  }
+  // A letter in front of the number is part of another catalogue's number unless the card's own number carries it.
+  assert.equal(citesReference('Macedon. Tetradrachm. Price L23.', price23), false);
+  assert.equal(citesReference('Macedon. Tetradrachm. Price L23.', { catalogue: 'Price', number: 'L23' }), true);
+});
+
+// The filter judges the reference the card is about, so it may only judge a search that still looks for it: a collector who typed something else
+// is looking for something else.
+test('searchesReference asks whether the term still searches the card’s own citation', () => {
+  const price23 = { catalogue: 'Price', number: '23' };
+  assert.equal(searchesReference('"Price 23"', price23), true);
+  assert.equal(searchesReference('Price 23 tetradrachm', price23), true);
+  assert.equal(searchesReference('Müller 5', price23), false);
+  assert.equal(referenceName(price23), 'Price 23');
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
+  assert.equal(searchesReference(defaultTerm(nero), nero), true);
+  assert.equal(searchesReference('Nero sestertius', nero), false);
+  assert.equal(referenceName(nero), 'RIC 306');
+  assert.equal(referenceName({ catalogue: 'RRC', number: '44/5' }), 'Crawford 44/5');
+  // A reference with no phrase to search (an Other reference that is prose) is never filtered out of its own results.
+  assert.equal(searchesReference('anything', { catalogue: 'Other', number: 'Rare', section: '' }), true);
+});
+
+// 75,000 characters of repeated lowercase marks took the reviewer's machine 948 ms, because every match sliced the description again.
+test('a long description is read once and quickly', () => {
+  const long = `Fine. ${'ss ss ss '.repeat(8000)}`;
+  const started = Date.now();
+  assert.equal(gradeOf(long), 'Fine and below');
+  assert.ok(Date.now() - started < 250, `gradeOf took ${Date.now() - started} ms`);
+  // Only the opening of a description is read: a dealer's grade is never 3,000 characters in.
+  assert.equal(gradeOf(`${'x'.repeat(4000)}. EF`), null);
 });
 
 test('namesDenomination matches the card word as a whole word, plural tolerated', () => {

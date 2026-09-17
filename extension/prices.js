@@ -173,6 +173,17 @@ export function defaultTerm(reference) {
   return phrase('Price', referenceNumber('Price', number));
 }
 
+// The exact phrases the default term looks for, bare, and the first of them as the panel names the reference ("Price 23", "RIC 306"). The citation
+// filter judges the reference the card is about, so it may only judge a search that still looks for it: a collector who typed something else
+// ("Müller 5") is looking for something else, and every row he found is counted.
+export const citationPhrases = (reference) => (defaultTerm(reference).match(/"[^"]*"/g) ?? []).map((quoted) => quoted.slice(1, -1));
+export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
+export function searchesReference(term, reference) {
+  const phrases = citationPhrases(reference).map((phrase) => phrase.toLowerCase());
+  const text = squash(term).toLowerCase();
+  return phrases.length === 0 || phrases.some((phrase) => text.includes(phrase));
+}
+
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
 // a remembered term that is exactly that old default counts as unsaved. Anything else the collector saved still wins.
 const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
@@ -250,28 +261,63 @@ export function summarise(lots, currency) {
 
 const escaped = (value) => String(value).replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&');
 
-// The spellings each catalogue's own term offers, which are the ones dealers write. An Other reference is already searched as the exact citation, so
-// every row it finds cites it; a Krause or Sear part comes back through that path too.
-const CITATION_KEYS = { Price: ['Price'], RIC: ['RIC'], RRC: ['Crawford', 'Cr.', 'RRC'], SC: ['SC', 'Seleucid Coins'], Bop: ['Bopearachchi'] };
+// A word (or a number's letter suffix) read whatever its capitals: dealers cite RIC 22A as "RIC 22a" and Bop 24A as "Bopearachchi 24a". A full stop
+// inside a number reads as the comma they write just as often ("SC 1266,2" is SC 1266.2).
+const eitherCase = (text) => [...String(text)].map((char) => {
+  if (char === '.') return '[.,]';
+  const [lower, upper] = [char.toLowerCase(), char.toUpperCase()];
+  return lower === upper ? escaped(char) : `[${lower}${upper}]`;
+}).join('');
+
+// The spellings dealers write each key in. A key ending in a full stop needs no entry of its own — the separator below already eats the stop, so
+// "Cr" covers "Cr." and "Craw" covers "Craw." — and an Other reference is already searched as the exact citation, so every row it finds cites it.
+const CITATION_KEYS = {
+  Price: ['Price'], RIC: ['RIC', 'R.I.C'], RRC: ['Crawford', 'Crawf', 'Craw', 'Cr', 'RRC'], SC: ['SC', 'Seleucid Coins'], Bop: ['Bopearachchi'],
+};
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
   return referenceNumber(catalogue, number);
 };
-// A volume between the key and the number, as dealers write it ("RIC I 306", "RIC I², 306", "RIC II.1 306"), and the punctuation around it.
-const BETWEEN = String.raw`[\s.,:;-]*(?:[IVXLC][IVXLC.\d²³]*[\s.,:;-]*)?`;
+// Between the key and the number: the punctuation and the bracket dealers put there ("Cited as RIC I, 306", "RIC (306)"). No colon, no dash and no
+// semicolon — those start the next citation on the line.
+const SEP = String.raw`[\s.,(]*`;
+// An edition or part mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC II.1 306".
+const EDITION = String.raw`(?:[²³]|\(\d\)|\.\d|\d)?`;
+// A ruler or an edition spelled out, between the volume and the number: plain words, or a bracketed phrase of them, each with an optional comma.
+// A word holding a digit or ending in a full stop is another citation's, so "RIC -; C. 306" and "RIC 12; Cohen 306" stop here. A bare Roman numeral
+// is never a word: it is a volume, and which volumes count is decided above.
+const NUMERAL = String.raw`[IVXLC]+`;
+const WORD = String.raw`(?:\([\p{L} ]+\)|(?!${NUMERAL}(?![\p{L}\d]))\p{L}+)`;
+const RULERS = String.raw`(?:${WORD},?\s+){0,4}`;
+// A full-number range that ends at the number ("RIC 305-306"); one that starts at it ("RIC 306-307") already ends at a character no number may hold.
+const RANGE = String.raw`(?:\d+\s*[-–]\s*)?`;
+// A line about money, not about a type: the key carries one of these words in front of it, or the number is an amount in a currency.
+const PRICE_WORDS = ['starting', 'hammer', 'estimate', 'realized', 'realised'];
+const CURRENCY = String.raw`(?!\s?(?:(?:USD|EUR|GBP|CHF)(?![\p{L}\d])|[$€£]))`;
 
-// Whether a lot's description cites the searched reference: the catalogue key, at most a volume between, then the number as a whole token — not inside
-// a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" no longer count as sales of Price 23 or RIC 306. A key is read as
-// written or in full capitals, never in lower case, so a "Starting price 23" line is no citation. A row with no description at all is never dropped:
-// the page simply says nothing to judge it by.
+// Only RIC carries a volume, and only its own: a card on volume I is not cited by "RIC II 306", while a card without a volume takes any numeral.
+function between({ catalogue, volume }) {
+  if (catalogue !== 'RIC') return SEP;
+  const numeral = /^[IVXLC]+/.exec(squash(volume))?.[0] ?? '';
+  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${SEP})?${RULERS}${SEP}`;
+}
+
+// Whether a lot's description cites the searched reference: the catalogue key in any spelling, at most a volume and a ruler between, then the number
+// as a whole token — not inside a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" are not sales of Price 23 or RIC 306,
+// nor is a line about the money ("Starting Price: 100 EUR", "Hammer Price 100", "Price 23 EUR"), nor another catalogue's prefixed number ("Price L23").
+// A key is read as written or in full capitals, never in lower case. A lettered number is its own type, so "Price 23a" does not cite Price 23 and
+// "Seleucid Coins 1266.2a" does not cite SC 1266.2, exactly as "RIC 306a" never cited RIC 306. A row with no description at all is never dropped: the
+// page simply says nothing to judge it by. Every part is bounded, so the pattern reads a description once however long it is.
 export function citesReference(description, reference) {
   const text = squash(description);
   const keys = Object.hasOwn(CITATION_KEYS, reference?.catalogue) ? CITATION_KEYS[reference.catalogue] : null;
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
-  const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].map(escaped);
-  return new RegExp(`(?<![\\p{L}\\d])(?:${spellings.join('|')})${BETWEEN}${escaped(number)}(?![\\p{L}\\d])`, 'u').test(text);
+  const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
+  const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
+    + `${between(reference)}${RANGE}(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${CURRENCY}`;
+  return new RegExp(pattern, 'u').test(text);
 }
 
 // The card's own denomination word in a description, whole and whatever its capitals; a plural is tolerated by the two endings that cover the Latin
