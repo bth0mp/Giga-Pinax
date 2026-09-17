@@ -552,6 +552,24 @@ test('RIC local miss offers an explicit online permission button', async () => {
   assert.equal(requested, 1);
 });
 
+// Bundled corpora no longer prompt at Look up, so Check online is now the usual place a Firefox prompt closes the popup.
+// A prompt that closes it takes the typed reference with it unless this request remembers it, as Look up's own does.
+test('Check online keeps the typed reference, because its prompt is what closes the popup', async () => {
+  const session = new Map();
+  const popup = await loadPopup({
+    session, permissionContains: async () => false, permissionRequest: () => new Promise(() => {}),
+    priceFetch: async () => ({ status: 'empty', term: 'Nero 99999' }),
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
+  });
+  popup.element('quick-reference').value = 'RIC Nero 99999';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.get('giga-pinax-pending-reference-v1'), undefined, 'a bundled lookup asks for nothing, so there is nothing to keep');
+  void popup.element('online-fallback').onclick();
+  await settle();
+  assert.equal(session.get('giga-pinax-pending-reference-v1'), 'RIC Nero 99999');
+});
+
 // The corpora bundled beside OCRE, through the popup rather than through the catalogue: every gate here reads the
 // corpus the reference names, so a provider that serves only OCRE would never exercise one of them.
 const PRICE_CARD = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', authority: 'Alexander III of Macedon',
@@ -856,6 +874,80 @@ test('the denomination toggle is offered by the verified card and filters on its
   await popup.element('denomination-filter').emit('change');
   assert.match(popup.element('median-amount').textContent, /200/);
   assert.equal(popup.element('cited-count').hidden, true);
+});
+
+// Nomisma gives a RIC mint both its English names, and the lookup opens the card under either; the card that came back
+// was then compared to the typed reference letter by letter, so "RIC VII Trier 12" opened RIC VII Treveri 12 and then
+// counted it as somebody else's coin: no denomination toggle, no type URL in Copy summary, and the term not remembered.
+test('a card found under a mint’s other English name is still this reference’s card', async () => {
+  const card = { id: 'ric.7.tri.12', corpus: 'ocre', label: 'RIC VII Treveri 12', denomination: 'Solidus', obverse: {}, reverse: {} };
+  const lots = [citingSale('s1', '100', 'Constantine I. Solidus. RIC VII Trier 12. VF'), citingSale('s2', '300', 'Constantine I. Follis. RIC VII Trier 12. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'RIC VII Trier 12';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, false);
+  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “solidus”');
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /numismatics\.org\/ocre\/id\/ric\.7\.tri\.12/);
+});
+
+// A dealer cites the range OCRE titles the record over, and the guided fields below hold one number: dropping the range
+// looked up the first number of it instead, which is a different record wherever OCRE files the range itself.
+test('a cited range reaches the lookup, and a refined search of the fields does not', async () => {
+  const asked = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { asked.push(reference); return { status: 'none' }; } });
+  popup.element('quick-reference').value = 'Hadrian 100-102';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(asked.at(-1).number, '100');
+  assert.equal(asked.at(-1).range, '100-102');
+  // The refined search is the fields themselves, and no field holds a range.
+  await popup.element('reference-form').emit('submit', { submitter: { id: 'refine-lookup-button' } });
+  await settle();
+  assert.equal(asked.at(-1).range, undefined);
+});
+
+// The card decides what the price panel may offer: its denomination, and the type URL Copy summary ends with. When the
+// prices came back first the panel was drawn without one and never drawn again, so the toggle was simply not there.
+test('prices that arrive before the card are drawn again once it does', async () => {
+  const looked = deferred();
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Drachm. Price 23. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: () => looked.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  const submission = popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, true, 'no card yet, so nothing to filter by');
+  looked.resolve({ status: 'ok', card });
+  await submission;
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, false);
+  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /numismatics\.org\/pella\/id\/price\.23/);
+});
+
+// The denomination toggle is a decision about one coin, exactly as the citation toggle is, so another coin starts without it.
+test('the denomination toggle resets on a new lookup', async () => {
+  const card = (id, denomination) => ({ id, corpus: 'pella', label: id.replace('price.', 'Price '), denomination, obverse: {}, reverse: {} });
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Drachm. Price 23. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: async (reference) => ({ status: 'ok', card: card(`price.${reference.number}`, 'Tetradrachm') }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('denomination-filter').checked = true;
+  await popup.element('denomination-filter').emit('change');
+  assert.match(popup.element('median-amount').textContent, /100/);
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-filter').checked, false);
+  assert.match(popup.element('median-amount').textContent, /200/);
 });
 
 test('a median per grade appears once a bucket rests on three sales', async () => {
