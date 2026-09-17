@@ -115,8 +115,8 @@ function saleKey(row) {
 
 // Two installs number the members of an alternative group from one independently, so a merged group
 // can hold two lots at the same priority. Ordering is presentation rather than collector data: the
-// local lots keep theirs and the merged-in lots follow, and only a group validation would reject is
-// touched at all.
+// local lots keep theirs and the merged-in lots follow, and only a group that validation would
+// reject is renumbered at all.
 function compactPriorities(snapshot, localLotIds) {
   const members = new Map();
   for (const lot of snapshot.lots) {
@@ -181,15 +181,11 @@ export function previewImport(current, incoming, mode) {
       if (at !== undefined) {
         const local = rows[at];
         if (equal(local, record)) { tally.keptLocal += 1; continue; }
-        // An entry that names another lot would leave both pairs half-linked, so it stays where it
-        // is; everything else is settled by revision, then date, then in the local row's favour.
-        if ((key === 'collectionEntries' && record.lotId !== local.lotId) || !incomingWins(local, record)) {
-          if (key === 'collectionEntries' && record.lotId !== local.lotId) {
-            conflicts.push({ collection: key, id: record.id, reason: 'lot-not-merged' });
-          }
-          tally.keptLocal += 1;
-          continue;
-        }
+        // An entry that names another lot would leave both pairs half-linked, so it stays put.
+        const moved = key === 'collectionEntries' && record.lotId !== local.lotId;
+        if (moved) conflicts.push({ collection: key, id: record.id, reason: 'lot-not-merged' });
+        // Everything else is settled by revision, then date, then in the local row's favour.
+        if (moved || !incomingWins(local, record)) { tally.keptLocal += 1; continue; }
         const merged = clone(record);
         // Which collection entry a lot is paired with is local bookkeeping the other install cannot
         // know about, so an incoming lot that wins still inherits the local pairing.
