@@ -6,9 +6,11 @@ Giga Pinax is a browser extension for ancient-coin research and local auction an
 
 ## Information handled
 
-Giga Pinax handles references and search terms that you enter. After you explicitly choose a context-menu or current-page command, it can also handle selected page text and the current page address to prepare editable research or an auction draft. It does not monitor browsing in the background.
+Giga Pinax handles references and search terms that you enter. After you explicitly choose a context-menu or current-page command, it can also handle selected page text and the current page address to prepare editable research or an auction draft. A current-page capture reads that page's own structured data (`application/ld+json`) and its `og:` page metadata as well as its visible text, all from the page you are looking at, and it refuses a page it is not permitted to read, such as a browser settings page, an extension page or a local file. It does not monitor browsing in the background.
 
-The extension stores information you choose to save in browser extension storage. This can include watchlist and collection records, auction identity and page links, notes, bid plans and outcomes, reminders, provenance, measurements, condition, fee estimates, collector-entered comparable sales and up to two external photo URL links per coin. Giga Pinax stores the photo URLs, not copies of the photo files.
+The extension stores information you choose to save in browser extension storage. This can include watchlist and collection records, auction identity and page links, notes, bid plans and outcomes, reminders, provenance, measurements, condition, fee estimates, saved house premiums and their bid increment ladders, collector-entered comparable sales and up to two external photo URL links per coin. Giga Pinax stores the photo URLs, not copies of the photo files.
+
+Unsaved capture drafts, which hold the captured page text, and a short ledger of recent write requests are also kept in that storage so a save is not repeated or lost. A reference you have typed is held in the browser's extension session storage while a permission prompt closes the popup, and is discarded when the browser session ends.
 
 ## Network requests
 
@@ -31,7 +33,9 @@ When you open saved-coin comparison, Giga Pinax may load the external photo URL 
 
 Saved records and preferences remain in the browser's extension storage on your device. They are not uploaded or synced to the developer. Fetched acsearch and CoinArchives rows, and acsearch inclusion choices, remain in the current research session and are not automatically added to durable collection evidence or backups. Optional CoinArchives host access can be revoked through the browser's extension permissions controls.
 
-You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
+A record that cannot be read is set aside in the same local storage rather than discarded, and can be downloaded on its own from Settings.
+
+You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. **Export raw data** writes a rescue file that is a verbatim copy of that storage, including unsaved drafts, their captured page text and recent request ids; treat it as you would the records themselves. Replacing your records with an import, or merging one that would overwrite a record, first downloads a safety copy of your current records to your own device. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
 
 Optional desktop notifications contain auction and reminder information you supplied and are created through the browser after you enable notifications.
 
