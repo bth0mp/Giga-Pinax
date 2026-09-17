@@ -470,11 +470,11 @@ async function initWorkspace() {
   document.querySelector('.workspace-nav').addEventListener('click', (event) => { routeChangeFromNav = Boolean(event.target.closest('[data-route]')); });
   addEventListener('hashchange', () => { const fromNav = routeChangeFromNav; routeChangeFromNav = false; setRoute(fromNav); });
 
-  const updateConflictNote = () => {
-    const message = conflictNoteMessage(editorsWithChangedBasis(snapshot, dirtyEditors, editorBases));
+  const showConflictNote = (message) => {
     $('conflict-editors').textContent = message;
     $('conflict-note').hidden = !message;
   };
+  const updateConflictNote = () => showConflictNote(conflictNoteMessage(editorsWithChangedBasis(snapshot, dirtyEditors, editorBases)));
   const clearSelectedEditors = () => {
     for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); }
   };
@@ -484,6 +484,7 @@ async function initWorkspace() {
     snapshot = incoming;
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
     const selected = selectionAfterSnapshot(selection, snapshot);
+    const clearedInput = selected !== selection && ['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor));
     if (selected !== selection) {
       selection = selected;
       lotInteractionGeneration += 1;
@@ -492,6 +493,7 @@ async function initWorkspace() {
       $('coin-workspace').dataset.mobileView = 'list';
     }
     updateConflictNote();
+    if (clearedInput) showConflictNote('The coin you were editing is no longer in your records, so its unsaved input was cleared.');
     renderAll();
     return true;
   };
@@ -1061,7 +1063,15 @@ async function initWorkspace() {
       announce('Captured research text loaded. Edit it before opening a source or saving evidence.');
     }
   }
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); }
+  // An auction or group form left open follows committed data until the collector edits it.
+  function renderOpenRecordForms() {
+    for (const editor of ['event', 'group']) {
+      const basis = editorBases.get(editor);
+      if ($(`${editor}-form`).hidden || dirtyEditors.has(editor) || !basis?.id) continue;
+      applyCommittedEditor(editor, basis);
+    }
+  }
+  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); }
   setRoute();
   if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {
