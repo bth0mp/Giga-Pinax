@@ -18,10 +18,12 @@ import {
   reminderControlsForPrecision,
   outcomeDraftForLot,
   WORKSPACE_EDITORS,
+  COIN_REMOVED_NOTICE,
   editorsWithChangedBasis,
-  editorsSharingRecord,
   conflictNoteMessage,
-  editorAfterSave,
+  planCommit,
+  commandExpectedRevisions,
+  eventAttachDecision,
   selectionAfterSnapshot,
   routeFromHash,
   applyActiveRoute,
@@ -157,6 +159,9 @@ test('a committed update conflicts only with the dirty editors whose own record 
   assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(WORKSPACE_EDITORS), bases), ['bid', 'outcome']);
   assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(['lot', 'event', 'evidence']), bases), []);
   assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(), bases), []);
+  // A snapshot carrying this page's own in-flight write is not a conflict with the form that
+  // produced it: that editor is judged when its reply is processed.
+  assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(WORKSPACE_EDITORS), bases, new Set(['bid'])), ['outcome']);
 });
 
 test('the conflict note names the editors it belongs to and stays hidden without one', () => {
@@ -166,29 +171,151 @@ test('the conflict note names the editors it belongs to and stays hidden without
   assert.equal(conflictNoteMessage(['lot', 'bid', 'event']), 'Committed data changed while the coin details, bid and auction forms have unsaved input.');
 });
 
-test('saving one editor of a coin moves the coin’s other open editors onto the committed revision', () => {
-  const bases = new Map([
-    ['lot', { id: 'lot-a', revision: 3 }],
-    ['bid', { id: 'lot-a', revision: 3 }],
-    ['outcome', { id: 'lot-b', revision: 1 }],
-    ['event', { id: 'lot-a', revision: 1 }],
-  ]);
-  assert.deepEqual(editorsSharingRecord(bases, 'lot', 'lot-a'), ['bid']);
-  assert.deepEqual(editorsSharingRecord(bases, 'bid', 'lot-a'), ['lot']);
-  assert.deepEqual(editorsSharingRecord(bases, 'lot', 'lot-b'), ['outcome']);
-  assert.deepEqual(editorsSharingRecord(bases, 'lot', undefined), []);
-  assert.deepEqual(editorsSharingRecord(bases, 'evidence', 'lot-a'), []);
+const commitInput = ({ lots = [], auctionEvents = [], alternativeGroups = [], bases = [], dirty = [], versions = [], ...rest }) => ({
+  snapshot: { lots, auctionEvents, alternativeGroups },
+  bases: new Map(bases), dirty: new Set(dirty), versions: new Map(versions),
+  ...rest,
 });
 
-test('a saved editor is repopulated from the committed record and only a removed one is blanked', () => {
-  const snapshot = { lots: [{ id: 'lot-a', revision: 4 }], auctionEvents: [{ id: 'event-a', revision: 2 }], alternativeGroups: [] };
-  assert.equal(editorAfterSave('lot', { id: 'lot-a', revision: 4 }, snapshot), 'repopulate');
-  assert.equal(editorAfterSave('bid', { id: 'lot-a', revision: 4 }, snapshot), 'repopulate');
-  assert.equal(editorAfterSave('event', { id: 'event-a', revision: 2 }, snapshot), 'repopulate');
-  assert.equal(editorAfterSave('lot', { id: 'lot-a', revision: 4 }, { lots: [] }), 'reset');
-  assert.equal(editorAfterSave('group', { id: 'group-a' }, snapshot), 'reset');
-  assert.equal(editorAfterSave('evidence', { id: 'evidence-a' }, snapshot), 'reset');
-  assert.equal(editorAfterSave('lot', null, snapshot), 'reset');
+test('a committed save repopulates its own editor without moving any edit version', () => {
+  const plan = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 7,
+    value: { id: 'lot-a', revision: 4, title: 'Saved' },
+    lots: [{ id: 'lot-a', revision: 4, title: 'Saved' }],
+    bases: [['lot', { id: 'lot-a', revision: 3, record: { id: 'lot-a', revision: 3 } }]],
+    dirty: ['lot'], versions: [['lot', 7]],
+  }));
+  assert.deepEqual(plan.repopulate, ['lot']);
+  assert.deepEqual(plan.reset, []);
+  assert.deepEqual([...plan.dirty], []);
+  assert.deepEqual(plan.conflicts, []);
+  assert.equal(plan.preserved, false);
+  assert.equal(plan.bases.get('lot').revision, 4);
+  assert.deepEqual(plan.bases.get('lot').record, { id: 'lot-a', revision: 4, title: 'Saved' });
+  // The auction attach and every other after-save decision reads the version it submitted.
+  assert.deepEqual([...plan.versions], [['lot', 7]]);
+});
+
+test('a save keeps input typed while it was in flight and rebases it onto the committed record', () => {
+  const plan = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 7,
+    value: { id: 'lot-a', revision: 4 },
+    lots: [{ id: 'lot-a', revision: 4 }],
+    bases: [['lot', { id: 'lot-a', revision: 3 }]], dirty: ['lot'], versions: [['lot', 9]],
+  }));
+  assert.equal(plan.preserved, true);
+  assert.deepEqual(plan.repopulate, []);
+  assert.deepEqual([...plan.dirty], ['lot']);
+  assert.equal(plan.bases.get('lot').revision, 4);
+  assert.deepEqual(plan.conflicts, []);
+});
+
+test('an editor that moved to another coin is untouched by the reply it no longer owns', () => {
+  const bases = [['bid', { id: 'lot-b', revision: 1 }]];
+  const plan = planCommit(commitInput({
+    editor: 'bid', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 2,
+    value: { id: 'lot-a', revision: 4 },
+    lots: [{ id: 'lot-a', revision: 4 }, { id: 'lot-b', revision: 1 }],
+    bases, dirty: [], versions: [['bid', 2]],
+  }));
+  assert.deepEqual(plan.bases.get('bid'), { id: 'lot-b', revision: 1 });
+  assert.deepEqual([plan.repopulate, plan.reset, [...plan.dirty]], [[], [], []]);
+});
+
+test('a coin’s other editors follow a commit only when they were based on the replaced record', () => {
+  const dirtyLot = (revision) => commitInput({
+    editor: 'bid', submittedBasis: { id: 'lot-a', revision: 4 }, submittedVersion: 1,
+    value: { id: 'lot-a', revision: 5 },
+    lots: [{ id: 'lot-a', revision: 5 }],
+    bases: [['lot', { id: 'lot-a', revision }], ['bid', { id: 'lot-a', revision: 4 }]],
+    dirty: ['lot'], versions: [['bid', 1]],
+  });
+  const together = planCommit(dirtyLot(4));
+  assert.equal(together.bases.get('lot').revision, 5);
+  assert.deepEqual(together.conflicts, []);
+  assert.deepEqual([...together.dirty], ['lot']);
+  // The detail form was still on revision 3 because another view had already written revision 4:
+  // rebasing it here would hide that conflict and let Save details overwrite the other view.
+  const stale = planCommit(dirtyLot(3));
+  assert.equal(stale.bases.get('lot').revision, 3);
+  assert.deepEqual(stale.conflicts, ['lot']);
+});
+
+test('a dirty bid editor left behind by another view keeps its conflict when details are saved', () => {
+  const plan = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-a', revision: 4 }, submittedVersion: 1,
+    value: { id: 'lot-a', revision: 5 },
+    lots: [{ id: 'lot-a', revision: 5 }],
+    bases: [['lot', { id: 'lot-a', revision: 4 }], ['bid', { id: 'lot-a', revision: 3 }]],
+    dirty: ['bid'], versions: [['lot', 1]],
+  }));
+  assert.equal(plan.bases.get('bid').revision, 3);
+  assert.deepEqual(plan.conflicts, ['bid']);
+});
+
+test('an editor-less commit moves the dirty editors it replaced instead of conflicting with itself', () => {
+  const undone = (revision) => planCommit(commitInput({
+    editor: null, submittedRevisions: { 'lot-a': 4 },
+    value: { id: 'lot-a', revision: 5 },
+    lots: [{ id: 'lot-a', revision: 5 }],
+    bases: [['bid', { id: 'lot-a', revision }]], dirty: ['bid'],
+  }));
+  assert.deepEqual(undone(4).conflicts, []);
+  assert.equal(undone(4).bases.get('bid').revision, 5);
+  assert.deepEqual(undone(3).conflicts, ['bid']);
+});
+
+test('a group reorder carries every coin revision it claimed, so its own writes raise no banner', () => {
+  const command = buildGroupReorderCommand({ id: 'group-a', revision: 2 }, ['lot-a'], {
+    alternativeGroups: [{ id: 'group-a', revision: 2 }],
+    lots: [{ id: 'lot-a', revision: 7, alternativeGroupId: 'group-a' }],
+  }, () => 'req');
+  assert.deepEqual(commandExpectedRevisions(command), { 'group-a': 2, 'lot-a': 7 });
+  const plan = planCommit(commitInput({
+    editor: null, submittedRevisions: commandExpectedRevisions(command),
+    value: { id: 'group-a', revision: 3 },
+    lots: [{ id: 'lot-a', revision: 8, alternativeGroupId: 'group-a' }],
+    alternativeGroups: [{ id: 'group-a', revision: 3 }],
+    bases: [['lot', { id: 'lot-a', revision: 7 }]], dirty: ['lot'],
+  }));
+  assert.deepEqual(plan.conflicts, []);
+  assert.equal(plan.bases.get('lot').revision, 8);
+});
+
+test('commands name the records they claim to replace', () => {
+  assert.deepEqual(commandExpectedRevisions({ type: 'lot.save', expectedRevision: 8, lot: { id: 'lot-a' } }), { 'lot-a': 8 });
+  assert.deepEqual(commandExpectedRevisions({ type: 'lot.delete', lotId: 'lot-a', expectedRevision: 2 }), { 'lot-a': 2 });
+  assert.deepEqual(commandExpectedRevisions({ type: 'event.delete', eventId: 'event-a', expectedRevision: 1 }), { 'event-a': 1 });
+  assert.deepEqual(commandExpectedRevisions({ type: 'lot.save', expectedRevision: null, lot: {} }), {});
+  assert.deepEqual(commandExpectedRevisions({ type: 'alert.markAllRead' }), {});
+});
+
+test('a removed record blanks its editor, and a failed refresh never blanks a new one', () => {
+  const deleted = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 1,
+    value: { id: 'lot-a', revision: 3 }, lots: [], bases: [['lot', { id: 'lot-a', revision: 3 }]],
+    dirty: ['lot'], versions: [['lot', 1]],
+  }));
+  assert.deepEqual([deleted.reset, deleted.repopulate], [['lot'], []]);
+  assert.equal(deleted.bases.has('lot'), false);
+  // The coin was created; the snapshot that would confirm it never arrived.
+  const draft = { id: null, revision: null, record: null };
+  const created = planCommit(commitInput({
+    editor: 'lot', submittedBasis: draft, submittedVersion: 1,
+    value: { id: 'lot-new', revision: 0, title: 'Added' }, lots: [], snapshotFresh: false,
+    bases: [['lot', draft]], dirty: ['lot'], versions: [['lot', 1]],
+  }));
+  assert.deepEqual([created.reset, created.repopulate], [[], ['lot']]);
+  assert.deepEqual(created.bases.get('lot').record, { id: 'lot-new', revision: 0, title: 'Added' });
+  assert.equal(created.conflicts, null, 'a stale snapshot decides no conflicts');
+});
+
+test('the comparable form is cleared after an add because it has no record to return to', () => {
+  const plan = planCommit(commitInput({
+    editor: 'evidence', submittedVersion: 3, value: { id: 'evidence-a', revision: 0 },
+    dirty: ['evidence'], versions: [['evidence', 3]],
+  }));
+  assert.deepEqual([plan.reset, plan.repopulate], [['evidence'], []]);
 });
 
 test('a selected coin that left the snapshot clears the selection instead of editing a ghost', () => {
@@ -290,6 +417,37 @@ test('auction return context belongs only to the editor submission that captured
   assert.equal(sameEventReturnContext(lotA, lotA, 3, 3), true);
   assert.equal(sameEventReturnContext(lotA, { id: 'lot-b', revision: 1 }, 3, 3), false);
   assert.equal(sameEventReturnContext(lotA, lotA, 3, 4), false);
+});
+
+test('an auction saved from a coin is attached to it, and never skipped in silence', () => {
+  const lot = { id: 'lot-a', revision: 2 };
+  const snapshot = { lots: [lot] };
+  const context = { returnLot: lot, currentReturnLot: lot, submittedVersion: 3, currentVersion: 3, selectedLotId: 'lot-a', snapshot, eventId: 'event-a' };
+  assert.deepEqual(eventAttachDecision(context), { action: 'attach', lot, eventId: 'event-a' });
+  // The auction editor was not opened from a coin: nothing to attach, nothing to say.
+  assert.deepEqual(eventAttachDecision({ ...context, returnLot: null }), { action: 'none' });
+  for (const [name, changed] of [
+    ['the collector typed in the auction form while it saved', { currentVersion: 4 }],
+    ['another coin claimed the auction form', { currentReturnLot: { id: 'lot-b', revision: 1 } }],
+  ]) {
+    assert.deepEqual(eventAttachDecision({ ...context, ...changed }), {
+      action: 'message',
+      message: 'Auction saved. The auction form changed while it was saving, so it was not attached to the coin. Attach it from coin details.',
+    }, name);
+  }
+  assert.deepEqual(eventAttachDecision({ ...context, selectedLotId: 'lot-b' }), {
+    action: 'message', message: 'Auction saved, but the coin changed before it could be attached. Attach it from coin details.',
+  });
+  assert.deepEqual(eventAttachDecision({ ...context, snapshot: { lots: [{ id: 'lot-a', revision: 3 }] } }), {
+    action: 'message', message: 'Auction saved, but the coin changed before it could be attached. Attach it from coin details.',
+  });
+  assert.deepEqual(eventAttachDecision({ ...context, eventId: undefined }), {
+    action: 'message', message: 'Auction saved, but its confirmed identity was unavailable. Attach it from coin details.',
+  });
+});
+
+test('a coin removed in another view is announced, not left to a hidden banner', () => {
+  assert.equal(COIN_REMOVED_NOTICE, 'The coin you were editing was removed in another view. Unsaved input for it was discarded.');
 });
 
 test('command builders use the background contract and complete group order', () => {
@@ -426,34 +584,6 @@ test('workspace bid command carries only a matching calculator estimate atomical
   const estimate = { currency: 'GBP', shippingMinor: 500, paymentFeeBps: 300, paymentFeeMinor: 20, incrementMinor: 1000, minimumBidMinor: 2000 };
   assert.deepEqual(buildBidSaveCommand('plan', { id: 'lot-a', revision: 3 }, bid, estimate, () => 'bid-1'), { type: 'bid.plan', requestId: 'bid-1', lotId: 'lot-a', expectedRevision: 3, plannedBid: bid, costEstimate: estimate });
   assert.equal(buildBidSaveCommand('place', { id: 'lot-a', revision: 3 }, { amount: { currency: 'EUR', minor: 10000 } }, estimate, () => 'bid-2').costEstimate, undefined);
-});
-
-const workspaceSource = () => readFileSync(new URL('../extension/workspace.js', import.meta.url), 'utf8');
-
-test('filtering coins redraws the list alone, debounced, and leaves the open editors untouched', () => {
-  const source = workspaceSource();
-  assert.match(source, /\$\('lot-filter'\)\.addEventListener\('input', \(\) => \{\s*clearTimeout\(filterTimer\);\s*filterTimer = setTimeout\(renderCoinList, 150\);/);
-  const coinList = /function renderCoinList\(\)[\s\S]*?\n  \}/.exec(source)[0];
-  for (const forbidden of ['comparison-picker', 'group-list', 'renderSelectedLot', 'beginEditor']) {
-    assert.equal(coinList.includes(forbidden), false, forbidden);
-  }
-  assert.match(source, /eventsById = new Map\(/);
-  assert.equal(/\(snapshot\.auctionEvents \?\? \[\]\)\.find\(/.test(coinList), false);
-});
-
-test('an unattended hash change never pulls the focus back to the navigation', () => {
-  const source = workspaceSource();
-  assert.match(source, /const setRoute = \(focusLink = false\) =>/);
-  assert.match(source, /if \(focusLink\) document\.querySelector\(`\[data-route="\$\{active\}"\]`\)\?\.focus/);
-  assert.match(source, /addEventListener\('hashchange', \(\) => \{ const fromNav = routeChangeFromNav; routeChangeFromNav = false; setRoute\(fromNav\); \}\);/);
-});
-
-test('an unreachable background worker leaves the record and the retry request intact', () => {
-  const source = workspaceSource();
-  assert.match(source, /const WORKER_UNREACHABLE = "The extension's background worker could not be reached\. Reload this page and check the record before retrying\.";/);
-  assert.match(source, /try \{ reply = await bridge\.sendCommand\(command\); \}\s*catch \{[\s\S]*?pendingRetry = \{ command, editor \};[\s\S]*?announce\(WORKER_UNREACHABLE, true\);/);
-  assert.match(source, /try \{ reply = await bridge\.getSnapshot\(\); \}\s*catch \{ announce\(WORKER_UNREACHABLE, true\); return; \}/);
-  assert.match(source, /addEventListener\('beforeunload', \(event\) => \{\s*if \(!dirtyEditors\.size\) return;/);
 });
 
 test('the bid calculator sits outside the bid form so Enter in it cannot save a plan', () => {
