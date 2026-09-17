@@ -59,6 +59,14 @@ test('extractLots reads the embedded results array from a whole page', () => {
   assert.match(lots[1].description, /\[RIC I, 306\];/);
 });
 
+// What the panel would make of the whole page: the rows a search for Nero "RIC 306" brings back, read by the two filters a median rests on.
+test('the fixture page reads as two citations of another type, and the grades the dealers wrote', () => {
+  const lots = extractLots(fixture('acsearch-search-nero-306.html'));
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
+  assert.deepEqual(lots.map((entry) => citesReference(entry.description, nero)), [true, true, false, false, true]);
+  assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'FDC/Mint State']);
+});
+
 test('extractLots survives "];" inside descriptions and rejects pages without the array', () => {
   const page = '<script>acsearch.initSearchResults = [{"id":1,"title":"A","description":"see [RIC 306]; nice","date":"01.02.2023","price":"1,200","last":false}]; acsearch.x=1;</script>';
   assert.deepEqual(extractLots(page), [{ id: '1', title: 'A', date: '01.02.2023', price: '1,200', description: 'see [RIC 306]; nice' }]);

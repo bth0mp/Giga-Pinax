@@ -303,6 +303,11 @@ function between({ catalogue, volume }) {
   return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${SEP})?${RULERS}${SEP}`;
 }
 
+// Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
+// has no citation to look for, so their rows all count and the panel offers no filter to switch off.
+export const filtersCitations = (reference) =>
+  Object.hasOwn(CITATION_KEYS, reference?.catalogue ?? '') && Boolean(citationNumber(reference));
+
 // Whether a lot's description cites the searched reference: the catalogue key in any spelling, at most a volume and a ruler between, then the number
 // as a whole token — not inside a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" are not sales of Price 23 or RIC 306,
 // nor is a line about the money ("Starting Price: 100 EUR", "Hammer Price 100", "Price 23 EUR"), nor another catalogue's prefixed number ("Price L23").
@@ -439,6 +444,8 @@ export function createPriceCuration() {
       return { included: lots.length - excluded, excluded };
     },
     changed() { return byHand.size > 0; },
+    // What Reset would leave counted: the panel only offers it as the way back when it would bring a sale back.
+    defaultIncluded(lots) { return lots.filter((lot) => (byDefault(lot) ?? null) === null); },
     reset() { byHand.clear(); },
   };
 }
