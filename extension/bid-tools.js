@@ -1,6 +1,6 @@
 import {
-  MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney, nextBidOnLadder,
-  parseMoney, parsePremiumPercent, validateIncrementLadder,
+  CURRENCIES, MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney,
+  nextBidOnLadder, parseMoney, parsePremiumPercent, validateIncrementLadder,
 } from './core/money.js';
 import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './browser-api.js';
 
@@ -15,14 +15,17 @@ export function formatMinorInput(minor, locale = 'en-US') {
   return `${Math.floor(minor / 100)}${decimal}${String(minor % 100).padStart(2, '0')}`;
 }
 
-const LADDER_FORMAT = 'write each tier as “from: step”, for example 0: 5.';
+const LADDER_FORMAT = 'write each tier as the amount it starts at, a colon, and the step from there.';
 
 // One tier per line, `from: step`, in the auction house's own currency. A colon is the separator
 // because every other candidate — comma, point, space, apostrophe — is already a digit separator
 // somewhere the money parser has to accept.
-export function parseIncrementLadder(text, currency = 'USD', locale = 'en-US') {
+export function parseIncrementLadder(text, currency) {
   const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter((line) => line !== '');
   if (lines.length === 0) return { ok: true, value: null };
+  if (!CURRENCIES.includes(currency)) {
+    return { ok: false, error: { code: 'unsupported-currency', message: 'Choose the currency this house’s increments are written in.', field: 'ladderCurrency' } };
+  }
   if (lines.length > MAX_INCREMENT_TIERS) {
     return { ok: false, error: { code: 'invalid-ladder', message: `An increment ladder holds at most ${MAX_INCREMENT_TIERS} tiers.` } };
   }
@@ -31,37 +34,52 @@ export function parseIncrementLadder(text, currency = 'USD', locale = 'en-US') {
     const fail = (message) => ({ ok: false, error: { code: 'invalid-ladder', message: `Line ${index + 1}: ${message}` } });
     const parts = line.split(':');
     if (parts.length !== 2) return fail(LADDER_FORMAT);
-    const from = parseMoney(parts[0], currency, locale);
-    const step = parseMoney(parts[1], currency, locale);
+    const from = parseMoney(parts[0], currency);
+    const step = parseMoney(parts[1], currency);
     if (!from.ok) return fail(from.error.message);
     if (!step.ok) return fail(step.error.message);
     tiers.push({ from: from.value.minor, step: step.value.minor });
   }
-  const valid = validateIncrementLadder(tiers);
-  if (valid.ok) return { ok: true, value: tiers };
-  const tier = Number(/\[(\d+)\]/.exec(valid.error.path ?? '')?.[1] ?? 0);
-  return { ok: false, error: { code: valid.error.code, message: `Line ${tier + 1}: ${valid.error.message}` } };
+  const ladder = { currency, tiers };
+  const valid = validateIncrementLadder(ladder);
+  if (valid.ok) return { ok: true, value: ladder };
+  return { ok: false, error: { code: valid.error.code, message: `Line ${(valid.error.tier ?? 0) + 1}: ${valid.error.message}` } };
 }
 
-export function formatIncrementLadder(tiers, locale = 'en-US') {
+// Tiers are written with a point and no grouping whatever the collector's locale is: the money
+// parser accepts that everywhere, while a locale's own decimal mark it may refuse outright — ar-EG
+// writes ٫ — so a localized ladder could not be read back at all.
+export function formatIncrementLadder(tiers) {
   if (!Array.isArray(tiers)) return '';
-  return tiers
-    .map((tier) => `${formatMinorInput(tier.from, locale)}: ${formatMinorInput(tier.step, locale)}`)
-    .join('\n');
+  const plain = (minor) => (Number.isSafeInteger(minor) && minor >= 0
+    ? `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`
+    : '');
+  return tiers.map((tier) => `${plain(tier.from)}: ${plain(tier.step)}`).join('\n');
 }
 
 // The house preset behind one row of the presets editor. It names the field its error belongs to so
 // the page can show the message beside that field rather than in a page-wide status line.
-export function presetFromFields({ name, premiumText, ladderText } = {}, { currency = 'USD', locale = 'en-US' } = {}) {
+export function presetFromFields({ name, premiumText, ladderText, ladderCurrency } = {}, { locale = 'en-US' } = {}) {
   const trimmed = String(name ?? '').trim().replace(/\s+/g, ' ');
   if (!trimmed) return { ok: false, error: { code: 'missing-name', message: 'Enter an auction house name.', field: 'name' } };
   const premium = parsePremiumPercent(premiumText, locale);
   if (!premium.ok) return { ok: false, error: { ...premium.error, field: 'premium' } };
-  const ladder = parseIncrementLadder(ladderText, currency, locale);
-  if (!ladder.ok) return { ok: false, error: { ...ladder.error, field: 'ladder' } };
+  const ladder = parseIncrementLadder(ladderText, ladderCurrency);
+  if (!ladder.ok) return { ok: false, error: { field: 'ladder', ...ladder.error } };
   const preset = { name: trimmed, buyerPremiumBps: premium.value };
   if (ladder.value) preset.incrementLadder = ladder.value;
   return { ok: true, value: preset };
+}
+
+// A house's schedule is written in that house's own money. Applied under another currency the tiers
+// would be a schedule no house published, so the fixed increment stands in and the page says why.
+export function ladderForCurrency(ladder, currency) {
+  if (!Array.isArray(ladder?.tiers) || ladder.tiers.length === 0) return { tiers: null, notice: '' };
+  if (ladder.currency === currency) return { tiers: ladder.tiers, notice: '' };
+  return {
+    tiers: null,
+    notice: `This house’s increments are in ${ladder.currency}; the calculator is set to ${currency}, so the fixed increment is used.`,
+  };
 }
 
 // The calculator's own preset editor knows about the premium and nothing else, so it replaces that
@@ -98,20 +116,22 @@ export function buildBidCalculation(input) {
   delete options.currency;
   // A house ladder belongs to the house, not to this lot, so it drives the calculation without
   // joining the cost estimate the lot is saved with.
-  const ladder = Array.isArray(input.ladder) && input.ladder.length > 0 ? input.ladder : null;
-  if (ladder) options.ladder = ladder;
+  const ladder = ladderForCurrency(input.ladder, input.currency);
+  if (ladder.tiers) options.ladder = ladder.tiers;
   const calculated = input.mode === 'budget'
     ? calculateAffordableBid(amount.value, premium.value, options)
     : calculateBidCost(amount.value, premium.value, options);
   if (!calculated.ok) return calculated;
   // The grid the collector is bidding on: the house ladder, or the fixed increment anchored at the
-  // minimum bid. A hammer that is off it is answered with the next bid the house would take.
-  const grid = ladder ?? [{ from: minimum.value.minor, step: increment.value.minor }];
-  const next = nextBidOnLadder(grid, calculated.value.hammer.minor);
+  // minimum bid. A hammer that is off it — or below where bidding starts — is answered with the
+  // next bid the auctioneer would take.
+  const grid = ladder.tiers ?? [{ from: minimum.value.minor, step: increment.value.minor }];
+  const next = nextBidOnLadder(grid, Math.max(calculated.value.hammer.minor, minimum.value.minor));
   return {
     ...calculated,
     costEstimate,
     buyerPremiumBps: premium.value,
+    ladderNotice: ladder.notice,
     nextValidBid: next.ok ? { currency: input.currency, minor: next.value } : calculated.value.hammer,
   };
 }
@@ -157,6 +177,11 @@ export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total
     paymentFixed: formatMinorInput(estimate.paymentFeeMinor, locale),
     increment: formatMinorInput(estimate.incrementMinor, locale),
     minimum: formatMinorInput(estimate.minimumBidMinor, locale),
+    // A house's tiers belong to that house, not to whichever lot is on screen: leaving them
+    // selected would compute this lot's premium and minimum on the last house's schedule. The lot's
+    // own saved increment applies until the collector picks a house again.
+    preset: '',
+    ladder: null,
   };
   // A saved hammer is not a budget: writing it into the budget field would answer a question the
   // collector did not ask.
@@ -251,7 +276,8 @@ export function mountBidCalculator(
     const selected = preset.value;
     preset.replaceChildren(el('option', { value: '', textContent: 'Choose house premium' }));
     (preferences?.housePremiumPresets ?? []).forEach((item) => {
-      const tiers = item.incrementLadder?.length ? ` · ${item.incrementLadder.length}-tier ladder` : '';
+      const count = item.incrementLadder?.tiers?.length ?? 0;
+      const tiers = count ? ` · ${count}-tier ${item.incrementLadder.currency} ladder` : '';
       preset.append(el('option', {
         value: presetKey(item.name),
         textContent: `${item.name} — ${(item.buyerPremiumBps / 100).toFixed(2)}%${tiers}`,
@@ -264,18 +290,21 @@ export function mountBidCalculator(
   const renderLadder = () => {
     ladderNote.hidden = !ladder;
     if (!ladder) return;
-    const tiers = `${ladder.tiers.length} increment ${ladder.tiers.length === 1 ? 'tier' : 'tiers'}`;
-    ladderNote.textContent = `${ladder.name}: ${tiers} you entered in Settings. Bids follow those tiers, not the fixed increment.`;
+    const applied = ladderForCurrency(ladder.record, currencyControl.value);
+    const count = ladder.record.tiers.length;
+    ladderNote.textContent = applied.notice
+      || `${ladder.name}: ${count} increment ${count === 1 ? 'tier' : 'tiers'} you entered in Settings. Bids follow those tiers, not the fixed increment.`;
   };
   const selectedPreset = () => (preset.value === ''
     ? null
     : preferences?.housePremiumPresets?.find((entry) => presetKey(entry.name) === preset.value) ?? null);
+  const ladderText = (record) => `${record?.currency ?? ''}\n${formatIncrementLadder(record?.tiers ?? null)}`;
   // Tiers edited in Settings reach an open calculator through the same snapshot the premiums do.
   const selectLadder = () => {
     const item = selectedPreset();
-    const tiers = item?.incrementLadder?.length ? item.incrementLadder : null;
-    const changed = formatIncrementLadder(tiers) !== formatIncrementLadder(ladder?.tiers ?? null);
-    ladder = tiers ? { name: item.name, tiers } : null;
+    const record = item?.incrementLadder?.tiers?.length ? item.incrementLadder : null;
+    const changed = ladderText(record) !== ladderText(ladder?.record);
+    ladder = record ? { name: item.name, record } : null;
     renderLadder();
     return changed;
   };
@@ -289,10 +318,12 @@ export function mountBidCalculator(
     status.dataset.error = 'false';
     result = null;
     use.disabled = true;
+    // The currency control decides whether the house's tiers apply at all, so the note follows it.
+    renderLadder();
     const untouched = amount.value.trim() === '' && premium.value.trim() === '';
     const calculated = buildBidCalculation({ mode: mode.value, amountText: amount.value, premiumText: premium.value,
       shippingText: shipping.value, paymentPercentText: paymentPercent.value, paymentFixedText: paymentFixed.value,
-      incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.tiers ?? null,
+      incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.record ?? null,
       currency: currencyControl.value, locale: language() });
     if (!calculated.ok) {
       output.textContent = 'Enter an amount and buyer premium.';
@@ -381,6 +412,8 @@ export function mountBidCalculator(
       if (!inputs) return;
       loadedLotId = values.lotId;
       if (inputs.currency) currencyControl.value = inputs.currency;
+      preset.value = inputs.preset;
+      ladder = inputs.ladder;
       if (Object.hasOwn(inputs, 'amount')) amount.value = inputs.amount;
       for (const [control, key] of [[premium, 'premium'], [shipping, 'shipping'], [paymentPercent, 'paymentPercent'],
         [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum']]) {
