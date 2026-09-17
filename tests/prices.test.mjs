@@ -812,6 +812,13 @@ test('a long description is read once and quickly', () => {
   assert.ok(Date.now() - started < 250, `gradeOf took ${Date.now() - started} ms`);
   // Only the opening of a description is read: a dealer's grade is never 3,000 characters in.
   assert.equal(gradeOf(`${'x'.repeat(4000)}. EF`), null);
+  // The citation pattern is bounded in the same way: a group lot's page of literature costs no more per character than a one-line description.
+  const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  for (const text of [`RIC ${'a '.repeat(30000)}306`, 'RIC I Nero '.repeat(7000), `RIC ${'3'.repeat(60000)}`, 'RIC ('.repeat(15000)]) {
+    const began = Date.now();
+    assert.equal(citesReference(text, ric), false);
+    assert.ok(Date.now() - began < 250, `citesReference took ${Date.now() - began} ms`);
+  }
 });
 
 test('namesDenomination matches the card word as a whole word, plural tolerated', () => {
