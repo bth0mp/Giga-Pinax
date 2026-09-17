@@ -237,7 +237,11 @@ function legendAt(text) {
   const tokens = [...text.matchAll(/\S+/g)];
   let run = [];
   for (const token of [...tokens, null]) {
-    if (token && /^\p{Lu}+$/u.test(token[0])) { run.push(token); continue; }
+    // The mark a dealer ends a legend with is no part of it ("Rev: C L CAESARES, Gaius and Lucius Caesars standing"), so a punctuated capital
+    // closes the run it belongs to instead of breaking it. One capital word with a comma after it is still nobody's legend ("TITUS, AD 69-79").
+    const capitals = token && /^\p{Lu}+([.,;:]?)$/u.exec(token[0]);
+    if (capitals && !capitals[1]) { run.push(token); continue; }
+    if (capitals) run.push(token);
     for (let start = 0; start + 3 <= run.length; start += 1) {
       const named = [4, 3, 2, 1].find((words) => start + words <= run.length
         && LABELS.has(run.slice(start, start + words).map((word) => word[0]).join(' ').toLowerCase()));
@@ -248,8 +252,14 @@ function legendAt(text) {
   }
   return -1;
 }
+// A legend is quoted from the coin, and no dealer quotes one before naming the lot: the headline sentence is the house's own and is routinely set
+// in capitals ("ROMAN IMPERIAL COINAGE Trajan AR Denarius", "ROMAN EMPIRE AR DENARIUS NERO"), so a legend is only looked for after it.
+const SENTENCE = /[.!?](?=\s)|\n/;
 const heading = (text) => {
-  const cuts = [text.search(DESCRIBES), legendAt(text)].filter((at) => at >= 0);
+  const sentence = text.search(SENTENCE);
+  const after = sentence < 0 ? text.length : sentence + 1;
+  const legend = legendAt(text.slice(after));
+  const cuts = [text.search(DESCRIBES), legend >= 0 ? after + legend : -1].filter((at) => at >= 0);
   return cuts.length > 0 ? text.slice(0, Math.min(...cuts)) : text;
 };
 

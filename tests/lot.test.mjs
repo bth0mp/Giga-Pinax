@@ -870,6 +870,15 @@ test('rulers are read from the heading alone: not from a legend, not from what t
   assert.deepEqual(rulers('Denarius. Wolf suckling Romulus and Remus. RIC 1.'), []);
   assert.deepEqual(rulers('Hadrian. Sestertius. Victory standing left, Aurelian behind. RIC 1.'), ['Hadrian']);
   assert.deepEqual(rulers('Hadrian seated. Aurelian. RIC 1.'), ['Hadrian']);
+  // A lot's own first sentence is the dealer's headline, and houses set it in capitals: no legend is ever quoted before the coin has been named.
+  assert.deepEqual(rulers('ROMAN IMPERIAL COINAGE Trajan AR Denarius. RIC 1'), ['Trajan']);
+  assert.deepEqual(rulers('ROMAN EMPIRE AR DENARIUS NERO. RIC 1'), ['Nero']);
+  // A legend after that sentence is still a legend, and the mark a dealer ends it with is no part of it.
+  assert.deepEqual(rulers('Augustus. Denarius. Rev: C L CAESARES, Gaius and Lucius Caesars standing. RIC 1'), ['Augustus']);
+  // The joint and regency headings a dealer really writes keep every ruler in them.
+  assert.deepEqual(rulers('Marcus Aurelius and Lucius Verus. RIC 1'), ['Marcus Aurelius', 'Lucius Verus']);
+  assert.deepEqual(rulers('Titus, as Caesar, under Vespasian. RIC 1'), ['Titus', 'Vespasian']);
+  assert.deepEqual(rulers('Divus Augustus under Tiberius. RIC 1'), ['Augustus', 'Tiberius']);
 });
 
 test('a regnal numeral after a name is read in capitals only, so a lower-case letter never hides the ruler', () => {
