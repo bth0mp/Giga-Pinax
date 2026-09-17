@@ -182,6 +182,29 @@ test('schema.org types are read in every spelling, and the lot this page shows w
   assert.equal(first.candidates.reference.value, 'RIC 1');
 });
 
+// Google's canonical Product markup puts the lot's address on the offer and none on the product. An offer describes a sale, not a coin, so it names the
+// page on its product's behalf instead of standing in for it - taking it for the lot on show left the product's own name and description unread.
+test('an offer names the page for its product without standing in for the lot', () => {
+  const product = { '@context': 'https://schema.org', '@type': 'Product', name: 'Reference: RIC 306', description: 'Emperor: Nero',
+    offers: { '@type': 'Offer', url: 'https://auction.test/lot/27' } };
+  const result = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify(product)] }), { href: 'https://auction.test/lot/27' });
+  assert.equal(result.candidates.reference.value, 'RIC 306');
+  assert.equal(result.candidates.reference.provenance, 'structured-data');
+  assert.equal(result.candidates.ruler.value, 'Nero');
+  assert.equal(result.canonicalUrl, 'https://auction.test/lot/27');
+
+  // Two lots on one page: the one being shown is named by its offer, at an address the page wrote with a fragment and a trailing slash.
+  const similar = { '@type': 'Product', name: 'Reference: RIC 1', offers: { '@type': 'Offer', url: 'https://auction.test/lot/1' } };
+  const shown = { '@type': 'Product', name: 'Reference: RIC 306', offers: [{ '@type': 'Offer', url: 'https://auction.test/lot/27/#bidding' }] };
+  const pair = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([similar, shown])] }), { href: 'https://auction.test/lot/27' });
+  assert.equal(pair.candidates.reference.value, 'RIC 306');
+
+  // Nothing names this page, so the first product answers for it, with its offer's address as the lot's own.
+  const unnamed = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([similar, shown])] }), { href: 'https://auction.test/lot/9' });
+  assert.equal(unnamed.candidates.reference.value, 'RIC 1');
+  assert.equal(unnamed.canonicalUrl, 'https://auction.test/lot/1');
+});
+
 test('structured data the page made too large to read is left unread, and its arrays cannot outgrow the node budget', () => {
   const oversized = `${JSON.stringify({ '@type': 'Product', name: 'Reference: RIC 306' })}${' '.repeat(200001)}`;
   const skipped = collectCurrentLotCandidates(page({ jsonLd: [oversized], nodes: [node('Reference: RIC 99')] }), { href: 'https://auction.test/99' });

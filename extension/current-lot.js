@@ -33,7 +33,13 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
   // written as a bare name, as a schema.org address, or as a list of either.
   // ponytail: an offer's price and priceCurrency and a product's image are read past, not kept - the current-lot draft payload holds target, title,
   // reference, pageUrl and auctionContext (validateDraftPayload in core/records.js) and has no photo link or estimate field to carry them into.
-  const described = [];
+  // Two addresses for one page: a fragment names a place on it, and a trailing slash is the same directory either way.
+  const sameUrl = (left, right) => {
+    const settled = (value) => { try { const url = new URL(value); url.hash = ''; return url.href.replace(/\/$/, ''); } catch { return ''; } };
+    const address = settled(left);
+    return Boolean(address) && address === settled(right);
+  };
+  const products = [];
   for (const script of [...(root?.querySelectorAll?.('script[type="application/ld+json"]') ?? [])].slice(0, 10)) {
     const source = typeof script?.textContent === 'string' ? script.textContent : '';
     if (!source || source.length > 200000) continue;
@@ -44,25 +50,27 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     for (let seen = 0; queue.length && seen < 50; seen += 1) {
       const entry = queue.shift();
       if (!entry || typeof entry !== 'object') continue;
-      // These arrays are the page's own and as long as it cares to make them: only what the node budget still has room for is taken up.
+      // The graph is the page's own and as long as it cares to make it: only what the node budget still has room for is taken up.
       if (Array.isArray(entry['@graph'])) queue.push(...entry['@graph'].slice(0, Math.max(0, 49 - seen - queue.length)));
-      if (entry.offers) queue.push(...[].concat(entry.offers).slice(0, Math.max(0, 49 - seen - queue.length)));
       const types = [].concat(entry['@type'] ?? []).map((type) => typeof type === 'string' ? type.replace(/^https?:\/\/schema\.org\//, '') : '');
-      if (!types.includes('Product') && !types.includes('Offer')) continue;
+      if (!types.includes('Product')) continue;
       const texts = [];
       for (const field of ['name', 'description']) {
         const text = limit(typeof entry[field] === 'string' ? entry[field] : '', 500);
         if (text) texts.push(text);
       }
-      described.push({ texts, url: webUrl(entry.url) });
+      // An offer describes a sale, not a coin, so it says nothing about the lot; but the canonical Product markup puts the page's address on the offer
+      // and none on the product, so its addresses are the product's for naming the page it is shown on.
+      const offered = [].concat(entry.offers ?? []).slice(0, 10).map((offer) => webUrl(offer?.url));
+      if (texts.length) products.push({ texts, urls: [webUrl(entry.url), ...offered].filter(Boolean) });
     }
   }
   // A page may describe several products (the lot, then "similar lots"): the one naming this page is the lot being shown, and with none, the first.
-  const shownLot = described.find(({ url }) => url && (url === pageUrl || url === canonicalLink)) ?? described[0];
+  const shownLot = products.find(({ urls }) => urls.some((url) => sameUrl(url, pageUrl) || sameUrl(url, canonicalLink))) ?? products[0];
   const structured = shownLot?.texts ?? [];
   const metaContent = (property) => limit(root?.querySelector?.(`meta[property="${property}"]`)?.content ?? '', 500);
   const openGraph = ['og:title', 'og:description'].map(metaContent).filter(Boolean);
-  const canonicalUrl = canonicalLink || shownLot?.url || webUrl(metaContent('og:url'));
+  const canonicalUrl = canonicalLink || shownLot?.urls[0] || webUrl(metaContent('og:url'));
   // Visibility decides before the cap: 120 nodes of a hidden template would otherwise stand in for the lot on show.
   const nodes = [...(root?.querySelectorAll?.('h1,h2,h3,dt,dd,th,td,label,[itemprop],.lot-title,.description') ?? [])]
     .filter(visible)
