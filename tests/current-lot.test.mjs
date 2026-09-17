@@ -8,6 +8,24 @@ function node(text, options = {}) {
     textContent: text,
     hidden: options.hidden ?? false,
     getAttribute(name) { return name === 'aria-hidden' ? options.ariaHidden ?? null : null; },
+    ...(Object.hasOwn(options, 'shown') ? { checkVisibility: () => options.shown } : {}),
+  };
+}
+
+// A page as the injected function reads it: querySelectorAll answers per selector, so structured data and the text scan are told apart.
+function page({ title = '', canonical = null, nodes = [], jsonLd = [], meta = {}, selection = '' } = {}) {
+  return {
+    title,
+    querySelector(selector) {
+      if (selector === 'link[rel="canonical"]') return canonical ? { href: canonical } : null;
+      const property = /^meta\[property="(.+)"\]$/.exec(selector)?.[1];
+      return property && meta[property] ? { content: meta[property] } : null;
+    },
+    querySelectorAll(selector) {
+      if (selector === 'script[type="application/ld+json"]') return jsonLd.map((text) => ({ textContent: text }));
+      return nodes;
+    },
+    getSelection: () => ({ toString: () => selection }),
   };
 }
 
@@ -81,6 +99,61 @@ test('bounds capture inputs and ignores uncertain or blank candidate values', ()
   assert.ok(draft.rawText.length <= 3000);
   assert.equal(draft.ruler, undefined);
   assert.ok(draft.mint.value.length <= 120);
+});
+
+test('a hostile page cannot dress a script URL as the lot it was captured from', () => {
+  const result = collectCurrentLotCandidates(page({ canonical: 'javascript:alert(1)', nodes: [node('Mint: Rome')] }), { href: 'data:text/html,<p>lot' });
+  assert.equal(result.pageUrl, '');
+  assert.equal(Object.hasOwn(result, 'canonicalUrl'), false);
+  const draft = buildResearchDraft({ pageTitle: 'Lot 27', pageUrl: 'javascript:alert(1)', canonicalUrl: 'https://auction.test/27', candidates: {} },
+    { now: '2026-09-12T12:00:00.000Z', newId: () => 'draft-id' });
+  assert.equal(draft.pageUrl, undefined);
+  assert.equal(draft.auctionContext, undefined);
+  const canonical = buildResearchDraft({ pageTitle: 'Lot 27', pageUrl: 'https://auction.test/27', canonicalUrl: 'javascript:alert(1)', candidates: {} },
+    { now: '2026-09-12T12:00:00.000Z', newId: () => 'draft-id' });
+  assert.deepEqual(canonical.auctionContext, { pageUrl: 'https://auction.test/27' });
+});
+
+test('a lot hidden by an ancestor is not read, and the node cap counts only what is visible', () => {
+  const buried = [node('Reference: RIC 1', { shown: false }), node('Reference: RIC 2', { shown: true })];
+  const result = collectCurrentLotCandidates(page({ nodes: buried }), { href: 'https://auction.test/2' });
+  assert.equal(result.candidates.reference.value, 'RIC 2');
+  assert.equal(result.rawText.includes('RIC 1'), false);
+
+  const many = [...Array.from({ length: 150 }, () => node('Weight: 3.42 g', { shown: false })), node('Reference: RIC 306', { shown: true })];
+  const capped = collectCurrentLotCandidates(page({ nodes: many }), { href: 'https://auction.test/306' });
+  assert.equal(capped.candidates.reference.value, 'RIC 306');
+});
+
+test('JSON-LD product data is read before the page text, and unreadable data never throws', () => {
+  const product = JSON.stringify({
+    '@context': 'https://schema.org', '@type': 'Product', name: 'Nero. AR Denarius. Rome, AD 65. RIC I 306.',
+    description: 'Mint: Rome', url: 'https://auction.test/lots/27', image: ['https://auction.test/27.jpg'],
+    offers: { '@type': 'Offer', price: '1200', priceCurrency: 'EUR' },
+  });
+  const nodes = [node('Mint: Alexandria'), node('Similar lots: RIC II 147')];
+  const result = collectCurrentLotCandidates(page({ jsonLd: ['{ broken', product], nodes }), { href: 'https://auction.test/27' });
+  assert.equal(result.candidates.reference.value, 'RIC I 306');
+  assert.equal(result.candidates.reference.provenance, 'structured-data');
+  assert.equal(result.candidates.denomination.provenance, 'structured-data');
+  assert.equal(result.candidates.mint.value, 'Rome');
+  assert.equal(result.canonicalUrl, 'https://auction.test/lots/27');
+
+  const hostile = JSON.stringify({ '@type': 'Product', name: { toString: 'no' }, description: 'x'.repeat(4000), url: 'javascript:alert(1)' });
+  const guarded = collectCurrentLotCandidates(page({ jsonLd: [hostile] }), { href: 'https://auction.test/27' });
+  assert.equal(Object.hasOwn(guarded, 'canonicalUrl'), false);
+  assert.ok(guarded.rawText.length <= 3000);
+});
+
+test('OpenGraph metadata stands in for a page whose text has no fields', () => {
+  const result = collectCurrentLotCandidates(page({
+    meta: { 'og:title': 'Reference: Crawford 511/2b', 'og:description': 'Emperor: Augustus', 'og:url': 'https://auction.test/lots/42' },
+  }), { href: 'https://auction.test/42?utm_source=x' });
+  assert.equal(result.candidates.reference.value, 'Crawford 511/2b');
+  assert.equal(result.candidates.reference.provenance, 'open-graph');
+  assert.equal(result.candidates.ruler.value, 'Augustus');
+  assert.equal(result.pageUrl, 'https://auction.test/42?utm_source=x');
+  assert.equal(result.canonicalUrl, 'https://auction.test/lots/42');
 });
 
 test('fallback reference extraction preserves Crawford slash suffix and stops before following metadata', () => {
