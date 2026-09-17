@@ -10,40 +10,50 @@ function failure(code, message, path) {
   return { ok: false, error };
 }
 
-function localeDecimal(locale) {
-  try {
-    const part = new Intl.NumberFormat(locale).formatToParts(1.1)
-      .find(({ type }) => type === 'decimal');
-    return part?.value ?? '.';
-  } catch {
-    return null;
+const DECIMAL = /^(\d+)([.,])(\d+)$/;
+// Auction houses group with a comma, a point, an apostrophe or a space, so a grouped amount is
+// recognized by its shape rather than by the browser locale, which is often not the seller's.
+// Swiss listings group with the typographic apostrophe; a grouping space may be plain, no-break
+// or narrow, written as escapes here so an invisible byte cannot be lost in an edit.
+const GROUPED = /^(\d{1,3})((['\u2019 \u00a0\u202f,.])\d{3}(?:\3\d{3})*)(?:([.,])(\d{1,2}))?$/;
+const ambiguousMessage = (input) =>
+  `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
+
+// Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
+// `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
+function splitAmount(input) {
+  if (/^\d+$/.test(input)) return { whole: input, fraction: '' };
+  const decimal = DECIMAL.exec(input);
+  if (decimal) {
+    if (decimal[3].length <= 2) return { whole: decimal[1], fraction: decimal[3] };
+    return decimal[3].length === 3 && decimal[1].length <= 3 ? { ambiguous: true } : null;
   }
+  const grouped = GROUPED.exec(input);
+  if (!grouped) return null;
+  const [, lead, groups, groupSeparator, decimalSeparator, fraction] = grouped;
+  if (decimalSeparator === groupSeparator) return null;
+  return { whole: lead + groups.split(groupSeparator).join(''), fraction: fraction ?? '' };
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function parseFixed(text, locale, maximumMinor, subject) {
+// The locale is accepted for call-site symmetry with formatting; parsing never depends on it.
+function parseFixed(text, maximumMinor, subject) {
   if (typeof text !== 'string') {
     return failure('invalid-format', `${subject} must be entered as text.`);
   }
-  const decimal = localeDecimal(locale);
-  if (decimal === null) return failure('invalid-locale', 'The selected locale is not supported.');
 
   const input = text.trim();
   if (input.length > 32) return failure('input-too-long', `${subject} input is too long.`);
-  const pattern = new RegExp(`^(\\d+)(?:${escapeRegExp(decimal)}(\\d{1,2}))?$`);
-  const match = pattern.exec(input);
-  if (!match) {
+  const parts = splitAmount(input);
+  if (!parts) {
     return failure(
       'invalid-format',
-      `${subject} must be non-negative with no more than two decimal places.`,
+      `${subject} must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.`,
     );
   }
+  if (parts.ambiguous) return failure('ambiguous-amount', ambiguousMessage(input));
 
-  const whole = BigInt(match[1]);
-  const fraction = BigInt((match[2] ?? '').padEnd(FRACTION_DIGITS, '0'));
+  const whole = BigInt(parts.whole);
+  const fraction = BigInt(parts.fraction.padEnd(FRACTION_DIGITS, '0'));
   const minor = whole * 100n + fraction;
   if (minor > maximumMinor) {
     return failure('unsafe-money', `${subject} is outside the supported integer range.`);
@@ -72,13 +82,13 @@ export function parseMoney(text, currency, locale = 'en-US') {
   if (!CURRENCY_SET.has(currency)) {
     return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
   }
-  const parsed = parseFixed(text, locale, MAX_SAFE_BIGINT, 'Money');
+  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money');
   if (!parsed.ok) return parsed;
   return { ok: true, value: { currency, minor: parsed.value } };
 }
 
 export function parsePremiumPercent(text, locale = 'en-US') {
-  const parsed = parseFixed(text, locale, 10000n, 'Buyer premium');
+  const parsed = parseFixed(text, 10000n, 'Buyer premium');
   if (!parsed.ok) {
     if (parsed.error.code === 'unsafe-money') {
       return failure('invalid-basis-points', 'Buyer premium must be between 0% and 100%.');
