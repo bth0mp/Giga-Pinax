@@ -17,7 +17,12 @@ import {
   moneyInputText,
   reminderControlsForPrecision,
   outcomeDraftForLot,
-  receiveWorkspaceSnapshot,
+  WORKSPACE_EDITORS,
+  editorsWithChangedBasis,
+  editorsSharingRecord,
+  conflictNoteMessage,
+  editorAfterSave,
+  selectionAfterSnapshot,
   routeFromHash,
   applyActiveRoute,
   editorCompletion,
@@ -141,12 +146,58 @@ test('import confirmation uses the revision that was actually previewed', () => 
   });
 });
 
-test('dirty workspace editors survive committed updates and show conflict state', () => {
-  const state = { snapshot: { revision: 2 }, dirtyEditors: new Set(['lot']), editorValues: { lot: { title: 'Unsaved' } }, conflict: null };
-  const next = receiveWorkspaceSnapshot(state, { revision: 3 });
-  assert.equal(next.snapshot.revision, 2);
-  assert.equal(next.editorValues.lot.title, 'Unsaved');
-  assert.equal(next.conflict.pendingSnapshot.revision, 3);
+test('a committed update conflicts only with the dirty editors whose own record moved', () => {
+  const snapshot = { lots: [{ id: 'lot-a', revision: 3 }], auctionEvents: [{ id: 'event-a', revision: 1 }], alternativeGroups: [] };
+  const bases = new Map([
+    ['lot', { id: 'lot-a', revision: 3 }],
+    ['bid', { id: 'lot-a', revision: 2 }],
+    ['outcome', { id: 'removed-elsewhere', revision: 1 }],
+    ['event', { id: null, revision: null }],
+  ]);
+  assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(WORKSPACE_EDITORS), bases), ['bid', 'outcome']);
+  assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(['lot', 'event', 'evidence']), bases), []);
+  assert.deepEqual(editorsWithChangedBasis(snapshot, new Set(), bases), []);
+});
+
+test('the conflict note names the editors it belongs to and stays hidden without one', () => {
+  assert.equal(conflictNoteMessage([]), '');
+  assert.equal(conflictNoteMessage(['lot']), 'Committed data changed while the coin details form has unsaved input.');
+  assert.equal(conflictNoteMessage(['lot', 'bid']), 'Committed data changed while the coin details and bid forms have unsaved input.');
+  assert.equal(conflictNoteMessage(['lot', 'bid', 'event']), 'Committed data changed while the coin details, bid and auction forms have unsaved input.');
+});
+
+test('saving one editor of a coin moves the coin’s other open editors onto the committed revision', () => {
+  const bases = new Map([
+    ['lot', { id: 'lot-a', revision: 3 }],
+    ['bid', { id: 'lot-a', revision: 3 }],
+    ['outcome', { id: 'lot-b', revision: 1 }],
+    ['event', { id: 'lot-a', revision: 1 }],
+  ]);
+  assert.deepEqual(editorsSharingRecord(bases, 'lot', 'lot-a'), ['bid']);
+  assert.deepEqual(editorsSharingRecord(bases, 'bid', 'lot-a'), ['lot']);
+  assert.deepEqual(editorsSharingRecord(bases, 'lot', 'lot-b'), ['outcome']);
+  assert.deepEqual(editorsSharingRecord(bases, 'lot', undefined), []);
+  assert.deepEqual(editorsSharingRecord(bases, 'evidence', 'lot-a'), []);
+});
+
+test('a saved editor is repopulated from the committed record and only a removed one is blanked', () => {
+  const snapshot = { lots: [{ id: 'lot-a', revision: 4 }], auctionEvents: [{ id: 'event-a', revision: 2 }], alternativeGroups: [] };
+  assert.equal(editorAfterSave('lot', { id: 'lot-a', revision: 4 }, snapshot), 'repopulate');
+  assert.equal(editorAfterSave('bid', { id: 'lot-a', revision: 4 }, snapshot), 'repopulate');
+  assert.equal(editorAfterSave('event', { id: 'event-a', revision: 2 }, snapshot), 'repopulate');
+  assert.equal(editorAfterSave('lot', { id: 'lot-a', revision: 4 }, { lots: [] }), 'reset');
+  assert.equal(editorAfterSave('group', { id: 'group-a' }, snapshot), 'reset');
+  assert.equal(editorAfterSave('evidence', { id: 'evidence-a' }, snapshot), 'reset');
+  assert.equal(editorAfterSave('lot', null, snapshot), 'reset');
+});
+
+test('a selected coin that left the snapshot clears the selection instead of editing a ghost', () => {
+  const snapshot = { lots: [{ id: 'lot-a' }] };
+  const selected = { selectedLotId: 'lot-a', mode: 'detail' };
+  assert.equal(selectionAfterSnapshot(selected, snapshot), selected);
+  assert.deepEqual(selectionAfterSnapshot({ selectedLotId: 'removed', mode: 'detail' }, snapshot), { selectedLotId: null, mode: 'list' });
+  const draft = { selectedLotId: null, mode: 'detail' };
+  assert.equal(selectionAfterSnapshot(draft, snapshot), draft);
 });
 
 test('a save reply resets only the editor version that was submitted', () => {

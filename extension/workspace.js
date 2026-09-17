@@ -7,6 +7,7 @@ import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 
 const ROUTES = Object.freeze(['search', 'watchlist', 'auctions', 'bids', 'history']);
+const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
 const requestId = () => globalThis.crypto?.randomUUID?.() ?? `request-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export function routeFromHash(hash) {
@@ -205,9 +206,51 @@ export function draftToConsumeAfterLotSave(reply, draftId) {
   return reply?.ok && draftId ? draftId : null;
 }
 
-export function receiveWorkspaceSnapshot(state, snapshot) {
-  if (state.dirtyEditors?.size) return { ...state, conflict: { pendingSnapshot: snapshot } };
-  return { ...state, snapshot, conflict: null };
+export const WORKSPACE_EDITORS = Object.freeze(['lot', 'bid', 'outcome', 'event', 'group', 'evidence']);
+// The comparable editor writes a new observation each time, so it has no basis record to compare.
+const EDITOR_RECORDS = Object.freeze({ lot: 'lots', bid: 'lots', outcome: 'lots', event: 'auctionEvents', group: 'alternativeGroups' });
+const EDITOR_LABELS = Object.freeze({ lot: 'coin details', bid: 'bid', outcome: 'outcome', event: 'auction', group: 'group', evidence: 'comparable' });
+
+const editorRecord = (snapshot, editor, id) => {
+  const collection = EDITOR_RECORDS[editor];
+  return collection && id ? (snapshot?.[collection] ?? []).find((item) => item.id === id) ?? null : null;
+};
+
+export function editorsWithChangedBasis(snapshot, dirtyEditors, editorBases) {
+  return WORKSPACE_EDITORS.filter((editor) => {
+    if (!dirtyEditors?.has(editor)) return false;
+    const basis = editorBases?.get(editor);
+    if (!basis?.id || !Number.isInteger(basis.revision) || !EDITOR_RECORDS[editor]) return false;
+    const record = editorRecord(snapshot, editor, basis.id);
+    return !record || record.revision !== basis.revision;
+  });
+}
+
+export function conflictNoteMessage(editors) {
+  const labels = (editors ?? []).map((editor) => EDITOR_LABELS[editor] ?? editor);
+  if (!labels.length) return '';
+  const listed = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
+  return `Committed data changed while the ${listed} form${labels.length === 1 ? ' has' : 's have'} unsaved input.`;
+}
+
+// One coin is edited through the details, bid and outcome editors at once. When this page commits
+// one of them the others are still looking at the revision before that write, so they are moved
+// onto the committed record: their unsaved input belongs on top of it, not in a conflict.
+export function editorsSharingRecord(editorBases, editor, id) {
+  if (!id || !EDITOR_RECORDS[editor]) return [];
+  return WORKSPACE_EDITORS.filter((other) => other !== editor
+    && EDITOR_RECORDS[other] === EDITOR_RECORDS[editor]
+    && editorBases?.get(other)?.id === id);
+}
+
+export function editorAfterSave(editor, value, snapshot) {
+  return editorRecord(snapshot, editor, value?.id) ? 'repopulate' : 'reset';
+}
+
+export function selectionAfterSnapshot(selection, snapshot) {
+  if (!selection?.selectedLotId) return selection;
+  if ((snapshot?.lots ?? []).some((lot) => lot.id === selection.selectedLotId)) return selection;
+  return { selectedLotId: null, mode: 'list' };
 }
 
 export function buildLotSaveCommand(lot, expectedRevision, newRequestId = requestId) {
@@ -351,7 +394,7 @@ async function initWorkspace() {
     editorBases.set(editor, basis);
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
   };
-  let pendingSnapshot = null;
+  let eventsById = new Map();
   let pendingRetry = null;
   let selection = { selectedLotId: null, mode: 'list' };
   let comparisonSelection = [];
@@ -423,46 +466,91 @@ async function initWorkspace() {
   };
   addEventListener('hashchange', setRoute);
 
-  const acceptIncoming = (incoming, force = false) => {
-    if (!force && dirtyEditors.size) {
-      pendingSnapshot = incoming;
-      $('conflict-note').hidden = false;
-      return false;
-    }
+  const updateConflictNote = () => {
+    const message = conflictNoteMessage(editorsWithChangedBasis(snapshot, dirtyEditors, editorBases));
+    $('conflict-editors').textContent = message;
+    $('conflict-note').hidden = !message;
+  };
+  const clearSelectedEditors = () => {
+    for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); }
+  };
+  // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
+  // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
+  const acceptIncoming = (incoming) => {
     snapshot = incoming;
-    pendingSnapshot = null;
-    $('conflict-note').hidden = true;
+    eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
+    const selected = selectionAfterSnapshot(selection, snapshot);
+    if (selected !== selection) {
+      selection = selected;
+      lotInteractionGeneration += 1;
+      clearSelectedEditors();
+      lastLotUndo = null; $('undo-lot').hidden = true;
+      $('coin-workspace').dataset.mobileView = 'list';
+    }
+    updateConflictNote();
     renderAll();
     return true;
   };
-  const refresh = async (force = false) => {
+  // A committed save leaves the editor showing the stored record; only a record that is gone from
+  // the snapshot — a delete, or a removal from another view — blanks the form.
+  const applyCommittedEditor = (editor, value) => {
+    if (editorAfterSave(editor, value, snapshot) === 'reset') {
+      editorBases.delete(editor); resetEditor(editor);
+    } else if (editor === 'event') {
+      const record = editorRecord(snapshot, 'event', value.id);
+      beginEditor('event', { id: record.id, revision: record.revision, record: structuredClone(record) });
+      $('event-form').hidden = false; populateEventForm(record);
+    } else if (editor === 'group') {
+      const record = editorRecord(snapshot, 'group', value.id);
+      beginEditor('group', { id: record.id, revision: record.revision, record: structuredClone(record) });
+      const form = $('group-form'); form.hidden = false; form.elements.id.value = record.id; form.elements.name.value = record.name;
+    }
+    // lot, bid and outcome were repopulated from the committed record while the snapshot rendered.
+    updateConflictNote();
+  };
+  const refresh = async () => {
     if (!bridge) return;
-    const reply = await bridge.getSnapshot();
+    let reply;
+    try { reply = await bridge.getSnapshot(); }
+    catch { announce(WORKER_UNREACHABLE, true); return; }
     if (!reply.ok) return announce(reply.message, true);
-    if (acceptIncoming(reply.value, force)) announce('Local records loaded.');
+    acceptIncoming(reply.value);
+    announce('Local records loaded.');
     return reply.value;
   };
   const send = async (command, editor) => {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
     const submittedVersion = editor ? editorVersions.get(editor) ?? 0 : null;
     const submittedBasis = editor ? editorBases.get(editor) : null;
+    const rebaseEditor = (target, value) => {
+      const currentBasis = editorBases.get(target);
+      if (!value || typeof value !== 'object' || typeof value.id !== 'string' || !Number.isInteger(value.revision)) return;
+      const originalManualUrl = target === 'lot' ? value.sourceLinks?.find((link) => link.source === 'manual')?.url : currentBasis?.originalManualUrl;
+      editorBases.set(target, { ...currentBasis, id: value.id, revision: value.revision, record: structuredClone(value), ...(target === 'lot' ? { originalManualUrl } : {}) });
+    };
     const completeEditor = (value) => {
       if (!editor) return false;
+      for (const other of editorsSharingRecord(editorBases, editor, value?.id)) rebaseEditor(other, value);
       if (editorCompletion(submittedVersion, editorVersions.get(editor) ?? 0) === 'reset') {
-        dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor);
+        // The form keeps what was just committed: blanking it here is what used to lose the entry
+        // and let the next save create a second record.
+        dirtyEditors.delete(editor); rebaseEditor(editor, value);
         return false;
       }
-      const currentBasis = editorBases.get(editor);
-      if (sameEditorIdentity(submittedBasis, currentBasis) && value && typeof value === 'object' && typeof value.id === 'string' && Number.isInteger(value.revision)) {
-        const originalManualUrl = editor === 'lot' ? value.sourceLinks?.find((link) => link.source === 'manual')?.url : currentBasis?.originalManualUrl;
-        editorBases.set(editor, { ...currentBasis, id: value.id, revision: value.revision, record: structuredClone(value), ...(editor === 'lot' ? { originalManualUrl } : {}) });
-      }
+      if (sameEditorIdentity(submittedBasis, editorBases.get(editor))) rebaseEditor(editor, value);
       dirtyEditors.add(editor);
-      $('conflict-note').hidden = false;
       return true;
     };
     announce('Saving…');
-    const reply = await bridge.sendCommand(command);
+    let reply;
+    try { reply = await bridge.sendCommand(command); }
+    catch {
+      // The worker may or may not have committed: the same request ID makes a retry idempotent.
+      pendingRetry = { command, editor };
+      $('unknown-note').hidden = false;
+      announce(WORKER_UNREACHABLE, true);
+      return { ok: false, requestId: command.requestId, code: 'unreachable', outcome: 'unknown', message: WORKER_UNREACHABLE };
+    }
     if (!reply.ok) {
       if (editor === 'lot') {
         const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(reply.message ?? 'The coin could not be saved.')); status.classList.add('error');
@@ -471,13 +559,15 @@ async function initWorkspace() {
           const open = text('button', 'Open existing coin', 'quiet'); open.type = 'button'; open.addEventListener('click', () => selectLot(existingLotId)); status.append(document.createTextNode(' '), open);
         }
       }
-      if (reply.code === 'conflict') $('conflict-note').hidden = false;
+      // A conflict reply means the stored record moved on: the fresh snapshot decides which
+      // editors the note belongs to.
+      if (reply.code === 'conflict') await refresh();
       if (reply.outcome === 'unknown') {
         const committed = await refresh();
         if (commandWasCommitted(committed, command.requestId)) {
           const ledgerValue = committed?.recentCommands?.find((item) => item.requestId === command.requestId)?.reply?.value;
           const preserved = completeEditor(ledgerValue);
-          if (committed) acceptIncoming(committed);
+          if (editor) { if (!preserved) applyCommittedEditor(editor, ledgerValue); else updateConflictNote(); }
           pendingRetry = null; $('unknown-note').hidden = true;
           announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
           return { ok: true, requestId: command.requestId, value: ledgerValue ?? null, editorPreserved: preserved };
@@ -492,6 +582,7 @@ async function initWorkspace() {
     }
     const preserved = completeEditor(reply.value);
     await refresh();
+    if (editor) { if (!preserved) applyCommittedEditor(editor, reply.value); else updateConflictNote(); }
     if (editor === 'lot') $('lot-action-status').classList.remove('error');
     announce(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
     return { ...reply, editorPreserved: preserved };
@@ -503,11 +594,17 @@ async function initWorkspace() {
     dirtyEditors.add(editor);
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
   }));
+  // Unsaved input lives only in this tab, so the browser's own prompt is the last thing between a
+  // half-finished entry and a reload.
+  addEventListener('beforeunload', (event) => {
+    if (!dirtyEditors.size) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
   $('reload-snapshot').addEventListener('click', () => {
     lotInteractionGeneration += 1;
     dirtyEditors.clear(); editorBases.clear(); editorVersions.clear(); resetEditors();
-    if (pendingSnapshot) { snapshot = pendingSnapshot; pendingSnapshot = null; renderAll(); }
-    else void refresh(true);
+    void refresh();
     $('conflict-note').hidden = true;
   });
   $('retry-uncertain').addEventListener('click', () => {
@@ -815,9 +912,11 @@ async function initWorkspace() {
     for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(text('p', `${event.localDate}${event.localTime ? ` at ${event.localTime}` : ' · date only'} · ${event.timeZone}`)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
     const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed' }; alerts.replaceChildren(...due.map((alert) => text('p', `${snapshot.auctionEvents.find((event) => event.id === alert.eventId)?.name ?? 'Auction'} · ${alertLabel[alert.status]}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
   }
-  const openEventEditor = (event) => { $('event-form').hidden = false; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; updatePrecision(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
+  // otherwise attach itself to when saved.
+  const openEventEditor = (event) => { eventReturnLot = null; $('event-form').hidden = false; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; updatePrecision(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
-  $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); eventReturnLot = event ? null : structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); location.hash = '#auctions'; openEventEditor(event ?? null); });
+  $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
     for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
@@ -888,15 +987,14 @@ async function initWorkspace() {
   $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
 
   function resetEditors() {
-    for (const id of ['lot-form', 'group-form', 'bid-form', 'event-form', 'outcome-form', 'evidence-form']) $(id).reset();
-    $('lot-form').elements.id.value = ''; $('event-form').elements.id.value = ''; lastEventPrecision = $('event-form').elements.precision.value; updatePrecision();
+    for (const editor of WORKSPACE_EDITORS) resetEditor(editor);
   }
   function resetEditor(editor) {
     const form = $(`${editor}-form`);
     if (!form) return;
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
-    if (editor === 'event') { lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
+    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
   }
   async function loadRouteDraft() {
@@ -943,10 +1041,16 @@ async function initWorkspace() {
   setRoute();
   if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {
-    const initialized = initializeCompanionPreferences ? await initializeCompanionPreferences(bridge, localStorage) : await bridge.getSnapshot();
-    if (!initialized.ok) announce(initialized.message, true);
-    else { acceptIncoming(initialized.value, true); announce('Local records loaded.'); }
-    await loadRouteDraft(); bridge.subscribeToSnapshots((incoming) => { acceptIncoming(incoming); });
+    try {
+      const initialized = initializeCompanionPreferences ? await initializeCompanionPreferences(bridge, localStorage) : await bridge.getSnapshot();
+      if (!initialized.ok) announce(initialized.message, true);
+      else { acceptIncoming(initialized.value); announce('Local records loaded.'); }
+      await loadRouteDraft();
+    } catch {
+      renderAll();
+      announce(WORKER_UNREACHABLE, true);
+    }
+    bridge.subscribeToSnapshots((incoming) => { acceptIncoming(incoming); });
   }
 }
 
