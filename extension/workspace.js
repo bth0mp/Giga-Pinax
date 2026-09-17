@@ -723,6 +723,9 @@ async function initWorkspace() {
     const submittedRevisions = commandReplacedRevisions(command, snapshot);
     let preserved = false;
     const commit = (value, incoming, snapshotFresh) => {
+      // The reply is being applied now, so this editor stops being in flight and this plan is what
+      // decides its banner.
+      released();
       const plan = planCommit({
         editor, submittedBasis, submittedVersion, submittedRevisions, value,
         snapshot: incoming, snapshotFresh, pending: savesInFlight,
@@ -740,16 +743,20 @@ async function initWorkspace() {
     };
     announce('Saving…');
     if (editor) savesInFlight.add(editor);
+    // The flag is held until the commit has been applied: a subscription snapshot arriving between
+    // the reply and the refresh carries this page's own write, which is no conflict with the form
+    // that produced it.
+    const released = () => { savesInFlight.delete(editor); };
     let reply;
     try { reply = await bridge.sendCommand(command); }
     catch {
+      released();
       // The worker may or may not have committed: the same request ID makes a retry idempotent.
       pendingRetry = { command, editor };
       $('unknown-note').hidden = false;
       announce(WORKER_UNREACHABLE, true);
       return { ok: false, requestId: command.requestId, code: 'unreachable', outcome: 'unknown', message: WORKER_UNREACHABLE };
     }
-    finally { savesInFlight.delete(editor); }
     if (!reply.ok) {
       if (editor === 'lot') {
         const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(reply.message ?? 'The coin could not be saved.')); status.classList.add('error');
@@ -758,9 +765,9 @@ async function initWorkspace() {
           const open = text('button', 'Open existing coin', 'quiet'); open.type = 'button'; open.addEventListener('click', () => selectLot(existingLotId)); status.append(document.createTextNode(' '), open);
         }
       }
-      // A conflict reply means the stored record moved on: the fresh snapshot decides which
-      // editors the note belongs to.
-      if (reply.code === 'conflict') await refresh();
+      // A conflict reply means the stored record moved on: nothing of this page's is in flight any
+      // more, and the fresh snapshot decides which editors the note belongs to.
+      if (reply.code === 'conflict') { released(); await refresh(); }
       if (reply.outcome === 'unknown') {
         const committed = await refresh();
         if (commandWasCommitted(committed.value, command.requestId)) {
@@ -770,11 +777,13 @@ async function initWorkspace() {
           announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
           return { ok: true, requestId: command.requestId, value: ledgerValue ?? null, editorPreserved: preserved };
         }
+        released();
         pendingRetry = { command, editor };
         $('unknown-note').hidden = false;
         announce('Save outcome is uncertain. Review committed records before retrying the same request.', true);
         return reply;
       }
+      released();
       announce(reply.message, true);
       return reply;
     }
