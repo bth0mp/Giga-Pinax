@@ -220,11 +220,10 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
-  const effects = [];
 
   switch (command.type) {
     case 'preferences.migrateIfAbsent': {
-      if (snapshot.preferences !== null) return ok({ snapshot, effects, value: snapshot.preferences, mutated: false });
+      if (snapshot.preferences !== null) return ok({ snapshot, value: snapshot.preferences, mutated: false });
       const preferences = preferenceFields(command.preferences);
       if (!preferences) return fail('validation', 'Preferences are required.', 'preferences');
       next.preferences = {
@@ -421,7 +420,6 @@ function mutation(snapshot, command, context) {
       lot.revision += 1;
       lot.updatedAt = now;
       value = lot;
-      effects.push({ type: 'badge.refresh' });
       break;
     }
     case 'lot.outcome.set': {
@@ -456,10 +454,6 @@ function mutation(snapshot, command, context) {
         reviewed.revision += 1;
         reviewed.updatedAt = now;
       }
-      if (value.collectionReviewReason && value.collectionEntryId) {
-        effects.push({ type: 'collection.review', collectionEntryId: value.collectionEntryId });
-      }
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'collection.review.resolve': {
@@ -511,7 +505,6 @@ function mutation(snapshot, command, context) {
       const retainedReminderIds = new Set(value.reminders.map(({ id }) => id));
       next.alerts = next.alerts.filter((alert) =>
         alert.eventId !== value.id || retainedReminderIds.has(alert.reminderId));
-      effects.push({ type: 'scheduler.reconcile' });
       break;
     }
     case 'event.delete': {
@@ -523,7 +516,6 @@ function mutation(snapshot, command, context) {
       next.auctionEvents.splice(found.value.index, 1);
       next.alerts = next.alerts.filter(({ eventId }) => eventId !== command.eventId);
       value = found.value.record;
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'evidence.add': {
@@ -657,7 +649,6 @@ function mutation(snapshot, command, context) {
       }
       if (ids && changed !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
       value = { changed };
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'alert.claim':
@@ -688,18 +679,16 @@ function mutation(snapshot, command, context) {
         return fail('conflict', 'One or more alerts are no longer in the expected delivery state.', 'triggerIds');
       }
       value = { eventId: command.eventId, triggerIds: [...ids], changed };
-      effects.push({ type: 'badge.refresh' });
       break;
     }
     case 'scheduler.reconcile': {
       const plan = reconcileIntoSnapshot(next, context);
       value = { nextWakeAt: plan.nextWakeAt, dueEventCount: Object.keys(plan.overdueByEvent).length };
-      effects.push({ type: 'alarm.schedule', nextWakeAt: plan.nextWakeAt }, { type: 'badge.refresh' });
       // Every service-worker wake reconciles. A reconcile that changes no alert and no wake time
       // must leave the root alone, or an idle worker would invalidate an import's expectedRevision.
       if (next.scheduler.nextWakeAt === snapshot.scheduler.nextWakeAt &&
           JSON.stringify(next.alerts) === JSON.stringify(snapshot.alerts)) {
-        return ok({ snapshot, effects, value, mutated: false });
+        return ok({ snapshot, value, mutated: false });
       }
       break;
     }
@@ -723,7 +712,6 @@ function mutation(snapshot, command, context) {
       for (const key of Object.keys(next)) delete next[key];
       Object.assign(next, imported);
       value = { mode: command.mode, counts: preview.value.counts };
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     default:
@@ -770,7 +758,7 @@ function mutation(snapshot, command, context) {
   next.recentCommands = next.recentCommands.slice(-200);
   const validated = validateSnapshot(next);
   if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
-  return ok({ snapshot: next, effects, value, reply, mutated: true });
+  return ok({ snapshot: next, value, reply, mutated: true });
 }
 
 export function applyCommand(snapshot, command, context) {
@@ -779,12 +767,12 @@ export function applyCommand(snapshot, command, context) {
   }
   if (typeof command.requestId !== 'string') return fail('validation', 'Request ID is required.', 'requestId');
   if (command.type === 'snapshot.get' || command.type === 'snapshot.raw') {
-    return ok({ snapshot, effects: [], value: snapshot, mutated: false });
+    return ok({ snapshot, value: snapshot, mutated: false });
   }
   if (command.type === 'draft.get') {
     const draft = snapshot.drafts.find((item) =>
       item.id === command.draftId && item.expiresAt > getNow(context));
-    return draft ? ok({ snapshot, effects: [], value: draft, mutated: false })
+    return draft ? ok({ snapshot, value: draft, mutated: false })
       : fail('validation', 'Draft was not found or expired.', 'draftId');
   }
   return mutation(snapshot, command, context);
