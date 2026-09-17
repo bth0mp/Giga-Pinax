@@ -41,15 +41,49 @@ export function buildBidCalculation(input) {
   return calculated.ok ? { ...calculated, costEstimate, buyerPremiumBps: premium.value } : calculated;
 }
 
+export function snapshotSupersedes(incoming, accepted) {
+  const incomingRevision = Number.isInteger(incoming?.revision) ? incoming.revision : null;
+  const acceptedRevision = Number.isInteger(accepted?.revision) ? accepted.revision : null;
+  if (incomingRevision !== null && acceptedRevision !== null && incomingRevision !== acceptedRevision) {
+    return incomingRevision > acceptedRevision;
+  }
+  const incomingTime = Date.parse(incoming?.updatedAt ?? '');
+  const acceptedTime = Date.parse(accepted?.updatedAt ?? '');
+  return Number.isFinite(incomingTime) && Number.isFinite(acceptedTime) && incomingTime > acceptedTime;
+}
+
 export function createPreferenceRevisionGate(apply, isActive = () => true) {
   let latestRevision = -1;
+  let latestSnapshot = null;
   return (snapshot) => {
     const incoming = snapshot?.preferences;
-    if (!isActive() || !incoming || !Number.isInteger(incoming.revision) || incoming.revision <= latestRevision) return false;
+    if (!isActive() || !incoming || !Number.isInteger(incoming.revision)) return false;
+    // A replace import restarts the preferences revision, so a lower one is still current when the
+    // snapshot that carries it is itself newer than the last one this gate accepted.
+    if (incoming.revision <= latestRevision && !snapshotSupersedes(snapshot, latestSnapshot)) return false;
     latestRevision = incoming.revision;
+    latestSnapshot = { revision: snapshot.revision, updatedAt: snapshot.updatedAt };
     apply(incoming);
     return true;
   };
+}
+
+export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total', locale = 'en-US' } = {}) {
+  if (values.lotId !== undefined && values.lotId === loadedLotId) return null;
+  const estimate = values.costEstimate ?? {};
+  const inputs = {
+    currency: values.currency ?? null,
+    premium: formatMinorInput(values.buyerPremiumBps, locale),
+    shipping: formatMinorInput(estimate.shippingMinor, locale),
+    paymentPercent: formatMinorInput(estimate.paymentFeeBps, locale),
+    paymentFixed: formatMinorInput(estimate.paymentFeeMinor, locale),
+    increment: formatMinorInput(estimate.incrementMinor, locale),
+    minimum: formatMinorInput(estimate.minimumBidMinor, locale),
+  };
+  // A saved hammer is not a budget: writing it into the budget field would answer a question the
+  // collector did not ask.
+  if (mode !== 'budget') inputs.amount = formatMinorInput(values.hammerMinor, locale);
+  return inputs;
 }
 
 export function mountBidCalculator(
@@ -128,6 +162,7 @@ export function mountBidCalculator(
   let result = null;
   let preferences = null;
   let destroyed = false;
+  let loadedLotId;
   const showError = (message) => {
     status.textContent = message;
     status.dataset.error = 'true';
@@ -238,15 +273,15 @@ export function mountBidCalculator(
   try { unsubscribe = subscribeToSnapshots(takePreferences); } catch { /* standalone calculator has no extension storage */ }
   return {
     setValues(values = {}) {
-      if (values.currency) currencyControl.value = values.currency;
-      amount.value = formatMinorInput(values.hammerMinor, language());
-      premium.value = formatMinorInput(values.buyerPremiumBps, language());
-      const estimate = values.costEstimate ?? {};
-      shipping.value = formatMinorInput(estimate.shippingMinor, language());
-      paymentPercent.value = formatMinorInput(estimate.paymentFeeBps, language());
-      paymentFixed.value = formatMinorInput(estimate.paymentFeeMinor, language());
-      increment.value = formatMinorInput(estimate.incrementMinor, language());
-      minimum.value = formatMinorInput(estimate.minimumBidMinor, language());
+      const inputs = calculatorInputsForLot(values, { loadedLotId, mode: mode.value, locale: language() });
+      if (!inputs) return;
+      loadedLotId = values.lotId;
+      if (inputs.currency) currencyControl.value = inputs.currency;
+      if (Object.hasOwn(inputs, 'amount')) amount.value = inputs.amount;
+      for (const [control, key] of [[premium, 'premium'], [shipping, 'shipping'], [paymentPercent, 'paymentPercent'],
+        [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum']]) {
+        control.value = inputs[key];
+      }
       calculate();
     },
     destroy() {
