@@ -171,6 +171,9 @@ test('a ladder in another currency is not applied, and the calculator says so', 
   assert.equal(mismatched.ladderNotice, 'This house’s increments are in EUR; the calculator is set to USD, so the fixed increment is used.');
   assert.equal(mismatched.value.hammer.minor, 11200, 'a bid on the fixed 7.00 grid instead');
   assert.equal(buildBidCalculation({ ...input, currency: 'USD', ladder: null }).ladderNotice, '');
+  // Tiers that are not a schedule are refused rather than quietly replaced by the fixed increment.
+  const broken = buildBidCalculation({ ...input, currency: 'EUR', ladder: { currency: 'EUR', tiers: [{ from: 5, step: 1 }] } });
+  assert.equal(broken.error.code, 'invalid-ladder');
 });
 
 test('the total calculator names the next valid bid when the hammer is off the ladder', () => {
