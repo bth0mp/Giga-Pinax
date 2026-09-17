@@ -1195,7 +1195,9 @@ window.addEventListener('storage', (event) => {
 // this page's own; the answer names the window so the sender brings it forward. The toolbar popup doesn't listen, so it never takes one. The window
 // first takes up what the sender saved, as a new window does at start-up: a card sent by corpus and id is priced with its own fields, term and currency,
 // and this window's older copy is never saved over the sender's Recent list, terms and currency.
-if (windowed) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+// The panel fallback (panel=1&window=1) stands in for a sidebar the browser wouldn't open, so it never takes a lookup: only the lookup window answers,
+// and a right-click made while just the fallback is open opens a lookup window of its own.
+if (windowed && !panel) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
   if (message?.type !== LOOKUP_MESSAGE) return false;
   const search = new URL(String(message.url), location.href).search;
   const opened = cardFromSearch(search);

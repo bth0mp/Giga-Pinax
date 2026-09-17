@@ -16,7 +16,9 @@ export function documentMode(search = '') {
   const parameters = new URLSearchParams(search);
   const panel = parameters.get('panel') === '1';
   const windowed = parameters.get('window') === '1';
-  return { panel, windowed, acceptsLookupMessages: windowed };
+  // Only the lookup window takes a right-click's reference: the panel fallback stands in for a sidebar the browser wouldn't open, and a lookup sent to
+  // it would land beside the page it was meant to leave.
+  return { panel, windowed, acceptsLookupMessages: windowed && !panel };
 }
 
 export function shouldRevealRefine(outcome, field = '') {

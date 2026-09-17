@@ -76,10 +76,10 @@ test('one lookup window: an open one is sent the address and brought forward; wi
     await showInWindow(api, url);
     assert.deepEqual(api.calls, [sent, ['create', { url: `chrome-extension://id/${url}`, type: 'popup', width: 440, height: 680 }]]);
   }
-  // A window that took the lookup but couldn't name itself is not doubled.
+  // An answer that names no window is no window to bring forward: the lookup opens in one of its own rather than going nowhere.
   const unnamed = fakeApi(() => ({}));
   await showInWindow(unnamed, url);
-  assert.deepEqual(unnamed.calls, [sent]);
+  assert.deepEqual(unnamed.calls, [sent, ['create', { url: `chrome-extension://id/${url}`, type: 'popup', width: 440, height: 680 }]]);
   assert.equal(LOOKUP_MESSAGE, 'giga-pinax-lookup');
 });
 

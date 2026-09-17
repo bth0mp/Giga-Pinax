@@ -32,9 +32,10 @@ test('navigation failures and thrown errors become visible action results', asyn
   assert.deepEqual(await runVisibleAction(async () => undefined, 'Fallback'), { ok: true });
 });
 
-test('native panels ignore pop-out routing while the window fallback accepts it', () => {
+// Only the lookup window itself answers a right-click: the panel fallback stands in for a sidebar, so a lookup sent while it is open opens its own window.
+test('native panels and the panel fallback ignore pop-out routing, which only the lookup window accepts', () => {
   assert.deepEqual(documentMode('?panel=1'), { panel: true, windowed: false, acceptsLookupMessages: false });
-  assert.deepEqual(documentMode('?panel=1&window=1'), { panel: true, windowed: true, acceptsLookupMessages: true });
+  assert.deepEqual(documentMode('?panel=1&window=1'), { panel: true, windowed: true, acceptsLookupMessages: false });
   assert.deepEqual(documentMode('?window=1'), { panel: false, windowed: true, acceptsLookupMessages: true });
   assert.deepEqual(documentMode(''), { panel: false, windowed: false, acceptsLookupMessages: false });
 });
