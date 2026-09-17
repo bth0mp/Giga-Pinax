@@ -1,6 +1,7 @@
 import { SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
+import { clone, failure, own } from './validate.js';
 
 export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // Exports are compact, but backups written by earlier builds were indented: the import bound has to
@@ -37,13 +38,6 @@ const CONFLICT_SENTENCES = {
   'lot-not-merged': 'is attached to a lot this merge did not take, skipped',
   'entry-kept-local': 'arrived for a lot that already has a collection entry here, kept local',
 };
-const fail = (code, message, path) => ({ ok: false, error: { code, message, ...(path ? { path } : {}) } });
-const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
-
-function clone(value) {
-  return structuredClone(value);
-}
-
 function bytes(value) {
   return new TextEncoder().encode(value).length;
 }
@@ -62,10 +56,10 @@ function exportableSnapshot(snapshot) {
 }
 
 export function exportBackup(snapshot, now) {
-  if (!canonicalInstant(now)) return fail('invalid-timestamp', 'Export time must be a canonical UTC timestamp.', 'exportedAt');
+  if (!canonicalInstant(now)) return failure('invalid-timestamp', 'Export time must be a canonical UTC timestamp.', 'exportedAt');
   const data = exportableSnapshot(snapshot);
   const valid = validateSnapshot(data);
-  if (!valid.ok) return fail('invalid-snapshot', valid.error.message, `data.${valid.error.path ?? ''}`);
+  if (!valid.ok) return failure('invalid-snapshot', valid.error.message, `data.${valid.error.path ?? ''}`);
   // Indentation doubled a full store's export past its own bound, so the file is written compact.
   const document = JSON.stringify({
     format: BACKUP_FORMAT,
@@ -73,46 +67,46 @@ export function exportBackup(snapshot, now) {
     exportedAt: now,
     data,
   });
-  if (bytes(document) > MAX_BACKUP_BYTES) return fail('file-too-large', 'Backup exceeds the 16 MiB limit.');
+  if (bytes(document) > MAX_BACKUP_BYTES) return failure('file-too-large', 'Backup exceeds the 16 MiB limit.');
   return { ok: true, value: document };
 }
 
 export function validateBackup(document) {
   let value = document;
   if (typeof document === 'string') {
-    if (bytes(document) > MAX_BACKUP_BYTES) return fail('file-too-large', 'Backup exceeds the 16 MiB limit.');
-    try { value = JSON.parse(document); } catch { return fail('invalid-json', 'Backup is not valid JSON.'); }
+    if (bytes(document) > MAX_BACKUP_BYTES) return failure('file-too-large', 'Backup exceeds the 16 MiB limit.');
+    try { value = JSON.parse(document); } catch { return failure('invalid-json', 'Backup is not valid JSON.'); }
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail('invalid-document', 'Backup must be an object.');
-  if (value.format !== BACKUP_FORMAT) return fail('invalid-format', 'Backup format is not recognized.', 'format');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-document', 'Backup must be an object.');
+  if (value.format !== BACKUP_FORMAT) return failure('invalid-format', 'Backup format is not recognized.', 'format');
   // Only a backup from a later build is refused on sight, and it is told what would let it in. An
   // older one is migrated first and then judged on what the migration produced, so a version this
   // build can still read imports. Version one is the first there was: below it is not a backup.
   if (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion < 1) {
-    return fail('unsupported-schema', 'Backup schema version is unsupported.', 'schemaVersion');
+    return failure('unsupported-schema', 'Backup schema version is unsupported.', 'schemaVersion');
   }
   // The header can lag the root it carries, and then it is the root that says where the file came
   // from: either way it was written by a build this one cannot read, and the answer is the same.
   if (value.schemaVersion > SCHEMA_VERSION || value.data?.schemaVersion > SCHEMA_VERSION) {
-    return fail(
+    return failure(
       'unsupported-schema',
       'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',
       'schemaVersion',
     );
   }
-  if (!canonicalInstant(value.exportedAt)) return fail('invalid-timestamp', 'Export time is invalid.', 'exportedAt');
-  if (value.kind === RAW_EXPORT_KIND) return fail('raw-rescue-file', RAW_EXPORT_REFUSAL, 'kind');
+  if (!canonicalInstant(value.exportedAt)) return failure('invalid-timestamp', 'Export time is invalid.', 'exportedAt');
+  if (value.kind === RAW_EXPORT_KIND) return failure('raw-rescue-file', RAW_EXPORT_REFUSAL, 'kind');
   const data = migrateSnapshot(clone(value.data));
-  if (!data || typeof data !== 'object') return fail('invalid-document', 'Backup data is missing.', 'data');
+  if (!data || typeof data !== 'object') return failure('invalid-document', 'Backup data is missing.', 'data');
   // Only a raw copy of storage carries the request ledger, so a rescue file taken before the
   // marker existed is still turned away as one rather than for the IDs it happens to hold.
   if (Array.isArray(data.recentCommands) && data.recentCommands.length) {
-    return fail('raw-rescue-file', RAW_EXPORT_REFUSAL, 'data.recentCommands');
+    return failure('raw-rescue-file', RAW_EXPORT_REFUSAL, 'data.recentCommands');
   }
   data.recentCommands = [];
   data.drafts = [];
   const valid = validateSnapshot(data);
-  if (!valid.ok) return fail(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
+  if (!valid.ok) return failure(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
   exportTimes.set(data, value.exportedAt);
   return { ok: true, value: data };
 }
@@ -272,10 +266,10 @@ function mergeQuarantine(snapshot, current, incoming) {
 
 export function previewImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
   const currentValid = validateSnapshot(current);
-  if (!currentValid.ok) return fail('invalid-current', currentValid.error.message, currentValid.error.path);
+  if (!currentValid.ok) return failure('invalid-current', currentValid.error.message, currentValid.error.path);
   const incomingValid = validateSnapshot(incoming);
-  if (!incomingValid.ok) return fail('invalid-incoming', incomingValid.error.message, incomingValid.error.path);
-  if (mode !== 'merge' && mode !== 'replace') return fail('invalid-mode', 'Import mode must be merge or replace.', 'mode');
+  if (!incomingValid.ok) return failure('invalid-incoming', incomingValid.error.message, incomingValid.error.path);
+  if (mode !== 'merge' && mode !== 'replace') return failure('invalid-mode', 'Import mode must be merge or replace.', 'mode');
   const summary = { outgoing: counts(current), incoming: counts(incoming) };
   if (mode === 'replace') {
     const snapshot = exportableSnapshot(incoming);
@@ -424,7 +418,7 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);
 
   const valid = validateSnapshot(snapshot);
-  if (!valid.ok) return fail('merge-invalid', valid.error.message, valid.error.path);
+  if (!valid.ok) return failure('merge-invalid', valid.error.message, valid.error.path);
   return {
     ok: true,
     value: {

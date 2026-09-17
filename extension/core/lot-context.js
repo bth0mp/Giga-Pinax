@@ -1,4 +1,4 @@
-const TRACKING = new Set(['fbclid', 'gclid', 'dclid', 'msclkid', 'mc_cid', 'mc_eid']);
+import { stripTracking } from './validate.js';
 
 export function normalizeAuctionUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return null;
@@ -7,10 +7,7 @@ export function normalizeAuctionUrl(value) {
     if (!['http:', 'https:'].includes(url.protocol)) return null;
     // A hash route addresses the lot itself, so only cosmetic anchors such as #photo are dropped.
     if (!/^#[/!]/.test(url.hash)) url.hash = '';
-    for (const key of [...url.searchParams.keys()]) {
-      if (key.toLowerCase().startsWith('utm_') || TRACKING.has(key.toLowerCase())) url.searchParams.delete(key);
-    }
-    return url.href;
+    return stripTracking(url).href;
   } catch { return null; }
 }
 
