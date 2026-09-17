@@ -85,7 +85,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - Stored data moves to schema 2 on the first save after upgrading, and **0.31.1 cannot open it**: rolling back needs a build that reads schema 2.
 - Export a backup before upgrading to keep a copy 0.31 can still read.
-- The extension package grows from about 1.87 MB (0.31.1's released ZIP: 1,872,932 bytes) to about 2.49 MB (2,487,671 bytes), mostly for the bundled Crawford, Price and Seleucid Coins records, their labels and the RIC number index.
+- The extension package grows from about 1.87 MB (0.31.1's released ZIP: 1,872,932 bytes) to about 2.49 MB (2,489,752 bytes), mostly for the bundled Crawford, Price and Seleucid Coins records, their labels and the RIC number index.
 
 ## [0.31.1] - 2026-09-15
 
