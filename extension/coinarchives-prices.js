@@ -1,12 +1,25 @@
-import { coinArchivesUrl, summarise } from './prices.js';
+import { coinArchivesUrl, localDay, summarise } from './prices.js';
 
 export const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
 export const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
 const ORIGIN = 'https://www.coinarchives.com';
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+// The header sits in the first screenful of markup; this is the most of the page the pattern for it ever reads.
+const HEADER_SLICE = 4096;
+// How many places the word may appear before the header itself. A real page carries a rule and a heading or two.
+const HEADER_TRIES = 8;
 const emptyExcluded = () => ({ upcoming: 0, toBePosted: 0, unpriced: 0, malformedPrice: 0, malformedDate: 0, futureDate: 0, duplicateId: 0, conflictingId: 0 });
-const text = (html) => String(html).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/\s+/g, ' ').trim();
-const normalizedQuery = (value) => text(value).toLocaleLowerCase('en-US');
+const NAMED_ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+// One pass over the whole text, so an escaped entity is decoded once and stays text: "&amp;quot;" is the characters "&quot;", not a quotation mark.
+const decode = (value) => value.replace(/&(#\d{1,7}|#[xX][\da-fA-F]{1,6}|[a-zA-Z]+);/g, (entity, name) => {
+  if (!name.startsWith('#')) return Object.hasOwn(NAMED_ENTITY, name.toLowerCase()) ? NAMED_ENTITY[name.toLowerCase()] : entity;
+  const code = Number(name[1] === 'x' || name[1] === 'X' ? `0${name.slice(1)}` : name.slice(1));
+  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+});
+const text = (html) => decode(String(html).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
+// The term quotes the citation as an exact phrase; the echo keeps the quotes, but a page that shows the same search without them is that search, not
+// a different one, so they are left out of the comparison.
+const normalizedQuery = (value) => text(value).replaceAll('"', '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en-US');
 const nativeSummary = (lots, currency) => {
   const summary = summarise(lots.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = lots;
@@ -29,13 +42,39 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
   const result = baseResult({ term, section, currency, url });
   if (!['a', 'w'].includes(section) || !String(term || '').trim() || !/^[A-Z]{3}$/.test(currency || '')) return { ...result, status: 'layout', reason: 'input' };
   if (/closest\s+matches/i.test(html)) return { ...result, status: 'closest' };
-  const header = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(html)?.[1];
-  const countMatch = header && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(header);
+  // The word is found first and the pattern run on a slice around it: on a page of nothing but "<span class='" the
+  // pattern would otherwise try every one of them and take half a minute over half a megabyte. A stylesheet rule that
+  // styles the class, or a heading that carries it, comes before the header on some pages, so the first few places the
+  // word appears are read in turn until one of them is the header. Still linear: each slice is bounded and so is the
+  // number of them.
+  const source = String(html);
+  const lower = source.toLowerCase();
+  let header;
+  let countMatch;
+  for (let at = lower.indexOf('headertext'), tried = 0; at >= 0 && tried < HEADER_TRIES; tried += 1) {
+    // From the start tag that carries this occurrence, so each try reads its own element rather than an earlier one.
+    const lookBack = Math.max(0, at - 512);
+    const tagAt = source.slice(lookBack, at).lastIndexOf('<');
+    const around = source.slice(tagAt < 0 ? at : lookBack + tagAt, at + HEADER_SLICE);
+    const candidate = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(around)?.[1];
+    countMatch = candidate && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(candidate);
+    // The first element that carries the class is what an empty result is read from, as it was when only one was read.
+    if (header === undefined && candidate !== undefined) header = candidate;
+    if (countMatch) break;
+    at = lower.indexOf('headertext', at + 1);
+  }
   if (!countMatch) return { ...result, status: /(?:matched\s+0\s+lots?|no\s+(?:matching\s+)?lots)/i.test(header || '') ? 'empty' : 'layout' };
   if (normalizedQuery(countMatch[1]) !== normalizedQuery(term)) return { ...result, status: 'closest' };
   result.matchedCount = Number(countMatch[2]);
   result.capped = result.matchedCount > result.cap;
-  const rows = [...String(html).matchAll(/<tr\s+id=["'](\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi)];
+  // Cut on the row starts first, then read each piece on its own: one pattern over the whole page re-scanned the rest of
+  // it from every "<tr" on a page that never closed a row. ponytail: a row start inside another row's body would then
+  // be a row of its own, which these pages, whose rows carry no nested table, never produce.
+  const rows = [];
+  for (const piece of source.split(/<tr\b/i).slice(1)) {
+    const row = /^\s+id=["'](\d+)["'][^>]*>([\s\S]*?)<\/tr>/i.exec(piece);
+    if (row) rows.push(row);
+  }
   result.renderedCount = rows.length;
   if (result.matchedCount === 0) return { ...result, status: 'empty' };
   if (rows.length !== Math.min(result.matchedCount, result.cap)) return { ...result, status: 'layout', reason: 'count' };
@@ -50,6 +89,9 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
     const lotUrl = new URL(href, `${ORIGIN}/${section}/`);
     const title = text(link[2]);
     if (!title || lotUrl.origin !== ORIGIN || lotUrl.pathname !== `/${section}/lotviewer.php` || lotUrl.searchParams.get('LotID') !== id || !lotUrl.searchParams.get('AucID') || !lotUrl.searchParams.get('Lot') || !lotUrl.searchParams.get('Val')) return { ...result, status: 'layout', reason: 'link' };
+    // ponytail: the lot text is read from the one element that carries it; a page that ever renamed it leaves every description empty, which the
+    // citation filter reads as "nothing to judge by" and counts the row.
+    const description = text(/<span\b[^>]*class=["']lottext["'][^>]*>([\s\S]*?)<\/span>/i.exec(body)?.[1] ?? '');
     const rawPrice = text(priceCell[1]);
     const rawDate = text(dateCell[1]);
     const fingerprint = JSON.stringify({ title, date: rawDate, price: rawPrice, url: lotUrl.href });
@@ -60,10 +102,11 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
     if (!priceMatch) { candidates.push({ id, fingerprint, exclusion: 'malformedPrice' }); continue; }
     const date = isoDate(rawDate);
     if (!date) { candidates.push({ id, fingerprint, exclusion: 'malformedDate' }); continue; }
-    if (date > new Date(now).toISOString().slice(0, 10)) { candidates.push({ id, fingerprint, exclusion: 'futureDate' }); continue; }
+    // The collector's own day, as prices.js draws its periods: the UTC date is another day for part of every day away from UTC.
+    if (date > localDay(now).toISOString().slice(0, 10)) { candidates.push({ id, fingerprint, exclusion: 'futureDate' }); continue; }
     const amount = Number(priceMatch[1].replaceAll(',', ''));
     if (!Number.isSafeInteger(amount) || amount <= 0) { candidates.push({ id, fingerprint, exclusion: 'malformedPrice' }); continue; }
-    candidates.push({ id, fingerprint, lot: { id, title, date, price: `${priceMatch[1]} ${priceMatch[2]}`, amount, currency: priceMatch[2], url: lotUrl.href, source: 'coinarchives' } });
+    candidates.push({ id, fingerprint, lot: { id, title, description, date, price: `${priceMatch[1]} ${priceMatch[2]}`, amount, currency: priceMatch[2], url: lotUrl.href, source: 'coinarchives' } });
   }
 
   const byId = new Map();
@@ -118,19 +161,18 @@ export async function fetchCoinArchivesPrices({ term, section = 'a', currency },
   const url = coinArchivesUrl(term, section);
   const fallback = baseResult({ term, section, currency, url });
   if (!['a', 'w'].includes(section)) return { ...fallback, status: 'network', reason: 'input' };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(url, { method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'text/html' }, signal: controller.signal });
+    const response = await fetchImpl(url, { method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'http', httpStatus: response.status }; }
-    if (response.url && response.url !== url) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'redirect' }; }
+    // Both addresses through the same normalisation: a browser reports the URL it fetched with every character percent-encoded, so an apostrophe in
+    // the term would otherwise read as a redirect.
+    if (response.url && new URL(response.url).href !== new URL(url).href) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'redirect' }; }
     const contentType = response.headers?.get?.('content-type');
     if (contentType && !/^text\/html\b/i.test(contentType)) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'content-type' }; }
     const html = await boundedText(response, maxBytes);
     return parseCoinArchivesPublic(html, { term, section, currency, now, url });
   } catch (error) {
-    return { ...fallback, status: 'network', reason: error?.message === 'too-large' ? 'too-large' : error?.name === 'AbortError' ? 'timeout' : 'fetch' };
-  } finally {
-    clearTimeout(timer);
+    // AbortSignal.timeout rejects with a TimeoutError; an AbortError is a caller (or a browser) cutting the request off.
+    return { ...fallback, status: 'network', reason: error?.message === 'too-large' ? 'too-large' : ['TimeoutError', 'AbortError'].includes(error?.name) ? 'timeout' : 'fetch' };
   }
 }

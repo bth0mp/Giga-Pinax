@@ -1,8 +1,9 @@
-import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
+import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
+import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
   lots: 5000,
   auctionEvents: 500,
@@ -12,6 +13,7 @@ export const LIMITS = Object.freeze({
   drafts: 20,
   alerts: 10000,
   recentCommands: 200,
+  clearedReferences: 10000,
   sourceLinks: 20,
   reminders: 20,
   bidHistory: 500,
@@ -22,6 +24,15 @@ export const LIMITS = Object.freeze({
   url: 2048,
   draftPayloadBytes: 10000,
   commandReplyBytes: 100000,
+  // A revision is only ever compared and counted up, so the ceiling is the highest number the next count is still an
+  // exact integer from: at 2^53-1 the increment is no longer one, and a root carrying it made every later save and every
+  // reconcile fail validation for good. 2^52 writes is a number no collector reaches.
+  revision: 2 ** 52,
+  // Validation accepts the ceiling itself, because a root that already carries one has to open; but a record stopped
+  // exactly there is refused by its very next write, which would land one above. So a revision a document brings in, or
+  // a load hands back, stays this far below it. The gap is headroom for the writes that record still has coming: 2^32
+  // of them, more than any store will ever see, and still nowhere near the ceiling.
+  usableRevision: 2 ** 52 - 2 ** 32,
 });
 
 const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -43,16 +54,7 @@ const ALERT_STATES = new Set([
   'pending', 'due', 'claimed', 'delivered', 'acknowledged', 'snoozed', 'missed',
 ]);
 const DRAFT_KINDS = new Set(['research-highlight', 'current-lot', 'auction-capture']);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-
-function failure(code, message, path) {
-  const error = { code, message };
-  if (path !== undefined) error.path = path;
-  return { ok: false, error };
-}
 
 function firstFailure(...results) {
   return results.find((result) => !result.ok) ?? { ok: true, value: undefined };
@@ -96,33 +98,13 @@ function uuidResult(value, path) {
 
 function instantResult(value, path, { nullable = false } = {}) {
   if (nullable && value === null) return { ok: true, value };
-  let canonical = false;
-  if (typeof value === 'string' && ISO_INSTANT.test(value)) {
-    const parsed = new Date(value);
-    canonical = Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
-  }
-  if (!canonical) {
-    return failure('invalid-timestamp', 'Expected a UTC ISO timestamp.', path);
-  }
-  return { ok: true, value };
+  return isIsoInstant(value) ? { ok: true, value } : failure('invalid-timestamp', 'Expected a UTC ISO timestamp.', path);
 }
 
+// The two answers are told apart: text that is no date at all, and a date spelling naming no day of any month.
 function dateResult(value, path) {
-  const match = typeof value === 'string' ? DATE.exec(value) : null;
-  if (!match) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
-    return failure('invalid-date', 'Expected a real calendar date.', path);
-  }
-  return { ok: true, value };
-}
-
-function shiftDate(value, days) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
+  return dateParts(value) ? { ok: true, value } : failure('invalid-date', 'Expected a real calendar date.', path);
 }
 
 function urlResult(value, path) {
@@ -170,7 +152,7 @@ function commonRecord(record, path, { dataClass = true } = {}) {
   if (!object.ok) return object;
   const checks = [
     uuidResult(record.id, `${path}.id`),
-    integerResult(record.revision, `${path}.revision`),
+    integerResult(record.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(record.createdAt, `${path}.createdAt`),
     instantResult(record.updatedAt, `${path}.updatedAt`),
   ];
@@ -463,22 +445,6 @@ function eventResult(event, path) {
     if (event.reminders[index].kind !== expectedKind) {
       return failure('invalid-reminder-kind', 'Reminder kind must match the event precision.', `${path}.reminders[${index}].kind`);
     }
-    if (expectedKind === 'wall-time') {
-      const reminder = event.reminders[index];
-      const resolved = resolveZonedDateTime({
-        localDate: shiftDate(event.localDate, -reminder.daysBefore),
-        localTime: reminder.localTime,
-        timeZone: event.timeZone,
-        disambiguation: 'reject',
-      });
-      if (!resolved.ok) {
-        return failure(
-          'invalid-reminder-time',
-          'Reminder wall time must exist exactly once in the confirmed time zone.',
-          `${path}.reminders[${index}].localTime`,
-        );
-      }
-    }
     if (reminderIds.has(event.reminders[index].id)) {
       return failure('duplicate-id', 'Reminder IDs must be unique in an event.', `${path}.reminders[${index}].id`);
     }
@@ -488,17 +454,49 @@ function eventResult(event, path) {
     if (!TIME.test(event.localTime)) return failure('invalid-time', 'Timed events require HH:mm.', `${path}.localTime`);
     const startsAt = instantResult(event.startsAt, `${path}.startsAt`);
     if (!startsAt.ok) return startsAt;
-    const resolved = resolveZonedDateTime({
-      localDate: event.localDate,
-      localTime: event.localTime,
+  } else if (OWN(event, 'localTime') || OWN(event, 'startsAt')) {
+    return failure('invalid-event-precision', 'Date-only events cannot carry a time or instant.', path);
+  }
+  return { ok: true, value: event };
+}
+
+// Resolving a local date and time depends on the browser's time-zone data, which changes with
+// the browser. These checks therefore belong to the event being written, never to stored data:
+// a zone whose rules were revised must not lock the collector out of records saved under the
+// older rules. Stored and imported instants stay authoritative.
+export function validateEventLocalTimes(event, path = 'event') {
+  const object = objectResult(event, path);
+  if (!object.ok) return object;
+  const reminders = Array.isArray(event.reminders) ? event.reminders : [];
+  for (let index = 0; index < reminders.length; index += 1) {
+    const reminder = reminders[index];
+    if (reminder?.kind !== 'wall-time' || !TIME.test(reminder.localTime) ||
+        !Number.isSafeInteger(reminder.daysBefore)) continue;
+    const shifted = dateResult(event.localDate, `${path}.localDate`).ok
+      ? shiftDate(event.localDate, -reminder.daysBefore) : null;
+    const resolved = shifted === null ? null : resolveZonedDateTime({
+      localDate: shifted,
+      localTime: reminder.localTime,
       timeZone: event.timeZone,
       disambiguation: 'reject',
     });
-    if (!resolved.ok || resolved.value.startsAt !== event.startsAt) {
-      return failure('inconsistent-instant', 'Stored start must match the confirmed local date, time, and zone.', `${path}.startsAt`);
+    if (resolved && !resolved.ok) {
+      return failure(
+        'invalid-reminder-time',
+        'Reminder wall time must exist exactly once in the confirmed time zone.',
+        `${path}.reminders[${index}].localTime`,
+      );
     }
-  } else if (OWN(event, 'localTime') || OWN(event, 'startsAt')) {
-    return failure('invalid-event-precision', 'Date-only events cannot carry a time or instant.', path);
+  }
+  if (event.precision !== 'timed' || !TIME.test(event.localTime)) return { ok: true, value: event };
+  const resolved = resolveZonedDateTime({
+    localDate: event.localDate,
+    localTime: event.localTime,
+    timeZone: event.timeZone,
+    disambiguation: 'reject',
+  });
+  if (!resolved.ok || resolved.value.startsAt !== event.startsAt) {
+    return failure('inconsistent-instant', 'Stored start must match the confirmed local date, time, and zone.', `${path}.startsAt`);
   }
   return { ok: true, value: event };
 }
@@ -540,7 +538,7 @@ function evidenceResult(evidence, path) {
     LIMITS.evidenceObservations,
   );
   if (!observations.ok) return observations;
-  const validated = validateSaleEvidence(evidence, { mode: 'live' });
+  const validated = validateSaleEvidence(evidence);
   if (validated.ok) return validated;
   const nestedPath = validated.error.path ? `${path}.${validated.error.path}` : path;
   return { ok: false, error: { ...validated.error, path: nestedPath } };
@@ -551,20 +549,13 @@ function preferencesResult(preferences, path) {
   const object = objectResult(preferences, path);
   if (!object.ok) return object;
   const common = firstFailure(
-    integerResult(preferences.revision, `${path}.revision`),
+    integerResult(preferences.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(preferences.createdAt, `${path}.createdAt`),
     instantResult(preferences.updatedAt, `${path}.updatedAt`),
     preferences.schemaVersion === SCHEMA_VERSION
       ? { ok: true, value: preferences.schemaVersion }
       : failure('unsupported-schema', 'Preferences schema version is unsupported.', `${path}.schemaVersion`),
     enumResult(preferences.currency, new Set(CURRENCIES), `${path}.currency`),
-    enumResult(preferences.catalogue, new Set(['Price', 'RIC']), `${path}.catalogue`),
-    stringResult(preferences.number, `${path}.number`, LIMITS.shortText, { nonEmpty: false }),
-    stringResult(preferences.volume, `${path}.volume`, LIMITS.shortText, { nonEmpty: false }),
-    stringResult(preferences.section, `${path}.section`, LIMITS.shortText, { nonEmpty: false }),
-    typeof preferences.sampleMode === 'boolean'
-      ? { ok: true, value: preferences.sampleMode }
-      : failure('invalid-boolean', 'Expected a boolean.', `${path}.sampleMode`),
     typeof preferences.desktopAlertsEnabled === 'boolean'
       ? { ok: true, value: preferences.desktopAlertsEnabled }
       : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
@@ -582,6 +573,11 @@ function preferencesResult(preferences, path) {
     const valid = firstFailure(
       stringResult(preset.name, `${presetPath}.name`, LIMITS.shortText),
       integerResult(preset.buyerPremiumBps, `${presetPath}.buyerPremiumBps`, { maximum: 10000 }),
+      // The ladder is optional: a preset saved before this version simply has no such key, which is
+      // why the stored shape needs no migration step of its own.
+      OWN(preset, 'incrementLadder')
+        ? validateIncrementLadder(preset.incrementLadder, `${presetPath}.incrementLadder`)
+        : { ok: true, value: undefined },
     );
     if (!valid.ok) return valid;
     const normalized = preset.name.trim().toLocaleLowerCase();
@@ -652,7 +648,7 @@ function alertResult(alert, path) {
   const checks = [
     stringResult(alert.triggerId, `${path}.triggerId`, 500),
     uuidResult(alert.eventId, `${path}.eventId`),
-    integerResult(alert.eventRevision, `${path}.eventRevision`),
+    integerResult(alert.eventRevision, `${path}.eventRevision`, { maximum: LIMITS.revision }),
     uuidResult(alert.reminderId, `${path}.reminderId`),
     instantResult(alert.triggerAt, `${path}.triggerAt`),
     enumResult(alert.status, ALERT_STATES, `${path}.status`),
@@ -679,7 +675,7 @@ function schedulerResult(scheduler, path) {
   const object = objectResult(scheduler, path);
   if (!object.ok) return object;
   return firstFailure(
-    integerResult(scheduler.revision, `${path}.revision`),
+    integerResult(scheduler.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(scheduler.nextWakeAt, `${path}.nextWakeAt`, { nullable: true }),
     instantResult(scheduler.lastReconciledAt, `${path}.lastReconciledAt`, { nullable: true }),
   );
@@ -707,6 +703,67 @@ function recentCommandResult(command, path) {
     return failure('reply-too-large', 'Ledger reply exceeds its storage bound.', `${path}.reply`);
   }
   return { ok: true, value: command };
+}
+
+const COLLECTIONS = [
+  { key: 'lots', maximum: LIMITS.lots, validator: lotResult },
+  { key: 'auctionEvents', maximum: LIMITS.auctionEvents, validator: eventResult },
+  { key: 'alternativeGroups', maximum: LIMITS.alternativeGroups, validator: groupResult },
+  { key: 'evidence', maximum: LIMITS.evidenceObservations, validator: evidenceResult },
+  { key: 'collectionEntries', maximum: LIMITS.collectionEntries, validator: collectionEntryResult },
+  { key: 'drafts', maximum: LIMITS.drafts, validator: draftResult },
+  { key: 'alerts', maximum: LIMITS.alerts, validator: alertResult },
+  // The ledger is appended to and trimmed from the front, and a retry is only answered from an
+  // entry that is still there, so an overflowing one loses its oldest rows rather than its newest.
+  { key: 'recentCommands', maximum: LIMITS.recentCommands, validator: recentCommandResult, keepNewest: true },
+];
+
+// A reference the repair had to clear is a link the collector made, so the entry that caused it
+// keeps the value verbatim: which record lost which field, and what it pointed at.
+function clearedReferenceResult(reference, path) {
+  const object = objectResult(reference, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    stringResult(reference.collection, `${path}.collection`, LIMITS.shortText),
+    stringResult(reference.id, `${path}.id`, LIMITS.shortText),
+    stringResult(reference.field, `${path}.field`, LIMITS.shortText),
+    OWN(reference, 'value') ? { ok: true, value: reference.value } : failure('missing-value', 'A cleared reference keeps the value it lost.', `${path}.value`),
+  );
+}
+
+function clearedReferencesResult(references, path) {
+  const array = arrayResult(references, path, LIMITS.clearedReferences);
+  if (!array.ok) return array;
+  for (let index = 0; index < references.length; index += 1) {
+    const result = clearedReferenceResult(references[index], `${path}[${index}]`);
+    if (!result.ok) return result;
+  }
+  return { ok: true, value: references };
+}
+
+function quarantineEntryResult(entry, path) {
+  const object = objectResult(entry, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    stringResult(entry.collection, `${path}.collection`, LIMITS.shortText),
+    stringResult(entry.reason, `${path}.reason`, LIMITS.shortText),
+    instantResult(entry.quarantinedAt, `${path}.quarantinedAt`),
+    OWN(entry, 'record') ? { ok: true, value: entry.record } : failure('missing-record', 'A quarantined entry keeps its record.', `${path}.record`),
+    OWN(entry, 'clearedReferences')
+      ? clearedReferencesResult(entry.clearedReferences, `${path}.clearedReferences`)
+      : { ok: true, value: undefined },
+  );
+}
+
+function quarantineResult(entries, path) {
+  // The bin has no count of its own: the 5 MiB root bound is what caps it.
+  const array = arrayResult(entries, path, Number.MAX_SAFE_INTEGER);
+  if (!array.ok) return array;
+  for (let index = 0; index < entries.length; index += 1) {
+    const result = quarantineEntryResult(entries[index], `${path}[${index}]`);
+    if (!result.ok) return result;
+  }
+  return { ok: true, value: entries };
 }
 
 function validateCollection(snapshot, key, maximum, validator) {
@@ -744,6 +801,221 @@ export function createEmptySnapshot(now) {
   };
 }
 
+// Stored roots pass through here before validation, so one place brings an older stored shape up
+// to the current one. Each step is keyed by the version it migrates from and never by
+// SCHEMA_VERSION itself, which is what ends the walk.
+// ponytail: a single linear chain of steps, each one hand-written; there is no down-migration.
+const MIGRATIONS = new Map([
+  // Version 2 took the research form out of the durable root. The catalogue, number, volume and
+  // section belong to the popup's own form, which already keeps them in its local storage, and
+  // sample mode is gone entirely; the currency, the house premiums and the alert switch stay,
+  // because more than one view reads them. Nothing outside those five keys is touched, and a
+  // nested version that does not read as the one being migrated is left for validation to judge.
+  [1, (value) => {
+    value.schemaVersion = 2;
+    if (isObject(value.preferences)) {
+      for (const key of ['catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+        delete value.preferences[key];
+      }
+      if (value.preferences.schemaVersion === 1) value.preferences.schemaVersion = 2;
+    }
+    return value;
+  }],
+]);
+
+export function migrateSnapshot(stored) {
+  if (!isObject(stored)) return stored;
+  let value = stored;
+  for (let step = MIGRATIONS.get(value.schemaVersion); step; step = MIGRATIONS.get(value.schemaVersion)) {
+    value = step(structuredClone(value));
+  }
+  return value;
+}
+
+const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
+
+// Every place a root keeps a revision, named as the collection and record that carries it so a warning can say which.
+function* revisionSites(root) {
+  if (isObject(root?.preferences)) yield { host: root.preferences, key: 'revision', collection: 'preferences', id: null };
+  if (isObject(root?.scheduler)) yield { host: root.scheduler, key: 'revision', collection: 'scheduler', id: null };
+  for (const { key } of COLLECTIONS) {
+    if (!Array.isArray(root?.[key])) continue;
+    for (const record of root[key]) {
+      if (!isObject(record)) continue;
+      yield { host: record, key: 'revision', collection: key, id: record.id ?? null };
+      if (OWN(record, 'eventRevision')) yield { host: record, key: 'eventRevision', collection: key, id: record.id ?? null };
+    }
+  }
+}
+
+const unusableRevision = (value) => typeof value === 'number' && value > LIMITS.usableRevision;
+
+// A revision above the usable ceiling is one no run of writes produced, so the file that carries it was hand-made or
+// damaged. Nothing has to take such a file in: the caller refuses it whole and names what it found.
+export function unusableRevisions(root) {
+  const found = [];
+  for (const { host, key, collection, id } of revisionSites(root)) {
+    if (unusableRevision(host[key])) found.push({ collection, id, field: key });
+  }
+  return found;
+}
+
+// What is already in storage is the other case: an older build's root, or a file that got past an earlier import, must
+// still open with all its records, and every later write has to count from somewhere the arithmetic can hold. So the
+// revision is restarted in place rather than condemned, which the next write persists. Nothing else is touched, and a
+// root with nothing to restart is left exactly as it came, so this can run on every load.
+export function restartUnusableRevisions(root) {
+  const restarted = [];
+  for (const { host, key, collection, id } of revisionSites(root)) {
+    if (!unusableRevision(host[key])) continue;
+    host[key] = 0;
+    restarted.push({ collection, id, field: key });
+  }
+  return restarted;
+}
+
+// One record that stops validating must never lock the collector out of the rest of their data.
+// Each record is validated on its own; a failing one is set aside verbatim in `quarantine` and
+// references to it are repaired by the cheapest step that keeps the root valid: an optional
+// reference is cleared, while a record whose required reference is gone follows it into the bin.
+// Only the bookkeeping in DISCARDED_ON_REPAIR is dropped outright, and a root that is unusable
+// even then is reported as a failure so the caller can fall back to its existing storage error.
+export function quarantineInvalidRecords(stored, now) {
+  const instant = instantResult(now, 'now');
+  if (!instant.ok) return instant;
+  const object = objectResult(stored, 'snapshot');
+  if (!object.ok) return object;
+  let root;
+  try { root = structuredClone(stored); } catch { return failure('invalid-record', 'Stored data cannot be copied.', 'snapshot'); }
+
+  restartUnusableRevisions(root);
+
+  const quarantine = [];
+  const hosts = new Map();
+  const setAside = (collection, record, reason) => {
+    const entry = { collection, record, reason, quarantinedAt: now };
+    quarantine.push(entry);
+    const id = record?.id ?? record?.requestId;
+    if (typeof id === 'string') hosts.set(`${collection}:${id}`, entry);
+    return entry;
+  };
+  // Clearing a reference alters a record the collector still holds, so the value goes on the
+  // quarantine entry of whatever caused the clearing and the link can be put back. A cause that
+  // was never in storage, or one that is itself kept, has no entry of its own, so an entry with a
+  // null record is opened to carry the note.
+  // ponytail: entries carried in from an earlier repair are not reused as causes, so a root
+  // repaired, written, then broken the same way again opens a second entry for the same cause.
+  const noteCleared = (cause, causeId, reason, record, collection, field) => {
+    const key = `${cause}:${causeId}`;
+    const host = hosts.get(key) ?? setAside(cause, null, reason);
+    hosts.set(key, host);
+    host.clearedReferences ??= [];
+    host.clearedReferences.push({ collection, id: record.id, field, value: record[field] });
+  };
+  if (OWN(root, 'quarantine')) {
+    const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];
+    for (const entry of entries) {
+      if (quarantineEntryResult(entry, 'quarantine').ok) quarantine.push(entry);
+      else setAside('quarantine', entry, 'invalid-entry');
+    }
+  }
+
+  for (const { key, maximum, validator, keepNewest } of COLLECTIONS) {
+    if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);
+    const kept = [];
+    const ids = new Set();
+    for (const record of keepNewest ? root[key].slice(-maximum) : root[key]) {
+      const id = record?.id ?? record?.requestId;
+      const result = validator(record, key);
+      let reason = null;
+      if (!result.ok) reason = result.error.code;
+      else if (ids.has(id)) reason = 'duplicate-id';
+      else if (kept.length >= maximum) reason = 'collection-limit';
+      if (reason) {
+        // Ledger entries and drafts are bookkeeping and half-hour scratch, not collector records,
+        // and backups strip them for privacy: a broken one is dropped rather than moved into the
+        // quarantine bin, which is exported.
+        if (!DISCARDED_ON_REPAIR.has(key)) setAside(key, record, reason);
+        continue;
+      }
+      ids.add(id);
+      kept.push(record);
+    }
+    root[key] = kept;
+  }
+
+  let observations = 0;
+  root.evidence = root.evidence.filter((row) => {
+    observations += row.observations.length;
+    if (observations <= LIMITS.evidenceObservations) return true;
+    setAside('evidence', row, 'collection-limit');
+    return false;
+  });
+
+  const events = new Map(root.auctionEvents.map((event) => [event.id, event]));
+  const groups = new Set(root.alternativeGroups.map((group) => group.id));
+  for (const lot of root.lots) {
+    if (OWN(lot, 'auctionEventId') && !events.has(lot.auctionEventId)) {
+      noteCleared('auctionEvents', lot.auctionEventId, 'missing-record', lot, 'lots', 'auctionEventId');
+      delete lot.auctionEventId;
+    }
+    if (OWN(lot, 'alternativeGroupId') && !groups.has(lot.alternativeGroupId)) {
+      const groupId = lot.alternativeGroupId;
+      noteCleared('alternativeGroups', groupId, 'missing-record', lot, 'lots', 'alternativeGroupId');
+      noteCleared('alternativeGroups', groupId, 'missing-record', lot, 'lots', 'priority');
+      delete lot.alternativeGroupId;
+      delete lot.priority;
+    }
+  }
+  const lots = new Map(root.lots.map((lot) => [lot.id, lot]));
+  root.collectionEntries = root.collectionEntries.filter((entry) => {
+    const lot = lots.get(entry.lotId);
+    if (lot && lot.collectionEntryId === entry.id) return true;
+    // A collection entry without its lot has no valid shape, so it follows the lot into the bin.
+    setAside('collectionEntries', entry, 'foreign-key');
+    return false;
+  });
+  const entries = new Map(root.collectionEntries.map((entry) => [entry.id, entry]));
+  for (const lot of root.lots) {
+    if (!OWN(lot, 'collectionEntryId')) continue;
+    const entry = entries.get(lot.collectionEntryId);
+    if (entry && entry.lotId === lot.id) continue;
+    // An entry that names another lot as its own belongs to that lot; this one is a stale claim,
+    // and clearing it keeps both lots rather than locking the whole store over one field.
+    if (entry) noteCleared('collectionEntries', entry.id, 'entry-claimed-by-another-lot', lot, 'lots', 'collectionEntryId');
+    else noteCleared('collectionEntries', lot.collectionEntryId, 'missing-record', lot, 'lots', 'collectionEntryId');
+    delete lot.collectionEntryId;
+  }
+  root.alerts = root.alerts.filter((alert) => {
+    const event = events.get(alert.eventId);
+    if (event?.reminders.some(({ id }) => id === alert.reminderId)) return true;
+    setAside('alerts', alert, 'foreign-key');
+    return false;
+  });
+
+  // The collector's ordering is only rewritten where validation insists on it: a group left
+  // non-compact by a rescued member, or one stored with duplicate priorities. A group that still
+  // validates is left exactly as it was, and every priority that does move is written down.
+  const members = new Map();
+  for (const lot of root.lots) {
+    if (!OWN(lot, 'alternativeGroupId')) continue;
+    members.set(lot.alternativeGroupId, [...(members.get(lot.alternativeGroupId) ?? []), lot]);
+  }
+  for (const [groupId, group] of members) {
+    group.sort((left, right) => (left.priority - right.priority) || left.id.localeCompare(right.id));
+    if (group.every((lot, index) => lot.priority === index + 1)) continue;
+    group.forEach((lot, index) => {
+      if (lot.priority === index + 1) return;
+      noteCleared('alternativeGroups', groupId, 'noncompact-priority', lot, 'lots', 'priority');
+      lot.priority = index + 1;
+    });
+  }
+
+  if (quarantine.length) root.quarantine = quarantine;
+  const valid = validateSnapshot(root);
+  return valid.ok ? { ok: true, value: root } : valid;
+}
+
 export function validateSnapshot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;
@@ -755,20 +1027,12 @@ export function validateSnapshot(value) {
     instantResult(value.updatedAt, 'updatedAt'),
     preferencesResult(value.preferences, 'preferences'),
     schedulerResult(value.scheduler, 'scheduler'),
+    OWN(value, 'quarantine') ? quarantineResult(value.quarantine, 'quarantine') : { ok: true },
   );
   if (!header.ok) return header;
 
-  const collections = [
-    validateCollection(value, 'lots', LIMITS.lots, lotResult),
-    validateCollection(value, 'auctionEvents', LIMITS.auctionEvents, eventResult),
-    validateCollection(value, 'alternativeGroups', LIMITS.alternativeGroups, groupResult),
-    validateCollection(value, 'evidence', LIMITS.evidenceObservations, evidenceResult),
-    validateCollection(value, 'collectionEntries', LIMITS.collectionEntries, collectionEntryResult),
-    validateCollection(value, 'drafts', LIMITS.drafts, draftResult),
-    validateCollection(value, 'alerts', LIMITS.alerts, alertResult),
-    validateCollection(value, 'recentCommands', LIMITS.recentCommands, recentCommandResult),
-  ];
-  const collectionFailure = firstFailure(...collections);
+  const collectionFailure = firstFailure(...COLLECTIONS.map(({ key, maximum, validator }) =>
+    validateCollection(value, key, maximum, validator)));
   if (!collectionFailure.ok) return collectionFailure;
 
   const events = new Map(value.auctionEvents.map((event) => [event.id, event]));
@@ -1024,6 +1288,9 @@ export function setOutcome(lot, outcomeDraft, now) {
   }
   if (lot.outcome.status === 'won' && outcomeDraft.status !== 'won' && OWN(lot, 'collectionEntryId')) {
     next.collectionReviewReason = 'source-lot-no-longer-won';
+  } else if (outcomeDraft.status === 'won') {
+    // Correcting the outcome back to won answers the review that the mistake raised.
+    delete next.collectionReviewReason;
   }
 
   const validated = lotResult(next, 'lot');

@@ -1,8 +1,12 @@
-import { LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validateSnapshot } from './core/records.js';
+import {
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords,
+  restartUnusableRevisions, setOutcome, validateDraftPayload, validateEventLocalTimes, validateSnapshot,
+} from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
 import { findDuplicateLot } from './core/lot-context.js';
+import { clone, failure, own } from './core/validate.js';
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
@@ -11,6 +15,9 @@ const SCHEDULE_CHANGING_COMMANDS = new Set([
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
 const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
+const ALERT_STATE_RANK = {
+  pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
+};
 
 function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   const reserved = clone(snapshot);
@@ -25,15 +32,8 @@ function storageBytesWithReserve(snapshot, commandHeadroom = true) {
 }
 
 const ok = (value) => ({ ok: true, value });
-const fail = (code, message, path, existingLotId) => ({
-  ok: false,
-  error: { code, message, ...(path === undefined ? {} : { path }), ...(existingLotId === undefined ? {} : { existingLotId }) },
-});
-const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
-
-function clone(value) {
-  return structuredClone(value);
-}
+// The only failure shape with a fourth field: a lot identity that collided names the lot it collided with.
+const fail = (code, message, path, existingLotId) => failure(code, message, path, existingLotId === undefined ? undefined : { existingLotId });
 
 function getNow(context) {
   return typeof context.now === 'function' ? context.now() : context.now;
@@ -67,7 +67,7 @@ function baseRecord(draft, context) {
 function preferenceFields(value, includeAlerts = false) {
   if (!value || typeof value !== 'object') return null;
   const result = {};
-  for (const key of ['currency', 'catalogue', 'number', 'volume', 'section', 'sampleMode', 'housePremiumPresets']) {
+  for (const key of ['currency', 'housePremiumPresets']) {
     if (own(value, key)) result[key] = value[key];
   }
   if (includeAlerts && own(value, 'desktopAlertsEnabled')) {
@@ -150,13 +150,29 @@ function compactGroupPriorities(lots, groupId, now) {
     });
 }
 
+function adoptTriggerIds(alerts) {
+  // Alerts written before 0.32 embed the event revision in their trigger ID, so an edited event
+  // recreated every alert as pending. Rebuild the current identity from the alert's own fields
+  // rather than by parsing the stored string, and keep the collector's decision if two legacy
+  // alerts collapse onto one identity.
+  const byTrigger = new Map();
+  for (const alert of alerts) {
+    alert.triggerId = `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
+    const kept = byTrigger.get(alert.triggerId);
+    if (!kept || ALERT_STATE_RANK[alert.status] > ALERT_STATE_RANK[kept.status]) {
+      byTrigger.set(alert.triggerId, alert);
+    }
+  }
+  return [...byTrigger.values()];
+}
+
 function reconcileIntoSnapshot(next, context) {
   const now = getNow(context);
   const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
     next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
   const triggers = deriveReminderTriggers(events, now);
-  const triggerIds = new Set(triggers.map(({ id }) => id));
-  next.alerts = next.alerts.filter((alert) => triggerIds.has(alert.triggerId));
+  const triggersById = new Map(triggers.map((trigger) => [trigger.id, trigger]));
+  next.alerts = adoptTriggerIds(next.alerts).filter((alert) => triggersById.has(alert.triggerId));
   const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
   for (const trigger of triggers) {
     if (existing.has(trigger.id)) continue;
@@ -177,9 +193,12 @@ function reconcileIntoSnapshot(next, context) {
     if (missed.has(alert.triggerId)) status = 'missed';
     else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
       (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
-    if (status === alert.status) continue;
+    // The event revision is copied onto the alert for display, so a surviving alert refreshes it.
+    const eventRevision = triggersById.get(alert.triggerId)?.eventRevision ?? alert.eventRevision;
+    if (status === alert.status && eventRevision === alert.eventRevision) continue;
+    if (status !== alert.status && status === 'missed') alert.missedAt = now;
     alert.status = status;
-    if (status === 'missed') alert.missedAt = now;
+    alert.eventRevision = eventRevision;
     alert.revision += 1;
     alert.updatedAt = now;
   }
@@ -195,15 +214,14 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
-  const effects = [];
 
   switch (command.type) {
     case 'preferences.migrateIfAbsent': {
-      if (snapshot.preferences !== null) return ok({ snapshot, effects, value: snapshot.preferences, mutated: false });
+      if (snapshot.preferences !== null) return ok({ snapshot, value: snapshot.preferences, mutated: false });
       const preferences = preferenceFields(command.preferences);
       if (!preferences) return fail('validation', 'Preferences are required.', 'preferences');
       next.preferences = {
-        schemaVersion: 1,
+        schemaVersion: SCHEMA_VERSION,
         revision: 0,
         ...clone(preferences),
         desktopAlertsEnabled: false,
@@ -396,7 +414,6 @@ function mutation(snapshot, command, context) {
       lot.revision += 1;
       lot.updatedAt = now;
       value = lot;
-      effects.push({ type: 'badge.refresh' });
       break;
     }
     case 'lot.outcome.set': {
@@ -422,16 +439,15 @@ function mutation(snapshot, command, context) {
         value.collectionEntryId = entry.id;
         next.collectionEntries.push(entry);
       }
-      if (value.collectionReviewReason && value.collectionEntryId) {
-        const entry = next.collectionEntries.find(({ id }) => id === value.collectionEntryId);
-        if (entry) {
-          entry.reviewReason = value.collectionReviewReason;
-          entry.revision += 1;
-          entry.updatedAt = now;
-        }
-        effects.push({ type: 'collection.review', collectionEntryId: value.collectionEntryId });
+      const reviewed = value.collectionEntryId
+        ? next.collectionEntries.find(({ id }) => id === value.collectionEntryId) : undefined;
+      if (reviewed && value.collectionReviewReason !== reviewed.reviewReason) {
+        // The entry follows its lot, so a correction back to won withdraws the review as well.
+        if (value.collectionReviewReason) reviewed.reviewReason = value.collectionReviewReason;
+        else delete reviewed.reviewReason;
+        reviewed.revision += 1;
+        reviewed.updatedAt = now;
       }
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'collection.review.resolve': {
@@ -478,10 +494,11 @@ function mutation(snapshot, command, context) {
         value = eventFromDraft(eventDraft, found.value.record, context);
         next.auctionEvents[found.value.index] = value;
       }
+      const localTimes = validateEventLocalTimes(value);
+      if (!localTimes.ok) return fail('validation', localTimes.error.message, localTimes.error.path);
       const retainedReminderIds = new Set(value.reminders.map(({ id }) => id));
       next.alerts = next.alerts.filter((alert) =>
         alert.eventId !== value.id || retainedReminderIds.has(alert.reminderId));
-      effects.push({ type: 'scheduler.reconcile' });
       break;
     }
     case 'event.delete': {
@@ -493,7 +510,6 @@ function mutation(snapshot, command, context) {
       next.auctionEvents.splice(found.value.index, 1);
       next.alerts = next.alerts.filter(({ eventId }) => eventId !== command.eventId);
       value = found.value.record;
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'evidence.add': {
@@ -627,7 +643,6 @@ function mutation(snapshot, command, context) {
       }
       if (ids && changed !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
       value = { changed };
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     case 'alert.claim':
@@ -658,13 +673,17 @@ function mutation(snapshot, command, context) {
         return fail('conflict', 'One or more alerts are no longer in the expected delivery state.', 'triggerIds');
       }
       value = { eventId: command.eventId, triggerIds: [...ids], changed };
-      effects.push({ type: 'badge.refresh' });
       break;
     }
     case 'scheduler.reconcile': {
       const plan = reconcileIntoSnapshot(next, context);
       value = { nextWakeAt: plan.nextWakeAt, dueEventCount: Object.keys(plan.overdueByEvent).length };
-      effects.push({ type: 'alarm.schedule', nextWakeAt: plan.nextWakeAt }, { type: 'badge.refresh' });
+      // Every service-worker wake reconciles. A reconcile that changes no alert and no wake time
+      // must leave the root alone, or an idle worker would invalidate an import's expectedRevision.
+      if (next.scheduler.nextWakeAt === snapshot.scheduler.nextWakeAt &&
+          JSON.stringify(next.alerts) === JSON.stringify(snapshot.alerts)) {
+        return ok({ snapshot, value, mutated: false });
+      }
       break;
     }
     case 'backup.import': {
@@ -675,15 +694,30 @@ function mutation(snapshot, command, context) {
       if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
       const preview = previewImport(snapshot, validated.value, command.mode);
       if (!preview.ok) return fail('validation', preview.error.message, preview.error.path);
-      if (!preview.value.snapshot || preview.value.conflicts.length) {
+      // A conflict the merge could not settle keeps the local row and is reported in the preview;
+      // it no longer holds back the records that did merge.
+      if (!preview.value.snapshot) {
         return fail('conflict', 'Import conflicts must be resolved before committing.', 'document');
       }
       const imported = clone(preview.value.snapshot);
       imported.recentCommands = command.mode === 'merge' ? clone(snapshot.recentCommands) : [];
+      // Quarantine is a recovery bin rather than live data, so no import discards what is in it.
+      const rescued = new Map([...(snapshot.quarantine ?? []), ...(imported.quarantine ?? [])]
+        .map((entry) => [JSON.stringify(entry), entry]));
+      if (rescued.size) imported.quarantine = [...rescued.values()];
+      // Only the root keys the snapshot has are copied, one at a time: `Object.assign` would run a
+      // backup's own `"__proto__"` key through the setter and replace the live root's prototype,
+      // and any other key a hand-edited file carries would settle into storage unvalidated.
+      const rootKeys = [
+        'schemaVersion', 'revision', 'updatedAt', 'preferences', 'scheduler', 'quarantine',
+        'lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries',
+        'drafts', 'alerts', 'recentCommands',
+      ];
       for (const key of Object.keys(next)) delete next[key];
-      Object.assign(next, imported);
+      for (const key of rootKeys) {
+        if (Object.prototype.hasOwnProperty.call(imported, key)) next[key] = imported[key];
+      }
       value = { mode: command.mode, counts: preview.value.counts };
-      effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
       break;
     }
     default:
@@ -712,6 +746,12 @@ function mutation(snapshot, command, context) {
       reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
     });
     projected.recentCommands = projected.recentCommands.slice(-200);
+    // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
+    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is.
+    const projectedValid = validateSnapshot(projected);
+    if (!projectedValid.ok) {
+      return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
+    }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
       return fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
     }
@@ -730,7 +770,7 @@ function mutation(snapshot, command, context) {
   next.recentCommands = next.recentCommands.slice(-200);
   const validated = validateSnapshot(next);
   if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
-  return ok({ snapshot: next, effects, value, reply, mutated: true });
+  return ok({ snapshot: next, value, reply, mutated: true });
 }
 
 export function applyCommand(snapshot, command, context) {
@@ -738,11 +778,13 @@ export function applyCommand(snapshot, command, context) {
     return fail('validation', 'Command type is required.', 'type');
   }
   if (typeof command.requestId !== 'string') return fail('validation', 'Request ID is required.', 'requestId');
-  if (command.type === 'snapshot.get') return ok({ snapshot, effects: [], value: snapshot, mutated: false });
+  if (command.type === 'snapshot.get' || command.type === 'snapshot.raw') {
+    return ok({ snapshot, value: snapshot, mutated: false });
+  }
   if (command.type === 'draft.get') {
     const draft = snapshot.drafts.find((item) =>
       item.id === command.draftId && item.expiresAt > getNow(context));
-    return draft ? ok({ snapshot, effects: [], value: draft, mutated: false })
+    return draft ? ok({ snapshot, value: draft, mutated: false })
       : fail('validation', 'Draft was not found or expired.', 'draftId');
   }
   return mutation(snapshot, command, context);
@@ -766,15 +808,47 @@ export function createCommandWriter(storageArea, context) {
         typeof command.requestId !== 'string') {
       return errorReply(command, 'validation', 'not-committed', 'Command type and request ID are required.');
     }
-    let stored;
+    let raw;
     try {
       const result = await storageArea.get(STORAGE_KEY);
-      stored = result?.[STORAGE_KEY] ?? createEmptySnapshot(getNow(context));
+      raw = result?.[STORAGE_KEY] ?? createEmptySnapshot(getNow(context));
     } catch (error) {
       return errorReply(command, 'storage', 'not-committed', error.message || 'Unable to read local storage.');
     }
+    // A raw read never validates, so exporting the stored data stays possible whatever shape it is in.
+    if (command.type === 'snapshot.raw') {
+      return {
+        ok: true,
+        requestId: command.requestId,
+        revision: Number.isSafeInteger(raw?.revision) ? raw.revision : 0,
+        value: raw,
+      };
+    }
+    let stored = migrateSnapshot(raw);
+    // A revision above the usable ceiling has to be restarted before anything else looks at the root, because it is
+    // valid: validation accepts it, so the repair pass below would never run, and the record would be locked at its
+    // very next write. The scan walks the records already about to be validated, changes nothing when there is nothing
+    // to change, and what it does change reaches storage with this command's own write. A root from a version this
+    // build cannot read is left alone, as the repair leaves it: its records are not this build's to walk.
+    const restarted = Number.isSafeInteger(stored?.schemaVersion) && stored.schemaVersion <= SCHEMA_VERSION
+      ? restartUnusableRevisions(stored)
+      : [];
+    if (restarted.length) {
+      console.warn('Giga Pinax: restarted a revision no write could have produced, at', restarted
+        .map(({ collection, id, field }) => `${collection}${id ? ` ${id}` : ''} (${field})`).join(', '));
+    }
     const current = validateSnapshot(stored);
-    if (!current.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
+    if (!current.ok) {
+      // Continue with the records that still validate; the rest wait in quarantine for the
+      // collector. The repair reaches storage with the next write, not with this read. A root
+      // migration could not bring to this version is not a broken record: judging its records by
+      // today's validators would condemn a shape they were never meant to read.
+      const rescued = current.error.code === 'unsupported-schema'
+        ? current
+        : quarantineInvalidRecords(stored, getNow(context));
+      if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
+      stored = rescued.value;
+    }
 
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };

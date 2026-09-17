@@ -63,10 +63,8 @@ async function launchLatest(api) {
     const url = latestLaunchUrl;
     let answer = null;
     try { answer = await api.runtime.sendMessage({ type: LOOKUP_MESSAGE, url }); } catch { /* no window open */ }
-    if (answer && !Object.hasOwn(answer, 'windowId')) {
-      if (version === launchVersion) return;
-      continue;
-    }
+    // An answer that names no window is no window to bring forward - a listener that took the message but could not read its own window, or none at
+    // all - so the lookup goes on to open a window of its own rather than being dropped where nobody can see it.
     if (Number.isInteger(answer?.windowId) && answer.windowId >= 0) {
       try {
         await api.windows.update(answer.windowId, { focused: true });

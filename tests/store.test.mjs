@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createEmptySnapshot } from '../extension/core/records.js';
-import { exportBackup } from '../extension/core/backup.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
+import { BACKUP_FORMAT, exportBackup } from '../extension/core/backup.js';
+import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
+const LATER = '2026-09-13T12:00:00.000Z';
+const LATEST = '2026-09-14T12:00:00.000Z';
 let nextId = 1;
 const uuid = () => `00000000-0000-4000-8000-${String(nextId++).padStart(12, '0')}`;
 const context = () => ({ now: () => NOW, newId: uuid });
@@ -235,6 +238,29 @@ test('sets an outcome and atomically creates reciprocal collection history', () 
   assert.equal(won.snapshot.collectionEntries[0].lotId, won.value.id);
 });
 
+test('correcting a lot back to won answers the collection review the mistake raised', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] },
+  }));
+  const won = reduce(created.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 0, outcome: { status: 'won' },
+    addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-12', sourceLinks: [] },
+  }));
+  const lost = reduce(won.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 1, outcome: { status: 'lost' },
+  }));
+  assert.equal(lost.value.collectionReviewReason, 'source-lot-no-longer-won');
+  assert.equal(lost.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+
+  const corrected = reduce(lost.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 2, outcome: { status: 'won' },
+  }));
+  assert.equal(Object.hasOwn(corrected.value, 'collectionReviewReason'), false);
+  assert.equal(Object.hasOwn(corrected.snapshot.collectionEntries[0], 'reviewReason'), false);
+  assert.equal(corrected.snapshot.collectionEntries[0].revision, 2);
+  assert.equal(corrected.value.collectionEntryId, corrected.snapshot.collectionEntries[0].id);
+});
+
 test('event save derives timed UTC instant and reminder IDs in the authority', () => {
   const saved = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,
@@ -258,9 +284,58 @@ test('event save derives timed UTC instant and reminder IDs in the authority', (
   assert.equal(invalid.error.code, 'validation');
 });
 
+test('event save rejects a reminder whose wall time does not exist in the confirmed zone', () => {
+  const result = applyCommand(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Spring forward', eventKind: 'auction-day', precision: 'date-only',
+      localDate: '2026-03-29', timeZone: 'Europe/London', reminderScope: 'standalone',
+      reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '01:30' }],
+    },
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.path, 'event.reminders[0].localTime');
+});
+
+// A reminder that far before its event has no date to resolve at all: it must be refused as an out-of-bound day count, not shift the calendar past
+// the range a Date can hold and crash the writer.
+test('event save refuses an absurd daysBefore as an ordinary validation failure', () => {
+  for (const daysBefore of [1e9, 366, -1e9, Number.MAX_SAFE_INTEGER]) {
+    const result = applyCommand(createEmptySnapshot(NOW), command('event.save', {
+      expectedRevision: null,
+      event: {
+        name: 'Far off', eventKind: 'auction-day', precision: 'date-only',
+        localDate: '2026-02-10', timeZone: 'Europe/London', reminderScope: 'standalone',
+        reminders: [{ kind: 'wall-time', daysBefore, localTime: '09:00' }],
+      },
+    }), context());
+    assert.equal(result.ok, false, String(daysBefore));
+    assert.equal(result.error.code, 'validation', String(daysBefore));
+  }
+});
+
+test('a stored event whose start instant drifted from its local fields still loads', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.auctionEvents.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Shifted sale',
+    eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-10', localTime: '12:00',
+    timeZone: 'Europe/London', startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }],
+    createdAt: NOW, updatedAt: NOW,
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.auctionEvents[0].startsAt, '2026-10-10T12:00:00.000Z');
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().alerts[0].triggerAt, '2026-10-10T11:00:00.000Z');
+});
+
 test('migrates preferences once and bounds shared drafts by expiry and count', () => {
   let state = createEmptySnapshot(NOW);
-  const prefs = { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true };
+  const prefs = { currency: 'GBP' };
   const migrated = reduce(state, command('preferences.migrateIfAbsent', { preferences: prefs }));
   state = migrated.snapshot;
   const again = reduce(state, command('preferences.migrateIfAbsent', { preferences: { ...prefs, currency: 'EUR' } }));
@@ -280,7 +355,7 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
 
 test('saves bounded unique house premiums and preserves them for older callers', () => {
   const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
-    preferences: { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I', section: 'Nero', sampleMode: false },
+    preferences: { currency: 'GBP' },
   }));
   const saved = reduce(base.snapshot, command('preferences.save', {
     expectedRevision: 0,
@@ -393,6 +468,10 @@ test('preference migration ignores client-owned metadata', () => {
   assert.equal(prefs.value.revision, 0);
   assert.equal('id' in prefs.value, false);
   assert.equal(prefs.value.createdAt, NOW);
+  // The research form is the popup's own, not the durable root's: a caller still sending it is ignored.
+  for (const key of ['catalogue', 'number', 'volume', 'section', 'sampleMode']) {
+    assert.equal(key in prefs.value, false, key);
+  }
 });
 
 test('rejects invalid commands without mutating the supplied snapshot', () => {
@@ -494,8 +573,56 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   const writer = createCommandWriter(storage, context());
   const reply = await writer.commitCommand(command('snapshot.get'));
   assert.equal(reply.ok, true);
-  assert.equal(reply.value.schemaVersion, 1);
+  assert.equal(reply.value.schemaVersion, SCHEMA_VERSION);
   assert.equal(storage.read().recentCommands.length, 0);
+});
+
+test('a root with one corrupt lot still loads, exports, and keeps the lot quarantined', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const keep = {
+    id: uuid(), revision: 0, dataClass: 'collector', title: 'Sound lot', sourceLinks: [],
+    bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  };
+  const corrupt = { ...structuredClone(keep), id: uuid(), outcome: { status: 'maybe' } };
+  stored.lots.push(keep, corrupt);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.lots.map(({ id }) => id), [keep.id]);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record.id]),
+    [['lots', corrupt.id]]);
+  assert.equal(reply.revision, 0);
+  assert.equal(storage.read().lots.length, 2, 'a read must not rewrite storage');
+  assert.equal(JSON.parse(exportBackup(reply.value, NOW).value).data.quarantine.length, 1);
+
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Added later', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true);
+  assert.deepEqual(storage.read().quarantine.map(({ record }) => record), [corrupt]);
+  assert.equal(storage.read().lots.length, 2);
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().quarantine.length, 1);
+});
+
+test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
+  stored.scheduler = 'corrupt';
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.revision, 0);
+  assert.deepEqual(reply.value, stored);
+  assert.deepEqual(storage.read(), stored);
+  const blocked = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'New', sourceLinks: [] },
+  }));
+  assert.equal(blocked.code, 'storage');
 });
 
 test('scheduler reconciliation persists occurrences and one next wake', () => {
@@ -511,6 +638,30 @@ test('scheduler reconciliation persists occurrences and one next wake', () => {
   assert.equal(reconciled.snapshot.alerts.length, 1);
   assert.equal(reconciled.snapshot.alerts[0].status, 'pending');
   assert.equal(reconciled.snapshot.scheduler.nextWakeAt, '2026-10-10T11:00:00.000Z');
+});
+
+test('repeated reconciliation of an unchanged store neither writes nor bumps the revision', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const saved = await writer.commitCommand(command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  }));
+  assert.equal(saved.ok, true);
+  const first = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(first.ok, true);
+  const settled = storage.read();
+  for (let index = 0; index < 3; index += 1) {
+    const reply = await writer.commitCommand(command('scheduler.reconcile'));
+    assert.equal(reply.ok, true);
+    assert.equal(reply.revision, settled.revision);
+    assert.equal(reply.value.nextWakeAt, '2026-10-10T11:00:00.000Z');
+  }
+  assert.deepEqual(storage.read(), settled);
 });
 
 test('scheduler reconciliation supports more than 500 alerts from valid events', () => {
@@ -625,6 +776,197 @@ test('linked-event reminders exist only while at least one linked lot stays open
   assert.equal(state.snapshot.alerts.length, 0);
 });
 
+// The store the collector already has must open, whatever a crafted backup or an older build left in it. A revision no
+// write could have counted to, and an event whose reminder falls outside the instants a record can hold, each made every
+// later reconcile fail validation - and the background swallowed that, so the reminders simply stopped.
+test('a root carrying an uncountable revision and an underivable reminder still opens, reconciles and exports', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push({
+    id: uuid(), revision: Number.MAX_SAFE_INTEGER, dataClass: 'collector', title: 'Nero denarius',
+    sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const reminderId = uuid();
+  stored.auctionEvents.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Year zero sale', eventKind: 'auction-starts',
+    precision: 'timed', localDate: '2026-10-01', localTime: '00:00', timeZone: 'UTC',
+    startsAt: '0000-01-01T00:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: reminderId, kind: 'offset', offsetMinutes: 60 }], createdAt: NOW, updatedAt: NOW,
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.lots.length, 1, 'the coin is still there');
+  assert.equal(opened.value.auctionEvents.length, 1, 'and so is the sale');
+  assert.equal(opened.value.lots[0].revision, 0, 'counted again from a number the arithmetic can hold');
+
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true, reconciled.message);
+  const after = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(after.value.lots.length, 1);
+  assert.equal(after.value.auctionEvents.length, 1);
+  // The one reminder that cannot be spelled as an instant has no alert; nothing else is affected.
+  assert.deepEqual(after.value.alerts, []);
+  assert.equal(exportBackup(after.value, NOW).ok, true);
+});
+
+// A root and a document are held to different ceilings. Validation still accepts 2^52, because a store that already
+// carries it has to open; but a record stopped there could never be written to again, so nothing is taken IN above the
+// usable ceiling, and a stored root above it is counted again from zero.
+const rootWithRevisions = (revision) => {
+  const snapshot = createEmptySnapshot(NOW);
+  const lotId = uuid();
+  snapshot.lots.push({
+    id: lotId, revision, dataClass: 'collector', title: 'Nero denarius', sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision, currency: 'USD', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+  };
+  return { snapshot, lotId };
+};
+
+test('a backup carrying a revision no write could have produced is refused whole, in either mode', async () => {
+  for (const revision of [LIMITS.revision, LIMITS.usableRevision + 1]) {
+    for (const mode of ['replace', 'merge']) {
+      const storage = memoryStorage(createEmptySnapshot(NOW));
+      const writer = createCommandWriter(storage, context());
+      const { snapshot } = rootWithRevisions(revision);
+      const refused = await writer.commitCommand(command('backup.import', {
+        expectedRevision: 0, mode, document: exportBackup(snapshot, NOW).value,
+      }));
+      assert.equal(refused.ok, false, `${mode} at ${revision}`);
+      assert.match(refused.message, /crafted or corrupt/i);
+      assert.deepEqual(storage.read().lots, [], 'nothing of the file reached storage');
+    }
+  }
+});
+
+test('a backup at the usable ceiling imports, and what it carries can still be saved', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const { snapshot, lotId } = rootWithRevisions(LIMITS.usableRevision);
+  const imported = await writer.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(snapshot, NOW).value,
+  }));
+  assert.equal(imported.ok, true, imported.message);
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: LIMITS.usableRevision,
+    lot: { id: lotId, title: 'Nero denarius, retoned', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(saved.value.revision, LIMITS.usableRevision + 1);
+  const currency = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: LIMITS.usableRevision, preferences: { currency: 'EUR' },
+  }));
+  assert.equal(currency.ok, true, currency.message);
+});
+
+test('a stored root at the ceiling opens, is written to again and exports', async () => {
+  const { snapshot, lotId } = rootWithRevisions(LIMITS.revision);
+  const storage = memoryStorage(snapshot);
+  const writer = createCommandWriter(storage, context());
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+  let opened;
+  try {
+    opened = await writer.commitCommand(command('snapshot.get'));
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.lots.length, 1, 'the coin is still there');
+  assert.equal(opened.value.lots[0].revision, 0, 'counted again from a number every later write can hold');
+  assert.equal(opened.value.preferences.revision, 0);
+  assert.equal(warnings.length, 1, 'one line for a support request, naming what was restarted');
+  assert.match(warnings[0], /lots/);
+  assert.match(warnings[0], new RegExp(lotId));
+
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: 0, lot: { id: lotId, title: 'Nero denarius, retoned', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(storage.read().lots[0].revision, 1, 'the restart reached storage with the write');
+  assert.equal(storage.read().preferences.revision, 0);
+
+  // Idempotent: the root it wrote has nothing left to restart, so the next load says nothing.
+  warnings.length = 0;
+  console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+  let after;
+  try {
+    after = await writer.commitCommand(command('snapshot.get'));
+  } finally {
+    console.warn = realWarn;
+  }
+  assert.deepEqual(warnings, []);
+  assert.equal(exportBackup(after.value, NOW).ok, true);
+});
+
+test('an ordinary root is read, not rewritten, on load', async () => {
+  const { snapshot } = rootWithRevisions(3);
+  const options = {};
+  const storage = memoryStorage(snapshot, options);
+  const writer = createCommandWriter(storage, context());
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(opened.value.lots[0].revision, 3);
+  assert.equal(opened.value.preferences.revision, 3);
+  assert.equal(options.setCalled, undefined, 'a load is still a read');
+  assert.deepEqual(storage.read(), structuredClone(snapshot));
+});
+
+// A replace takes the other install's records, not its schedule: that is derived again from the events it just took.
+// Adopting the file's scheduler carried a wake time, and a revision, that belong to a store this one no longer is.
+test('a replace import starts the schedule again instead of adopting the file’s', () => {
+  const current = createEmptySnapshot(NOW);
+  current.scheduler = { revision: 4, nextWakeAt: '2026-09-20T09:00:00.000Z', lastReconciledAt: NOW };
+  const incoming = createEmptySnapshot(NOW);
+  incoming.scheduler = { revision: 900, nextWakeAt: '2030-01-01T00:00:00.000Z', lastReconciledAt: NOW };
+  const eventId = uuid();
+  const reminderId = uuid();
+  incoming.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', name: 'Imported sale', eventKind: 'auction-starts',
+    precision: 'timed', localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+    startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: reminderId, kind: 'offset', offsetMinutes: 60 }], createdAt: NOW, updatedAt: NOW,
+  });
+  incoming.alerts.push({
+    id: uuid(), revision: 3, dataClass: 'collector', triggerId: `${eventId}:${reminderId}:2026-10-10T11:00:00.000Z`,
+    eventId, eventRevision: 0, reminderId, triggerAt: '2026-10-10T11:00:00.000Z',
+    status: 'acknowledged', acknowledgedAt: NOW, createdAt: NOW, updatedAt: NOW,
+  });
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.scheduler, { revision: 0, nextWakeAt: null, lastReconciledAt: null });
+  // The acknowledgement is kept: its reminder came with the file, so the reconcile derives the same trigger again.
+  assert.equal(imported.snapshot.alerts.length, 1);
+  assert.equal(imported.snapshot.alerts[0].status, 'acknowledged');
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  assert.equal(reconciled.snapshot.alerts[0].status, 'acknowledged');
+});
+
+// Every command that changes the schedule is followed by a reconcile that is not part of it. A command whose own
+// projection could not be reconciled used to commit and leave the reconcile failing from then on, with nobody to tell.
+test('a command whose reconcile would be invalid is refused rather than committed', () => {
+  const current = createEmptySnapshot(NOW);
+  current.scheduler = { revision: LIMITS.revision, nextWakeAt: null, lastReconciledAt: null };
+  const result = applyCommand(current, command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'validation');
+  assert.match(result.error.message, /reminders could not be scheduled/i);
+  assert.equal(current.auctionEvents.length, 0);
+});
+
 test('backup import replaces through the same validated root mutation', () => {
   const current = createEmptySnapshot(NOW);
   const incoming = createEmptySnapshot(NOW);
@@ -638,6 +980,168 @@ test('backup import replaces through the same validated root mutation', () => {
   }));
   assert.equal(imported.snapshot.alternativeGroups[0].name, 'Imported');
   assert.equal(imported.snapshot.revision, 1);
+});
+
+test('a merge import folds a duplicated auction lot into the local one and leaves it editable', () => {
+  const auctionContext = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+  const lot = (id, title) => ({
+    id, revision: 0, dataClass: 'collector', title, sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], auctionContext, createdAt: NOW, updatedAt: NOW,
+  });
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(), 'Nero denarius'));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(), 'Nero denarius from the other install'));
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.equal(imported.snapshot.lots.length, 1);
+  assert.equal(imported.snapshot.lots[0].title, 'Nero denarius');
+  const saved = reduce(imported.snapshot, command('lot.save', {
+    expectedRevision: 0,
+    lot: { id: imported.snapshot.lots[0].id, title: 'Nero denarius, retoned', sourceLinks: [], auctionContext },
+  }));
+  assert.equal(saved.value.title, 'Nero denarius, retoned');
+});
+
+test('a merge import commits with the local rows a conflict kept', () => {
+  const observation = {
+    id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'collector', retrievedAt: NOW,
+    houseSaleId: 'Sale 10', auctionHouse: 'House', auctionDate: '2026-01-02', lotNumber: '9',
+    priceBasis: 'hammer', amount: { currency: 'EUR', minor: 12000 },
+  };
+  const row = { ...deduplicateEvidence([observation]).value.evidence[0], revision: 0, createdAt: NOW, updatedAt: NOW };
+  const current = createEmptySnapshot(NOW);
+  current.evidence.push(row);
+  const incoming = createEmptySnapshot(NOW);
+  const conflicting = structuredClone(row);
+  conflicting.id = uuid();
+  conflicting.observations[0].id = uuid();
+  conflicting.observations[0].amount.minor = 14000;
+  conflicting.resolved.hammer.minor = 14000;
+  incoming.evidence.push(conflicting);
+  incoming.alternativeGroups.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Imported', createdAt: NOW, updatedAt: NOW,
+  });
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.evidence, [row]);
+  assert.equal(imported.snapshot.alternativeGroups.length, 1, 'one conflict no longer blocks the rest');
+  assert.equal(imported.value.counts.keptLocal, 1);
+});
+
+test('a merge import survives a reminder the other install replaced', () => {
+  const event = {
+    name: 'Sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-10',
+    localTime: '12:00', timeZone: 'Europe/London', reminderScope: 'standalone',
+    reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+  };
+  let local = reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event })).snapshot;
+  local = reduce(local, command('scheduler.reconcile')).snapshot;
+  assert.equal(local.alerts.length, 1);
+
+  // The other install starts from the same records and rewrites the reminder, so the ID the local
+  // alert was derived from no longer exists anywhere in the backup.
+  const saved = local.auctionEvents[0];
+  let other = structuredClone(local);
+  other = reduce(other, command('event.save', {
+    expectedRevision: saved.revision,
+    event: { ...event, id: saved.id, reminders: [{ kind: 'offset', offsetMinutes: 120 }] },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATER).value,
+  }), { now: () => LATER, newId: uuid });
+  assert.deepEqual(imported.snapshot.auctionEvents[0].reminders[0].offsetMinutes, 120);
+  assert.deepEqual(imported.snapshot.alerts, [], 'the stale alert is dropped, not the whole import');
+  // The reconcile that follows an import derives the schedule again from the merged events.
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'), { now: () => LATER, newId: uuid });
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  assert.equal(reconciled.snapshot.alerts[0].reminderId, imported.snapshot.auctionEvents[0].reminders[0].id);
+});
+
+test('a merge import takes the collection history the other install recorded', () => {
+  const auctionContext = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+  const local = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Nero denarius', sourceLinks: [], auctionContext },
+  })).snapshot;
+  const saved = local.lots[0];
+  const other = reduce(structuredClone(local), command('lot.outcome.set', {
+    lotId: saved.id, expectedRevision: saved.revision,
+    outcome: { status: 'won', hammer: { currency: 'USD', minor: 50000 } },
+    addToCollection: { title: 'Nero denarius', acquisitionDate: '2026-09-13', sourceLinks: [] },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATER).value,
+  }), { now: () => LATER, newId: uuid });
+  const [merged] = imported.snapshot.lots;
+  assert.equal(merged.outcome.status, 'won');
+  assert.equal(merged.collectionEntryId, other.lots[0].collectionEntryId);
+  assert.deepEqual(
+    imported.snapshot.collectionEntries.map(({ id }) => id),
+    other.collectionEntries.map(({ id }) => id),
+  );
+  assert.equal(imported.value.counts.added, 1);
+  // A won lot that already carries its entry cannot be added to the collection twice.
+  const twice = applyCommand(imported.snapshot, command('lot.outcome.set', {
+    lotId: merged.id, expectedRevision: merged.revision, outcome: merged.outcome,
+    addToCollection: { title: 'again', acquisitionDate: '2026-09-13', sourceLinks: [] },
+  }), context());
+  assert.equal(twice.ok, false);
+});
+
+test('a lot the merge replaced refuses a save holding the pre-merge revision', () => {
+  const shared = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Shared', sourceLinks: [] },
+  })).snapshot;
+  const id = shared.lots[0].id;
+  // Both installs edit the same lot from the same starting revision, so the counters end up equal
+  // and only the write times tell them apart.
+  const local = reduce(structuredClone(shared), command('lot.save', {
+    expectedRevision: 0, lot: { id, title: 'Desktop edit', sourceLinks: [], notes: 'desktop notes' },
+  }), { now: () => LATER, newId: uuid }).snapshot;
+  const other = reduce(structuredClone(shared), command('lot.save', {
+    expectedRevision: 0, lot: { id, title: 'Laptop edit', sourceLinks: [] },
+  }), { now: () => LATEST, newId: uuid }).snapshot;
+  // What an editor opened before the import still holds.
+  const basis = local.lots[0].revision;
+  assert.equal(basis, other.lots[0].revision, 'per-install counters agree by accident');
+
+  const imported = reduce(local, command('backup.import', {
+    expectedRevision: local.revision, mode: 'merge', document: exportBackup(other, LATEST).value,
+  }), { now: () => LATEST, newId: uuid });
+  assert.equal(imported.snapshot.lots[0].title, 'Laptop edit');
+  assert.equal(imported.snapshot.lots[0].notes, undefined, 'the backup replaced the local body');
+  const stale = applyCommand(imported.snapshot, command('lot.save', {
+    expectedRevision: basis, lot: { id, title: 'Desktop edit', sourceLinks: [] },
+  }), context());
+  assert.equal(stale.ok, false, 'a stale editor must be told, not allowed to save over the backup');
+  assert.equal(stale.error.code, 'conflict');
+});
+
+test('an imported root keeps only the keys the snapshot knows', () => {
+  const data = createEmptySnapshot(NOW);
+  // A hand-edited or hostile backup whose root carries an own "__proto__" key and an unknown one.
+  const text = JSON.stringify({
+    format: 'ancient-coin-auction-companion', schemaVersion: SCHEMA_VERSION, exportedAt: NOW, data,
+  }).replace('"lots":[]', '"lots":[],"__proto__":{"polluted":true},"extraRootKey":1');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(JSON.parse(text).data, '__proto__'), true,
+    'the fixture really does carry an own __proto__ key',
+  );
+  const imported = reduce(createEmptySnapshot(NOW), command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: text,
+  }));
+  const root = imported.snapshot;
+  assert.equal(Object.getPrototypeOf(root), Object.prototype, 'the live root keeps its prototype');
+  assert.equal(root.polluted, undefined);
+  assert.equal(({}).polluted, undefined);
+  assert.equal('extraRootKey' in root, false, 'an unknown root key never reaches the store');
+  assert.equal(Object.prototype.hasOwnProperty.call(root, '__proto__'), false);
+  assert.equal(root.lots.length, 0);
+  assert.equal(root.revision, 1);
 });
 
 test('adds manual evidence through authority metadata and resolves a conflicting retained claim', () => {
@@ -702,6 +1206,129 @@ test('acknowledges alerts by the public trigger ID while preserving future sibli
   const acknowledged = reduce(state, command('alert.ack', { triggerIds: [due.triggerId] }));
   assert.equal(acknowledged.snapshot.alerts.find(({ triggerId }) => triggerId === due.triggerId).status, 'acknowledged');
   assert.equal(acknowledged.snapshot.alerts.find(({ triggerId }) => triggerId === pending.triggerId).status, 'pending');
+});
+
+function dueAlertState() {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Renamed sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [
+        { kind: 'offset', offsetMinutes: 20 }, { kind: 'offset', offsetMinutes: 10 },
+      ],
+    },
+  }));
+  const event = state.value;
+  state = reduce(state.snapshot, command('scheduler.reconcile'));
+  const [first, second] = state.snapshot.alerts;
+  state = reduce(state.snapshot, command('alert.ack', { triggerIds: [first.triggerId] }));
+  state = reduce(state.snapshot, command('alert.snooze', {
+    triggerIds: [second.triggerId], snoozedUntil: '2026-09-12T12:10:00.000Z',
+  }));
+  return { event, snapshot: state.snapshot };
+}
+
+function renameEvent(snapshot, event) {
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  return reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: { ...structuredClone(stored), name: 'Renamed sale, corrected' },
+  })).snapshot;
+}
+
+test('renaming an event keeps acknowledged and snoozed reminders through reconciliation', () => {
+  const { event, snapshot } = dueAlertState();
+  const reconciled = reduce(renameEvent(snapshot, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  const snoozed = reconciled.alerts.find(({ status }) => status === 'snoozed');
+  assert.equal(snoozed.snoozedUntil, '2026-09-12T12:10:00.000Z');
+  assert.equal(reconciled.alerts.every(({ eventRevision }) => eventRevision === 1), true);
+});
+
+test('reconciliation rewrites alert IDs stored in the older revision-scoped format', () => {
+  const { event, snapshot } = dueAlertState();
+  const legacy = structuredClone(snapshot);
+  for (const alert of legacy.alerts) {
+    alert.triggerId = `${alert.eventId}:${alert.eventRevision}:${alert.reminderId}:${alert.triggerAt}`;
+  }
+  const reconciled = reduce(renameEvent(legacy, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  assert.equal(reconciled.alerts.every(({ triggerId, eventId, reminderId, triggerAt }) =>
+    triggerId === `${eventId}:${reminderId}:${triggerAt}`), true);
+});
+
+// The event form rebuilds its command from the fields it shows, so the reminder IDs only survive
+// because workspace.js's mergeEventReminders carries them; this is that submitted shape.
+test('an event edited through the workspace form keeps its reminder identities', () => {
+  const { event, snapshot } = dueAlertState();
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  const edited = reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: {
+      id: stored.id, name: 'Renamed sale, corrected', eventKind: 'auction-starts',
+      precision: 'timed', localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone',
+      reminders: stored.reminders.map((reminder) => ({ ...reminder })),
+    },
+  })).snapshot;
+  assert.deepEqual(edited.auctionEvents[0].reminders.map(({ id }) => id),
+    stored.reminders.map(({ id }) => id));
+  const reconciled = reduce(edited, command('scheduler.reconcile')).snapshot;
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+});
+
+test('an unsupported stored schema is refused without being taken apart record by record', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.schemaVersion = SCHEMA_VERSION + 1;
+  // Judging a later version's records by today's validators is the bug, so the lot counts every
+  // read of it: the repair cannot copy or validate a record without going through these.
+  let readsOfTheLot = 0;
+  stored.lots.push(Object.defineProperties({}, {
+    id: { enumerable: true, get() { readsOfTheLot += 1; return '55555555-5555-4555-8555-555555555555'; } },
+    title: { enumerable: true, get() { readsOfTheLot += 1; return 'Written by a later version'; } },
+  }));
+  // The shared fake clones on read, which would strip the getters before the store sees them.
+  const storage = {
+    async get(key) { return { [key]: stored }; },
+    async set() { assert.fail('a root from a later version is left exactly as it is'); },
+  };
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'storage');
+  assert.equal(readsOfTheLot, 0, 'a root we cannot read must not be walked record by record');
+  const raw = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
+  assert.equal(readsOfTheLot, 0);
+});
+
+// The ledger is appended to and trimmed from the front everywhere else, and a retry can only be
+// answered from an entry that is still there, so an overflowing one must lose its oldest rows.
+test('a repaired ledger keeps its newest entries', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const ledgerId = (index) => `11111111-0000-4000-8000-${String(index).padStart(12, '0')}`;
+  for (let index = 0; index < LIMITS.recentCommands + 50; index += 1) {
+    stored.recentCommands.push({
+      requestId: ledgerId(index),
+      commandType: 'lot.save',
+      revision: index,
+      committedAt: NOW,
+      reply: { ok: true, requestId: ledgerId(index), revision: index, value: null },
+    });
+  }
+  const writer = createCommandWriter(memoryStorage(stored), context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.recentCommands.length, LIMITS.recentCommands);
+  assert.deepEqual(
+    [reply.value.recentCommands[0].requestId, reply.value.recentCommands.at(-1).requestId],
+    [ledgerId(50), ledgerId(LIMITS.recentCommands + 49)],
+  );
 });
 
 test('claims an overdue event before notification delivery and records the outcome', () => {
@@ -769,4 +1396,218 @@ test('failed notification delivery expires without another retry after event rel
   const expired = reduce(state, command('scheduler.reconcile'), { now: () => '2026-09-12T12:15:00.001Z', newId: uuid });
   assert.equal(expired.snapshot.alerts[0].status, 'missed');
   assert.equal(expired.value.nextWakeAt, null);
+});
+
+// Sample mode is gone, but a row a build that had it could have written must not take the store
+// down with it. It never counted towards a median while it existed, so it is not quietly relabelled
+// as the collector's own: it is set aside verbatim, where Data health shows it and a backup keeps it.
+test('a stored evidence row still marked as sample is set aside rather than lost or counted', async () => {
+  const observation = {
+    id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'sample', retrievedAt: NOW,
+    houseSaleId: 'Sale 10', auctionHouse: 'House', auctionDate: '2026-01-02', lotNumber: '9',
+    priceBasis: 'hammer', amount: { currency: 'EUR', minor: 12000 },
+  };
+  const sample = {
+    id: uuid(), revision: 0, dataClass: 'sample', observations: [observation],
+    saleIdentity: { auctionHouse: 'House', houseSaleId: 'Sale 10', lotNumber: '9' },
+    inclusion: 'included',
+    resolved: { priceBasis: 'hammer', hammer: { currency: 'EUR', minor: 12000 }, resolution: 'source-agreement' },
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const stored = createEmptySnapshot(NOW);
+  stored.evidence.push(sample);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.evidence, []);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record]),
+    [['evidence', sample]]);
+});
+
+// A whole root as the 0.31.1 build left it in storage - written by that build, with the research
+// form in its preferences, a preset with an increment ladder and one without, two lots (one with an
+// outcome and a collection entry), an event with two reminders and the alerts they produced, a piece
+// of evidence, a group, a draft, a row that build had already set aside, and its request ledger.
+// Copied from what that writer produced rather than shaped to suit the migration.
+const V1_ROOT = Object.freeze({
+  schemaVersion: 1,
+  revision: 10,
+  updatedAt: NOW,
+  preferences: {
+    schemaVersion: 1, revision: 1, currency: 'GBP',
+    catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true,
+    desktopAlertsEnabled: true, createdAt: NOW, updatedAt: NOW,
+    housePremiumPresets: [
+      { name: 'CNG', buyerPremiumBps: 2000, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 10000, step: 1000 }] } },
+      { name: 'Roma', buyerPremiumBps: 2400 },
+    ],
+  },
+  lots: [
+    { id: '00000000-0000-4000-8000-000000000010', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      title: 'Athens owl', sourceLinks: [{ source: 'manual', url: 'https://example.test/lot' }], bidHistory: [],
+      outcome: { status: 'open' }, outcomeHistory: [], notes: 'nice', auctionEventId: '00000000-0000-4000-8000-000000000006' },
+    { id: '00000000-0000-4000-8000-000000000012', revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      title: 'Won coin', sourceLinks: [], bidHistory: [],
+      outcome: { status: 'won', hammer: { currency: 'EUR', minor: 12000 }, verification: 'personal-unverified' },
+      outcomeHistory: [{ id: '996e6cc2-190e-5d13-b922-ed9df65bb00a', from: 'open', to: 'won', recordedAt: NOW }],
+      collectionEntryId: '00000000-0000-4000-8000-000000000014' },
+  ],
+  auctionEvents: [
+    { id: '00000000-0000-4000-8000-000000000006', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      name: 'Near sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:10',
+      timeZone: 'UTC', startsAt: '2026-09-12T12:10:00.000Z', reminderScope: 'standalone',
+      reminders: [
+        { kind: 'offset', offsetMinutes: 20, id: '00000000-0000-4000-8000-000000000007' },
+        { kind: 'offset', offsetMinutes: 5, id: '00000000-0000-4000-8000-000000000008' },
+      ] },
+  ],
+  alternativeGroups: [
+    { id: '00000000-0000-4000-8000-000000000004', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, name: 'One owl' },
+  ],
+  evidence: [
+    { id: 'a798446e-60c6-43d3-9601-b89ad69d8991', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      saleIdentity: { auctionHouse: 'House', houseSaleId: 'Sale 7', lotNumber: '14' },
+      observations: [{ id: '00000000-0000-4000-8000-000000000017', queryId: '00000000-0000-4000-8000-000000000015',
+        source: 'manual', dataClass: 'collector', retrievedAt: NOW, houseSaleId: 'Sale 7', auctionHouse: 'House',
+        auctionDate: '2026-01-02', lotNumber: '14', priceBasis: 'hammer', amount: { currency: 'GBP', minor: 10000 } }],
+      inclusion: 'included',
+      resolved: { priceBasis: 'hammer', hammer: { currency: 'GBP', minor: 10000 }, resolution: 'source-agreement' } },
+  ],
+  collectionEntries: [
+    { id: '00000000-0000-4000-8000-000000000014', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      lotId: '00000000-0000-4000-8000-000000000012', title: 'Won coin', acquisitionDate: '2026-09-12',
+      sourceLinks: [], hammer: { currency: 'EUR', minor: 12000 } },
+  ],
+  drafts: [
+    { id: '00000000-0000-4000-8000-000000000022', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      kind: 'auction-capture', payload: { rawText: 'Auction x' }, expiresAt: '2026-09-12T12:30:00.000Z' },
+  ],
+  alerts: [
+    { id: '00000000-0000-4000-8000-000000000019', revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      triggerId: '00000000-0000-4000-8000-000000000006:00000000-0000-4000-8000-000000000007:2026-09-12T11:50:00.000Z',
+      eventId: '00000000-0000-4000-8000-000000000006', eventRevision: 0,
+      reminderId: '00000000-0000-4000-8000-000000000007', triggerAt: '2026-09-12T11:50:00.000Z', status: 'due' },
+    { id: '00000000-0000-4000-8000-000000000020', revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW,
+      triggerId: '00000000-0000-4000-8000-000000000006:00000000-0000-4000-8000-000000000008:2026-09-12T12:05:00.000Z',
+      eventId: '00000000-0000-4000-8000-000000000006', eventRevision: 0,
+      reminderId: '00000000-0000-4000-8000-000000000008', triggerAt: '2026-09-12T12:05:00.000Z', status: 'pending' },
+  ],
+  scheduler: { revision: 1, nextWakeAt: '2026-09-12T12:05:00.000Z', lastReconciledAt: NOW },
+  recentCommands: [
+    { requestId: '00000000-0000-4000-8000-000000000009', commandType: 'group.save', revision: 3, committedAt: NOW,
+      reply: { ok: true, requestId: '00000000-0000-4000-8000-000000000009', revision: 3, value: { name: 'One owl' } } },
+    { requestId: '00000000-0000-4000-8000-000000000021', commandType: 'draft.save', revision: 10, committedAt: NOW,
+      reply: { ok: true, requestId: '00000000-0000-4000-8000-000000000021', revision: 10, value: { kind: 'auction-capture' } } },
+  ],
+  quarantine: [
+    { collection: 'lots', record: { id: 'not-a-uuid', title: 42 }, reason: 'invalid-string', quarantinedAt: NOW },
+  ],
+});
+
+// The five keys the research form kept in the durable root, which version two drops.
+const RESEARCH_FORM_KEYS = ['catalogue', 'number', 'volume', 'section', 'sampleMode'];
+
+function versionTwoOf(root) {
+  const migrated = structuredClone(root);
+  migrated.schemaVersion = 2;
+  migrated.preferences.schemaVersion = 2;
+  for (const key of RESEARCH_FORM_KEYS) delete migrated.preferences[key];
+  return migrated;
+}
+
+// Storage that says how often it was written to, and with what: migration is a read-time repair, so
+// a start-up on a version 1 root must not be a write at all, and the write that does come must be
+// the one whole root this store has always set.
+function countingStorage(initial) {
+  const storage = memoryStorage(initial);
+  const sets = [];
+  return {
+    ...storage,
+    sets,
+    async set(items) { sets.push(structuredClone(items[STORAGE_KEY])); return storage.set(items); },
+  };
+}
+
+test('a stored version one root migrates on read, keeps every record, and is rewritten once', async () => {
+  const storage = countingStorage(V1_ROOT);
+  const writer = createCommandWriter(storage, context());
+
+  // The rescue copy is the stored bytes, before any repair: a collector who exports it here gets
+  // what the older build wrote.
+  const raw = await writer.commitCommand(command('snapshot.raw'));
+  assert.deepEqual(raw.value, V1_ROOT);
+
+  const read = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(read.ok, true, read.message);
+  assert.deepEqual(read.value, versionTwoOf(V1_ROOT));
+  // Reading is not writing, and a migration is not an edit: nothing was stored and no revision moved.
+  assert.deepEqual(storage.sets, []);
+  assert.deepEqual(storage.read(), V1_ROOT);
+  assert.equal(read.revision, V1_ROOT.revision);
+
+  // The first real write is what puts version two in storage - as one whole-root set, with the five
+  // research-form keys gone and every collection exactly as the older build left it.
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Added later', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.equal(storage.sets.length, 1);
+  const stored = storage.read();
+  const expected = versionTwoOf(V1_ROOT);
+  expected.revision = V1_ROOT.revision + 1;
+  expected.lots.push(stored.lots.at(-1));
+  expected.recentCommands.push(stored.recentCommands.at(-1));
+  assert.deepEqual(stored, expected);
+  assert.deepEqual(storage.sets[0], stored);
+  assert.equal(stored.lots.at(-1).title, 'Added later');
+  assert.equal(stored.recentCommands.at(-1).commandType, 'lot.save');
+
+  // The page that read the older root holds its preferences revision; migration did not move it, so
+  // the save it was already composing still lands.
+  const preferences = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: V1_ROOT.preferences.revision, preferences: { currency: 'EUR' },
+  }));
+  assert.equal(preferences.ok, true, preferences.message);
+  assert.equal(preferences.value.currency, 'EUR');
+  assert.equal(preferences.value.revision, V1_ROOT.preferences.revision + 1);
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in preferences.value, false, key);
+});
+
+// The same root as a file, which is how it arrives from an install still on the older build.
+const versionOneDocument = () => JSON.stringify({
+  format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW,
+  data: { ...structuredClone(V1_ROOT), recentCommands: [], drafts: [] },
+});
+
+test('a version one backup document imports through the writer, replacing or merging', async () => {
+  const replaced = createCommandWriter(countingStorage(createEmptySnapshot(NOW)), context());
+  const replace = await replaced.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: versionOneDocument(),
+  }));
+  assert.equal(replace.ok, true, replace.message);
+  const after = await replaced.commitCommand(command('snapshot.get'));
+  assert.equal(after.value.schemaVersion, SCHEMA_VERSION);
+  assert.deepEqual(after.value.preferences.housePremiumPresets, V1_ROOT.preferences.housePremiumPresets);
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in after.value.preferences, false, key);
+  for (const collection of ['lots', 'auctionEvents', 'evidence', 'collectionEntries', 'alternativeGroups']) {
+    assert.deepEqual(after.value[collection], V1_ROOT[collection], collection);
+  }
+
+  // A merge keeps this install's own preferences, so the older file's research form has no way back in.
+  const local = createEmptySnapshot(NOW);
+  local.preferences = {
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'CHF', desktopAlertsEnabled: false,
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const merged = createCommandWriter(countingStorage(local), context());
+  const merge = await merged.commitCommand(command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: versionOneDocument(),
+  }));
+  assert.equal(merge.ok, true, merge.message);
+  const folded = await merged.commitCommand(command('snapshot.get'));
+  assert.equal(folded.value.preferences.currency, 'CHF');
+  for (const key of RESEARCH_FORM_KEYS) assert.equal(key in folded.value.preferences, false, key);
+  assert.deepEqual(folded.value.lots, V1_ROOT.lots);
 });

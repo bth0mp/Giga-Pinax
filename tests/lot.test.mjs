@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { parseReference } from '../extension/lookup.js';
 import { defaultTerm } from '../extension/prices.js';
 
 const LOTS = [
@@ -125,8 +126,11 @@ test('an arbitrary or malformed OCRE token is never carried as a record hint', (
 test('several distinct OCRE ids disable the hint, and an ambiguous Latin person alias keeps every identity', () => {
   const several = findReferences('Constantine II. RIC VII 287 OCRE ric.7.lon.287; OCRE ric.7.rom.287');
   assert.equal(lotLookup(several.references[0], several.rulers).id, undefined);
+  // Nomisma files "Valerianus" under Valerian and under Valerian II alike: the heading names both, and the lookup offers the two rather than
+  // opening one of them.
   assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, ['Valerian', 'Valerian II']);
   assert.deepEqual(findReferences('Valerian II. RIC 1').rulers, ['Valerian II']);
+  assert.deepEqual(findReferences('Valerian I. RIC 1').rulers, ['Valerian']);
 });
 
 test('a mint section keeps the lot ruler so an id hint must satisfy both', () => {
@@ -160,7 +164,8 @@ test('cf. and var. become flags, remarks go, and the RIC forms dealers use are r
   assert.deepEqual(cf.reference, ric('20 (aureus)'));
   const variant = only('RIC IV 34a-b var.');
   assert.deepEqual([variant.text, variant.cf, variant.variant], ['RIC IV 34a-b', false, true]);
-  assert.deepEqual(variant.reference, ric('34a', 'IV'));
+  // The number as the dealer wrote it rides along, so the range OCRE may title a type over is tried before its first number.
+  assert.deepEqual(variant.reference, { ...ric('34a', 'IV'), range: '34a-b' });
   const legend = only('RIC 972 var. (obv. legend)');
   assert.deepEqual([legend.text, legend.variant], ['RIC 972', true]);
   assert.deepEqual(only('RIC² 1180').reference, ric('1180'));
@@ -244,6 +249,19 @@ test('a lot row looks up its parsed reference, with the rulers only on a RIC ref
   assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC 972 · Titus');
   assert.equal(lotLabel(lot.references[1], lot.rulers), 'Cohen 17 · prices only');
   assert.equal(lotLabel(only('Cf. RIC 20 var.'), []), 'RIC 20 · cf. · var.');
+});
+
+// A RIC key names a book with type data, so its row is a RIC row and the lookup reports a clean miss. Built as an Other row instead, each of these
+// sent its own text to the sale sites as the phrase to median a price from.
+test('a RIC key always makes a RIC row, never a prices-only Other one', () => {
+  for (const [text, number] of [['Denarius. RIC 1,2', '1,2'], ['Denarius. RIC XI Nero 1', 'XI Nero 1'], ['Denarius. RIC 1073 18', '1073 18']]) {
+    const found = only(text);
+    assert.deepEqual(found.reference, { catalogue: 'RIC', volume: '', section: '', number }, text);
+    assert.equal(found.typed, true, text);
+  }
+  // A row a reading rule refuses outright keeps no number at all and is still no row, and another catalogue's key still makes its prices-only row.
+  assert.deepEqual(texts('Trajan. RIC II, 2, 123'), []);
+  assert.deepEqual(texts('Denarius. RIC 972; Cohen 17'), ['RIC 972', 'Cohen 17']);
 });
 
 test('isLot: lot text, or a reference inside other words, but a mistyped type reference stays an error', () => {
@@ -832,4 +850,124 @@ test('a long run of non-space text after a key resolves quickly, not in minutes'
   const start = Date.now();
   texts(`ROMAN. RIC ${'.'.repeat(2900)}`);
   assert.ok(Date.now() - start < 2000, 'a 2,900-character non-digit run after a key must not freeze the reader');
+});
+
+test('a comma between a RIC volume and its number keeps the reference whole', () => {
+  assert.deepEqual(only('Hadrian. RIC II.3, 2345.').reference, ric('2345', 'II, Part 3'));
+  assert.deepEqual(only('Trajan denarius. RIC II, 123.').reference, ric('123', 'II'));
+  assert.deepEqual(only('Diva Faustina I. RIC III, 394a.').reference, ric('394a', 'III'));
+  assert.deepEqual(only('Caracalla. RIC IV.1, 123a.').reference, ric('123a', 'IV, Part 1'));
+  assert.deepEqual(only('Vespasian. RIC II², 972.').reference, ric('972', 'II (2nd edition)'));
+  assert.deepEqual(texts('Trajan denarius. RIC II, 123; BMC 45.'), ['RIC II, 123', 'BMC 45']);
+  // The volume still ends the reference when no number follows it, and a second number after the first is another type.
+  assert.deepEqual(texts('Hadrian. RIC II.3, 2345, 2346.'), ['RIC II.3, 2345']);
+  // A volume, its part and its number, each parted by a comma. Read as "RIC V 2" this opened Probus 2, a coin the dealer never cited.
+  assert.deepEqual(only('Probus. RIC V, 2, 123').reference, { catalogue: 'RIC', volume: 'V, Part 2', section: '', number: '123' });
+  assert.deepEqual(only('Trajan. RIC II, 1, 123').reference, { catalogue: 'RIC', volume: 'II, Part 1', section: '', number: '123' });
+  // Only a part the volume really has, since a comma is also how a dealer lists numbers: "RIC III, 2, 3" is two of RIC III's numbers, and the
+  // Reference box must read these the same way, which is to say not at all.
+  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 1, 123a']) {
+    assert.deepEqual(texts(`Trajan. ${text}`), [], text);
+    assert.equal(parseReference(text), null, text);
+  }
+  // A part written with a space is the dealer's number, not a part: "RIC II 1" is volume II number 1, and the 2 after it is another type.
+  assert.deepEqual(texts('Trajan. RIC II 1, 2'), ['RIC II 1']);
+});
+
+test('rulers are read from the heading alone: not from a legend, not from what the coin pictures', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  // A legend is the coin's own words: three unpunctuated capitals in a row start it, and the names in it are not the issuer.
+  assert.deepEqual(rulers('Trajan. Denarius. IMP CAES NERVA TRAIAN AVG GERM. RIC 12.'), ['Trajan']);
+  assert.deepEqual(rulers('Denarius, Rome. IMP CAES NERVA TRAIAN AVG. RIC 12.'), []);
+  // Two capitals in a row are a house's classification or a ruler's own name, and a ruler's name in capitals is never a legend however long it is.
+  assert.deepEqual(rulers('ROMAN IMPERIAL. Titus. Denarius. RIC 972.'), ['Titus']);
+  assert.deepEqual(rulers('SEVERUS ALEXANDER. RIC 12'), ['Severus Alexander']);
+  assert.deepEqual(rulers('CLAUDIUS II GOTHICUS AE Antoninianus. RIC 36.'), ['Claudius Gothicus']);
+  // Everything from the type description on is what is pictured, not who struck it.
+  assert.deepEqual(rulers('Vespasian. Denarius. Head of Titus, laureate, right. RIC 972.'), ['Vespasian']);
+  assert.deepEqual(rulers('Denarius. Bust of Titus right. RIC 972.'), []);
+  assert.deepEqual(rulers('Denarius. Wolf suckling Romulus and Remus. RIC 1.'), []);
+  assert.deepEqual(rulers('Hadrian. Sestertius. Victory standing left, Aurelian behind. RIC 1.'), ['Hadrian']);
+  assert.deepEqual(rulers('Hadrian seated. Aurelian. RIC 1.'), ['Hadrian']);
+  // A lot's own first sentence is the dealer's headline, and houses set it in capitals: no legend is ever quoted before the coin has been named.
+  assert.deepEqual(rulers('ROMAN IMPERIAL COINAGE Trajan AR Denarius. RIC 1'), ['Trajan']);
+  assert.deepEqual(rulers('ROMAN EMPIRE AR DENARIUS NERO. RIC 1'), ['Nero']);
+  // A legend after that sentence is still a legend, and the mark a dealer ends it with is no part of it.
+  assert.deepEqual(rulers('Augustus. Denarius. Rev: C L CAESARES, Gaius and Lucius Caesars standing. RIC 1'), ['Augustus']);
+  // The joint and regency headings a dealer really writes keep every ruler in them.
+  assert.deepEqual(rulers('Marcus Aurelius and Lucius Verus. RIC 1'), ['Marcus Aurelius', 'Lucius Verus']);
+  assert.deepEqual(rulers('Titus, as Caesar, under Vespasian. RIC 1'), ['Titus', 'Vespasian']);
+  assert.deepEqual(rulers('Divus Augustus under Tiberius. RIC 1'), ['Augustus', 'Tiberius']);
+});
+
+test('a regnal numeral after a name is read in capitals only, so a lower-case letter never hides the ruler', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  assert.deepEqual(rulers('Gallienus x 3 antoniniani. RIC 1.'), ['Gallienus']);
+  assert.deepEqual(rulers('Nero i.e. the emperor. RIC 1.'), ['Nero']);
+  assert.deepEqual(rulers('Titus v Vespasian. RIC 1.'), ['Titus', 'Vespasian']);
+  // The capital numeral still makes the name someone else's.
+  assert.deepEqual(rulers('Constantine II. RIC 1.'), ['Constantine II']);
+  assert.deepEqual(rulers('Valerian II. RIC 1.'), ['Valerian II']);
+});
+
+// Reading every language's labels turned ordinary words into emperors: a Portuguese "Faustina", an Estonian "Severus", a German "August", a French
+// "Sévère", a Spanish "Juan" and a Latin dative "Iovi" all became rulers, and "Sept. Severus. RIC 16" then opened a Severus II follis. Each of these
+// is prose, a month, a legend or an abbreviation, and none of them named a ruler before the aliases were widened.
+test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abbreviation stay text', () => {
+  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina Senior, 138-141. AR Denarius. RIC III 344.',
+    'Severe scratches and a flan crack. RIC 1', 'Denarius. Rev: Pietas Augusti. RIC 1', 'Struck August 70. RIC 1', 'Jovi Statori. RIC 1',
+    'Marc Antony legionary denarius. RIC 1', 'Juan Carlos collection. RIC 1', 'Mario Ratto, 1962. RIC 1', 'Drusus. RIC 1', 'Maximinus. RIC 1',
+  ]) assert.deepEqual(findReferences(text).rulers, [], text);
+});
+
+// A mint is a place, so its other name is only ever a section: Nomisma titles the concept "Trier" and keeps "Treveri" beside it.
+// One clean-up, applied once: a lot row runs it and hands parseReference the result, instead of both of them running the same chain over the same
+// text. Either way round the two paths must read the same reference out of the same words.
+test('a lot row and the same reference typed into the box read alike', () => {
+  for (const text of ['RIC 268 (Elagabalus)', 'RIC 972 var.', 'RIC II 123 corr.', 'RIC.112', 'RIC II.3, 2345', 'RIC 12-13', 'RIC II Trajan 12 (Rome)',
+    'RIC 266 (aureus)', 'RIC II², 972', 'RIC IV-1 123']) {
+    assert.deepEqual(findReferences(`Denarius. ${text}`).references[0].reference, parseReference(text), text);
+  }
+});
+
+test('a mint written by the name on the map today is a section, and no ruler at all', () => {
+  const lot = findReferences('Constantine I. Follis. RIC VII Trier 12.');
+  // The row reads the mint as the section it is, spelled as the dealer spelled it; lookupType reads that name as RIC's own Treveri.
+  assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' });
+  assert.deepEqual(lot.rulers, ['Constantine I']);
+  assert.equal(lotLookup(lot.references[0], lot.rulers).section, 'Trier');
+});
+
+test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [heading, expected] of [
+    // A regnal "I" names the plain person only where the table holds the "II" it is told apart from.
+    ['Valerian I', ['Valerian']],
+    ['Licinius I', ['Licinius']],
+    ['Philippus Arabs', ['Philip the Arab']],
+    ['Claudius Gothicus', ['Claudius Gothicus']],
+    // RIC's own section names, which need no alias at all.
+    ['Philip I', ['Philip I']],
+    ['Florian', ['Florian']],
+    ['Severina', ['Severina']],
+    ['Mariniana', ['Mariniana']],
+    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: they name nobody rather than somebody.
+    ['Maximinus I', []],
+    ['Maximinus II', []],
+    ['Constantius I', []],
+    ['Faustina II', []],
+    ['Faustina Junior', []],
+    ['Diva Faustina I', []],
+    ['Julian II', []],
+  ]) assert.deepEqual(rulers(`${heading}. Denarius. RIC 12.`), expected, heading);
+});
+
+test('a heading of three thousand characters, and a long run of capitals in it, resolve quickly', () => {
+  // The heading is scanned against every spelling Nomisma knows, and its legend runs are walked token by token: both must stay linear in its length.
+  const heading = 'Titus, as Caesar, 69-79. Denarius, Rome. Fine style, lovely old cabinet tone, well centred. '.repeat(40).slice(0, 2900);
+  for (const text of [`${heading} RIC 1073.`, `${'AAAA '.repeat(600).slice(0, 2900)} RIC 1073.`, `${'NERO '.repeat(600).slice(0, 2900)} RIC 1073.`]) {
+    const start = Date.now();
+    findReferences(text);
+    assert.ok(Date.now() - start < 2000, `a 2,900-character heading must not freeze the reader: ${text.slice(0, 20)}`);
+  }
 });

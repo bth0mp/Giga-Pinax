@@ -5,7 +5,9 @@ function requireApi() {
   return api;
 }
 
-function chromeCall(method, receiver, ...args) {
+// Firefox's WebExtension APIs return promises; Chrome's take a callback and report a failure through runtime.lastError.
+export function invokeExtensionMethod(method, receiver, ...args) {
+  if (globalThis.browser) return method.call(receiver, ...args);
   return new Promise((resolve, reject) => {
     method.call(receiver, ...args, (value) => {
       const error = globalThis.chrome?.runtime?.lastError;
@@ -15,22 +17,13 @@ function chromeCall(method, receiver, ...args) {
   });
 }
 
-function call(method, receiver, ...args) {
-  if (globalThis.browser) return method.call(receiver, ...args);
-  return chromeCall(method, receiver, ...args);
-}
-
-export function invokeExtensionMethod(method, receiver, ...args) {
-  return call(method, receiver, ...args);
-}
-
 export function newRequestId() {
   return crypto.randomUUID();
 }
 
 export function sendCommand(command) {
   const extensionApi = requireApi();
-  return call(extensionApi.runtime.sendMessage, extensionApi.runtime, command);
+  return invokeExtensionMethod(extensionApi.runtime.sendMessage, extensionApi.runtime, command);
 }
 
 export function getSnapshot() {
@@ -49,7 +42,7 @@ export function subscribeToSnapshots(listener) {
 
 export async function requestNotificationPermission() {
   const extensionApi = requireApi();
-  return call(
+  return invokeExtensionMethod(
     extensionApi.permissions.request,
     extensionApi.permissions,
     { permissions: ['notifications'] },
@@ -59,8 +52,8 @@ export async function requestNotificationPermission() {
 export function storageLocalAdapter() {
   const extensionApi = requireApi();
   return {
-    get: (key) => call(extensionApi.storage.local.get, extensionApi.storage.local, key),
-    set: (items) => call(extensionApi.storage.local.set, extensionApi.storage.local, items),
+    get: (key) => invokeExtensionMethod(extensionApi.storage.local.get, extensionApi.storage.local, key),
+    set: (items) => invokeExtensionMethod(extensionApi.storage.local.set, extensionApi.storage.local, items),
   };
 }
 

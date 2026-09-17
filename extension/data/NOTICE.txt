@@ -1,0 +1,28 @@
+Bundled Nomisma.org label data
+
+nomisma-labels.json beside this file carries the English preferred label of
+every Nomisma.org concept the bundled type records name in a field a card
+shows: authority or issuer, denomination, mint, material and portrait. It
+covers every corpus in this directory, so a local card reads a name here
+instead of asking nomisma.org for one.
+
+Source: https://nomisma.org/
+SPARQL endpoint: https://nomisma.org/query
+Retrieved 17 September 2026.
+
+Nomisma concept data is available under Creative Commons Attribution 3.0:
+https://creativecommons.org/licenses/by/3.0/
+
+The labels are taken verbatim: nothing is reworded, and a concept Nomisma
+publishes no English label for is absent here, so the card shows the bare
+identifier rather than a name nobody published. The endpoint, the query text,
+the retrieval date, the licence and the full fetched result are recorded in
+scripts/data/nomisma-labels.json; the generated file is rebuilt from it with
+`python scripts/import_rdf.py --write-labels`.
+
+RIC ruler names come from extension/ric-people.js, not from this file: that
+snapshot of Nomisma's own person concepts takes precedence over the labels
+here for an OCRE authority or portrait. Both spell all 214 people the same.
+
+Each corpus directory beside this file carries its own NOTICE.txt for the
+American Numismatic Society type data it holds, which is under ODbL 1.0.

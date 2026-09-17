@@ -1,18 +1,37 @@
-import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, volumesOf } from './catalogues.js';
+import { squash } from './core/validate.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+
+// The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
+// Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
+// R to RRR, R2 or C, while a capital type letter ("509 (BB)") is one and stays.
+export const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
+export const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
+// The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
+// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I".
+export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
+// A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
+// a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
+// dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
+// The range is the one step a caller may keep: the number as the dealer wrote it is what withRange carries to the index, since OCRE titles types
+// over a range too. One fixed run at one position, as every other step here is.
+const RANGE = /(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i;
+export const readable = (text, shortenRange = true) => {
+  const spelled = text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2');
+  return (shortenRange ? spelled.replace(RANGE, '$1') : spelled).replace(/^Pr\s+(?=\d)/, 'Price ');
+};
+// A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference readType reads it as the section; on
+// any other catalogue it is a remark the row drops.
+export const sectionBracket = (text) => [...String(text).matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0) ?? null;
 
 export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https://nomisma.org/*']);
 export const TIMEOUT_MS = 15000;
 
 const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 // The hidden characters dealer pages add (soft hyphens, zero-width and direction marks, bidi controls, word joiners, a byte order mark) would split a
 // copied reference inside a word; parseReference and a right-click selection drop them first. NBSP and other Unicode spaces are squashed as spaces.
 export const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
-// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Craw. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and
-// the acsearch term. It is stripped only before the number itself, so "Crawfrd 44/5" or "Cr . 44/5" stay as typed.
-const PREFIX = { RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i, SC: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i, Bop: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i };
 // Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
 const SCO_ID = 'sc.1.';
 // Bopearachchi (1991) references resolve through BIGR, whose own numbering ("Euthydemus I 13.1") differs from Bopearachchi's series ("Euthydème I 24A");
@@ -30,40 +49,45 @@ const unquote = (value) => squash(String(value ?? '').replace(/["“”„]/g, '
 // A volume as OCRE titles it, the edition spelled out: "I (2nd edition)" is "I (second edition)".
 const ocreVolume = (volume) => unquote(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
 
+// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Craw. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and
+// the acsearch term. It is stripped only before the number itself, so "Crawfrd 44/5" or "Cr . 44/5" stay as typed.
 export function referenceNumber(catalogue, number) {
   const value = unquote(number);
-  return Object.hasOwn(PREFIX, catalogue) ? value.replace(PREFIX[catalogue], '') : value;
+  const prefix = catalogueOf(catalogue)?.prefixPattern;
+  return prefix ? value.replace(prefix, '') : value;
 }
 
 // Bopearachchi series letters are upper case in BIGR's citations ("24A"), so a typed "24a" is normalised before it is searched or compared.
 export const bopSeries = (number) => referenceNumber('Bop', number).toUpperCase();
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-// SCO's own titles ("Seleucid Coins (part 1) 1266.2", as a Recent chip stores them) read as SC too, so a chip fills the fields like the others.
-const SIMPLE_REFERENCE = {
-  RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(\d\S*)$/i,
-  Price: /^Price\s*(\d\S*)$/i,
-  SC: /^(?:SC|Seleucid Coins(?: \(part \d+\))?)\s*(\d\S*)$/i,
-};
 // "Bop Euthydemus I 24A", "Bopearachchi 9C", "Bop-9C" (prefix first, king optional) or "Euthydemus I Bop. 24A", "Euthydemus I, Bop 24A" (king first).
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
 const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\s+)?|([^\d\s][^\d]*?)\s*,?\s*${BOP}[\s-]*)(\d\S*)$`, 'i');
 // RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
 // optional second-edition marker, then the ruler or mint section if any (starting with a non-digit, so "RIC I 2 Nero 306" fails)
-// and finally the last token starting with a digit, with an optional parenthetical.
-const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./,]\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?\s+(\d\S*(?: \([^)]*\))?)$/i;
+// and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
+// comma: dealers punctuate a volume the way they punctuate HGC's ("RIC III, 394a" beside "HGC 4, 1218"). Both separators are a fixed run at one place,
+// so neither alternative can be entered twice and the pattern stays linear.
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
 // No volume: "RIC 972", "RIC Titus 123" or a bare "Titus 123", the number as above. The ruler must be one OCRE has, or the name of one it splits
 // into sections ("Theodosius II" for its East and West), checked by volumesOf, so "RIC hello 5", "RIC XI Nero 1" and "Euthydemus I 24A" stay unread,
 // and a number alone needs the RIC prefix.
 const RIC_ANY_VOLUME = /^(?:RIC(?![a-z])\s*(?:([^\d\s].*?)\s+)?|([^\d\s].*?)\s+)(\d\S*(?: \([^)]*\))?)$/i;
 const MAX_REFERENCE = 120;
+// The parts RIC's own volume division gives a numeral, as this repository evidences it and no further: RIC_VOLUMES (catalogues.js) lists II, Part 1
+// and II, Part 3 as volumes of their own, the bundled OCRE titles and ids carry a part for no other numeral, and nothing here says how the rest of
+// the set is bound. RIC V is the one addition, settled before this table existed: dealers cite V.1 and V.2, and OCRE merges the two into one V, so
+// both are read and the lookup asks for V entire. A part outside the table is not this book's, so the citation carrying it is left unread.
+const VOLUME_PARTS = new Map([['II', new Set(['1', '3'])], ['V', new Set(['1', '2'])]]);
+export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String(numeral).toUpperCase())?.has(part));
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
 // is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
 export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
-// text; "RIC –" (not in RIC) has no number. The Crawford names are the ones PREFIX reads.
+// text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
@@ -119,38 +143,110 @@ const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some
 
 // References are ";"-separated ("SC 2195.5c; SNG Spaer 1712"): the first one a type rule reads is looked up, else the whole text is Other.
 // The hidden characters go before anything else, the length cap included.
-export function parseReference(text) {
+// The clean-up belongs to text a person wrote: a dealer's row or a typed reference. An OCRE title is the catalogue's own spelling and is read with
+// `clean` false — 653 of them are titled over a range ("RIC II.3² Hadrian 1009-1012"), and taking each down to its first number made it a second
+// claim on a number some other type really carries.
+export function parseReference(text, clean = true) {
   const visible = String(text ?? '').replace(INVISIBLE, '');
   if (squash(visible).length > MAX_REFERENCE) return null;
   const value = unwrap(unquote(visible));
   const parts = value.split(';').map(unwrap);
   for (const part of parts) {
-    const type = readType(part);
+    const type = readType(part, clean);
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
   return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
-// One reference, read by the rules of the catalogues that have type data, or null.
-function readType(value) {
-  for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
-    const number = value.match(pattern)?.[1];
+// The remark a dealer hangs on a corrected number ("RIC II 123 corr.") is no part of it. Its brothers "var." and the bracketed remarks are REMARKS
+// and VARIANT above; unwrap has already taken the full stop off the end.
+export const CORRECTION = /\s+corr\.?$/i;
+// The marks the clean-up above reads: a bracket or sentence punctuation to drop, a house's own separator or a "²" to respell, a hyphen that opens a
+// range, a word a dealer hangs on a number, or the "Pr" that is Price. One class, matched once, in place of running the whole chain.
+const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
+
+// The whole of that clean-up, in one place, so a lot row and a typed reference are cleaned once each and in the same way: the remarks, the variety,
+// the edition and the correction a dealer hangs on a number, then the house's own separators, "RIC²", a hyphenated volume and a range's first number.
+// Every part of it needs one of CLEANABLE's marks to change anything, so text carrying none ("RIC VII Antioch 1") skips the chain whole.
+export function cleanReference(text, shortenRange = true) {
+  const written = String(text).trim();
+  if (!CLEANABLE.test(written)) return written;
+  const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  return CLEANABLE.test(remarked) ? readable(remarked, shortenRange) : remarked;
+}
+
+// A RIC reference whose number the clean-up shortened out of a range, with the number as it was written kept beside it. OCRE titles 658 of its own
+// types over a range and 654 of those first numbers are a type of their own as well, so the shortened citation answered a real but different record:
+// the written number is tried against the index first and the first number is the fallback. Both readings come from the same text, and only a RIC
+// reference pays for the second one.
+export function withRange(shortened, readWhole) {
+  if (shortened?.catalogue !== 'RIC') return shortened;
+  const whole = readWhole();
+  return whole?.catalogue === 'RIC' && whole.number !== shortened.number ? { ...shortened, range: whole.number } : shortened;
+}
+
+// One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
+// "RIC 972 var." and "RIC.112" read in the Reference box exactly as they read in a lot row. An Other reference never sees it: its text is its card.
+// Two volumes are the same shelf when they carry the same numeral, and the same part where both name one: "II" is the shelf II.1² stands on.
+const sameShelf = (one, other) => {
+  const [numeral, part] = shelf(one);
+  const [otherNumeral, otherPart] = shelf(other);
+  return Boolean(numeral) && numeral === otherNumeral && (!part || !otherPart || part === otherPart);
+};
+// One RIC reference as the fields hold it. The section is kept as it was written — a mint's modern name is read as RIC's Latin one in lookupType,
+// the one place every lookup passes through, since the guided fields never come through here. A bracket a dealer hangs on the number is read three ways: as the section, where RIC really heads a section of that volume with the name ("RIC 268 (Elagabalus)"); dropped,
+// where the name heads a section of some other volume only, which is a mint remark and belongs in neither field ("RIC II Trajan 12 (Rome)"); and
+// left in the number where it names no section at all, which is how OCRE titles its own types ("266 (aureus)").
+function ricReference(number, volume, written) {
+  const [, bare, trailing] = number.match(/^(\S+)\s+\(([^()]*)\)$/) ?? [];
+  // A dealer brackets the section in either place: before the number ("RIC III (Antoninus Pius) 394a") or after it ("RIC 268 (Elagabalus)").
+  const wrapped = squash(written).match(/^\(([^()]*)\)$/);
+  const bracketed = wrapped?.[1] ?? (bare === undefined ? null : trailing);
+  const plain = wrapped ? '' : squash(written);
+  if (bracketed === null) return { catalogue: 'RIC', number, volume, section: plain };
+  const name = squash(bracketed);
+  const volumes = volumesOf(name);
+  const here = volumes.length > 0 && (!volume || volumes.some((listed) => sameShelf(listed, volume)));
+  // A bracket naming no section at all is how OCRE titles its own types ("266 (aureus)") and stays in the number; one naming a section of another
+  // volume only is a mint remark ("RIC II Trajan 12 (Rome)") and belongs in neither field.
+  const keep = !wrapped && volumes.length === 0;
+  return { catalogue: 'RIC', number: keep ? number : bare ?? number, volume, section: plain || (here ? name : '') };
+}
+
+// One reference as a lot row and the Reference box both read it: the shared clean-up, then the catalogue rules over what it leaves, and the range a
+// citation was written over kept beside the number the clean-up took it down to.
+function readType(text, clean = true) {
+  const written = String(text).trim();
+  const type = readClean(clean ? cleanReference(written) : written);
+  return clean ? withRange(type, () => readClean(cleanReference(written, false))) : type;
+}
+
+function readClean(value) {
+  // The catalogues whose whole reference is a key and a number; RIC and Bop carry a volume or a king and are read below.
+  for (const [catalogue, { referencePattern }] of Object.entries(CATALOGUES)) {
+    const number = referencePattern && value.match(referencePattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
   }
   const bop = value.match(BOP_REFERENCE);
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
-    const [, numeral, part, edition, section = '', number] = ric;
+    const [, numeral, mark, part, edition, section = '', number] = ric;
+    // A volume written in Arabic numerals takes no comma after it. The Roman spelling is the one RIC is bound and cited under, and it alone is
+    // punctuated the way HGC's volume is; "RIC 5, 6" and "RIC 1,2" are two numbers a dealer listed under one key, not volume V number 6.
+    if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
     const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
+    // A comma is also how a dealer lists numbers, so a part joined on with one is read only where RIC really divides that volume: "RIC III, 2, 3" is
+    // two of RIC III's numbers. The volume's own punctuation ("IV.1", "II.3", "IV part 1") says part and nothing else, and is read whatever it names.
+    if (part && mark === ',' && !realVolumePart(roman, part)) return null;
     const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
-    return { catalogue: 'RIC', number, volume, section };
+    return ricReference(number, volume, section);
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
   if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
-  return { catalogue: 'RIC', number: any[3], volume: '', section: ruler };
+  return ricReference(any[3], '', ruler);
 }
 
 // RPC has no open type data here, but RPC Online has a page per type, which only the user opens (Giga Pinax never fetches RPC): "RPC I 1234" and
@@ -174,11 +270,6 @@ export function buildQuery({ catalogue, number, volume, section }) {
     const siblings = Object.hasOwn(RIC_SECTIONS, unquote(volume)) && RIC_SECTIONS[unquote(volume)].some((name) => norm(name).startsWith(`${norm(ruler)} (`));
     return edition && ruler && !siblings ? { corpus: 'ocre', query } : { corpus: 'ocre', query, partial: true };
   }
-  if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${referenceNumber('RRC', number)}`) };
-  if (catalogue === 'SC') {
-    const sc = referenceNumber('SC', number);
-    return { corpus: 'sco', query: squash(`SC ${sc}`), id: `${SCO_ID}${sc}` };
-  }
   if (catalogue === 'Bop') {
     // The section field is the king (English, as BIGR titles it); the query names the reference the way the popup reports a miss.
     const king = unquote(section);
@@ -187,7 +278,11 @@ export function buildQuery({ catalogue, number, volume, section }) {
   }
   // Cleaned as parseReference cleans it, so the guided field and the Reference box give the same card, Recent chip and term.
   if (catalogue === 'Other') return { corpus: OTHER, query: otherNumber(unwrap(unquote(number))) };
-  return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };
+  // The rest are a key and a number: the key as the corpus titles its types, the number without the key a collector typed.
+  const { corpus, queryKey, prefixPattern } = catalogueOf(catalogue) ?? CATALOGUES.Price;
+  const digits = unquote(number).replace(prefixPattern, '');
+  const query = squash(`${queryKey} ${digits}`);
+  return catalogue === 'SC' ? { corpus, query, id: `${SCO_ID}${digits}` } : { corpus, query };
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -327,7 +422,7 @@ const andList = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')}
 // until the card says so. It reports only what the record holds: no rank, no claim that the search was wrong, and no name RIC does not use itself.
 export function filingNote(card) {
   if (card?.corpus !== 'ocre') return '';
-  const reference = parseReference(card.label);
+  const reference = parseReference(card.label, false);
   if (reference?.catalogue !== 'RIC') return '';
   const [portrait, authority] = [squash(card.portrait), squash(card.authority)];
   const sentences = [];
@@ -431,10 +526,11 @@ export async function lookupById(corpus, id, options = {}) {
   // A chip saved before 0.19 ("SG6829v") takes the SG spelling; any other id stays as saved, so its remembered term still matches.
   if (corpus === OTHER) return { status: 'ok', card: otherCard(otherNumber(id)) };
   const { localProvider, online = true } = options;
-  if (corpus === 'ocre' && localProvider?.lookupById) {
-    const local = await localProvider.lookupById(corpus, id);
-    if (local?.status === 'ok') return local;
-    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, id };
+  // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
+  const local = localProvider?.lookupById ? await localProvider.lookupById(corpus, id) : null;
+  if (local) {
+    if (local.status === 'ok') return local;
+    if (!online) return { status: 'online-required', localStatus: local.status, corpus, id };
   }
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
   const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
@@ -454,7 +550,8 @@ const scBase = (number) => referenceNumber('SC', number).split('.')[0];
 // CRRO's plain search also matches dates ("44/5a" finds "480/5a"), so its suggestions must share the typed Crawford group;
 // SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
-function inGroup(entries, corpus, reference) {
+// The bundled catalogue filters its own index by the same rule, so the near misses it offers are the ones this offers.
+export function inGroup(entries, corpus, reference) {
   if (corpus === 'sco') {
     const base = `${SCO_ID}${scBase(reference.number)}`;
     return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
@@ -527,11 +624,15 @@ function volumePhrase(volume) {
 // case, "509 (BB)" is not), and a plain number also asks for those types (266_*; unquoted, so digits and letters only).
 // Rulers from a lot text ask OCRE's portrait and authority facets for any of them. Every OR group stays bracketed: unbracketed, "a OR b AND c" is
 // read as "a OR (b AND c)" (394a_* OR 394A_* returned 51,853 hits).
-function ricSearch({ number, volume, section }, rulers = []) {
-  const [, base, word] = ricNumber(number).match(/^(.*?)\s*(?:\(([^)]*)\))?$/);
-  const clauses = [...new Set([base.toLowerCase(), base.toUpperCase()])].flatMap((form) => (word
-    ? [...new Set([word, word.toLowerCase()])].map((typed) => `typeNumber:"${form}_${typed}"`)
-    : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
+// A citation written over a range asks for the range as well as for its first number, in the one search, so the record OCRE titles over it is among
+// the hits pickRicEntries then prefers.
+function ricSearch({ number, volume, section, range }, rulers = []) {
+  const clauses = [...new Set([number, ...(range ? [range] : [])])].flatMap((written) => {
+    const [, base, word] = ricNumber(written).match(/^(.*?)\s*(?:\(([^)]*)\))?$/);
+    return [...new Set([base.toLowerCase(), base.toUpperCase()])].flatMap((form) => (word
+      ? [...new Set([word, word.toLowerCase()])].map((typed) => `typeNumber:"${form}_${typed}"`)
+      : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
+  });
   const group = (list) => (list.length > 1 ? `(${list.join(' OR ')})` : list[0]);
   const facets = rulers.flatMap((name) => [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]);
   const narrow = [volumePhrase(unquote(volume)), phrase(section)].filter(Boolean).map((text) => ` AND "${text}"`).join('');
@@ -547,18 +648,46 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const [number, volume, ruler] = [spaced(ricNumber(reference.number)), unquote(reference.volume), norm(phrase(reference.section))];
   const exact = !volume || listed(volume);
   const [numeral, part] = shelf(volume);
+  // A dealer writes the numeral a volume is bound under, not the title OCRE splits it into: "RIC II" is II, II.1² and II.3², "RIC IV" only IV. So a
+  // bare numeral asks for its whole family, and a volume that names a part or an edition asks for itself.
+  const family = Boolean(numeral) && norm(volume) === numeral;
   const onShelf = ([n, p]) => n === numeral && (!part || !DIVIDED.has(n) || p === part);
-  const inVolume = (hit) => (exact ? !volume || norm(hit.volume) === norm(volume) : onShelf(shelf(hit.volume)));
-  const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`);
+  const inVolume = (hit) => (exact && !family ? !volume || norm(hit.volume) === norm(volume) : onShelf(shelf(hit.volume)));
+  // A section written the way Nomisma spells the person ("Valerian I" for OCRE's "Valerian") is the same section: the aliases say so, and they are
+  // read once into a set of keys, since this filter runs over every entry of the bundled index.
+  const aliases = new Set(ricPeople(reference.section).flatMap((person) => [person.name, ...person.aliases].map(rulerKey)));
+  const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`)
+    || (aliases.size > 0 && aliases.has(rulerKey(section.split(' (')[0])));
+  // A citation written over a range names the type OCRE titles over it, where OCRE has one: both numbers are kept in the one pass, and the range
+  // answers alone when it hit anything, since the first number is a different record wherever it is a type of its own (654 of the 658 ranges).
+  const range = reference.range ? spaced(ricNumber(reference.range)) : '';
+  const numbered = (hit, wanted) => [spaced(hit.number), bareNumber(hit.number)].includes(wanted);
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
-  const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title) }))
-    .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && [spaced(hit.number), bareNumber(hit.number)].includes(number)
+  const found = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
+    .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && (numbered(hit, number) || (range && numbered(hit, range)))
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));
+  const written = range ? found.filter(({ hit }) => numbered(hit, range)) : [];
+  const kept = written.length > 0 ? written : found;
   if (kept.length === 0) return { status: 'none' };
+  // The volume as typed first: the rest of the family is only offered when that volume holds nothing the ruler asked for, and then it is offered,
+  // since the coin is not in the volume the dealer wrote.
+  const own = family && ruler ? kept.filter(({ hit }) => norm(hit.volume) === norm(volume)) : kept;
+  const chosen = own.length > 0 ? own : kept;
   // One hit is the type only when it is what was typed; a sibling section, or the edition of a volume typed another way, is offered, never opened.
-  if (kept.length === 1 && exact && (!ruler || norm(kept[0].hit.section) === ruler)) return { status: 'ok', entry: kept[0].entry };
-  return { status: 'candidates', candidates: kept.map(({ entry }) => entry), partial: true };
+  if (own.length > 0 && chosen.length === 1 && exact && (!ruler || norm(chosen[0].hit.section) === ruler)) return { status: 'ok', entry: chosen[0].entry };
+  return { status: 'candidates', candidates: chosen.map(({ entry }) => entry), partial: true };
+}
+
+// Whether a hit comes from another part of the volume family the reference names: "RIC II" reaches II.1² and II.3² too, and those parts number
+// their rulers their own way, so such a hit answers a different book. pickRicEntries only ever offers one; the local person path, which blanks the
+// section before its final pick, asks here rather than slipping past that rule.
+export function otherVolumePart(reference, title) {
+  const volume = unquote(reference.volume);
+  const [numeral, part] = shelf(volume);
+  if (!numeral || part || norm(volume) !== numeral) return false;
+  const hit = parseReference(title, false);
+  return Boolean(hit) && norm(hit.volume) !== norm(volume);
 }
 
 function pickRic(xml, reference) {
@@ -568,9 +697,10 @@ function pickRic(xml, reference) {
 }
 
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
-// hold OCRE's names: "Gaius/Caligula" whole (either half finds nothing), and Claudius Gothicus as "Claudius II Gothicus".
-const FACET_NAMES = Object.freeze({ 'Claudius Gothicus': 'Claudius II Gothicus' });
-const facetName = (name) => phrase(FACET_NAMES[squash(name)] ?? (canonicalRicPerson(name) || String(name ?? '')));
+// hold OCRE's names, which are the names the aliases resolve a heading's spelling to ("Claudius II" and "Claudius Gothicus" are both Claudius II
+// Gothicus, "Maximinus II" is Maximinus Daia, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot
+// place, or one two people share, is asked for as it was written rather than guessed at.
+const facetName = (name) => phrase(canonicalRicPerson(name) || String(name ?? ''));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
   .map(facetName).filter(Boolean))];
 
@@ -592,16 +722,22 @@ async function pickPortrait(reference, feed) {
   return pickRic(await feed(ricSearch(anyRuler, [facetName(reference.section)])), anyRuler);
 }
 
-export async function lookupType(reference, options = {}) {
+export async function lookupType(given, options = {}) {
+  // A mint written by the name on the map today ("Trier") is RIC's own Latin section ("Treveri"). Every lookup arrives here — typed, guided or from a
+  // lot row — so the name is read once, where the section is used, rather than in the parse the guided fields never run. The caller's own object is
+  // left as it was.
+  const mint = ricMintSection(given.section);
+  const reference = mint ? { ...given, section: mint } : given;
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
   if (corpus === OTHER) return { status: 'ok', card: otherCard(query) };
   const { localProvider, online = true } = options;
-  if (corpus === 'ocre' && localProvider?.lookupType) {
-    const local = await localProvider.lookupType(reference);
-    if (local?.status === 'ok' || local?.status === 'candidates' || local?.status === 'too-many') return local;
-    if (!online) return { status: 'online-required', localStatus: local?.status ?? 'unavailable', corpus, query };
+  // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
+  const local = localProvider?.lookupType ? await localProvider.lookupType(reference) : null;
+  if (local) {
+    if (local.status === 'ok' || local.status === 'candidates' || local.status === 'too-many') return local;
+    if (!online) return { status: 'online-required', localStatus: local.status, corpus, query };
   }
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);

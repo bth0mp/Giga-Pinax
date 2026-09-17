@@ -14,7 +14,7 @@ const MENU_RESEARCH = 'auction-companion:research-selection';
 const MENU_TRACK = 'auction-companion:track-auction';
 const SCHEDULER_ALARM = 'auction-companion:scheduler';
 const COMMAND_TYPES = new Set([
-  'snapshot.get',
+  'snapshot.get', 'snapshot.raw',
   'preferences.migrateIfAbsent', 'preferences.save',
   'lot.save', 'lot.delete',
   'group.save', 'group.delete', 'group.reorder',
@@ -24,9 +24,10 @@ const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'alert.claim', 'alert.delivery.record',
-  'scheduler.reconcile', 'backup.import',
+  'backup.import',
 ]);
+// The address this extension's own pages are served from; a sender outside it commands nothing.
+const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
@@ -34,6 +35,35 @@ const RECONCILE_AFTER = new Set([
 ]);
 let reconcileQueue = Promise.resolve();
 let menuQueue = Promise.resolve();
+// A context-menu click wakes an idle worker, so the reconcile this module starts is still in
+// flight when a capture fails and would wipe the badge within milliseconds. The failure outranks
+// the due count until the collector has had a chance to see it.
+const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
+// Most reconciles are nobody's request - an alarm, an install, the one that follows a save - so their reply is read by
+// no page. One that fails stops every reminder, and until this it did so in silence.
+const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
+let captureFailed = false;
+let captureFailureTitle = '';
+// A reconcile that failed is a different failure from a capture that was not saved, and has a different way out: the
+// capture warning is retired by the next capture that works or by the collector opening a page, while the reminders
+// stay stopped until a reconcile works again. Sharing one flag let a later capture clear a warning nobody had seen.
+let reconcileFailed = false;
+
+// The browser keeps the badge and the toolbar title across worker restarts, but module memory
+// only lasts the ~30 s until the worker idles out, so the flag is read back from the badge the
+// browser still shows. Without it a restart's own reconcile wipes the `!` and then declines to
+// clear the title, stranding it for the rest of the session. A module cannot await at the top
+// level and still register its listeners synchronously, so the recovery is awaited where it is read.
+// The badge does not say which of the two warnings left it, so a restart takes it for the capture one; a reconcile that
+// is still failing puts its own warning back on the next reconcile, which every startup and every save runs.
+const captureFailureRecovered = (async () => {
+  try {
+    if (await invokeExtensionMethod(api.action.getBadgeText, api.action, {}) === '!') captureFailed = true;
+  } catch {
+    // A toolbar that will not report its badge leaves the warning to the next failure.
+  }
+})();
 
 function commit(command) {
   return writer.commitCommand(command);
@@ -49,15 +79,23 @@ async function snapshot() {
   return reply.ok ? reply.value : null;
 }
 
-async function refreshBadge() {
-  const state = await snapshot();
-  if (!state) return;
+async function showBadge(text) {
+  await invokeExtensionMethod(api.action.setBadgeText, api.action, { text });
+  if (text) await invokeExtensionMethod(api.action.setBadgeBackgroundColor, api.action, { color: '#9f2d20' });
+}
+
+async function showDueBadge(state) {
+  await captureFailureRecovered;
+  if (captureFailed || reconcileFailed) return;
   const dueEvents = new Set(state.alerts
     .filter(({ status }) => ['due', 'claimed', 'delivered'].includes(status))
     .map(({ eventId }) => eventId));
-  const text = dueEvents.size === 0 ? '' : dueEvents.size > 99 ? '99+' : String(dueEvents.size);
-  await invokeExtensionMethod(api.action.setBadgeText, api.action, { text });
-  if (text) await invokeExtensionMethod(api.action.setBadgeBackgroundColor, api.action, { color: '#9f2d20' });
+  await showBadge(dueEvents.size === 0 ? '' : dueEvents.size > 99 ? '99+' : String(dueEvents.size));
+}
+
+async function refreshBadge() {
+  const state = await snapshot();
+  if (state) await showDueBadge(state);
 }
 
 async function notificationsAllowed(state) {
@@ -65,15 +103,16 @@ async function notificationsAllowed(state) {
   return invokeExtensionMethod(api.permissions.contains, api.permissions, { permissions: ['notifications'] });
 }
 
-async function deliverOverdue(plan) {
-  const state = await snapshot();
-  if (!state || !(await notificationsAllowed(state))) return;
+async function deliverOverdue(plan, state) {
+  if (!(await notificationsAllowed(state))) return false;
+  let claimedAny = false;
   for (const [eventId, triggers] of Object.entries(plan.overdueByEvent)) {
     const triggerIds = triggers.map(({ id }) => id);
     const claimed = await commit({
       type: 'alert.claim', requestId: crypto.randomUUID(), eventId, triggerIds,
     });
     if (!claimed.ok) continue;
+    claimedAny = true;
     const recovery = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
     if (recovery.ok) await setAlarm(recovery.value.nextWakeAt);
     let delivered = false;
@@ -100,20 +139,26 @@ async function deliverOverdue(plan) {
     const settled = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
     if (settled.ok) await setAlarm(settled.value.nextWakeAt);
   }
+  return claimedAny;
 }
 
 async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
-  if (!reply.ok) return reply;
-  await setAlarm(reply.value.nextWakeAt);
-  await refreshBadge();
-  const state = await snapshot();
-  if (state) {
-    const events = state.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
-      state.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
-    await deliverOverdue(reconcileScheduler(events, { alerts: state.alerts }, new Date().toISOString()));
+  if (!reply.ok) {
+    console.error('Giga Pinax: the scheduler reconcile failed.', reply.message);
+    await showReconcileFailure();
+    return reply;
   }
-  await refreshBadge();
+  await clearReconcileFailure();
+  await setAlarm(reply.value.nextWakeAt);
+  // One read serves both the badge and delivery: an idle wake must not re-read the whole root.
+  const state = await snapshot();
+  if (!state) return reply;
+  await showDueBadge(state);
+  const events = state.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
+    state.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
+  const plan = reconcileScheduler(events, { alerts: state.alerts }, new Date().toISOString());
+  if (await deliverOverdue(plan, state)) await refreshBadge();
   return reply;
 }
 
@@ -150,7 +195,11 @@ function registerMenus() {
   return result;
 }
 
-api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Nothing here is a public API: a reply carries the collector's records, and alert.claim, alert.delivery.record and
+  // scheduler.reconcile are the background's own - a page that could send them could silence the reminders it claimed.
+  // Those three are no longer in COMMAND_TYPES, and a sender outside this extension is not answered at all.
+  if (sender?.id !== api.runtime.id || !String(sender?.url ?? '').startsWith(EXTENSION_PAGES)) return false;
   if (message?.type === LOOKUP_LAUNCH_MESSAGE) {
     if (!isLookupWindowUrl(message.url)) {
       sendResponse({ ok: false, message: 'Invalid lookup window address.' });
@@ -163,6 +212,8 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
+  // Only an extension page sends a command, so the collector is looking at their records.
+  void clearCaptureFailure();
   processCommand(message).then(sendResponse, (error) => sendResponse({
     ok: false,
     requestId: message?.requestId ?? '',
@@ -182,10 +233,59 @@ api.runtime.onStartup.addListener(() => {
   void reconcileRuntime().catch(() => undefined);
 });
 
-api.contextMenus.onClicked.addListener((info) => {
+// No workspace is open when a context menu is used, so the badge is the only place a capture
+// that never arrived can be seen without asking for a further permission. The badge on its own
+// says nothing, so the toolbar tooltip carries the explanation and what to do about it.
+async function showWarning(title) {
+  try {
+    await showBadge('!');
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title });
+  } catch {
+    // A toolbar that will not take the warning leaves the command reply as the only account.
+  }
+}
+
+async function showCaptureFailure(title) {
+  captureFailed = true;
+  captureFailureTitle = title;
+  await showWarning(title);
+}
+
+async function showReconcileFailure() {
+  reconcileFailed = true;
+  await showWarning(RECONCILE_FAILURE_TITLE);
+}
+
+// An empty title falls back to the manifest's own, so the tooltip is restored rather than blanked - unless the other
+// warning is still standing, in which case the toolbar goes back to explaining that one.
+async function retireWarning(standingTitle) {
+  try {
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title: standingTitle });
+    await refreshBadge();
+  } catch {
+    // The stale badge outliving its cause is better than a failed command reply.
+  }
+}
+
+// The next capture that works, or the collector opening any extension page, retires the capture warning.
+async function clearCaptureFailure() {
+  await captureFailureRecovered;
+  if (!captureFailed) return;
+  captureFailed = false;
+  await retireWarning(reconcileFailed ? RECONCILE_FAILURE_TITLE : '');
+}
+
+// The reminders are stopped until a reconcile works, so that is the only thing that retires this one.
+async function clearReconcileFailure() {
+  if (!reconcileFailed) return;
+  reconcileFailed = false;
+  await retireWarning(captureFailed ? captureFailureTitle : '');
+}
+
+async function runMenuAction(info) {
   if (info.menuItemId === MENU_LOOKUP) {
     const query = selectionQuery(info.selectionText);
-    if (query) void showInWindow(api, popupUrlFor(query));
+    if (query) await showInWindow(api, popupUrlFor(query));
     return;
   }
   if (info.menuItemId !== MENU_RESEARCH && info.menuItemId !== MENU_TRACK) return;
@@ -193,23 +293,47 @@ api.contextMenus.onClicked.addListener((info) => {
   const rawText = String(info.selectionText ?? '').trim().slice(0, 500);
   const pageUrl = String(info.pageUrl ?? '').slice(0, 2048);
   const requestId = crypto.randomUUID();
-  processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } })
-    .then((reply) => {
-      if (!reply.ok) return;
-      const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
-      api.tabs.create({ url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`) });
+  const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
+  if (!reply.ok) {
+    await showCaptureFailure(CAPTURE_FAILURE_TITLE);
+    return;
+  }
+  await clearCaptureFailure();
+  const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
+  try {
+    await invokeExtensionMethod(api.tabs.create, api.tabs, {
+      url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`),
     });
+  } catch {
+    // The draft reached storage: only the window that would have shown it is missing, and telling
+    // the collector their capture was lost would send them looking for work they still have.
+    await showCaptureFailure(OPEN_FAILURE_TITLE);
+  }
+}
+
+api.contextMenus.onClicked.addListener((info) => {
+  void runMenuAction(info).catch(() => showCaptureFailure(CAPTURE_FAILURE_TITLE));
 });
 
 api.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SCHEDULER_ALARM) void reconcileRuntime().catch(() => undefined);
 });
 
-if (api.notifications?.onClicked) {
+// The notifications API only exists once its optional permission is granted, which can happen
+// long after the worker started, so the click handler is registered again on every grant.
+let notificationClicksRegistered = false;
+function registerNotificationClicks() {
+  if (notificationClicksRegistered || !api.notifications?.onClicked) return;
   api.notifications.onClicked.addListener(() => {
-    api.tabs.create({ url: api.runtime.getURL('workspace.html#auctions') });
+    void invokeExtensionMethod(api.tabs.create, api.tabs, {
+      url: api.runtime.getURL('workspace.html#auctions'),
+    }).catch(() => undefined);
   });
+  notificationClicksRegistered = true;
 }
+
+registerNotificationClicks();
+api.permissions?.onAdded?.addListener(() => registerNotificationClicks());
 
 void registerMenus().catch(() => undefined);
 void reconcileRuntime().catch(() => undefined);

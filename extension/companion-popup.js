@@ -1,4 +1,7 @@
-import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { CURRENCIES, formatMoney } from './core/money.js';
+// The one definition of the message, shared with the function that returns it. Static because the
+// note is owed even where the import below could not run; only browser-api.js needs that tolerance.
+import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
@@ -7,7 +10,6 @@ import { mountSourcesMenu } from './source-menu.js';
 import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
-const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 const bounded = (value, maximum) => typeof value === 'string'
   ? value.trim().replace(/\s+/g, ' ').slice(0, maximum)
   : '';
@@ -16,7 +18,9 @@ export function documentMode(search = '') {
   const parameters = new URLSearchParams(search);
   const panel = parameters.get('panel') === '1';
   const windowed = parameters.get('window') === '1';
-  return { panel, windowed, acceptsLookupMessages: windowed };
+  // Only the lookup window takes a right-click's reference: the panel fallback stands in for a sidebar the browser wouldn't open, and a lookup sent to
+  // it would land beside the page it was meant to leave.
+  return { panel, windowed, acceptsLookupMessages: windowed && !panel };
 }
 
 export function shouldRevealRefine(outcome, field = '') {
@@ -24,8 +28,10 @@ export function shouldRevealRefine(outcome, field = '') {
     || Boolean(field && ['catalogue', 'reference-number', 'ric-volume', 'ric-section'].includes(field));
 }
 
-export function captureControlsState(pending, hasDraft) {
-  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft };
+// Research coin needs a query as well as a draft: a capture that gave no readable reference has fields to edit and can still be saved to the watchlist,
+// but nothing to look up.
+export function captureControlsState(pending, hasDraft, researchable = hasDraft) {
+  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft, researchDisabled: pending || !hasDraft || !researchable };
 }
 
 export async function runVisibleAction(action, fallback) {
@@ -44,20 +50,15 @@ export function moveCompanionTab(current, key) {
   return current;
 }
 
-export function buildCalculatorView({ hammerText, premiumPercentText, currency, locale = 'en-US' }) {
-  const hammer = parseMoney(hammerText, currency, locale);
-  if (!hammer.ok) return { status: 'invalid', hammer: null, premium: null, total: null, error: hammer.error };
-  if (typeof premiumPercentText !== 'string' || !premiumPercentText.trim()) {
-    return { status: 'unknown-premium', hammer: hammer.value, premium: null, total: null, error: null };
-  }
-  const basisPoints = parsePremiumPercent(premiumPercentText, locale);
-  if (!basisPoints.ok) return { status: 'invalid', hammer: hammer.value, premium: null, total: null, error: basisPoints.error };
-  const calculated = calculatePremium(hammer.value, basisPoints.value);
-  if (!calculated.ok) return { status: 'invalid', hammer: hammer.value, premium: null, total: null, error: calculated.error };
-  return {
-    status: 'complete', hammer: hammer.value, buyerPremiumBps: basisPoints.value,
-    premium: calculated.value.premium, total: calculated.value.hammerPlusPremium, error: null,
-  };
+// The stored preference wins over the display cache the research half showed, but it is applied
+// through that half's own change handler rather than by assigning the value: a start-up or
+// handed-over lookup has already priced under the cached currency, and those prices, the acsearch
+// link and the cache itself all have to follow. A value the select already shows is not a change.
+export function applyPreferredCurrency(select, preferred) {
+  if (!select || !CURRENCIES.includes(preferred) || select.value === preferred) return false;
+  select.value = preferred;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 }
 
 export function buildWatchlistDraftPayload(input) {
@@ -92,19 +93,26 @@ export function replaceAuctionContextInPayload(payload, auctionContext) {
   return clean && auctionContext ? { ...clean, auctionContext } : clean;
 }
 
+// Which coin a payload is about: a storage outcome nobody can tell (unknown) keeps its own payload and request id, so the same save is retried rather
+// than written twice - but only for that coin. A different reference or page is a different save and starts its own request.
+const draftIdentity = (payload) => `${payload?.reference ?? ''}\n${payload?.pageUrl ?? ''}`;
+
 export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: send, openDraft }) {
   let pending = null;
   let retry = null;
   return (payload) => {
     if (pending) return pending;
-    if (!retry) retry = { requestId: makeRequestId(), payload, draftId: null };
+    const identity = draftIdentity(payload);
+    if (retry?.identity !== identity) retry = null;
+    if (!retry) retry = { identity, requestId: makeRequestId(), payload, draftId: null };
     pending = (async () => {
       if (!retry.draftId) {
         const reply = await send({ type: 'draft.save', requestId: retry.requestId, kind: 'current-lot', payload: retry.payload });
         if (!reply?.ok) {
-          const outcome = reply.outcome ?? reply.error?.outcome;
+          // No reply at all is no outcome to read: the save is not known to have been refused, so its request is kept for the retry.
+          const outcome = reply ? reply.outcome ?? reply.error?.outcome : 'unknown';
           if (outcome !== 'unknown') retry = null;
-          return reply;
+          return reply ?? { ok: false };
         }
         retry.draftId = reply.value.id;
       }
@@ -173,23 +181,78 @@ async function callExtension(receiver, method, ...args) {
   }));
 }
 
-export async function captureCurrentPage(api, call = callExtension) {
-  const tabs = await call(api?.tabs, 'query', { active: true, currentWindow: true });
+// The toolbar popup and the side panel belong to a browser window, so its active tab is the page being looked at. The lookup window is the extension's
+// own window, whose active tab is this page: the tab to read is the last browser window's instead.
+export function captureTabQuery(mode) {
+  return mode?.windowed ? { active: true, lastFocusedWindow: true, windowType: 'normal' } : { active: true, currentWindow: true };
+}
+
+// Only a page the extension may inject into: settings pages, the extension's own pages and local files answer a query like any other tab, and reading
+// them is neither allowed nor an auction lot.
+export function capturableTab(tabs) {
   const tab = tabs?.[0];
-  if (!tab?.id) throw new Error('The current page could not be read. Enter the fields manually.');
-  const fallback = { pageTitle: tab.title ?? '', pageUrl: tab.url ?? '', candidates: {} };
+  if (!Number.isInteger(tab?.id)) return null;
+  try { return ['http:', 'https:'].includes(new URL(String(tab.url ?? '')).protocol) ? tab : null; }
+  catch { return null; }
+}
+
+const CAPTURE_UNREADABLE = 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.';
+// Said of a capture as it arrives and of the fields as they are edited, so it names neither the page nor the keystroke.
+const CAPTURE_NO_REFERENCE = 'These details hold no catalogue reference to look up. Add one below, such as “RIC 306”, or type it in the Reference box.';
+const PANEL_ACCESS_HINT = 'The Giga Pinax toolbar button grants access to the page you are on.';
+const captureFailureMessage = (mode) => mode?.panel ? `${CAPTURE_UNREADABLE} ${PANEL_ACCESS_HINT}` : CAPTURE_UNREADABLE;
+
+// A page that cannot be read leaves no context behind: a tab title and address kept from a refused injection would name a page nothing was read from,
+// and would be saved to the watchlist as the lot's own.
+export async function captureCurrentPage(api, call = callExtension, mode = { panel: false, windowed: false }) {
+  const refuse = () => new Error(captureFailureMessage(mode));
+  let tabs;
+  try { tabs = await call(api?.tabs, 'query', captureTabQuery(mode)); }
+  catch { throw refuse(); }
+  const tab = capturableTab(tabs);
+  if (!tab) throw refuse();
+  let results;
   try {
-    const results = await call(api?.scripting, 'executeScript', {
-      target: { tabId: tab.id }, func: collectCurrentLotCandidates,
-    });
-    return results?.[0]?.result ?? fallback;
-  } catch { return fallback; }
+    results = await call(api?.scripting, 'executeScript', { target: { tabId: tab.id }, func: collectCurrentLotCandidates });
+  } catch { throw refuse(); }
+  const capture = results?.[0]?.result;
+  if (!capture) throw refuse();
+  return capture;
+}
+
+const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
+// background, so the note must not promise a loss that is not one.
+const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
+
+// Nothing durable can be saved for the rest of this page's life: every later answer - a result card, a finished save, an edited capture - asks this
+// before putting a save button back, so the note and the disabled buttons never disagree.
+let storageUnavailable = false;
+
+// The note popup.js shows for its own unreadable preferences. Written without the page's helpers, since start-up may have failed before they existed.
+function showStorageNote(message = '') {
+  const note = document.getElementById('storage-note');
+  if (!note) return;
+  if (message) note.textContent = message;
+  note.hidden = false;
+}
+
+// Only the background bridge can say a record cannot be kept, and when it does nothing durable can be saved for the rest of this page's life: the two
+// buttons that would save something are the ones that go, and the note keeps the wording it already had for that.
+function showStorageUnavailable() {
+  storageUnavailable = true;
+  showStorageNote();
+  for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = true;
+  }
 }
 
 async function initCompanionPopup() {
   const $ = (id) => document.getElementById(id);
   let bridge;
   let initializeCompanionPreferences;
+  let saveCurrency;
   let snapshot = { lots: [], auctionEvents: [], alerts: [] };
   let safeCard = null;
   let captureDraft = null;
@@ -201,7 +264,7 @@ async function initCompanionPopup() {
   mountSourcesMenu($('sources-menu'));
   try {
     bridge = await import('./browser-api.js');
-    ({ initializeCompanionPreferences } = await import('./companion-preferences.js'));
+    ({ initializeCompanionPreferences, saveCurrency } = await import('./companion-preferences.js'));
   } catch { /* the calculator remains useful in a standalone page */ }
   if (!extensionRuntimeAvailable(globalThis.browser ?? globalThis.chrome)) bridge = null;
 
@@ -242,17 +305,19 @@ async function initCompanionPopup() {
     }
   };
 
+  // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
+  const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
   const clearCard = () => {
     safeCard = null;
     $('companion-save-watchlist').disabled = true;
   };
   addEventListener('giga-pinax-card', (event) => {
     safeCard = buildWatchlistDraftPayload({ ...event.detail, auctionContext: researchAuctionContext });
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
   }
   for (const id of ['quick-reference', 'catalogue', 'ric-volume', 'ric-section', 'reference-number']) {
     $(id)?.addEventListener('input', clearCard);
@@ -266,7 +331,7 @@ async function initCompanionPopup() {
   });
   let draftSavePending = false;
   const saveWatchlistDraft = async (payload) => {
-    if (!bridge || !payload) return announce('Extension storage is unavailable.', true);
+    if (!bridge || storageUnavailable || !payload) return announce(STORAGE_UNAVAILABLE, true);
     if (draftSavePending) return;
     draftSavePending = true;
     $('companion-save-watchlist').disabled = true;
@@ -277,9 +342,9 @@ async function initCompanionPopup() {
       announce('Watchlist details are ready to review.');
     } finally {
       draftSavePending = false;
-      $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+      $('companion-save-watchlist').disabled = !canSave(safeCard);
       const currentCapturePayload = watchlistPayloadFromCapture(reviewedCapture());
-      $('companion-capture-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), currentCapturePayload);
+      $('companion-capture-watchlist').disabled = !canSave(currentCapturePayload);
     }
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
@@ -294,16 +359,37 @@ async function initCompanionPopup() {
     return draft;
   };
   const captureFieldIds = ['ruler', 'denomination', 'mint', 'reference'].map((field) => `companion-capture-${field}`);
+  // The reason Research coin is disabled belongs where the fields are being edited, and beside the Reference box the lookup would have answered in.
+  // #form-error is popup.js's line as much as this one's, so only the line this page put there is ever taken back.
+  let shownFormError = '';
+  const showCaptureError = (message) => {
+    // Written again, the alert beside the fields is read out again: the same reason, still true, is left as it stands.
+    if ($('companion-capture-error').textContent === message) return;
+    $('companion-capture-error').textContent = message;
+    $('companion-capture-error').hidden = !message;
+    if (message) {
+      $('form-error').textContent = message;
+      $('form-error').hidden = false;
+      shownFormError = message;
+    } else if (shownFormError && $('form-error').textContent === shownFormError) {
+      $('form-error').textContent = '';
+      $('form-error').hidden = true;
+      shownFormError = '';
+    }
+  };
   const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
-    const state = captureControlsState(pending, hasDraft);
+    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())));
     $('companion-capture-editor').hidden = !state.editorVisible;
     for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
-    $('companion-use-capture').disabled = state.actionsDisabled;
-    $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge;
+    $('companion-use-capture').disabled = state.researchDisabled;
+    $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge || storageUnavailable;
   };
   for (const id of captureFieldIds) $(id).addEventListener('input', () => {
     if (!captureDraft) captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
-    applyCaptureState(false, captureFieldIds.some((fieldId) => $(fieldId).value.trim()));
+    const edited = captureFieldIds.some((fieldId) => $(fieldId).value.trim());
+    // Read again from the fields as they now stand: the reason Research coin is off goes when they can be looked up, and not at the first keystroke.
+    showCaptureError(edited && !buildResearchQuery(reviewedCapture()) ? CAPTURE_NO_REFERENCE : '');
+    applyCaptureState(false, edited);
   });
   $('companion-capture-current').addEventListener('click', async () => {
     const requestId = ++captureRequestId;
@@ -311,10 +397,11 @@ async function initCompanionPopup() {
     captureButton.disabled = true;
     captureButton.textContent = 'Capturing…';
     captureDraft = null;
+    showCaptureError('');
     applyCaptureState(true, false);
     try {
       const api = globalThis.browser ?? globalThis.chrome;
-      const capture = await captureCurrentPage(api);
+      const capture = await captureCurrentPage(api, undefined, mode);
       if (requestId !== captureRequestId) return;
       captureDraft = buildResearchDraft(capture);
       researchAuctionContext = captureDraft.auctionContext;
@@ -326,10 +413,20 @@ async function initCompanionPopup() {
       $('companion-capture-source').textContent = captureDraft.pageUrl ? `From ${captureDraft.pageTitle || captureDraft.pageUrl}` : 'Page extraction unavailable. Enter the fields manually.';
       applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
-      announce('Current-page details are ready to review.');
+      // The message is an alert beside the Reference box already: announcing it as well would have it read out twice.
+      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.');
+      else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
       captureDraft = null;
+      // The page nothing could be read from is now the page being looked at: the last one's context is no longer shown in the editor, so it must not
+      // travel with the next coin saved from this page either.
+      researchAuctionContext = null;
+      safeCard = clearAuctionContextFromPayload(safeCard);
+      if (globalThis.gigaPinaxWatchlistReference) {
+        globalThis.gigaPinaxWatchlistReference = clearAuctionContextFromPayload(globalThis.gigaPinaxWatchlistReference);
+      }
+      $('companion-save-watchlist').disabled = !canSave(safeCard);
       for (const id of captureFieldIds) $(id).value = '';
       $('companion-capture-source').textContent = error.message;
       applyCaptureState(false, false);
@@ -354,17 +451,28 @@ async function initCompanionPopup() {
     if (!draft) return;
     void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
   });
-  $('companion-clear-auction-context').addEventListener('click', () => {
-    if (!captureDraft) return;
-    captureDraft = { ...captureDraft, auctionContext: null };
+  // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
+  // stopped being about that page.
+  const dropAuctionContext = () => {
+    if (captureDraft) captureDraft = { ...captureDraft, auctionContext: null };
     researchAuctionContext = null;
     safeCard = clearAuctionContextFromPayload(safeCard);
     if (globalThis.gigaPinaxWatchlistReference) {
       globalThis.gigaPinaxWatchlistReference = clearAuctionContextFromPayload(globalThis.gigaPinaxWatchlistReference);
     }
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
     $('companion-capture-source').textContent = 'Auction context cleared. Captured fields remain available for research.';
+  };
+  $('companion-clear-auction-context').addEventListener('click', () => {
+    if (!captureDraft) return;
+    dropAuctionContext();
     announce('Auction context cleared.');
+  });
+  // A lookup this window was SENT is about a page somebody right-clicked on, not the one captured here, so the captured
+  // page must not ride along on the coin saved from it. popup.js says so before it opens the card. A reference typed into
+  // this window by hand is still about the captured page and keeps it.
+  addEventListener('giga-pinax-lookup-received', () => {
+    if (researchAuctionContext) dropAuctionContext();
   });
   const navigate = async (action, fallback) => {
     const result = await runVisibleAction(action, fallback);
@@ -374,21 +482,60 @@ async function initCompanionPopup() {
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
+  // Set once the snapshot has been read: only then is there a revision to write the currency against.
+  let currencyWritable = false;
   if (!bridge || !initializeCompanionPreferences) {
     $('companion-runtime-note').hidden = false;
     document.querySelectorAll('[data-companion-runtime]').forEach((element) => { element.disabled = true; });
   } else {
-    const reply = await initializeCompanionPreferences(bridge, localStorage);
-    if (reply.ok) {
+    // Blocked site data makes reading localStorage itself throw, and a background that answers nothing leaves no reply to read: either way the page
+    // still calculates and looks up references, so it says what it cannot do instead of stopping here.
+    let stored = null;
+    let preferencesBlocked = false;
+    try { stored = localStorage; } catch { preferencesBlocked = true; }
+    // A background that answers nothing at all leaves a reply the migration would read an outcome from and throw over, naming no reason a collector
+    // could act on: it is answered for here, where it arrives, so every other failure still speaks for itself.
+    const answering = { ...bridge, getSnapshot: async () => (await bridge.getSnapshot()) ?? { ok: false, message: '' } };
+    const reply = await initializeCompanionPreferences(answering, stored).catch((error) => ({ ok: false, message: error?.message }));
+    if (reply?.ok) {
       snapshot = reply.value;
+      currencyWritable = true;
       const currency = snapshot.preferences?.currency;
       if (CURRENCIES.includes(currency)) calculator.setValues({ currency });
+      // Applied before the listener below is registered: this is the stored value itself, so there is
+      // nothing for it to write back.
+      applyPreferredCurrency($('currency'), currency);
       renderSummary();
-    } else announce(reply.message, true);
+      // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
+      if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
+    } else {
+      showStorageUnavailable();
+      announce(reply?.message || STORAGE_UNAVAILABLE, true);
+    }
     bridge.subscribeToSnapshots((incoming) => { snapshot = incoming; renderSummary(); });
   }
+  // Registered whether or not the snapshot could be read: the research half has already cached the
+  // choice for the next window, so what a failed start-up owes the collector is the reason it will
+  // not outlive this profile's session - said once, rather than silence on every change.
+  let currencyNoteShown = false;
+  $('currency').addEventListener('change', () => {
+    const chosen = $('currency').value;
+    if (!CURRENCIES.includes(chosen)) return;
+    if (!currencyWritable) {
+      if (!currencyNoteShown) announce(CURRENCY_NOT_SAVED, true);
+      currencyNoteShown = true;
+      return;
+    }
+    // Price research never waits on storage, so the write is sent and answered for on its own.
+    void saveCurrency(bridge, chosen, snapshot.preferences)
+      .then((saved) => {
+        if (saved?.ok) snapshot = { ...snapshot, preferences: saved.value };
+        else announce(saved?.message || CURRENCY_NOT_SAVED, true);
+      })
+      .catch((error) => announce(error?.message || CURRENCY_NOT_SAVED, true));
+  });
   activate('research');
   renderSummary();
 }
 
-if (typeof document !== 'undefined') void initCompanionPopup();
+if (typeof document !== 'undefined') void initCompanionPopup().catch(() => showStorageUnavailable());

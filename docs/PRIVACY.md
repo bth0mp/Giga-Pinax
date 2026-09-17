@@ -1,24 +1,28 @@
 # Giga Pinax Privacy Policy
 
-Effective date: 15 September 2026
+Effective date: 17 September 2026
 
 Giga Pinax is a browser extension for ancient-coin research and local auction and collection records. It has no Giga Pinax account, analytics, advertising or developer-operated data server. Questions may be filed publicly through [GitHub Issues](https://github.com/bth0mp/Giga-Pinax/issues). Do not include private auction, payment or collection information in a public issue.
 
 ## Information handled
 
-Giga Pinax handles references and search terms that you enter. After you explicitly choose a context-menu or current-page command, it can also handle selected page text and the current page address to prepare editable research or an auction draft. It does not monitor browsing in the background.
+Giga Pinax handles references and search terms that you enter. After you explicitly choose a context-menu or current-page command, it can also handle selected page text and the current page address to prepare editable research or an auction draft. A current-page capture reads that page's own structured data (`application/ld+json`) and its `og:` page metadata as well as its visible text, all from the page you are looking at, and it refuses a page it is not permitted to read, such as a browser settings page, an extension page or a local file. It does not monitor browsing in the background.
 
-The extension stores information you choose to save in browser extension storage. This can include watchlist and collection records, auction identity and page links, notes, bid plans and outcomes, reminders, provenance, measurements, condition, fee estimates, collector-entered comparable sales and up to two external photo URL links per coin. Giga Pinax stores the photo URLs, not copies of the photo files.
+The extension stores information you choose to save in browser extension storage. This can include watchlist and collection records, auction identity and page links, notes, bid plans and outcomes, reminders, provenance, measurements, condition, fee estimates, saved house premiums and their bid increment ladders, collector-entered comparable sales and up to two external photo URL links per coin. Giga Pinax stores the photo URLs, not copies of the photo files.
+
+Unsaved capture drafts, which hold the captured page text, and a short ledger of recent write requests are also kept in that storage so a save is not repeated or lost. A reference you have typed is held in the browser's extension session storage while a permission prompt closes the popup, and is discarded when the browser session ends.
+
+The research popup also keeps a few display settings in the extension page's own `localStorage`, so it opens the way you left it: your last six lookups, up to 50 price-search phrases you have edited, the research form's catalogue, number, volume, ruler or mint, currency and sales period, the light or dark theme, a cache of the Nomisma names an online card has already been given, and a copy of the default currency the popup can read before the background answers it. None of it is part of a backup or of the raw export, and all of it goes when the extension's data is removed.
 
 ## Network requests
 
-RIC reference lookups first check OCRE data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Other catalogues use online services. Auction-price research remains independent and can contact acsearch even when the type record is local.
+RIC, Crawford (RRC), Price and Seleucid Coins (SC) reference lookups first check the OCRE, CRRO, PELLA and SCO data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Bopearachchi references are not bundled and always use the online services, because the citation that identifies a Bopearachchi type is only in the online records. A local match makes no Nomisma request either: the English Nomisma.org names for every authority, denomination, mint, material and portrait the bundled records carry are packaged with them, under CC BY 3.0, so a local card is named from inside the package. Ruler names on RIC cards come from the Nomisma snapshot in `ric-people.js`, which takes precedence over the bundled label file. A concept Nomisma publishes no English name for shows as the identifier the record carries, rather than a guess. Auction-price research is independent of the type record: the acsearch price search starts with every lookup once acsearch access is granted, and does so whether the type record came from inside the package or from online.
 
-When online research is requested, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
+Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers — the price search with every lookup, the rest only when that research is requested:
 
 - American Numismatic Society services at `numismatics.org` for public catalogue searches and type records;
 - Nomisma.org at `nomisma.org` for public numismatic terms and labels;
-- acsearch.info at `www.acsearch.info` for the requested session sale-result search, using your existing acsearch browser session when available; and
+- acsearch.info at `www.acsearch.info` for the sale-result search, which starts with every lookup once acsearch access is granted — the default in Brave and Chrome, where acsearch is a required host permission — and uses your existing acsearch browser session when available; and
 - CoinArchives at `www.coinarchives.com` for one public results page when you explicitly request CoinArchives prices and grant optional access. This request omits credentials and does not access CoinArchives Pro.
 
 These providers receive the request and ordinary connection data such as an IP address and process it under their own terms and privacy practices. Search text may appear in request URLs and provider logs. Giga Pinax does not control provider retention.
@@ -31,7 +35,9 @@ When you open saved-coin comparison, Giga Pinax may load the external photo URL 
 
 Saved records and preferences remain in the browser's extension storage on your device. They are not uploaded or synced to the developer. Fetched acsearch and CoinArchives rows, and acsearch inclusion choices, remain in the current research session and are not automatically added to durable collection evidence or backups. Optional CoinArchives host access can be revoked through the browser's extension permissions controls.
 
-You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
+A record that cannot be read is set aside in the same local storage rather than discarded, and can be downloaded on its own from Settings.
+
+You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. **Export raw data** writes a rescue file that is a verbatim copy of that storage, including unsaved drafts, their captured page text and recent request ids; treat it as you would the records themselves. Replacing your records with an import, or merging one that would overwrite a record, first downloads a safety copy of your current records to your own device. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
 
 Optional desktop notifications contain auction and reminder information you supplied and are created through the browser after you enable notifications.
 

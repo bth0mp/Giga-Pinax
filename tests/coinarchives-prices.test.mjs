@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fetchCoinArchivesPrices, parseCoinArchivesPublic } from '../extension/coinarchives-prices.js';
+import { coinArchivesUrl } from '../extension/prices.js';
 
 const row = (id, date, price, title = `Auction, Lot ${id}`, description = '') => `<tr id="${id}"><td><a class='R' href='lotviewer.php?LotID=${id}&amp;AucID=7&amp;Lot=${id}&amp;Val=x'><div class="auctiontitle">${title}</div><span class="lottext">${description}</span></a></td><td><nobr>${date}</nobr></td><td class="price">${price}</td><td></td></tr>`;
 const page = (rows, count = rows.length) => `<div class="resultsinfo"><span class="headertext">Your search for <b>'test</b>' matched ${count} lots from auctions added in the last six months.</span><br>Only the first 100 results are shown.</div><table class='results'>${rows.join('')}</table>`;
 const options = { term: 'test', section: 'a', currency: 'USD', now: new Date('2026-09-15T00:00:00Z') };
+// A request that never answers. Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
+const stall = (url, { signal }) => new Promise((resolve, reject) => {
+  const alive = setTimeout(resolve, 1000);
+  signal.addEventListener('abort', () => { clearTimeout(alive); reject(signal.reason); });
+});
 
 test('parses only strict realized-price cells and keeps native currencies', () => {
   const result = parseCoinArchivesPublic(page([
@@ -43,6 +49,16 @@ test('classifies incomplete and malformed rows without using descriptions', () =
   assert.deepEqual(result.excluded, { upcoming: 1, toBePosted: 1, unpriced: 1, malformedPrice: 1, malformedDate: 1, futureDate: 1, duplicateId: 0, conflictingId: 0 });
 });
 
+// The lot text travels with the lot, so the same citation filter can read a public row as it reads an acsearch one.
+test('a lot carries the description the row shows', () => {
+  const result = parseCoinArchivesPublic(page([
+    row('1', '1 Sep 2026', '10&nbsp;USD', 'Auction, Lot 1', 'Macedon. Tetradrachm. Price 23. Very Fine.'),
+    row('2', '2 Sep 2026', '20&nbsp;USD'),
+  ]), options);
+  assert.equal(result.lots.find(({ id }) => id === '1').description, 'Macedon. Tetradrachm. Price 23. Very Fine.');
+  assert.equal(result.lots.find(({ id }) => id === '2').description, '');
+});
+
 test('fails closed for closest matches and result-count layout drift', () => {
   assert.equal(parseCoinArchivesPublic('<p>Closest matches</p>', options).status, 'closest');
   assert.equal(parseCoinArchivesPublic(page([row('1', '1 Sep 2026', '10&nbsp;USD')], 2), options).status, 'layout');
@@ -51,6 +67,15 @@ test('fails closed for closest matches and result-count layout drift', () => {
 test('does not attribute a different displayed query to the requested term', () => {
   const html = page([row('1', '1 Sep 2026', '10&nbsp;USD')]).replace("<b>'test</b>", "<b>'nearby result</b>");
   assert.equal(parseCoinArchivesPublic(html, options).status, 'closest');
+});
+
+// The term is quoted so the search is the citation, not the words in it; the echo comes back with the quotes, but a page that drops them is showing
+// the same search, not a different one.
+test('an echoed query that differs only in its quotes is the requested one', () => {
+  const html = page([row('1', '1 Sep 2026', '10&nbsp;USD')]);
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", '<b>\'"Price 23"</b>'), { ...options, term: '"Price 23"' }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", "<b>'Price 23</b>"), { ...options, term: '"Price 23"' }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(html.replace("<b>'test</b>", "<b>'Price 24</b>"), { ...options, term: '"Price 23"' }).status, 'closest');
 });
 
 test('quarantines duplicate and conflicting lot identifiers', () => {
@@ -70,6 +95,44 @@ test('rejects zero and unsafe realized amounts before selecting lots', () => {
   assert.equal(result.status, 'unpriced');
   assert.equal(result.excluded.malformedPrice, 2);
   assert.equal(result.lots.length, 0);
+});
+
+test('decodes every character reference once, so an escaped entity stays text', () => {
+  const result = parseCoinArchivesPublic(page([
+    row('1', '1 Sep 2026', '10&nbsp;USD', 'Ash &amp;quot;Two&amp;quot; &#039;three&#x27; &lt;b&gt;'),
+  ]), options);
+  assert.equal(result.lots[0].title, 'Ash &quot;Two&quot; \'three\' <b>');
+});
+
+// A browser reports the address it fetched with every character percent-encoded, so an apostrophe in the term reads as a redirect until both are
+// normalised the same way.
+test('an apostrophe in the term is no redirect', async () => {
+  const term = "O'Brien 12";
+  const html = page([row('1', '1 Sep 2026', '10&nbsp;USD')]).replace("<b>'test</b>", "<b>'O&#039;Brien 12</b>");
+  const served = new URL(coinArchivesUrl(term, 'a')).href;
+  const fetchImpl = async () => ({ ok: true, status: 200, url: served, headers: new Headers({ 'content-type': 'text/html' }),
+    arrayBuffer: async () => new TextEncoder().encode(html).buffer });
+  const result = await fetchCoinArchivesPrices({ term, section: 'a', currency: 'USD' }, { fetchImpl, now: options.now });
+  assert.equal(result.status, 'ok');
+});
+
+// The cutoff is the collector's own day, as it is for acsearch: for part of every day away from UTC the UTC date is another day, so a lot he can still
+// see as today's was posted as future-dated, or tomorrow's counted as sold. The clock is injected, so the test can fail on a machine set to UTC too.
+const inZone = (iso, offsetMinutes) => {
+  const shifted = new Date(new Date(iso).getTime() + offsetMinutes * 60000);
+  return { getFullYear: () => shifted.getUTCFullYear(), getMonth: () => shifted.getUTCMonth(), getDate: () => shifted.getUTCDate() };
+};
+
+test('a lot is future-dated by the local calendar day, not the UTC one', () => {
+  // 23:59 on 15 September five hours west of UTC, where UTC has already reached the 16th.
+  const late = inZone('2026-09-16T04:59:00Z', -5 * 60);
+  assert.equal(parseCoinArchivesPublic(page([row('1', '15 Sep 2026', '10&nbsp;USD')]), { ...options, now: late }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(page([row('1', '16 Sep 2026', '10&nbsp;USD')]), { ...options, now: late }).excluded.futureDate, 1);
+});
+
+test('a stalled request is cut off by its own timeout', async () => {
+  const result = await fetchCoinArchivesPrices({ term: 'x', section: 'a', currency: 'USD' }, { fetchImpl: stall, timeoutMs: 20 });
+  assert.equal(result.reason, 'timeout');
 });
 
 test('fetches one bounded public page without credentials or redirects', async () => {
@@ -104,4 +167,47 @@ test('cancels a response stream as soon as its body exceeds the byte limit', asy
   const result = await fetchCoinArchivesPrices({ term: 'x', section: 'a', currency: 'USD' }, { fetchImpl: async () => response, maxBytes: 4 });
   assert.equal(result.reason, 'too-large');
   assert.equal(cancelled, true);
+});
+
+// The page is untrusted text off the network and the popup's own thread reads it. Each of these shapes made a pattern
+// re-scan the rest of the page from every start it found: half a megabyte of them cost between two and thirty-five
+// seconds. They are refused as a layout the parser does not know, promptly.
+test('a page shaped to make the parser re-scan it is refused promptly, not chewed through', () => {
+  const header = '<span class="headertext">Your search for <b>x</b> matched 5 lots from auctions added in the last six months.</span>';
+  const fill = (unit) => unit.repeat(Math.floor((512 * 1024) / unit.length));
+  for (const [name, html] of [
+    ['start tags that never close', fill('<span ')],
+    ['class attributes that never close', fill("<span class='")],
+    ['row start tags that never close', header + fill("<tr id='1' ")],
+    ['rows that never end', header + fill("<tr id='1'>")],
+  ]) {
+    const started = performance.now();
+    const result = parseCoinArchivesPublic(html, { term: 'x', currency: 'USD' });
+    const spent = performance.now() - started;
+    assert.equal(result.status, 'layout', name);
+    assert.ok(spent < 1000, `${name} took ${spent.toFixed(0)} ms`);
+  }
+});
+
+// The word is located before the pattern runs, which is what keeps the scan linear - but the first place it appears is
+// not always the header. A stylesheet rule that styles the class, or a heading that carries it, is ordinary page
+// furniture, and reading only the first occurrence turned pages the parser used to read into an unknown layout.
+test('the header is read past a stylesheet rule or a heading that names its class first', () => {
+  const body = page([row('1', '1 Sep 2026', '1,000&nbsp;USD'), row('2', '2 Sep 2026', '2,000&nbsp;USD')]);
+  const spacer = (unit, times) => unit.repeat(times);
+  for (const [name, html] of [
+    ['a rule 6 KB before the header', `<html><head><style>.headertext{font-weight:bold}</style>${spacer('<meta name="x" content="y">', 250)}</head><body>${body}`],
+    ['a rule just before the header', `<html><head><style>.headertext{font-weight:bold}</style></head><body>${body}`],
+    ['a page heading of the same class', `<div class="headertext">Search results</div>${spacer('<a href="#">nav</a>', 400)}${body}`],
+    ['seven of them before the header', `${spacer('<div class="headertext">Search results</div>', 7)}${body}`],
+  ]) {
+    const result = parseCoinArchivesPublic(html, options);
+    assert.equal(result.status, 'ok', name);
+    assert.equal(result.renderedCount, 2, name);
+  }
+  // Bounded, and still linear: a page of nothing but the word is given up on rather than searched to the end.
+  const started = performance.now();
+  const flooded = '<span class="headertext">nothing</span>'.repeat(Math.floor((512 * 1024) / 38));
+  assert.equal(parseCoinArchivesPublic(flooded, options).status, 'layout');
+  assert.ok(performance.now() - started < 1000, 'a page of nothing but the word must not be chewed through');
 });

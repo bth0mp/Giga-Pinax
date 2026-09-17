@@ -1,59 +1,72 @@
 # Giga Pinax
 
-Giga Pinax 0.31.1 is a Brave, Chrome and Firefox extension for researching ancient coin types and sale prices, planning auction activity, and keeping local collection records. It never places, changes or cancels bids.
+[![CI](https://github.com/bth0mp/Giga-Pinax/actions/workflows/ci.yml/badge.svg)](https://github.com/bth0mp/Giga-Pinax/actions/workflows/ci.yml)
 
-Research supports RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type records, plus prices-only references such as RPC, Sear, SNG, BCD, HGC and Krause numbers. Paste a whole lot description to extract its catalogue references, or use the context menu on selected text. Public type and label data comes from American Numismatic Society projects and Nomisma.org. Requested sale-price research uses the collector's existing acsearch browser session.
+Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin references and what they sell for. Type a catalogue reference or paste a whole lot description, and it resolves the type, fetches recent hammer prices — from acsearch using your own signed-in session, and from CoinArchives' public results using no session at all — works out what a bid really costs, and keeps the result in a local watchlist beside your own notes, photos and provenance. It has no account, no analytics and no server of its own, and it never places, changes or cancels a bid.
 
-The 0.29 workspace adds auction page, house, sale and lot identity; duplicate checks; closing-soon, research, planned, active and completed queues; provenance; measurements and condition; external photo URL links; reminders and outcomes; and comparison of two to four saved coins. The calculator includes buyer premium, shipping, percentage and fixed payment fees, and the highest affordable bid on a collector-entered fixed increment.
+![The Giga Pinax auction workspace, showing the workflow queue beside a selected coin](docs/store/assets/01-workspace-1280x800.png)
 
-Version 0.30 bundles 52,254 active Roman Imperial type records and 2,808 replacement redirects derived from the supplied OCRE RDF export. RIC searches check a local index and load the relevant details from packaged files. Local results need no ANS connection; missing records can use the existing online lookup. This snapshot does not cover Crawford/RRC, Price, Seleucid Coins or Bopearachchi. Settings identifies the bundled data and its coverage. The export's publication date is unknown, and unresolved Nomisma identifiers are not guessed. See [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+## What it does
 
-Version 0.30.1 adds verified people to the RIC ruler/mint suggestions, including those missing from the mint-organised volumes VI–IX. For example, choose **VII**, enter **Constantine II** and **287**, or paste the lot description containing `OCRE ric.7.lon.287`. The local lookup distinguishes the obverse portrait from the issuing authority. Verified Latin names such as **Constantinus II** are recognised too. See [release notes](docs/RELEASE-0.30.1.md).
+- **Research** — resolve a reference from the type data bundled with the extension, or from American Numismatic Society and Nomisma services when the bundle cannot answer, or read every catalogue reference out of a pasted lot description or a right-clicked selection. An ambiguous reference offers choices instead of inventing an answer.
+- **Prices** — a median of recent acsearch sales, and a separately labelled median of CoinArchives public results. Each search looks for the reference as a phrase dealers actually write, counts how many results cite it (`39 of 55 results cite Price 23`) and keeps the rest out of the median; you can switch that filter off, narrow to one denomination, read a median per dealer grade, exclude a sale and watch the figures follow. Each panel shows its own query, sample and coverage. Currencies and providers are never pooled.
+- **Current source** — capture the auction page you are looking at, read from its own structured data and metadata before its visible text, review the extracted reference and auction context, then research it or save an editable draft.
+- **Calculator** — hammer plus buyer premium, or the highest affordable hammer from a budget, including shipping, percentage and fixed payment fees, and either a fixed bid increment or the increment ladder you copied from a house's own terms.
+- **Watchlist and workspace** — Closing soon, Needs research, Planned, Active and Completed queues; auction identity with duplicate detection; measurements, condition, sourced provenance, external photo links, reminders and outcomes; and comparison of two to four saved coins.
+- **Local catalogue data** — 68,123 type records travel inside the package: 52,254 Roman Imperial (RIC) types with 2,808 replacement redirects, 2,602 Roman Republican (RRC) types, 4,573 Price types and 8,694 Seleucid Coins types, with the English Nomisma.org name of every authority, denomination, mint, material and portrait they carry. A RIC, Crawford, Price or SC reference the bundle holds is answered, and named, from data inside the package: no request to numismatics.org or nomisma.org, and the card appears with the network disabled. The price search that starts with every lookup still sends the search phrase to acsearch whenever acsearch access is granted. A reference the bundle does not hold, and every Bopearachchi reference, can still fall back to the online catalogue.
+- **Backups** — records and settings export and import as JSON. An import can replace your records or merge into them: a merge keeps the version of each record that was written last and lists what it would change before anything is replaced, and a replace downloads a copy of your current records first. There is also a raw rescue export that works when nothing else will load. Everything lives in your browser's extension storage; nothing is uploaded.
 
-Version 0.31 adds a separate CoinArchives public-results median. In Research, select **Get CoinArchives prices** and allow optional site access. The extension reads one public results page and counts eligible hammer prices in the selected original currency, excluding upcoming auctions and missing prices. It shows its own query, sample and coverage: auctions added in the past six months, up to the first 100 matches. Currency values and the two providers' results are never pooled. CoinArchives Pro remains an external link.
+## Catalogues
 
-Version 0.31.1 fixes **Refine reference** searches. With the top search box empty, select the catalogue and enter its reference fields, then select **Search** or press Enter in a field. RIC volume and ruler fields work the same way, including restored valid values. Old text left in the top box no longer overrides a newly refined reference. Native top-box lookup safety remains in place. See [release notes](docs/RELEASE-0.31.1.md).
+Type records resolve for RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi. Many further catalogues are read for prices only, including RPC, Sear, SNG, BCD, HGC and Krause KM#/Y# numbers; pasted lot text is read against a table of over 200 catalogue keys, so a dealer's citation is listed even when no open type data carries it.
 
-Fetched provider rows remain in Research. Excluding an acsearch result updates its count, range, median, comparison and copied summary from the same included rows, and curation resets with a new lookup. Provider rows are not copied into saved comparable evidence.
-
-Price research starts from the entered reference independently of ANS catalogue lookup. With existing acsearch access, the extension fetches available hammer prices and calculates the median while catalogue details load separately. An ANS outage, missing match or request for a more specific type does not block price research. acsearch prices require an account with access to hammer prices; CoinArchives public prices do not require a Pro account. Catalogue details arriving later do not replace the active price query or its curated results.
-
-Captured auction context follows a coin into Research and an editable watchlist draft. Saving from a result carries the resolved reference, type link and available captured auction context; saving from Current source carries the reviewed capture. The collector confirms the record in the workspace. Duplicate auction identity opens the existing coin rather than silently merging it.
-
-Saved records use browser extension storage and can be exported and imported as JSON. Giga Pinax stores external photo URLs rather than photo binaries. Their explicit HTTP or HTTPS servers are contacted only after comparison opens; images are lazy-loaded without a referrer and display an unavailable fallback on failure.
+```
+RIC I² Nero 306        Crawford 44/5       SC 1266.2         Price 23
+Bop Euthydemus I 24A   RPC I 1234          SG 6829           Netherlands KM# 123
+```
 
 ## Install
 
-Open the public [Giga Pinax releases](https://github.com/bth0mp/Giga-Pinax/releases), choose the latest release, and download the browser ZIP under **Assets** rather than GitHub's **Source code** archives. Public downloads require no GitHub account.
+Open the [Giga Pinax releases](https://github.com/bth0mp/Giga-Pinax/releases), choose the latest release, and download the ZIP for your browser under **Assets** — not GitHub's **Source code** archive. No GitHub account is needed, and you do not need Python.
 
-- **Brave or Chrome:** Extract the Brave ZIP, open `brave://extensions` or `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder containing `manifest.json`.
-- **Firefox 142+:** Open `about:debugging`, select **This Firefox**, choose **Load Temporary Add-on**, and select the unsigned Firefox ZIP. The temporary add-on is removed when Firefox restarts; permanent installation requires a Mozilla-signed build.
+- **Brave or Chrome:** extract the Brave ZIP, open `brave://extensions` or `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder holding `manifest.json`.
+- **Firefox 142+:** open `about:debugging`, select **This Firefox**, choose **Load Temporary Add-on**, and select the unsigned Firefox ZIP. Firefox removes a temporary add-on when it restarts; permanent installation needs a Mozilla-signed build.
 
-For updates, open **Settings**, find **Updates**, and select **Download latest update**. Brave or Chrome users replace the files in the existing extracted folder and select **Reload**. Firefox users load the new unsigned ZIP again. Giga Pinax opens a fixed public GitHub asset URL and does not poll GitHub or install updates silently. See [the installation guide](docs/INSTALL.md).
+**Settings → Updates** shows the installed version and opens the latest package for your browser. Giga Pinax never polls GitHub or installs an update by itself. The [installation guide](docs/INSTALL.md) has the full steps, and the [changelog](CHANGELOG.md) has what each version changed.
 
-## Using 0.29
+## Privacy
 
-- Use **Research** for a reference or pasted lot text. **Refine reference** exposes catalogue-specific fields. **Inspect sales** lets you include or exclude acsearch rows for the current lookup and **Reset** restores them.
-- Use **Current source** to capture the page you are viewing, review its fields and auction context, then research it or save an editable draft.
-- Use **Calculator** for total and affordable-bid planning. Its optional fees and increments section accepts shipping, payment fees, minimum bid and fixed increment.
-- Use **Watchlist** to open the full workspace. Its queue covers all open lots, closing soon, needs research, planned, active and completed records. Auction-start labels are distinct from lot deadlines; date-only events do not gain invented times.
-- In a selected coin, edit auction identity, measurements, condition, two photo links, sourced provenance and cost estimate. **Open auction** and **Research reference** lead to separate destinations. Select two to four coins to compare their recorded fields and labelled currencies.
-- Open **Settings** from the header or workspace for **Appearance**, default currency, saved house premiums, **Updates**, and backup/import.
+Giga Pinax contacts a host only because you asked it to, and only these:
 
-Useful examples include `RIC I² Nero 306`, `Crawford 44/5`, `SC 1266.2`, `Bop Euthydemus I 24A`, `Price 23`, `RPC I 1234`, `SG 6829`, and `Netherlands KM# 123`. Ambiguous references produce choices rather than an invented result. CoinArchives Pro and RPC Online are external links opened only when selected; Giga Pinax does not receive their credentials or import their paid results.
+| Host | When |
+| --- | --- |
+| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price or SC reference answered by the bundled data contacts neither: the concept names a card shows are packaged with the records. Bopearachchi references are always online. |
+| `www.acsearch.info` | Every lookup, once acsearch access is granted: the price search starts with the lookup and uses your existing acsearch session. |
+| `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
+| `github.com` | Only when you choose a release or update download. |
+| Your own photo hosts | Only once saved-coin comparison opens, for the external photo URLs you entered. |
 
-Online lookups contact `numismatics.org`, `nomisma.org` and `www.acsearch.info` over HTTPS. CoinArchives price requests contact `www.coinarchives.com` only after a dedicated user action and optional permission grant. Bundled RIC results do not contact ANS or Nomisma; independent auction-price research still contacts acsearch when enabled. GitHub is contacted only for a user-requested release download. Explicit collector-supplied comparison photos may come from HTTP or HTTPS hosts. See [the privacy policy](docs/PRIVACY.md).
+Links Giga Pinax offers but you open yourself — a CoinArchives Pro or acsearch search page, an RPC Online type page, an OCRE type page at the ANS, the auction page a saved coin came from — are ordinary browser navigations in a new tab, not requests the extension makes: they carry whatever that site already knows about your browser, and nothing from the extension beyond the search phrase in the link itself.
 
-## Development and release
+There is no account, no analytics and no developer-operated server; saved records never leave your browser unless you export them. Full details are in the [privacy policy](docs/PRIVACY.md).
 
-The runtime has no dependencies. `python scripts/build.py` copies an explicit allowlist into deterministic Brave and Firefox packages. `python scripts/make_icons.py` needs Pillow only to reproduce the icon PNGs. `web-ext` is used only for Firefox validation.
+## Development
 
-```powershell
+The runtime has no dependencies, no bundler and no build step: plain ES modules the browser loads directly. From the repository root:
+
+```sh
 node --test tests/*.test.mjs
-python -m unittest discover -s tests -p 'test_*.py' -v
+python -m unittest discover -s tests -p "test_*.py"
+python scripts/build.py
 npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 ```
 
-Each GitHub release carries five ZIP assets: versioned Brave, Chrome and Firefox packages plus stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases. The versioned Chrome ZIP is a byte-identical copy of the Brave ZIP. Every release body includes brief installation and update instructions; see [the release guide](docs/RELEASING.md).
+`python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext` is used only to validate the Firefox package. Publishing is described in the [release guide](docs/RELEASING.md).
 
-Companion backups contain records and settings. Lookup preferences, theme, ANS label cache, browser sessions and live acsearch results are outside the backup. Browser storage does not move between extension identities; export from the original installation and import explicitly.
+## Data attribution
+
+The bundled type databases are derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/), [CRRO](https://numismatics.org/crro/), [PELLA](https://numismatics.org/pella/) and [SCO](https://numismatics.org/sco/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The concept names a card shows — the authorities, denominations, mints, materials and portraits — and the RIC ruler suggestions, the ruler names and aliases the extension recognises and offers, are both derived from [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+
+## License
+
+The code is released under the [MIT License](LICENSE). The bundled catalogue data keeps its own terms: OCRE, CRRO, PELLA and SCO type data under ODbL 1.0 and Nomisma.org concept data under CC BY 3.0; see [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).

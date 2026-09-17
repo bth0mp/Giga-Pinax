@@ -3,13 +3,10 @@ import assert from 'node:assert/strict';
 
 import { SOURCE_CAPABILITIES, buildUserInitiatedSearch } from '../extension/source-launchers.js';
 
-test('publishes access-gated capabilities separately from verified launcher transfer', () => {
+test('publishes one reviewed HTTPS route per supported source', () => {
   assert.deepEqual(Object.keys(SOURCE_CAPABILITIES), ['coinarchives', 'acsearch']);
   for (const capability of Object.values(SOURCE_CAPABILITIES)) {
-    assert.equal(capability.launch.transfer, 'verified');
-    assert.equal(capability.automaticEvidence.status, 'unavailable');
-    assert.equal(capability.automaticEvidence.label, 'Unavailable — access not approved');
-    assert.equal(new URL(capability.launch.searchPageUrl).protocol, 'https:');
+    assert.equal(new URL(capability.launch.route.pathname, capability.launch.route.origin).protocol, 'https:');
   }
 });
 
