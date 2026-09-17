@@ -235,6 +235,29 @@ test('sets an outcome and atomically creates reciprocal collection history', () 
   assert.equal(won.snapshot.collectionEntries[0].lotId, won.value.id);
 });
 
+test('correcting a lot back to won answers the collection review the mistake raised', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] },
+  }));
+  const won = reduce(created.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 0, outcome: { status: 'won' },
+    addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-12', sourceLinks: [] },
+  }));
+  const lost = reduce(won.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 1, outcome: { status: 'lost' },
+  }));
+  assert.equal(lost.value.collectionReviewReason, 'source-lot-no-longer-won');
+  assert.equal(lost.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+
+  const corrected = reduce(lost.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 2, outcome: { status: 'won' },
+  }));
+  assert.equal(Object.hasOwn(corrected.value, 'collectionReviewReason'), false);
+  assert.equal(Object.hasOwn(corrected.snapshot.collectionEntries[0], 'reviewReason'), false);
+  assert.equal(corrected.snapshot.collectionEntries[0].revision, 2);
+  assert.equal(corrected.value.collectionEntryId, corrected.snapshot.collectionEntries[0].id);
+});
+
 test('event save derives timed UTC instant and reminder IDs in the authority', () => {
   const saved = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,

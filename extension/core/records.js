@@ -1176,6 +1176,9 @@ export function setOutcome(lot, outcomeDraft, now) {
   }
   if (lot.outcome.status === 'won' && outcomeDraft.status !== 'won' && OWN(lot, 'collectionEntryId')) {
     next.collectionReviewReason = 'source-lot-no-longer-won';
+  } else if (outcomeDraft.status === 'won') {
+    // Correcting the outcome back to won answers the review that the mistake raised.
+    delete next.collectionReviewReason;
   }
 
   const validated = lotResult(next, 'lot');

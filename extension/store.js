@@ -447,13 +447,16 @@ function mutation(snapshot, command, context) {
         value.collectionEntryId = entry.id;
         next.collectionEntries.push(entry);
       }
+      const reviewed = value.collectionEntryId
+        ? next.collectionEntries.find(({ id }) => id === value.collectionEntryId) : undefined;
+      if (reviewed && value.collectionReviewReason !== reviewed.reviewReason) {
+        // The entry follows its lot, so a correction back to won withdraws the review as well.
+        if (value.collectionReviewReason) reviewed.reviewReason = value.collectionReviewReason;
+        else delete reviewed.reviewReason;
+        reviewed.revision += 1;
+        reviewed.updatedAt = now;
+      }
       if (value.collectionReviewReason && value.collectionEntryId) {
-        const entry = next.collectionEntries.find(({ id }) => id === value.collectionEntryId);
-        if (entry) {
-          entry.reviewReason = value.collectionReviewReason;
-          entry.revision += 1;
-          entry.updatedAt = now;
-        }
         effects.push({ type: 'collection.review', collectionEntryId: value.collectionEntryId });
       }
       effects.push({ type: 'scheduler.reconcile' }, { type: 'badge.refresh' });
