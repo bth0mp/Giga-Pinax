@@ -1206,12 +1206,25 @@ $('catalogue').addEventListener('change', () => {
   clearLot();
   $('lookup-prompt').hidden = false;
 });
+// Prices already on screen were fetched in the currency being replaced. Where acsearch access is already granted the same
+// search is run again in the new one - the lookup that fetched them asked for nothing either - rather than leaving an
+// empty panel with a Get prices button on it. This is what a default currency arriving from the durable root, after a
+// Settings change or a replace import, does to a window that has already priced its lookup. Without access nothing is
+// fetched and nothing is asked: a permission prompt closes the popup in Firefox, and nobody pressed anything here.
 $('currency').addEventListener('change', () => {
   savePreferences();
+  const repriced = shownPrices?.context === researchContext ? researchContext : null;
+  const term = $('price-term').value;
   clearPrices();
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
+  if (repriced) void repriceShownLots(repriced, term, $('currency').value);
 });
+async function repriceShownLots(context, term, currency) {
+  if (!(await hasAcsearchAccess())) return;
+  if (context !== researchContext || currency !== $('currency').value) return;
+  runPrices(term || context.term, currency, { remember: false, context });
+}
 // A listed volume clears a known ruler it lacks (Titus under I²), since blank means any ruler, and says so; Any volume, a volume OCRE does not list
 // (a parsed "IV, Part 1") and text that names no known ruler keep it. The form's input handler has already cleared the one-box and the output, and a
 // select's change comes after its input, so the announcement stays.

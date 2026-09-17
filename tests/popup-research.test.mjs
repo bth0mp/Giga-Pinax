@@ -1233,14 +1233,40 @@ test('a stored preference arriving late switches the select, the cache and the p
   assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), true);
   assert.equal(popup.element('currency').value, 'GBP');
   assert.equal(cachedCurrency(stored), 'GBP');
-  assert.equal(popup.element('prices-panel').hidden, true);
   assert.match(popup.element('acsearch-link').href, /currency=gbp/);
   assert.equal(popup.element('announcement').textContent, 'Currency set to GBP.');
+  // acsearch access is already granted, so the same search is simply run again in the new currency: an empty panel with
+  // a Get prices button on it is not what the collector asked for by having a default currency.
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, ['EUR', 'GBP']);
+  assert.equal(popup.element('prices-panel').hidden, false);
 
   // The stored value the select already shows is not a change: nothing is cleared and nothing is said.
   popup.element('announcement').textContent = '';
   assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), false);
   assert.equal(popup.element('announcement').textContent, '');
+});
+
+// Re-pricing must never be the thing that asks for acsearch: a prompt closes the popup in Firefox, and nobody pressed
+// anything here. Without access the panel simply waits for Get prices, as it always did.
+test('a currency change never prompts for acsearch, so an ungranted window keeps its empty panel', async () => {
+  const stored = seeded('EUR');
+  const fetched = [];
+  let prompts = 0;
+  const popup = await loadPopup({ stored, search: '?window=1&q=Price%2023',
+    permissionRequest: async () => { prompts += 1; return true; }, permissionContains: async () => false,
+    priceFetch: async (request) => { fetched.push(request.currency); return oneSale; },
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
+  await settle();
+  await settle();
+  const before = prompts;
+  assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), true);
+  await settle();
+  await settle();
+  assert.equal(prompts, before, 'a currency change asks for nothing');
+  assert.deepEqual(fetched, [], 'and fetches nothing it has no access for');
+  assert.equal(popup.element('prices-panel').hidden, true);
 });
 
 test('a profile whose bridge never answers keeps the chosen currency across sessions', async () => {

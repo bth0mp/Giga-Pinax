@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initializeCompanionPreferences, saveCurrency } from '../extension/companion-preferences.js';
+import { cacheDefaultCurrency, initializeCompanionPreferences, saveCurrency } from '../extension/companion-preferences.js';
 
 const GIGA_KEY = 'giga-pinax-preferences-v1';
 const LEGACY_KEY = 'coin-lookup-test-preferences-v1';
@@ -11,10 +11,35 @@ function storage(values = {}) {
   const removed = [];
   return {
     removed,
+    read: (key) => (items.has(key) ? items.get(key) : null),
     getItem(key) { return items.has(key) ? items.get(key) : null; },
+    setItem(key, value) { items.set(key, String(value)); },
     removeItem(key) { removed.push(key); items.delete(key); },
   };
 }
+
+// The research popup opens, looks up and prices before the background can answer, so it prices in the display cache of
+// the default currency. Settings shares that local storage: until it wrote the cache too, the first popup opened after
+// a currency change - or after an import - priced once in the currency just replaced and then showed an empty panel.
+test('a page that changes the stored default currency writes the popup display cache too', () => {
+  const local = storage({ [GIGA_KEY]: JSON.stringify({ currency: 'USD', catalogue: 'Bop', number: '24A' }) });
+  assert.equal(cacheDefaultCurrency(local, 'CHF'), true);
+  assert.deepEqual(JSON.parse(local.read(GIGA_KEY)), { currency: 'CHF', catalogue: 'Bop', number: '24A' });
+
+  // Nothing else in the cache is the caller's to write, and a cache that is missing or unreadable is simply started.
+  const empty = storage();
+  assert.equal(cacheDefaultCurrency(empty, 'EUR'), true);
+  assert.deepEqual(JSON.parse(empty.read(GIGA_KEY)), { currency: 'EUR' });
+  const broken = storage({ [GIGA_KEY]: 'not json' });
+  assert.equal(cacheDefaultCurrency(broken, 'GBP'), true);
+  assert.deepEqual(JSON.parse(broken.read(GIGA_KEY)), { currency: 'GBP' });
+
+  // A currency the calculator has no ladders for is not one the popup may be told to price in.
+  assert.equal(cacheDefaultCurrency(local, 'XYZ'), false);
+  assert.equal(JSON.parse(local.read(GIGA_KEY)).currency, 'CHF');
+  // Blocked site data costs the cache, not the save that had already happened.
+  assert.equal(cacheDefaultCurrency({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } }, 'EUR'), false);
+});
 
 function bridge(initialSnapshot, migratedSnapshot = initialSnapshot) {
   const commands = [];
