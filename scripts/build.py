@@ -5,6 +5,7 @@ and Firefox zips, and the stable Brave and Firefox aliases."""
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -146,6 +147,36 @@ def local_catalogue_assets() -> tuple[str, ...]:
     return (f"{base}/metadata.json", f"{base}/index.json", f"{base}/numbers.json", f"{base}/NOTICE.txt", *files)
 
 
+def importer_number_index(entries: list) -> dict:
+    """The importer's own function, so the packaged file is checked against the code that writes it, not a copy of it."""
+    spec = importlib.util.spec_from_file_location("giga_pinax_import_rdf", PROJECT_ROOT / "scripts" / "import_rdf.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.number_index(entries)
+
+
+def check_number_index() -> None:
+    """numbers.json is derived from index.json, and a stale one is still a perfectly valid file: every position it lists
+    resolves, and the lookup simply never sees the coins the rebuild added. Nothing at runtime can tell the two apart, so
+    the index is recomputed here and a bundle that disagrees is not packaged."""
+    base = "data/ocre"
+    try:
+        index = json.loads(read_asset(f"{base}/index.json"))
+        numbers = json.loads(read_asset(f"{base}/numbers.json"))
+        metadata = json.loads(read_asset(f"{base}/metadata.json"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("cannot read the bundled OCRE index") from error
+    entries = index.get("entries") if isinstance(index, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("unsupported bundled OCRE index")
+    if metadata.get("activeRecordCount") != len(entries):
+        raise ValueError("the bundled OCRE index and metadata disagree about how many records there are")
+    if not isinstance(numbers, dict) or numbers.get("schemaVersion") != 1 or numbers.get("entryCount") != len(entries):
+        raise ValueError("the bundled OCRE number index does not count the entries of the index beside it")
+    if numbers.get("numbers") != importer_number_index(entries):
+        raise ValueError("the bundled OCRE number index is stale: rerun python scripts/import_rdf.py --reindex extension/data/ocre")
+
+
 def read_manifest(browser: str) -> tuple[bytes, dict]:
     manifest_path = MANIFEST_ROOT / f"{browser}.json"
     try:
@@ -248,6 +279,7 @@ def stale_release_zips(output_root: Path, version: str) -> list[Path]:
 
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
     version = check_manifest_versions()
+    check_number_index()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     try:

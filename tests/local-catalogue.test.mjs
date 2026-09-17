@@ -9,7 +9,7 @@ import { lookupType, parseReference, pickRicEntries } from '../extension/lookup.
 
 const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
 const metadata = {
-  schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
+  schemaVersion: 1, corpus: 'ocre', recordCount: 12, activeRecordCount: 11,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
   shards: Object.fromEntries(['1(2)', '2', '2_1(2)', '2_3(2)', '4', '7'].map((prefix) => [prefix, whole(prefix)])),
 };
@@ -26,8 +26,9 @@ const index = { schemaVersion: 1, entries: [
   ['ric.4.ph_i.27A', 'RIC IV Philip I 27A'],
   ['ric.4.ph_i.27B', 'RIC IV Philip I 27B'],
 ] };
-// The index positions each RIC number's leading integer reaches, as the importer writes them beside the index.
-const numbers = { schemaVersion: 1, numbers: { 27: [9, 10], 287: [2, 3, 4, 5], 306: [0], 720: [6, 7, 8], 972: [1] } };
+// The index positions each RIC number's leading integer reaches, as the importer writes them beside the index, under the
+// count of the entries they were taken from.
+const numbers = { schemaVersion: 1, entryCount: index.entries.length, numbers: { 27: [9, 10], 287: [2, 3, 4, 5], 306: [0], 720: [6, 7, 8], 972: [1] } };
 const records = {
   'ric.1(2).ner.306': { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], m: ['rome'], x: ['ae'], s: '0062', e: '0068', o: { l: 'NERO', d: 'Head of Nero', p: ['nero'] }, r: { d: 'Temple' } },
   'ric.2_1(2).ves.972': { i: 'ric.2_1(2).ves.972', l: 'RIC II, Part 1 (second edition) Vespasian 972', a: ['vespasian'], d: ['denarius', 'aureus'], o: { p: ['titus'] }, r: {} },
@@ -123,8 +124,10 @@ test('missing and corrupt bundles fail closed and never claim a catalogue miss',
   assert.equal((await corrupt.lookupById('ocre', 'ric.1(2).ner.306')).status, 'unavailable');
   // numbers.json decides which titles a number is read from, so a bundle whose number index is missing, foreign or pointing outside the index it
   // was built for must fail closed. "none" from any of these would tell a collector the coin is not in RIC when only the file is wrong.
-  for (const override of [{ 'numbers.json': 404 }, { 'numbers.json': { schemaVersion: 2, numbers: { 306: [0] } } },
-    { 'numbers.json': { schemaVersion: 1, numbers: 306 } }, { 'numbers.json': { schemaVersion: 1, numbers: { 306: [99] } } },
+  for (const override of [{ 'numbers.json': 404 }, { 'numbers.json': { ...numbers, schemaVersion: 2 } },
+    { 'numbers.json': { ...numbers, numbers: 306 } }, { 'numbers.json': { ...numbers, numbers: { 306: [99] } } },
+    // A schema-valid index of another, smaller catalogue: every position in it resolves, and the answers would be its answers, not this bundle's.
+    { 'numbers.json': { ...numbers, entryCount: 10 } }, { 'numbers.json': { schemaVersion: 1, numbers: numbers.numbers } },
     { 'metadata.json': { ...metadata, shards: 7 } }, { 'records-1(2).json': { schemaVersion: 1, records: 306 } },
     // Past "z" there is no letter left to name a part, and fromCharCode would carry on into punctuation.
     { 'metadata.json': { ...metadata, shards: { ...metadata.shards, 3: Array.from({ length: 27 }, (value, position) => (

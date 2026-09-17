@@ -38,8 +38,14 @@ def load_import_script():
     return module
 
 
-def written_bytes(directory):
-    return {path.name: path.read_bytes() for path in sorted(directory.iterdir())}
+def digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def written_digests(directory):
+    """Every file by its digest: still a byte-for-byte comparison, but one a failure can print. Compared as raw bytes, a
+    single differing megabyte leaves unittest pretty-printing both directories to build a diff nobody could read."""
+    return {path.name: digest(path.read_bytes()) for path in sorted(directory.iterdir())}
 
 
 class RdfImportTests(unittest.TestCase):
@@ -69,7 +75,8 @@ class RdfImportTests(unittest.TestCase):
             ]}, load(output / "index.json"))
             # The leading integer of each title's RIC number, against the index positions carrying it. "Current three"
             # is no RIC title and no number can reach it, so it is in no list.
-            self.assertEqual({"schemaVersion": 1, "numbers": {"1": [0], "2": [1]}}, load(output / "numbers.json"))
+            self.assertEqual({"schemaVersion": 1, "entryCount": 3, "numbers": {"1": [0], "2": [1]}},
+                             load(output / "numbers.json"))
             self.assertEqual({
                 "i": "ric.1.test.1", "l": "RIC I Test 1",
                 "a": ["authority_one", "authority_two"], "d": ["denarius", "aureus"],
@@ -88,8 +95,7 @@ class RdfImportTests(unittest.TestCase):
             one, two = root / "one", root / "two"
             self.assertEqual(0, run_import(FIXTURE, one).returncode)
             self.assertEqual(0, run_import(FIXTURE, two).returncode)
-            self.assertEqual({p.name: p.read_bytes() for p in one.iterdir()},
-                             {p.name: p.read_bytes() for p in two.iterdir()})
+            self.assertEqual(written_digests(one), written_digests(two))
 
     def test_import_quarantines_conflicting_repeated_subject(self):
         body = f"""<rdf:RDF {NAMESPACES}>
@@ -191,7 +197,7 @@ class ShardCapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "ocre"
             self.assertEqual(0, run_import(FIXTURE, root).returncode)
-            before = written_bytes(root)
+            before = written_digests(root)
             metadata = load(root / "metadata.json")
             records = {record_id: record for path in sorted(root.glob("records-*.json"))
                        for record_id, record in load(path)["records"].items()}
@@ -201,7 +207,7 @@ class ShardCapTests(unittest.TestCase):
             self.imports.CAP_BYTES = 200
             with self.assertRaises(self.imports.ImportFailure):
                 self.imports.write_data(root, records, metadata)
-            self.assertEqual(before, written_bytes(root))
+            self.assertEqual(before, written_digests(root))
 
     def test_the_bundled_data_stays_under_the_cap(self):
         if not (BUNDLE / "metadata.json").is_file():
@@ -222,7 +228,7 @@ class ReindexTests(unittest.TestCase):
                 (reindexed / name).unlink()
             result = run_reindex(reindexed)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual(written_bytes(imported), written_bytes(reindexed))
+            self.assertEqual(written_digests(imported), written_digests(reindexed))
 
     def test_reindex_reproduces_the_bundled_data_byte_for_byte(self):
         if not (BUNDLE / "metadata.json").is_file():
@@ -232,8 +238,8 @@ class ReindexTests(unittest.TestCase):
             shutil.copytree(BUNDLE, copy)
             result = run_reindex(copy)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual({path.name: path.read_bytes() for path in sorted(BUNDLE.glob("*.json"))},
-                             {name: data for name, data in written_bytes(copy).items() if name.endswith(".json")})
+            self.assertEqual({path.name: digest(path.read_bytes()) for path in sorted(BUNDLE.glob("*.json"))},
+                             {name: value for name, value in written_digests(copy).items() if name.endswith(".json")})
 
     def test_reindex_refuses_a_data_directory_missing_records(self):
         with tempfile.TemporaryDirectory() as temporary:

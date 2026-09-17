@@ -351,6 +351,39 @@ class LocalCataloguePackageTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             build.local_catalogue_assets()
 
+    def test_a_number_index_that_is_not_the_index_beside_it_is_not_packaged(self):
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data/ocre"
+            data.mkdir(parents=True)
+            entries = [["ric.1.x.1", "RIC I Test 1"], ["ric.1.x.2", "RIC I Test 2"]]
+            (data / "index.json").write_text(json.dumps({"schemaVersion": 1, "entries": entries}), encoding="utf-8")
+            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 2}), encoding="utf-8")
+            current = {"schemaVersion": 1, "entryCount": 2, "numbers": {"1": [0], "2": [1]}}
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
+                build.check_number_index()
+                # A stale index is a valid file whose positions all resolve, so only recomputing it catches one: the
+                # dropped list is a coin no lookup would ever reach again, and the two counts are the cheap half.
+                for numbers in ({**current, "numbers": {"1": [0]}}, {**current, "numbers": {"1": [0], "2": [0]}},
+                                {**current, "entryCount": 3}, {**current, "schemaVersion": 2},
+                                {"schemaVersion": 1, "numbers": current["numbers"]}):
+                    (data / "numbers.json").write_text(json.dumps(numbers), encoding="utf-8")
+                    with self.subTest(numbers=numbers):
+                        with self.assertRaises(ValueError):
+                            build.check_number_index()
+            # A metadata that counts other records than the index holds is the same disagreement from the other side.
+            (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
+            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 3}), encoding="utf-8")
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                with self.assertRaises(ValueError):
+                    build.check_number_index()
+
+    def test_the_bundled_number_index_is_the_one_the_importer_writes(self):
+        # The gate over the real bundle: the committed numbers.json must be what --reindex would write today.
+        load_build_script().check_number_index()
+
 
 if __name__ == "__main__":
     unittest.main()

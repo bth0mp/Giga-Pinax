@@ -93,8 +93,8 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   const indexEntries = () => (indexPromise ??= retried(loadIndex, () => { indexPromise = undefined; }));
   const loadNumbers = async () => {
     const value = await json(fetchImpl, new URL('numbers.json', baseUrl));
-    if (value?.schemaVersion !== 1 || !isMap(value.numbers)) throw new Error('Invalid local OCRE number index');
-    return value.numbers;
+    if (value?.schemaVersion !== 1 || !Number.isInteger(value.entryCount) || !isMap(value.numbers)) throw new Error('Invalid local OCRE number index');
+    return value;
   };
   const numberIndex = () => (numbersPromise ??= retried(loadNumbers, () => { numbersPromise = undefined; }));
   // The entries a number can possibly be in: the positions numbers.json lists it under, in index order, so pickRicEntries parses a few dozen titles
@@ -102,9 +102,13 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   const numbered = async (reference) => {
     const keys = [reference.number, ...(reference.range ? [reference.range] : [])].map(numberKey);
     const wanted = keys.every((key) => key !== null);
-    const [entries, numbers] = await Promise.all([indexEntries(), wanted ? numberIndex() : null]);
+    const [meta, entries, index] = await Promise.all([loadMetadata(), indexEntries(), wanted ? numberIndex() : null]);
     const asEntry = ([id, title]) => ({ id, title });
-    if (!numbers) return entries.map(asEntry);
+    if (!index) return entries.map(asEntry);
+    // A number index built against another index still lists positions that resolve, and the lookup would quietly miss
+    // whatever the two disagree about. The count it carries is what tells the two apart.
+    if (index.entryCount !== entries.length || index.entryCount !== meta.activeRecordCount) throw new Error('Invalid local OCRE number index');
+    const numbers = index.numbers;
     return [...new Set(keys.flatMap((key) => numbers[key] ?? []))].sort((a, b) => a - b).map((position) => {
       const entry = Number.isInteger(position) && position >= 0 ? entries[position] : undefined;
       if (!entry) throw new Error('Invalid local OCRE number index');

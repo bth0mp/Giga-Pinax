@@ -332,7 +332,9 @@ def write_data(output: Path, active: dict[str, dict], metadata: dict) -> dict:
     entries = [[record_id, active[record_id]["l"]] for record_id in sorted(active)]
     complete = {**metadata, "activeRecordCount": len(active), "shards": shard_files}
     files += [(output / "index.json", {"schemaVersion": 1, "entries": entries}),
-              (output / "numbers.json", {"schemaVersion": 1, "numbers": number_index(entries)}),
+              # The entry count travels with the number index: it is the one thing that tells a reader the positions were
+              # taken from the index beside them, since a stale list of positions is still a perfectly valid one.
+              (output / "numbers.json", {"schemaVersion": 1, "entryCount": len(entries), "numbers": number_index(entries)}),
               (output / "metadata.json", complete)]
 
     # Every file is measured before any of them is written, so an import the cap refuses leaves the data directory
