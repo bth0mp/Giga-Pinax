@@ -1300,3 +1300,29 @@ test('a comma after the RIC volume is read, wherever the volume names its part o
   // A volume with nothing after the comma is still no reference.
   for (const text of ['RIC III,', 'RIC II, Titus']) assert.equal(parseReference(text), null, text);
 });
+
+// One reference typed into the Reference box is read by the rules a lot row is read by, so the same text gives the same reference either way.
+test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed section, a house spelling and a range', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [
+    ['RIC 268 (Elagabalus)', ric('', 'Elagabalus', '268')],
+    ['RIC III (Antoninus Pius) 394a', ric('III', 'Antoninus Pius', '394a')],
+    ['RIC 972 var.', ric('', '', '972')],
+    ['RIC 972 var', ric('', '', '972')],
+    ['Crawford 44/5 var.', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['RIC II 123 corr.', ric('II', '', '123')],
+    ['RIC² 123', ric('', '', '123')],
+    ['RIC IV-1 123', ric('IV, Part 1', '', '123')],
+    ['RIC.112', ric('', '', '112')],
+    ['SC 1266.2-3', { catalogue: 'SC', number: '1266.2', volume: '', section: '' }],
+    ['RIC 12-13', ric('', '', '12')],
+    ['RRC 44/5-6', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['Price 3426-7', { catalogue: 'Price', number: '3426', volume: '', section: '' }],
+    ['RIC IV 34a-b', ric('IV', '', '34a')],
+  ]) assert.deepEqual(parseReference(text), expected, text);
+  // The clean-up never reaches an Other reference, whose text is its card, nor a Crawford number that only looks like a range.
+  assert.deepEqual(parseReference('Sear-734'), { catalogue: 'Other', number: 'Sear-734', volume: '', section: '' });
+  assert.deepEqual(parseReference('HGC 4, 1218-1220'), { catalogue: 'Other', number: 'HGC 4, 1218-1220', volume: '', section: '' });
+  assert.deepEqual(parseReference('cr. 197-198B/1a'), { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' });
+  assert.deepEqual(parseReference('RIC 266 (aureus)'), ric('', '', '266 (aureus)'));
+});

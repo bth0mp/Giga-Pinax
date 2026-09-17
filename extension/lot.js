@@ -1,5 +1,5 @@
-import { INVISIBLE, kmNumber, parseReference, sgNumber } from './lookup.js';
-import { RIC_SECTIONS, volumesOf } from './catalogues.js';
+import { EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, ricSection, sectionBracket, sgNumber, VARIANT } from './lookup.js';
+import { RIC_SECTIONS } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -110,13 +110,6 @@ const withoutProvenance = (text) => {
   }
   return out;
 };
-// Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
-// R to RRR, R2 or C, while a capital type letter ("509 (BB)") is one and stays.
-const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
-const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
-// The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
-// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I".
-const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
 // A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
 // volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").
@@ -269,12 +262,6 @@ function pieceAfter(raw, typed = false) {
   return { body, broken };
 }
 
-// A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
-// a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
-// dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
-const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
-  .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
-
 function normalise(written, key, cf) {
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, ''));
@@ -286,10 +273,10 @@ function normalise(written, key, cf) {
   const km = kmNumber(text);
   if (km) return { text, reference: { catalogue: 'Other', number: km, volume: '', section: '' }, cf, variant, typed: false };
   // A bracket naming a RIC section is that section ("RIC 268 (Elagabalus)"), put before the number; on another catalogue it is a remark.
-  const section = [...text.matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0);
+  const section = sectionBracket(text);
   const ric = /^RIC/i.test(key);
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
-  const plain = section && ric ? text.replace(section[0], ' ').replace(/\s+/g, ' ').trim().replace(/\s+(\d\S*)$/, ` ${section[1].trim()} $1`) : text;
+  const plain = section && ric ? ricSection(text, section) : text;
   const parsed = parseReference(readable(plain));
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);

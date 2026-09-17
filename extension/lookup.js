@@ -1,5 +1,25 @@
 import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, volumesOf } from './catalogues.js';
 
+// The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
+// Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
+// R to RRR, R2 or C, while a capital type letter ("509 (BB)") is one and stays.
+export const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
+export const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
+// The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
+// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I".
+export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
+// A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
+// a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
+// dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
+export const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
+  .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
+// A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference it is the section; on any other
+// catalogue it is a remark the row drops.
+export const sectionBracket = (text) => [...String(text).matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0) ?? null;
+// That section read in front of the number ("RIC 268 (Elagabalus)" is RIC Elagabalus 268), where the volume's own brackets already stand.
+export const ricSection = (text, found = sectionBracket(text)) => (found
+  ? text.replace(found[0], ' ').replace(/\s+/g, ' ').trim().replace(/\s+(\d\S*)$/, ` ${found[1].trim()} $1`) : text);
+
 export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https://nomisma.org/*']);
 export const TIMEOUT_MS = 15000;
 
@@ -134,8 +154,15 @@ export function parseReference(text) {
   return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
-// One reference, read by the rules of the catalogues that have type data, or null.
-function readType(value) {
+// The remark a dealer hangs on a corrected number ("RIC II 123 corr.") is no part of it. Its brothers "var." and the bracketed remarks are REMARKS
+// and VARIANT above; unwrap has already taken the full stop off the end.
+const CORRECTION = /\s+corr\.?$/i;
+
+// One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
+// "RIC 972 var." and "RIC.112" read in the Reference box exactly as they read in a lot row. An Other reference never sees it: its text is its card.
+function readType(text) {
+  const remarked = unpunctuate(String(text).replace(VARIANT, '').replace(REMARKS, '').replace(CORRECTION, '').trim());
+  const value = readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked);
   for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
     const number = value.match(pattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
