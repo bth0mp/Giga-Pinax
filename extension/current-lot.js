@@ -33,9 +33,11 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
   // written as a bare name, as a schema.org address, or as a list of either.
   // ponytail: an offer's price and priceCurrency and a product's image are read past, not kept - the current-lot draft payload holds target, title,
   // reference, pageUrl and auctionContext (validateDraftPayload in core/records.js) and has no photo link or estimate field to carry them into.
-  // Two addresses for one page: a fragment names a place on it, and a trailing slash is the same directory either way.
+  // Two addresses for one page: a hash route ("#/lot/43") addresses the lot itself, so only a cosmetic anchor such as
+  // #photo is dropped - the rule core/lot-context.js reads a lot's address by, repeated here because this function is
+  // injected into the page and can import nothing. A trailing slash is the same directory either way.
   const sameUrl = (left, right) => {
-    const settled = (value) => { try { const url = new URL(value); url.hash = ''; return url.href.replace(/\/$/, ''); } catch { return ''; } };
+    const settled = (value) => { try { const url = new URL(value); if (!/^#[/!]/.test(url.hash)) url.hash = ''; return url.href.replace(/\/$/, ''); } catch { return ''; } };
     const address = settled(left);
     return Boolean(address) && address === settled(right);
   };

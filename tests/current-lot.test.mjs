@@ -182,6 +182,31 @@ test('schema.org types are read in every spelling, and the lot this page shows w
   assert.equal(first.candidates.reference.value, 'RIC 1');
 });
 
+// A catalogue that routes in the fragment gives every lot on it the same path: "#/lot/42" and "#/lot/43" are two lots,
+// and core/lot-context.js reads such a fragment as part of a lot's address. Dropping it here made every product on the
+// page name this one, so the capture took whichever lot was written first - a stranger's coin, and a stranger's
+// auction context saved with it. A cosmetic anchor is still no address.
+test('a hash route tells two lots of one catalogue page apart, as the lot address does', () => {
+  const lots = [
+    { '@type': 'Product', name: 'Reference: RRC 44/5', url: 'https://house.test/catalogue#/lot/42' },
+    { '@type': 'Product', name: 'Reference: Price 23', url: 'https://house.test/catalogue#/lot/43' },
+  ];
+  const shown = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify(lots)] }), { href: 'https://house.test/catalogue#/lot/43' });
+  assert.equal(shown.candidates.reference.value, 'Price 23');
+  assert.equal(shown.canonicalUrl, 'https://house.test/catalogue#/lot/43');
+  // The "#!" spelling of the same routing, and a page whose fragment names no lot at all.
+  const bang = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([
+    { '@type': 'Product', name: 'Reference: RRC 44/5', url: 'https://house.test/catalogue#!/lot/42' },
+    { '@type': 'Product', name: 'Reference: Price 23', url: 'https://house.test/catalogue#!/lot/43' },
+  ])] }), { href: 'https://house.test/catalogue#!/lot/43' });
+  assert.equal(bang.candidates.reference.value, 'Price 23');
+  // #photo is a place on the page, not a lot: the product still names it.
+  const anchored = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([
+    { '@type': 'Product', name: 'Reference: RIC 306', url: 'https://house.test/lot/27#photo' },
+  ])] }), { href: 'https://house.test/lot/27' });
+  assert.equal(anchored.candidates.reference.value, 'RIC 306');
+});
+
 // Google's canonical Product markup puts the lot's address on the offer and none on the product. An offer describes a sale, not a coin, so it names the
 // page on its product's behalf instead of standing in for it - taking it for the lot on show left the product's own name and description unread.
 test('an offer names the page for its product without standing in for the lot', () => {
