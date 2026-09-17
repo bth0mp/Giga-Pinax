@@ -2,7 +2,17 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# The workflow only reads the checkout; it publishes nothing and needs no write scope.
+permissions:
+  contents: read
+
+# A branch pushed while its pull request is open would otherwise run twice over; keep only the newest run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
