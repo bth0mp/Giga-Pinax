@@ -1,13 +1,12 @@
 import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
 
-// Everything that differs between the six catalogues the Reference box offers: the corpus each one is looked up in and
-// the name that corpus goes by, how its key is spelled where a reference is read or searched, and what the guided fields
-// say about it. Plain data, so this table pulls nothing in behind it; RIC and Bop need code as well, because their
-// references carry a volume or a king, and that code stays in lookup.js and prices.js and reads its spellings from here.
-// prefixPattern strips a typed key before the number ("Cr. 44/5"); referencePattern reads a whole plain reference, which
-// only the catalogues without a volume or a king have. termKeys are the phrases acsearch is asked for, citationKeys the
-// spellings a dealer's own line may carry.
+// Everything that differs between the six catalogues the Reference box offers: the corpus each is looked up in and the
+// name it goes by, how its key is spelled wherever a reference is read or searched, and what the guided fields say about
+// it. Plain data, so the table pulls nothing in behind it. prefixPattern strips a typed key from in front of the number
+// ("Cr. 44/5"); referencePattern reads a whole plain reference, which only the catalogues carrying neither a volume nor a
+// king have; termKeys are the phrases acsearch is asked for and citationKeys the spellings a dealer's own line may carry.
+// RIC and Bop need code as well, and it stays in lookup.js and prices.js and reads its spellings from here.
 export const CATALOGUES = Object.freeze({
   Price: Object.freeze({ corpus: 'pella', corpusName: 'PELLA', idPrefix: 'price.', label: 'Price number', help: 'Example: Price 23',
     defaultNumber: '23', notFoundHint: 'Check the number.', queryKey: 'Price', termKeys: ['Price'], citationKeys: ['Price'],

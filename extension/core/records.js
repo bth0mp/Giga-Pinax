@@ -1,7 +1,7 @@
 import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
-import { ISO_DATE, UUID, dateParts, failure, isIsoInstant } from './validate.js';
+import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
 
 export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
@@ -96,11 +96,6 @@ function instantResult(value, path, { nullable = false } = {}) {
 function dateResult(value, path) {
   if (typeof value !== 'string' || !ISO_DATE.test(value)) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
   return dateParts(value) ? { ok: true, value } : failure('invalid-date', 'Expected a real calendar date.', path);
-}
-
-function shiftDate(value, days) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
 function urlResult(value, path) {

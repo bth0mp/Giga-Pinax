@@ -3,10 +3,9 @@ import { CATALOGUES, CORPORA, catalogueOf } from './catalogues.js';
 import { CURRENCIES } from './core/money.js';
 
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
-// The example the guided fields start from, and the ruler or king beside it, as the catalogue table holds them; the
-// catalogues with no section of their own keep RIC's ready, so choosing RIC fills the field rather than blanking it.
-const column = (field) => Object.freeze(Object.fromEntries(Object.entries(CATALOGUES)
-  .flatMap(([name, entry]) => (entry[field] === undefined ? [] : [[name, entry[field]]]))));
+// One column of the catalogue table: the example the guided fields start from, and the ruler or king beside it. A
+// catalogue with no section of its own keeps RIC's ready, so choosing RIC fills the field rather than blanking it.
+const column = (field) => Object.freeze(Object.fromEntries(Object.entries(CATALOGUES).flatMap(([name, entry]) => (entry[field] === undefined ? [] : [[name, entry[field]]]))));
 export const DEFAULT_NUMBER = column('defaultNumber');
 export const DEFAULT_SECTION = column('defaultSection');
 export const RECENT_LIMIT = 6;

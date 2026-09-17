@@ -1,4 +1,4 @@
-import { dateParts, failure } from './validate.js';
+import { dateParts, failure, shiftDate } from './validate.js';
 
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const FORMATTERS = new Map();
@@ -75,13 +75,6 @@ export function resolveZonedDateTime(input) {
   return structuredClone(result);
 }
 
-function addDays(localDate, amount) {
-  const parts = dateParts(localDate);
-  if (!parts) return null;
-  const result = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + amount));
-  return result.toISOString().slice(0, 10);
-}
-
 export function deriveReminderTriggers(events, _now) {
   const triggers = [];
   for (const event of events) {
@@ -91,7 +84,7 @@ export function deriveReminderTriggers(events, _now) {
         triggerAt = new Date(Date.parse(event.startsAt) - reminder.offsetMinutes * 60000).toISOString();
       } else if (reminder.kind === 'wall-time' && event.precision === 'date-only') {
         const resolved = resolveZonedDateTime({
-          localDate: addDays(event.localDate, -reminder.daysBefore),
+          localDate: shiftDate(event.localDate, -reminder.daysBefore),
           localTime: reminder.localTime,
           timeZone: event.timeZone,
           disambiguation: 'reject',
@@ -133,7 +126,7 @@ function relevanceEnd(trigger) {
   if (trigger.precision === 'timed') {
     return new Date(Date.parse(trigger.eventStartsAt) + 15 * 60000).toISOString();
   }
-  const nextMidnight = startOfLocalDay(addDays(trigger.localDate, 1), trigger.timeZone);
+  const nextMidnight = startOfLocalDay(shiftDate(trigger.localDate, 1), trigger.timeZone);
   return nextMidnight ?? `${trigger.localDate}T23:59:59.999Z`;
 }
 

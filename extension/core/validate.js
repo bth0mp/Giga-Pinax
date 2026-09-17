@@ -32,6 +32,12 @@ export function dateParts(value) {
 
 export const isIsoDate = (value) => dateParts(value) !== null;
 
+// The date a whole number of days from this one, or null where this one is no date.
+export function shiftDate(value, days) {
+  const parts = dateParts(value);
+  return parts ? new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)).toISOString().slice(0, 10) : null;
+}
+
 // A UTC instant exactly as toISOString writes it. The round trip settles the whole shape; the four leading digits are
 // what keeps the expanded years (+275760-09-13) that no record here stores out.
 export function isIsoInstant(value) {
