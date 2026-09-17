@@ -1285,3 +1285,18 @@ test('a plain volume numeral reaches every volume of its family, the volume as t
   assert.deepEqual(pickRicEntries([trajan972, vespasian972, hadrian972], parseReference('RIC 972')),
     { status: 'candidates', candidates: [trajan972, vespasian972, hadrian972], partial: true });
 });
+
+// Dealers punctuate a RIC volume the way they punctuate HGC's ("HGC 4, 1218"), and that comma stands between the volume and the number.
+test('a comma after the RIC volume is read, wherever the volume names its part or edition', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [
+    ['RIC III, 394a', ric('III', '', '394a')],
+    ['RIC II, 123', ric('II', '', '123')],
+    ['RIC IV.1, 123a', ric('IV, Part 1', '', '123a')],
+    ['RIC II², 972', ric('II (2nd edition)', '', '972')],
+    ['RIC II.3, 2345', ric('II, Part 3', '', '2345')],
+    ['RIC I², Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+  ]) assert.deepEqual(parseReference(text), expected, text);
+  // A volume with nothing after the comma is still no reference.
+  for (const text of ['RIC III,', 'RIC II, Titus']) assert.equal(parseReference(text), null, text);
+});

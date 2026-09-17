@@ -833,3 +833,14 @@ test('a long run of non-space text after a key resolves quickly, not in minutes'
   texts(`ROMAN. RIC ${'.'.repeat(2900)}`);
   assert.ok(Date.now() - start < 2000, 'a 2,900-character non-digit run after a key must not freeze the reader');
 });
+
+test('a comma between a RIC volume and its number keeps the reference whole', () => {
+  assert.deepEqual(only('Hadrian. RIC II.3, 2345.').reference, ric('2345', 'II, Part 3'));
+  assert.deepEqual(only('Trajan denarius. RIC II, 123.').reference, ric('123', 'II'));
+  assert.deepEqual(only('Diva Faustina I. RIC III, 394a.').reference, ric('394a', 'III'));
+  assert.deepEqual(only('Caracalla. RIC IV.1, 123a.').reference, ric('123a', 'IV, Part 1'));
+  assert.deepEqual(only('Vespasian. RIC II², 972.').reference, ric('972', 'II (2nd edition)'));
+  assert.deepEqual(texts('Trajan denarius. RIC II, 123; BMC 45.'), ['RIC II, 123', 'BMC 45']);
+  // The volume still ends the reference when no number follows it, and a second number after the first is another type.
+  assert.deepEqual(texts('Hadrian. RIC II.3, 2345, 2346.'), ['RIC II.3, 2345']);
+});

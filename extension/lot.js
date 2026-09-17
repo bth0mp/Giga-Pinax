@@ -247,18 +247,23 @@ const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearach
 // "Lot 23312", "Rome 79") ends it but not the run, so a later C or S still counts; other text ("NGC Choice VF 5/5", "Good VF", "AD 69-79") ends the run
 // too, which broken says.
 const GAP_HEAD = new RegExp(String.raw`^(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEPARATOR}*(?=(?:[IVXL]+${SEPARATOR}+)?${NUMBER})`, 'u');
+// A RIC volume is not the reference's number, however many digits it carries: "RIC II.3, 2345" and "RIC II², 972" are one reference each, the comma
+// standing where a space could, while "Price 3949, 3950" is still two. The numeral, an optional part and an optional second-edition mark, and nothing
+// else: each group matches one fixed run, so the test is linear.
+const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]?\s*(?:part\s*)?\d)?\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\))?\s*$/i;
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
-  let body = read, ended = typed, broken = stopped || first.text.slice(read.length).trim() !== '';
+  let body = read, ended = typed && !VOLUME_ONLY.test(read), broken = stopped || first.text.slice(read.length).trim() !== '';
   for (const { sep, text } of broken ? [] : more) {
     const piece = unpunctuate(text);
     if (!piece) continue;
     if (!/^(?:\d|\p{Lu}\p{L}*\s+\d)/u.test(piece) || piece.match(BODY)?.[0] !== piece || MEASURE.test(piece)) { broken = true; break; }
-    if (/^\d/.test(piece) && !ended) body += `${sep}${piece}`;
+    // A typed key takes one number after its volume, and no more: the second is another type.
+    if (/^\d/.test(piece) && !ended) { body += `${sep}${piece}`; ended = typed; }
     else ended = true;
   }
   return { body, broken };
