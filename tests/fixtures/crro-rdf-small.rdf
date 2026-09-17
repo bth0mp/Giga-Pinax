@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Trimmed from Coinage of the Roman Republic Online (CRRO), American Numismatic Society,
+https://numismatics.org/crro/nomisma.rdf retrieved 2026-09-17. Type data under the Open
+Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+Four records, verbatim; predicates the importer ignores are left out.
+-->
+<rdf:RDF xmlns:nmo="http://nomisma.org/ontology#" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:void="http://rdfs.org/ns/void#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:un="http://www.owl-ontologies.com/Ontology1181490123.owl#">
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/crro/id/rrc-1.1">
+    <skos:prefLabel xml:lang="en">RRC 1/1</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/rrc"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/uncertain_value"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ae"/>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/anonymous"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/neapolis_campania"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0326</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0242</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/crro/id/rrc-1.1#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/crro/id/rrc-1.1#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-1.1#obverse">
+    <dcterms:description xml:lang="en">Laureate head of Apollo, right.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/apollo"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-1.1#reverse">
+    <nmo:hasLegend>ΡΩΜΑΙΩΝ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Forepart of man-headed bull walking right; flank of bull is decorated by star.</dcterms:description>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/crro/id/rrc-44.5">
+    <skos:prefLabel xml:lang="en">RRC 44/5</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/rrc"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/denarius"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/anonymous"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/rome"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/crro/id/rrc-44.5#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/crro/id/rrc-44.5#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-44.5#obverse">
+    <dcterms:description xml:lang="en">Helmeted head of Roma, right. Border of dots.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/roma"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-44.5#reverse">
+    <nmo:hasLegend>ROMA</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Dioscuri galloping right. Line border.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/dioscuri"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/crro/id/rrc-44.6">
+    <skos:prefLabel xml:lang="en">RRC 44/6</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/rrc"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/quinarius"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/anonymous"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/rome"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/crro/id/rrc-44.6#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/crro/id/rrc-44.6#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-44.6#obverse">
+    <dcterms:description xml:lang="en">Helmeted head of Roma, right. Border of dots.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/roma"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-44.6#reverse">
+    <nmo:hasLegend>ROMA</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Dioscuri galloping right. Line border.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/dioscuri"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/crro/id/rrc-98b">
+    <skos:prefLabel xml:lang="en">RRC 98B</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/rrc"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/quinarius"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasIssuer rdf:resource="http://nomisma.org/id/anonymous"/>
+    <nmo:hasMint>
+      <rdf:Description>
+        <rdf:value rdf:resource="http://nomisma.org/id/luceria"/>
+        <un:hasUncertainty rdf:resource="http://nomisma.org/id/uncertain_value"/>
+      </rdf:Description>
+    </nmo:hasMint>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/crro/id/rrc-98b#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/crro/id/rrc-98b#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-98b#obverse">
+    <nmo:hasLegend>V</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Helmeted head of Roma, right; behind, denominational mark. Border of dots.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://collection.britishmuseum.org/id/person-institution/60208"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/crro/id/rrc-98b#reverse">
+    <nmo:hasLegend>ROMA</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Dioscuri galloping, right; in linear frame, inscription. Line border.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://collection.britishmuseum.org/id/person-institution/57951"/>
+  </rdf:Description>
+</rdf:RDF>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Trimmed from Seleucid Coins Online (SCO), American Numismatic Society,
+https://numismatics.org/sco/nomisma.rdf retrieved 2026-09-17. Type data under the Open
+Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+Four records, verbatim; predicates the importer ignores are left out. 1266 and 1266.2 are the
+whole of SCO's 1266 group; 1315.3c is titled part 2 and identified under sc.1 like every SCO record.
+-->
+<rdf:RDF xmlns:nmo="http://nomisma.org/ontology#" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:void="http://rdfs.org/ns/void#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:un="http://www.owl-ontologies.com/Ontology1181490123.owl#">
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/sco/id/sc.1.1266">
+    <skos:prefLabel xml:lang="en">Seleucid Coins (part 1) 1266</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/seleucid_coins"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/denomination_b_sco"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ae"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/antiochus_iii"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/ecbatana"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0211</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0208</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/sco/id/sc.1.1266#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/sco/id/sc.1.1266#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1266#obverse">
+    <dcterms:description xml:lang="en">Diademed head of Antiochus III right (Type B)</dcterms:description>
+    <dcterms:description xml:lang="fr">Tête diadémée d'Antiochos III à droite (type B)</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/antiochus_iii"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1266#reverse">
+    <nmo:hasLegend xml:lang="grc">BAΣΙΛΕΩΣ ANTIOXOY</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Horse grazing left</dcterms:description>
+    <dcterms:description xml:lang="fr">Cheval paissant à gauche</dcterms:description>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/sco/id/sc.1.1266.2">
+    <skos:prefLabel xml:lang="en">Seleucid Coins (part 1) 1266.2</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/seleucid_coins"/>
+    <skos:broader rdf:resource="http://numismatics.org/sco/id/sc.1.1266"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/tetradrachm"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/demetrius_ii_nicator"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/antiocheia_syria"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0129</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0128</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/sco/id/sc.1.1266.2#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/sco/id/sc.1.1266.2#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1266.2#obverse">
+    <dcterms:description xml:lang="en">Diademed head of Demetrius II right, bearded, with touseled locks on crown of head and stubby horns at temple</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/demetrius_ii_nicator"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1266.2#reverse">
+    <nmo:hasLegend xml:lang="grc">BAΣΙΛΕΩΣ ΔHMHTPIOY ΘEOY NIKATOPOΣ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Zeus seated on high-backed throne left, resting on scepter and extending right hand through legend, holding Nike who faces left, extending wreath toward edge of coin</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/zeus"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/sco/id/sc.1.1315.3">
+    <skos:prefLabel xml:lang="en">Seleucid Coins (part 2) 1315.3</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/seleucid_coins"/>
+    <skos:broader rdf:resource="http://numismatics.org/sco/id/sc.1.1315"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/denomination_a_sco"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ae"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/seleucus_iv"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/antiocheia_syria"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0187</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0175</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/sco/id/sc.1.1315.3#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/sco/id/sc.1.1315.3#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1315.3#obverse">
+    <dcterms:description xml:lang="en">Laureate head of Apollo right, of archaizing severe style, hair rolled behind</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/apollo"/>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/seleucus_iv"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1315.3#reverse">
+    <nmo:hasLegend xml:lang="grc">BAΣΙΛΕΩΣ ΣΕΛΕΥΚΟΥ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Apollo standing left, testing arrow and resting elbow on tall tripod</dcterms:description>
+    <dcterms:description xml:lang="fr">Apollon debout à gauche essayant une flèche et le coude appuyé sur un trépied haut</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/apollo"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/sco/id/sc.1.1315.3c">
+    <skos:prefLabel xml:lang="en">Seleucid Coins (part 2) 1315.3c</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/seleucid_coins"/>
+    <skos:broader rdf:resource="http://numismatics.org/sco/id/sc.1.1315.3"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/denomination_a_sco"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ae"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/seleucus_iv"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/antiocheia_syria"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0187</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0175</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/sco/id/sc.1.1315.3c#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/sco/id/sc.1.1315.3c#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1315.3c#obverse">
+    <dcterms:description xml:lang="en">Laureate head of Apollo right, of archaizing severe style, hair rolled behind</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/apollo"/>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/seleucus_iv"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/sco/id/sc.1.1315.3c#reverse">
+    <nmo:hasLegend xml:lang="grc">BAΣΙΛΕΩΣ ΣΕΛΕΥΚΟΥ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Apollo standing left, testing arrow and resting elbow on tall tripod</dcterms:description>
+    <dcterms:description xml:lang="fr">Apollon debout à gauche essayant une flèche et le coude appuyé sur un trépied haut</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/apollo"/>
+  </rdf:Description>
+</rdf:RDF>
