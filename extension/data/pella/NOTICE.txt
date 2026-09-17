@@ -1,0 +1,25 @@
+Bundled PELLA reference data
+
+Derived from PELLA, Coinage of Alexander the Great, American Numismatic
+Society.
+Source: https://numismatics.org/pella/
+Data documentation: https://numismatics.org/pella/apis
+Source export: pella.rdf, retrieved 17 September 2026
+
+The source type database and this derived database are available under the
+Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Source filename, SHA-256, coverage, record counts and conversion date are in
+metadata.json. Only Price's type numbers are bundled: the export's 2,274 Le
+Rider die combinations and 382 PELLA type numbers are left out, because no
+reference the extension reads cites either. metadata.json records that count
+and the reason. The source publication date is unknown. This bundle excludes
+monograms, symbols, images and auction-price data. The converter and editable
+derived data are provided at https://github.com/bth0mp/Giga-Pinax .
+Conversion instructions:
+https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
+
+Nomisma.org concept labels are absent from this export and none are bundled for
+this corpus: an identifier it carries for an authority, denomination, mint or
+material is left unresolved rather than labelled from another source.
