@@ -13,6 +13,9 @@ import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
 
+// A lookup reaches this window from this extension's own background, or from another of its pages.
+const SENDER = { id: 'giga-pinax@test', url: 'moz-extension://test/background.js' };
+
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -93,7 +96,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       request: permissionRequest,
       contains: permissionContains,
     },
-    runtime: { onMessage: { addListener: (listener) => messageListeners.push(listener) } },
+    runtime: { id: 'giga-pinax@test', getURL: (path) => `moz-extension://test/${path}`, onMessage: { addListener: (listener) => messageListeners.push(listener) } },
     windows: { getCurrent: async () => ({ id: 7 }) },
     storage: sessionArea ? {
       session: {
@@ -103,6 +106,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       },
     } : {},
   };
+  const dispatched = [];
   const window = new TestElement('window');
   window.open = () => {};
   window.close = () => {};
@@ -129,7 +133,9 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set,
     setTimeout: () => 0,
     clearTimeout() {},
-    dispatchEvent() {},
+    // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
+    // with the card still on screen at the time, so what the other half would have seen is what this records.
+    dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent }); return true; },
     console,
   };
   sandbox.globalThis = sandbox;
@@ -137,7 +143,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard, stored };
+  return { element, document, writes, clipboard, stored, dispatched };
 }
 
 const oneSale = {
@@ -298,7 +304,7 @@ test('a lookup that arrives first leaves no room for a restored reference', asyn
   const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, sessionGate: gate.promise,
     session: new Map([['giga-pinax-pending-reference-v1', 'Price 23']]),
     permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
-  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, null, () => {});
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, SENDER, () => {});
   gate.resolve();
   await settle();
   assert.equal(popup.element('quick-reference').value, '');
@@ -313,11 +319,53 @@ test('only the lookup window answers a lookup sent to an open window', async () 
     priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
   assert.equal(listeners.length, 1);
   const answers = [];
-  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, (answer) => answers.push(answer)), true);
+  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, SENDER, (answer) => answers.push(answer)), true);
   await settle();
   assert.equal(popup.element('quick-reference').value, 'Price 23');
   assert.equal(answers.length, 1);
   assert.equal(answers[0].windowId, 7);
+});
+
+// The other half of this page holds the auction context of the page it captured, and a lookup sent here is about a page
+// somebody right-clicked on instead. It is told before the card is built, because the card is what carries the context into
+// a save. A reference typed into this window by hand says nothing: that lookup is still about the captured page.
+test('a lookup sent to this window is announced to the rest of the page before the card is opened', async () => {
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  popup.dispatched.length = 0;
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, SENDER, () => {});
+  await settle();
+  const received = popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received');
+  assert.equal(received.length, 1);
+  assert.equal(received[0].reference, '', 'said while the window still shows no card, so the next one is built without the page');
+
+  // A hand-typed reference is not a lookup this window was sent.
+  popup.dispatched.length = 0;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received'), []);
+});
+
+// The lookup window takes an address from a message and opens it. Only this extension sends one: a page that could send
+// this message would choose what the collector's open window looks up, and be answered with the window's own id.
+test('a lookup is taken only from this extension’s own pages', async () => {
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  const answers = [];
+  const ask = (sender) => listeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, sender, (answer) => answers.push(answer));
+  for (const sender of [{ id: 'somebody-else@test', url: 'moz-extension://other/background.js' },
+    { id: 'giga-pinax@test', url: 'https://house.test/sale' }, undefined]) {
+    assert.equal(ask(sender), false);
+  }
+  await settle();
+  assert.deepEqual(answers, []);
+  assert.equal(popup.element('quick-reference').value, '');
+  assert.equal(ask(SENDER), true);
+  await settle();
+  assert.equal(popup.element('quick-reference').value, 'Price 23');
 });
 
 test('refined Search validates before requesting permission or fetching', async () => {
@@ -525,6 +573,24 @@ test('RIC local miss offers an explicit online permission button', async () => {
   await popup.element('online-fallback').onclick();
   await settle();
   assert.equal(requested, 1);
+});
+
+// Bundled corpora no longer prompt at Look up, so Check online is now the usual place a Firefox prompt closes the popup.
+// A prompt that closes it takes the typed reference with it unless this request remembers it, as Look up's own does.
+test('Check online keeps the typed reference, because its prompt is what closes the popup', async () => {
+  const session = new Map();
+  const popup = await loadPopup({
+    session, permissionContains: async () => false, permissionRequest: () => new Promise(() => {}),
+    priceFetch: async () => ({ status: 'empty', term: 'Nero 99999' }),
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
+  });
+  popup.element('quick-reference').value = 'RIC Nero 99999';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.get('giga-pinax-pending-reference-v1'), undefined, 'a bundled lookup asks for nothing, so there is nothing to keep');
+  void popup.element('online-fallback').onclick();
+  await settle();
+  assert.equal(session.get('giga-pinax-pending-reference-v1'), 'RIC Nero 99999');
 });
 
 // The corpora bundled beside OCRE, through the popup rather than through the catalogue: every gate here reads the
@@ -833,6 +899,80 @@ test('the denomination toggle is offered by the verified card and filters on its
   assert.equal(popup.element('cited-count').hidden, true);
 });
 
+// Nomisma gives a RIC mint both its English names, and the lookup opens the card under either; the card that came back
+// was then compared to the typed reference letter by letter, so "RIC VII Trier 12" opened RIC VII Treveri 12 and then
+// counted it as somebody else's coin: no denomination toggle, no type URL in Copy summary, and the term not remembered.
+test('a card found under a mint’s other English name is still this reference’s card', async () => {
+  const card = { id: 'ric.7.tri.12', corpus: 'ocre', label: 'RIC VII Treveri 12', denomination: 'Solidus', obverse: {}, reverse: {} };
+  const lots = [citingSale('s1', '100', 'Constantine I. Solidus. RIC VII Trier 12. VF'), citingSale('s2', '300', 'Constantine I. Follis. RIC VII Trier 12. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'RIC VII Trier 12';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, false);
+  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “solidus”');
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /numismatics\.org\/ocre\/id\/ric\.7\.tri\.12/);
+});
+
+// A dealer cites the range OCRE titles the record over, and the guided fields below hold one number: dropping the range
+// looked up the first number of it instead, which is a different record wherever OCRE files the range itself.
+test('a cited range reaches the lookup, and a refined search of the fields does not', async () => {
+  const asked = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { asked.push(reference); return { status: 'none' }; } });
+  popup.element('quick-reference').value = 'Hadrian 100-102';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(asked.at(-1).number, '100');
+  assert.equal(asked.at(-1).range, '100-102');
+  // The refined search is the fields themselves, and no field holds a range.
+  await popup.element('reference-form').emit('submit', { submitter: { id: 'refine-lookup-button' } });
+  await settle();
+  assert.equal(asked.at(-1).range, undefined);
+});
+
+// The card decides what the price panel may offer: its denomination, and the type URL Copy summary ends with. When the
+// prices came back first the panel was drawn without one and never drawn again, so the toggle was simply not there.
+test('prices that arrive before the card are drawn again once it does', async () => {
+  const looked = deferred();
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Drachm. Price 23. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: () => looked.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  const submission = popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, true, 'no card yet, so nothing to filter by');
+  looked.resolve({ status: 'ok', card });
+  await submission;
+  await settle();
+  assert.equal(popup.element('denomination-row').hidden, false);
+  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /numismatics\.org\/pella\/id\/price\.23/);
+});
+
+// The denomination toggle is a decision about one coin, exactly as the citation toggle is, so another coin starts without it.
+test('the denomination toggle resets on a new lookup', async () => {
+  const card = (id, denomination) => ({ id, corpus: 'pella', label: id.replace('price.', 'Price '), denomination, obverse: {}, reverse: {} });
+  const lots = [citingSale('s1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('s2', '300', 'Alexander III. Drachm. Price 23. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }),
+    lookupTypeImpl: async (reference) => ({ status: 'ok', card: card(`price.${reference.number}`, 'Tetradrachm') }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('denomination-filter').checked = true;
+  await popup.element('denomination-filter').emit('change');
+  assert.match(popup.element('median-amount').textContent, /100/);
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('denomination-filter').checked, false);
+  assert.match(popup.element('median-amount').textContent, /200/);
+});
+
 test('a median per grade appears once a bucket rests on three sales', async () => {
   const graded = (id, price, grade) => citingSale(id, price, `Alexander III. Tetradrachm. Price 23. ${grade}`);
   const lots = [graded('s1', '100', 'Very Fine'), graded('s2', '200', 'gVF'), graded('s3', '300', 'VF'), graded('s4', '900', 'Extremely Fine')];
@@ -1092,7 +1232,7 @@ test('a lookup handed to an open window keeps the cached currency', async () => 
     lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
   await settle();
   await settle();
-  messageListeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, null, () => {});
+  messageListeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, SENDER, () => {});
   await settle();
   await settle();
   assert.equal(open.element('currency').value, 'EUR');
@@ -1116,14 +1256,40 @@ test('a stored preference arriving late switches the select, the cache and the p
   assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), true);
   assert.equal(popup.element('currency').value, 'GBP');
   assert.equal(cachedCurrency(stored), 'GBP');
-  assert.equal(popup.element('prices-panel').hidden, true);
   assert.match(popup.element('acsearch-link').href, /currency=gbp/);
   assert.equal(popup.element('announcement').textContent, 'Currency set to GBP.');
+  // acsearch access is already granted, so the same search is simply run again in the new currency: an empty panel with
+  // a Get prices button on it is not what the collector asked for by having a default currency.
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, ['EUR', 'GBP']);
+  assert.equal(popup.element('prices-panel').hidden, false);
 
   // The stored value the select already shows is not a change: nothing is cleared and nothing is said.
   popup.element('announcement').textContent = '';
   assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), false);
   assert.equal(popup.element('announcement').textContent, '');
+});
+
+// Re-pricing must never be the thing that asks for acsearch: a prompt closes the popup in Firefox, and nobody pressed
+// anything here. Without access the panel simply waits for Get prices, as it always did.
+test('a currency change never prompts for acsearch, so an ungranted window keeps its empty panel', async () => {
+  const stored = seeded('EUR');
+  const fetched = [];
+  let prompts = 0;
+  const popup = await loadPopup({ stored, search: '?window=1&q=Price%2023',
+    permissionRequest: async () => { prompts += 1; return true; }, permissionContains: async () => false,
+    priceFetch: async (request) => { fetched.push(request.currency); return oneSale; },
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
+  await settle();
+  await settle();
+  const before = prompts;
+  assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), true);
+  await settle();
+  await settle();
+  assert.equal(prompts, before, 'a currency change asks for nothing');
+  assert.deepEqual(fetched, [], 'and fetches nothing it has no access for');
+  assert.equal(popup.element('prices-panel').hidden, true);
 });
 
 test('a profile whose bridge never answers keeps the chosen currency across sessions', async () => {

@@ -40,9 +40,9 @@ function labelFor(values, cache) {
 
 const PEOPLE_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person.name]));
 // The checked-in Nomisma snapshot was filtered against OCRE's own authority and portrait concepts, so it names RIC's
-// people and nobody else's; only OCRE reads it. It also outranks the bundled Nomisma labels for those concepts: RIC's
-// own section spelling is what the collector typed and what the book's page says, so an OCRE card keeps it wherever
-// the two differ. The runtime cache outranks both, because that is nomisma.org answering about this record now.
+// people and nobody else's; only OCRE reads it. It outranks the bundled Nomisma labels for those concepts because it is
+// the narrower, checked list; the two are Nomisma's own English names either way and agree about all 214 people, so the
+// order decides nothing today. The runtime cache outranks both, because that is nomisma.org answering about this record now.
 const NO_PEOPLE = new Map();
 const NO_LABELS = new Map();
 

@@ -17,14 +17,20 @@ export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
   return `${SEARCH_URL}?${params}`;
 }
 
+// The most of a reply this ever reads, and the most "];" it ever tries: every retry parses the whole slice again, so a
+// page made of nothing but terminators would keep the popup busy for as long as that page cared to make it. An acsearch
+// result page is a few hundred kilobytes; a full one is a hundred lots, and a dealer may write several "];" into each
+// description, so the retry limit sits where no real page reaches it - two thousand, about 17 ms on the worst shape.
+const MAX_RESULT_BYTES = 2 * 1024 * 1024;
+const MAX_TERMINATORS = 2000;
 // ponytail: the page inlines its lots as JSON; try each "];" until one parses, so a "];" inside a description can't truncate it.
 export function extractLots(html) {
-  const text = String(html ?? '');
+  const text = String(html ?? '').slice(0, MAX_RESULT_BYTES);
   const start = text.indexOf(MARKER);
   if (start < 0) return null;
   const from = start + MARKER.length;
   let end = text.indexOf('];', from);
-  while (end >= 0) {
+  for (let tried = 0; end >= 0 && tried < MAX_TERMINATORS; tried += 1) {
     try {
       const lots = JSON.parse(text.slice(from, end + 1));
       if (Array.isArray(lots)) {

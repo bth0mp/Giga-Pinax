@@ -160,6 +160,16 @@ for (const person of RIC_PEOPLE) {
   OWN_NAME.add(label);
 }
 
+// The one Latinisation the table applies: an English name ending in -ian is regularly Latinised by ending it -us (Domitianus,
+// Vespasianus, Numerianus), and Nomisma files that form for some rulers and not for others. Without it a heading Nomisma gives
+// to nobody else would be unknown, and worse, one it happens to give to somebody else ("Domitianus" is filed only under
+// Domitian II and Domitius Domitianus) opens a stranger's coin as the single answer. Sharing the spelling makes the lookup
+// offer a choice, which is the honest answer; a spelling that is already somebody's own name stays his alone.
+for (const person of RIC_PEOPLE) {
+  const label = rulerKey(person.name);
+  if (/^[a-z]+ian$/.test(label) && !OWN_NAME.has(`${label}us`)) own(`${label}us`, person);
+}
+
 // The people each spelling names outright, before any is widened below: a numeral is read against these, never against a widened one.
 const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label, [...people]]));
 

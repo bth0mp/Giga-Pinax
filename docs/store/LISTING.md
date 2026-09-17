@@ -19,7 +19,7 @@ Giga Pinax is a research and collection workspace for ancient-coin collectors. E
 Features include:
 
 - RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type lookups, plus prices-only references;
-- 68,123 type records packaged inside the extension, derived from the American Numismatic Society's OCRE, CRRO, PELLA and SCO data, with the English Nomisma.org name of the concepts they carry, so a RIC, Crawford, Price or Seleucid Coins reference is resolved and named with no network request at all;
+- 68,123 type records packaged inside the extension, derived from the American Numismatic Society's OCRE, CRRO, PELLA and SCO data, with the English Nomisma.org name of the concepts they carry, so the type record for a RIC, Crawford, Price or Seleucid Coins reference is resolved and named from inside the package, with no request to numismatics.org or nomisma.org and with the network disabled;
 - public type data from American Numismatic Society projects and Nomisma.org for a reference the package does not hold, and for every Bopearachchi reference;
 - session sale-price research from acsearch, searched as the phrase dealers cite, counting how many results cite the reference and keeping the rest out of the median, with collector-controlled exclusions, an optional denomination filter, medians per dealer grade, and consistent count, range, median and summary calculations;
 - auction identity and duplicate checks, workflow queues, reminders, notes and outcomes;
@@ -27,9 +27,9 @@ Features include:
 - provenance, measurements, condition, external photo URL links and two-to-four coin comparison; and
 - browser-local records with explicit JSON backup, a reviewed merge or replace import that copies the current records to disk first, and a raw rescue export.
 
-Research terms are sent over HTTPS to `numismatics.org`, `nomisma.org` or `www.acsearch.info` when needed for the lookup; a reference answered from the packaged data transmits nothing. acsearch uses the collector's existing provider session. A separate **Get CoinArchives prices** action requests optional access to `www.coinarchives.com` and reads one public results page without credentials. Its median uses only the selected original currency and identifies the public archive's coverage and result limit. CoinArchives Pro and RPC Online remain external links; Giga Pinax does not receive their credentials or import their paid results. GitHub is contacted when the collector chooses a release download.
+Research terms are sent over HTTPS to `numismatics.org` and `nomisma.org` when a lookup needs them; a reference whose type record is in the packaged data sends neither of them anything. The price search that starts with every lookup sends the search phrase to `www.acsearch.info` whenever acsearch access is granted, which is the default in Chrome and Brave. acsearch uses the collector's existing provider session. A separate **Get CoinArchives prices** action requests optional access to `www.coinarchives.com` and reads one public results page without credentials. Its median uses only the selected original currency and identifies the public archive's coverage and result limit. CoinArchives Pro and RPC Online remain external links; Giga Pinax does not receive their credentials or import their paid results. GitHub is contacted when the collector chooses a release download.
 
-Saved records stay in browser extension storage. Giga Pinax stores external photo URL links, not photo binaries. A collector-specified HTTP or HTTPS photo server is contacted only after saved-coin comparison opens, and each image is lazy-loaded without a referrer. Fetched acsearch rows and curation remain session-only.
+Saved records stay in browser extension storage. The research popup keeps its own display settings in the extension page's `localStorage` instead: the last six lookups, up to 50 edited price-search phrases, the research form's fields, the theme, a cache of Nomisma names and a copy of the default currency. None of it is part of a backup or the raw export, and all of it goes with the extension's data. Giga Pinax stores external photo URL links, not photo binaries. A collector-specified HTTP or HTTPS photo server is contacted only after saved-coin comparison opens, and each image is lazy-loaded without a referrer. Fetched acsearch rows and curation remain session-only.
 
 Giga Pinax does not place, change or cancel bids, make purchases, offer investment advice, collect analytics, run advertising, or provide cloud sync.
 
@@ -44,12 +44,12 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 **Single purpose:** Help ancient-coin collectors research catalogue references and sale prices, then organize auction and collection work in a local workspace.
 
 - `contextMenus`: starts user-invoked highlighted-text research or an editable current-lot draft.
-- `storage`: stores preferences, recent references, watchlists, bid plans, reminders, notes, provenance, measurements, external photo links, fee estimates, comparable sales and collection history locally.
+- `storage`: stores preferences, watchlists, bid plans, reminders, notes, provenance, measurements, external photo links, fee estimates, comparable sales and collection history locally.
 - `activeTab` and `scripting`: temporarily extract the current page after an explicit collector action so its structured data, metadata, visible text and URL can be reviewed before research or saving. A page the extension may not read, such as a browser settings page or a local file, is refused rather than captured.
 - `alarms`: schedules local reminder due checks.
 - `sidePanel`: opens the research workspace in Brave/Chrome's side panel.
 - optional `notifications`: shows desktop reminders only after the collector enables and grants them.
-- HTTPS host permissions: request public catalogue/type/label data from `numismatics.org` and `nomisma.org`, and user-requested sale-result research from `www.acsearch.info`.
+- HTTPS host permissions: request public catalogue/type/label data from `numismatics.org` and `nomisma.org`, and the sale-result search that starts with every lookup from `www.acsearch.info`, using the collector's existing acsearch session.
 - optional host permission `https://www.coinarchives.com/*`: reads one public results page, only after the collector selects **Get CoinArchives prices** and grants it.
 
 The permission set is unchanged from the previous release: the bundled catalogue data removed network requests, not permissions, and the online fallback still needs the same hosts.

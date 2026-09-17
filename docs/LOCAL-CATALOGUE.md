@@ -13,7 +13,7 @@ The three new exports were retrieved on 17 September 2026; each `metadata.json` 
 
 **BIGR (Bopearachchi) is not bundled and still goes online.** A Bopearachchi reference is resolved by searching BIGR and verifying every hit against the Bopearachchi citation in the hit's NUDS XML, because BIGR numbers its own types differently from Bopearachchi's series ("Euthydemus I 13.1" against "Euthydème I 24A"). That citation is in the NUDS records only: none of the 2,109 `nmo:TypeSeriesItem` records in `bigr.rdf` carries it, and the file's 910 mentions of Bopearachchi are all monogram labels. Nothing in the export can tell "Bop 24A" from "Bop 24", so bundling it could only answer with a record nobody verified. The corpus stays online until the export carries the citation.
 
-PELLA leaves out the type series no reference the extension reads can cite: `SIMPLE_REFERENCE` reads a Price number and nothing else, so `lerider.*` and `pella.*` records could never be reached. `metadata.json` records that count, the per-group breakdown and the reason. All 184 replacement links in the PELLA export run from a Le Rider record to a PELLA one, so no redirect between bundled records exists; CRRO and SCO carry no replacement links at all.
+PELLA leaves out the type series no reference the extension reads can cite: `SIMPLE_REFERENCE` reads a Price number and nothing else, so `lerider.*` and `pella.*` records could never be reached. `metadata.json` records that count, the per-group breakdown and the reason. All 184 replacement links between type records in the PELLA export run from a Le Rider record to a PELLA one, so no redirect between bundled records exists. CRRO and SCO carry none between type records either: CRRO's export has no replacement link at all, and all 1,293 of SCO's run between monograms, which are not bundled.
 
 ## Coverage and provenance
 
@@ -33,7 +33,9 @@ Nomisma concept labels and classes are absent from every one of these exports, s
 
 Of the 1,526 concepts the four bundles name, 1,524 carry an English preferred label; `dupondius_or_as` and `uncertain_74_sco` have none and are absent from the generated file, so a card shows those two identifiers as they are. Nothing is guessed and nothing is title-cased into a label nobody published.
 
-Three sources can name a concept on a local card, in this order: the runtime label cache that an online Nomisma lookup filled, because that is the record's own publisher answering now; `ric-people.js`, for an OCRE authority or portrait, because RIC's own spelling of a ruler is what the collector typed and what the section above the coin says; then the bundled labels. `ric-people.js` is read for OCRE alone — it was filtered against OCRE's own concepts — and where it and Nomisma spell a ruler differently, an OCRE card keeps RIC's spelling. An identifier none of the three names stays an identifier.
+A field the export gives more than one value is left off the local card rather than one of them being chosen: `labelFor` names a field only where the record holds exactly one identifier for it, so a type with two authorities, or a denomination recorded two ways, shows no authority or no denomination at all. It is not rare — 569 of the 15,869 records in the three new corpora and 8,904 of OCRE's 52,254 carry at least one such field, almost all of them two authorities or two denominations. The online card is less careful: `toCard` takes the first value of each field, so **Check online** names one of them, and the **Type** link on every card opens the record itself, which lists them all.
+
+Three sources can name a concept on a local card, in this order: the runtime label cache that an online Nomisma lookup filled, because that is the record's own publisher answering now; `ric-people.js`, for an OCRE authority or portrait; then the bundled labels. `ric-people.js` is read for OCRE alone — it was filtered against OCRE's own concepts — and it takes precedence over the bundled label file, so a ruler name on a RIC card is the one the Nomisma snapshot in `ric-people.js` carries. As it happens the two agree about all 214 people, so the order decides nothing today and is kept because the snapshot is the narrower, checked list. An identifier none of the three names stays an identifier.
 
 The label file is read lazily, once, the first time a card is built, and never for a lookup that misses. A missing or damaged one costs a card its names and never its answer: the record is still the record, with the identifiers on it, and the lookup is never reported as unavailable because of it. `tests/local-catalogue.test.mjs` compares the local card with `toCard` over the same record's JSON-LD, field by field, with the labels the package carries and with a cache that overrides them, and they are equal either way.
 
@@ -53,7 +55,7 @@ acsearch price research is separate and still needs internet access and the coll
 
 ## Rebuilding the data
 
-The developer converter is `scripts/import_rdf.py`. It uses Python's standard library and does not download data. From the repository root:
+The developer converter is `scripts/import_rdf.py`. It uses Python's standard library and never downloads an export: the export is a file you already have. Its `--fetch-labels` option is the one thing here that uses the network, and it reads Nomisma's SPARQL endpoint, not an export. From the repository root:
 
 ```powershell
 python scripts/import_rdf.py "Numismatics.org RDF/nomisma.rdf" extension/data/ocre --generated-on 2026-09-14

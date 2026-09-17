@@ -27,6 +27,8 @@ The extension requests access to the HTTPS research providers `numismatics.org`,
 
 To update, open **Settings**, find **Updates**, and select **Download latest update**. Download and extract the new Brave ZIP, replace the files in the same extracted folder, select **Reload** on `brave://extensions` or `chrome://extensions`, and reopen Giga Pinax. The extension does not install files silently.
 
+The **Updates** card is hidden on a Chrome Web Store install, where the store keeps the extension up to date: the card goes by the update URL the store writes into the manifest it serves. An unpacked install, a temporary Firefox install and an install from addons.mozilla.org — which sets no update URL — all keep it.
+
 ## Temporary Firefox installation
 
 Use Firefox 142 or later.
@@ -62,7 +64,7 @@ GitHub's generated **Source code** archives are repository snapshots and are not
 
 ## Remove or preserve records
 
-Before removing or changing extension identity, use **Settings** → **Backup and import** → **Export backup** if the records matter. Backups exclude lookup preferences, theme, ANS label cache, browser sessions and live acsearch results.
+Before removing or changing extension identity, use **Settings** → **Backup and import** → **Export backup** if the records matter. Backups exclude lookup preferences, theme, the Nomisma label cache, browser sessions and live acsearch results.
 
 An import either merges into your records or replaces them. A merge keeps the version of each record that was written last, recognises a lot you already have even when the backup names it differently, and lists everything it would change or keep, with the date each side was last edited, before you accept it. A replace, and any merge that would overwrite a record, downloads a safety copy of your current records first and names the file; if that copy cannot be made, it asks before going on. **Export raw data** writes a rescue file — everything in storage as it stands, unsaved drafts included — for the case where nothing else will load; it is not a backup and is refused by the importer.
 

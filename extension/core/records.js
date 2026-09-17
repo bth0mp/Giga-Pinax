@@ -24,6 +24,15 @@ export const LIMITS = Object.freeze({
   url: 2048,
   draftPayloadBytes: 10000,
   commandReplyBytes: 100000,
+  // A revision is only ever compared and counted up, so the ceiling is the highest number the next count is still an
+  // exact integer from: at 2^53-1 the increment is no longer one, and a root carrying it made every later save and every
+  // reconcile fail validation for good. 2^52 writes is a number no collector reaches.
+  revision: 2 ** 52,
+  // Validation accepts the ceiling itself, because a root that already carries one has to open; but a record stopped
+  // exactly there is refused by its very next write, which would land one above. So a revision a document brings in, or
+  // a load hands back, stays this far below it. The gap is headroom for the writes that record still has coming: 2^32
+  // of them, more than any store will ever see, and still nowhere near the ceiling.
+  usableRevision: 2 ** 52 - 2 ** 32,
 });
 
 const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -143,7 +152,7 @@ function commonRecord(record, path, { dataClass = true } = {}) {
   if (!object.ok) return object;
   const checks = [
     uuidResult(record.id, `${path}.id`),
-    integerResult(record.revision, `${path}.revision`),
+    integerResult(record.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(record.createdAt, `${path}.createdAt`),
     instantResult(record.updatedAt, `${path}.updatedAt`),
   ];
@@ -540,7 +549,7 @@ function preferencesResult(preferences, path) {
   const object = objectResult(preferences, path);
   if (!object.ok) return object;
   const common = firstFailure(
-    integerResult(preferences.revision, `${path}.revision`),
+    integerResult(preferences.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(preferences.createdAt, `${path}.createdAt`),
     instantResult(preferences.updatedAt, `${path}.updatedAt`),
     preferences.schemaVersion === SCHEMA_VERSION
@@ -639,7 +648,7 @@ function alertResult(alert, path) {
   const checks = [
     stringResult(alert.triggerId, `${path}.triggerId`, 500),
     uuidResult(alert.eventId, `${path}.eventId`),
-    integerResult(alert.eventRevision, `${path}.eventRevision`),
+    integerResult(alert.eventRevision, `${path}.eventRevision`, { maximum: LIMITS.revision }),
     uuidResult(alert.reminderId, `${path}.reminderId`),
     instantResult(alert.triggerAt, `${path}.triggerAt`),
     enumResult(alert.status, ALERT_STATES, `${path}.status`),
@@ -666,7 +675,7 @@ function schedulerResult(scheduler, path) {
   const object = objectResult(scheduler, path);
   if (!object.ok) return object;
   return firstFailure(
-    integerResult(scheduler.revision, `${path}.revision`),
+    integerResult(scheduler.revision, `${path}.revision`, { maximum: LIMITS.revision }),
     instantResult(scheduler.nextWakeAt, `${path}.nextWakeAt`, { nullable: true }),
     instantResult(scheduler.lastReconciledAt, `${path}.lastReconciledAt`, { nullable: true }),
   );
@@ -825,6 +834,46 @@ export function migrateSnapshot(stored) {
 
 const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 
+// Every place a root keeps a revision, named as the collection and record that carries it so a warning can say which.
+function* revisionSites(root) {
+  if (isObject(root?.preferences)) yield { host: root.preferences, key: 'revision', collection: 'preferences', id: null };
+  if (isObject(root?.scheduler)) yield { host: root.scheduler, key: 'revision', collection: 'scheduler', id: null };
+  for (const { key } of COLLECTIONS) {
+    if (!Array.isArray(root?.[key])) continue;
+    for (const record of root[key]) {
+      if (!isObject(record)) continue;
+      yield { host: record, key: 'revision', collection: key, id: record.id ?? null };
+      if (OWN(record, 'eventRevision')) yield { host: record, key: 'eventRevision', collection: key, id: record.id ?? null };
+    }
+  }
+}
+
+const unusableRevision = (value) => typeof value === 'number' && value > LIMITS.usableRevision;
+
+// A revision above the usable ceiling is one no run of writes produced, so the file that carries it was hand-made or
+// damaged. Nothing has to take such a file in: the caller refuses it whole and names what it found.
+export function unusableRevisions(root) {
+  const found = [];
+  for (const { host, key, collection, id } of revisionSites(root)) {
+    if (unusableRevision(host[key])) found.push({ collection, id, field: key });
+  }
+  return found;
+}
+
+// What is already in storage is the other case: an older build's root, or a file that got past an earlier import, must
+// still open with all its records, and every later write has to count from somewhere the arithmetic can hold. So the
+// revision is restarted in place rather than condemned, which the next write persists. Nothing else is touched, and a
+// root with nothing to restart is left exactly as it came, so this can run on every load.
+export function restartUnusableRevisions(root) {
+  const restarted = [];
+  for (const { host, key, collection, id } of revisionSites(root)) {
+    if (!unusableRevision(host[key])) continue;
+    host[key] = 0;
+    restarted.push({ collection, id, field: key });
+  }
+  return restarted;
+}
+
 // One record that stops validating must never lock the collector out of the rest of their data.
 // Each record is validated on its own; a failing one is set aside verbatim in `quarantine` and
 // references to it are repaired by the cheapest step that keeps the root valid: an optional
@@ -838,6 +887,8 @@ export function quarantineInvalidRecords(stored, now) {
   if (!object.ok) return object;
   let root;
   try { root = structuredClone(stored); } catch { return failure('invalid-record', 'Stored data cannot be copied.', 'snapshot'); }
+
+  restartUnusableRevisions(root);
 
   const quarantine = [];
   const hosts = new Map();

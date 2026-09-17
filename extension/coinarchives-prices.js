@@ -4,6 +4,10 @@ export const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
 export const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
 const ORIGIN = 'https://www.coinarchives.com';
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+// The header sits in the first screenful of markup; this is the most of the page the pattern for it ever reads.
+const HEADER_SLICE = 4096;
+// How many places the word may appear before the header itself. A real page carries a rule and a heading or two.
+const HEADER_TRIES = 8;
 const emptyExcluded = () => ({ upcoming: 0, toBePosted: 0, unpriced: 0, malformedPrice: 0, malformedDate: 0, futureDate: 0, duplicateId: 0, conflictingId: 0 });
 const NAMED_ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 // One pass over the whole text, so an escaped entity is decoded once and stays text: "&amp;quot;" is the characters "&quot;", not a quotation mark.
@@ -38,13 +42,39 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
   const result = baseResult({ term, section, currency, url });
   if (!['a', 'w'].includes(section) || !String(term || '').trim() || !/^[A-Z]{3}$/.test(currency || '')) return { ...result, status: 'layout', reason: 'input' };
   if (/closest\s+matches/i.test(html)) return { ...result, status: 'closest' };
-  const header = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(html)?.[1];
-  const countMatch = header && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(header);
+  // The word is found first and the pattern run on a slice around it: on a page of nothing but "<span class='" the
+  // pattern would otherwise try every one of them and take half a minute over half a megabyte. A stylesheet rule that
+  // styles the class, or a heading that carries it, comes before the header on some pages, so the first few places the
+  // word appears are read in turn until one of them is the header. Still linear: each slice is bounded and so is the
+  // number of them.
+  const source = String(html);
+  const lower = source.toLowerCase();
+  let header;
+  let countMatch;
+  for (let at = lower.indexOf('headertext'), tried = 0; at >= 0 && tried < HEADER_TRIES; tried += 1) {
+    // From the start tag that carries this occurrence, so each try reads its own element rather than an earlier one.
+    const lookBack = Math.max(0, at - 512);
+    const tagAt = source.slice(lookBack, at).lastIndexOf('<');
+    const around = source.slice(tagAt < 0 ? at : lookBack + tagAt, at + HEADER_SLICE);
+    const candidate = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(around)?.[1];
+    countMatch = candidate && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(candidate);
+    // The first element that carries the class is what an empty result is read from, as it was when only one was read.
+    if (header === undefined && candidate !== undefined) header = candidate;
+    if (countMatch) break;
+    at = lower.indexOf('headertext', at + 1);
+  }
   if (!countMatch) return { ...result, status: /(?:matched\s+0\s+lots?|no\s+(?:matching\s+)?lots)/i.test(header || '') ? 'empty' : 'layout' };
   if (normalizedQuery(countMatch[1]) !== normalizedQuery(term)) return { ...result, status: 'closest' };
   result.matchedCount = Number(countMatch[2]);
   result.capped = result.matchedCount > result.cap;
-  const rows = [...String(html).matchAll(/<tr\s+id=["'](\d+)["'][^>]*>([\s\S]*?)<\/tr>/gi)];
+  // Cut on the row starts first, then read each piece on its own: one pattern over the whole page re-scanned the rest of
+  // it from every "<tr" on a page that never closed a row. ponytail: a row start inside another row's body would then
+  // be a row of its own, which these pages, whose rows carry no nested table, never produce.
+  const rows = [];
+  for (const piece of source.split(/<tr\b/i).slice(1)) {
+    const row = /^\s+id=["'](\d+)["'][^>]*>([\s\S]*?)<\/tr>/i.exec(piece);
+    if (row) rows.push(row);
+  }
   result.renderedCount = rows.length;
   if (result.matchedCount === 0) return { ...result, status: 'empty' };
   if (rows.length !== Math.min(result.matchedCount, result.cap)) return { ...result, status: 'layout', reason: 'count' };

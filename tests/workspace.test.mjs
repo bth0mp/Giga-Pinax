@@ -207,6 +207,24 @@ test('a save keeps input typed while it was in flight and rebases it onto the co
   assert.deepEqual(plan.conflicts, []);
 });
 
+// The merge exists for a form the collector was not saving: it follows a write from elsewhere in the fields they left alone.
+// A form's own save is not such a write, and a field put back to what it was reads as untouched — so merging the save's own
+// record into the form that submitted it silently undid the revert, and the next save stored the value the collector had
+// just taken out.
+test('a save never merges its own committed record back into the form that submitted it', () => {
+  const before = { id: 'lot-a', revision: 3, title: 'A', notes: '', sourceLinks: [] };
+  const saved = { ...before, revision: 4, title: 'B' };
+  const plan = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-a', revision: 3 }, submittedVersion: 7,
+    value: saved, lots: [saved],
+    bases: [['lot', { id: 'lot-a', revision: 3, record: before }]], dirty: ['lot'], versions: [['lot', 9]],
+  }));
+  assert.equal(plan.preserved, true, 'the form still keeps what was typed while the save was in flight');
+  assert.deepEqual(plan.merge, [], 'and nothing is merged into it');
+  // What the merge would have written: the title the collector typed back is indistinguishable from one they never touched.
+  assert.deepEqual(mergeRebasedFields(lotFormValues(before), lotFormValues(saved), lotFormValues(before)), { title: 'B' });
+});
+
 test('an editor that moved to another coin is untouched by the reply it no longer owns', () => {
   const bases = [['bid', { id: 'lot-b', revision: 1 }]];
   const plan = planCommit(commitInput({

@@ -11,6 +11,21 @@ const eventId = '11111111-1111-4111-8111-111111111111';
 const reminderA = '22222222-2222-4222-8222-111111111111';
 const reminderB = '22222222-2222-4222-8222-222222222222';
 
+// An offset subtracted from a date near the start of the era lands outside the years an ISO instant can spell, and the
+// expanded form Date gives back ("-000001-12-31T23:00:00.000Z") is no timestamp any record may hold. The trigger is
+// dropped exactly as an unresolvable wall time is: one reminder is lost, not every reminder in the store.
+test('a trigger that lands outside the instants a record can hold is skipped, not derived', () => {
+  const triggers = deriveReminderTriggers([
+    {
+      id: eventId, revision: 0, name: 'Year zero', precision: 'timed', startsAt: '0000-01-01T00:00:00.000Z',
+      localDate: '0000-01-01', localTime: '00:00', timeZone: 'UTC',
+      reminders: [{ id: reminderA, kind: 'offset', offsetMinutes: 60 }, { id: reminderB, kind: 'offset', offsetMinutes: 0 }],
+    },
+  ], '2026-09-12T12:00:00.000Z');
+  assert.deepEqual(triggers.map(({ reminderId }) => reminderId), [reminderB]);
+  assert.equal(triggers[0].triggerAt, '0000-01-01T00:00:00.000Z');
+});
+
 test('resolves a unique London local time and rejects DST gaps and overlaps', () => {
   assert.deepEqual(resolveZonedDateTime({
     localDate: '2026-02-10', localTime: '10:30', timeZone: 'Europe/London', disambiguation: 'reject',

@@ -1,7 +1,7 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quoteList, referenceName, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
+import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
@@ -245,11 +245,16 @@ function fillFields(parsed) {
 }
 
 // An empty one-box leaves the guided fields alone; a parsed one fills them so they show what was understood. False when it doesn't parse.
+// The range a dealer cites ("Hadrian 100-102"), which OCRE titles 658 of its own records over. No guided field holds one,
+// so it is kept here for the submit that parsed it to put back on the reference it looks up.
+let quickRange = '';
 function applyQuickReference() {
   const text = $('quick-reference').value;
+  quickRange = '';
   if (!text.trim()) return true;
   const parsed = parseReference(text);
   if (!parsed) return false;
+  quickRange = parsed.range ?? '';
   fillFields(parsed);
   return true;
 }
@@ -376,8 +381,9 @@ function initialisePriceResearch(reference, identity = null) {
   const term = defaultTerm(reference);
   if (!term) return false;
   clearPrices();
-  // Another coin is another question: the citation filter comes back on for a new lookup, while a re-fetch of the same one keeps what the collector set.
+  // Another coin is another question: both filters come back to their defaults for a new lookup, while a re-fetch of the same one keeps what the collector set.
   onlyCiting = true;
+  onlyDenomination = false;
   const chosen = identity ? chooseTerm(reference, rememberedTerm(preferences, identity)) : term;
   researchContext = Object.freeze({ reference: Object.freeze({ ...reference }), label: buildQuery(reference).query, identity, term: chosen,
     currency: $('currency').value, priceTicket: priceRequestId });
@@ -401,7 +407,10 @@ function cardMatchesContext(card, context) {
   if (!reference) return false;
   const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   if (field(reference.catalogue) !== field(context.reference.catalogue) || field(reference.number) !== field(context.reference.number)) return false;
-  if (reference.catalogue === 'RIC') return ['volume', 'section'].every((key) => field(reference[key]) === field(context.reference[key]));
+  // Nomisma gives a RIC mint both its English names and the lookup opens the card under either, so the card that came back
+  // is this reference's card whichever of them was typed ("RIC VII Trier 12" is RIC VII Treveri 12).
+  const section = (value) => field(ricMintSection(value) || value);
+  if (reference.catalogue === 'RIC') return field(reference.volume) === field(context.reference.volume) && section(reference.section) === section(context.reference.section);
   if (reference.catalogue === 'Bop') return field(reference.section) === field(context.reference.section);
   return true;
 }
@@ -978,7 +987,15 @@ async function run(perform, note = '', failedReference = null) {
     else if (outcome.card.corpus === 'pella' && !parseReference(outcome.card.label)) fillFields({ catalogue: 'Price', number: outcome.card.id.replace(/^price\./, ''), volume: '', section: '' });
     else if (title) fillFields(title);
     renderCard(outcome.card);
-    if (researchContext && cardMatchesContext(outcome.card, researchContext)) verifiedPriceCards.set(researchContext, outcome.card);
+    if (researchContext && cardMatchesContext(outcome.card, researchContext)) {
+      verifiedPriceCards.set(researchContext, outcome.card);
+      // Prices that came back before the card were drawn without one: the denomination to offer and the type URL Copy
+      // summary ends with are both the card's, so the panel is drawn again now that this context has one.
+      if (shownPrices?.context === researchContext) {
+        resetCopyLabel();
+        renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term);
+      }
+    }
     if (!researchContext) {
       const reference = referenceFromCard(outcome.card);
       if (reference && initialisePriceResearch(reference, outcome.card)) {
@@ -999,7 +1016,7 @@ async function run(perform, note = '', failedReference = null) {
     button.disabled = false;
     button.onclick = async () => {
       if (button.disabled) return;
-      const access = requestHostAccess([...HOST_ORIGINS]);
+      const access = requestHostAccess([...HOST_ORIGINS], { remember: true });
       const owner = requestId;
       const expectedRevision = referenceRevision;
       const expectedContext = researchContext;
@@ -1189,12 +1206,25 @@ $('catalogue').addEventListener('change', () => {
   clearLot();
   $('lookup-prompt').hidden = false;
 });
+// Prices already on screen were fetched in the currency being replaced. Where acsearch access is already granted the same
+// search is run again in the new one - the lookup that fetched them asked for nothing either - rather than leaving an
+// empty panel with a Get prices button on it. This is what a default currency arriving from the durable root, after a
+// Settings change or a replace import, does to a window that has already priced its lookup. Without access nothing is
+// fetched and nothing is asked: a permission prompt closes the popup in Firefox, and nobody pressed anything here.
 $('currency').addEventListener('change', () => {
   savePreferences();
+  const repriced = shownPrices?.context === researchContext ? researchContext : null;
+  const term = $('price-term').value;
   clearPrices();
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
+  if (repriced) void repriceShownLots(repriced, term, $('currency').value);
 });
+async function repriceShownLots(context, term, currency) {
+  if (!(await hasAcsearchAccess())) return;
+  if (context !== researchContext || currency !== $('currency').value) return;
+  runPrices(term || context.term, currency, { remember: false, context });
+}
 // A listed volume clears a known ruler it lacks (Titus under I²), since blank means any ruler, and says so; Any volume, a volume OCRE does not list
 // (a parsed "IV, Part 1") and text that names no known ruler keep it. The form's input handler has already cleared the one-box and the output, and a
 // select's change comes after its input, so the announcement stays.
@@ -1271,6 +1301,8 @@ $('reference-form').addEventListener('submit', async (event) => {
   // Other is only an acsearch search, so text that gives none (blank, ";", no part with a letter and a digit) is refused before it makes a card.
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
+  // A refined search is the fields, and no field holds a range: only the box the range was written in carries one.
+  if (!refinedSubmit && quickRange) reference.range = quickRange;
   // A corpus the package carries answers without a request, so nothing is asked of the browser before the lookup;
   // one it does not carry (Bopearachchi, whose citations only the online records hold) needs access as it always did.
   const bundled = localCatalogue?.serves(buildQuery(reference).corpus) === true;
@@ -1432,6 +1464,9 @@ window.addEventListener('storage', (event) => {
 // The panel fallback (panel=1&window=1) stands in for a sidebar the browser wouldn't open, so it never takes a lookup: only the lookup window answers,
 // and a right-click made while just the fallback is open opens a lookup window of its own.
 if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+  // The message chooses what this window looks up, and is answered with the window's own id, so it is taken only from
+  // this extension's own pages: its background, or another of its popups handing a lookup over.
+  if (sender?.id !== api.runtime.id || !String(sender?.url ?? '').startsWith(api.runtime.getURL(''))) return false;
   if (message?.type !== LOOKUP_MESSAGE) return false;
   const search = new URL(String(message.url), location.href).search;
   const opened = cardFromSearch(search);
@@ -1442,6 +1477,9 @@ if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender
     $('quick-reference').value = '';
     clearLot();
     showStored();
+    // The other half of this page holds the auction context of the page it captured; this lookup is about a different
+    // page, so it is told before the card it would be saved with is built.
+    dispatchEvent(new CustomEvent('giga-pinax-lookup-received'));
     openFrom(search);
   }
   Promise.resolve(api.windows.getCurrent()).catch(() => null).then((current) => sendResponse({ windowId: current?.id }));

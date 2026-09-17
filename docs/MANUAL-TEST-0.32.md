@@ -33,12 +33,17 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
    but was not attached because the form changed while it was saving, telling you to attach it from coin details. No
    input is silently discarded and no second event is created.
 
-3. **Reload committed data with one conflicting and one clean form.** With the workspace open in two tabs, in tab A type
-   into the coin details form and into the **Bid** form without saving. In tab B change and save that same coin's
-   details only. Return to tab A.
-   *Expected:* the banner appears and names only the form that really changed — "Committed data changed while the coin
-   details form has unsaved input." Select **reload committed data**.
-   *Expected:* the coin details form is refilled from the saved record, and the bid form keeps everything you typed.
+3. **Reload committed data with one conflicting and one clean form.** The forms have to be on different records: the
+   coin details, **Bid** and outcome forms all edit the one lot record, so a save of that coin moves all three and the
+   banner names every one of them that is dirty. With the workspace open in two tabs, in tab A type into the coin
+   details form without saving, and in the same coin's **Auction and reminders** section select **Add auction** and type
+   a name into that form without saving it either. In tab B change and save that same coin's details only. Return to
+   tab A.
+   *Expected:* the banner appears and names the coin details form alone — "Committed data changed while the coin details
+   form has unsaved input." The auction form is not named: it holds an auction event, which that save did not touch.
+   Select **reload committed data**.
+   *Expected:* the coin details form is refilled from the saved record, and the auction form keeps every word you
+   typed.
 
 4. **The default currency has one home.** In the popup, change **Currency** to EUR, close the popup and open it again.
    Then open **Settings** and the **Calculator** tab.
@@ -77,19 +82,25 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* the panel gives its query and a line of the form "N of M results cite Price 23"; the median is taken
     from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
     automated fixtures for this page are synthetic, so this is the only check that the signed-in page is read correctly.
+    Open the same search on acsearch itself and compare two of the listed prices, date and hammer, with the rows under
+    **Inspect sales**: the figures the median rests on must be the ones acsearch shows, in the same currency.
 
 11. **The signed-out note.** Repeat the same lookup in a private window where acsearch is not signed in.
     *Expected:* the sign-in note appears and points at acsearch. It must not appear in step 10, and it must not appear
     merely because the only hits are lots that have yet to be sold.
 
-12. **A merge import preview.** Export a backup, change one record, then select **Settings → Backup and import**, choose
-    that file, keep **Merge with local records**, and select **Preview import**.
-    *Expected:* the preview lists what would be added, updated and kept, names your own copy of each changed record with
-    the date each side was last edited, and says which fields the backup would change — before anything is written.
-    Confirm it.
-    *Expected:* if any record would be overwritten, a safety copy download starts first and the status names the file.
+12. **A merge import preview that really overwrites something.** A merge keeps whichever copy of a record was written
+    last, so a backup exported before your latest edit updates nothing and never reaches the safety copy. Make the
+    backup the newer side: export a backup (call it **old**), change one record, export a second backup (**new**), then
+    import **old** with **Replace local records** so that record is back as it was. Now select **Settings → Backup and
+    import**, choose **new**, keep **Merge with local records**, and select **Preview import**.
+    *Expected:* the preview lists what would be added, updated and kept — with at least one record under updated —
+    names your own copy of each changed record with the date each side was last edited, and says which fields the backup
+    would change, all before anything is written. Confirm it.
+    *Expected:* because a record would be overwritten, a safety copy download starts first and the status names the
+    file, and only then is the merge written.
 
-13. **A replace import with the safety copy.** Preview the same file with **Replace local records** and confirm it.
+13. **A replace import with the safety copy.** Preview **new** again with **Replace local records** and confirm it.
     *Expected:* a confirmation is asked for, a safety copy of the current records downloads and is named in the status,
     and only then are the records replaced. If the download cannot be made, you are asked whether to import anyway.
 
@@ -106,7 +117,15 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* the ladder is used — the highest affordable bid lands on the tier's grid, a minimum bid off the schedule
     is rounded up, and a hammer off it is answered with the next valid bid.
 
-16. **Catalogue lookups with the network disabled.** Turn the network off, then look each of these up in the popup:
+16. **CoinArchives public prices.** Look up `Price 23`, then select **Get CoinArchives prices** and grant the access it
+    asks for.
+    *Expected:* a separately labelled median appears beside the acsearch one, with its own query and its own "N of M
+    results cite Price 23" line. Open **Inspect sales** under it: every row carries the lot's own description text from
+    the CoinArchives results page, not an empty line. An empty description on every row means the page has renamed the
+    element the description is read from, and the citation count above is then counting nothing — that is a finding.
+    Compare one listed price and date with the CoinArchives results page itself.
+
+17. **Catalogue lookups with the network disabled.** Turn the network off, then look each of these up in the popup:
 
     | Entered | Expected |
     | --- | --- |

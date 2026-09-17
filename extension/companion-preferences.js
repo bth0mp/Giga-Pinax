@@ -23,6 +23,21 @@ function storedCurrency(raw) {
     : DEFAULT_CURRENCY;
 }
 
+// The research popup opens, looks up and prices before the background can answer, so it prices in a
+// display cache of the default currency kept in the local storage the extension's pages share. A
+// page that changes the stored default writes that cache too: without it the next popup priced once
+// in the currency just replaced and then showed an empty panel. Only the currency is written; the
+// rest of the cache belongs to the research form.
+export function cacheDefaultCurrency(storage, currency) {
+  if (!CURRENCIES.includes(currency)) return false;
+  let cached;
+  try { cached = JSON.parse(storedValue(storage, GIGA_PREFERENCES_KEY)); } catch { cached = null; }
+  const kept = cached && typeof cached === 'object' && !Array.isArray(cached) ? cached : {};
+  try { storage?.setItem?.(GIGA_PREFERENCES_KEY, JSON.stringify({ ...kept, currency })); }
+  catch { return false; }
+  return true;
+}
+
 // The snapshot is the single home for the default currency, and preferences.save is gated on the
 // revision the caller read. A save that loses that race is retried once against the revision a
 // re-read reports; a second conflict is another view still writing, and is left to it rather than

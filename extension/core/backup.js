@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
+import { LIMITS, SCHEMA_VERSION, migrateSnapshot, unusableRevisions, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, own } from './validate.js';
@@ -105,6 +105,18 @@ export function validateBackup(document) {
   }
   data.recentCommands = [];
   data.drafts = [];
+  // Before validation, because validation says only that a revision is an integer within the ceiling a stored root may
+  // carry: it cannot say that no run of writes produced it. A revision above the usable ceiling is turned away here
+  // rather than restarted as a stored one is - a record taken in above it would be refused by its own next save - and
+  // it is told what the file is, instead of being reported as an integer out of range.
+  const unusable = unusableRevisions(data);
+  if (unusable.length) {
+    return failure(
+      'invalid-record',
+      'This backup carries a revision no Giga Pinax write could have produced, so the file is crafted or corrupt. Import a file made by Export backup.',
+      `data.${unusable[0].collection}`,
+    );
+  }
   const valid = validateSnapshot(data);
   if (!valid.ok) return failure(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
   exportTimes.set(data, value.exportedAt);
@@ -131,6 +143,10 @@ function evidenceBody(row) {
 // than to the call, so it is remembered here for the snapshot `validateBackup` produced instead of
 // being threaded through every caller; a snapshot from anywhere else has no file and no ceiling.
 // The file's own claim is bounded in turn: an export more than a day ahead of now is read as now.
+// The key is the object identity `validateBackup` returned, so a caller must pass that exact object or an explicit
+// `{ exportedAt }`: a clone of it is a different object, finds no ceiling here and compares every record by the time it
+// claims. That fails safe - a hand-edited write time then wins where it would have been capped - but it is a weaker
+// merge than the one the file earns, so pass the snapshot through, not a copy of it.
 const exportTimes = new WeakMap();
 
 function comparisonCeiling(incoming, exportedAt, now) {
@@ -236,6 +252,33 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
   });
 }
 
+// The identity of a trigger, rebuilt from the three things it is derived from, exactly as the reconcile rebuilds it.
+const triggerKey = (alert) => `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
+
+// Alerts are not merged record by record - the reconcile derives the schedule again from the merged events - but an
+// acknowledgement or a snooze is the collector's own answer, not the other install's bookkeeping, and deriving the
+// schedule again brought a reminder they had already answered there back as due here. An incoming alert whose trigger
+// this install does not already hold is taken, provided the event and the reminder it names came through the merge; a
+// trigger this install does hold keeps its own alert, which is the row in front of the collector.
+function adoptIncomingAlerts(snapshot, incoming) {
+  const held = new Set(snapshot.alerts.map(triggerKey));
+  const ids = new Set(snapshot.alerts.map(({ id }) => id));
+  const remindersByEvent = new Map(snapshot.auctionEvents.map((event) =>
+    [event.id, new Set(event.reminders.map(({ id }) => id))]));
+  let adopted = 0;
+  for (const alert of incoming.alerts ?? []) {
+    if (snapshot.alerts.length >= LIMITS.alerts) break;
+    const key = triggerKey(alert);
+    if (held.has(key) || ids.has(alert.id)) continue;
+    if (remindersByEvent.get(alert.eventId)?.has(alert.reminderId) !== true) continue;
+    snapshot.alerts.push({ ...clone(alert), triggerId: key });
+    held.add(key);
+    ids.add(alert.id);
+    adopted += 1;
+  }
+  return adopted;
+}
+
 // Alerts are the collector's local schedule and are kept verbatim, but the merge can take an event
 // that no longer carries the reminder one of them was derived from. The reconcile that follows an
 // import derives the schedule again, so a stale alert is dropped rather than failing the merge and
@@ -273,6 +316,11 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   const summary = { outgoing: counts(current), incoming: counts(incoming) };
   if (mode === 'replace') {
     const snapshot = exportableSnapshot(incoming);
+    // The schedule belongs to the install, not to the file: the reconcile that follows the import derives it again from
+    // the events just taken, so the file's wake time and its revision - counted in a store this one no longer is - are
+    // not adopted. The alerts stay, so an acknowledgement survives wherever its reminder came with the file.
+    snapshot.scheduler = { revision: 0, nextWakeAt: null, lastReconciledAt: null };
+    dropStaleAlerts(snapshot);
     return { ok: true, value: { mode, counts: summary, conflicts: [], duplicates: [], snapshot, requiresConfirmation: true } };
   }
 
@@ -413,6 +461,7 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
     if (survivors.has(id)) tally[outcome] += 1;
   }
   const attached = (row) => row.collection !== 'collectionEntries' || survivors.has(row.id);
+  tally.added += adoptIncomingAlerts(snapshot, incoming);
   dropStaleAlerts(snapshot);
   compactPriorities(snapshot, new Set(current.lots.map(({ id }) => id)));
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);

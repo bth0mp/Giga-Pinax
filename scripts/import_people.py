@@ -51,6 +51,12 @@ DEFAULT_MINTS = Path(__file__).resolve().parent / "data" / "nomisma-mints.json"
 
 def parsed_xml(payload: bytes):
     """The RDF/XML of a snapshot or a fetched response, parsed. ElementTree expands internal entities, so a declaration is refused before it can."""
+    # The pattern reads UTF-8 bytes. The same declaration written in UTF-16 or UTF-32 carries a NUL between every
+    # character and matches nothing, while expat works the encoding out for itself and expands the entity: input that is
+    # not UTF-8 is turned away first, by its byte order mark or by the NUL such a file carries among its first four
+    # bytes, exactly as scripts/import_rdf.py turns it away.
+    if payload.startswith((b"\xff\xfe", b"\xfe\xff", b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")) or b"\x00" in payload[:4]:
+        raise ValueError("RDF input must be UTF-8 XML")
     if FORBIDDEN_DECLARATION.search(payload):
         raise ValueError("DTD and entity declarations are not allowed")
     return ET.fromstring(payload)

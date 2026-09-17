@@ -168,3 +168,46 @@ test('cancels a response stream as soon as its body exceeds the byte limit', asy
   assert.equal(result.reason, 'too-large');
   assert.equal(cancelled, true);
 });
+
+// The page is untrusted text off the network and the popup's own thread reads it. Each of these shapes made a pattern
+// re-scan the rest of the page from every start it found: half a megabyte of them cost between two and thirty-five
+// seconds. They are refused as a layout the parser does not know, promptly.
+test('a page shaped to make the parser re-scan it is refused promptly, not chewed through', () => {
+  const header = '<span class="headertext">Your search for <b>x</b> matched 5 lots from auctions added in the last six months.</span>';
+  const fill = (unit) => unit.repeat(Math.floor((512 * 1024) / unit.length));
+  for (const [name, html] of [
+    ['start tags that never close', fill('<span ')],
+    ['class attributes that never close', fill("<span class='")],
+    ['row start tags that never close', header + fill("<tr id='1' ")],
+    ['rows that never end', header + fill("<tr id='1'>")],
+  ]) {
+    const started = performance.now();
+    const result = parseCoinArchivesPublic(html, { term: 'x', currency: 'USD' });
+    const spent = performance.now() - started;
+    assert.equal(result.status, 'layout', name);
+    assert.ok(spent < 1000, `${name} took ${spent.toFixed(0)} ms`);
+  }
+});
+
+// The word is located before the pattern runs, which is what keeps the scan linear - but the first place it appears is
+// not always the header. A stylesheet rule that styles the class, or a heading that carries it, is ordinary page
+// furniture, and reading only the first occurrence turned pages the parser used to read into an unknown layout.
+test('the header is read past a stylesheet rule or a heading that names its class first', () => {
+  const body = page([row('1', '1 Sep 2026', '1,000&nbsp;USD'), row('2', '2 Sep 2026', '2,000&nbsp;USD')]);
+  const spacer = (unit, times) => unit.repeat(times);
+  for (const [name, html] of [
+    ['a rule 6 KB before the header', `<html><head><style>.headertext{font-weight:bold}</style>${spacer('<meta name="x" content="y">', 250)}</head><body>${body}`],
+    ['a rule just before the header', `<html><head><style>.headertext{font-weight:bold}</style></head><body>${body}`],
+    ['a page heading of the same class', `<div class="headertext">Search results</div>${spacer('<a href="#">nav</a>', 400)}${body}`],
+    ['seven of them before the header', `${spacer('<div class="headertext">Search results</div>', 7)}${body}`],
+  ]) {
+    const result = parseCoinArchivesPublic(html, options);
+    assert.equal(result.status, 'ok', name);
+    assert.equal(result.renderedCount, 2, name);
+  }
+  // Bounded, and still linear: a page of nothing but the word is given up on rather than searched to the end.
+  const started = performance.now();
+  const flooded = '<span class="headertext">nothing</span>'.repeat(Math.floor((512 * 1024) / 38));
+  assert.equal(parseCoinArchivesPublic(flooded, options).status, 'layout');
+  assert.ok(performance.now() - started < 1000, 'a page of nothing but the word must not be chewed through');
+});

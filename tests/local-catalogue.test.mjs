@@ -297,12 +297,18 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
   // A name no person carries alone names nobody: none of these headings may pick one man out of the several it could mean.
   for (const heading of ['Sept. Severus', 'Maximinus', 'Drusus']) assert.deepEqual(await openedOver(heading), [], heading);
   // A shared spelling keeps every owner, and a coin only opens where one of them is on it.
-  for (const [heading, count, owners] of [['Valerianus', 83, ['valerian', 'valerian_ii']], ['Domitianus', 6, ['domitian_ii', 'domitius_domitianus']],
+  // "Domitianus" is Domitian's own Latin name too, so his 290 numbers open and the six that were a stranger's become a choice.
+  for (const [heading, count, owners] of [['Valerianus', 83, ['valerian', 'valerian_ii']],
+    ['Domitianus', 290, ['domitian_ii', 'domitian', 'domitius_domitianus']],
     ['Valens', 12, ['valens']], ['Romulus', 12, ['romulus']], ['Maximus', 18, ['gaius_julius_verus_maximus']]]) {
     const opened = await openedOver(heading);
     assert.equal(opened.length, count, heading);
     opensOnly(opened, owners, heading);
   }
+  // The six a stranger's coin used to answer are the ones the emperor himself has no type for, so they are offered and never opened.
+  const domitianus = await openedOver('Domitianus');
+  assert.ok(domitianus.every(({ card }) => card.id.startsWith('ric.2_1(2).dom.')), 'Domitianus opens only Domitian\'s own volume');
+  for (const number of [1, 5, 6, 19, 20, 45]) assert.ok(!domitianus.some((hit) => hit.number === number), `RIC ${number}`);
   // A heading RIC heads a section with is that section, and its number opens the one coin.
   const philip = await openedOver('Philip I');
   assert.equal(philip.find(({ number }) => number === 16)?.card.id, 'ric.4.ph_i.16');

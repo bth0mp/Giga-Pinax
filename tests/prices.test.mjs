@@ -70,6 +70,43 @@ test('the fixture page reads as two citations of another type, and the grades th
   assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'FDC/Mint State']);
 });
 
+// A page is untrusted text off the network, and every retry parses the whole slice from the marker again: half a
+// megabyte of nothing but terminators took seconds with the popup's own thread. Bounded by the size read and the number
+// of retries, so a hostile page costs a miss rather than a frozen popup.
+test('a page made of nothing but array terminators is given up on, not chewed through', () => {
+  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2)}"}];`;
+  for (const bytes of [64 * 1024, 512 * 1024, 2 * 1024 * 1024]) {
+    const started = performance.now();
+    assert.equal(extractLots(terminators(bytes)), null);
+    const spent = performance.now() - started;
+    // Measured at about 17 ms for each of these; the margin is for a loaded machine, not for a slower bound.
+    assert.ok(spent < 250, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
+  }
+  // A page with more results text than any reply carries is read up to the bound and no further.
+  const started = performance.now();
+  assert.equal(extractLots(`${' '.repeat(4 * 1024 * 1024)}acsearch.initSearchResults = [];`), null);
+  assert.ok(performance.now() - started < 1000);
+  // The handful a real page's descriptions carry is still read through.
+  const inside = `acsearch.initSearchResults = [{"id":"1","title":"${'see [RIC 306]; '.repeat(20)}"}];`;
+  assert.equal(extractLots(inside)?.length, 1);
+});
+
+// A full result page is a hundred lots, and a dealer who writes "[RIC 306]; " three times in a description puts three
+// hundred terminators in front of the array's own. The limit has to be out of a real page's reach, not merely above the
+// handful the fixtures carry, or a page the parser used to read comes back as no prices at all.
+test('a full page of descriptions that each carry terminators is still read', () => {
+  const lots = Array.from({ length: 100 }, (unused, index) => ({
+    id: String(index + 1), title: `Lot ${index + 1}`, date: '01.02.2023', price: '1,200',
+    description: `Nero, RIC 306. Cf. [RIC 305]; [RIC 306]; [RIC 307]; ${'x'.repeat(400)}`,
+  }));
+  const page = `<script>acsearch.initSearchResults = ${JSON.stringify(lots)}; acsearch.x=1;</script>`;
+  const started = performance.now();
+  const parsed = extractLots(page);
+  assert.equal(parsed?.length, 100);
+  assert.equal(parsed[99].description.includes('[RIC 307];'), true);
+  assert.ok(performance.now() - started < 1000, 'and read promptly');
+});
+
 test('extractLots survives "];" inside descriptions and rejects pages without the array', () => {
   const page = '<script>acsearch.initSearchResults = [{"id":1,"title":"A","description":"see [RIC 306]; nice","date":"01.02.2023","price":"1,200","last":false}]; acsearch.x=1;</script>';
   assert.deepEqual(extractLots(page), [{ id: '1', title: 'A', date: '01.02.2023', price: '1,200', description: 'see [RIC 306]; nice' }]);

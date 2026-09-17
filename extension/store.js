@@ -1,6 +1,6 @@
 import {
-  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords, setOutcome,
-  validateDraftPayload, validateEventLocalTimes, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords,
+  restartUnusableRevisions, setOutcome, validateDraftPayload, validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -746,6 +746,12 @@ function mutation(snapshot, command, context) {
       reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
     });
     projected.recentCommands = projected.recentCommands.slice(-200);
+    // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
+    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is.
+    const projectedValid = validateSnapshot(projected);
+    if (!projectedValid.ok) {
+      return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
+    }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
       return fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
     }
@@ -819,6 +825,18 @@ export function createCommandWriter(storageArea, context) {
       };
     }
     let stored = migrateSnapshot(raw);
+    // A revision above the usable ceiling has to be restarted before anything else looks at the root, because it is
+    // valid: validation accepts it, so the repair pass below would never run, and the record would be locked at its
+    // very next write. The scan walks the records already about to be validated, changes nothing when there is nothing
+    // to change, and what it does change reaches storage with this command's own write. A root from a version this
+    // build cannot read is left alone, as the repair leaves it: its records are not this build's to walk.
+    const restarted = Number.isSafeInteger(stored?.schemaVersion) && stored.schemaVersion <= SCHEMA_VERSION
+      ? restartUnusableRevisions(stored)
+      : [];
+    if (restarted.length) {
+      console.warn('Giga Pinax: restarted a revision no write could have produced, at', restarted
+        .map(({ collection, id, field }) => `${collection}${id ? ` ${id}` : ''} (${field})`).join(', '));
+    }
     const current = validateSnapshot(stored);
     if (!current.ok) {
       // Continue with the records that still validate; the rest wait in quarantine for the

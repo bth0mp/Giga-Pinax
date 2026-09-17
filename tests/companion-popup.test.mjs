@@ -16,7 +16,11 @@ globalThis.browser = {
   tabs: { query: (query) => answerTabs(query), create: async () => ({ id: 9 }) },
   scripting: { executeScript: (request) => answerScript(request) },
 };
-globalThis.addEventListener = (type, listener) => { if (type === 'giga-pinax-card') cardListeners.push(listener); };
+const lookupListeners = [];
+globalThis.addEventListener = (type, listener) => {
+  if (type === 'giga-pinax-card') cardListeners.push(listener);
+  if (type === 'giga-pinax-lookup-received') lookupListeners.push(listener);
+};
 globalThis.dispatchEvent = () => true;
 globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
 
@@ -114,6 +118,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
+  lookupListeners.length = 0;
   started = element;
   await import(`../extension/companion-popup.js?start=${++loaded}`);
   // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
@@ -123,6 +128,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   return {
     element,
     card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
+    lookupReceived: () => lookupListeners[0]?.({ type: 'giga-pinax-lookup-received' }),
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
@@ -497,6 +503,30 @@ test('a capture that fails takes the earlier page off the card it would be saved
   page.card({ title: 'Nero denarius', reference: 'RIC 306' });
   await page.click('companion-save-watchlist');
   assert.equal(Object.hasOwn(commands.filter(({ type }) => type === 'draft.save').at(-1).payload, 'auctionContext'), false);
+});
+
+// A right-click on another page sends its reference to this window. That lookup is not about the page captured here, so the
+// captured page comes off the card: without this, a coin looked up from one site was filed under the sale open in another.
+test('a lookup sent to this window takes the captured page off the coin saved from it', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: capturedPage({ reference: { value: 'Price 23', provenance: 'visible-text' } }),
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  page.card({ title: 'Alexander tetradrachm', reference: 'Price 23' });
+  await page.click('companion-save-watchlist');
+  assert.deepEqual(lastSaved().auctionContext, { pageUrl: 'https://auction.example/27' });
+
+  page.lookupReceived();
+  page.card({ title: 'Roman Republic denarius', reference: 'RRC 44/5' });
+  await page.click('companion-save-watchlist');
+  assert.equal(Object.hasOwn(lastSaved(), 'auctionContext'), false, 'the sent lookup carries no page of its own');
+  // The capture editor no longer claims a page it is not standing for.
+  assert.equal(page.element('companion-capture-source').textContent, 'Auction context cleared. Captured fields remain available for research.');
+  assert.equal(page.element('companion-capture-reference').value, 'Price 23', 'the captured fields stay available');
 });
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {

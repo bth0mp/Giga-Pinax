@@ -6,7 +6,7 @@ import {
 import { CURRENCIES } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
-import { initializeCompanionPreferences } from './companion-preferences.js';
+import { cacheDefaultCurrency, initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
 import { LOCAL_CORPORA, catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
 
@@ -183,6 +183,9 @@ async function load() {
     throw new Error(reply?.message || 'Could not load settings.');
   }
   preferencesSnapshot = reply.value;
+  // Settings and the research popup share this origin's local storage, and the popup prices from the cache before the
+  // background can answer it. Written on every load, so the reload after an import carries the imported default too.
+  cacheDefaultCurrency(localStorage, preferencesSnapshot.preferences.currency);
   render();
   renderDataHealth(preferencesSnapshot.quarantine);
   $('save-settings').disabled = false;
@@ -257,6 +260,7 @@ $('save-settings').addEventListener('click', async () => {
       throw new Error(reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.');
     }
     preferencesSnapshot.preferences = reply.value;
+    cacheDefaultCurrency(localStorage, preferencesSnapshot.preferences.currency);
     if (theme) localStorage.setItem('giga-pinax-theme-v1', theme);
     else localStorage.removeItem('giga-pinax-theme-v1');
     if (theme) document.documentElement.dataset.theme = theme;

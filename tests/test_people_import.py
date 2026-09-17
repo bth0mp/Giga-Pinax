@@ -205,6 +205,20 @@ class PeopleImportTests(unittest.TestCase):
         concepts = module.read_concepts(rdf.format(doctype="").encode("utf-8"), {"nero": {"1(2)"}})
         self.assertEqual({"Nero"}, concepts["nero"]["labels"])
 
+    def test_input_that_is_not_utf_8_is_refused_before_expat_sniffs_it(self):
+        """The pattern above reads UTF-8 bytes. UTF-16 spells the same declaration with a NUL between every character,
+        so nothing matches - and expat, which works its own encoding out, reads and expands the entity anyway. Refused
+        as import_rdf.py refuses it: by the byte order mark, and by the NUL that a mark-less UTF-16 file starts with."""
+        module = load_module()
+        declared = ('<!DOCTYPE rdf:RDF [<!ENTITY name "Nero">]><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"'
+                    ' xmlns:skos="http://www.w3.org/2004/02/skos/core#"><skos:Concept rdf:about="http://nomisma.org/id/nero">'
+                    '<skos:prefLabel xml:lang="en">&name;</skos:prefLabel></skos:Concept></rdf:RDF>')
+        for encoding in ("utf-16", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"):
+            with self.subTest(encoding=encoding), self.assertRaises(ValueError):
+                module.parsed_xml(declared.encode(encoding))
+        # Leading whitespace is still UTF-8, and a sound snapshot is read as before.
+        self.assertIsNotNone(module.parsed_xml(b'  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/>'))
+
 
 @unittest.skipUnless((DATA / "metadata.json").is_file(), "extension/data/ocre is not bundled here")
 class BundledDataTests(unittest.TestCase):

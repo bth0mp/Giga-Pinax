@@ -136,7 +136,7 @@ test('a person is found by the English and Latin spellings Nomisma files, folded
   // coin. A diacritic never hides it — every alias is compared folded, as the importer stored it.
   assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
   assert.deepEqual(ricPeople('Valeriánus').map(({ id }) => id), ['valerian', 'valerian_ii']);
-  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitius_domitianus']);
+  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitian', 'domitius_domitianus']);
   assert.equal(canonicalRicPerson('Valerianus'), '');
   // A one-word name that stands inside other people's names is every one of them, never one alone: "Sextus" is a praenomen two emperors carry.
   assert.deepEqual(ricPeople('Sextus').map(({ name }) => name), ['Saturninus', 'Martinianus']);
@@ -169,9 +169,33 @@ test("a spelling that is a person's own name names him alone and is never widene
   assert.deepEqual(ricPeople('Licinius I'), ricPeople('Licinius'));
   assert.equal(canonicalRicPerson('Licinius I'), 'Licinius');
   // A spelling nobody is named outright is still every person it stands in, so it is offered and never opened.
-  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitius_domitianus']);
+  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitian', 'domitius_domitianus']);
   assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
   assert.equal(canonicalRicPerson('Domitianus'), '');
+});
+
+// An English -ian name is regularly Latinised -ianus, and Nomisma files that form for some rulers and not for others. Where it files it for
+// somebody else and not for him, the heading a dealer writes over his coins opened a stranger's: "Domitianus, 81-96. RIC 1" was answered with a
+// coin of Domitianus of Gaul, and five more numbers with Domitius Domitianus's.
+test('an English -ian name is also reached by its regular Latin -ianus form, without taking it from anyone', () => {
+  // The name Nomisma leaves Latinless joins the two it does file, so the heading offers the three and settles on none.
+  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitian', 'domitius_domitianus']);
+  assert.equal(canonicalRicPerson('Domitianus'), '');
+  // Nobody else carries these, so the Latin form is simply the man.
+  for (const [spelling, person] of [['Vespasianus', 'Vespasian'], ['Octavianus', 'Octavian'], ['Majorianus', 'Majorian'],
+    ['Nigrinianus', 'Nigrinian']]) {
+    assert.equal(canonicalRicPerson(spelling), person, spelling);
+  }
+  // Every Latin form Nomisma already files answers exactly as it did: the rule adds a spelling, it never moves one.
+  assert.equal(canonicalRicPerson('Hadrianus'), 'Hadrian');
+  assert.equal(canonicalRicPerson('Aurelianus'), 'Aurelian');
+  assert.equal(canonicalRicPerson('Maximianus'), 'Maximian');
+  assert.equal(canonicalRicPerson('Diocletianus'), 'Diocletian');
+  assert.equal(canonicalRicPerson('Gratianus'), 'Gratian');
+  assert.equal(canonicalRicPerson('Numerianus'), 'Numerian');
+  assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
+  // Only the English -ian names are Latinised, and only by this one ending: nothing is invented for a name shaped otherwise.
+  for (const unknown of ['Titusus', 'Neroius', 'Trajanus', 'Constantinus']) assert.deepEqual(ricPeople(unknown), [], unknown);
 });
 
 // Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.
