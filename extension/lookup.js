@@ -194,8 +194,8 @@ const sameShelf = (one, other) => {
   const [otherNumeral, otherPart] = shelf(other);
   return Boolean(numeral) && numeral === otherNumeral && (!part || !otherPart || part === otherPart);
 };
-// One RIC reference as the fields hold it. A mint written by the name on the map today is RIC's own Latin section, and a bracket a dealer hangs on
-// the number is read three ways: as the section, where RIC really heads a section of that volume with the name ("RIC 268 (Elagabalus)"); dropped,
+// One RIC reference as the fields hold it. The section is kept as it was written — a mint's modern name is read as RIC's Latin one in lookupType,
+// the one place every lookup passes through, since the guided fields never come through here. A bracket a dealer hangs on the number is read three ways: as the section, where RIC really heads a section of that volume with the name ("RIC 268 (Elagabalus)"); dropped,
 // where the name heads a section of some other volume only, which is a mint remark and belongs in neither field ("RIC II Trajan 12 (Rome)"); and
 // left in the number where it names no section at all, which is how OCRE titles its own types ("266 (aureus)").
 function ricReference(number, volume, written) {
@@ -204,9 +204,8 @@ function ricReference(number, volume, written) {
   const wrapped = squash(written).match(/^\(([^()]*)\)$/);
   const bracketed = wrapped?.[1] ?? (bare === undefined ? null : trailing);
   const plain = wrapped ? '' : squash(written);
-  const named = (name) => ricMintSection(name) || name;
-  if (bracketed === null) return { catalogue: 'RIC', number, volume, section: named(plain) };
-  const name = named(squash(bracketed));
+  if (bracketed === null) return { catalogue: 'RIC', number, volume, section: plain };
+  const name = squash(bracketed);
   const volumes = volumesOf(name);
   const here = volumes.length > 0 && (!volume || volumes.some((listed) => sameShelf(listed, volume)));
   // A bracket naming no section at all is how OCRE titles its own types ("266 (aureus)") and stays in the number; one naming a section of another
@@ -718,7 +717,12 @@ async function pickPortrait(reference, feed) {
   return pickRic(await feed(ricSearch(anyRuler, [facetName(reference.section)])), anyRuler);
 }
 
-export async function lookupType(reference, options = {}) {
+export async function lookupType(given, options = {}) {
+  // A mint written by the name on the map today ("Trier") is RIC's own Latin section ("Treveri"). Every lookup arrives here — typed, guided or from a
+  // lot row — so the name is read once, where the section is used, rather than in the parse the guided fields never run. The caller's own object is
+  // left as it was.
+  const mint = ricMintSection(given.section);
+  const reference = mint ? { ...given, section: mint } : given;
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;

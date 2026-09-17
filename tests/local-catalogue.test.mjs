@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
-import { parseReference } from '../extension/lookup.js';
+import { lookupType, parseReference } from '../extension/lookup.js';
 
 const metadata = {
   schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
@@ -291,6 +291,15 @@ test('over the bundled catalogue, a cited range reaches the record OCRE titles o
   // A range OCRE has no record of falls back to the first number, which is the type the other 654 ranges share.
   const missing = await bundleCatalogue('10').lookupType(parseReference('RIC II.3 Hadrian 10-11'));
   assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10']);
+});
+
+test('over the bundled catalogue, guided fields naming a mint by its modern name open the coin', { skip }, async () => {
+  const localProvider = bundleCatalogue('12');
+  const guided = await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, { localProvider, online: false });
+  assert.equal(guided.status, 'ok');
+  assert.equal(guided.card.id, 'ric.7.tri.12');
+  // Unmapped, the name is no section of any volume and the sixteen mints of RIC VII are all that is left to offer.
+  assert.equal((await localProvider.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' })).candidates.length, 16);
 });
 
 test('the shards a person filter needs are loaded together, not one after another', async () => {

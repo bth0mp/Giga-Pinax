@@ -913,10 +913,12 @@ test('a lot row and the same reference typed into the box read alike', () => {
   }
 });
 
-test('a mint written by the name on the map today is RIC\'s own section, and no ruler at all', () => {
+test('a mint written by the name on the map today is a section, and no ruler at all', () => {
   const lot = findReferences('Constantine I. Follis. RIC VII Trier 12.');
-  assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Treveri', number: '12' });
+  // The row reads the mint as the section it is, spelled as the dealer spelled it; lookupType reads that name as RIC's own Treveri.
+  assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' });
   assert.deepEqual(lot.rulers, ['Constantine I']);
+  assert.equal(lotLookup(lot.references[0], lot.rulers).section, 'Trier');
 });
 
 test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {

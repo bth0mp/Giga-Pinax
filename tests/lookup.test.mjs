@@ -1368,9 +1368,26 @@ test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed sec
   assert.deepEqual(parseReference('RIC II 12 (Rome)'), ric('II', '', '12'));
   assert.deepEqual(parseReference('RIC VII 12 (Rome)'), ric('VII', 'Rome', '12'));
   assert.deepEqual(parseReference('RIC II, Part 1 720 (Domitian)'), ric('II, Part 1', 'Domitian', '720'));
-  // A mint written by the name on the map today is RIC's own Latin section.
-  assert.deepEqual(parseReference('RIC VII Trier 12'), ric('VII', 'Treveri', '12'));
-  assert.deepEqual(parseReference('Trier 12'), ric('', 'Treveri', '12'));
+  // A mint keeps the name the dealer wrote it under; the lookup is what reads it as RIC's Latin section, wherever the section came from.
+  assert.deepEqual(parseReference('RIC VII Trier 12'), ric('VII', 'Trier', '12'));
+  assert.deepEqual(parseReference('Trier 12'), ric('', 'Trier', '12'));
+});
+
+// The guided fields never pass through parseReference, and the bracketed branch skipped a plain section, so "Trier" reached RIC's Treveri only from
+// the Reference box: picked as typed it left the sixteen mints of RIC VII to choose between. The name is mapped once, where a lookup uses it.
+test('a mint\'s modern name reaches RIC\'s Latin section however the section was filled in', async () => {
+  const asked = [];
+  const localProvider = { lookupType: async (reference) => { asked.push(reference); return { status: 'none' }; } };
+  const typed = parseReference('RIC VII Trier 12');
+  for (const reference of [typed, { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, parseReference('RIC VII Trier 12 (Rome)')]) {
+    await lookupType(reference, { localProvider, online: false });
+  }
+  assert.deepEqual(asked.map(({ section }) => section), ['Treveri', 'Treveri', 'Treveri']);
+  assert.equal(buildQuery({ ...typed, section: asked[0].section }).query, 'RIC VII Treveri 12');
+  // A section that is no mint alias is untouched, and the reference the caller passed is never rewritten under it.
+  assert.equal(typed.section, 'Trier');
+  await lookupType({ catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '1' }, { localProvider, online: false });
+  assert.equal(asked.at(-1).section, 'Gallienus');
 });
 
 test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, never a hand-written table', async () => {
