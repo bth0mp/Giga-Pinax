@@ -11,6 +11,9 @@ import {
 
 const NOW = '2026-09-12T12:00:00.000Z';
 const LATER = '2026-09-13T12:00:00.000Z';
+const LATEST = '2026-09-14T12:00:00.000Z';
+// What a clock-skewed or hand-edited record claims: a write time no export could have followed.
+const SKEWED = '9999-12-31T23:59:59.999Z';
 const uuid = (index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
 
 function lot(id, extra = {}) {
@@ -22,6 +25,21 @@ function lot(id, extra = {}) {
 
 function group(id, name = 'Greek') {
   return { id, revision: 0, dataClass: 'collector', name, createdAt: NOW, updatedAt: NOW };
+}
+
+function dateEvent(id, extra = {}) {
+  return {
+    id, revision: 0, dataClass: 'collector', name: 'Sale', eventKind: 'auction-starts',
+    precision: 'date-only', localDate: '2026-10-10', timeZone: 'Europe/London',
+    reminderScope: 'standalone', reminders: [], createdAt: NOW, updatedAt: NOW, ...extra,
+  };
+}
+
+function wonEntry(id, lotId, extra = {}) {
+  return {
+    id, revision: 0, dataClass: 'collector', lotId, title: 'Nero denarius',
+    acquisitionDate: '2026-09-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW, ...extra,
+  };
 }
 
 test('exports a versioned UTF-8 JSON document without the request ledger', () => {
@@ -126,7 +144,8 @@ test('merge preview skips equal IDs and settles differences by updatedAt, then l
   assert.equal(won.value.snapshot.alternativeGroups[0].name, 'Roman');
   assert.equal(won.value.counts.updated, 1);
   assert.deepEqual(importChangeLines(won.value), [
-    `alternativeGroups: "Roman" is replaced by the backup's copy (backup ${LATER}, local ${NOW})`,
+    'alternativeGroups: "Greek" (in the backup: "Roman") is replaced by the backup\'s copy ' +
+    `(backup ${LATER}, local ${NOW}), differing in name`,
   ]);
 });
 
@@ -147,6 +166,82 @@ test('a record the merge replaces is stamped past both revisions so stale holder
   assert.equal(again.value.counts.added, 0);
   assert.deepEqual(importChangeLines(again.value), []);
   assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(first.value.snapshot));
+});
+
+test('a change line names the local record and the two write times the right way round', () => {
+  const desktop = createEmptySnapshot(NOW);
+  desktop.lots.push(lot(uuid(1), { title: 'Desktop title', updatedAt: LATEST }));
+  const laptop = createEmptySnapshot(NOW);
+  laptop.lots.push(lot(uuid(1), { title: 'Laptop title', updatedAt: LATER }));
+
+  const kept = previewImport(desktop, laptop, 'merge', { exportedAt: LATEST, now: LATEST });
+  assert.equal(kept.value.counts.keptLocal, 1);
+  assert.deepEqual(importChangeLines(kept.value), [
+    `lots: "Desktop title" keeps the local copy (local ${LATEST}, backup ${LATER})`,
+  ]);
+
+  // The same two records the other way round: the line names the local title either way.
+  const updated = previewImport(laptop, desktop, 'merge', { exportedAt: LATEST, now: LATEST });
+  assert.equal(updated.value.counts.updated, 1);
+  assert.deepEqual(importChangeLines(updated.value), [
+    'lots: "Laptop title" (in the backup: "Desktop title") is replaced by the backup\'s copy ' +
+    `(backup ${LATEST}, local ${LATER}), differing in title`,
+  ]);
+});
+
+test('an updated line names at most eight of the fields that differ', () => {
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(dateEvent(uuid(1), {
+    capturedText: 'Sale notes', capturedFromUrl: 'https://house.test/local', sourceUrl: 'https://house.test/local-sale',
+  }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(1), {
+    name: 'Renamed sale', eventKind: 'lot-closes', localDate: '2026-10-11', timeZone: 'Europe/Berlin',
+    reminderScope: 'linked-lots', createdAt: LATER, updatedAt: LATER, capturedText: 'Other notes',
+    capturedFromUrl: 'https://house.test/backup', sourceUrl: 'https://house.test/backup-sale',
+  }));
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(importChangeLines(preview.value), [
+    'auctionEvents: "Sale" (in the backup: "Renamed sale") is replaced by the backup\'s copy ' +
+    `(backup ${LATER}, local ${NOW}), differing in name, eventKind, localDate, timeZone, ` +
+    'reminderScope, createdAt, capturedText, capturedFromUrl and 1 more',
+  ]);
+});
+
+test('a backup time later than the export itself is compared as the export time', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Mine', updatedAt: LATEST }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { title: 'Skewed', updatedAt: SKEWED }));
+
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.value.snapshot.lots[0].title, 'Mine', 'a skewed clock does not beat a real edit');
+  assert.deepEqual(importChangeLines(preview.value), [
+    `lots: "Mine" keeps the local copy (local ${LATEST}, backup ${SKEWED}); ` +
+    `backup time is later than the export itself; compared as ${LATER}`,
+  ]);
+
+  // The bound settles the comparison only: a record that still wins keeps the time it claims.
+  const older = createEmptySnapshot(NOW);
+  older.lots.push(lot(uuid(1), { title: 'Mine', updatedAt: NOW }));
+  const won = previewImport(older, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(won.value.snapshot.lots[0].title, 'Skewed');
+  assert.equal(won.value.snapshot.lots[0].updatedAt, SKEWED, 'the stored write time is not rewritten');
+  assert.equal(
+    importChangeLines(won.value)[0].endsWith(`; backup time is later than the export itself; compared as ${LATER}`),
+    true,
+  );
+});
+
+test('an export time from the future does not raise the ceiling past now', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Mine', updatedAt: NOW }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { title: 'Skewed', updatedAt: SKEWED }));
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: SKEWED, now: NOW });
+  assert.equal(preview.value.snapshot.lots[0].title, 'Mine');
+  assert.equal(preview.value.keptLocal[0].comparedAs, NOW);
 });
 
 test('replace preview reports exact outgoing and incoming collection counts', () => {
@@ -448,6 +543,37 @@ test('a merge keeps the local collection entry and raises the review the store w
   assert.equal(merged.collectionEntryId, uuid(2), 'the collection history stays');
   assert.equal(merged.collectionReviewReason, 'source-lot-no-longer-won');
   assert.equal(preview.value.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+
+  // A second merge of the same backup has nothing left to take: what differs is the revision
+  // stamp, the collection link and the review this merge itself raised.
+  const again = previewImport(preview.value.snapshot, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(again.value.counts.added, 0);
+  assert.equal(again.value.counts.updated, 0);
+  assert.deepEqual(importChangeLines(again.value), []);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+test('a lot the backup corrects back to won withdraws the review on its entry', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), {
+    outcome: { status: 'lost' }, collectionEntryId: uuid(2),
+    collectionReviewReason: 'source-lot-no-longer-won',
+  }));
+  current.collectionEntries.push(wonEntry(uuid(2), uuid(1), {
+    revision: 1, reviewReason: 'source-lot-no-longer-won',
+  }));
+  // The other install settled the same lot back to won, later.
+  const incoming = createEmptySnapshot(NOW);
+  incoming.lots.push(lot(uuid(1), { outcome: { status: 'won' }, updatedAt: LATER }));
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.equal(merged.outcome.status, 'won');
+  assert.equal(merged.collectionEntryId, uuid(2), 'the collection history stays');
+  assert.equal(merged.collectionReviewReason, undefined, 'a won lot carries no review');
+  const [entry] = preview.value.snapshot.collectionEntries;
+  assert.equal(entry.reviewReason, undefined, 'the entry follows its lot, as lot.outcome.set does');
+  assert.equal(entry.revision, 2, 'a holder of the flagged entry is asked again');
 });
 
 test('a backup entry for a lot that already has one is kept local and said so', () => {

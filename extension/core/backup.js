@@ -7,6 +7,17 @@ export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // clear a pretty-printed copy of a full store, while the store's own 5 MiB bound still decides what
 // the resulting snapshot may hold.
 export const MAX_BACKUP_BYTES = 16 * 1024 * 1024;
+// A write time beyond the export that carries it is a skewed clock or a hand-edited file, and a
+// file that claims to have been exported in the future does not get to raise that ceiling either.
+const MAX_EXPORT_SKEW_MS = 24 * 60 * 60 * 1000;
+// How many differing field names a change line spells out before it counts the rest.
+const NAMED_FIELDS = 8;
+// Fields the merge writes itself: the revision stamp it puts on a replaced row, the collection
+// link it always keeps local, and the review flag that follows the merged lot. A backup can never
+// restore them, so a record differing in nothing else is not a difference worth reporting.
+const MERGE_OWNED_FIELDS = ['revision', 'collectionEntryId', 'collectionReviewReason', 'reviewReason'];
+// Named in the two write times the line already carries, or the same on both sides by construction.
+const UNNAMED_FIELDS = new Set(['id', 'revision', 'updatedAt']);
 
 const COLLECTIONS = [
   'lots', 'auctionEvents', 'alternativeGroups', 'evidence',
@@ -92,6 +103,7 @@ export function validateBackup(document) {
   data.drafts = [];
   const valid = validateSnapshot(data);
   if (!valid.ok) return fail(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
+  exportTimes.set(data, value.exportedAt);
   return { ok: true, value: data };
 }
 
@@ -109,18 +121,44 @@ function evidenceBody(row) {
   return body;
 }
 
-// Revision counters are per install: each one starts at zero and counts that install's own writes,
-// so "higher revision" says nothing about which body is later. The later write wins instead, and a
-// tie keeps the collector's own row: a backup never silently overwrites what is in front of them.
-function incomingWins(local, record) {
-  return record.updatedAt > local.updatedAt;
+// A record cannot have been written after the file that carries it was exported, so an incoming
+// write time beyond the export is a skewed clock or a hand edit rather than a later edit, and is
+// compared as the export time. That ceiling belongs to the file the records came out of rather
+// than to the call, so it is remembered here for the snapshot `validateBackup` produced instead of
+// being threaded through every caller; a snapshot from anywhere else has no file and no ceiling.
+// The file's own claim is bounded in turn: an export more than a day ahead of now is read as now.
+const exportTimes = new WeakMap();
+
+function comparisonCeiling(incoming, exportedAt, now) {
+  const claimed = canonicalInstant(exportedAt) ? exportedAt : exportTimes.get(incoming);
+  if (!canonicalInstant(claimed)) return null;
+  const ahead = new Date(Date.parse(now) + MAX_EXPORT_SKEW_MS).toISOString();
+  return claimed <= ahead ? claimed : now;
 }
 
-// A row this merge replaced carries a revision stamped past both sides, so on a re-import the only
-// difference left is that stamp. It is this install's own bookkeeping, not content the backup
-// would restore, so it is not reported as a kept-local difference.
-function sameExceptRevision(local, record) {
-  return equal({ ...local, revision: 0 }, { ...record, revision: 0 });
+// A row this merge replaced carries a revision stamped past both sides, and a merged lot carries
+// the local collection link and whatever review that lot's outcome asks for. On a re-import those
+// are the only differences left: this install's own bookkeeping, not content the backup would
+// restore, so they are not reported as kept-local differences.
+function sameExceptMergeStamps(local, record) {
+  const bare = (row) => {
+    const copy = { ...row };
+    for (const key of MERGE_OWNED_FIELDS) delete copy[key];
+    return copy;
+  };
+  return equal(bare(local), bare(record));
+}
+
+// Which top-level fields disagree, by name only: a value from a backup is untrusted text and the
+// listing is a summary, not a diff.
+function differingFields(local, record) {
+  const names = [...new Set([...Object.keys(local), ...Object.keys(record)])];
+  return names.filter((key) => !UNNAMED_FIELDS.has(key) && !equal(local[key], record[key]));
+}
+
+function fieldsText(names) {
+  if (names.length <= NAMED_FIELDS) return names.join(', ');
+  return `${names.slice(0, NAMED_FIELDS).join(', ')} and ${names.length - NAMED_FIELDS} more`;
 }
 
 // Every line the collector reads names the record, not only the collection it came from.
@@ -162,7 +200,7 @@ function compactPriorities(snapshot, localLotIds) {
 // A lot and its collection entry must name each other and no two lots may claim one entry, or the
 // merged root is invalid and nothing at all imports. Local lots are first in the list, so a local
 // pairing is the one that survives a clash.
-function repairCollectionPairs(snapshot, conflicts, reviewEntries) {
+function repairCollectionPairs(snapshot, conflicts, entryReviews) {
   const entriesById = new Map(snapshot.collectionEntries.map((entry) => [entry.id, entry]));
   const claimed = new Set();
   for (const lot of snapshot.lots) {
@@ -174,8 +212,12 @@ function repairCollectionPairs(snapshot, conflicts, reviewEntries) {
       continue;
     }
     claimed.add(entry.id);
-    if (reviewEntries.has(entry.id) && entry.reviewReason !== 'source-lot-no-longer-won') {
-      entry.reviewReason = 'source-lot-no-longer-won';
+    // The entry follows its lot, so a merge that settles the lot away from won raises the review
+    // and one that corrects it back to won withdraws it, exactly as `lot.outcome.set` does.
+    if (entryReviews.has(lot.id) && entry.reviewReason !== entryReviews.get(lot.id)) {
+      const reason = entryReviews.get(lot.id);
+      if (reason) entry.reviewReason = reason;
+      else delete entry.reviewReason;
       // The review is a change to the entry, so a holder of the old row is asked again. The write
       // time stays: a preview has no clock, and this install's row is the later one either way.
       entry.revision += 1;
@@ -218,7 +260,7 @@ function mergeQuarantine(snapshot, current, incoming) {
   return gained;
 }
 
-export function previewImport(current, incoming, mode) {
+export function previewImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
   const currentValid = validateSnapshot(current);
   if (!currentValid.ok) return fail('invalid-current', currentValid.error.message, currentValid.error.path);
   const incomingValid = validateSnapshot(incoming);
@@ -240,13 +282,22 @@ export function previewImport(current, incoming, mode) {
   // Entries only count once it is known which of them survived the pairing repair, or a re-merge
   // would report adding the same entry again every time.
   const entryOutcomes = new Map();
-  const reviewEntries = new Set();
+  // Lot id -> the review reason its merged lot now carries, or undefined when the merge withdrew it.
+  const entryReviews = new Map();
+  const ceiling = comparisonCeiling(incoming, exportedAt, now);
+  const beyondCeiling = (record) => ceiling !== null && record.updatedAt > ceiling;
+  const asWritten = (record) => (beyondCeiling(record) ? ceiling : record.updatedAt);
+  // Every line names the local record: it is the one the collector already knows. The backup's own
+  // title is worth saying only when it calls the record something else.
   const change = (key, record, local) => ({
     collection: key,
-    id: record.id,
-    title: recordLabel(record),
+    id: local.id,
+    title: recordLabel(local),
+    ...(recordLabel(record) === recordLabel(local) ? {} : { incomingTitle: recordLabel(record) }),
     localUpdatedAt: local.updatedAt,
     incomingUpdatedAt: record.updatedAt,
+    ...(beyondCeiling(record) ? { comparedAs: ceiling } : {}),
+    fields: differingFields(local, record),
   });
   for (const key of MERGED_COLLECTIONS) {
     const rows = snapshot[key];
@@ -272,8 +323,12 @@ export function previewImport(current, incoming, mode) {
         const moved = key === 'collectionEntries' && record.lotId !== local.lotId;
         if (moved) conflicts.push({ collection: key, id: record.id, title: recordLabel(record), reason: 'lot-not-merged' });
         // Everything else is settled by write time, then in the local row's favour.
-        if (moved || !incomingWins(local, record)) {
-          if (!moved && !sameExceptRevision(local, record)) keptLocal.push(change(key, local, record));
+        // Revision counters are per install: each one starts at zero and counts that install's own
+        // writes, so "higher revision" says nothing about which body is later. The later write wins
+        // instead, and a tie keeps the collector's own row: a backup never silently overwrites what
+        // is in front of them.
+        if (moved || asWritten(record) <= local.updatedAt) {
+          if (!moved && !sameExceptMergeStamps(local, record)) keptLocal.push(change(key, record, local));
           counted(record.id, 'keptLocal');
           continue;
         }
@@ -286,12 +341,16 @@ export function previewImport(current, incoming, mode) {
           // Collection history is the one link the other install cannot know about, so the local
           // pairing stays and the backup's own entry is listed rather than dropped in silence.
           merged.collectionEntryId = local.collectionEntryId;
-          if (merged.outcome?.status !== 'won') {
+          if (merged.outcome?.status === 'won') {
+            // The backup settled this lot back to won, so any review the local outcome raised on
+            // the entry goes with it rather than outliving the reason for it.
+            delete merged.collectionReviewReason;
+          } else {
             // The other install settled this lot away from won. `lot.outcome.set` would ask what to
             // do with the entry, so the merge raises exactly that review rather than deciding.
             merged.collectionReviewReason = 'source-lot-no-longer-won';
-            reviewEntries.add(local.collectionEntryId);
           }
+          entryReviews.set(merged.id, merged.collectionReviewReason);
         }
         rows[at] = merged;
         updates.push(change(key, record, local));
@@ -344,7 +403,7 @@ export function previewImport(current, incoming, mode) {
   // with different revisions, which is bookkeeping rather than a disagreement worth reporting.
   if (current.preferences === null) snapshot.preferences = clone(incoming.preferences);
 
-  repairCollectionPairs(snapshot, conflicts, reviewEntries);
+  repairCollectionPairs(snapshot, conflicts, entryReviews);
   const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
   for (const [id, outcome] of entryOutcomes) {
     if (survivors.has(id)) tally[outcome] += 1;
@@ -393,11 +452,20 @@ export function importIssueLines(preview) {
 // Nothing is replaced or passed over in silence: every record the import would take from the backup
 // and every one it would keep is named, with the write time each side claims.
 export function importChangeLines(preview) {
+  // A write time the export could not have followed is called out where it is read, so a line the
+  // collector reads never rests on a number the file made up.
+  const compared = ({ comparedAs }) =>
+    (comparedAs ? `; backup time is later than the export itself; compared as ${comparedAs}` : '');
   return [
-    ...(preview.updates ?? []).map(({ collection, title, localUpdatedAt, incomingUpdatedAt }) =>
-      `${collection}: "${title}" is replaced by the backup's copy (backup ${incomingUpdatedAt}, local ${localUpdatedAt})`),
-    ...(preview.keptLocal ?? []).map(({ collection, title, localUpdatedAt, incomingUpdatedAt }) =>
-      `${collection}: "${title}" keeps the local copy (local ${localUpdatedAt}, backup ${incomingUpdatedAt})`),
+    ...(preview.updates ?? []).map((row) => {
+      const alias = row.incomingTitle ? ` (in the backup: "${row.incomingTitle}")` : '';
+      const fields = row.fields?.length ? `, differing in ${fieldsText(row.fields)}` : '';
+      return `${row.collection}: "${row.title}"${alias} is replaced by the backup's copy ` +
+        `(backup ${row.incomingUpdatedAt}, local ${row.localUpdatedAt})${fields}${compared(row)}`;
+    }),
+    ...(preview.keptLocal ?? []).map((row) =>
+      `${row.collection}: "${row.title}" keeps the local copy ` +
+      `(local ${row.localUpdatedAt}, backup ${row.incomingUpdatedAt})${compared(row)}`),
   ];
 }
 
