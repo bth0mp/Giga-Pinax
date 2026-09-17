@@ -351,7 +351,7 @@ function updateCoinArchivesLink() {
 }
 
 function priceCard(context) {
-  return verifiedPriceCards.get(context) ?? { label: context.label };
+  return verifiedPriceCards.get(context) ?? { label: context?.label ?? '' };
 }
 
 function initialisePriceResearch(reference, identity = null) {
