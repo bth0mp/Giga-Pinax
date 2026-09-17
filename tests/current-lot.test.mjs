@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from '../extension/current-lot.js';
 
+// checkVisibility answers the question it was asked: a node a "content-visibility: auto" container has skipped counts as hidden only for a caller that
+// asked about that, as the browser's own method does.
 function node(text, options = {}) {
+  const asked = Object.hasOwn(options, 'shown') || Object.hasOwn(options, 'skipped');
   return {
     textContent: text,
     hidden: options.hidden ?? false,
     getAttribute(name) { return name === 'aria-hidden' ? options.ariaHidden ?? null : null; },
-    ...(Object.hasOwn(options, 'shown') ? { checkVisibility: () => options.shown } : {}),
+    ...(asked ? { checkVisibility: (check = {}) => (options.shown ?? true) && !(check.contentVisibilityAuto && options.skipped) } : {}),
   };
 }
 
@@ -151,7 +154,43 @@ test('JSON-LD product data is read before the page text, and unreadable data nev
   const hostile = JSON.stringify({ '@type': 'Product', name: { toString: 'no' }, description: 'x'.repeat(4000), url: 'javascript:alert(1)' });
   const guarded = collectCurrentLotCandidates(page({ jsonLd: [hostile] }), { href: 'https://auction.test/27' });
   assert.equal(Object.hasOwn(guarded, 'canonicalUrl'), false);
-  assert.ok(guarded.rawText.length <= 3000);
+
+  // The cap belongs to the structured field itself: what the page wrote past 500 characters is not read, so a reference buried there never reaches the
+  // fields and the page's own visible text still answers for them.
+  const padded = JSON.stringify({ '@type': 'Product', name: `${'x '.repeat(260)}RIC 306` });
+  const capped = collectCurrentLotCandidates(page({ jsonLd: [padded], nodes: [node('Reference: RIC 99')] }), { href: 'https://auction.test/99' });
+  assert.equal(capped.candidates.reference.value, 'RIC 99');
+  assert.equal(capped.candidates.reference.provenance, 'visible-text');
+});
+
+// A lot below the fold is still the lot on show: a container the browser has not laid out yet says nothing about whether its coin is being displayed.
+test('content the page has not laid out yet still counts as the lot on show', () => {
+  const result = collectCurrentLotCandidates(page({ nodes: [node('Reference: RIC 306', { skipped: true })] }), { href: 'https://auction.test/306' });
+  assert.equal(result.candidates.reference.value, 'RIC 306');
+});
+
+test('schema.org types are read in every spelling, and the lot this page shows wins', () => {
+  const listed = { '@context': 'https://schema.org', '@type': ['Thing', 'http://schema.org/Product'], name: 'Reference: RIC 1', url: 'https://auction.test/lots/1' };
+  const shown = { '@type': ['https://schema.org/Product'], name: 'Reference: RIC 306', url: 'https://auction.test/lots/27' };
+  const result = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([listed, shown])], canonical: 'https://auction.test/lots/27' }),
+    { href: 'https://auction.test/27' });
+  assert.equal(result.candidates.reference.value, 'RIC 306');
+  assert.equal(result.candidates.reference.provenance, 'structured-data');
+
+  // With no product naming this page, the first one answers, as it did before.
+  const first = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([listed, shown])] }), { href: 'https://auction.test/9' });
+  assert.equal(first.candidates.reference.value, 'RIC 1');
+});
+
+test('structured data the page made too large to read is left unread, and its arrays cannot outgrow the node budget', () => {
+  const oversized = `${JSON.stringify({ '@type': 'Product', name: 'Reference: RIC 306' })}${' '.repeat(200001)}`;
+  const skipped = collectCurrentLotCandidates(page({ jsonLd: [oversized], nodes: [node('Reference: RIC 99')] }), { href: 'https://auction.test/99' });
+  assert.equal(skipped.candidates.reference.value, 'RIC 99');
+
+  // A graph the page can make as long as it likes is read only as far as the budget reaches, and never copied past it.
+  const graph = JSON.stringify({ '@graph': [...Array.from({ length: 60000 }, () => 0), { '@type': 'Product', name: 'Reference: RIC 306' }] });
+  const bounded = collectCurrentLotCandidates(page({ jsonLd: [graph], nodes: [node('Reference: RIC 99')] }), { href: 'https://auction.test/99' });
+  assert.equal(bounded.candidates.reference.value, 'RIC 99');
 });
 
 test('OpenGraph metadata stands in for a page whose text has no fields', () => {
