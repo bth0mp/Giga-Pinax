@@ -96,7 +96,9 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   globalThis.location = { search };
   if (blockedLocalStorage) Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('Site data is blocked.'); } });
   else Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null, setItem() {}, removeItem() {} } });
-  const before = cardListeners.length;
+  // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
+  // here rather than piling up on globalThis for the rest of the file.
+  cardListeners.length = 0;
   await import(`../extension/companion-popup.js?start=${++loaded}`);
   // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
   for (let tick = 0; tick < 100 && element('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
@@ -104,7 +106,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // Only this page's own listener, so an earlier case's page cannot answer for it.
   return {
     element,
-    card: (detail) => cardListeners[before]?.({ type: 'giga-pinax-card', detail }),
+    card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
