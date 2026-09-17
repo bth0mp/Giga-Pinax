@@ -48,9 +48,9 @@ let researchContext = null;
 let shownPrices = null;
 let shownCoinArchivesPrices = null;
 let coinArchivesRequestId = 0;
-const priceCuration = createPriceCuration();
+const priceCuration = createPriceCuration('acsearch');
 // The public panel curates its own rows: the same filter, the same Include, over the results CoinArchives returned.
-const coinArchivesCuration = createPriceCuration();
+const coinArchivesCuration = createPriceCuration('coinarchives');
 // The two toggles above the median, and the sale whose toggle the keyboard was on when a list was redrawn. All live in this view only; the citation
 // filter starts on, because a result that never cites the reference is not a sale of this type until the collector says it is.
 let onlyCiting = true;
@@ -730,10 +730,10 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     toggle.addEventListener('click', () => {
       if (excluded) priceCuration.include(sale); else priceCuration.exclude(sale);
       // The list is rebuilt from scratch, so the keyboard is put back on this row's own button, as Recent does with its chips.
-      focusSaleId = stableResultId(sale);
+      focusSaleId = stableResultId(sale, 'acsearch');
       renderPrices(lots, currency, term, true, context);
     });
-    if (focusSaleId === stableResultId(sale)) restore = toggle;
+    if (focusSaleId === stableResultId(sale, 'acsearch')) restore = toggle;
     row.append(label, amount, toggle);
     return row;
   }));
@@ -827,10 +827,10 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     toggle.addEventListener('click', () => {
       if (excluded) coinArchivesCuration.include(sale); else coinArchivesCuration.exclude(sale);
       // The list is rebuilt from scratch, so the keyboard is put back on this row's own button, as the acsearch list does.
-      focusSaleId = stableResultId(sale);
+      focusSaleId = stableResultId(sale, 'coinarchives');
       renderCoinArchivesPrices(shown, true);
     });
-    if (focusSaleId === stableResultId(sale)) restore = toggle;
+    if (focusSaleId === stableResultId(sale, 'coinarchives')) restore = toggle;
     row.append(link, amount, toggle);
     return row;
   }));

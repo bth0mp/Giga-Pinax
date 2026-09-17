@@ -13,9 +13,12 @@ test('session curation uses stable IDs and one included set for every statistic'
     { title: 'B', date: '2025-01-01', price: '300' },
     { title: 'C', date: '2024-01-01', price: '-' },
   ];
-  assert.equal(stableResultId(lots[0]), 'acsearch:9');
-  assert.equal(stableResultId(lots[1]), stableResultId({ ...lots[1] }));
-  const curation = createPriceCuration();
+  // The provider is the caller's to name: the public CoinArchives rows are curated too, and an "acsearch:" prefix on them stopped being true.
+  assert.equal(stableResultId(lots[0], 'acsearch'), 'acsearch:9');
+  assert.equal(stableResultId(lots[0], 'coinarchives'), 'coinarchives:9');
+  assert.equal(stableResultId(lots[1], 'acsearch'), stableResultId({ ...lots[1] }, 'acsearch'));
+  assert.notEqual(stableResultId(lots[1], 'acsearch'), stableResultId(lots[1], 'coinarchives'));
+  const curation = createPriceCuration('acsearch');
   curation.exclude(lots[1]);
   assert.deepEqual(curation.counts(lots), { included: 2, excluded: 1 });
   assert.equal(summarise(curation.included(lots), 'USD').median, 100);

@@ -455,32 +455,33 @@ export function gradeMedians(lots, currency) {
 }
 export const gradeText = ({ bucket, median, count }, format) => `${bucket}: median ${format(median)} (${count})`;
 
-export function stableResultId(lot) {
-  if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `acsearch:${String(lot.id).trim()}`;
+// A row's id within one provider's results; both providers are curated now, so which one a row came from is the caller's to say.
+export function stableResultId(lot, provider) {
+  if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `${provider}:${String(lot.id).trim()}`;
   const source = [lot?.title, lot?.date, lot?.price].map((value) => String(value ?? '').trim()).join('\u001f');
   let hash = 2166136261;
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
-  return `acsearch:derived:${(hash >>> 0).toString(36)}`;
+  return `${provider}:derived:${(hash >>> 0).toString(36)}`;
 }
 
 // What the statistics rest on: the filters leave a row out by default and say why, and the collector's own decisions override them either way.
 // Reset drops his decisions, so the default comes back rather than an empty set.
-export function createPriceCuration() {
+export function createPriceCuration(provider) {
   const byHand = new Map();
   let byDefault = () => null;
   const reasonFor = (lot) => {
-    const decided = byHand.get(stableResultId(lot));
+    const decided = byHand.get(stableResultId(lot, provider));
     return decided === undefined ? byDefault(lot) ?? null : decided ? 'by-hand' : null;
   };
   return {
     // The filters the panel is drawing with; a redraw sets them before it asks anything.
     filter(reason) { byDefault = reason ?? (() => null); },
     reasonFor,
-    exclude(lot) { byHand.set(stableResultId(lot), true); },
-    include(lot) { byHand.set(stableResultId(lot), false); },
+    exclude(lot) { byHand.set(stableResultId(lot, provider), true); },
+    include(lot) { byHand.set(stableResultId(lot, provider), false); },
     isExcluded(lot) { return reasonFor(lot) !== null; },
     included(lots) { return lots.filter((lot) => reasonFor(lot) === null); },
     counts(lots) {
