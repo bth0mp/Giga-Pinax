@@ -7,7 +7,7 @@ Version 0.27.1 keeps the research, Calculator, Watchlist, and local auction work
 - **Updates** under the popup header shows the installed version.
 - **Download latest update** opens the stable package for the current browser from the latest GitHub release. The Brave package also supports Chrome.
 - **View releases** opens the latest release page for release notes or GitHub sign-in.
-- The private repository still requires a GitHub account with access. No credential or access token is stored in the extension.
+- The public repository needs no GitHub account. No credential or access token is stored in the extension.
 
 ## Installation limits
 

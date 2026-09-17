@@ -184,7 +184,7 @@ def replace_known_directory(staged: Path, destination: Path, output_root: Path) 
 
 
 def replace_with_retry(source: Path, destination: Path, attempts: int = 5) -> None:
-    # ponytail: the project's SMB share (Z:) briefly denies overwriting a just-written zip
+    # ponytail: a network drive briefly denies overwriting a just-written zip
     # (WinError 5, ~1 build in 12); retry for up to ~1 s, then give up with the real error.
     for attempt in range(attempts):
         try:
