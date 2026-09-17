@@ -130,6 +130,9 @@ def local_catalogue_assets() -> tuple[str, ...]:
         parts = shards[prefix]
         if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?", prefix) or not isinstance(parts, list) or not parts:
             raise ValueError("unsafe bundled OCRE shard name")
+        # Past the twenty-sixth part there is no letter left to name one, and chr() would carry on past "z".
+        if len(parts) > 26:
+            raise ValueError(f"bundled OCRE volume {prefix} has more parts than there are letters to name them")
         # A volume over the file cap is split into lettered parts in id order; one part is the whole volume and takes
         # no letter. Every name is derived here, and a part starts where the one before it ended.
         for position, part in enumerate(parts):

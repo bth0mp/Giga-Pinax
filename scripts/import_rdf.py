@@ -32,8 +32,10 @@ SHARD_OVERHEAD = len(b'{"schemaVersion":1,"records":{}}\n')
 # The leading integer of the RIC number an OCRE title ends with ("RIC II.3 Hadrian 1009-1012" -> 1009), which is the
 # first thing a lookup filters on. It reads the number exactly where lookup.js reads it, as the last whitespace- or
 # comma-separated token, before the word OCRE brackets after some numbers ("266 (aureus)");
-# tests/local-catalogue.test.mjs proves the two agree over every bundled title.
-TITLE_NUMBER = re.compile(r"(?:^|[\s,])(\d+)\S*?(?:\s\([^()]*\))?$")
+# tests/local-catalogue.test.mjs proves the two agree over every bundled title. The digits are ASCII only, as JavaScript's
+# \d is: Python's would also match ٣ and ３, and a title keyed off one of those would sit under a number no reference can
+# ever be read as.
+TITLE_NUMBER = re.compile(r"(?:^|[\s,])([0-9]+)\S*?(?:\s\([^()]*\))?$")
 TAGS = {
     "prefLabel": SKOS + "prefLabel",
     "hasAuthority": NMO + "hasAuthority",
@@ -253,9 +255,9 @@ def json_bytes(value: object) -> bytes:
     return encoded(value) + b"\n"
 
 
-def write_file(path: Path, value: object) -> None:
+def write_file(path: Path, payload: bytes) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_bytes(json_bytes(value))
+    temporary.write_bytes(payload)
     temporary.replace(path)
 
 
@@ -320,29 +322,33 @@ def write_data(output: Path, active: dict[str, dict], metadata: dict) -> dict:
             raise ImportFailure(f"unsupported OCRE record id: {record_id}")
         shards[parts[1]][record_id] = active[record_id]
 
-    output.mkdir(parents=True, exist_ok=True)
     shard_files = {}
-    written = []
+    files = []
     for prefix in sorted(shards):
         parts = shard_parts(prefix, shards[prefix])
         for part in parts:
-            write_file(output / part["file"], {"schemaVersion": 1, "records": part["records"]})
-            written.append(output / part["file"])
+            files.append((output / part["file"], {"schemaVersion": 1, "records": part["records"]}))
         shard_files[prefix] = [{"file": part["file"], "from": part["from"]} for part in parts]
     entries = [[record_id, active[record_id]["l"]] for record_id in sorted(active)]
     complete = {**metadata, "activeRecordCount": len(active), "shards": shard_files}
-    for name, value in (("index.json", {"schemaVersion": 1, "entries": entries}),
-                        ("numbers.json", {"schemaVersion": 1, "numbers": number_index(entries)}),
-                        ("metadata.json", complete)):
-        write_file(output / name, value)
-        written.append(output / name)
+    files += [(output / "index.json", {"schemaVersion": 1, "entries": entries}),
+              (output / "numbers.json", {"schemaVersion": 1, "numbers": number_index(entries)}),
+              (output / "metadata.json", complete)]
+
+    # Every file is measured before any of them is written, so an import the cap refuses leaves the data directory
+    # exactly as it found it rather than half replaced.
+    payloads = [(path, json_bytes(value)) for path, value in files]
+    for path, payload in payloads:
+        if len(payload) > CAP_BYTES:
+            raise ImportFailure(f"{path.name} is larger than the {CAP_BYTES} byte cap")
+    output.mkdir(parents=True, exist_ok=True)
+    written = [path for path, _ in payloads]
+    for path, payload in payloads:
+        write_file(path, payload)
     # A volume that stops being split leaves the file it was split into behind, which would ship in the package.
     for stale in sorted(output.glob("records-*.json")):
         if stale not in written and SHARD_NAME.fullmatch(stale.name):
             stale.unlink()
-    for path in written:
-        if path.stat().st_size > CAP_BYTES:
-            raise ImportFailure(f"{path.name} is larger than the {CAP_BYTES} byte cap")
     return complete
 
 

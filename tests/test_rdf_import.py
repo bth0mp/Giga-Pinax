@@ -181,6 +181,28 @@ class ShardCapTests(unittest.TestCase):
         with self.assertRaises(self.imports.ImportFailure):
             self.imports.shard_parts("5", self.records(2, size=4096), cap=2048)
 
+    def test_the_number_index_keys_ascii_digits_only(self):
+        # lookup.js reads a number with JavaScript's \d, which is ASCII; Python's also matches ٣ and ３, and a title keyed
+        # off one of those would be listed under a number no reference can ever be parsed as.
+        self.assertEqual({"1": [0]}, self.imports.number_index(
+            [["ric.1.x.1", "RIC I Test 1"], ["ric.1.x.2", "RIC I Test ٣"], ["ric.1.x.3", "RIC I Test ３"]]))
+
+    def test_a_generated_file_over_the_cap_leaves_the_data_directory_untouched(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "ocre"
+            self.assertEqual(0, run_import(FIXTURE, root).returncode)
+            before = written_bytes(root)
+            metadata = load(root / "metadata.json")
+            records = {record_id: record for path in sorted(root.glob("records-*.json"))
+                       for record_id, record in load(path)["records"].items()}
+            # A smaller bundle and a cap nothing can meet: the refusal must come before the first byte is replaced,
+            # or a contributor is left with half of one import and half of another.
+            del records["ric.2.test.2"]
+            self.imports.CAP_BYTES = 200
+            with self.assertRaises(self.imports.ImportFailure):
+                self.imports.write_data(root, records, metadata)
+            self.assertEqual(before, written_bytes(root))
+
     def test_the_bundled_data_stays_under_the_cap(self):
         if not (BUNDLE / "metadata.json").is_file():
             self.skipTest("extension/data/ocre is not bundled here")

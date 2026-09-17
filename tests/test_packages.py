@@ -339,6 +339,10 @@ class LocalCataloguePackageTests(unittest.TestCase):
                 {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": "ric.3.x.1"}, {"file": "records-3.b.json", "from": "ric.3.x.5"}]}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json", "from": ""}]}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json"}]}},
+                # Past "z" there is no letter left to name a part, and chr() would carry on into punctuation.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [
+                    {"file": f"records-3.{chr(ord('a') + position)}.json", "from": "" if position == 0 else f"ric.3.x.{position:03d}"}
+                    for position in range(27)]}},
             ]
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 for metadata in cases:
