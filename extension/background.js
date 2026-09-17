@@ -14,7 +14,7 @@ const MENU_RESEARCH = 'auction-companion:research-selection';
 const MENU_TRACK = 'auction-companion:track-auction';
 const SCHEDULER_ALARM = 'auction-companion:scheduler';
 const COMMAND_TYPES = new Set([
-  'snapshot.get',
+  'snapshot.get', 'snapshot.raw',
   'preferences.migrateIfAbsent', 'preferences.save',
   'lot.save', 'lot.delete',
   'group.save', 'group.delete', 'group.reorder',

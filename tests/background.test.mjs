@@ -58,6 +58,10 @@ test('combined background ignores lookup-window messages and accepts companion c
     }, {}, resolve), true);
   });
   assert.equal((await reply).ok, true);
+
+  const rawReply = await send({ type: 'snapshot.raw', requestId: crypto.randomUUID() });
+  assert.equal(rawReply.ok, true);
+  assert.equal(rawReply.value.schemaVersion, 1);
 });
 
 test('Giga showInWindow opens a window when the combined background declines its message', async () => {

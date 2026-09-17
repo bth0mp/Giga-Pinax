@@ -771,7 +771,9 @@ export function applyCommand(snapshot, command, context) {
     return fail('validation', 'Command type is required.', 'type');
   }
   if (typeof command.requestId !== 'string') return fail('validation', 'Request ID is required.', 'requestId');
-  if (command.type === 'snapshot.get') return ok({ snapshot, effects: [], value: snapshot, mutated: false });
+  if (command.type === 'snapshot.get' || command.type === 'snapshot.raw') {
+    return ok({ snapshot, effects: [], value: snapshot, mutated: false });
+  }
   if (command.type === 'draft.get') {
     const draft = snapshot.drafts.find((item) =>
       item.id === command.draftId && item.expiresAt > getNow(context));
@@ -805,6 +807,15 @@ export function createCommandWriter(storageArea, context) {
       raw = result?.[STORAGE_KEY] ?? createEmptySnapshot(getNow(context));
     } catch (error) {
       return errorReply(command, 'storage', 'not-committed', error.message || 'Unable to read local storage.');
+    }
+    // A raw read never validates, so exporting the stored data stays possible whatever shape it is in.
+    if (command.type === 'snapshot.raw') {
+      return {
+        ok: true,
+        requestId: command.requestId,
+        revision: Number.isSafeInteger(raw?.revision) ? raw.revision : 0,
+        value: raw,
+      };
     }
     let stored = migrateSnapshot(raw);
     const current = validateSnapshot(stored);

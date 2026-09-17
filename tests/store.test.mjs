@@ -530,6 +530,23 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   assert.equal(storage.read().recentCommands.length, 0);
 });
 
+test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
+  stored.scheduler = 'corrupt';
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.revision, 0);
+  assert.deepEqual(reply.value, stored);
+  assert.deepEqual(storage.read(), stored);
+  const blocked = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'New', sourceLinks: [] },
+  }));
+  assert.equal(blocked.code, 'storage');
+});
+
 test('scheduler reconciliation persists occurrences and one next wake', () => {
   let state = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,
