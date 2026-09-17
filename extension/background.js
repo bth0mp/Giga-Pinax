@@ -38,6 +38,7 @@ let menuQueue = Promise.resolve();
 // flight when a capture fails and would wipe the badge within milliseconds. The failure outranks
 // the due count until the collector has had a chance to see it.
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
 let captureFailed = false;
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
@@ -215,11 +216,11 @@ api.runtime.onStartup.addListener(() => {
 // No workspace is open when a context menu is used, so the badge is the only place a capture
 // that never arrived can be seen without asking for a further permission. The badge on its own
 // says nothing, so the toolbar tooltip carries the explanation and what to do about it.
-async function showCaptureFailure() {
+async function showCaptureFailure(title) {
   captureFailed = true;
   try {
     await showBadge('!');
-    await invokeExtensionMethod(api.action.setTitle, api.action, { title: CAPTURE_FAILURE_TITLE });
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title });
   } catch {
     // A toolbar that will not take the warning leaves the command reply as the only account.
   }
@@ -252,18 +253,24 @@ async function runMenuAction(info) {
   const requestId = crypto.randomUUID();
   const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
   if (!reply.ok) {
-    await showCaptureFailure();
+    await showCaptureFailure(CAPTURE_FAILURE_TITLE);
     return;
   }
   await clearCaptureFailure();
   const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
-  await invokeExtensionMethod(api.tabs.create, api.tabs, {
-    url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`),
-  });
+  try {
+    await invokeExtensionMethod(api.tabs.create, api.tabs, {
+      url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`),
+    });
+  } catch {
+    // The draft reached storage: only the window that would have shown it is missing, and telling
+    // the collector their capture was lost would send them looking for work they still have.
+    await showCaptureFailure(OPEN_FAILURE_TITLE);
+  }
 }
 
 api.contextMenus.onClicked.addListener((info) => {
-  void runMenuAction(info).catch(showCaptureFailure);
+  void runMenuAction(info).catch(() => showCaptureFailure(CAPTURE_FAILURE_TITLE));
 });
 
 api.alarms.onAlarm.addListener((alarm) => {

@@ -11,6 +11,7 @@ const stored = {};
 const badges = [];
 const titles = [];
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
 const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
@@ -250,6 +251,7 @@ test('a capture that cannot be saved or shown is surfaced instead of silently dr
   tabCreateFails = false;
   assert.equal(tabCalls, tabsBefore + 1, 'the saved draft must still try to open the workspace');
   assert.equal(badges.at(-1), '!', 'a capture that could not be shown is surfaced too');
+  assert.equal(titles.at(-1), OPEN_FAILURE_TITLE, 'a draft that was saved must not be reported as lost');
 
   click('auction-companion:research-selection');
   for (let index = 0; index < 8; index += 1) await flush();
