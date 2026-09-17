@@ -1,6 +1,5 @@
-import { INVISIBLE, kmNumber, parseReference, sgNumber } from './lookup.js';
-import { RIC_SECTIONS, volumesOf } from './catalogues.js';
-import { RIC_PEOPLE } from './ric-people.js';
+import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
+import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -110,13 +109,6 @@ const withoutProvenance = (text) => {
   }
   return out;
 };
-// Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
-// R to RRR, R2 or C, while a capital type letter ("509 (BB)") is one and stays.
-const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
-const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
-// The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
-// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I".
-const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
 // A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
 // volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").
@@ -188,38 +180,88 @@ const depths = (text) => {
 const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
-const regexText = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-const NON_PERSON_SECTION = /^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
+// A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
+// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler.
+const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
+  if (character === ' ') return String.raw`\s+`;
+  const [upper, lower] = [character.toUpperCase(), character.toLowerCase()];
+  return upper === lower || upper.length !== 1 || lower.length !== 1
+    ? character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : `[${upper}${lower}]`;
+}).join('');
+// A heading is folded the way the importer folded every alias: its diacritics stripped, so "Filipo el Árabe" is compared as the table holds it.
+// Stripping only ever shortens the text, so the names are still found in the order they stand in. Almost every heading is plain ASCII and skips it.
+const fold = (text) => (/[^\x20-\x7e\n]/.test(text) ? text.normalize('NFD').replace(/\p{M}+/gu, '') : text);
+const NON_PERSON_SECTION =/^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
 const SECTION_SPELLINGS = Object.freeze({ 'Claudius Gothicus': ['Claudius II', 'Claudius II Gothicus'] });
 const sectionPeople = [...new Set(Object.entries(RIC_SECTIONS).filter(([volume]) => !['VI', 'VII', 'VIII', 'IX'].includes(volume))
   .flatMap(([, sections]) => sections.map((section) => section.split(' (')[0])).filter((name) => !NON_PERSON_SECTION.test(name)))];
-const rulerLabels = [
-  ...sectionPeople.flatMap((name) => [...name.split('/'), ...(SECTION_SPELLINGS[name] ?? [])].map((label) => ({ name, label, preferred: true }))),
-  ...RIC_PEOPLE.flatMap((person) => [...new Set([person.name, ...person.aliases])].map((label) => ({ name: person.name, label }))),
-];
-const labelGroups = new Map();
-for (const row of rulerLabels) {
-  const key = row.label.replace(/\s+/g, ' ').trim().toLowerCase();
-  if (!labelGroups.has(key)) labelGroups.set(key, []);
-  labelGroups.get(key).push(row);
+// Every spelling the people table answers to, then RIC's own section names over the top: a spelling RIC heads a section with is that section's
+// ruler and nobody else, since RIC's titles are what the lookup has to match.
+const labelGroups = new Map(PEOPLE_SPELLINGS.map(([label, names]) => [label, [...names]]));
+const fromSection = new Set();
+for (const name of sectionPeople) {
+  for (const spelling of [...name.split('/'), ...(SECTION_SPELLINGS[name] ?? [])]) {
+    const label = rulerKey(spelling);
+    if (!fromSection.has(label)) { labelGroups.set(label, []); fromSection.add(label); }
+    if (!labelGroups.get(label).includes(name)) labelGroups.get(label).push(name);
+  }
 }
-const RULERS = Object.freeze([...labelGroups.values()].map((rows) => {
-  const preferred = rows.filter((row) => row.preferred);
-  const exact = rows.filter(({ name, label }) => name.toLowerCase() === label.toLowerCase());
-  const names = [...new Set((preferred.length > 0 ? preferred : exact.length > 0 ? exact : rows).map(({ name }) => name))];
-  const label = rows[0].label;
-  return [names, label, new RegExp(`(?<!\\p{L})(?:${regexText(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'giu')];
-}).sort((a, b) => b[1].length - a[1].length));
+const RULERS = Object.freeze([...labelGroups.entries()]
+  .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
+  .sort((a, b) => b[1].length - a[1].length));
+const LABELS = new Set(labelGroups.keys());
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
 function rulersIn(text) {
-  let rest = text.replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
+  // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
+  const lower = rest.toLowerCase();
   const found = [];
-  for (const [names, , pattern] of RULERS) rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
+  for (const [names, , pattern, probe] of RULERS) {
+    if (!lower.includes(probe)) continue;
+    rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
+  }
   return [...new Set(found.sort((a, b) => a[0] - b[0]).map(([, name]) => name))];
 }
+
+// Where a lot's heading ends. The rulers are read from it alone: a legend is the coin's own words ("IMP CAES NERVA TRAIAN AVG"), and from the type
+// description on the text says what is pictured, not who struck it.
+const DESCRIBES = /\b(?:head of|bust of|suckling|standing|seated)\b/i;
+// A legend is three unpunctuated capitals in a row. Two are a house's classification or a ruler's own name ("ROMAN IMPERIAL", "SEVERUS ALEXANDER",
+// "PLON AE"), and a ruler named in capitals is no legend however many words it takes ("CLAUDIUS II GOTHICUS"), so a run that opens on one of RIC's own
+// names is counted from after it. The tokens are walked in JavaScript rather than matched by one pattern, so no run of capitals can make it backtrack.
+function legendAt(text) {
+  const tokens = [...text.matchAll(/\S+/g)];
+  let run = [];
+  for (const token of [...tokens, null]) {
+    // The mark a dealer ends a legend with is no part of it ("Rev: C L CAESARES, Gaius and Lucius Caesars standing"), so a punctuated capital
+    // closes the run it belongs to instead of breaking it. One capital word with a comma after it is still nobody's legend ("TITUS, AD 69-79").
+    const capitals = token && /^\p{Lu}+([.,;:]?)$/u.exec(token[0]);
+    if (capitals && !capitals[1]) { run.push(token); continue; }
+    if (capitals) run.push(token);
+    for (let start = 0; start + 3 <= run.length; start += 1) {
+      const named = [4, 3, 2, 1].find((words) => start + words <= run.length
+        && LABELS.has(run.slice(start, start + words).map((word) => word[0]).join(' ').toLowerCase()));
+      if (!named) return run[start].index;
+      start += named - 1;
+    }
+    run = [];
+  }
+  return -1;
+}
+// A legend is quoted from the coin, and no dealer quotes one before naming the lot: the headline sentence is the house's own and is routinely set
+// in capitals ("ROMAN IMPERIAL COINAGE Trajan AR Denarius", "ROMAN EMPIRE AR DENARIUS NERO"), so a legend is only looked for after it.
+const SENTENCE = /[.!?](?=\s)|\n/;
+const heading = (text) => {
+  const sentence = text.search(SENTENCE);
+  const after = sentence < 0 ? text.length : sentence + 1;
+  const legend = legendAt(text.slice(after));
+  const cuts = [text.search(DESCRIBES), legend >= 0 ? after + legend : -1].filter((at) => at >= 0);
+  return cuts.length > 0 ? text.slice(0, Math.min(...cuts)) : text;
+};
 
 // Split what follows a key at its top-level separators; a ")" it never opened ends it.
 function chunks(span) {
@@ -247,32 +289,42 @@ const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearach
 // "Lot 23312", "Rome 79") ends it but not the run, so a later C or S still counts; other text ("NGC Choice VF 5/5", "Good VF", "AD 69-79") ends the run
 // too, which broken says.
 const GAP_HEAD = new RegExp(String.raw`^(?:${SEPARATOR}*${DROPPED}\.?){1,2}${SEPARATOR}*(?=(?:[IVXL]+${SEPARATOR}+)?${NUMBER})`, 'u');
+// A RIC volume is not the reference's number, however many digits it carries: "RIC II.3, 2345" and "RIC II², 972" are one reference each, the comma
+// standing where a space could, while "Price 3949, 3950" is still two. The numeral, an optional part and an optional second-edition mark, and nothing
+// else: each group matches one fixed run, so the test is linear.
+// A part is only a part when a mark says so ("II.3", "II, 3", "II part 3"); a plain space carries the dealer's number instead, so "RIC II 1, 2" is
+// volume II number 1 and the 2 after it is another type.
+const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]\s*(?:part\s*)?\d|\s+part\s*\d)?\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\))?\s*$/i;
+// A volume and a part written as two chunks ("RIC V, 2, 123"): the number is the chunk after them. The part is real or the row is not a reference,
+// by the one table the Reference box reads it by (realVolumePart), so a lot row and the box never disagree about the same words.
+const VOLUME_PART = /^\s*(?:vol\.?\s*)?([IVX]+)\s*,\s*(\d)\s*$/i;
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
-  let body = read, ended = typed, broken = stopped || first.text.slice(read.length).trim() !== '';
+  let body = read, ended = typed && !VOLUME_ONLY.test(read), broken = stopped || first.text.slice(read.length).trim() !== '';
   for (const { sep, text } of broken ? [] : more) {
     const piece = unpunctuate(text);
     if (!piece) continue;
     if (!/^(?:\d|\p{Lu}\p{L}*\s+\d)/u.test(piece) || piece.match(BODY)?.[0] !== piece || MEASURE.test(piece)) { broken = true; break; }
-    if (/^\d/.test(piece) && !ended) body += `${sep}${piece}`;
-    else ended = true;
+    // A typed key takes one number after its volume, and no more: the second is another type. A volume whose part is a chunk of its own waits for
+    // one chunk longer, and only for a part that volume really has — otherwise the whole reference is unread rather than half read.
+    if (/^\d/.test(piece) && !ended) {
+      const joined = `${body}${sep}${piece}`;
+      const part = VOLUME_PART.exec(joined);
+      if (part && !realVolumePart(part[1], part[2])) return { body: '', broken: true };
+      body = joined;
+      ended = typed && !part;
+    } else ended = true;
   }
   return { body, broken };
 }
 
-// A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
-// a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
-// dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
-const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
-  .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
-
 function normalise(written, key, cf) {
   const variant = VARIANT.test(written);
-  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, ''));
+  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
   const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
   if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
@@ -281,14 +333,19 @@ function normalise(written, key, cf) {
   const km = kmNumber(text);
   if (km) return { text, reference: { catalogue: 'Other', number: km, volume: '', section: '' }, cf, variant, typed: false };
   // A bracket naming a RIC section is that section ("RIC 268 (Elagabalus)"), put before the number; on another catalogue it is a remark.
-  const section = [...text.matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0);
+  const section = sectionBracket(text);
   const ric = /^RIC/i.test(key);
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
-  const plain = section && ric ? text.replace(section[0], ' ').replace(/\s+/g, ' ').trim().replace(/\s+(\d\S*)$/, ` ${section[1].trim()} $1`) : text;
-  const parsed = parseReference(readable(plain));
+  // The row's own text has had its remarks, edition, variety and correction taken off already, so the reference is read from it with the shared
+  // clean-up switched off: each row is cleaned once, not once here and again inside parseReference.
+  const parsed = withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false));
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
-  const reference = type ? parsed : { catalogue: 'Other', number: text, volume: '', section: '' };
+  // A RIC key cites RIC whatever follows it, so its row is a RIC row even where the words are no reference this extension can place ("RIC 1,2" is two
+  // of a dealer's numbers under one key, "RIC XI" a volume RIC has not got): the lookup then reports a clean miss. Built as an Other row it was prices
+  // only, and its own text went to the sale sites as the phrase to median.
+  const unread = ric ? { catalogue: 'RIC', number: text.slice(key.length).replace(/^[\s.:#-]+/, '').trim(), volume: '', section: '' } : null;
+  const reference = type ? parsed : unread ?? { catalogue: 'Other', number: text, volume: '', section: '' };
   return { text, reference, cf, variant, typed: TYPED.includes(reference.catalogue) };
 }
 
@@ -335,7 +392,7 @@ export function findReferences(input) {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
     return !seen.has(id) && seen.add(id);
   });
-  return { references, rulers: rulersIn(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length)) };
+  return { references, rulers: rulersIn(heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length))) };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
@@ -355,7 +412,15 @@ export const isLot = (text) => looksLikeLot(text)
 // search); "(Elagabalus)" in the reference keeps today's path.
 const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && rulers.length > 0
   && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume));
-export const lotLookup = (found, rulers) => (borrowsRulers(found, rulers) ? { ...found.reference, rulers } : found.reference);
+// A heading name RIC itself heads a section with, and that no person answers to ("Philip I", "Gaius/Caligula"), is that section rather than a
+// portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
+// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.
+const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && volumesOf(name).length > 0) ?? '';
+export function lotLookup(found, rulers) {
+  if (!borrowsRulers(found, rulers)) return found.reference;
+  const section = found.reference.section ? '' : headingSection(rulers);
+  return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
+}
 export const lotLabel = (found, rulers) => [found.text, borrowsRulers(found, rulers) && rulers[0], !found.typed && 'prices only', found.cf && 'cf.',
   found.variant && 'var.'].filter(Boolean).join(' · ');
 

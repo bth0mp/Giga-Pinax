@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
@@ -107,4 +107,67 @@ test('selectOptions lists the entries and appends an unlisted, non-blank value a
   assert.equal(selectOptions(RIC_VOLUMES, 'II, Part 1 (2nd edition)').length, 12);
   assert.equal(selectOptions(VOLUME_OPTIONS, '').length, 13);
   assert.equal(selectOptions(VOLUME_OPTIONS, 'IV, Part 1').length, 14);
+});
+
+// Nomisma files a ruler's name in every language it has; only the English and Latin spellings are ones a dealer writes, and the importer folds
+// those onto each person, so a heading reaches the person however it is punctuated or accented.
+test('a person is found by the English and Latin spellings Nomisma files, folded and without diacritics', () => {
+  assert.equal(canonicalRicPerson('Claudius Gothicus'), 'Claudius II Gothicus');
+  assert.equal(canonicalRicPerson('  ALEXANDER   SEVERUS '), 'Severus Alexander');
+  assert.equal(canonicalRicPerson('Philippus Arabs'), 'Philip the Arab');
+  assert.equal(isRicPerson('Sabinus Julianus'), true);
+  // A spelling two people share stays on both of them, so the lookup offers the two: dropping it lost the name, and picking one opened a stranger's
+  // coin. A diacritic never hides it — every alias is compared folded, as the importer stored it.
+  assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
+  assert.deepEqual(ricPeople('Valeriánus').map(({ id }) => id), ['valerian', 'valerian_ii']);
+  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitius_domitianus']);
+  assert.equal(canonicalRicPerson('Valerianus'), '');
+  // A one-word name that stands inside other people's names is every one of them, never one alone: "Sextus" is a praenomen two emperors carry.
+  assert.deepEqual(ricPeople('Sextus').map(({ name }) => name), ['Saturninus', 'Martinianus']);
+  assert.equal(canonicalRicPerson('Sextus'), '');
+  assert.equal(canonicalRicPerson('Nero'), 'Nero');
+  assert.equal(canonicalRicPerson('Titus'), 'Titus');
+  // A regnal "I" only tells the plain name from a "II" the table also holds.
+  assert.equal(canonicalRicPerson('Licinius I'), 'Licinius');
+  assert.deepEqual(ricPeople('Valerian I').map(({ id }) => id), ['valerian']);
+  for (const unknown of ['', '  ', 'hello', 'Tit', 'Leo', 'Theodosius', 'Croesus', 'constructor', '__proto__', 'toString', undefined, null,
+    'Maximinus I', 'Julian II', 'Faustina Junior', 'Faustina II', 'Severus', 'Philip I']) {
+    assert.deepEqual(ricPeople(unknown), [], String(unknown));
+  }
+  // Aliases never make a name a volume's section: the volume lists are RIC's own.
+  assert.deepEqual(volumesOf('Valerian I'), []);
+  assert.deepEqual(volumesOf('Valerian'), ['V']);
+});
+
+// A name Nomisma titles a person with is that man's own spelling, and a dealer who writes it means him. Widened to everyone whose Latin label
+// carries the word, "Germanicus" reached Nero Claudius Drusus Germanicus and answered thirteen of Drusus's numbers with a Drusus coin, and
+// "Licinius" stopped answering at all because Publius Licinius Egnatius Gallienus joined it.
+test("a spelling that is a person's own name names him alone and is never widened", () => {
+  for (const [spelling, person] of [['Germanicus', 'Germanicus'], ['Licinius', 'Licinius'], ['Valens', 'Valens'], ['Romulus', 'Romulus'],
+    ['Maximus', 'Maximus'], ['Gallienus', 'Gallienus'], ['Titus', 'Titus']]) {
+    assert.deepEqual(ricPeople(spelling).map(({ name }) => name), [person], spelling);
+    assert.equal(canonicalRicPerson(spelling), person, spelling);
+  }
+  // The regnal numeral still reads against those names, so "Licinius I" is the Licinius the table holds a "Licinius II" beside, and it answers
+  // exactly as the bare name does.
+  assert.deepEqual(ricPeople('Licinius I'), ricPeople('Licinius'));
+  assert.equal(canonicalRicPerson('Licinius I'), 'Licinius');
+  // A spelling nobody is named outright is still every person it stands in, so it is offered and never opened.
+  assert.deepEqual(ricPeople('Domitianus').map(({ id }) => id), ['domitian_ii', 'domitius_domitianus']);
+  assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
+  assert.equal(canonicalRicPerson('Domitianus'), '');
+});
+
+// Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.
+test('a RIC mint section is found by the other English name Nomisma gives it, and never as a ruler', () => {
+  assert.equal(ricMintSection('Trier'), 'Treveri');
+  assert.equal(ricMintSection('  ISTANBUL '), 'Constantinople');
+  assert.deepEqual(volumesOf('Trier'), volumesOf('Treveri'));
+  assert.deepEqual(ricPeople('Trier'), []);
+  // Nomisma gives these no English name but the one RIC files them under, and none is invented: their modern names live only in its French and
+  // German labels.
+  for (const mint of ['London', 'Lyon', 'Lyons', 'Arles', 'Milan', 'Pavia']) {
+    assert.equal(ricMintSection(mint), '', mint);
+    assert.deepEqual(volumesOf(mint), [], mint);
+  }
 });

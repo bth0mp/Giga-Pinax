@@ -1,4 +1,4 @@
-import { formatDates, pickRicEntries } from './lookup.js';
+import { formatDates, otherVolumePart, pickRicEntries } from './lookup.js';
 import { isRicPerson, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 
@@ -45,6 +45,13 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   let metadataPromise;
   let indexPromise;
   const shardPromises = new Map();
+  // A failed load is never remembered: one dropped request would otherwise leave a rejected promise in hand for the life of the page, and every later
+  // lookup would fail on it without asking again. The slot is cleared as the rejection passes, so the next lookup retries.
+  const retried = (load, forget) => {
+    const promise = load();
+    promise.catch(forget);
+    return promise;
+  };
   const metadata = async () => {
     const value = await json(fetchImpl, new URL('metadata.json', baseUrl));
     if (value?.schemaVersion !== 1 || value.corpus !== 'ocre' || !value.shards || Array.isArray(value.shards) || !value.aliases || Array.isArray(value.aliases)) throw new Error('Invalid local OCRE metadata');
@@ -52,36 +59,36 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     if (Object.entries(value.aliases).some(([oldId, canonicalId]) => typeof oldId !== 'string' || typeof canonicalId !== 'string')) throw new Error('Invalid local OCRE aliases');
     return value;
   };
-  const loadMetadata = () => (metadataPromise ??= metadata());
+  const loadMetadata = () => (metadataPromise ??= retried(metadata, () => { metadataPromise = undefined; }));
   const loadIndex = async () => {
     const value = await json(fetchImpl, new URL('index.json', baseUrl));
     if (value?.schemaVersion !== 1 || !Array.isArray(value.entries) || value.entries.some((entry) => !Array.isArray(entry) || entry.length !== 2 || entry.some((part) => typeof part !== 'string'))) throw new Error('Invalid local OCRE index');
     return value.entries.map(([id, title]) => ({ id, title }));
   };
-  const indexEntries = () => (indexPromise ??= loadIndex());
-  const shard = async (prefix, meta) => {
-    if (!validPrefix(prefix) || typeof meta.shards[prefix] !== 'string') return null;
-    if (!shardPromises.has(prefix)) shardPromises.set(prefix, json(fetchImpl, new URL(meta.shards[prefix], baseUrl)));
-    const value = await shardPromises.get(prefix);
+  const indexEntries = () => (indexPromise ??= retried(loadIndex, () => { indexPromise = undefined; }));
+  const shardRecords = async (url) => {
+    const value = await json(fetchImpl, url);
     if (value?.schemaVersion !== 1 || !value.records || Array.isArray(value.records)) throw new Error('Invalid local OCRE shard');
     return value.records;
   };
-  const byId = async (id) => {
-    const meta = await loadMetadata();
-    const canonical = meta.aliases[id] ?? id;
-    const records = await shard(shardPrefix(canonical), meta);
-    const record = records?.[canonical];
-    if (record && record.i !== canonical) throw new Error('Invalid local OCRE record id');
-    const card = packedRecordToCard(record, cache);
-    return card ? { status: 'ok', card } : { status: 'none', corpus: 'ocre' };
+  const shard = (prefix, meta) => {
+    if (!validPrefix(prefix) || typeof meta.shards[prefix] !== 'string') return null;
+    if (!shardPromises.has(prefix)) {
+      shardPromises.set(prefix, retried(() => shardRecords(new URL(meta.shards[prefix], baseUrl)), () => shardPromises.delete(prefix)));
+    }
+    return shardPromises.get(prefix);
   };
+  // The one path from an id to its packed record: the alias map, the shard it lives in, and the record's own id checked against the one asked for.
   const recordById = async (id) => {
     const meta = await loadMetadata();
     const canonical = meta.aliases[id] ?? id;
-    const records = await shard(shardPrefix(canonical), meta);
-    const record = records?.[canonical];
+    const record = (await shard(shardPrefix(canonical), meta))?.[canonical];
     if (record && record.i !== canonical) throw new Error('Invalid local OCRE record id');
     return record ?? null;
+  };
+  const byId = async (id) => {
+    const card = packedRecordToCard(await recordById(id), cache);
+    return card ? { status: 'ok', card } : { status: 'none', corpus: 'ocre' };
   };
   const personIds = (reference) => {
     const names = isRicPerson(reference.section) ? [reference.section] : (Array.isArray(reference.rulers) ? reference.rulers : []);
@@ -109,11 +116,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
           const picked = pickRicEntries(await indexEntries(), citationRef);
           const entries = picked.status === 'ok' ? [picked.entry] : (picked.candidates ?? []);
           if (entries.length === 0) return { ...picked, corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
-          const matched = [];
-          for (const entry of entries) if (hasPerson(await recordById(entry.id), people)) matched.push(entry);
+          // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another.
+          const records = await Promise.all(entries.map((entry) => recordById(entry.id)));
+          const matched = entries.filter((entry, index) => hasPerson(records[index], people));
           if (matched.length > 0) {
-            const final = pickRicEntries(matched, citationRef);
-            if (final.status === 'ok') return await byId(final.entry.id);
+            let final = pickRicEntries(matched, citationRef);
+            // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
+            // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out.
+            if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title)) return await byId(final.entry.id);
+            if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
             return { ...final, candidates: final.candidates?.map((entry) => ({ ...entry, source: 'local' })), corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
           }
           const candidates = entries.map((entry) => ({ ...entry, source: 'local' }));
@@ -121,6 +132,9 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         }
         let picked = pickRicEntries(await indexEntries(), reference);
         let broadened = false;
+        // The section the collector asked for is what he is looking at: a volume is broadened before it, so the same mint or ruler in another volume
+        // comes before another section of the volume he typed. A section dropped altogether leaves other rulers' coins, which are choices, never the answer.
+        if (picked.status === 'none' && reference.section && reference.volume) { picked = pickRicEntries(await indexEntries(), { ...reference, volume: '' }); broadened = picked.status !== 'none'; }
         if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await indexEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
         if (picked.status === 'ok' && (broadened || reference.rulers?.length)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
         if (picked.candidates) picked.candidates = picked.candidates.map((entry) => ({ ...entry, source: 'local' }));

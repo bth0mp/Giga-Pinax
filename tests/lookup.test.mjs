@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -1261,4 +1261,162 @@ test('a citation listing several numbers under one catalogue is still read', () 
   // Prose is alphabetic where a run of numbers is not, so it is still refused, and so is a sentence that ends on a number.
   assert.equal(searchablePart('Good VF, 3.21 g, 6h, lot 42, from an old album, ex Berk 12 years ago'), false);
   assert.equal(searchablePart('a lovely old cabinet piece bought in Vienna in 2014'), false);
+});
+
+// A plain numeral is the volume a dealer writes; OCRE shelves the same numeral under several titles ("II", "II, Part 1 (second edition)").
+test('a plain volume numeral reaches every volume of its family, the volume as typed first', () => {
+  const entry = (id, title) => ({ id, title });
+  const trajan972 = entry('ric.2.tr.972', 'RIC II Trajan 972');
+  const vespasian972 = entry('ric.2_1(2).ves.972', 'RIC II, Part 1 (second edition) Vespasian 972');
+  const hadrian972 = entry('ric.2_3(2).hdn.972', 'RIC II, Part 3 (second edition) Hadrian 972');
+  const domitian720 = entry('ric.2_1(2).dom.720', 'RIC II, Part 1 (second edition) Domitian 720');
+  const trajan720 = entry('ric.2.tr.720', 'RIC II Trajan 720');
+  // "RIC II 972" is in no OCRE title, but II.1² and II.3² both hold the number: they are offered, never one of them opened.
+  assert.deepEqual(pickRicEntries([vespasian972, hadrian972], parseReference('RIC II 972')),
+    { status: 'candidates', candidates: [vespasian972, hadrian972], partial: true });
+  // A ruler the volume as typed does not have is looked for in the rest of the family, and offered because the volume was not the one typed.
+  assert.deepEqual(pickRicEntries([domitian720, trajan720], parseReference('RIC II Domitian 720')),
+    { status: 'candidates', candidates: [domitian720], partial: true });
+  // The volume as typed wins when it has the ruler asked for: II Trajan 972 opens although II.1² also holds 972.
+  assert.deepEqual(pickRicEntries([trajan972, vespasian972], parseReference('RIC II Trajan 972')), { status: 'ok', entry: trajan972 });
+  // A volume that names its part or edition still asks for itself alone.
+  assert.deepEqual(pickRicEntries([vespasian972, hadrian972], parseReference('RIC II.3 Hadrian 972')),
+    { status: 'candidates', candidates: [hadrian972], partial: true });
+  assert.deepEqual(pickRicEntries([trajan972, vespasian972, hadrian972], parseReference('RIC 972')),
+    { status: 'candidates', candidates: [trajan972, vespasian972, hadrian972], partial: true });
+});
+
+// OCRE titles 653 of its own types over a range ("RIC II.3² Hadrian 1009-1012"). The clean-up that takes a dealer's range down to its first number
+// turned every one of them into a second claim on that number, so the real type stopped opening.
+test('OCRE\'s own titles are read as OCRE writes them, never through the dealer clean-up', () => {
+  const entry = (id, title) => ({ id, title });
+  const range = entry('ric.2_3(2).hdn.1009-1012', 'RIC II, Part 3 (second edition) Hadrian 1009-1012');
+  const type = entry('ric.2_3(2).hdn.1009', 'RIC II, Part 3 (second edition) Hadrian 1009');
+  assert.deepEqual(pickRicEntries([range, type], parseReference('RIC II.3² Hadrian 1009')), { status: 'ok', entry: type });
+  // OCRE's own word after a number is still read as OCRE writes it.
+  const aureus = entry('ric.2_1(2).ves.266_aureus', 'RIC II, Part 1 (second edition) Vespasian 266 (aureus)');
+  assert.deepEqual(pickRicEntries([aureus], parseReference('RIC II.1² Vespasian 266 (aureus)')), { status: 'ok', entry: aureus });
+  // What the collector types still takes the clean-up: a typed range is its first number.
+  assert.equal(parseReference('RIC II.3² Hadrian 1009-1012').number, '1009');
+});
+
+// 658 of OCRE's types are titled over a range, and 654 of those first numbers are a type of their own as well: a citation shortened to its first
+// number therefore answered a real but different record. The number as the dealer wrote it is tried first.
+test('a range reaches the type OCRE titles over it, and falls back to its first number only on a miss', () => {
+  const entry = (id, title) => ({ id, title });
+  const range = entry('ric.2_3(2).hdn.10-11', 'RIC II, Part 3 (second edition) Hadrian 10-11');
+  const first = entry('ric.2_3(2).hdn.10', 'RIC II, Part 3 (second edition) Hadrian 10');
+  const typed = parseReference('RIC II.3 Hadrian 10-11');
+  assert.equal(typed.number, '10');
+  assert.equal(typed.range, '10-11');
+  assert.deepEqual(pickRicEntries([range, first], typed), { status: 'candidates', candidates: [range], partial: true });
+  // A range OCRE has no record of still answers with its first number, which is what 654 of the 658 ranges rely on.
+  assert.deepEqual(pickRicEntries([first], typed), { status: 'candidates', candidates: [first], partial: true });
+  // A number that never was a range carries nothing extra, and a guided field typed as a range is matched as it stands.
+  assert.equal(Object.hasOwn(parseReference('RIC II.3 Hadrian 10'), 'range'), false);
+  assert.deepEqual(pickRicEntries([range, first], { catalogue: 'RIC', volume: 'II, Part 3', section: 'Hadrian', number: '10-11' }),
+    { status: 'candidates', candidates: [range], partial: true });
+});
+
+// Dealers punctuate a RIC volume the way they punctuate HGC's ("HGC 4, 1218"), and that comma stands between the volume and the number.
+test('a comma after the RIC volume is read, wherever the volume names its part or edition', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [
+    ['RIC III, 394a', ric('III', '', '394a')],
+    ['RIC II, 123', ric('II', '', '123')],
+    ['RIC IV.1, 123a', ric('IV, Part 1', '', '123a')],
+    ['RIC II², 972', ric('II (2nd edition)', '', '972')],
+    ['RIC II.3, 2345', ric('II, Part 3', '', '2345')],
+    ['RIC I², Nero 306', ric('I (2nd edition)', 'Nero', '306')],
+  ]) assert.deepEqual(parseReference(text), expected, text);
+  // A volume and its part, both spelled with commas, and the number after them — but only where RIC really divides that volume so.
+  assert.deepEqual(parseReference('RIC V, 2, 123'), ric('V, Part 2', '', '123'));
+  // A volume with nothing after the comma is still no reference, and a volume written in Arabic numerals takes no comma at all: "RIC 5, 6" and
+  // "RIC 1,2" are two numbers a dealer listed, never volume V number 6.
+  for (const text of ['RIC III,', 'RIC II, Titus', 'RIC 5, 6', 'RIC 1,2']) assert.equal(parseReference(text), null, text);
+  assert.deepEqual(parseReference('RIC 5 6'), ric('V', '', '6'));
+});
+
+// "RIC III, 2, 3" is two of RIC III's numbers, not a Part 2 the book never had: a comma is how dealers list numbers, so a part joined on with one is
+// read only where RIC really divides the volume that way. The volume's own punctuation ("IV.1", "II.3") is unambiguous and is left alone.
+test('a part written after a comma is read only for a volume RIC really divides', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const text of ['RIC III, 2, 3', 'RIC X, 2, 123', 'RIC II, 2, 123', 'RIC IV, 1, 123a', 'RIC VII, 2, 12']) assert.equal(parseReference(text), null, text);
+  // The two divisions the data evidences: OCRE's own II, Part 1 and II, Part 3, and the V.1/V.2 dealers cite although OCRE merges them.
+  for (const [text, expected] of [['RIC II, 1, 123', ric('II, Part 1', '', '123')], ['RIC II, 3, 123', ric('II, Part 3', '', '123')],
+    ['RIC V, 1, 123', ric('V, Part 1', '', '123')], ['RIC V, 2, 123', ric('V, Part 2', '', '123')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // A part the volume itself carries is the citation's own spelling and is read whatever volume it names.
+  assert.deepEqual(parseReference('RIC IV.1, 123a'), ric('IV, Part 1', '', '123a'));
+  assert.deepEqual(parseReference('RIC IV-1 123'), ric('IV, Part 1', '', '123'));
+  assert.deepEqual(parseReference('RIC IV part 1 123'), ric('IV, Part 1', '', '123'));
+});
+
+// One reference typed into the Reference box is read by the rules a lot row is read by, so the same text gives the same reference either way.
+test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed section, a house spelling and a range', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [
+    ['RIC 268 (Elagabalus)', ric('', 'Elagabalus', '268')],
+    ['RIC III (Antoninus Pius) 394a', ric('III', 'Antoninus Pius', '394a')],
+    ['RIC 972 var.', ric('', '', '972')],
+    ['RIC 972 var', ric('', '', '972')],
+    ['Crawford 44/5 var.', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['RIC II 123 corr.', ric('II', '', '123')],
+    ['RIC² 123', ric('', '', '123')],
+    ['RIC IV-1 123', ric('IV, Part 1', '', '123')],
+    ['RIC.112', ric('', '', '112')],
+    ['SC 1266.2-3', { catalogue: 'SC', number: '1266.2', volume: '', section: '' }],
+    ['RIC 12-13', { ...ric('', '', '12'), range: '12-13' }],
+    ['RRC 44/5-6', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
+    ['Price 3426-7', { catalogue: 'Price', number: '3426', volume: '', section: '' }],
+    ['RIC IV 34a-b', { ...ric('IV', '', '34a'), range: '34a-b' }],
+  ]) assert.deepEqual(parseReference(text), expected, text);
+  // The clean-up never reaches an Other reference, whose text is its card, nor a Crawford number that only looks like a range.
+  assert.deepEqual(parseReference('Sear-734'), { catalogue: 'Other', number: 'Sear-734', volume: '', section: '' });
+  assert.deepEqual(parseReference('HGC 4, 1218-1220'), { catalogue: 'Other', number: 'HGC 4, 1218-1220', volume: '', section: '' });
+  assert.deepEqual(parseReference('cr. 197-198B/1a'), { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' });
+  assert.deepEqual(parseReference('RIC 266 (aureus)'), ric('', '', '266 (aureus)'));
+  // A bracket after the number is the section only where RIC heads a section of that volume with the name. A mint remark on another volume's
+  // number is neither the section nor part of the number, and a word OCRE titles its own types with stays where it is.
+  assert.deepEqual(parseReference('RIC II Trajan 12 (Rome)'), ric('II', 'Trajan', '12'));
+  assert.deepEqual(parseReference('RIC II 12 (Rome)'), ric('II', '', '12'));
+  assert.deepEqual(parseReference('RIC VII 12 (Rome)'), ric('VII', 'Rome', '12'));
+  assert.deepEqual(parseReference('RIC II, Part 1 720 (Domitian)'), ric('II, Part 1', 'Domitian', '720'));
+  // A mint keeps the name the dealer wrote it under; the lookup is what reads it as RIC's Latin section, wherever the section came from.
+  assert.deepEqual(parseReference('RIC VII Trier 12'), ric('VII', 'Trier', '12'));
+  assert.deepEqual(parseReference('Trier 12'), ric('', 'Trier', '12'));
+});
+
+// The guided fields never pass through parseReference, and the bracketed branch skipped a plain section, so "Trier" reached RIC's Treveri only from
+// the Reference box: picked as typed it left the sixteen mints of RIC VII to choose between. The name is mapped once, where a lookup uses it.
+test('a mint\'s modern name reaches RIC\'s Latin section however the section was filled in', async () => {
+  const asked = [];
+  const localProvider = { lookupType: async (reference) => { asked.push(reference); return { status: 'none' }; } };
+  const typed = parseReference('RIC VII Trier 12');
+  for (const reference of [typed, { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, parseReference('RIC VII Trier 12 (Rome)')]) {
+    await lookupType(reference, { localProvider, online: false });
+  }
+  assert.deepEqual(asked.map(({ section }) => section), ['Treveri', 'Treveri', 'Treveri']);
+  assert.equal(buildQuery({ ...typed, section: asked[0].section }).query, 'RIC VII Treveri 12');
+  // A section that is no mint alias is untouched, and the reference the caller passed is never rewritten under it.
+  assert.equal(typed.section, 'Trier');
+  await lookupType({ catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '1' }, { localProvider, online: false });
+  assert.equal(asked.at(-1).section, 'Gallienus');
+});
+
+test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, never a hand-written table', async () => {
+  const valerian = { id: 'ric.5.val.1', title: 'RIC V Valerian 1' };
+  // "Valerian I" is Nomisma's spelling of the section OCRE titles "Valerian": the hit is kept, and offered, since the section was written another way.
+  assert.deepEqual(pickRicEntries([valerian], { catalogue: 'RIC', volume: 'V', section: 'Valerian I', number: '1' }),
+    { status: 'candidates', candidates: [valerian], partial: true });
+  assert.deepEqual(pickRicEntries([valerian], { catalogue: 'RIC', volume: 'V', section: 'Constantius I', number: '1' }), { status: 'none' });
+  // The facets hold OCRE's names, so a lot heading's spelling is asked for under the name the aliases resolve it to.
+  const feed = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius Gothicus'] }, { fetchImpl: feed });
+  assert.ok(feed.calls[0].includes(encodeURIComponent('portrait_facet:"Claudius II Gothicus"')), feed.calls[0]);
+  // A spelling no English or Latin label carries is asked for exactly as it was written, never resolved to a guess.
+  const daia = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
+  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
 });

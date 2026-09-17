@@ -1,4 +1,4 @@
-import { RIC_PEOPLE } from './ric-people.js';
+import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
 
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
@@ -97,11 +97,62 @@ export const RIC_RULERS = Object.freeze([...new Set([...Object.values(RIC_SECTIO
 export const ANY_VOLUME = Object.freeze({ value: '', label: 'Any volume' });
 export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 
-const rulerKey = (ruler) => String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-export function ricPeople(name) {
-  const wanted = rulerKey(name);
-  return wanted ? RIC_PEOPLE.filter((person) => [person.name, ...person.aliases].some((label) => rulerKey(label) === wanted)) : [];
+// A name as the tables compare it: spacing squashed, case folded and diacritics stripped, the way the importer normalises every Nomisma alias, so
+// "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name. Almost every name asked for is plain ASCII, which has no
+// diacritics to strip and no decomposition to do, and this runs once per bundled title.
+export function rulerKey(ruler) {
+  const text = String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return /^[\x20-\x7e]*$/.test(text) ? text : text.normalize('NFD').replace(/\p{M}+/gu, '');
 }
+
+// Every name and alias Nomisma files, indexed once: a lot heading is compared against all of them, and a Map has no inherited keys ("constructor").
+// A spelling two people share ("Valerianus" is the Latin name of both Valerians) keeps both: the lookup offers a choice, which is the honest answer.
+const PEOPLE_BY_NAME = new Map();
+const own = (label, person) => {
+  if (!PEOPLE_BY_NAME.has(label)) PEOPLE_BY_NAME.set(label, []);
+  if (!PEOPLE_BY_NAME.get(label).includes(person)) PEOPLE_BY_NAME.get(label).push(person);
+};
+for (const person of RIC_PEOPLE) for (const label of new Set([person.name, ...person.aliases].map(rulerKey))) own(label, person);
+// A spelling that IS a person's own name — the English prefLabel Nomisma titles him with — is his and nobody else's, whoever else carries it as an
+// alias, and the widening below never touches it: a dealer who writes "Germanicus" means Germanicus, not Nero Claudius Drusus Germanicus, and
+// "Licinius" is Licinius, not Publius Licinius Egnatius Gallienus.
+const OWN_NAME = new Set();
+for (const person of RIC_PEOPLE) {
+  const label = rulerKey(person.name);
+  PEOPLE_BY_NAME.set(label, OWN_NAME.has(label) ? [...PEOPLE_BY_NAME.get(label), person] : [person]);
+  OWN_NAME.add(label);
+}
+
+// The people each spelling names outright, before any is widened below: a numeral is read against these, never against a widened one.
+const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label, [...people]]));
+
+const SECTION_NAMES = new Set(Object.values(RIC_SECTIONS).flat().flatMap((name) => [rulerKey(name), rulerKey(name.split(' (')[0])]));
+const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const labelsOf = (person) => [person.name, ...person.aliases].map(rulerKey);
+// A bare one-word name NOBODY is called is a nomen or a cognomen rather than one man: "Sextus" is a praenomen two emperors carry, "Valerianus" the
+// Latin name of both Valerians. Such a spelling means every person carrying it as a whole word in an English or Latin label, or in a RIC section, so
+// it is offered and never resolved to one of them. A one-word name that is somebody's own name, or one RIC heads a section with ("Nero", "Salonina"),
+// is settled by that and keeps the person it names.
+for (const [label, people] of [...PEOPLE_BY_NAME]) {
+  if (label.includes(' ') || OWN_NAME.has(label) || SECTION_NAMES.has(label)) continue;
+  const word = new RegExp(String.raw`(?<![\p{L}\d])${escaped(label)}(?![\p{L}\d])`, 'u');
+  const sharing = RIC_PEOPLE.filter((person) => !people.includes(person) && labelsOf(person).some((text) => word.test(text)));
+  const sections = [...SECTION_NAMES].filter((name) => word.test(name)).flatMap((name) => PEOPLE_BY_NAME.get(name) ?? []);
+  for (const person of [...sharing, ...sections]) own(label, person);
+}
+// A regnal "I" tells two people of the same name apart and says nothing else, so it names the plain one only where the table really holds the
+// other: "Licinius I" is Licinius because there is a Licinius II. Nothing more is read into a numeral — "Maximinus I" and "Julian II" stay unknown
+// unless a label spells them out.
+for (const [label, people] of NAMED_PEOPLE) {
+  const second = NAMED_PEOPLE.get(`${label} ii`);
+  if (!second || PEOPLE_BY_NAME.has(`${label} i`) || second.some((person) => people.includes(person))) continue;
+  PEOPLE_BY_NAME.set(`${label} i`, [...people]);
+}
+export const ricPeople = (name) => [...(PEOPLE_BY_NAME.get(rulerKey(name)) ?? [])];
+// Every spelling the table answers to, with the people each one names: a lot heading reads them straight, so a shared spelling and a derived one
+// behave in a heading exactly as they do in a typed field.
+export const PEOPLE_SPELLINGS = Object.freeze([...PEOPLE_BY_NAME]
+  .map(([label, people]) => Object.freeze([label, Object.freeze(people.map(({ name }) => name))])));
 
 export const isRicPerson = (name) => ricPeople(name).length > 0;
 export function canonicalRicPerson(name) {
@@ -110,13 +161,26 @@ export function canonicalRicPerson(name) {
 }
 
 // The volumes whose sections include a ruler, ignoring case and spacing; none for a blank or unknown one. A ruler OCRE splits into sections is also
-// known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). The lists are searched, never indexed by the
-// ruler, so an inherited key ("constructor") is unknown too.
-export function volumesOf(ruler) {
-  const wanted = rulerKey(ruler);
-  const named = (section) => rulerKey(section) === wanted || rulerKey(section.split(' (')[0]) === wanted;
-  return wanted ? RIC_VOLUMES.map(({ value }) => value).filter((volume) => RIC_SECTIONS[volume].some(named)) : [];
+// known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). Indexed once, in RIC volume order, because
+// every one of the 52,254 bundled titles is read through it; a Map has no inherited keys, so "constructor" is unknown too.
+const VOLUMES_BY_SECTION = new Map();
+for (const { value } of RIC_VOLUMES) {
+  for (const section of RIC_SECTIONS[value]) {
+    for (const key of new Set([rulerKey(section), rulerKey(section.split(' (')[0])])) {
+      if (!VOLUMES_BY_SECTION.has(key)) VOLUMES_BY_SECTION.set(key, []);
+      if (!VOLUMES_BY_SECTION.get(key).includes(value)) VOLUMES_BY_SECTION.get(key).push(value);
+    }
+  }
 }
+// The RIC section a mint's other English name stands for ("Trier" is RIC's Treveri), from Nomisma's own labels. A mint is a place, so this name
+// is only ever read as a section: it never names a ruler.
+const MINT_BY_ALIAS = new Map();
+for (const { section, aliases } of RIC_MINTS) for (const alias of aliases) MINT_BY_ALIAS.set(rulerKey(alias), section);
+export const ricMintSection = (name) => MINT_BY_ALIAS.get(rulerKey(name)) ?? '';
+for (const [alias, section] of MINT_BY_ALIAS) {
+  if (!VOLUMES_BY_SECTION.has(alias)) VOLUMES_BY_SECTION.set(alias, [...(VOLUMES_BY_SECTION.get(rulerKey(section)) ?? [])]);
+}
+export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).
