@@ -11,8 +11,13 @@ export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s
 // A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
 // a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
 // dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
-export const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
-  .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
+// The range is the one step a caller may keep: the number as the dealer wrote it is what withRange carries to the index, since OCRE titles types
+// over a range too. One fixed run at one position, as every other step here is.
+const RANGE = /(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i;
+export const readable = (text, shortenRange = true) => {
+  const spelled = text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2');
+  return (shortenRange ? spelled.replace(RANGE, '$1') : spelled).replace(/^Pr\s+(?=\d)/, 'Price ');
+};
 // A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference readType reads it as the section; on
 // any other catalogue it is a remark the row drops.
 export const sectionBracket = (text) => [...String(text).matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0) ?? null;
@@ -164,11 +169,21 @@ const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
 // The whole of that clean-up, in one place, so a lot row and a typed reference are cleaned once each and in the same way: the remarks, the variety,
 // the edition and the correction a dealer hangs on a number, then the house's own separators, "RIC²", a hyphenated volume and a range's first number.
 // Every part of it needs one of CLEANABLE's marks to change anything, so text carrying none ("RIC VII Antioch 1") skips the chain whole.
-export function cleanReference(text) {
+export function cleanReference(text, shortenRange = true) {
   const written = String(text).trim();
   if (!CLEANABLE.test(written)) return written;
   const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
-  return CLEANABLE.test(remarked) ? readable(remarked) : remarked;
+  return CLEANABLE.test(remarked) ? readable(remarked, shortenRange) : remarked;
+}
+
+// A RIC reference whose number the clean-up shortened out of a range, with the number as it was written kept beside it. OCRE titles 658 of its own
+// types over a range and 654 of those first numbers are a type of their own as well, so the shortened citation answered a real but different record:
+// the written number is tried against the index first and the first number is the fallback. Both readings come from the same text, and only a RIC
+// reference pays for the second one.
+export function withRange(shortened, readWhole) {
+  if (shortened?.catalogue !== 'RIC') return shortened;
+  const whole = readWhole();
+  return whole?.catalogue === 'RIC' && whole.number !== shortened.number ? { ...shortened, range: whole.number } : shortened;
 }
 
 // One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
@@ -200,9 +215,15 @@ function ricReference(number, volume, written) {
   return { catalogue: 'RIC', number: keep ? number : bare ?? number, volume, section: plain || (here ? name : '') };
 }
 
+// One reference as a lot row and the Reference box both read it: the shared clean-up, then the catalogue rules over what it leaves, and the range a
+// citation was written over kept beside the number the clean-up took it down to.
 function readType(text, clean = true) {
   const written = String(text).trim();
-  const value = clean ? cleanReference(written) : written;
+  const type = readClean(clean ? cleanReference(written) : written);
+  return clean ? withRange(type, () => readClean(cleanReference(written, false))) : type;
+}
+
+function readClean(value) {
   for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
     const number = value.match(pattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
@@ -599,11 +620,15 @@ function volumePhrase(volume) {
 // case, "509 (BB)" is not), and a plain number also asks for those types (266_*; unquoted, so digits and letters only).
 // Rulers from a lot text ask OCRE's portrait and authority facets for any of them. Every OR group stays bracketed: unbracketed, "a OR b AND c" is
 // read as "a OR (b AND c)" (394a_* OR 394A_* returned 51,853 hits).
-function ricSearch({ number, volume, section }, rulers = []) {
-  const [, base, word] = ricNumber(number).match(/^(.*?)\s*(?:\(([^)]*)\))?$/);
-  const clauses = [...new Set([base.toLowerCase(), base.toUpperCase()])].flatMap((form) => (word
-    ? [...new Set([word, word.toLowerCase()])].map((typed) => `typeNumber:"${form}_${typed}"`)
-    : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
+// A citation written over a range asks for the range as well as for its first number, in the one search, so the record OCRE titles over it is among
+// the hits pickRicEntries then prefers.
+function ricSearch({ number, volume, section, range }, rulers = []) {
+  const clauses = [...new Set([number, ...(range ? [range] : [])])].flatMap((written) => {
+    const [, base, word] = ricNumber(written).match(/^(.*?)\s*(?:\(([^)]*)\))?$/);
+    return [...new Set([base.toLowerCase(), base.toUpperCase()])].flatMap((form) => (word
+      ? [...new Set([word, word.toLowerCase()])].map((typed) => `typeNumber:"${form}_${typed}"`)
+      : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
+  });
   const group = (list) => (list.length > 1 ? `(${list.join(' OR ')})` : list[0]);
   const facets = rulers.flatMap((name) => [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]);
   const narrow = [volumePhrase(unquote(volume)), phrase(section)].filter(Boolean).map((text) => ` AND "${text}"`).join('');
@@ -629,11 +654,17 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const aliases = new Set(ricPeople(reference.section).flatMap((person) => [person.name, ...person.aliases].map(rulerKey)));
   const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`)
     || (aliases.size > 0 && aliases.has(rulerKey(section.split(' (')[0])));
+  // A citation written over a range names the type OCRE titles over it, where OCRE has one: both numbers are kept in the one pass, and the range
+  // answers alone when it hit anything, since the first number is a different record wherever it is a type of its own (654 of the 658 ranges).
+  const range = reference.range ? spaced(ricNumber(reference.range)) : '';
+  const numbered = (hit, wanted) => [spaced(hit.number), bareNumber(hit.number)].includes(wanted);
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
-  const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
-    .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && [spaced(hit.number), bareNumber(hit.number)].includes(number)
+  const found = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
+    .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && (numbered(hit, number) || (range && numbered(hit, range)))
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));
+  const written = range ? found.filter(({ hit }) => numbered(hit, range)) : [];
+  const kept = written.length > 0 ? written : found;
   if (kept.length === 0) return { status: 'none' };
   // The volume as typed first: the rest of the family is only offered when that volume holds nothing the ruler asked for, and then it is offered,
   // since the coin is not in the volume the dealer wrote.

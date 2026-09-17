@@ -1,4 +1,4 @@
-import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, sectionBracket, sgNumber, VARIANT } from './lookup.js';
+import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
 import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, RIC_VOLUMES, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -351,7 +351,7 @@ function normalise(written, key, cf) {
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
   // The row's own text has had its remarks, edition, variety and correction taken off already, so the reference is read from it with the shared
   // clean-up switched off: each row is cleaned once, not once here and again inside parseReference.
-  const parsed = parseReference(readable(text), false);
+  const parsed = withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false));
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
   const reference = type ? parsed : { catalogue: 'Other', number: text, volume: '', section: '' };

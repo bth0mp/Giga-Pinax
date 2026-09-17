@@ -164,7 +164,8 @@ test('cf. and var. become flags, remarks go, and the RIC forms dealers use are r
   assert.deepEqual(cf.reference, ric('20 (aureus)'));
   const variant = only('RIC IV 34a-b var.');
   assert.deepEqual([variant.text, variant.cf, variant.variant], ['RIC IV 34a-b', false, true]);
-  assert.deepEqual(variant.reference, ric('34a', 'IV'));
+  // The number as the dealer wrote it rides along, so the range OCRE may title a type over is tried before its first number.
+  assert.deepEqual(variant.reference, { ...ric('34a', 'IV'), range: '34a-b' });
   const legend = only('RIC 972 var. (obv. legend)');
   assert.deepEqual([legend.text, legend.variant], ['RIC 972', true]);
   assert.deepEqual(only('RIC² 1180').reference, ric('1180'));

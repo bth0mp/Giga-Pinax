@@ -1300,6 +1300,24 @@ test('OCRE\'s own titles are read as OCRE writes them, never through the dealer 
   assert.equal(parseReference('RIC II.3² Hadrian 1009-1012').number, '1009');
 });
 
+// 658 of OCRE's types are titled over a range, and 654 of those first numbers are a type of their own as well: a citation shortened to its first
+// number therefore answered a real but different record. The number as the dealer wrote it is tried first.
+test('a range reaches the type OCRE titles over it, and falls back to its first number only on a miss', () => {
+  const entry = (id, title) => ({ id, title });
+  const range = entry('ric.2_3(2).hdn.10-11', 'RIC II, Part 3 (second edition) Hadrian 10-11');
+  const first = entry('ric.2_3(2).hdn.10', 'RIC II, Part 3 (second edition) Hadrian 10');
+  const typed = parseReference('RIC II.3 Hadrian 10-11');
+  assert.equal(typed.number, '10');
+  assert.equal(typed.range, '10-11');
+  assert.deepEqual(pickRicEntries([range, first], typed), { status: 'candidates', candidates: [range], partial: true });
+  // A range OCRE has no record of still answers with its first number, which is what 654 of the 658 ranges rely on.
+  assert.deepEqual(pickRicEntries([first], typed), { status: 'candidates', candidates: [first], partial: true });
+  // A number that never was a range carries nothing extra, and a guided field typed as a range is matched as it stands.
+  assert.equal(Object.hasOwn(parseReference('RIC II.3 Hadrian 10'), 'range'), false);
+  assert.deepEqual(pickRicEntries([range, first], { catalogue: 'RIC', volume: 'II, Part 3', section: 'Hadrian', number: '10-11' }),
+    { status: 'candidates', candidates: [range], partial: true });
+});
+
 // Dealers punctuate a RIC volume the way they punctuate HGC's ("HGC 4, 1218"), and that comma stands between the volume and the number.
 test('a comma after the RIC volume is read, wherever the volume names its part or edition', () => {
   const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
@@ -1334,10 +1352,10 @@ test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed sec
     ['RIC IV-1 123', ric('IV, Part 1', '', '123')],
     ['RIC.112', ric('', '', '112')],
     ['SC 1266.2-3', { catalogue: 'SC', number: '1266.2', volume: '', section: '' }],
-    ['RIC 12-13', ric('', '', '12')],
+    ['RIC 12-13', { ...ric('', '', '12'), range: '12-13' }],
     ['RRC 44/5-6', { catalogue: 'RRC', number: '44/5', volume: '', section: '' }],
     ['Price 3426-7', { catalogue: 'Price', number: '3426', volume: '', section: '' }],
-    ['RIC IV 34a-b', ric('IV', '', '34a')],
+    ['RIC IV 34a-b', { ...ric('IV', '', '34a'), range: '34a-b' }],
   ]) assert.deepEqual(parseReference(text), expected, text);
   // The clean-up never reaches an Other reference, whose text is its card, nor a Crawford number that only looks like a range.
   assert.deepEqual(parseReference('Sear-734'), { catalogue: 'Other', number: 'Sear-734', volume: '', section: '' });

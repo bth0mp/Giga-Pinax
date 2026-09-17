@@ -221,12 +221,12 @@ const bundleIndex = () => {
   }
   return byNumber;
 };
-const bundleCatalogue = (number) => createLocalCatalogue({
+const bundleCatalogue = (...numbers) => createLocalCatalogue({
   baseUrl: 'moz-extension://test/data/ocre/',
   fetchImpl: async (url) => {
     const name = decodeURIComponent(String(url).split('/').pop());
-    const value = name === 'index.json' ? { schemaVersion: 1, entries: bundleIndex().get(number) ?? [] } : bundleJson(name);
-    return { ok: true, status: 200, json: async () => value };
+    const entries = numbers.flatMap((number) => bundleIndex().get(number) ?? []);
+    return { ok: true, status: 200, json: async () => (name === 'index.json' ? { schemaVersion: 1, entries } : bundleJson(name)) };
   },
 });
 // Every coin a heading opens on its own over RIC numbers 1 to 400, read exactly as a pasted lot is read.
@@ -279,6 +279,18 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
   const philip = await openedOver('Philip I');
   assert.equal(philip.find(({ number }) => number === 16)?.card.id, 'ric.4.ph_i.16');
   opensOnly(philip, ['philip_the_arab'], 'Philip I');
+});
+
+test('over the bundled catalogue, a cited range reaches the record OCRE titles over it', { skip }, async () => {
+  const local = bundleCatalogue('10-11', '10');
+  const typed = await local.lookupType(parseReference('RIC II.3 Hadrian 10-11'));
+  assert.deepEqual(typed.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
+  const lot = findReferences('Hadrian. AR Denarius. RIC II.3 Hadrian 10-11.');
+  const row = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.deepEqual(row.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
+  // A range OCRE has no record of falls back to the first number, which is the type the other 654 ranges share.
+  const missing = await bundleCatalogue('10').lookupType(parseReference('RIC II.3 Hadrian 10-11'));
+  assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10']);
 });
 
 test('the shards a person filter needs are loaded together, not one after another', async () => {
