@@ -161,9 +161,10 @@ export function defaultTerm(reference) {
   if (catalogue === 'RIC') return ricTerm(reference);
   if (catalogue === 'Other') return otherTerm(number);
   if (catalogue === 'Bop') return bopTerm(section, number);
-  const { termKeys } = catalogueOf(catalogue) ?? CATALOGUES.Price;
-  const digits = referenceNumber(catalogue, number);
-  return group(termKeys.map((key) => phrase(key, digits)));
+  // A catalogue name outside the table is Price's whole row, the typed prefix it strips included, exactly as buildQuery looks one up as Price.
+  const name = catalogueOf(catalogue) ? catalogue : 'Price';
+  const digits = referenceNumber(name, number);
+  return group(CATALOGUES[name].termKeys.map((key) => phrase(key, digits)));
 }
 
 // The exact phrases the default term looks for, bare, and the first of them as the panel names the reference ("Price 23", "RIC 306"). The citation
