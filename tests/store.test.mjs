@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -916,6 +916,31 @@ test('an unsupported stored schema is refused without being taken apart record b
   assert.deepEqual(storage.read(), stored, 'a root from a later version is left exactly as it is');
   const raw = await writer.commitCommand(command('snapshot.raw'));
   assert.deepEqual(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
+});
+
+// The ledger is appended to and trimmed from the front everywhere else, and a retry can only be
+// answered from an entry that is still there, so an overflowing one must lose its oldest rows.
+test('a repaired ledger keeps its newest entries', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const ledgerId = (index) => `11111111-0000-4000-8000-${String(index).padStart(12, '0')}`;
+  for (let index = 0; index < LIMITS.recentCommands + 50; index += 1) {
+    stored.recentCommands.push({
+      requestId: ledgerId(index),
+      commandType: 'lot.save',
+      revision: index,
+      committedAt: NOW,
+      reply: { ok: true, requestId: ledgerId(index), revision: index, value: null },
+    });
+  }
+  const writer = createCommandWriter(memoryStorage(stored), context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.recentCommands.length, LIMITS.recentCommands);
+  assert.deepEqual(
+    [reply.value.recentCommands[0].requestId, reply.value.recentCommands.at(-1).requestId],
+    [ledgerId(50), ledgerId(LIMITS.recentCommands + 49)],
+  );
 });
 
 test('claims an overdue event before notification delivery and records the outcome', () => {

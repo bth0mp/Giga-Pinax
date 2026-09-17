@@ -734,7 +734,9 @@ const COLLECTIONS = [
   { key: 'collectionEntries', maximum: LIMITS.collectionEntries, validator: collectionEntryResult },
   { key: 'drafts', maximum: LIMITS.drafts, validator: draftResult },
   { key: 'alerts', maximum: LIMITS.alerts, validator: alertResult },
-  { key: 'recentCommands', maximum: LIMITS.recentCommands, validator: recentCommandResult },
+  // The ledger is appended to and trimmed from the front, and a retry is only answered from an
+  // entry that is still there, so an overflowing one loses its oldest rows rather than its newest.
+  { key: 'recentCommands', maximum: LIMITS.recentCommands, validator: recentCommandResult, keepNewest: true },
 ];
 
 // A reference the repair had to clear is a link the collector made, so the entry that caused it
@@ -881,11 +883,11 @@ export function quarantineInvalidRecords(stored, now) {
     }
   }
 
-  for (const { key, maximum, validator } of COLLECTIONS) {
+  for (const { key, maximum, validator, keepNewest } of COLLECTIONS) {
     if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);
     const kept = [];
     const ids = new Set();
-    for (const record of root[key]) {
+    for (const record of keepNewest ? root[key].slice(-maximum) : root[key]) {
       const id = record?.id ?? record?.requestId;
       const result = validator(record, key);
       let reason = null;
