@@ -1,7 +1,11 @@
+import contextlib
 import importlib.util
+import io
 import json
+import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -133,6 +137,43 @@ class PeopleImportTests(unittest.TestCase):
             }}), encoding="utf-8")
             # A subtype title names no section, a record naming two mints says nothing, and the ruler volumes are filed by person, not by mint.
             self.assertEqual({"treveri": "Treveri"}, module.read_mints(root))
+
+    def test_generate_takes_the_tracked_mint_snapshot_by_default_and_stops_without_it(self):
+        """The generated header names that snapshot, so omitting the option may not quietly mean no mints at all."""
+        module = load_module()
+        self.assertEqual(ROOT / "scripts" / "data" / "nomisma-mints.json", module.DEFAULT_MINTS)
+        self.assertTrue(module.DEFAULT_MINTS.is_file())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data_dir = root / "ocre"
+            data_dir.mkdir()
+            (data_dir / "metadata.json").write_text(json.dumps({"shards": {"7": "records-7.json"}}), encoding="utf-8")
+            (data_dir / "records-7.json").write_text(json.dumps({"records": {
+                "ric.7.tr.1": {"l": "RIC VII Treveri 1", "m": ["treveri"], "a": ["constantine_ii"], "o": {}},
+            }}), encoding="utf-8")
+            tracked = root / "nomisma-mints.json"
+            tracked.write_text(json.dumps({"concepts": {"treveri": {
+                "url": "https://nomisma.org/id/treveri.rdf",
+                "labels": [["prefLabel", "en", "Trier"], ["altLabel", "en", "Treveri"]],
+            }}}), encoding="utf-8")
+            output = root / "ric-people.js"
+            argv = ["import_people.py", "generate", str(data_dir), str(SNAPSHOT), str(output), "--generated-on", "2026-09-15"]
+
+            module.DEFAULT_MINTS = tracked
+            printed, failed = io.StringIO(), io.StringIO()
+            with unittest.mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(printed):
+                self.assertEqual(0, module.main())
+            self.assertEqual(1, json.loads(printed.getvalue())["mintCount"])
+            self.assertIn('id: "treveri", section: "Treveri", aliases: Object.freeze(["trier"])', output.read_text(encoding="utf-8"))
+
+            # Missing, it is an error that names the file: the header would otherwise claim a mint
+            # snapshot the run never read, over an index with no mints in it.
+            output.unlink()
+            module.DEFAULT_MINTS = root / "gone.json"
+            with unittest.mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(printed), contextlib.redirect_stderr(failed):
+                self.assertEqual(1, module.main())
+            self.assertIn("gone.json", failed.getvalue())
+            self.assertFalse(output.exists())
 
     def test_a_dtd_or_entity_declaration_is_refused_before_any_xml_is_parsed(self):
         """ElementTree resolves no external entity but expands internal ones, so the declaration is refused first, as import_rdf.py refuses it."""

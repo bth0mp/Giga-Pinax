@@ -44,6 +44,9 @@ VOLUMES = {
     "10": "X",
 }
 VOLUME_ORDER = {volume: index for index, volume in enumerate(VOLUMES.values())}
+# The tracked mint snapshot the generated header names. It is where fetch-mints writes, and the only
+# one a regeneration should read, so the option defaults to it rather than to no mints at all.
+DEFAULT_MINTS = Path(__file__).resolve().parent / "data" / "nomisma-mints.json"
 
 
 def parsed_xml(payload: bytes):
@@ -333,7 +336,7 @@ def main() -> int:
     build.add_argument("data_dir", type=Path)
     build.add_argument("snapshot", type=Path)
     build.add_argument("output", type=Path)
-    build.add_argument("--mints", type=Path)
+    build.add_argument("--mints", type=Path, default=DEFAULT_MINTS)
     build.add_argument("--generated-on", required=True)
     args = parser.parse_args()
     try:
@@ -346,8 +349,12 @@ def main() -> int:
             fetch_snapshot(memberships, args.snapshot)
             print(f"Fetched {len(memberships)} Nomisma concepts in one query.")
         else:
+            # Said here rather than left to the header: a run with no mint snapshot would write a
+            # file claiming one, with none of the eight mint sections in it.
+            if not args.mints.is_file():
+                raise ValueError(f"mint snapshot not found: {args.mints}")
             report = generate(args.snapshot, memberships, args.output, args.generated_on,
-                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir)) if args.mints else [])
+                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir)))
             print(json.dumps(report, sort_keys=True))
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"People import failed: {error}", file=sys.stderr)
