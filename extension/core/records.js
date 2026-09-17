@@ -841,8 +841,8 @@ const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 // Each record is validated on its own; a failing one is set aside verbatim in `quarantine` and
 // references to it are repaired by the cheapest step that keeps the root valid: an optional
 // reference is cleared, while a record whose required reference is gone follows it into the bin.
-// Nothing is ever dropped, and a root that is unusable even then is reported as a failure so the
-// caller can fall back to its existing storage error.
+// Only the bookkeeping in DISCARDED_ON_REPAIR is dropped outright, and a root that is unusable
+// even then is reported as a failure so the caller can fall back to its existing storage error.
 export function quarantineInvalidRecords(stored, now) {
   const instant = instantResult(now, 'now');
   if (!instant.ok) return instant;
