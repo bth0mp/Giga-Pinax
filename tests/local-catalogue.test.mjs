@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
+import { findReferences, lotLookup } from '../extension/lot.js';
 
 const metadata = {
   schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
-  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '7': 'records-7.json' },
+  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '4': 'records-4.json', '7': 'records-7.json' },
 };
 const index = { schemaVersion: 1, entries: [
   ['ric.1(2).ner.306', 'RIC I (second edition) Nero 306'],
@@ -17,6 +18,8 @@ const index = { schemaVersion: 1, entries: [
   ['ric.7.rom.287', 'RIC VII Rome 287'],
   ['ric.2.tr.720', 'RIC II Trajan 720'],
   ['ric.2_1(2).dom.720', 'RIC II, Part 1 (second edition) Domitian 720'],
+  ['ric.4.ph_i.27A', 'RIC IV Philip I 27A'],
+  ['ric.4.ph_i.27B', 'RIC IV Philip I 27B'],
 ] };
 const records = {
   'ric.1(2).ner.306': { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], m: ['rome'], x: ['ae'], s: '0062', e: '0068', o: { l: 'NERO', d: 'Head of Nero', p: ['nero'] }, r: { d: 'Temple' } },
@@ -27,10 +30,12 @@ const records = {
   'ric.7.rom.287': { i: 'ric.7.rom.287', l: 'RIC VII Rome 287', a: ['licinius'], o: { p: ['licinius'] }, r: {} },
   'ric.2.tr.720': { i: 'ric.2.tr.720', l: 'RIC II Trajan 720', a: ['trajan'], o: { p: ['trajan'] }, r: {} },
   'ric.2_1(2).dom.720': { i: 'ric.2_1(2).dom.720', l: 'RIC II, Part 1 (second edition) Domitian 720', a: ['domitian'], o: { p: ['domitian'] }, r: {} },
+  'ric.4.ph_i.27A': { i: 'ric.4.ph_i.27A', l: 'RIC IV Philip I 27A', a: ['philip_the_arab'], o: { p: ['philip_the_arab'] }, r: {} },
+  'ric.4.ph_i.27B': { i: 'ric.4.ph_i.27B', l: 'RIC IV Philip I 27B', a: ['philip_the_arab'], o: { p: ['philip_the_arab'] }, r: {} },
 };
 
 function fixtureFetch(overrides = {}) {
-  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
+  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-4.json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(String(url));
@@ -134,6 +139,19 @@ test('a plain volume numeral finds the part of its family that has the ruler, an
   const missing = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Otho', number: '720' });
   assert.equal(missing.status, 'candidates');
   assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2.tr.720', 'ric.2_1(2).dom.720']);
+});
+
+// RIC heads a section "Philip I", but no person is called that: read as a ruler the name reached neither OCRE's facets nor the local index, and a
+// numberless "RIC 27b" then offered two dozen coins. Read as the section it is, with the volume that section implies, it is one coin.
+test('a heading name RIC heads a section with is passed as that section, not as a person', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
+  const lot = findReferences('Philip I. AR Antoninianus. Rome. RIC 27b; RSC 9.');
+  assert.deepEqual(lot.rulers, ['Philip I']);
+  const reference = lotLookup(lot.references[0], lot.rulers);
+  assert.deepEqual(reference, { catalogue: 'RIC', volume: 'IV', section: 'Philip I', number: '27b' });
+  const found = await local.lookupType(reference);
+  assert.equal(found.status, 'ok');
+  assert.equal(found.card.id, 'ric.4.ph_i.27B');
 });
 
 test('the local fallback broadens the volume before the section, and a section it had to drop is only ever offered', async () => {

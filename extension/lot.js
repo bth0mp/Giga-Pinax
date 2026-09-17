@@ -1,5 +1,5 @@
 import { EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, ricSection, sectionBracket, sgNumber, VARIANT } from './lookup.js';
-import { PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey } from './catalogues.js';
+import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -386,7 +386,15 @@ export const isLot = (text) => looksLikeLot(text)
 // search); "(Elagabalus)" in the reference keeps today's path.
 const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && rulers.length > 0
   && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume));
-export const lotLookup = (found, rulers) => (borrowsRulers(found, rulers) ? { ...found.reference, rulers } : found.reference);
+// A heading name RIC itself heads a section with, and that no person answers to ("Philip I", "Gaius/Caligula"), is that section rather than a
+// portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
+// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.
+const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && volumesOf(name).length > 0) ?? '';
+export function lotLookup(found, rulers) {
+  if (!borrowsRulers(found, rulers)) return found.reference;
+  const section = found.reference.section ? '' : headingSection(rulers);
+  return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
+}
 export const lotLabel = (found, rulers) => [found.text, borrowsRulers(found, rulers) && rulers[0], !found.typed && 'prices only', found.cf && 'cf.',
   found.variant && 'var.'].filter(Boolean).join(' · ');
 
