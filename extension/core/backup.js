@@ -91,7 +91,9 @@ export function validateBackup(document) {
   if (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion < 1) {
     return fail('unsupported-schema', 'Backup schema version is unsupported.', 'schemaVersion');
   }
-  if (value.schemaVersion > SCHEMA_VERSION) {
+  // The header can lag the root it carries, and then it is the root that says where the file came
+  // from: either way it was written by a build this one cannot read, and the answer is the same.
+  if (value.schemaVersion > SCHEMA_VERSION || value.data?.schemaVersion > SCHEMA_VERSION) {
     return fail(
       'unsupported-schema',
       'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',

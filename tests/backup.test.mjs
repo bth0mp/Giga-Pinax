@@ -373,6 +373,19 @@ test('a newer backup says what to do, and a header version below one is refused 
     assert.equal(refused.error.path, 'schemaVersion');
     assert.equal(refused.error.message, 'Backup schema version is unsupported.');
   }
+
+  // The header can lag the root it carries - a file written by a build that moved the root's version
+  // before its own. What the collector has is still a backup from a newer Giga Pinax, and there is
+  // still one thing to do about it, so it is told the same thing rather than that its file is junk.
+  const newerData = {
+    format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW,
+    data: { ...createEmptySnapshot(NOW), schemaVersion: SCHEMA_VERSION + 1 },
+  };
+  assert.equal(
+    validateBackup(newerData).error.message,
+    'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',
+  );
+  assert.equal(validateBackup(newerData).error.code, 'unsupported-schema');
 });
 
 test('merge keeps local preferences and alerts, whatever bookkeeping the backup carries', () => {
