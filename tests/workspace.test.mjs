@@ -26,6 +26,7 @@ import {
   bidFormValues,
   mergeRebasedFields,
   commandExpectedRevisions,
+  commandReplacedRevisions,
   eventAttachDecision,
   selectionAfterSnapshot,
   routeFromHash,
@@ -355,6 +356,28 @@ test('commands name the records they claim to replace', () => {
   assert.deepEqual(commandExpectedRevisions({ type: 'event.delete', eventId: 'event-a', expectedRevision: 1 }), { 'event-a': 1 });
   assert.deepEqual(commandExpectedRevisions({ type: 'lot.save', expectedRevision: null, lot: {} }), {});
   assert.deepEqual(commandExpectedRevisions({ type: 'alert.markAllRead' }), {});
+});
+
+test('deleting a group moves the dirty editors of its member coins instead of conflicting', () => {
+  // The store clears the group from every member coin, bumping each one, but the command names
+  // only the group; the members come from the snapshot the command was sent against.
+  const sent = {
+    lots: [{ id: 'lot-a', revision: 7, alternativeGroupId: 'group-a' }, { id: 'lot-b', revision: 2 }],
+    alternativeGroups: [{ id: 'group-a', revision: 2 }],
+  };
+  const command = { type: 'group.delete', requestId: 'req', groupId: 'group-a', expectedRevision: 2 };
+  assert.deepEqual(commandReplacedRevisions(command, sent), { 'group-a': 2, 'lot-a': 7 });
+  assert.deepEqual(commandReplacedRevisions({ type: 'lot.delete', lotId: 'lot-a', expectedRevision: 7 }, sent), { 'lot-a': 7 });
+  const cleared = { id: 'lot-a', revision: 8, title: 'Nero', sourceLinks: [] };
+  const plan = planCommit(commitInput({
+    editor: null, submittedRevisions: commandReplacedRevisions(command, sent),
+    value: { id: 'group-a', revision: 2 }, lots: [cleared, sent.lots[1]],
+    bases: [['lot', { id: 'lot-a', revision: 7, record: { ...cleared, revision: 7, alternativeGroupId: 'group-a' } }]],
+    dirty: ['lot'],
+  }));
+  assert.deepEqual(plan.conflicts, [], 'the collector never has to discard input over this page’s own delete');
+  assert.equal(plan.bases.get('lot').revision, 8);
+  assert.deepEqual(plan.merge, ['lot']);
 });
 
 test('a removed record blanks its editor, and a failed refresh never blanks a new one', () => {

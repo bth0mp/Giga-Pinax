@@ -300,6 +300,18 @@ export function commandExpectedRevisions(command) {
   return revisions;
 }
 
+// `group.delete` clears the group from every member coin, bumping each coin's revision, but the
+// command itself names only the group. The members are read from the snapshot the command was sent
+// against, so a dirty editor on one of them follows the commit instead of raising a false conflict.
+export function commandReplacedRevisions(command, snapshot) {
+  const revisions = commandExpectedRevisions(command);
+  if (command?.type !== 'group.delete' || !command.groupId) return revisions;
+  for (const lot of snapshot?.lots ?? []) {
+    if (lot.alternativeGroupId === command.groupId && Number.isInteger(lot.revision)) revisions[lot.id] = lot.revision;
+  }
+  return revisions;
+}
+
 // What a committed command does to the open editors. One coin is edited through the details, bid
 // and outcome forms at once, and a group reorder rewrites several coins, so a commit moves every
 // editor that was based on a record it replaced onto the committed revision — and only those: an
@@ -705,7 +717,7 @@ async function initWorkspace() {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
     const submittedVersion = editor ? editorVersions.get(editor) ?? 0 : null;
     const submittedBasis = editor ? editorBases.get(editor) ?? null : null;
-    const submittedRevisions = commandExpectedRevisions(command);
+    const submittedRevisions = commandReplacedRevisions(command, snapshot);
     let preserved = false;
     const commit = (value, incoming, snapshotFresh) => {
       const plan = planCommit({
