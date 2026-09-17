@@ -1,5 +1,6 @@
 import {
-  calculateAffordableBid, calculateBidCost, formatMoney, parseMoney, parsePremiumPercent,
+  MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney, nextBidOnLadder,
+  parseMoney, parsePremiumPercent, validateIncrementLadder,
 } from './core/money.js';
 import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './browser-api.js';
 
@@ -12,6 +13,55 @@ export function formatMinorInput(minor, locale = 'en-US') {
   const decimal = new Intl.NumberFormat(locale).formatToParts(1.1)
     .find(({ type }) => type === 'decimal')?.value ?? '.';
   return `${Math.floor(minor / 100)}${decimal}${String(minor % 100).padStart(2, '0')}`;
+}
+
+const LADDER_FORMAT = 'write each tier as “from: step”, for example 0: 5.';
+
+// One tier per line, `from: step`, in the auction house's own currency. A colon is the separator
+// because every other candidate — comma, point, space, apostrophe — is already a digit separator
+// somewhere the money parser has to accept.
+export function parseIncrementLadder(text, currency = 'USD', locale = 'en-US') {
+  const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter((line) => line !== '');
+  if (lines.length === 0) return { ok: true, value: null };
+  if (lines.length > MAX_INCREMENT_TIERS) {
+    return { ok: false, error: { code: 'invalid-ladder', message: `An increment ladder holds at most ${MAX_INCREMENT_TIERS} tiers.` } };
+  }
+  const tiers = [];
+  for (const [index, line] of lines.entries()) {
+    const fail = (message) => ({ ok: false, error: { code: 'invalid-ladder', message: `Line ${index + 1}: ${message}` } });
+    const parts = line.split(':');
+    if (parts.length !== 2) return fail(LADDER_FORMAT);
+    const from = parseMoney(parts[0], currency, locale);
+    const step = parseMoney(parts[1], currency, locale);
+    if (!from.ok) return fail(from.error.message);
+    if (!step.ok) return fail(step.error.message);
+    tiers.push({ from: from.value.minor, step: step.value.minor });
+  }
+  const valid = validateIncrementLadder(tiers);
+  if (valid.ok) return { ok: true, value: tiers };
+  const tier = Number(/\[(\d+)\]/.exec(valid.error.path ?? '')?.[1] ?? 0);
+  return { ok: false, error: { code: valid.error.code, message: `Line ${tier + 1}: ${valid.error.message}` } };
+}
+
+export function formatIncrementLadder(tiers, locale = 'en-US') {
+  if (!Array.isArray(tiers)) return '';
+  return tiers
+    .map((tier) => `${formatMinorInput(tier.from, locale)}: ${formatMinorInput(tier.step, locale)}`)
+    .join('\n');
+}
+
+// The house preset behind one row of the presets editor. It names the field its error belongs to so
+// the page can show the message beside that field rather than in a page-wide status line.
+export function presetFromFields({ name, premiumText, ladderText } = {}, { currency = 'USD', locale = 'en-US' } = {}) {
+  const trimmed = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return { ok: false, error: { code: 'missing-name', message: 'Enter an auction house name.', field: 'name' } };
+  const premium = parsePremiumPercent(premiumText, locale);
+  if (!premium.ok) return { ok: false, error: { ...premium.error, field: 'premium' } };
+  const ladder = parseIncrementLadder(ladderText, currency, locale);
+  if (!ladder.ok) return { ok: false, error: { ...ladder.error, field: 'ladder' } };
+  const preset = { name: trimmed, buyerPremiumBps: premium.value };
+  if (ladder.value) preset.incrementLadder = ladder.value;
+  return { ok: true, value: preset };
 }
 
 export function buildBidCalculation(input) {
@@ -35,10 +85,24 @@ export function buildBidCalculation(input) {
   };
   const options = { ...costEstimate };
   delete options.currency;
+  // A house ladder belongs to the house, not to this lot, so it drives the calculation without
+  // joining the cost estimate the lot is saved with.
+  const ladder = Array.isArray(input.ladder) && input.ladder.length > 0 ? input.ladder : null;
+  if (ladder) options.ladder = ladder;
   const calculated = input.mode === 'budget'
     ? calculateAffordableBid(amount.value, premium.value, options)
     : calculateBidCost(amount.value, premium.value, options);
-  return calculated.ok ? { ...calculated, costEstimate, buyerPremiumBps: premium.value } : calculated;
+  if (!calculated.ok) return calculated;
+  // The grid the collector is bidding on: the house ladder, or the fixed increment anchored at the
+  // minimum bid. A hammer that is off it is answered with the next bid the house would take.
+  const grid = ladder ?? [{ from: minimum.value.minor, step: increment.value.minor }];
+  const next = nextBidOnLadder(grid, calculated.value.hammer.minor);
+  return {
+    ...calculated,
+    costEstimate,
+    buyerPremiumBps: premium.value,
+    nextValidBid: next.ok ? { currency: input.currency, minor: next.value } : calculated.value.hammer,
+  };
 }
 
 export function snapshotSupersedes(incoming, accepted) {

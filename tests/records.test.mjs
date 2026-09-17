@@ -526,6 +526,22 @@ test('rejects duplicate or out-of-bounds house premium presets and oversized lot
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 
+test('a house preset may carry an optional increment ladder that older data simply lacks', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  const preferences = { schemaVersion: 1, revision: 0, currency: 'USD', catalogue: 'Price', number: '23', volume: '', section: '', sampleMode: false, desktopAlertsEnabled: false, housePremiumPresets: [{ name: 'CNG', buyerPremiumBps: 2000 }], createdAt: NOW, updatedAt: NOW };
+  snapshot.preferences = preferences;
+  // The field is optional, so a root written before this version needs no migration to validate.
+  assert.equal(validateSnapshot(migrateSnapshot(snapshot)).ok, true);
+  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }];
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  preferences.housePremiumPresets[0].incrementLadder = [{ from: 100, step: 500 }];
+  assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder[0].from');
+  preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }, { from: 10000, step: 0 }];
+  assert.equal(validateSnapshot(snapshot).error.code, 'invalid-ladder');
+  preferences.housePremiumPresets[0].incrementLadder = [];
+  assert.equal(validateSnapshot(snapshot).ok, false);
+});
+
 test('durable current-lot drafts cannot contain fetched provider results', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.drafts.push({

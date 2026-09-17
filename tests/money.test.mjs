@@ -3,16 +3,26 @@ import assert from 'node:assert/strict';
 
 import {
   CURRENCIES,
+  MAX_INCREMENT_TIERS,
   calculateMaximumHammer,
   calculateAffordableBid,
   calculateBidCost,
   calculatePremium,
   formatMoney,
+  nextBidOnLadder,
   parseMoney,
   parsePremiumPercent,
   sumMoney,
+  validateIncrementLadder,
   validateMoney,
 } from '../extension/core/money.js';
+
+// The tier a bid sits in, by the same rule the calculator uses: the last tier that starts at or
+// below it. Written out here so the invariants are checked against the specification, not against
+// the implementation that is under test.
+function tierAt(tiers, minor) {
+  return [...tiers].reverse().find((tier) => tier.from <= minor) ?? tiers[0];
+}
 
 test('calculates full bid cost with half-up percentage fees', () => {
   assert.deepEqual(calculateBidCost({ currency: 'GBP', minor: 10000 }, 2250, {
@@ -63,6 +73,95 @@ test('affordable bids stay within budget, on the grid and maximal across randomi
     assert.ok(hammer >= Math.max(options.minimumBidMinor, 1), `index ${index} positive bid`);
     assert.equal((hammer - options.minimumBidMinor) % options.incrementMinor, 0, `index ${index} on the grid`);
     const above = calculateBidCost({ currency: 'EUR', minor: hammer + options.incrementMinor }, buyerPremiumBps, options);
+    assert.ok(!above.ok || above.value.total.minor > budget.minor, `index ${index} maximal`);
+  }
+});
+
+test('an increment ladder is ordered, anchored at zero and bounded', () => {
+  assert.equal(validateIncrementLadder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]).ok, true);
+  assert.equal(validateIncrementLadder([]).error.code, 'invalid-ladder');
+  assert.equal(validateIncrementLadder('0: 5').error.code, 'invalid-ladder');
+  assert.equal(validateIncrementLadder([{ from: 100, step: 5 }]).error.path, 'incrementLadder[0].from');
+  assert.equal(validateIncrementLadder([{ from: 0, step: 0 }]).error.path, 'incrementLadder[0].step');
+  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: 0, step: 10 }]).error.path, 'incrementLadder[1].from');
+  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: -1, step: 10 }]).error.path, 'incrementLadder[1].from');
+  assert.equal(validateIncrementLadder([{ from: 0, step: 5 }, { from: 10, step: 1.5 }]).error.path, 'incrementLadder[1].step');
+  const tooMany = Array.from({ length: MAX_INCREMENT_TIERS + 1 }, (_, index) => ({ from: index * 100, step: 10 }));
+  assert.equal(validateIncrementLadder(tooMany).error.code, 'invalid-ladder');
+  assert.equal(validateIncrementLadder(tooMany.slice(0, MAX_INCREMENT_TIERS)).ok, true);
+  assert.equal(validateIncrementLadder(null, 'preset.ladder').error.path, 'preset.ladder');
+});
+
+test('the next bid on a ladder rounds up, never down, and lands on a tier boundary', () => {
+  const tiers = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }, { from: 50000, step: 2500 }];
+  assert.equal(nextBidOnLadder(tiers, 0).value, 0);
+  assert.equal(nextBidOnLadder(tiers, 1).value, 500);
+  assert.equal(nextBidOnLadder(tiers, 500).value, 500, 'a bid exactly at a step is already on the grid');
+  assert.equal(nextBidOnLadder(tiers, 10000).value, 10000, 'a bid exactly at a tier start is on the grid');
+  assert.equal(nextBidOnLadder(tiers, 9600).value, 10000, 'the rounded bid stops at the next tier');
+  assert.equal(nextBidOnLadder(tiers, 10001).value, 11000);
+  assert.equal(nextBidOnLadder(tiers, 49500).value, 50000);
+  assert.equal(nextBidOnLadder(tiers, 50001).value, 52500);
+  // The fixed increment is the one-tier case, anchored wherever the collector's minimum sits.
+  assert.equal(nextBidOnLadder([{ from: 2000, step: 1000 }], 100).value, 2000);
+  assert.equal(nextBidOnLadder([{ from: 2000, step: 1000 }], 2001).value, 3000);
+  assert.equal(nextBidOnLadder([{ from: 0, step: 5 }], -1).error.code, 'invalid-option');
+  assert.equal(nextBidOnLadder([{ from: 0, step: 0 }], 5).error.code, 'invalid-ladder');
+});
+
+test('the affordable bid walks the ladder and may land below the budget-implied tier', () => {
+  const tiers = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }, { from: 50000, step: 2500 }];
+  // No fees: the budget is the hammer, so the answer is the grid value at or below it.
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 10999 }, 0, { ladder: tiers }).value.hammer.minor, 10000);
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 9999 }, 0, { ladder: tiers }).value.hammer.minor, 9500);
+  // A budget that reaches into the 2500 tier but not as far as its first step falls back to the
+  // last bid of the tier below it.
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 51000 }, 0, { ladder: tiers }).value.hammer.minor, 50000);
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 52499 }, 0, { ladder: tiers }).value.hammer.minor, 50000);
+  // A minimum the house's schedule does not allow is rounded up before it is used as the floor.
+  const floored = calculateAffordableBid({ currency: 'EUR', minor: 12000 }, 0, { ladder: tiers, minimumBidMinor: 9600 });
+  assert.equal(floored.value.hammer.minor, 12000);
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 9800 }, 0, { ladder: tiers, minimumBidMinor: 9600 }).error.code, 'no-affordable-bid');
+  // Fees push the affordable hammer down the ladder rather than off it.
+  const withFees = calculateAffordableBid({ currency: 'EUR', minor: 15000 }, 2000, {
+    shippingMinor: 500, paymentFeeBps: 250, paymentFeeMinor: 50, ladder: tiers,
+  });
+  assert.equal(withFees.value.hammer.minor, 11000);
+  assert.ok(withFees.value.total.minor <= 15000);
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 100 }, 0, { ladder: [{ from: 10, step: 5 }] }).error.code, 'invalid-ladder');
+});
+
+test('affordable ladder bids stay within budget, on the tier grid and maximal', () => {
+  let seed = 20260918;
+  const next = (bound) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % bound;
+  };
+  for (let index = 0; index < 400; index += 1) {
+    const tiers = [{ from: 0, step: 1 + next(3000) }];
+    for (let tier = 0; tier < next(6); tier += 1) {
+      tiers.push({ from: tiers[tiers.length - 1].from + 1 + next(200000), step: 1 + next(20000) });
+    }
+    const budget = { currency: 'EUR', minor: next(2_000_000) };
+    const buyerPremiumBps = next(10001);
+    const options = {
+      shippingMinor: next(20000), paymentFeeBps: next(3000), paymentFeeMinor: next(5000),
+      minimumBidMinor: next(50000), ladder: tiers,
+    };
+    const trace = () => JSON.stringify({ index, budget, buyerPremiumBps, options });
+    const floor = nextBidOnLadder(tiers, Math.max(options.minimumBidMinor, 1)).value;
+    const result = calculateAffordableBid(budget, buyerPremiumBps, options);
+    if (!result.ok) {
+      assert.equal(result.error.code, 'no-affordable-bid', trace());
+      assert.ok(calculateBidCost({ currency: 'EUR', minor: floor }, buyerPremiumBps, options).value.total.minor > budget.minor, trace());
+      continue;
+    }
+    const hammer = result.value.hammer.minor;
+    assert.ok(result.value.total.minor <= budget.minor, `index ${index} within budget`);
+    assert.ok(hammer >= floor, `index ${index} at or above the rounded minimum`);
+    const tier = tierAt(tiers, hammer);
+    assert.equal((hammer - tier.from) % tier.step, 0, `index ${index} on the grid of its tier`);
+    const above = calculateBidCost({ currency: 'EUR', minor: nextBidOnLadder(tiers, hammer + 1).value }, buyerPremiumBps, options);
     assert.ok(!above.ok || above.value.total.minor > budget.minor, `index ${index} maximal`);
   }
 });

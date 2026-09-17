@@ -177,6 +177,80 @@ export function calculateMaximumHammer(budget, buyerPremiumBps) {
   };
 }
 
+export const MAX_INCREMENT_TIERS = 20;
+
+// Every rule of a ladder except the anchor at zero. The fixed increment field is the one-tier case
+// of the same code, and its one tier is anchored at the collector's minimum bid instead.
+function ladderShape(tiers, path) {
+  if (!Array.isArray(tiers) || tiers.length === 0 || tiers.length > MAX_INCREMENT_TIERS) {
+    return failure('invalid-ladder', `An increment ladder needs 1 to ${MAX_INCREMENT_TIERS} tiers.`, path);
+  }
+  let previousFrom = -1;
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tier = tiers[index];
+    const tierPath = `${path}[${index}]`;
+    if (!tier || typeof tier !== 'object' || Array.isArray(tier)) {
+      return failure('invalid-ladder', 'Each tier must be a from and a step.', tierPath);
+    }
+    if (!Number.isSafeInteger(tier.from) || tier.from < 0 || tier.from <= previousFrom) {
+      return failure('invalid-ladder', 'Each tier must start above the tier before it.', `${tierPath}.from`);
+    }
+    if (!Number.isSafeInteger(tier.step) || tier.step < 1) {
+      return failure('invalid-ladder', 'Each tier needs a step greater than zero.', `${tierPath}.step`);
+    }
+    previousFrom = tier.from;
+  }
+  return { ok: true, value: tiers };
+}
+
+// A stored ladder is the house's own schedule as the collector copied it: the first tier starts at
+// zero so that every bid falls in exactly one tier.
+export function validateIncrementLadder(tiers, path = 'incrementLadder') {
+  const shape = ladderShape(tiers, path);
+  if (!shape.ok) return shape;
+  return tiers[0].from === 0
+    ? { ok: true, value: tiers }
+    : failure('invalid-ladder', 'The first tier must start at 0.', `${path}[0].from`);
+}
+
+function tierAt(tiers, minor) {
+  let index = 0;
+  while (index + 1 < tiers.length && tiers[index + 1].from <= minor) index += 1;
+  return tiers[index];
+}
+
+// The smallest bid on the ladder at or above `minor`, which is `minor` itself when it already sits
+// on the grid of its tier. A step that would carry past the next tier stops at that tier's start,
+// which is on the grid by definition.
+function nextOnLadder(tiers, minor) {
+  const floored = Math.max(minor, tiers[0].from);
+  const tier = tierAt(tiers, floored);
+  const remainder = (floored - tier.from) % tier.step;
+  if (remainder === 0) return floored;
+  const candidate = floored + (tier.step - remainder);
+  const nextTier = tiers[tiers.indexOf(tier) + 1];
+  return nextTier ? Math.min(candidate, nextTier.from) : candidate;
+}
+
+// The highest bid on the ladder at or below `minor`, which is never below the tier it falls in.
+function previousOnLadder(tiers, minor) {
+  const tier = tierAt(tiers, minor);
+  return tier.from + Math.floor((minor - tier.from) / tier.step) * tier.step;
+}
+
+// A minimum bid the house's schedule does not allow is rounded up, never down: a bid below the grid
+// is not a bid the house would take.
+export function nextBidOnLadder(tiers, minor) {
+  const shape = ladderShape(tiers, 'incrementLadder');
+  if (!shape.ok) return shape;
+  const valid = optionInteger(minor, 'minor');
+  if (!valid.ok) return valid;
+  const next = nextOnLadder(tiers, minor);
+  return Number.isSafeInteger(next)
+    ? { ok: true, value: next }
+    : failure('unsafe-money', 'The next bid on this ladder is outside the supported integer range.');
+}
+
 function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE_INTEGER } = {}) {
   if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0) || value > maximum) {
     return failure('invalid-option', `${key} must be ${positive ? 'a positive' : 'a non-negative'} safe integer.`, key);
@@ -219,23 +293,36 @@ export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
   for (const [key, config] of [['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]]) {
     const valid = optionInteger(values[key], key, config); if (!valid.ok) return valid;
   }
+  // A house ladder replaces the fixed grid; without one the fixed increment is a single tier
+  // anchored at the minimum bid, which is the grid this calculator has always used.
+  const tiers = values.ladder === undefined
+    ? [{ from: values.minimumBidMinor, step: values.incrementMinor }]
+    : values.ladder;
+  if (values.ladder !== undefined) {
+    const valid = validateIncrementLadder(values.ladder, 'ladder');
+    if (!valid.ok) return valid;
+  }
   const premiumCheck = calculatePremium({ currency: budget.currency, minor: 0 }, buyerPremiumBps);
   if (!premiumCheck.ok) return premiumCheck;
   const affordable = (minor) => {
     const result = calculateBidCost({ currency: budget.currency, minor: Number(minor) }, buyerPremiumBps, values);
     return result.ok && result.value.total.minor <= budget.minor;
   };
-  const minimum = BigInt(values.minimumBidMinor);
-  const increment = BigInt(values.incrementMinor);
-  const firstIndex = minimum === 0n ? 1n : 0n;
-  if (!affordable(minimum + firstIndex * increment)) return failure('no-affordable-bid', 'No positive bid on this grid is affordable.');
-  let low = firstIndex;
-  let high = (BigInt(budget.minor) >= minimum ? (BigInt(budget.minor) - minimum) / increment + 1n : firstIndex + 1n);
+  // The lowest bid worth trying: positive, at or above the minimum, and rounded up onto the grid.
+  const floor = nextOnLadder(tiers, Math.max(values.minimumBidMinor, 1));
+  if (!Number.isSafeInteger(floor)) return failure('unsafe-money', 'The lowest bid on this grid is outside the supported integer range.');
+  if (!affordable(floor)) return failure('no-affordable-bid', 'No positive bid on this grid is affordable.');
+  // Total cost never falls as the hammer rises, so the affordable hammers are exactly those at or
+  // below one boundary: find it, then step back onto the grid of whichever tier it lands in. That
+  // step back is what puts the answer in a lower tier when the tier above is out of reach.
+  let low = BigInt(floor);
+  let high = BigInt(budget.minor) + 1n;
   while (low + 1n < high) {
     const middle = (low + high) / 2n;
-    if (affordable(minimum + middle * increment)) low = middle; else high = middle;
+    if (affordable(middle)) low = middle; else high = middle;
   }
-  return calculateBidCost({ currency: budget.currency, minor: Number(minimum + low * increment) }, buyerPremiumBps, values);
+  const hammer = previousOnLadder(tiers, Number(low));
+  return calculateBidCost({ currency: budget.currency, minor: hammer }, buyerPremiumBps, values);
 }
 
 export function sumMoney(values, currency) {
