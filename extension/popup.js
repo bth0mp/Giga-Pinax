@@ -33,7 +33,10 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
-const ONLINE_MESSAGE = 'This type was not available in the local OCRE catalogue. Check online to search numismatics.org.';
+// Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
+// number is not in OCRE would be told about a catalogue nobody looked in.
+const onlineMessage = (corpus) => `This type was not available in the local ${CORPUS_NAME[corpus] ? `${CORPUS_NAME[corpus]} ` : ''}catalogue. `
+  + 'Check online to search numismatics.org.';
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -994,7 +997,7 @@ async function run(perform, note = '', failedReference = null) {
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
   else if (outcome.status === 'online-required') {
-    showError(ONLINE_MESSAGE);
+    showError(onlineMessage(outcome.corpus));
     const button = $('online-fallback');
     button.hidden = false;
     button.disabled = false;

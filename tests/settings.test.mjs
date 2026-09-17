@@ -131,8 +131,11 @@ test('a refused command is reported without claiming the import happened', async
 const settingsHtml = readFileSync(new URL('../extension/settings.html', import.meta.url), 'utf8');
 const dataRoot = new URL('../extension/data/', import.meta.url);
 
+// The corpus directories, without the two files extension/data holds for all of them at once.
+const bundledCorpora = () => readdirSync(dataRoot).filter((name) => !name.includes('.')).sort();
+
 test('the bundled-data panel names every corpus the package carries, and only those', () => {
-  const bundled = readdirSync(dataRoot).sort();
+  const bundled = bundledCorpora();
   assert.deepEqual(Object.keys(LOCAL_CORPORA).sort(), bundled);
   // One row per corpus, each built from that corpus's own metadata rather than from a sentence written here.
   assert.match(settingsSource, /const corpora = Object\.keys\(LOCAL_CORPORA\);/);
@@ -142,14 +145,22 @@ test('the bundled-data panel names every corpus the package carries, and only th
   // online, and it must not be listed as a corpus the package carries.
   assert.match(settingsHtml, /RIC, Crawford, Price and Seleucid Coins lookups use this local data\./);
   assert.match(settingsHtml, /Bopearachchi references and any lookup the local data cannot answer go online/);
-  // A local card resolves no name of its own, and the panel must not imply that it does.
-  assert.match(settingsHtml, /shows the Nomisma identifier a record carries/);
+  // The names travel with the package now, so the panel says so — and says what it still cannot name. It must not go
+  // back to claiming a local card shows nothing but identifiers, and it must not claim every concept has a name.
+  assert.match(settingsHtml, /English Nomisma\.org names for every authority, denomination, mint, material and portrait/);
+  assert.match(settingsHtml, /CC BY 3\.0/);
+  assert.match(settingsHtml, /shows as the identifier the record carries, and none is ever guessed/);
+  // Every name the panel promises is really in the file beside the records.
+  const labels = JSON.parse(readFileSync(new URL('nomisma-labels.json', dataRoot), 'utf8'));
+  assert.equal(labels.schemaVersion, 1);
+  assert.ok(Object.keys(labels.labels).length > 1000);
+  assert.match(readFileSync(new URL('NOTICE.txt', dataRoot), 'utf8'), /Creative Commons Attribution 3\.0/);
   assert.equal(bundled.includes('bigr'), false);
   assert.doesNotMatch(settingsHtml, /id="catalogue-coverage"/);
 });
 
 test('each panel row reports the counts and the date its own corpus metadata carries', () => {
-  for (const corpus of readdirSync(dataRoot)) {
+  for (const corpus of bundledCorpora()) {
     const metadata = JSON.parse(readFileSync(new URL(`${corpus}/metadata.json`, dataRoot), 'utf8'));
     const line = catalogueMetadataText(metadata);
     assert.match(line, new RegExp(`${LOCAL_CORPORA[corpus].label} records`), corpus);

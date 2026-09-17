@@ -40,22 +40,25 @@ function labelFor(values, cache) {
 
 const PEOPLE_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person.name]));
 // The checked-in Nomisma snapshot was filtered against OCRE's own authority and portrait concepts, so it names RIC's
-// people and nobody else's. A Seleucid or Republican identifier it happens to carry would be a label taken from a
-// source that was never asked about that corpus, so only OCRE reads it; every other corpus leaves an identifier the
-// label cache cannot resolve exactly as unresolved as the online card leaves it.
+// people and nobody else's; only OCRE reads it. It also outranks the bundled Nomisma labels for those concepts: RIC's
+// own section spelling is what the collector typed and what the book's page says, so an OCRE card keeps it wherever
+// the two differ. The runtime cache outranks both, because that is nomisma.org answering about this record now.
 const NO_PEOPLE = new Map();
+const NO_LABELS = new Map();
 
-export function packedRecordToCard(record, cache = new Map(), corpus = 'ocre') {
+export function packedRecordToCard(record, cache = new Map(), corpus = 'ocre', labels = NO_LABELS) {
   if (!record || typeof record.i !== 'string' || typeof record.l !== 'string') return null;
   const people = LOCAL_CORPORA[corpus]?.people ? PEOPLE_BY_ID : NO_PEOPLE;
-  const named = (id) => cache?.get?.(id) ?? people.get(id);
-  const authority = labelFor(record.a, { get: named });
+  // An identifier none of the three names is left exactly as it is: never guessed, never title-cased into a label.
+  const named = (id) => cache?.get?.(id) ?? people.get(id) ?? labels.get(id);
+  const resolved = { get: named };
+  const authority = labelFor(record.a, resolved);
   const portraits = record.o?.p;
   const portrait = record.a?.length === 1 && portraits?.length === 1 ? named(portraits[0]) ?? null : null;
   const side = (value = {}) => ({ legend: typeof value.l === 'string' ? value.l : null, description: typeof value.d === 'string' ? value.d : null });
   return {
     id: record.i, uri: `${LOCAL_CORPORA[corpus].uri}${encodeURIComponent(record.i)}`, corpus, label: record.l,
-    authority, denomination: labelFor(record.d, cache), mint: labelFor(record.m, cache), material: labelFor(record.x, cache),
+    authority, denomination: labelFor(record.d, resolved), mint: labelFor(record.m, resolved), material: labelFor(record.x, resolved),
     portrait, dates: formatDates(record.s, record.e), obverse: side(record.o), reverse: side(record.r), source: 'local',
   };
 }
@@ -79,6 +82,14 @@ async function json(fetchImpl, url) {
   return response.json();
 }
 
+// A failed load is never remembered: one dropped request would otherwise leave a rejected promise in hand for the life of the page, and every later
+// lookup would fail on it without asking again. The slot is cleared as the rejection passes, so the next lookup retries.
+const retried = (load, forget) => {
+  const promise = load();
+  promise.catch(forget);
+  return promise;
+};
+
 // One corpus's files, loaded on demand and never before: a popup that opens, or a lookup of another catalogue, reads
 // nothing at all, and a lookup by identifier reads the metadata and one shard.
 function createStore(name, fetchImpl, baseUrl) {
@@ -88,13 +99,6 @@ function createStore(name, fetchImpl, baseUrl) {
   let indexPromise;
   let numbersPromise;
   const shardPromises = new Map();
-  // A failed load is never remembered: one dropped request would otherwise leave a rejected promise in hand for the life of the page, and every later
-  // lookup would fail on it without asking again. The slot is cleared as the rejection passes, so the next lookup retries.
-  const retried = (load, forget) => {
-    const promise = load();
-    promise.catch(forget);
-    return promise;
-  };
   const metadata = async () => {
     const value = await json(fetchImpl, new URL('metadata.json', base));
     if (value?.schemaVersion !== 1 || value.corpus !== name || !isMap(value.shards) || !isMap(value.aliases)) throw new Error(`Invalid local ${corpus.label} metadata`);
@@ -154,8 +158,23 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     if (!stores.has(name)) stores.set(name, createStore(name, fetchImpl, baseUrl));
     return stores.get(name);
   };
+  // The names every corpus shares, in one file beside them. It is read when the first card is built and never before
+  // or again: a lookup that misses, or one the popup makes of a corpus that is not bundled, asks for no name at all.
+  let labelsPromise;
+  const loadLabels = async () => {
+    const value = await json(fetchImpl, new URL('nomisma-labels.json', baseUrl));
+    if (value?.schemaVersion !== 1 || !isMap(value.labels)) throw new Error('Invalid local Nomisma labels');
+    return new Map(Object.entries(value.labels).filter(([, label]) => typeof label === 'string' && label !== ''));
+  };
+  // A missing or damaged label file costs the card its names, never the answer: the record is what the collector asked
+  // for, and it is all there whether or not anything can be named on it.
+  const labels = async () => {
+    try { return await (labelsPromise ??= retried(loadLabels, () => { labelsPromise = undefined; })); }
+    catch { return NO_LABELS; }
+  };
   const byId = async (name, id) => {
-    const card = packedRecordToCard(await store(name).recordById(id), cache, name);
+    const record = await store(name).recordById(id);
+    const card = record && packedRecordToCard(record, cache, name, await labels());
     return card ? { status: 'ok', card } : { status: 'none', corpus: name };
   };
   // The entries a lookup compares titles against, as objects rather than the pairs the file stores.
@@ -243,8 +262,16 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     }
     // The quoted phrase search first, which is exact over the whole corpus ("RRC 98B" is titled with no group slash),
     // then the loose search narrowed to the reference's own group, which is where the near misses come from.
-    const listed = await entries(name);
+    // The metadata is read with the index, never after it: an index short of a record is still a schema-valid index
+    // whose every title resolves, and the count beside it is the one thing that tells it from the index the importer
+    // wrote. Without it a stale bundle would answer "not in this catalogue" for a coin the package holds.
+    const [meta, listed] = await Promise.all([store(name).loadMetadata(), entries(name)]);
+    if (listed.length !== meta.activeRecordCount) throw new Error(`Invalid local ${LOCAL_CORPORA[name].label} index`);
     let picked = pickMatch(listed, query);
+    // inGroup's rule over the whole index rather than over what Solr returned, so the near misses are a superset of the
+    // online ones: "SC 1266.9" offers sc.1.1266 and sc.1.1266.2 where ANS's own search for the base number returns
+    // sc.1.1266 alone, though sc.1.1266.2 is a real record of that group. Deliberate — these are candidates the
+    // collector chooses from, never a record opened for him, so the longer list can only ever offer him more.
     if (picked.status !== 'ok') picked = pickMatch(inGroup(listed, name, reference), query);
     if (picked.status === 'ok') return await byId(name, picked.entry.id);
     return local(picked, name, query);

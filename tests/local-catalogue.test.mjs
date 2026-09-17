@@ -67,7 +67,7 @@ test('local catalogue resolves exact RIC titles without loading an unrelated sha
   assert.equal(result.status, 'ok');
   assert.equal(result.card.id, 'ric.1(2).ner.306');
   assert.equal(result.card.source, 'local');
-  assert.deepEqual(fetchImpl.calls.map((url) => url.split('/').pop()), ['metadata.json', 'index.json', 'numbers.json', 'records-1(2).json']);
+  assert.deepEqual(fetchImpl.calls.map((url) => url.split('/').pop()), ['metadata.json', 'index.json', 'numbers.json', 'records-1(2).json', 'nomisma-labels.json']);
 });
 
 test('local catalogue preserves RIC partial, suffix, volume and sibling candidate rules', async () => {
@@ -238,7 +238,9 @@ const bundleJson = (path) => {
   if (!files.has(path)) files.set(path, JSON.parse(readFileSync(`${BUNDLE}${path}`, 'utf8')));
   return files.get(path);
 };
-const bundlePath = (url) => decodeURIComponent(String(url)).split('/').slice(-2).join('/');
+// A bundled file by its path under extension/data: "<corpus>/<name>", or a bare name for one the corpora share.
+const bundlePath = (url) => decodeURIComponent(String(url)).replace('moz-extension://test/data/', '');
+const bundledLabels = () => bundleJson('nomisma-labels.json').labels;
 // Every file served as the package serves it, and every request recorded, so a test can say what a lookup cost.
 const asked = [];
 const bundle = createLocalCatalogue({
@@ -418,9 +420,9 @@ test('a split volume is read from the part its id falls in, and no index is touc
   const boundary = bundleJson('ocre/metadata.json').shards['5'][1].from;
   const before = Object.keys(bundleJson(`ocre/${first}`).records).at(-1);
   assert.equal((await local.lookupById('ocre', boundary)).card.id, boundary);
-  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`]);
+  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`, 'nomisma-labels.json']);
   assert.equal((await local.lookupById('ocre', before)).card.id, before);
-  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`, `ocre/${first}`]);
+  assert.deepEqual(read, ['ocre/metadata.json', `ocre/${second}`, 'nomisma-labels.json', `ocre/${first}`]);
   assert.equal((await local.lookupById('ocre', 'ric.5.nobody.1')).status, 'none');
 });
 
@@ -463,10 +465,67 @@ test('a local card is field for field the card the online path builds from the s
     // source is the one field the online card has no opinion about: it is how the popup says which bundle answered.
     assert.equal(card.source, 'local');
     assert.deepEqual({ ...card, source: undefined }, { ...online, source: undefined }, `${corpus} ${id}`);
-    // With no label for anything, both sides fall back to the identifier the record carries and neither invents one.
+    // And with nothing cached at all: the names in the package must build the card the online path builds once
+    // nomisma.org has answered for every concept the package carries a name for.
+    const packaged = Object.fromEntries(slugs.filter((slug) => Object.hasOwn(bundledLabels(), slug))
+      .map((slug) => [slug, bundledLabels()[slug]]));
     assert.deepEqual({ ...(await bundle.lookupById(corpus, id)).card, source: undefined },
-      { ...toCard(record, corpus, {}), source: undefined }, `${corpus} ${id} unlabelled`);
+      { ...toCard(record, corpus, packaged), source: undefined }, `${corpus} ${id} bundled labels`);
+    assert.ok(Object.keys(packaged).length > 0, `${corpus} ${id} has no bundled label at all`);
   }
+});
+
+test('a name the collector already has wins over the bundled one, and an unnamed concept stays its identifier', { skip }, async () => {
+  // RIC's own spelling of a ruler is what the collector typed and what the section above the coin says, so
+  // ric-people.js outranks the Nomisma label for an OCRE authority; nomisma.org's answer, cached by an online lookup,
+  // outranks both because it is the record's own publisher answering now.
+  const record = { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], o: { p: ['nero'] }, r: {} };
+  const labels = new Map([['nero', 'Nero Claudius Caesar Augustus Germanicus'], ['as', 'As']]);
+  assert.equal(packedRecordToCard(record, new Map(), 'ocre', labels).authority, 'Nero');
+  assert.equal(packedRecordToCard(record, new Map(), 'ocre', labels).portrait, 'Nero');
+  assert.equal(packedRecordToCard(record, new Map([['nero', 'Nero of Rome']]), 'ocre', labels).authority, 'Nero of Rome');
+  // A corpus ric-people.js was never filtered for takes the bundled name and nothing else.
+  assert.equal(packedRecordToCard({ i: 'price.23', l: 'Price 23', a: ['nero'], o: {}, r: {} }, new Map(), 'pella', labels).authority,
+    'Nero Claudius Caesar Augustus Germanicus');
+  // Nomisma publishes no English label for these two, so no name is guessed and neither card gains one.
+  assert.equal((await bundle.lookupById('ocre', 'ric.3.m_aur.1505')).card.denomination, 'dupondius_or_as');
+  assert.equal((await bundle.lookupById('sco', 'sc.1.1278')).card.mint, 'uncertain_74_sco');
+});
+
+test('the labels are read once, only when a card is built, and a broken label file leaves the identifiers standing', { skip }, async () => {
+  const read = [];
+  const serve = (override = () => null) => async (url) => {
+    const path = bundlePath(url);
+    read.push(path);
+    return override(path) ?? { ok: true, status: 200, json: async () => bundleJson(path) };
+  };
+  const local = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', fetchImpl: serve() });
+  // A miss builds no card, so it asks for no names.
+  assert.equal((await local.lookupType(parseReference('Price 999999'))).status, 'none');
+  assert.ok(!read.includes('nomisma-labels.json'), read.join(' '));
+  assert.equal((await local.lookupById('pella', 'price.23')).card.material, 'Silver');
+  assert.equal(read.filter((path) => path === 'nomisma-labels.json').length, 1);
+  assert.equal((await local.lookupById('crro', 'rrc-44.5')).card.material, 'Silver');
+  assert.equal(read.filter((path) => path === 'nomisma-labels.json').length, 1);
+  // Missing, or there but not the file the package ships: the card is still the record, with the identifiers on it.
+  for (const broken of [{ ok: false, status: 404, json: async () => ({}) }, { ok: true, status: 200, json: async () => ({ schemaVersion: 2 }) }]) {
+    const degraded = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/',
+      fetchImpl: serve((path) => (path === 'nomisma-labels.json' ? broken : null)) });
+    const found = await degraded.lookupById('pella', 'price.23');
+    assert.equal(found.status, 'ok');
+    assert.equal(found.card.material, 'ar');
+    assert.equal(found.card.authority, 'alexander_iii');
+  }
+  // A dropped request is forgotten as the rejection passes, so the next card asks again rather than staying nameless.
+  let dropped = true;
+  const retried = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/',
+    fetchImpl: async (url) => {
+      const path = bundlePath(url);
+      if (path === 'nomisma-labels.json' && dropped) { dropped = false; throw new Error('offline'); }
+      return { ok: true, status: 200, json: async () => bundleJson(path) };
+    } });
+  assert.equal((await retried.lookupById('crro', 'rrc-44.5')).card.material, 'ar');
+  assert.equal((await retried.lookupById('crro', 'rrc-44.5')).card.material, 'Silver');
 });
 
 test('a bundled reference is answered without one request to numismatics.org', { skip }, async () => {
@@ -490,9 +549,15 @@ test('each reference shape is answered from the bundle as the online path answer
     assert.equal(found.card.id, id, text);
   }
   // A number the base group has near misses for is offered, out of the group the online base-number search is filtered to.
+  // Deliberately a superset of the online answer: ANS's own search for "SC 1266" returns sc.1.1266 alone
+  // (tests/fixtures/sco-search-sc-1266.xml, <opensearch:totalResults>1</opensearch:totalResults>), while the bundle
+  // applies inGroup's rule to the whole index and so also offers sc.1.1266.2, a real record of that group Solr left
+  // out. Candidates are offered, never opened, so the wider list is a longer "did you mean" and never a wrong answer.
   const sc = await bundle.lookupType(parseReference('SC 1266.9'));
   assert.deepEqual([sc.status, sc.candidates.map((entry) => entry.id), sc.corpus, sc.query],
     ['candidates', ['sc.1.1266', 'sc.1.1266.2'], 'sco', 'SC 1266.9']);
+  assert.equal(readFileSync(new URL('./fixtures/sco-search-sc-1266.xml', import.meta.url), 'utf8')
+    .match(/<opensearch:totalResults>(\d+)</)[1], '1');
   assert.ok(sc.candidates.every((entry) => entry.source === 'local'));
   const rrc = await bundle.lookupType(parseReference('RRC 1/9'));
   assert.deepEqual([rrc.status, rrc.candidates.map((entry) => entry.id)], ['candidates', ['rrc-1.1']]);
@@ -517,14 +582,45 @@ test('a lookup loads only the corpus it asks about, and never an index it does n
   assert.equal(await local.lookupType(parseReference('Bop Euthydemus I 24A')), null);
   assert.equal(await local.lookupById('bigr', 'bigr.euthydemus_i.13.1'), null);
   assert.deepEqual(read, []);
-  // An SC reference names its record, so the index is never read for it.
+  // An SC reference names its record, so the index is never read for it. The shared label file is read with the first
+  // card built, whichever corpus builds it, and never again.
   assert.equal((await local.lookupType(parseReference('SC 1266.2'))).card.id, 'sc.1.1266.2');
-  assert.deepEqual(read.splice(0), ['sco/metadata.json', 'sco/records-sc.json']);
+  assert.deepEqual(read.splice(0), ['sco/metadata.json', 'sco/records-sc.json', 'nomisma-labels.json']);
   // A Price reference is a title, so it reads that corpus's index and its shard, and nothing of any other corpus.
   assert.equal((await local.lookupType(parseReference('Price 23'))).card.id, 'price.23');
   assert.deepEqual(read.splice(0).sort(), ['pella/index.json', 'pella/metadata.json', 'pella/records-price.json']);
   assert.equal((await local.lookupById('crro', 'rrc-44.5')).card.id, 'rrc-44.5');
   assert.deepEqual(read.splice(0), ['crro/metadata.json', 'crro/records-rrc.json']);
+});
+
+test('an index and the metadata beside it that disagree are unavailable, never a miss', { skip }, async () => {
+  // A record dropped from the index is still a schema-valid index, and every title left in it resolves: nothing but the
+  // count the metadata carries tells the two apart, and without it the bundle would answer "no such Price number" for a
+  // coin it holds. The number index does this for OCRE; the count does it for the corpora matched on titles.
+  const served = (overrides) => createLocalCatalogue({ baseUrl: 'moz-extension://test/data/',
+    fetchImpl: async (url) => {
+      const path = bundlePath(url);
+      const value = Object.hasOwn(overrides, path) ? overrides[path] : bundleJson(path);
+      if (value === null) return { ok: false, status: 404, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => value };
+    } });
+  const short = (corpus, file, id) => ({ ...bundleJson(`${corpus}/${file}`),
+    entries: bundleJson(`${corpus}/${file}`).entries.filter((entry) => entry[0] !== id) });
+  for (const [reference, overrides] of [
+    ['Price 23', { 'pella/index.json': short('pella', 'index.json', 'price.23') }],
+    ['RRC 44/5', { 'crro/index.json': short('crro', 'index.json', 'rrc-44.5') }],
+    ['SC 1266.9', { 'sco/index.json': short('sco', 'index.json', 'sc.1.1266.2') }],
+    // Metadata that cannot be read at all is the same answer: the count it carries is what the index is judged by.
+    ['Price 99999', { 'pella/metadata.json': null }],
+    ['Price 99999', { 'pella/metadata.json': { schemaVersion: 1, corpus: 'pella', shards: 7, aliases: {} } }],
+    ['RRC 44/99', { 'crro/metadata.json': null }],
+    ['SC 999999', { 'sco/metadata.json': null }],
+  ]) {
+    const found = await served(overrides).lookupType(parseReference(reference));
+    assert.equal(found.status, 'unavailable', `${reference} ${JSON.stringify(Object.keys(overrides))}`);
+  }
+  // And the bundle as it is shipped still answers, so the gate is the disagreement and not the check itself.
+  assert.equal((await served({}).lookupType(parseReference('Price 23'))).card.id, 'price.23');
 });
 
 test('a damaged corpus fails closed, and a dropped request is retried', { skip }, async () => {
@@ -540,7 +636,8 @@ test('a damaged corpus fails closed, and a dropped request is retried', { skip }
   }
   // One dropped request for each of the three files a CRRO reference reads — the index it is matched against, the
   // metadata that names the shard, and the shard — then the same reference answered: a remembered rejection would
-  // leave the bundle unusable for the life of the page.
+  // leave the bundle unusable for the life of the page. The metadata and the index are asked for together, so one
+  // attempt can spend two of the three.
   const failures = new Set(['crro/metadata.json', 'crro/index.json', 'crro/records-rrc.json']);
   const once = async (url) => {
     const path = bundlePath(url);
@@ -548,9 +645,9 @@ test('a damaged corpus fails closed, and a dropped request is retried', { skip }
     return { ok: true, status: 200, json: async () => bundleJson(path) };
   };
   const retried = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', fetchImpl: once });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; failures.size > 0; attempt += 1) {
+    assert.ok(attempt < 3, 'a dropped request was never retried');
     assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).status, 'unavailable', String(attempt));
   }
   assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).card.id, 'rrc-44.5');
-  assert.equal(failures.size, 0);
 });
