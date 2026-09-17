@@ -1,6 +1,6 @@
 # Giga Pinax Privacy Policy
 
-Effective date: 15 September 2026
+Effective date: 17 September 2026
 
 Giga Pinax is a browser extension for ancient-coin research and local auction and collection records. It has no Giga Pinax account, analytics, advertising or developer-operated data server. Questions may be filed publicly through [GitHub Issues](https://github.com/bth0mp/Giga-Pinax/issues). Do not include private auction, payment or collection information in a public issue.
 
@@ -12,7 +12,7 @@ The extension stores information you choose to save in browser extension storage
 
 ## Network requests
 
-RIC, Crawford (RRC), Price and Seleucid Coins (SC) reference lookups first check the OCRE, CRRO, PELLA and SCO data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Bopearachchi references are not bundled and always use the online services, because the citation that identifies a Bopearachchi type is only in the online records. A local match makes no Nomisma request either: a card built from the bundled data shows the Nomisma identifier a record carries for its denomination, mint or material — and, outside RIC, for its authority — unless a name for that identifier is already in the browser's label cache from an earlier online lookup. It shows the identifier rather than a guess. Auction-price research remains independent and can contact acsearch even when the type record is local.
+RIC, Crawford (RRC), Price and Seleucid Coins (SC) reference lookups first check the OCRE, CRRO, PELLA and SCO data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Bopearachchi references are not bundled and always use the online services, because the citation that identifies a Bopearachchi type is only in the online records. A local match makes no Nomisma request either: the English Nomisma.org names for every authority, denomination, mint, material and portrait the bundled records carry are packaged with them, under CC BY 3.0, so a local card is named from inside the package. RIC's own spelling of a ruler is kept where it and Nomisma differ. A concept Nomisma publishes no English name for shows as the identifier the record carries, rather than a guess. Auction-price research remains independent and can contact acsearch even when the type record is local.
 
 When online research is requested, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
 

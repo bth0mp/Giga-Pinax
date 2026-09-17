@@ -40,7 +40,7 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 
 | Host | When |
 | --- | --- |
-| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price or SC reference answered by the bundled data contacts neither. Bopearachchi references are always online. |
+| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price or SC reference answered by the bundled data contacts neither: the concept names a card shows are packaged with the records. Bopearachchi references are always online. |
 | `www.acsearch.info` | A requested price lookup, using your existing acsearch session. |
 | `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
 | `github.com` | Only when you choose a release or update download. |
@@ -65,7 +65,7 @@ npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 
 ## Data attribution
 
-The bundled type databases are derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/), [CRRO](https://numismatics.org/crro/), [PELLA](https://numismatics.org/pella/) and [SCO](https://numismatics.org/sco/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The RIC ruler suggestions — the ruler names and aliases the extension recognises and offers — come from a filtered derivative of [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+The bundled type databases are derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/), [CRRO](https://numismatics.org/crro/), [PELLA](https://numismatics.org/pella/) and [SCO](https://numismatics.org/sco/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The concept names a card shows — the authorities, denominations, mints, materials and portraits — and the RIC ruler suggestions, the ruler names and aliases the extension recognises and offers, are both derived from [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
 
 ## License
 

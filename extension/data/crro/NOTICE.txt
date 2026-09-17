@@ -18,6 +18,8 @@ https://github.com/bth0mp/Giga-Pinax .
 Conversion instructions:
 https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
 
-Nomisma.org concept labels are absent from this export and none are bundled for
-this corpus: an identifier it carries for an issuer, denomination, mint or
-material is left unresolved rather than labelled from another source.
+Nomisma.org concept labels are absent from this export. The English name of
+every concept these records carry for an authority, issuer, denomination, mint,
+material or portrait is bundled in ../nomisma-labels.json instead, under CC BY
+3.0; see ../NOTICE.txt. A concept Nomisma publishes no English name for is left
+unresolved rather than labelled from another source.
