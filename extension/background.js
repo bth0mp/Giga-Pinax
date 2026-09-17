@@ -34,6 +34,11 @@ const RECONCILE_AFTER = new Set([
 ]);
 let reconcileQueue = Promise.resolve();
 let menuQueue = Promise.resolve();
+// A context-menu click wakes an idle worker, so the reconcile this module starts is still in
+// flight when a capture fails and would wipe the badge within milliseconds. The failure outranks
+// the due count until the collector has had a chance to see it.
+const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+let captureFailed = false;
 
 function commit(command) {
   return writer.commitCommand(command);
@@ -55,6 +60,7 @@ async function showBadge(text) {
 }
 
 async function showDueBadge(state) {
+  if (captureFailed) return;
   const dueEvents = new Set(state.alerts
     .filter(({ status }) => ['due', 'claimed', 'delivered'].includes(status))
     .map(({ eventId }) => eventId));
@@ -171,6 +177,8 @@ api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
+  // Only an extension page sends a command, so the collector is looking at their records.
+  void clearCaptureFailure();
   processCommand(message).then(sendResponse, (error) => sendResponse({
     ok: false,
     requestId: message?.requestId ?? '',
@@ -191,9 +199,29 @@ api.runtime.onStartup.addListener(() => {
 });
 
 // No workspace is open when a context menu is used, so the badge is the only place a capture
-// that never arrived can be seen without asking for a further permission.
-function showCaptureFailure() {
-  return showBadge('!').catch(() => undefined);
+// that never arrived can be seen without asking for a further permission. The badge on its own
+// says nothing, so the toolbar tooltip carries the explanation and what to do about it.
+async function showCaptureFailure() {
+  captureFailed = true;
+  try {
+    await showBadge('!');
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title: CAPTURE_FAILURE_TITLE });
+  } catch {
+    // A toolbar that will not take the warning leaves the command reply as the only account.
+  }
+}
+
+// The next capture that works, or the collector opening any extension page, retires the warning.
+async function clearCaptureFailure() {
+  if (!captureFailed) return;
+  captureFailed = false;
+  try {
+    // An empty title falls back to the manifest's own, so the tooltip is restored, not blanked.
+    await invokeExtensionMethod(api.action.setTitle, api.action, { title: '' });
+    await refreshBadge();
+  } catch {
+    // The stale badge outliving its cause is better than a failed command reply.
+  }
 }
 
 async function runMenuAction(info) {
@@ -212,6 +240,7 @@ async function runMenuAction(info) {
     await showCaptureFailure();
     return;
   }
+  await clearCaptureFailure();
   const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
   await invokeExtensionMethod(api.tabs.create, api.tabs, {
     url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`),

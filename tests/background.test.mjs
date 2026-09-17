@@ -9,6 +9,8 @@ const listeners = {
 const menus = [];
 const stored = {};
 const badges = [];
+const titles = [];
+const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
@@ -50,6 +52,7 @@ globalThis.browser = {
   action: {
     async setBadgeText({ text }) { badges.push(text); },
     async setBadgeBackgroundColor() {},
+    async setTitle({ title }) { titles.push(title); },
   },
   permissions: {
     async contains() { return notificationsAllowed; },
@@ -230,6 +233,13 @@ test('a capture that cannot be saved or shown is surfaced instead of silently dr
   for (let index = 0; index < 6; index += 1) await flush();
   storageSetFails = false;
   assert.equal(badges.at(-1), '!');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE, 'the badge alone does not say what went wrong');
+
+  // A command can only come from an extension page, so the collector has the workspace open.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  for (let index = 0; index < 6; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'the failure must go away once the collector can see it');
+  assert.equal(titles.at(-1), '');
 
   const tabsBefore = tabCalls;
   tabCreateFails = true;
@@ -237,6 +247,12 @@ test('a capture that cannot be saved or shown is surfaced instead of silently dr
   for (let index = 0; index < 6; index += 1) await flush();
   tabCreateFails = false;
   assert.equal(tabCalls, tabsBefore + 1, 'the saved draft must still try to open the workspace');
+  assert.equal(badges.at(-1), '!', 'a capture that could not be shown is surfaced too');
+
+  click('auction-companion:research-selection');
+  for (let index = 0; index < 8; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'a capture that works clears the earlier failure');
+  assert.equal(titles.at(-1), '');
 });
 
 test('a reconcile with nothing to change reads once and writes nothing', async () => {
@@ -246,6 +262,23 @@ test('a reconcile with nothing to change reads once and writes nothing', async (
   assert.equal(reply.ok, true);
   assert.equal(storageCalls.set, before.set);
   assert.ok(storageCalls.get - before.get <= 2, `an idle reconcile read ${storageCalls.get - before.get} times`);
+});
+
+// A context-menu click is what wakes an idle worker, so the module's own reconcile is always in
+// flight when the capture fails, and its badge refresh lands after the failure badge.
+test('a capture that fails on a cold wake keeps its badge', async () => {
+  const clickedBefore = listeners.clicked.length;
+  storageSetFails = true;
+  await import(`../extension/background.js?coldwake=${Date.now()}`);
+  listeners.clicked[clickedBefore]({
+    menuItemId: 'auction-companion:track-auction',
+    selectionText: 'Nero denarius, Rome',
+    pageUrl: 'https://house.test/sale',
+  });
+  for (let index = 0; index < 40; index += 1) await flush();
+  storageSetFails = false;
+  assert.equal(badges.at(-1), '!', 'the waking reconcile wiped the only sign of a lost capture');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
 });
 
 test.after(() => { delete globalThis.browser; });
