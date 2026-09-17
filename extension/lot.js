@@ -1,4 +1,4 @@
-import { EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, ricSection, sectionBracket, sgNumber, VARIANT } from './lookup.js';
+import { EDITION, INVISIBLE, kmNumber, parseReference, REMARKS, sectionBracket, sgNumber, VARIANT } from './lookup.js';
 import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, RIC_VOLUMES, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -349,8 +349,7 @@ function normalise(written, key, cf) {
   const section = sectionBracket(text);
   const ric = /^RIC/i.test(key);
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
-  const plain = section && ric ? ricSection(text, section) : text;
-  const parsed = parseReference(readable(plain));
+  const parsed = parseReference(text);
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
   const reference = type ? parsed : { catalogue: 'Other', number: text, volume: '', section: '' };

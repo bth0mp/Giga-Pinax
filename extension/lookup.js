@@ -13,12 +13,9 @@ export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s
 // dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
 export const readable = (text) => text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2')
   .replace(/(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i, '$1').replace(/^Pr\s+(?=\d)/, 'Price ');
-// A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference it is the section; on any other
-// catalogue it is a remark the row drops.
+// A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference readType reads it as the section; on
+// any other catalogue it is a remark the row drops.
 export const sectionBracket = (text) => [...String(text).matchAll(/\s*\(([^()]+)\)/g)].find((match) => volumesOf(match[1]).length > 0) ?? null;
-// That section read in front of the number ("RIC 268 (Elagabalus)" is RIC Elagabalus 268), where the volume's own brackets already stand.
-export const ricSection = (text, found = sectionBracket(text)) => (found
-  ? text.replace(found[0], ' ').replace(/\s+/g, ' ').trim().replace(/\s+(\d\S*)$/, ` ${found[1].trim()} $1`) : text);
 
 export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https://nomisma.org/*']);
 export const TIMEOUT_MS = 15000;
@@ -171,11 +168,38 @@ export function cleanReference(text) {
   const written = String(text).trim();
   if (!CLEANABLE.test(written)) return written;
   const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
-  return CLEANABLE.test(remarked) ? readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked) : remarked;
+  return CLEANABLE.test(remarked) ? readable(remarked) : remarked;
 }
 
 // One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
 // "RIC 972 var." and "RIC.112" read in the Reference box exactly as they read in a lot row. An Other reference never sees it: its text is its card.
+// Two volumes are the same shelf when they carry the same numeral, and the same part where both name one: "II" is the shelf II.1² stands on.
+const sameShelf = (one, other) => {
+  const [numeral, part] = shelf(one);
+  const [otherNumeral, otherPart] = shelf(other);
+  return Boolean(numeral) && numeral === otherNumeral && (!part || !otherPart || part === otherPart);
+};
+// One RIC reference as the fields hold it. A mint written by the name on the map today is RIC's own Latin section, and a bracket a dealer hangs on
+// the number is read three ways: as the section, where RIC really heads a section of that volume with the name ("RIC 268 (Elagabalus)"); dropped,
+// where the name heads a section of some other volume only, which is a mint remark and belongs in neither field ("RIC II Trajan 12 (Rome)"); and
+// left in the number where it names no section at all, which is how OCRE titles its own types ("266 (aureus)").
+function ricReference(number, volume, written) {
+  const [, bare, trailing] = number.match(/^(\S+)\s+\(([^()]*)\)$/) ?? [];
+  // A dealer brackets the section in either place: before the number ("RIC III (Antoninus Pius) 394a") or after it ("RIC 268 (Elagabalus)").
+  const wrapped = squash(written).match(/^\(([^()]*)\)$/);
+  const bracketed = wrapped?.[1] ?? (bare === undefined ? null : trailing);
+  const plain = wrapped ? '' : squash(written);
+  const named = (name) => ricMintSection(name) || name;
+  if (bracketed === null) return { catalogue: 'RIC', number, volume, section: named(plain) };
+  const name = named(squash(bracketed));
+  const volumes = volumesOf(name);
+  const here = volumes.length > 0 && (!volume || volumes.some((listed) => sameShelf(listed, volume)));
+  // A bracket naming no section at all is how OCRE titles its own types ("266 (aureus)") and stays in the number; one naming a section of another
+  // volume only is a mint remark ("RIC II Trajan 12 (Rome)") and belongs in neither field.
+  const keep = !wrapped && volumes.length === 0;
+  return { catalogue: 'RIC', number: keep ? number : bare ?? number, volume, section: plain || (here ? name : '') };
+}
+
 function readType(text, clean = true) {
   const written = String(text).trim();
   const value = clean ? cleanReference(written) : written;
@@ -193,12 +217,12 @@ function readType(text, clean = true) {
     if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
     const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
     const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
-    return { catalogue: 'RIC', number, volume, section: ricMintSection(section) || section };
+    return ricReference(number, volume, section);
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
   if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
-  return { catalogue: 'RIC', number: any[3], volume: '', section: ricMintSection(ruler) || ruler };
+  return ricReference(any[3], '', ruler);
 }
 
 // RPC has no open type data here, but RPC Online has a page per type, which only the user opens (Giga Pinax never fetches RPC): "RPC I 1234" and

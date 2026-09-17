@@ -1344,6 +1344,12 @@ test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed sec
   assert.deepEqual(parseReference('HGC 4, 1218-1220'), { catalogue: 'Other', number: 'HGC 4, 1218-1220', volume: '', section: '' });
   assert.deepEqual(parseReference('cr. 197-198B/1a'), { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' });
   assert.deepEqual(parseReference('RIC 266 (aureus)'), ric('', '', '266 (aureus)'));
+  // A bracket after the number is the section only where RIC heads a section of that volume with the name. A mint remark on another volume's
+  // number is neither the section nor part of the number, and a word OCRE titles its own types with stays where it is.
+  assert.deepEqual(parseReference('RIC II Trajan 12 (Rome)'), ric('II', 'Trajan', '12'));
+  assert.deepEqual(parseReference('RIC II 12 (Rome)'), ric('II', '', '12'));
+  assert.deepEqual(parseReference('RIC VII 12 (Rome)'), ric('VII', 'Rome', '12'));
+  assert.deepEqual(parseReference('RIC II, Part 1 720 (Domitian)'), ric('II, Part 1', 'Domitian', '720'));
   // A mint written by the name on the map today is RIC's own Latin section.
   assert.deepEqual(parseReference('RIC VII Trier 12'), ric('VII', 'Treveri', '12'));
   assert.deepEqual(parseReference('Trier 12'), ric('', 'Treveri', '12'));
