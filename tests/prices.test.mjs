@@ -837,8 +837,8 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   assert.equal(gradeOf('Nero. As. RIC 306. Very Fine, dark patina.'), 'VF');
   assert.equal(gradeOf('Good very fine, lightly toned.'), 'VF');
   assert.equal(gradeOf('Extremely Fine, minor marks.'), 'EF');
-  // A slab's grading line is not a clause ("Choice VF 5/5 - 4/5"), so 0.32 leaves it ungraded rather than reading a grade out of the middle of prose.
-  assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), null);
+  // A slab's own grading line, scores and all.
+  assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), 'VF');
   assert.equal(gradeOf('gVF'), 'VF');
   assert.equal(gradeOf('VF/EF'), 'VF');
   assert.equal(gradeOf('Fine, rough surfaces.'), 'Fine and below');
@@ -880,6 +880,47 @@ test('gradeOf reads a grade only where a dealer writes one: at a clause edge', (
   // Split grades still go to the lower bucket.
   assert.equal(gradeOf('Erhaltung: ss-vz.'), 'VF');
   assert.equal(gradeOf('(VF/EF)'), 'VF');
+});
+
+// 0.32 review, round 2: the clause rule wanted both edges and knew two qualifiers, so it ungraded the commonest house styles ("Near EF", "Choice EF",
+// "Fast vorzüglich", a slab line, "Very Fine and rare"). The closing edge is what tells a grade from prose; in front of it a closed list of qualifiers
+// carries the bucket through.
+test('gradeOf reads the qualifiers, slab lines and closing edges dealers write', () => {
+  const graded = [
+    ['Near EF.', 'EF'], ['Nearly Extremely Fine.', 'EF'], ['Almost Very Fine.', 'VF'], ['About Very Fine.', 'VF'],
+    ['Choice EF.', 'EF'], ['Superb EF.', 'EF'], ['Nice VF.', 'VF'], ['Toned VF.', 'VF'],
+    ['A few light marks, otherwise EF.', 'EF'], ['Minor porosity, otherwise Very Fine.', 'VF'],
+    ['Fast vorzüglich.', 'EF'], ['Gutes sehr schön.', 'VF'], ['Fast sehr schön.', 'VF'], ['Knapp sehr schön.', 'VF'], ['fast vz.', 'EF'], ['Buon BB.', 'VF'],
+    // A slab's own line: the grade, then its strike and surface scores.
+    ['NGC Choice VF 5/5 - 4/5', 'VF'], ['NGC MS 5/5 - 4/5, Fine Style', 'FDC/Mint State'], ['NGC XF 4/5', 'EF'], ['NGC Ch VF', 'VF'], ['MS 63', 'FDC/Mint State'],
+    // The closing edges: a dash, a bracket, a conjunction, a preposition, the French "à", a plus.
+    ['Very Fine and rare.', 'VF'], ['Very Fine & Rare.', 'VF'], ['Very Fine - Extremely Fine.', 'VF'], ['VF - EF.', 'VF'],
+    ['VF (scratch).', 'VF'], ['Very Fine (light scratches).', 'VF'], ['Extremely Fine for the issue.', 'EF'], ['EF with luster.', 'EF'],
+    ['Sehr schön +.', 'VF'], ['TTB à SUP.', 'VF'], ['TB à TTB.', 'Fine and below'],
+    // Both sides graded: the lower of the two, as any other pair of grades.
+    ['Obverse VF, reverse Fine.', 'Fine and below'],
+  ];
+  for (const [text, bucket] of graded) assert.equal(gradeOf(text), bucket, text);
+  // The prose the clause rule was written for stays prose, and a slab's "Fine Style" is a die engraver's compliment, not a grade.
+  assert.equal(gradeOf('An attractive example with a fine portrait. Good very fine.'), 'VF');
+  assert.equal(gradeOf('A portrait as fine as any. EF'), 'EF');
+  assert.equal(gradeOf('From the BB collection. EF'), 'EF');
+  assert.equal(gradeOf('EF, Fine Style'), 'EF');
+  assert.equal(gradeOf('NGC AU 5/5.'), null);
+});
+
+// "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of
+// two grades it took every one of those lots down to Fine.
+test('gradeOf reads the German "s." as see, never as a grade of its own', () => {
+  assert.equal(gradeOf('Selten, s. Kommentar. vz'), 'EF');
+  assert.equal(gradeOf('Aus Sammlung Müller, s. Auktion 12. Vorzüglich.'), 'EF');
+  assert.equal(gradeOf('Vgl. RIC 306 (s. Anm.). ss'), 'VF');
+  assert.equal(gradeOf('Ex Slg. X (s. o.). vz'), 'EF');
+  assert.equal(gradeOf('Rs. Adler n. r., s. RIC 12. ss.'), 'VF');
+  // Inside a range with another mark, or right behind "Erhaltung", it is the grade schön.
+  assert.equal(gradeOf('Nero. Denar. RIC 306. s-ss'), 'Fine and below');
+  assert.equal(gradeOf('s/ss'), 'Fine and below');
+  assert.equal(gradeOf('Erhaltung: s'), 'Fine and below');
 });
 
 test('filterableDenomination offers only a label that can be matched as a word', () => {

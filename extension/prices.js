@@ -362,9 +362,15 @@ const GRADE_MARKS = {
   EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', vz: 'EF', SUP: 'EF', SPL: 'EF',
   FDC: MINT, MS: MINT, UNC: MINT, st: MINT,
 };
-// "Good" and "About" qualify a grade without moving it to another bucket, exactly as the gVF and aEF they abbreviate; the name behind one needs no
-// capital of its own ("Good very fine").
-const GRADE_QUALIFIERS = ['Good', 'About'];
+// German "s." is "siehe", see, far more often than it is the grade "schön": a German description points at a comment, a plate or another catalogue
+// with it, and as the lower of two grades it took every one of those lots down to Fine. It is read as a grade only inside a range with another mark
+// ("s-ss", "s/ss") or directly behind "Erhaltung", never alone, so it is kept out of the marks the pattern reads anywhere.
+const SEE = 's';
+// A qualifier in front of a grade keeps its bucket, exactly as the gVF and aEF it abbreviates: the trades' own "nearly", "choice" and "otherwise",
+// and the two slabbers whose line opens with their name. The name behind one needs no capital of its own ("Good very fine", "Gutes sehr schön").
+// Each is written as its own trade writes it and read like a grade name, first letter capitalised or as listed, so lower-case prose is still prose.
+const GRADE_QUALIFIERS = ['Near', 'Nearly', 'Almost', 'About', 'Good', 'Choice', 'Ch', 'Superb', 'Nice', 'Toned', 'otherwise',
+  'NGC', 'PCGS', 'Fast', 'Gutes', 'Knapp', 'Buon', 'Presque'];
 // A name as the pattern reads it: the first letter as the trade writes it or capitalised, every other letter in either case.
 const namePattern = (name, opening) => [...name].map((char, index) => {
   const [lower, upper] = [char.toLowerCase(), char.toUpperCase()];
@@ -374,15 +380,22 @@ const namePattern = (name, opening) => [...name].map((char, index) => {
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it.
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
 const names = (opening) => alternation(Object.keys(GRADE_NAMES).map((name) => namePattern(name, opening)));
-const marks = alternation(Object.keys(GRADE_MARKS).map(escaped));
-// A grade is a clause of its own, or it is not a grade: it opens the description or follows one of . ; , : ( / and it closes the description or runs
-// into one of . ; , + - ) /. That is what tells the grade in "…with a fine portrait. Good very fine." from the prose in front of it, "ss." from
-// "Kassel", and it is why a range reads as its lower grade ("ss-vz" stops at the dash, "VF/EF" gives both and the lower is taken).
-const GRADE_PHRASE = new RegExp(`(?<=^|[.;,:(/]\\s?)(?:(?:${GRADE_QUALIFIERS.join('|')})\\s+(?:${names(false)}|${marks})|${names(true)}|${marks})(?=$|[.;,+\\-)/])`, 'gu');
+const marks = alternation(Object.keys(GRADE_MARKS).filter((mark) => mark !== SEE).map(escaped));
+const qualifiers = alternation(GRADE_QUALIFIERS.map((word) => namePattern(word, true)));
+// A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"). Two digits or a
+// score, and no more: a lone digit behind a grade is a weight or a die axis ("Very Fine 3.41 g").
+const SLAB = String.raw`(?:\s(?:\d\d|\d\d?/\d\d?))?`;
+// What a grade may run into: the end, the punctuation that closes a clause, or the words a dealer carries on with. It is the closing edge that tells
+// a grade from prose — "a fine portrait." and "the BB collection." run into a word, "Good very fine." does not — and it is why a range reads as its
+// lower grade ("ss-vz" stops at the dash, "VF/EF" gives both and the lower is taken).
+const GRADE_CLOSE = String.raw`$|[.;,+\-)/]|\s(?:[-–(+&]|and\b|for\b|with\b|à)`;
+const SOFT_SEE = String.raw`(?:(?<=Erhaltung:?\s)s|s(?=\s?[-/–]\s?(?:${marks})))`;
+const GRADE_PHRASE = new RegExp(`(?<![\\p{L}\\d])(?:(?:${qualifiers})\\s+(?:${names(false)}|${marks})|${names(true)}|${marks}|${SOFT_SEE})${SLAB}(?=${GRADE_CLOSE})`, 'gu');
 const NAME_BUCKETS = new Map(Object.entries(GRADE_NAMES).map(([name, bucket]) => [name.toLowerCase(), bucket]));
-const QUALIFIED = new RegExp(`^(?:${GRADE_QUALIFIERS.join('|')})\\s+`);
+const QUALIFIED = new RegExp(`^(?:${GRADE_QUALIFIERS.join('|')})\\s+`, 'i');
+const SLAB_TAIL = /\s(?:\d\d|\d\d?\/\d\d?)$/;
 const bucketOf = (phrase) => {
-  const graded = phrase.replace(QUALIFIED, '');
+  const graded = phrase.replace(SLAB_TAIL, '').replace(QUALIFIED, '');
   return NAME_BUCKETS.get(graded.toLowerCase()) ?? (Object.hasOwn(GRADE_MARKS, graded) ? GRADE_MARKS[graded] : null);
 };
 
