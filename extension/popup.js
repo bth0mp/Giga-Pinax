@@ -1052,9 +1052,15 @@ $('reference-form').addEventListener('input', (event) => {
 // Enter in a guided field is a refined search, and says so here rather than being guessed at from the focus when the form is submitted: a submission the
 // tool makes itself - a right-click's lookup, the captured coin's Research coin - leaves the cursor wherever it was, and reading that as a refined search
 // threw away the very reference it was sent to look up.
+// The key's own submission is the one it means: it follows in the same turn, and Enter that submitted nothing (a suggestion picked from the datalist)
+// leaves no refined search waiting to be claimed by the next lookup.
 let refinedEnter = false;
 for (const id of ['ric-section', 'reference-number']) {
-  $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') refinedEnter = true; });
+  $(id).addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    refinedEnter = true;
+    setTimeout(() => { refinedEnter = false; }, 0);
+  });
 }
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();

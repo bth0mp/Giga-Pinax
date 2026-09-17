@@ -199,10 +199,10 @@ export function capturableTab(tabs) {
   catch { return null; }
 }
 
-export const CAPTURE_UNREADABLE = 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.';
-export const CAPTURE_NO_REFERENCE = 'No catalogue reference was found on this page. Add one below, such as “RIC 306”, or type it in the Reference box.';
+const CAPTURE_UNREADABLE = 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.';
+const CAPTURE_NO_REFERENCE = 'No catalogue reference was found on this page. Add one below, such as “RIC 306”, or type it in the Reference box.';
 const PANEL_ACCESS_HINT = 'The Giga Pinax toolbar button grants access to the page you are on.';
-export const captureFailureMessage = (mode) => mode?.panel ? `${CAPTURE_UNREADABLE} ${PANEL_ACCESS_HINT}` : CAPTURE_UNREADABLE;
+const captureFailureMessage = (mode) => mode?.panel ? `${CAPTURE_UNREADABLE} ${PANEL_ACCESS_HINT}` : CAPTURE_UNREADABLE;
 
 // A page that cannot be read leaves no context behind: a tab title and address kept from a refused injection would name a page nothing was read from,
 // and would be saved to the watchlist as the lot's own.
