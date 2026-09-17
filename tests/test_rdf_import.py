@@ -142,6 +142,13 @@ class RdfImportTests(unittest.TestCase):
              "DTD and entity declarations are not allowed", "2026-09-14", "utf-8"),
             ("<!DOCTYPE rdf:RDF [<!ENTITY x 'bad'>]><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'/>",
              "RDF input must be UTF-8 XML", "2026-09-14", "utf-16"),
+            # A byte order mark is what the check above reads; without one the same UTF-16 text is bytes with a NUL in
+            # every other place, which the declaration pattern never matches - and expat, which sniffs the encoding for
+            # itself, then reads and expands the entity the guard was there to refuse.
+            ("<!DOCTYPE rdf:RDF [<!ENTITY x 'bad'>]><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'/>",
+             "RDF input must be UTF-8 XML", "2026-09-14", "utf-16-le"),
+            ("<!DOCTYPE rdf:RDF [<!ENTITY x 'bad'>]><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'/>",
+             "RDF input must be UTF-8 XML", "2026-09-14", "utf-16-be"),
             (f"<rdf:RDF {NAMESPACES}><nmo:TypeSeriesItem rdf:about='http://numismatics.org/pella/id/price.1'><skos:prefLabel>Price 1</skos:prefLabel></nmo:TypeSeriesItem></rdf:RDF>",
              "unsupported type URI corpus", "2026-09-14", "utf-8"),
             ("<RDF xmlns='wrong'/>", "root element must be rdf:RDF", "2026-09-14", "utf-8"),

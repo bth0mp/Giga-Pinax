@@ -161,7 +161,10 @@ def inspect_source(path: Path) -> tuple[int, str]:
     with path.open("rb") as stream:
         while chunk := stream.read(1024 * 1024):
             if size == 0:
-                if chunk.startswith((b"\xff\xfe", b"\xfe\xff", b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")):
+                # A byte order mark, or - since UTF-16 and UTF-32 are usually written without one - the NUL that
+                # spelling XML in either of them puts among the first four bytes. The pattern below reads UTF-8 bytes
+                # and matches none of that, while expat works the encoding out for itself and expands the entity.
+                if chunk.startswith((b"\xff\xfe", b"\xfe\xff", b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")) or b"\x00" in chunk[:4]:
                     raise ImportFailure("RDF input must be UTF-8 XML")
                 declaration = chunk[:512].decode("ascii", "ignore")
                 encoding = re.search(r"<\?xml[^>]*\bencoding\s*=\s*['\"]([^'\"]+)", declaration, re.IGNORECASE)
