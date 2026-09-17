@@ -37,6 +37,36 @@ test('finds the highest affordable hammer on the configured bid grid', () => {
   }).value.total.minor > 15000);
 });
 
+test('affordable bids stay within budget, on the grid and maximal across randomized fees', () => {
+  // Deterministic linear congruential generator: a failing case can be replayed from its index.
+  let seed = 20260917;
+  const next = (bound) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % bound;
+  };
+  for (let index = 0; index < 400; index += 1) {
+    const budget = { currency: 'EUR', minor: next(2_000_000) };
+    const buyerPremiumBps = next(10001);
+    const options = {
+      shippingMinor: next(20000), paymentFeeBps: next(3000), paymentFeeMinor: next(5000),
+      incrementMinor: 1 + next(5000), minimumBidMinor: next(50000),
+    };
+    const result = calculateAffordableBid(budget, buyerPremiumBps, options);
+    if (!result.ok) {
+      assert.equal(result.error.code, 'no-affordable-bid', JSON.stringify({ index, budget, buyerPremiumBps, options }));
+      const first = options.minimumBidMinor === 0 ? options.incrementMinor : options.minimumBidMinor;
+      assert.ok(calculateBidCost({ currency: 'EUR', minor: first }, buyerPremiumBps, options).value.total.minor > budget.minor, `index ${index}`);
+      continue;
+    }
+    const hammer = result.value.hammer.minor;
+    assert.ok(result.value.total.minor <= budget.minor, `index ${index} within budget`);
+    assert.ok(hammer >= Math.max(options.minimumBidMinor, 1), `index ${index} positive bid`);
+    assert.equal((hammer - options.minimumBidMinor) % options.incrementMinor, 0, `index ${index} on the grid`);
+    const above = calculateBidCost({ currency: 'EUR', minor: hammer + options.incrementMinor }, buyerPremiumBps, options);
+    assert.ok(!above.ok || above.value.total.minor > budget.minor, `index ${index} maximal`);
+  }
+});
+
 test('rejects fee overflow and reports when no positive grid bid is affordable', () => {
   assert.equal(calculateBidCost({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 0, {
     shippingMinor: 1,
@@ -105,8 +135,35 @@ test('parses locale decimal money into exact integer minor units', () => {
   assert.deepEqual([...CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
 });
 
+test('accepts either decimal separator and grouped amounts whatever the locale', () => {
+  for (const locale of ['en-US', 'de-DE', 'de-CH']) {
+    for (const [text, minor] of [
+      ['12.50', 1250], ['12,50', 1250], ['1,200.50', 120050], ['1.200,50', 120050],
+      ["1'200.50", 120050], ['1 200,50', 120050], ['1 200', 120000], ['1,200,000', 120000000],
+      ['0.05', 5], ['1200', 120000],
+    ]) {
+      assert.deepEqual(parseMoney(text, 'USD', locale), { ok: true, value: { currency: 'USD', minor } }, `${text} in ${locale}`);
+    }
+  }
+});
+
+test('refuses a lone separator before three digits instead of guessing the amount', () => {
+  for (const text of ['1,200', '1.200', '1.001', '12,345']) {
+    const parsed = parseMoney(text, 'USD', 'en-US');
+    assert.equal(parsed.error.code, 'ambiguous-amount', text);
+    assert.equal(parsed.error.message, 'Write 1200 or 1200.00; “1,200” could mean two different amounts.');
+  }
+  assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'ambiguous-amount');
+});
+
+test('rejects malformed money with an error that names the accepted forms', () => {
+  const message = parseMoney('twelve fifty', 'USD', 'en-US').error.message;
+  assert.equal(message, 'Money must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
+  assert.equal(parsePremiumPercent('twenty', 'en-US').error.message, 'Buyer premium must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
+});
+
 test('rejects ambiguous or unsafe money input instead of rounding it', () => {
-  for (const text of ['-1.00', '+1.00', '1e2', 'NaN', 'Infinity', '1.001', '1,000.00']) {
+  for (const text of ['-1.00', '+1.00', '1e2', 'NaN', 'Infinity', '1.001', '1,200.5.0', '1.200.50', '1,20,000', '.50', '1.', '']) {
     assert.equal(parseMoney(text, 'USD', 'en-US').ok, false, text);
   }
   assert.equal(parseMoney('90071992547409.92', 'USD', 'en-US').error.code, 'unsafe-money');
