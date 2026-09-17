@@ -141,13 +141,16 @@ const otherNumber = (value, parts = value.split(';').map(unwrap)) => (parts.some
 
 // References are ";"-separated ("SC 2195.5c; SNG Spaer 1712"): the first one a type rule reads is looked up, else the whole text is Other.
 // The hidden characters go before anything else, the length cap included.
-export function parseReference(text) {
+// The clean-up belongs to text a person wrote: a dealer's row or a typed reference. An OCRE title is the catalogue's own spelling and is read with
+// `clean` false — 653 of them are titled over a range ("RIC II.3² Hadrian 1009-1012"), and taking each down to its first number made it a second
+// claim on a number some other type really carries.
+export function parseReference(text, clean = true) {
   const visible = String(text ?? '').replace(INVISIBLE, '');
   if (squash(visible).length > MAX_REFERENCE) return null;
   const value = unwrap(unquote(visible));
   const parts = value.split(';').map(unwrap);
   for (const part of parts) {
-    const type = readType(part);
+    const type = readType(part, clean);
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
@@ -161,15 +164,21 @@ const CORRECTION = /\s+corr\.?$/i;
 // range, a word a dealer hangs on a number, or the "Pr" that is Price. One class, matched once, in place of running the whole chain.
 const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
 
+// The whole of that clean-up, in one place, so a lot row and a typed reference are cleaned once each and in the same way: the remarks, the variety,
+// the edition and the correction a dealer hangs on a number, then the house's own separators, "RIC²", a hyphenated volume and a range's first number.
+// Every part of it needs one of CLEANABLE's marks to change anything, so text carrying none ("RIC VII Antioch 1") skips the chain whole.
+export function cleanReference(text) {
+  const written = String(text).trim();
+  if (!CLEANABLE.test(written)) return written;
+  const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  return CLEANABLE.test(remarked) ? readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked) : remarked;
+}
+
 // One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
 // "RIC 972 var." and "RIC.112" read in the Reference box exactly as they read in a lot row. An Other reference never sees it: its text is its card.
-function readType(text) {
+function readType(text, clean = true) {
   const written = String(text).trim();
-  // Every part of the clean-up needs one of these marks to change anything, and pickRicEntries reads all 52,254 bundled titles through here: the ones
-  // that carry none ("RIC VII Antioch 1") skip it whole.
-  const remarked = CLEANABLE.test(written)
-    ? unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(CORRECTION, '')) : written;
-  const value = CLEANABLE.test(remarked) ? readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked) : remarked;
+  const value = clean ? cleanReference(written) : written;
   for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
     const number = value.match(pattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
@@ -363,7 +372,7 @@ const andList = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')}
 // until the card says so. It reports only what the record holds: no rank, no claim that the search was wrong, and no name RIC does not use itself.
 export function filingNote(card) {
   if (card?.corpus !== 'ocre') return '';
-  const reference = parseReference(card.label);
+  const reference = parseReference(card.label, false);
   if (reference?.catalogue !== 'RIC') return '';
   const [portrait, authority] = [squash(card.portrait), squash(card.authority)];
   const sentences = [];
@@ -594,7 +603,7 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`)
     || (aliases.size > 0 && aliases.has(rulerKey(section.split(' (')[0])));
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
-  const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title) }))
+  const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
     .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && [spaced(hit.number), bareNumber(hit.number)].includes(number)
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));

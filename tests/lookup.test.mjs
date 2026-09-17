@@ -1286,6 +1286,20 @@ test('a plain volume numeral reaches every volume of its family, the volume as t
     { status: 'candidates', candidates: [trajan972, vespasian972, hadrian972], partial: true });
 });
 
+// OCRE titles 653 of its own types over a range ("RIC II.3² Hadrian 1009-1012"). The clean-up that takes a dealer's range down to its first number
+// turned every one of them into a second claim on that number, so the real type stopped opening.
+test('OCRE\'s own titles are read as OCRE writes them, never through the dealer clean-up', () => {
+  const entry = (id, title) => ({ id, title });
+  const range = entry('ric.2_3(2).hdn.1009-1012', 'RIC II, Part 3 (second edition) Hadrian 1009-1012');
+  const type = entry('ric.2_3(2).hdn.1009', 'RIC II, Part 3 (second edition) Hadrian 1009');
+  assert.deepEqual(pickRicEntries([range, type], parseReference('RIC II.3² Hadrian 1009')), { status: 'ok', entry: type });
+  // OCRE's own word after a number is still read as OCRE writes it.
+  const aureus = entry('ric.2_1(2).ves.266_aureus', 'RIC II, Part 1 (second edition) Vespasian 266 (aureus)');
+  assert.deepEqual(pickRicEntries([aureus], parseReference('RIC II.1² Vespasian 266 (aureus)')), { status: 'ok', entry: aureus });
+  // What the collector types still takes the clean-up: a typed range is its first number.
+  assert.equal(parseReference('RIC II.3² Hadrian 1009-1012').number, '1009');
+});
+
 // Dealers punctuate a RIC volume the way they punctuate HGC's ("HGC 4, 1218"), and that comma stands between the volume and the number.
 test('a comma after the RIC volume is read, wherever the volume names its part or edition', () => {
   const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
