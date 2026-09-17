@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build deterministic Brave and Firefox test packages."""
+"""Build every deterministic release package: unpacked Brave and Firefox directories, the versioned Brave, Chrome
+and Firefox zips, and the stable Brave and Firefox aliases."""
 
 from __future__ import annotations
 
@@ -146,13 +147,12 @@ def manifest_version(manifest: dict, browser: str) -> str:
     return version
 
 
-def agreed_version() -> str:
+def check_manifest_versions() -> None:
     # One release carries one version: manifests that disagree would ship packages a collector cannot tell apart.
     versions = {browser: manifest_version(read_manifest(browser)[1], browser) for browser in BROWSERS}
     if len(set(versions.values())) > 1:
         listed = ", ".join(f"{browser} {version}" for browser, version in sorted(versions.items()))
         raise ValueError(f"manifest versions disagree: {listed}")
-    return versions[BROWSERS[0]]
 
 
 def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
@@ -215,7 +215,7 @@ def replace_with_retry(source: Path, destination: Path, attempts: int = 5) -> No
 
 
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
-    agreed_version()
+    check_manifest_versions()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     staged: list[tuple[str, Path, Path, str]] = []
