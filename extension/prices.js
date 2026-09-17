@@ -29,8 +29,9 @@ export function extractLots(html) {
     try {
       const lots = JSON.parse(text.slice(from, end + 1));
       if (Array.isArray(lots)) {
+        // The description comes along: it is what says whether a lot cites the reference at all, what it was graded and what it is called.
         return lots.filter((lot) => lot && typeof lot === 'object').map((lot) => ({
-          id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''),
+          id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''), description: String(lot.description ?? ''),
         }));
       }
       return null;

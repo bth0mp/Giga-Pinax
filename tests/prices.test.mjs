@@ -47,19 +47,21 @@ test('buildSearchUrl targets acsearch search with term, ancient category, curren
   assert.equal(buildSearchUrl({ term: 'a&b=c', currency: 'EUR' }), 'https://www.acsearch.info/search.html?term=a%26b%3Dc&category=1&currency=eur&order=1');
 });
 
-test('extractLots reads the embedded results array from a real page', () => {
+test('extractLots reads the embedded results array from a whole page', () => {
   const lots = extractLots(fixture('acsearch-search-nero-306.html'));
-  assert.equal(lots.length, 3);
-  assert.deepEqual(Object.keys(lots[0]), ['id', 'title', 'date', 'price']);
-  assert.equal(lots[0].id, '16937025');
-  assert.equal(lots[0].title, 'Heritage Auctions, Auction 61635, Lot 23312');
+  assert.equal(lots.length, 5);
+  assert.deepEqual(Object.keys(lots[0]), ['id', 'title', 'date', 'price', 'description']);
+  assert.equal(lots[0].id, '90010001');
+  assert.equal(lots[0].title, 'Fabricius Numismatics, Auction 4, Lot 11');
   assert.match(lots[0].date, /^\d{2}\.\d{2}\.\d{4}$/);
   assert.ok(lots.every((lot) => lot.price === '*'));
+  // A "];" inside a description must not truncate the array.
+  assert.match(lots[1].description, /\[RIC I, 306\];/);
 });
 
 test('extractLots survives "];" inside descriptions and rejects pages without the array', () => {
   const page = '<script>acsearch.initSearchResults = [{"id":1,"title":"A","description":"see [RIC 306]; nice","date":"01.02.2023","price":"1,200","last":false}]; acsearch.x=1;</script>';
-  assert.deepEqual(extractLots(page), [{ id: '1', title: 'A', date: '01.02.2023', price: '1,200' }]);
+  assert.deepEqual(extractLots(page), [{ id: '1', title: 'A', date: '01.02.2023', price: '1,200', description: 'see [RIC 306]; nice' }]);
   assert.equal(extractLots('<html>no results here</html>'), null);
   assert.equal(extractLots('acsearch.initSearchResults = [{broken]; '), null);
   assert.equal(extractLots(''), null);
@@ -126,7 +128,7 @@ test('a typed catalogue reference searches as the exact phrases dealers cite it 
   assert.equal(defaultTerm({ catalogue: 'RIC', section: 'Nero', number: '306', volume: '' }), 'Nero "RIC 306"');
 });
 
-const lot = (price, date = '01.01.2024', id = '1') => ({ id, title: `Lot ${id}`, date, price });
+const lot = (price, date = '01.01.2024', id = '1', description = '') => ({ id, title: `Lot ${id}`, date, price, description });
 
 test('summarise computes median and interpolated quartiles over priced lots only', () => {
   const amounts = [90, 110, 135, 165, 180, 215, 245, 310, 450];
