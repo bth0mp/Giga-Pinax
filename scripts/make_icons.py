@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render extension/icons/icon-{16,32,48,128}.png from the geometry of extension/icon.svg with Pillow (a development tool only).
+"""Render extension/icons/icon-{16,32,48,128}.png from the geometry of scripts/icon.svg with Pillow (a development tool only).
 
 The icon is drawn at 1024 px with the SVG's own numbers (a 128-unit viewBox, scaled by 8) and downsampled with LANCZOS, so the PNGs
 match the SVG; below 48 px the lintel, columns and price line are drawn heavier (same axes and end points) so they survive at 16 and 32 px.
@@ -21,7 +21,7 @@ IVORY = "#F1E7D8"
 GOLD = "#E8BE5A"
 LINE = ((22, 92), (44, 78), (62, 86), (84, 60), (106, 66))
 
-# Master geometry (icon.svg) for 48 and 128 px; a heavier cut for 16 and 32 px, with the same axes and end points.
+# Master geometry (scripts/icon.svg) for 48 and 128 px; a heavier cut for 16 and 32 px, with the same axes and end points.
 MASTER = {"lintel": (28, 30, 72, 12), "columns": ((36, 42, 12, 54), (80, 42, 12, 54)), "stroke": 7}
 SMALL = {"lintel": (28, 29, 72, 14), "columns": ((34, 42, 16, 54), (78, 42, 16, 54)), "stroke": 10}
 

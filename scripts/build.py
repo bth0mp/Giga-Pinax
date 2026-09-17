@@ -64,7 +64,6 @@ ASSET_PATHS = (
     "workspace.css",
     "workspace.html",
     "workspace.js",
-    "icon.svg",
     "icons/icon-16.png",
     "icons/icon-32.png",
     "icons/icon-48.png",
