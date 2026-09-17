@@ -12,6 +12,8 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 RDF = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
@@ -106,6 +108,29 @@ TAGS = {
     "description": DC + "description",
     "isReplacedBy": DC + "isReplacedBy",
 }
+
+
+# The record fields that hold a Nomisma concept the card renders: authority or issuer, denomination, mint, material,
+# and the portrait of either side. A value that is not a bare Nomisma identifier is a concept published elsewhere
+# (CRRO cites four British Museum person URIs), which Nomisma cannot label and which is never rewritten here.
+CONCEPT_KEYS = ("a", "d", "m", "x")
+NOMISMA_SLUG = re.compile(r"[A-Za-z0-9._~()-]+")
+# Nomisma's public SPARQL endpoint, which scripts/import_people.py's fetch subcommand already reads the same concepts
+# from, under the same User-Agent. One request carries a batch of identifiers rather than one concept per request.
+LABEL_ENDPOINT = "https://nomisma.org/query"
+# The identifiers are relative to a BASE rather than written out: a batch of absolute URIs is many times longer once the
+# query string is percent-encoded, and the endpoint answers HTTP 414 long before the batch is worth making. A relative
+# IRI also needs none of the escaping a prefixed name would ("nm:-des_cos" and "nm:a(-)oros_colophon" are both illegal).
+LABEL_QUERY = ("BASE <http://nomisma.org/id/>\n"
+               "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n"
+               "SELECT ?id ?label WHERE { VALUES ?id { %s } ?id skos:prefLabel ?label . FILTER(lang(?label) = \"en\") }")
+LABEL_BATCH = 320
+LABEL_USER_AGENT = "Giga-Pinax-data-import/1"
+LABEL_LICENSE = "CC-BY-3.0"
+LABEL_LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
+LABEL_FILE = "nomisma-labels.json"
+DEFAULT_LABEL_SNAPSHOT = Path(__file__).resolve().parent / "data" / LABEL_FILE
+DEFAULT_DATA_ROOT = Path(__file__).resolve().parents[1] / "extension" / "data"
 
 
 class ImportFailure(ValueError):
@@ -489,7 +514,9 @@ def read_data(read) -> tuple[dict[str, dict], dict]:
     """The records and metadata a generated data directory already holds, read back the way the reader reads them."""
     metadata = read("metadata.json")
     name = metadata.get("corpus") if isinstance(metadata, dict) else None
-    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or name not in CORPORA:
+    # The name is tested for being a name before it is looked up: a list or an object in that slot is broken metadata
+    # like any other, and an unhashable key would otherwise raise a TypeError straight past every caller's handling.
+    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or not isinstance(name, str) or name not in CORPORA:
         raise ImportFailure("unsupported catalogue metadata")
     label = CORPORA[name]["label"]
     shards = metadata.get("shards")
@@ -533,6 +560,106 @@ def rebuilt(read) -> dict[str, bytes]:
     return dict(generated(active, metadata)[1])
 
 
+def record_slugs(records: dict[str, dict]) -> set[str]:
+    """Every Nomisma concept the packed records name in a field the card renders."""
+    slugs: set[str] = set()
+    for record in records.values():
+        for key in CONCEPT_KEYS:
+            slugs.update(record.get(key, []))
+        for side in ("o", "r"):
+            slugs.update((record.get(side) or {}).get("p", []))
+    return {slug for slug in slugs if NOMISMA_SLUG.fullmatch(slug)}
+
+
+def bundled_slugs(read_corpus) -> set[str]:
+    """The concepts every bundled corpus references, read the way the reader reads the records themselves."""
+    slugs: set[str] = set()
+    for name in sorted(CORPORA):
+        read = read_corpus(name)
+        if read is None:
+            continue
+        slugs |= record_slugs(read_data(read)[0])
+    return slugs
+
+
+def label_payload(snapshot: object, slugs: set[str]) -> dict:
+    """The generated file: the English label of every bundled concept Nomisma names, and nothing else.
+
+    A concept the snapshot does not label is left out rather than title-cased into a label nobody published, so the
+    card falls back to the identifier exactly as it does today."""
+    labels = snapshot.get("labels") if isinstance(snapshot, dict) else None
+    if not isinstance(labels, dict):
+        raise ImportFailure(f"{LABEL_FILE} holds no labels")
+    kept = {}
+    for slug in sorted(slugs):
+        label = labels.get(slug)
+        if label is None:
+            continue
+        if not isinstance(label, str) or not label.strip():
+            raise ImportFailure(f"unusable Nomisma label for {slug}")
+        kept[slug] = label
+    return {"schemaVersion": 1, "labels": kept}
+
+
+def fetch_labels(slugs: set[str], retrieved_on: str) -> dict:
+    """One SPARQL request per batch of identifiers, and no other request: the snapshot the build reads instead of the network."""
+    try:
+        date.fromisoformat(retrieved_on)
+    except ValueError as error:
+        raise ImportFailure("retrieval date must be a real ISO date") from error
+    ordered = sorted(slugs)
+    labels: dict[str, str] = {}
+    requests = 0
+    for start in range(0, len(ordered), LABEL_BATCH):
+        batch = ordered[start:start + LABEL_BATCH]
+        query = LABEL_QUERY % " ".join(f"<{slug}>" for slug in batch)
+        request = Request(f"{LABEL_ENDPOINT}?{urlencode({'query': query, 'output': 'json'})}",
+                          headers={"Accept": "application/sparql-results+json", "User-Agent": LABEL_USER_AGENT})
+        with urlopen(request, timeout=120) as response:
+            if response.status != 200:
+                raise ImportFailure(f"Nomisma query returned HTTP {response.status}")
+            payload = json.loads(response.read())
+        requests += 1
+        for binding in payload.get("results", {}).get("bindings", []):
+            uri = (binding.get("id") or {}).get("value") or ""
+            label = " ".join(((binding.get("label") or {}).get("value") or "").split())
+            if not uri.startswith(NOMISMA_ID) or not label:
+                continue
+            slug = uri[len(NOMISMA_ID):]
+            # Two English preferred labels for one concept is not something to choose between: it stops the fetch.
+            if labels.setdefault(slug, label) != label:
+                raise ImportFailure(f"Nomisma gives {slug} two English labels")
+    return {
+        "endpoint": LABEL_ENDPOINT,
+        "query": LABEL_QUERY,
+        "batchSize": LABEL_BATCH,
+        "requestCount": requests,
+        "retrievedOn": retrieved_on,
+        "license": LABEL_LICENSE,
+        "licenseUrl": LABEL_LICENSE_URL,
+        "requestedCount": len(ordered),
+        "labelledCount": len(labels),
+        "labels": dict(sorted(labels.items())),
+    }
+
+
+def snapshot_bytes(snapshot: dict) -> bytes:
+    return (json.dumps(snapshot, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8")
+
+
+def corpus_reader(root: Path):
+    return lambda name: (lambda file_name: read_json(root / name / file_name)) if (root / name).is_dir() else None
+
+
+def write_labels(root: Path, snapshot: Path) -> int:
+    """Regenerate the bundled label file from the tracked snapshot and the records beside it. No network, same bytes every time."""
+    payload = json_bytes(label_payload(read_json(snapshot), bundled_slugs(corpus_reader(root))))
+    if len(payload) > CAP_BYTES:
+        raise ImportFailure(f"{LABEL_FILE} is larger than the {CAP_BYTES} byte cap")
+    write_file(root / LABEL_FILE, payload)
+    return len(json.loads(payload)["labels"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?")
@@ -542,7 +669,33 @@ def main() -> int:
     parser.add_argument("--generated-on", help="explicit YYYY-MM-DD data generation date")
     parser.add_argument("--reindex", type=Path, metavar="DATA_DIR",
                         help="rebuild the indexes and shards of an existing data directory, without the RDF source")
+    parser.add_argument("--fetch-labels", type=Path, nargs="?", const=DEFAULT_DATA_ROOT, metavar="DATA_ROOT",
+                        help=f"fetch the English Nomisma label of every concept the bundled records name into {DEFAULT_LABEL_SNAPSHOT.name}")
+    parser.add_argument("--write-labels", type=Path, nargs="?", const=DEFAULT_DATA_ROOT, metavar="DATA_ROOT",
+                        help="regenerate the bundled label file from the tracked snapshot, without the network")
+    parser.add_argument("--snapshot", type=Path, default=DEFAULT_LABEL_SNAPSHOT,
+                        help="the tracked Nomisma label snapshot to fetch into or generate from")
+    parser.add_argument("--retrieved-on", help="explicit YYYY-MM-DD retrieval date for --fetch-labels")
     args = parser.parse_args()
+    if args.fetch_labels is not None or args.write_labels is not None:
+        root = args.fetch_labels if args.fetch_labels is not None else args.write_labels
+        if args.source is not None or args.output is not None or args.reindex is not None or args.corpus is not None:
+            parser.error("--fetch-labels and --write-labels take no source, output, --corpus or --reindex")
+        try:
+            if args.fetch_labels is not None:
+                if not args.retrieved_on:
+                    parser.error("--fetch-labels needs --retrieved-on")
+                snapshot = fetch_labels(bundled_slugs(corpus_reader(root)), args.retrieved_on)
+                args.snapshot.parent.mkdir(parents=True, exist_ok=True)
+                write_file(args.snapshot, snapshot_bytes(snapshot))
+                print(f"Fetched {snapshot['labelledCount']} of {snapshot['requestedCount']} Nomisma labels "
+                      f"in {snapshot['requestCount']} requests.")
+            else:
+                print(f"Wrote {write_labels(root, args.snapshot)} Nomisma labels to {root / LABEL_FILE}.")
+        except (ImportFailure, OSError, json.JSONDecodeError) as error:
+            print(f"label import failed: {error}", file=sys.stderr)
+            return 1
+        return 0
     if args.reindex is not None:
         # The corpus of a data directory is its own metadata's, never the command line's.
         if args.source is not None or args.output is not None or args.generated_on is not None or args.corpus is not None:

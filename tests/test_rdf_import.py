@@ -320,7 +320,7 @@ class ShardCapTests(unittest.TestCase):
     def test_the_bundled_data_stays_under_the_cap(self):
         if not (BUNDLE / "metadata.json").is_file():
             self.skipTest("extension/data is not bundled here")
-        for path in sorted(DATA.glob("*/*.json")):
+        for path in sorted([*DATA.glob("*.json"), *DATA.glob("*/*.json")]):
             self.assertLessEqual(path.stat().st_size, 4 * 1024 * 1024, str(path.relative_to(DATA)))
 
 
@@ -365,6 +365,77 @@ class ReindexTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(SCRIPT), "--reindex", str(root), str(FIXTURE), str(root / "out")],
                                     text=True, capture_output=True)
             self.assertNotEqual(0, result.returncode)
+
+
+class LabelTests(unittest.TestCase):
+    """The Nomisma label snapshot and the file generated from it. Neither path makes a request here."""
+
+    def setUp(self):
+        self.imports = load_import_script()
+
+    def records(self, **fields):
+        return {"records": {"x.1": {"i": "x.1", "l": "X 1", **fields}}}
+
+    def test_every_concept_field_the_card_renders_is_collected_and_a_foreign_uri_is_not(self):
+        museum = "http://collection.britishmuseum.org/id/person-institution/60208"
+        collected = self.imports.record_slugs(self.records(
+            a=["anonymous"], d=["denarius"], m=["rome"], x=["ar"],
+            o={"p": ["roma", museum]}, r={"p": ["dioscuri"]})["records"])
+        # A concept published somewhere other than Nomisma is kept whole on the record and asked of nobody.
+        self.assertEqual({"anonymous", "denarius", "rome", "ar", "roma", "dioscuri"}, collected)
+
+    def test_a_concept_the_snapshot_does_not_label_is_left_out_rather_than_invented(self):
+        payload = self.imports.label_payload({"labels": {"ar": "Silver"}}, {"ar", "dupondius_or_as"})
+        self.assertEqual({"schemaVersion": 1, "labels": {"ar": "Silver"}}, payload)
+        with self.assertRaises(self.imports.ImportFailure):
+            self.imports.label_payload({"retrievedOn": "2026-09-17"}, {"ar"})
+        with self.assertRaises(self.imports.ImportFailure):
+            self.imports.label_payload({"labels": {"ar": ""}}, {"ar"})
+
+    def test_the_generated_label_file_is_sorted_and_byte_identical_whenever_it_runs(self):
+        snapshot = {"labels": {"rome": "Rome", "ar": "Silver", "denarius": "Denarius"}}
+        first = self.imports.json_bytes(self.imports.label_payload(snapshot, {"rome", "ar", "denarius"}))
+        second = self.imports.json_bytes(self.imports.label_payload(snapshot, {"denarius", "ar", "rome"}))
+        self.assertEqual(first, second)
+        self.assertEqual(["ar", "denarius", "rome"], list(json.loads(first)["labels"]))
+
+    def test_the_tracked_snapshot_records_where_its_labels_came_from(self):
+        snapshot = load(ROOT / "scripts" / "data" / "nomisma-labels.json")
+        self.assertEqual(self.imports.LABEL_ENDPOINT, snapshot["endpoint"])
+        self.assertEqual(self.imports.LABEL_QUERY, snapshot["query"])
+        self.assertEqual(("CC-BY-3.0", "https://creativecommons.org/licenses/by/3.0/"),
+                         (snapshot["license"], snapshot["licenseUrl"]))
+        self.assertRegex(snapshot["retrievedOn"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertTrue(all(isinstance(label, str) and label.strip() for label in snapshot["labels"].values()))
+
+    def test_the_bundled_label_file_is_what_the_snapshot_and_the_records_generate(self):
+        if not (BUNDLE / "metadata.json").is_file():
+            self.skipTest("extension/data is not bundled here")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for bundle in sorted(path for path in DATA.iterdir() if path.is_dir()):
+                shutil.copytree(bundle, root / bundle.name)
+            result = subprocess.run([sys.executable, str(SCRIPT), "--write-labels", str(root)],
+                                    text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(digest((DATA / "nomisma-labels.json").read_bytes()),
+                             digest((root / "nomisma-labels.json").read_bytes()))
+
+    def test_the_bundled_label_file_labels_every_concept_nomisma_names_and_no_other(self):
+        if not (BUNDLE / "metadata.json").is_file():
+            self.skipTest("extension/data is not bundled here")
+        labels = load(DATA / "nomisma-labels.json")["labels"]
+        wanted = self.imports.bundled_slugs(self.imports.corpus_reader(DATA))
+        self.assertTrue(set(labels) <= wanted, sorted(set(labels) - wanted)[:5])
+        snapshot = load(ROOT / "scripts" / "data" / "nomisma-labels.json")["labels"]
+        self.assertEqual(sorted(wanted & set(snapshot)), sorted(labels))
+
+    def test_a_metadata_corpus_that_is_no_name_at_all_fails_the_import_not_the_interpreter(self):
+        # A corpus key of the wrong shape must be an ImportFailure like every other broken metadata: a raw TypeError
+        # out of the membership test would escape the build's and the importer's own error handling.
+        for corpus in ([], {}, {"ocre": 1}, 7, None):
+            with self.subTest(corpus=corpus), self.assertRaises(self.imports.ImportFailure):
+                self.imports.read_data(lambda name: {"schemaVersion": 1, "corpus": corpus, "shards": {}})
 
 
 if __name__ == "__main__":
