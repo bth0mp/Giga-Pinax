@@ -157,12 +157,19 @@ export function parseReference(text) {
 // The remark a dealer hangs on a corrected number ("RIC II 123 corr.") is no part of it. Its brothers "var." and the bracketed remarks are REMARKS
 // and VARIANT above; unwrap has already taken the full stop off the end.
 const CORRECTION = /\s+corr\.?$/i;
+// The marks the clean-up above reads: a bracket or sentence punctuation to drop, a house's own separator or a "²" to respell, a hyphen that opens a
+// range, a word a dealer hangs on a number, or the "Pr" that is Price. One class, matched once, in place of running the whole chain.
+const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
 
 // One reference, read by the rules of the catalogues that have type data, or null. The lot path's clean-up runs first, so "RIC 268 (Elagabalus)",
 // "RIC 972 var." and "RIC.112" read in the Reference box exactly as they read in a lot row. An Other reference never sees it: its text is its card.
 function readType(text) {
-  const remarked = unpunctuate(String(text).replace(VARIANT, '').replace(REMARKS, '').replace(CORRECTION, '').trim());
-  const value = readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked);
+  const written = String(text).trim();
+  // Every part of the clean-up needs one of these marks to change anything, and pickRicEntries reads all 52,254 bundled titles through here: the ones
+  // that carry none ("RIC VII Antioch 1") skip it whole.
+  const remarked = CLEANABLE.test(written)
+    ? unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(CORRECTION, '')) : written;
+  const value = CLEANABLE.test(remarked) ? readable(/^RIC/i.test(remarked) ? ricSection(remarked) : remarked) : remarked;
   for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
     const number = value.match(pattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };

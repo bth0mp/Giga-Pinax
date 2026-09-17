@@ -98,8 +98,12 @@ export const ANY_VOLUME = Object.freeze({ value: '', label: 'Any volume' });
 export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 
 // A name as the tables compare it: spacing squashed, case folded and diacritics stripped, the way the importer normalises every Nomisma alias, so
-// "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name.
-export const rulerKey = (ruler) => String(ruler ?? '').normalize('NFD').replace(/\p{M}+/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+// "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name. Almost every name asked for is plain ASCII, which has no
+// diacritics to strip and no decomposition to do, and this runs once per bundled title.
+export function rulerKey(ruler) {
+  const text = String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return /^[\x20-\x7e]*$/.test(text) ? text : text.normalize('NFD').replace(/\p{M}+/gu, '');
+}
 
 // Every name and alias, indexed once: a lot heading is compared against two thousand of them, and a Map has no inherited keys ("constructor").
 const PEOPLE_BY_NAME = new Map();
@@ -118,13 +122,18 @@ export function canonicalRicPerson(name) {
 }
 
 // The volumes whose sections include a ruler, ignoring case and spacing; none for a blank or unknown one. A ruler OCRE splits into sections is also
-// known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). The lists are searched, never indexed by the
-// ruler, so an inherited key ("constructor") is unknown too.
-export function volumesOf(ruler) {
-  const wanted = rulerKey(ruler);
-  const named = (section) => rulerKey(section) === wanted || rulerKey(section.split(' (')[0]) === wanted;
-  return wanted ? RIC_VOLUMES.map(({ value }) => value).filter((volume) => RIC_SECTIONS[volume].some(named)) : [];
+// known by the name before the parenthesis ("Theodosius II" for "Theodosius II (East)" and "(West)"). Indexed once, in RIC volume order, because
+// every one of the 52,254 bundled titles is read through it; a Map has no inherited keys, so "constructor" is unknown too.
+const VOLUMES_BY_SECTION = new Map();
+for (const { value } of RIC_VOLUMES) {
+  for (const section of RIC_SECTIONS[value]) {
+    for (const key of new Set([rulerKey(section), rulerKey(section.split(' (')[0])])) {
+      if (!VOLUMES_BY_SECTION.has(key)) VOLUMES_BY_SECTION.set(key, []);
+      if (!VOLUMES_BY_SECTION.get(key).includes(value)) VOLUMES_BY_SECTION.get(key).push(value);
+    }
+  }
 }
+export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).
