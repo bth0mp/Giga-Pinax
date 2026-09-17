@@ -156,6 +156,120 @@ test('quarantine clears optional references and follows required ones', () => {
   assert.equal(rescued.value.lots.length, 2);
 });
 
+test('quarantine writes down every reference it clears so a recovery can restore it', () => {
+  const snapshot = snapshotWith(
+    makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventUsd, alternativeGroupId: IDS.group, priority: 1 }),
+    makeLot(IDS.lotEur, { collectionEntryId: IDS.collection }),
+  );
+  snapshot.alternativeGroups.push({
+    id: IDS.group, revision: 0, dataClass: 'collector', name: 'One coin', createdAt: NOW, updatedAt: NOW,
+  });
+  snapshot.auctionEvents[0].eventKind = 'bring-your-own';
+  snapshot.alternativeGroups[0].name = 42;
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  const cleared = new Map(rescued.value.quarantine.map((entry) => [entry.collection, entry.clearedReferences]));
+  assert.deepEqual(cleared.get('auctionEvents'), [
+    { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventUsd },
+  ]);
+  assert.deepEqual(cleared.get('alternativeGroups'), [
+    { collection: 'lots', id: IDS.lotUsdKnown, field: 'alternativeGroupId', value: IDS.group },
+    { collection: 'lots', id: IDS.lotUsdKnown, field: 'priority', value: 1 },
+  ]);
+  assert.deepEqual(cleared.get('collectionEntries'), [
+    { collection: 'lots', id: IDS.lotEur, field: 'collectionEntryId', value: IDS.collection },
+  ]);
+  const missingEntry = rescued.value.quarantine.find(({ collection }) => collection === 'collectionEntries');
+  assert.deepEqual([missingEntry.record, missingEntry.reason], [null, 'missing-record']);
+  assert.equal(
+    JSON.stringify(quarantineInvalidRecords(rescued.value, NOW).value),
+    JSON.stringify(rescued.value),
+    'the repair applied to its own output must change nothing',
+  );
+});
+
+test('a collection entry claimed by a second lot unlinks the impostor and keeps both lots', () => {
+  const snapshot = snapshotWith(
+    makeLot(IDS.lotUsdKnown, { collectionEntryId: IDS.collection }),
+    makeLot(IDS.lotEur, { collectionEntryId: IDS.collection }),
+  );
+  snapshot.collectionEntries.push({
+    id: IDS.collection, revision: 0, dataClass: 'collector', lotId: IDS.lotUsdKnown,
+    title: 'Acquired', acquisitionDate: '2026-09-12', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  assert.equal(validateSnapshot(snapshot).error.path, 'lots[1].collectionEntryId');
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.lots.map(({ id }) => id), [IDS.lotUsdKnown, IDS.lotEur]);
+  assert.equal(rescued.value.lots[0].collectionEntryId, IDS.collection, 'the owning lot keeps its entry');
+  assert.equal(Object.hasOwn(rescued.value.lots[1], 'collectionEntryId'), false);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'collectionEntries',
+    record: null,
+    reason: 'entry-claimed-by-another-lot',
+    quarantinedAt: NOW,
+    clearedReferences: [
+      { collection: 'lots', id: IDS.lotEur, field: 'collectionEntryId', value: IDS.collection },
+    ],
+  }]);
+});
+
+test('broken bookkeeping is dropped by the repair instead of being exported in quarantine', () => {
+  const snapshot = snapshotWith(makeLot());
+  snapshot.drafts.push({ id: IDS.history, kind: 'unknown-kind' });
+  snapshot.recentCommands.push({ requestId: IDS.collection });
+  assert.equal(validateSnapshot(snapshot).ok, false);
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.deepEqual(rescued.value.drafts, []);
+  assert.deepEqual(rescued.value.recentCommands, []);
+  assert.equal(Object.hasOwn(rescued.value, 'quarantine'), false,
+    'scratch and ledger rows are not collector records and backups strip them');
+});
+
+const GROUP_KEPT = '22222222-2222-4222-8222-333333333333';
+const GROUP_DUPLICATE = '22222222-2222-4222-8222-444444444444';
+
+test('quarantine renumbers only the groups whose priorities validation rejects', () => {
+  const snapshot = snapshotWith(
+    makeLot(IDS.lotUsdKnown, { alternativeGroupId: GROUP_KEPT, priority: 2 }),
+    makeLot(IDS.lotEur, { alternativeGroupId: GROUP_KEPT, priority: 1 }),
+    makeLot(IDS.lotChf, { alternativeGroupId: GROUP_DUPLICATE, priority: 1 }),
+    makeLot(IDS.lotPlanned, { alternativeGroupId: GROUP_DUPLICATE, priority: 1 }),
+    makeLot(IDS.lotTerminal, { alternativeGroupId: IDS.group, priority: 1 }),
+    makeLot(IDS.lotUsdUnknown, { alternativeGroupId: IDS.group, priority: 2 }),
+  );
+  for (const id of [GROUP_KEPT, GROUP_DUPLICATE, IDS.group]) {
+    snapshot.alternativeGroups.push({
+      id, revision: 0, dataClass: 'collector', name: 'Pick one', createdAt: NOW, updatedAt: NOW,
+    });
+  }
+  snapshot.lots[4].outcome = { status: 'maybe' };
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  const priorities = new Map(rescued.value.lots.map((lot) => [lot.id, lot.priority]));
+  assert.deepEqual([priorities.get(IDS.lotUsdKnown), priorities.get(IDS.lotEur)], [2, 1],
+    'a group that validates keeps the ordering the collector gave it');
+  assert.deepEqual([priorities.get(IDS.lotPlanned), priorities.get(IDS.lotChf)], [1, 2],
+    'a duplicate priority is broken by the lot IDs, not by storage order');
+  assert.equal(priorities.get(IDS.lotUsdUnknown), 1, 'the survivor of a rescued member closes the gap');
+
+  const renumbered = rescued.value.quarantine
+    .filter(({ collection }) => collection === 'alternativeGroups')
+    .flatMap(({ clearedReferences }) => clearedReferences);
+  assert.deepEqual(renumbered, [
+    { collection: 'lots', id: IDS.lotChf, field: 'priority', value: 1 },
+    { collection: 'lots', id: IDS.lotUsdUnknown, field: 'priority', value: 2 },
+  ]);
+});
+
 test('quarantine compacts the priorities left behind by a rescued group member', () => {
   const snapshot = snapshotWith(
     makeLot(IDS.lotUsdKnown, { alternativeGroupId: IDS.group, priority: 1 }),
@@ -188,6 +302,17 @@ test('a validated root carries its quarantine and rejects a malformed entry', ()
   snapshot.quarantine = [{ collection: 'lots', record: { id: 'kept' }, reason: 'invalid-id' }];
   assert.equal(validateSnapshot(snapshot).ok, false);
   snapshot.quarantine = 'lost';
+  assert.equal(validateSnapshot(snapshot).ok, false);
+
+  const cleared = { collection: 'lots', id: IDS.lotEur, field: 'auctionEventId', value: IDS.eventUsd };
+  const entry = { collection: 'lots', record: null, reason: 'missing-record', quarantinedAt: NOW };
+  snapshot.quarantine = [{ ...entry, clearedReferences: [cleared] }];
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  snapshot.quarantine = [{ ...entry, clearedReferences: [{ collection: 'lots', id: IDS.lotEur, field: 'auctionEventId' }] }];
+  assert.equal(validateSnapshot(snapshot).ok, false, 'a cleared reference without its value restores nothing');
+  snapshot.quarantine = [{ ...entry, clearedReferences: { ...cleared } }];
+  assert.equal(validateSnapshot(snapshot).ok, false);
+  snapshot.quarantine = [{ ...entry, clearedReferences: new Array(LIMITS.clearedReferences + 1).fill(cleared) }];
   assert.equal(validateSnapshot(snapshot).ok, false);
 });
 

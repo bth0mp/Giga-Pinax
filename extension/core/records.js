@@ -12,6 +12,7 @@ export const LIMITS = Object.freeze({
   drafts: 20,
   alerts: 10000,
   recentCommands: 200,
+  clearedReferences: 10000,
   sourceLinks: 20,
   reminders: 20,
   bidHistory: 500,
@@ -736,6 +737,29 @@ const COLLECTIONS = [
   { key: 'recentCommands', maximum: LIMITS.recentCommands, validator: recentCommandResult },
 ];
 
+// A reference the repair had to clear is a link the collector made, so the entry that caused it
+// keeps the value verbatim: which record lost which field, and what it pointed at.
+function clearedReferenceResult(reference, path) {
+  const object = objectResult(reference, path);
+  if (!object.ok) return object;
+  return firstFailure(
+    stringResult(reference.collection, `${path}.collection`, LIMITS.shortText),
+    stringResult(reference.id, `${path}.id`, LIMITS.shortText),
+    stringResult(reference.field, `${path}.field`, LIMITS.shortText),
+    OWN(reference, 'value') ? { ok: true, value: reference.value } : failure('missing-value', 'A cleared reference keeps the value it lost.', `${path}.value`),
+  );
+}
+
+function clearedReferencesResult(references, path) {
+  const array = arrayResult(references, path, LIMITS.clearedReferences);
+  if (!array.ok) return array;
+  for (let index = 0; index < references.length; index += 1) {
+    const result = clearedReferenceResult(references[index], `${path}[${index}]`);
+    if (!result.ok) return result;
+  }
+  return { ok: true, value: references };
+}
+
 function quarantineEntryResult(entry, path) {
   const object = objectResult(entry, path);
   if (!object.ok) return object;
@@ -744,6 +768,9 @@ function quarantineEntryResult(entry, path) {
     stringResult(entry.reason, `${path}.reason`, LIMITS.shortText),
     instantResult(entry.quarantinedAt, `${path}.quarantinedAt`),
     OWN(entry, 'record') ? { ok: true, value: entry.record } : failure('missing-record', 'A quarantined entry keeps its record.', `${path}.record`),
+    OWN(entry, 'clearedReferences')
+      ? clearedReferencesResult(entry.clearedReferences, `${path}.clearedReferences`)
+      : { ok: true, value: undefined },
   );
 }
 
@@ -808,6 +835,8 @@ export function migrateSnapshot(stored) {
   return value;
 }
 
+const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
+
 // One record that stops validating must never lock the collector out of the rest of their data.
 // Each record is validated on its own; a failing one is set aside verbatim in `quarantine` and
 // references to it are repaired by the cheapest step that keeps the root valid: an optional
@@ -823,7 +852,27 @@ export function quarantineInvalidRecords(stored, now) {
   try { root = structuredClone(stored); } catch { return failure('invalid-record', 'Stored data cannot be copied.', 'snapshot'); }
 
   const quarantine = [];
-  const setAside = (collection, record, reason) => quarantine.push({ collection, record, reason, quarantinedAt: now });
+  const hosts = new Map();
+  const setAside = (collection, record, reason) => {
+    const entry = { collection, record, reason, quarantinedAt: now };
+    quarantine.push(entry);
+    const id = record?.id ?? record?.requestId;
+    if (typeof id === 'string') hosts.set(`${collection}:${id}`, entry);
+    return entry;
+  };
+  // Clearing a reference alters a record the collector still holds, so the value goes on the
+  // quarantine entry of whatever caused the clearing and the link can be put back. A cause that
+  // was never in storage, or one that is itself kept, has no entry of its own, so an entry with a
+  // null record is opened to carry the note.
+  // ponytail: entries carried in from an earlier repair are not reused as causes, so a root
+  // repaired, written, then broken the same way again opens a second entry for the same cause.
+  const noteCleared = (cause, causeId, reason, record, collection, field) => {
+    const key = `${cause}:${causeId}`;
+    const host = hosts.get(key) ?? setAside(cause, null, reason);
+    hosts.set(key, host);
+    host.clearedReferences ??= [];
+    host.clearedReferences.push({ collection, id: record.id, field, value: record[field] });
+  };
   if (OWN(root, 'quarantine')) {
     const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];
     for (const entry of entries) {
@@ -844,7 +893,10 @@ export function quarantineInvalidRecords(stored, now) {
       else if (ids.has(id)) reason = 'duplicate-id';
       else if (kept.length >= maximum) reason = 'collection-limit';
       if (reason) {
-        setAside(key, record, reason);
+        // Ledger entries and drafts are bookkeeping and half-hour scratch, not collector records,
+        // and backups strip them for privacy: a broken one is dropped rather than moved into the
+        // quarantine bin, which is exported.
+        if (!DISCARDED_ON_REPAIR.has(key)) setAside(key, record, reason);
         continue;
       }
       ids.add(id);
@@ -864,8 +916,14 @@ export function quarantineInvalidRecords(stored, now) {
   const events = new Map(root.auctionEvents.map((event) => [event.id, event]));
   const groups = new Set(root.alternativeGroups.map((group) => group.id));
   for (const lot of root.lots) {
-    if (OWN(lot, 'auctionEventId') && !events.has(lot.auctionEventId)) delete lot.auctionEventId;
+    if (OWN(lot, 'auctionEventId') && !events.has(lot.auctionEventId)) {
+      noteCleared('auctionEvents', lot.auctionEventId, 'missing-record', lot, 'lots', 'auctionEventId');
+      delete lot.auctionEventId;
+    }
     if (OWN(lot, 'alternativeGroupId') && !groups.has(lot.alternativeGroupId)) {
+      const groupId = lot.alternativeGroupId;
+      noteCleared('alternativeGroups', groupId, 'missing-record', lot, 'lots', 'alternativeGroupId');
+      noteCleared('alternativeGroups', groupId, 'missing-record', lot, 'lots', 'priority');
       delete lot.alternativeGroupId;
       delete lot.priority;
     }
@@ -878,9 +936,16 @@ export function quarantineInvalidRecords(stored, now) {
     setAside('collectionEntries', entry, 'foreign-key');
     return false;
   });
-  const entryIds = new Set(root.collectionEntries.map(({ id }) => id));
+  const entries = new Map(root.collectionEntries.map((entry) => [entry.id, entry]));
   for (const lot of root.lots) {
-    if (OWN(lot, 'collectionEntryId') && !entryIds.has(lot.collectionEntryId)) delete lot.collectionEntryId;
+    if (!OWN(lot, 'collectionEntryId')) continue;
+    const entry = entries.get(lot.collectionEntryId);
+    if (entry && entry.lotId === lot.id) continue;
+    // An entry that names another lot as its own belongs to that lot; this one is a stale claim,
+    // and clearing it keeps both lots rather than locking the whole store over one field.
+    if (entry) noteCleared('collectionEntries', entry.id, 'entry-claimed-by-another-lot', lot, 'lots', 'collectionEntryId');
+    else noteCleared('collectionEntries', lot.collectionEntryId, 'missing-record', lot, 'lots', 'collectionEntryId');
+    delete lot.collectionEntryId;
   }
   root.alerts = root.alerts.filter((alert) => {
     const event = events.get(alert.eventId);
@@ -889,14 +954,22 @@ export function quarantineInvalidRecords(stored, now) {
     return false;
   });
 
+  // The collector's ordering is only rewritten where validation insists on it: a group left
+  // non-compact by a rescued member, or one stored with duplicate priorities. A group that still
+  // validates is left exactly as it was, and every priority that does move is written down.
   const members = new Map();
   for (const lot of root.lots) {
     if (!OWN(lot, 'alternativeGroupId')) continue;
     members.set(lot.alternativeGroupId, [...(members.get(lot.alternativeGroupId) ?? []), lot]);
   }
-  for (const group of members.values()) {
+  for (const [groupId, group] of members) {
     group.sort((left, right) => (left.priority - right.priority) || left.id.localeCompare(right.id));
-    group.forEach((lot, index) => { lot.priority = index + 1; });
+    if (group.every((lot, index) => lot.priority === index + 1)) continue;
+    group.forEach((lot, index) => {
+      if (lot.priority === index + 1) return;
+      noteCleared('alternativeGroups', groupId, 'noncompact-priority', lot, 'lots', 'priority');
+      lot.priority = index + 1;
+    });
   }
 
   if (quarantine.length) root.quarantine = quarantine;
