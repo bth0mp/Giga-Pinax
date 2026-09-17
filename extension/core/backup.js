@@ -393,6 +393,30 @@ export function importChangeLines(preview) {
   ];
 }
 
+// An import that overwrites a record puts a copy of the current data on disk first, and the command
+// only goes out once that download has been handed to the browser. A copy that cannot be produced
+// is replaced by the raw rescue file and the collector has to say so a second time; declining sends
+// nothing. Every step is injected so the page's own sequence is the one under test.
+export async function importWithSafetyCopy({ exportCopy, exportRaw, download, confirm, send }) {
+  let copied = null;
+  try {
+    const file = await exportCopy();
+    // A download the browser refuses is a copy that did not happen, whatever the export returned.
+    download(file.text, file.name);
+    copied = file.name;
+  } catch (error) {
+    let offered = 'A raw copy of the stored data could not be downloaded either.';
+    try {
+      const raw = await exportRaw();
+      download(raw.text, raw.name);
+      offered = `A raw copy of the stored data was downloaded instead: ${raw.name}`;
+    } catch { /* the confirmation says so */ }
+    const message = `A safety copy of your current records could not be saved: ${error.message}\n\n${offered}\n\nImport anyway?`;
+    if (!confirm(message)) return { sent: false, copied: null };
+  }
+  return { sent: true, copied, reply: await send() };
+}
+
 export function quarantineSummaryText(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return '';
