@@ -1,4 +1,6 @@
-import { LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validateSnapshot } from './core/records.js';
+import {
+  LIMITS, createEmptySnapshot, setOutcome, validateDraftPayload, validateEventLocalTimes, validateSnapshot,
+} from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
@@ -500,6 +502,8 @@ function mutation(snapshot, command, context) {
         value = eventFromDraft(eventDraft, found.value.record, context);
         next.auctionEvents[found.value.index] = value;
       }
+      const localTimes = validateEventLocalTimes(value);
+      if (!localTimes.ok) return fail('validation', localTimes.error.message, localTimes.error.path);
       const retainedReminderIds = new Set(value.reminders.map(({ id }) => id));
       next.alerts = next.alerts.filter((alert) =>
         alert.eventId !== value.id || retainedReminderIds.has(alert.reminderId));

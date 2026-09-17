@@ -8,6 +8,7 @@ import {
   projectExposure,
   setOutcome,
   validateDraftPayload,
+  validateEventLocalTimes,
   validateSnapshot,
 } from '../extension/core/records.js';
 
@@ -129,24 +130,25 @@ test('rejects normalized calendar overflow in otherwise ISO-shaped timestamps', 
   assert.equal(validateSnapshot(snapshot).error.code, 'invalid-timestamp');
 });
 
-test('requires timed event instants and reminder kinds to match confirmed local fields', () => {
+test('keeps stored event instants authoritative and requires matching reminder kinds', () => {
   const snapshot = snapshotWith();
   Object.assign(snapshot.auctionEvents[0], {
     precision: 'timed', localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
     startsAt: '2026-10-10T12:00:00.000Z',
     reminders: [{ id: IDS.history, kind: 'offset', offsetMinutes: 60 }],
   });
-  snapshot.auctionEvents[0].startsAt = '2026-10-11T12:00:00.000Z';
-  let result = validateSnapshot(snapshot);
-  assert.equal(result.ok, false);
-  assert.equal(result.error.path, 'auctionEvents[0].startsAt');
+  // Browser time-zone data must never lock a collector out of stored data.
+  snapshot.auctionEvents[0].startsAt = '2026-10-10T13:00:00.000Z';
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  snapshot.auctionEvents[0].startsAt = 'not-an-instant';
+  assert.equal(validateSnapshot(snapshot).error.path, 'auctionEvents[0].startsAt');
 
   snapshot.auctionEvents[0].startsAt = '2026-10-10T12:00:00.000Z';
   snapshot.auctionEvents[0].reminders[0] = {
     ...snapshot.auctionEvents[0].reminders[0], kind: 'wall-time', daysBefore: 0, localTime: '09:00',
   };
   delete snapshot.auctionEvents[0].reminders[0].offsetMinutes;
-  result = validateSnapshot(snapshot);
+  const result = validateSnapshot(snapshot);
   assert.equal(result.ok, false);
   assert.equal(result.error.path, 'auctionEvents[0].reminders[0].kind');
 
@@ -156,9 +158,8 @@ test('requires timed event instants and reminder kinds to match confirmed local 
   });
   delete snapshot.auctionEvents[0].localTime;
   delete snapshot.auctionEvents[0].startsAt;
-  result = validateSnapshot(snapshot);
-  assert.equal(result.ok, false);
-  assert.equal(result.error.path, 'auctionEvents[0].reminders[0].localTime');
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  assert.equal(validateEventLocalTimes(snapshot.auctionEvents[0]).error.path, 'event.reminders[0].localTime');
 });
 
 test('rejects broken foreign links and duplicate alternative priorities', () => {

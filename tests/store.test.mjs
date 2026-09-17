@@ -258,6 +258,38 @@ test('event save derives timed UTC instant and reminder IDs in the authority', (
   assert.equal(invalid.error.code, 'validation');
 });
 
+test('event save rejects a reminder whose wall time does not exist in the confirmed zone', () => {
+  const result = applyCommand(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Spring forward', eventKind: 'auction-day', precision: 'date-only',
+      localDate: '2026-03-29', timeZone: 'Europe/London', reminderScope: 'standalone',
+      reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '01:30' }],
+    },
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.path, 'event.reminders[0].localTime');
+});
+
+test('a stored event whose start instant drifted from its local fields still loads', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.auctionEvents.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Shifted sale',
+    eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-10', localTime: '12:00',
+    timeZone: 'Europe/London', startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }],
+    createdAt: NOW, updatedAt: NOW,
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.auctionEvents[0].startsAt, '2026-10-10T12:00:00.000Z');
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().alerts[0].triggerAt, '2026-10-10T11:00:00.000Z');
+});
+
 test('migrates preferences once and bounds shared drafts by expiry and count', () => {
   let state = createEmptySnapshot(NOW);
   const prefs = { currency: 'GBP', catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero', sampleMode: true };

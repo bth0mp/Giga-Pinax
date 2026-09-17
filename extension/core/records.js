@@ -463,22 +463,6 @@ function eventResult(event, path) {
     if (event.reminders[index].kind !== expectedKind) {
       return failure('invalid-reminder-kind', 'Reminder kind must match the event precision.', `${path}.reminders[${index}].kind`);
     }
-    if (expectedKind === 'wall-time') {
-      const reminder = event.reminders[index];
-      const resolved = resolveZonedDateTime({
-        localDate: shiftDate(event.localDate, -reminder.daysBefore),
-        localTime: reminder.localTime,
-        timeZone: event.timeZone,
-        disambiguation: 'reject',
-      });
-      if (!resolved.ok) {
-        return failure(
-          'invalid-reminder-time',
-          'Reminder wall time must exist exactly once in the confirmed time zone.',
-          `${path}.reminders[${index}].localTime`,
-        );
-      }
-    }
     if (reminderIds.has(event.reminders[index].id)) {
       return failure('duplicate-id', 'Reminder IDs must be unique in an event.', `${path}.reminders[${index}].id`);
     }
@@ -488,17 +472,49 @@ function eventResult(event, path) {
     if (!TIME.test(event.localTime)) return failure('invalid-time', 'Timed events require HH:mm.', `${path}.localTime`);
     const startsAt = instantResult(event.startsAt, `${path}.startsAt`);
     if (!startsAt.ok) return startsAt;
-    const resolved = resolveZonedDateTime({
-      localDate: event.localDate,
-      localTime: event.localTime,
+  } else if (OWN(event, 'localTime') || OWN(event, 'startsAt')) {
+    return failure('invalid-event-precision', 'Date-only events cannot carry a time or instant.', path);
+  }
+  return { ok: true, value: event };
+}
+
+// Resolving a local date and time depends on the browser's time-zone data, which changes with
+// the browser. These checks therefore belong to the event being written, never to stored data:
+// a zone whose rules were revised must not lock the collector out of records saved under the
+// older rules. Stored and imported instants stay authoritative.
+export function validateEventLocalTimes(event, path = 'event') {
+  const object = objectResult(event, path);
+  if (!object.ok) return object;
+  const reminders = Array.isArray(event.reminders) ? event.reminders : [];
+  for (let index = 0; index < reminders.length; index += 1) {
+    const reminder = reminders[index];
+    if (reminder?.kind !== 'wall-time' || !TIME.test(reminder.localTime) ||
+        !Number.isSafeInteger(reminder.daysBefore)) continue;
+    const shifted = dateResult(event.localDate, `${path}.localDate`).ok
+      ? shiftDate(event.localDate, -reminder.daysBefore) : null;
+    const resolved = shifted === null ? null : resolveZonedDateTime({
+      localDate: shifted,
+      localTime: reminder.localTime,
       timeZone: event.timeZone,
       disambiguation: 'reject',
     });
-    if (!resolved.ok || resolved.value.startsAt !== event.startsAt) {
-      return failure('inconsistent-instant', 'Stored start must match the confirmed local date, time, and zone.', `${path}.startsAt`);
+    if (resolved && !resolved.ok) {
+      return failure(
+        'invalid-reminder-time',
+        'Reminder wall time must exist exactly once in the confirmed time zone.',
+        `${path}.reminders[${index}].localTime`,
+      );
     }
-  } else if (OWN(event, 'localTime') || OWN(event, 'startsAt')) {
-    return failure('invalid-event-precision', 'Date-only events cannot carry a time or instant.', path);
+  }
+  if (event.precision !== 'timed' || !TIME.test(event.localTime)) return { ok: true, value: event };
+  const resolved = resolveZonedDateTime({
+    localDate: event.localDate,
+    localTime: event.localTime,
+    timeZone: event.timeZone,
+    disambiguation: 'reject',
+  });
+  if (!resolved.ok || resolved.value.startsAt !== event.startsAt) {
+    return failure('inconsistent-instant', 'Stored start must match the confirmed local date, time, and zone.', `${path}.startsAt`);
   }
   return { ok: true, value: event };
 }
