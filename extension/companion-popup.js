@@ -224,9 +224,14 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
 
+// Nothing durable can be saved for the rest of this page's life: every later answer - a result card, a finished save, an edited capture - asks this
+// before putting a save button back, so the note and the disabled buttons never disagree.
+let storageUnavailable = false;
+
 // The note popup.js shows for its own unreadable preferences, shown here for the same reason: nothing durable can be saved, so the two buttons that
 // would save something are the ones that go. Written without the page's helpers, since start-up may have failed before they existed.
 function showStorageUnavailable() {
+  storageUnavailable = true;
   const note = document.getElementById('storage-note');
   if (note) note.hidden = false;
   for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) {
@@ -291,17 +296,19 @@ async function initCompanionPopup() {
     }
   };
 
+  // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
+  const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
   const clearCard = () => {
     safeCard = null;
     $('companion-save-watchlist').disabled = true;
   };
   addEventListener('giga-pinax-card', (event) => {
     safeCard = buildWatchlistDraftPayload({ ...event.detail, auctionContext: researchAuctionContext });
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
   }
   for (const id of ['quick-reference', 'catalogue', 'ric-volume', 'ric-section', 'reference-number']) {
     $(id)?.addEventListener('input', clearCard);
@@ -315,7 +322,7 @@ async function initCompanionPopup() {
   });
   let draftSavePending = false;
   const saveWatchlistDraft = async (payload) => {
-    if (!bridge || !payload) return announce('Extension storage is unavailable.', true);
+    if (!bridge || storageUnavailable || !payload) return announce(STORAGE_UNAVAILABLE, true);
     if (draftSavePending) return;
     draftSavePending = true;
     $('companion-save-watchlist').disabled = true;
@@ -326,9 +333,9 @@ async function initCompanionPopup() {
       announce('Watchlist details are ready to review.');
     } finally {
       draftSavePending = false;
-      $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+      $('companion-save-watchlist').disabled = !canSave(safeCard);
       const currentCapturePayload = watchlistPayloadFromCapture(reviewedCapture());
-      $('companion-capture-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), currentCapturePayload);
+      $('companion-capture-watchlist').disabled = !canSave(currentCapturePayload);
     }
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
@@ -355,7 +362,7 @@ async function initCompanionPopup() {
     $('companion-capture-editor').hidden = !state.editorVisible;
     for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
     $('companion-use-capture').disabled = state.researchDisabled;
-    $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge;
+    $('companion-capture-watchlist').disabled = state.actionsDisabled || !bridge || storageUnavailable;
   };
   for (const id of captureFieldIds) $(id).addEventListener('input', () => {
     if (!captureDraft) captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
@@ -424,7 +431,7 @@ async function initCompanionPopup() {
     if (globalThis.gigaPinaxWatchlistReference) {
       globalThis.gigaPinaxWatchlistReference = clearAuctionContextFromPayload(globalThis.gigaPinaxWatchlistReference);
     }
-    $('companion-save-watchlist').disabled = !canSaveWatchlist(Boolean(bridge), safeCard);
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
     $('companion-capture-source').textContent = 'Auction context cleared. Captured fields remain available for research.';
     announce('Auction context cleared.');
   });
@@ -443,8 +450,11 @@ async function initCompanionPopup() {
     // Blocked site data makes reading localStorage itself throw, and a background that answers nothing leaves no reply to read: either way the page
     // still calculates and looks up references, so it says what it cannot do instead of stopping here.
     let stored = null;
-    try { stored = localStorage; } catch { /* the note below says the choices won't be kept */ }
-    const reply = await initializeCompanionPreferences(bridge, stored).catch((error) => ({ ok: false, message: error?.message }));
+    try { stored = localStorage; } catch { showStorageUnavailable(); }
+    // A reply that could not be read at all - an absent one makes reading its outcome throw - names no reason a collector could act on, so the note
+    // speaks for it instead of a TypeError from inside the tool.
+    const reply = await initializeCompanionPreferences(bridge, stored)
+      .catch((error) => ({ ok: false, message: error instanceof TypeError ? '' : error?.message }));
     if (reply?.ok) {
       snapshot = reply.value;
       const currency = snapshot.preferences?.currency;

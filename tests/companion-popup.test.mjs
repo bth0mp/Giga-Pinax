@@ -2,7 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import {
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+// The page's own surroundings, hand-made as the other popup tests make them: the extension API answers what each case is about, and the listeners the
+// page registers on the window are kept so a result card can be delivered to it afterwards.
+let answerCommand = async () => ({ ok: true });
+const cardListeners = [];
+globalThis.browser = {
+  runtime: { sendMessage: (command) => answerCommand(command) },
+  storage: { onChanged: { addListener() {}, removeListener() {} } },
+};
+globalThis.addEventListener = (type, listener) => { if (type === 'giga-pinax-card') cardListeners.push(listener); };
+globalThis.dispatchEvent = () => true;
+globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
+
+// Imported after the surroundings exist: browser-api.js takes up the extension API as it is evaluated, and the page starts itself where a document is.
+const {
   buildCalculatorView,
   buildWatchlistDraftPayload,
   buildWatchlistSummary,
@@ -20,7 +35,69 @@ import {
   createDraftSaver,
   clearAuctionContextFromPayload,
   replaceAuctionContextInPayload,
-} from '../extension/companion-popup.js';
+} = await import('../extension/companion-popup.js');
+
+class TestElement {
+  constructor(id = '') {
+    this.id = id;
+    this.value = '';
+    this.textContent = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.open = false;
+    this.dataset = {};
+    this.options = [];
+    this.children = [];
+    this.listeners = new Map();
+    this.classList = { toggle() {}, add() {}, remove() {} };
+  }
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+  removeEventListener() {}
+  emit(type, detail = {}) {
+    const event = { target: this, preventDefault() {}, ...detail };
+    return Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)));
+  }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute(name, value) { this[name] = String(value); }
+  removeAttribute(name) { delete this[name]; }
+  querySelectorAll() { return []; }
+  focus() { this.focused = true; }
+}
+
+let loaded = 0;
+// Starts the real page: its own document, its own extension replies, and the card event the result panel sends it once it is running.
+async function loadCompanion({ sendMessage, blockedLocalStorage = false, search = '' }) {
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, new TestElement(id));
+    return elements.get(id);
+  };
+  answerCommand = sendMessage;
+  // As popup.html starts: the notes and the capture's error are hidden, and the two save buttons wait for something to save.
+  for (const id of ['storage-note', 'companion-runtime-note', 'companion-capture-error']) element(id).hidden = true;
+  for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) element(id).disabled = true;
+  globalThis.document = {
+    documentElement: new TestElement('html'),
+    getElementById: element,
+    createElement: () => new TestElement(),
+    querySelectorAll: () => [],
+  };
+  globalThis.location = { search };
+  if (blockedLocalStorage) Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('Site data is blocked.'); } });
+  else Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null, setItem() {}, removeItem() {} } });
+  const before = cardListeners.length;
+  await import(`../extension/companion-popup.js?start=${++loaded}`);
+  // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
+  for (let tick = 0; tick < 100 && element('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
+  await settle();
+  // Only this page's own listener, so an earlier case's page cannot answer for it.
+  return { element, card: (detail) => cardListeners[before]?.({ type: 'giga-pinax-card', detail }) };
+}
 
 test('capture controls prevent edits and stale actions while extraction is pending', () => {
   assert.equal(captureControlsState(true, true).editorVisible, false);
@@ -223,11 +300,37 @@ test('a retained retry belongs to its own coin, and an answerless send is not re
   assert.equal((await silent({ reference: 'RIC 306' })).ok, true);
 });
 
-test('a companion start-up that cannot reach storage still leaves a usable page', () => {
-  const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
-  // Blocked site data makes even reading localStorage throw, and a rejected or absent snapshot reply must not become an unhandled rejection.
-  assert.match(source, /void initCompanionPopup\(\)\.catch\(/);
-  assert.match(source, /storage-note'\)[\s\S]*hidden = false/);
+// Nothing that arrives after a failed start-up may put the save buttons back: the note stays true until the page is opened again.
+test('a companion start-up that cannot reach storage leaves its save buttons disabled for good', async () => {
+  const snapshot = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const cases = [
+    ['blocked site data', { blockedLocalStorage: true, sendMessage: async () => snapshot }, ''],
+    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, 'Storage is blocked.'],
+    ['a background that answers nothing', { sendMessage: async () => undefined }, 'Extension storage is unavailable.'],
+  ];
+  for (const [name, options, announced] of cases) {
+    const page = await loadCompanion(options);
+    assert.equal(page.element('storage-note').hidden, false, name);
+    assert.equal(page.element('companion-save-watchlist').disabled, true, name);
+    assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
+    // A reply nobody could read names no reason a collector could act on, so it is never shown as one.
+    assert.equal(page.element('companion-status').textContent, announced, name);
+
+    page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+    assert.equal(page.element('companion-save-watchlist').disabled, true, name);
+    page.element('companion-capture-ruler').value = 'Nero';
+    await page.element('companion-capture-ruler').emit('input');
+    assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
+  }
+
+  // With storage answering, the same card is saveable: the flag is what disabled the others, not the page failing to start at all.
+  const working = await loadCompanion({ sendMessage: async () => snapshot });
+  assert.equal(working.element('storage-note').hidden, true);
+  working.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  assert.equal(working.element('companion-save-watchlist').disabled, false);
+  working.element('companion-capture-ruler').value = 'Nero';
+  await working.element('companion-capture-ruler').emit('input');
+  assert.equal(working.element('companion-capture-watchlist').disabled, false);
 });
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {
