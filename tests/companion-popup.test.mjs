@@ -2,7 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import {
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+// The page's own surroundings, hand-made as the other popup tests make them: the extension API answers what each case is about, and the listeners the
+// page registers on the window are kept so a result card can be delivered to it afterwards.
+let answerCommand = async () => ({ ok: true });
+let answerTabs = async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }];
+let answerScript = async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: {} } }];
+const cardListeners = [];
+globalThis.browser = {
+  runtime: { sendMessage: (command) => answerCommand(command) },
+  storage: { onChanged: { addListener() {}, removeListener() {} } },
+  tabs: { query: (query) => answerTabs(query), create: async () => ({ id: 9 }) },
+  scripting: { executeScript: (request) => answerScript(request) },
+};
+globalThis.addEventListener = (type, listener) => { if (type === 'giga-pinax-card') cardListeners.push(listener); };
+globalThis.dispatchEvent = () => true;
+globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
+
+// Imported after the surroundings exist: browser-api.js takes up the extension API as it is evaluated, and the page starts itself where a document is.
+const {
   buildCalculatorView,
   buildWatchlistDraftPayload,
   buildWatchlistSummary,
@@ -12,18 +31,93 @@ import {
   shouldRevealRefine,
   captureCurrentPage,
   captureControlsState,
+  captureTabQuery,
+  capturableTab,
   runVisibleAction,
   moveCompanionTab,
   watchlistPayloadFromCapture,
   createDraftSaver,
   clearAuctionContextFromPayload,
   replaceAuctionContextInPayload,
-} from '../extension/companion-popup.js';
+} = await import('../extension/companion-popup.js');
+
+class TestElement {
+  constructor(id = '') {
+    this.id = id;
+    this.value = '';
+    this.textContent = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.open = false;
+    this.dataset = {};
+    this.options = [];
+    this.children = [];
+    this.listeners = new Map();
+    this.classList = { toggle() {}, add() {}, remove() {} };
+  }
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+  removeEventListener() {}
+  emit(type, detail = {}) {
+    const event = { target: this, preventDefault() {}, ...detail };
+    return Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)));
+  }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
+  setAttribute(name, value) { this[name] = String(value); }
+  removeAttribute(name) { delete this[name]; }
+  querySelectorAll() { return []; }
+  focus() { this.focused = true; }
+}
+
+let loaded = 0;
+// Starts the real page: its own document, its own extension replies, and the card event the result panel sends it once it is running.
+async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = false, search = '' }) {
+  const elements = new Map();
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, new TestElement(id));
+    return elements.get(id);
+  };
+  answerCommand = sendMessage;
+  if (tabs) answerTabs = tabs;
+  if (script) answerScript = script;
+  // As popup.html starts: the notes and the capture's error are hidden, and the two save buttons wait for something to save.
+  for (const id of ['storage-note', 'companion-runtime-note', 'companion-capture-error']) element(id).hidden = true;
+  for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) element(id).disabled = true;
+  globalThis.document = {
+    documentElement: new TestElement('html'),
+    getElementById: element,
+    createElement: () => new TestElement(),
+    querySelectorAll: () => [],
+  };
+  globalThis.location = { search };
+  if (blockedLocalStorage) Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('Site data is blocked.'); } });
+  else Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null, setItem() {}, removeItem() {} } });
+  // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
+  // here rather than piling up on globalThis for the rest of the file.
+  cardListeners.length = 0;
+  await import(`../extension/companion-popup.js?start=${++loaded}`);
+  // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
+  for (let tick = 0; tick < 100 && element('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
+  await settle();
+  // Only this page's own listener, so an earlier case's page cannot answer for it.
+  return {
+    element,
+    card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
+    setTabs: (answer) => { answerTabs = answer; },
+    async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
+    async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
+  };
+}
 
 test('capture controls prevent edits and stale actions while extraction is pending', () => {
-  assert.deepEqual(captureControlsState(true, true), { editorVisible: false, fieldsDisabled: true, actionsDisabled: true });
-  assert.deepEqual(captureControlsState(false, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: true });
-  assert.deepEqual(captureControlsState(false, true), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false });
+  assert.equal(captureControlsState(true, true).editorVisible, false);
+  assert.equal(captureControlsState(true, true).fieldsDisabled, true);
+  assert.equal(captureControlsState(false, false).actionsDisabled, true);
+  assert.equal(captureControlsState(false, true).actionsDisabled, false);
 });
 
 test('navigation failures and thrown errors become visible action results', async () => {
@@ -32,9 +126,10 @@ test('navigation failures and thrown errors become visible action results', asyn
   assert.deepEqual(await runVisibleAction(async () => undefined, 'Fallback'), { ok: true });
 });
 
-test('native panels ignore pop-out routing while the window fallback accepts it', () => {
+// Only the lookup window itself answers a right-click: the panel fallback stands in for a sidebar, so a lookup sent while it is open opens its own window.
+test('native panels and the panel fallback ignore pop-out routing, which only the lookup window accepts', () => {
   assert.deepEqual(documentMode('?panel=1'), { panel: true, windowed: false, acceptsLookupMessages: false });
-  assert.deepEqual(documentMode('?panel=1&window=1'), { panel: true, windowed: true, acceptsLookupMessages: true });
+  assert.deepEqual(documentMode('?panel=1&window=1'), { panel: true, windowed: true, acceptsLookupMessages: false });
   assert.deepEqual(documentMode('?window=1'), { panel: false, windowed: true, acceptsLookupMessages: true });
   assert.deepEqual(documentMode(''), { panel: false, windowed: false, acceptsLookupMessages: false });
 });
@@ -48,8 +143,9 @@ test('ambiguity and guided-field errors reveal refinement', () => {
 
 test('current-page capture stays pinned to the tab selected at action start', async () => {
   let target;
+  const queries = [];
   const api = {
-    tabs: { query: async () => [{ id: 27, title: 'Lot 27', url: 'https://auction.example/27' }] },
+    tabs: { query: async (query) => { queries.push(query); return [{ id: 27, title: 'Lot 27', url: 'https://auction.example/27' }]; } },
     scripting: { executeScript: async (request) => {
       target = request.target;
       return [{ result: { pageTitle: 'Extracted lot', pageUrl: 'https://auction.example/27', candidates: {} } }];
@@ -57,7 +153,44 @@ test('current-page capture stays pinned to the tab selected at action start', as
   };
   const capture = await captureCurrentPage(api, async (receiver, method, ...args) => receiver[method](...args));
   assert.deepEqual(target, { tabId: 27 });
+  assert.deepEqual(queries, [{ active: true, currentWindow: true }]);
   assert.equal(capture.pageUrl, 'https://auction.example/27');
+});
+
+test('the lookup window captures the browser window it was opened from, not itself', () => {
+  assert.deepEqual(captureTabQuery({ panel: false, windowed: false }), { active: true, currentWindow: true });
+  assert.deepEqual(captureTabQuery({ panel: true, windowed: false }), { active: true, currentWindow: true });
+  assert.deepEqual(captureTabQuery({ panel: true, windowed: true }), { active: true, lastFocusedWindow: true, windowType: 'normal' });
+  assert.deepEqual(captureTabQuery({ panel: false, windowed: true }), { active: true, lastFocusedWindow: true, windowType: 'normal' });
+});
+
+test('only an http or https tab is capturable', () => {
+  assert.equal(capturableTab([{ id: 3, url: 'https://auction.example/27' }])?.id, 3);
+  assert.equal(capturableTab([{ id: 3, url: 'http://auction.example/27' }])?.id, 3);
+  for (const tabs of [undefined, [], [{ id: 3 }], [{ url: 'https://auction.example/27' }], [{ id: 3, url: 'about:newtab' }],
+    [{ id: 3, url: 'moz-extension://test/popup.html?window=1' }], [{ id: 3, url: 'file:///C:/lot.html' }]]) {
+    assert.equal(capturableTab(tabs), null, JSON.stringify(tabs));
+  }
+});
+
+test('an unreadable page stores nothing and says where the extension can read one', async () => {
+  const unreadable = { tabs: { query: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] }, scripting: { executeScript: async () => assert.fail('must not inject') } };
+  const refused = { tabs: { query: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }] },
+    scripting: { executeScript: async () => { throw new Error('Cannot access contents of the page'); } } };
+  const call = async (receiver, method, ...args) => receiver[method](...args);
+  for (const api of [unreadable, refused]) {
+    await assert.rejects(captureCurrentPage(api, call, { panel: false, windowed: false }),
+      { message: 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.' });
+  }
+  await assert.rejects(captureCurrentPage(unreadable, call, { panel: true, windowed: false }),
+    (error) => error.message.startsWith('This page can\'t be read.') && /toolbar button/.test(error.message));
+});
+
+test('Research coin waits for a query the Reference box can read', () => {
+  assert.deepEqual(captureControlsState(true, true, true), { editorVisible: false, fieldsDisabled: true, actionsDisabled: true, researchDisabled: true });
+  assert.deepEqual(captureControlsState(false, true, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false, researchDisabled: true });
+  assert.deepEqual(captureControlsState(false, true, true), { editorVisible: true, fieldsDisabled: false, actionsDisabled: false, researchDisabled: false });
+  assert.deepEqual(captureControlsState(false, false, false), { editorVisible: true, fieldsDisabled: false, actionsDisabled: true, researchDisabled: true });
 });
 
 test('companion tabs support click-order keyboard movement without side effects', () => {
@@ -158,6 +291,138 @@ test('draft saver preserves request identity after an explicitly unknown storage
   assert.equal((await save({ title: 'Nero' })).ok, false);
   assert.equal((await save({ title: 'Changed but must not replace retry payload' })).ok, true);
   assert.deepEqual(requestIds, ['request-unknown', 'request-unknown']);
+});
+
+test('a retained retry belongs to its own coin, and an answerless send is not read for an outcome', async () => {
+  const sent = [];
+  let replies;
+  const save = createDraftSaver({
+    newRequestId: () => `request-${sent.length + 1}`,
+    sendCommand: async (command) => { sent.push(command); return replies[sent.length - 1]; },
+    openDraft: async () => ({ ok: true }),
+  });
+  replies = [{ ok: false, code: 'storage', outcome: 'unknown' }, { ok: true, value: { id: 'draft-2' } }];
+  assert.equal((await save({ reference: 'RIC 306', pageUrl: 'https://auction.example/27' })).ok, false);
+  // Another lot, not a retry of the first: the second save must not quietly store the coin the first one held.
+  assert.equal((await save({ reference: 'RRC 234/1', pageUrl: 'https://auction.example/44' })).ok, true);
+  assert.deepEqual(sent.map(({ requestId, payload }) => [requestId, payload.reference]), [['request-1', 'RIC 306'], ['request-2', 'RRC 234/1']]);
+
+  replies = [undefined, { ok: true, value: { id: 'draft-3' } }];
+  sent.length = 0;
+  const silent = createDraftSaver({ newRequestId: () => 'request-silent', sendCommand: async () => { sent.push(1); return replies[sent.length - 1]; }, openDraft: async () => ({ ok: true }) });
+  assert.equal((await silent({ reference: 'RIC 306' })).ok, false);
+  assert.equal((await silent({ reference: 'RIC 306' })).ok, true);
+});
+
+// Nothing that arrives after a failed start-up may put the save buttons back: the note stays true until the page is opened again.
+test('a companion start-up that cannot reach storage leaves its save buttons disabled for good', async () => {
+  const snapshot = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const cases = [
+    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, 'Storage is blocked.'],
+    ['a background that answers nothing', { sendMessage: async () => undefined }, 'Extension storage is unavailable.'],
+  ];
+  for (const [name, options, announced] of cases) {
+    const page = await loadCompanion(options);
+    assert.equal(page.element('storage-note').hidden, false, name);
+    assert.equal(page.element('companion-save-watchlist').disabled, true, name);
+    assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
+    // A reply nobody could read names no reason a collector could act on, so it is never shown as one.
+    assert.equal(page.element('companion-status').textContent, announced, name);
+
+    page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+    assert.equal(page.element('companion-save-watchlist').disabled, true, name);
+    page.element('companion-capture-ruler').value = 'Nero';
+    await page.element('companion-capture-ruler').emit('input');
+    assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
+  }
+
+  // With storage answering, the same card is saveable: the flag is what disabled the others, not the page failing to start at all.
+  const working = await loadCompanion({ sendMessage: async () => snapshot });
+  assert.equal(working.element('storage-note').hidden, true);
+  working.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  assert.equal(working.element('companion-save-watchlist').disabled, false);
+  working.element('companion-capture-ruler').value = 'Nero';
+  await working.element('companion-capture-ruler').emit('input');
+  assert.equal(working.element('companion-capture-watchlist').disabled, false);
+});
+
+const WORKING_SNAPSHOT = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+
+// A watchlist save goes to extension storage through the background and never touches localStorage, which is read once to carry an old preference over
+// and copes with no store at all: a profile that blocks site data costs the remembered appearance and fields, and nothing a collector records.
+test('blocked site data costs the remembered preferences, not the watchlist saves', async () => {
+  const page = await loadCompanion({ blockedLocalStorage: true, sendMessage: async () => WORKING_SNAPSHOT });
+  assert.equal(page.element('storage-note').hidden, false);
+  assert.equal(page.element('storage-note').textContent,
+    'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.');
+  assert.equal(page.element('companion-status').textContent, '');
+
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  assert.equal(page.element('companion-save-watchlist').disabled, false);
+  page.element('companion-capture-ruler').value = 'Nero';
+  await page.element('companion-capture-ruler').emit('input');
+  assert.equal(page.element('companion-capture-watchlist').disabled, false);
+});
+const capturedPage = (candidates = {}) => async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates } }];
+
+// The fields are where he is looking and where he is fixing it: the reason the button is off must not vanish at the first keystroke.
+test('the reason Research coin is off stays in view until the fields can be looked up', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, script: capturedPage() });
+  await page.click('companion-capture-current');
+  const message = page.element('companion-capture-error').textContent;
+  assert.match(message, /reference/i);
+  assert.equal(page.element('companion-use-capture').disabled, true);
+
+  await page.type('ruler', 'Nero');
+  assert.equal(page.element('companion-capture-error').textContent, message);
+  assert.equal(page.element('companion-capture-error').hidden, false);
+  assert.equal(page.element('companion-use-capture').disabled, true);
+
+  await page.type('reference', 'RIC 306');
+  assert.equal(page.element('companion-capture-error').textContent, '');
+  assert.equal(page.element('companion-capture-error').hidden, true);
+  assert.equal(page.element('companion-use-capture').disabled, false);
+});
+
+test('a capture message is said once and never takes back what the lookup wrote', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, script: capturedPage() });
+  await page.click('companion-capture-current');
+  assert.equal(page.element('form-error').textContent, page.element('companion-capture-error').textContent);
+  // One alert carries it; the live region is not given the same line to read out again.
+  assert.equal(page.element('announcement').textContent, '');
+
+  // The lookup answers about something else entirely, and the capture editor has no business erasing it.
+  page.element('form-error').textContent = 'No Price 23 found in PELLA.';
+  page.element('form-error').hidden = false;
+  await page.type('reference', 'RIC 306');
+  assert.equal(page.element('form-error').textContent, 'No Price 23 found in PELLA.');
+  assert.equal(page.element('form-error').hidden, false);
+});
+
+// Only one element carries the message as an alert; the other shows it without asking to be read out.
+test('the capture error is announced by one element, not by every place it appears', () => {
+  const markup = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.match(markup, /id="form-error"[^>]*role="alert"/);
+  assert.doesNotMatch(markup, /id="companion-capture-error"[^>]*role="alert"/);
+});
+
+// A page that could not be read leaves no context behind - including the one the last page left, which the editor no longer shows.
+test('a capture that fails takes the earlier page off the card it would be saved with', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    script: capturedPage({ reference: { value: 'RIC 306', provenance: 'structured-data' } }),
+  });
+  await page.click('companion-capture-current');
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  await page.click('companion-save-watchlist');
+  assert.deepEqual(commands.filter(({ type }) => type === 'draft.save').at(-1).payload.auctionContext, { pageUrl: 'https://auction.example/27' });
+
+  page.setTabs(async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }]);
+  await page.click('companion-capture-current');
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  await page.click('companion-save-watchlist');
+  assert.equal(Object.hasOwn(commands.filter(({ type }) => type === 'draft.save').at(-1).payload, 'auctionContext'), false);
 });
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {

@@ -54,13 +54,16 @@ class TestElement {
   toggleAttribute(name, force) { this[name] = force; }
   getBoundingClientRect() { return { top: 0 }; }
   scrollIntoView() {}
-  focus() {}
+  focus() { this.focused = true; }
   reportValidity() { return true; }
   setSelectionRange() {}
+  // As a browser does for Enter in a field and for the tool's own submissions: the same handler runs, with no submitter button.
+  requestSubmit(submitter) { return this.emit('submit', { submitter }); }
 }
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
-  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true }) {
+  permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
+  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [] }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -80,11 +83,23 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     querySelector: (selector) => selector === '.popup-scroll' ? element('popup-scroll') : null,
     createElement: () => new TestElement(),
   };
+  if (focusedId) document.activeElement = element(focusedId);
+  // The extension's own session area, as both browsers answer it: a promise, and a store that outlives the popup document a permission prompt closed.
+  const writes = [];
   const browser = {
     permissions: {
       request: permissionRequest,
       contains: permissionContains,
     },
+    runtime: { onMessage: { addListener: (listener) => messageListeners.push(listener) } },
+    windows: { getCurrent: async () => ({ id: 7 }) },
+    storage: sessionArea ? {
+      session: {
+        get: async (key) => { if (sessionGate) await sessionGate; return session.has(key) ? { [key]: session.get(key) } : {}; },
+        set: async (items) => { for (const [key, value] of Object.entries(items)) { writes.push(value); session.set(key, String(value)); } },
+        remove: async (key) => { session.delete(key); },
+      },
+    } : {},
   };
   const window = new TestElement('window');
   window.open = () => {};
@@ -100,7 +115,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     window,
     globalThis: null,
     localStorage: { getItem: () => null, setItem() {} },
-    location: { search: '', href: 'moz-extension://test/popup.html' },
+    location: { search, href: `moz-extension://test/popup.html${search}` },
     navigator: { clipboard: { writeText: async () => {} } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
@@ -117,7 +132,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document };
+  return { element, document, writes };
 }
 
 const oneSale = {
@@ -156,10 +171,148 @@ test('Enter in a refined text input uses refined fields even when restored field
     lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'none', corpus: 'crro', query: 'RRC 234/1' }; } });
   popup.element('catalogue').value = 'RRC';
   popup.element('reference-number').value = '234/1';
-  popup.document.activeElement = popup.element('reference-number');
+  await popup.element('reference-number').emit('keydown', { key: 'Enter' });
   await popup.element('reference-form').emit('submit');
   assert.equal(lookedUp.length, 1);
   assert.equal(lookedUp[0].number, '234/1');
+});
+
+// Where the cursor happens to be is not a choice of search: the right-click's lookup is submitted by the tool itself, and reading it as a refined
+// search threw the selection away and looked up the stored fields instead.
+test('a right-click lookup is never read as a refined search, wherever focus was left', async () => {
+  for (const focusedId of ['ric-section', 'reference-number']) {
+    const lookedUp = [];
+    const popup = await loadPopup({ search: '?q=RIC%20I%C2%B2%20Nero%20306', focusedId, permissionRequest: async () => true,
+      priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'network' }; } });
+    await settle();
+    assert.equal(popup.element('quick-reference').value, 'RIC I² Nero 306', focusedId);
+    assert.equal(lookedUp.length, 1, focusedId);
+    assert.equal(lookedUp[0].section, 'Nero', focusedId);
+    assert.equal(lookedUp[0].number, '306', focusedId);
+    // Alt+Shift+G, type, Enter: the cursor waits in the Reference box whatever the lookup did.
+    assert.equal(popup.element('quick-reference').focused, true, focusedId);
+  }
+});
+
+// Firefox closes the popup over its own permission prompt, taking the typed reference and everything the document held with it; "select Look up again"
+// only works if the reference outlived that document, which only the extension's own session store does. A prompt that closes the popup never answers
+// this document, so the request is made here as that leaves it: pending for good.
+test('a reference typed before a permission prompt is waiting when the popup opens again', async () => {
+  const session = new Map();
+  const popup = await loadPopup({ session, permissionRequest: () => new Promise(() => {}), priceFetch: async () => ({ status: 'empty' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.get('giga-pinax-pending-reference-v1'), 'Price 23');
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  await settle();
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
+  assert.equal(reopened.element('quick-reference').focused, true);
+  await reopened.element('reference-form').emit('submit');
+  await settle();
+  const afterLookup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  await settle();
+  assert.equal(afterLookup.element('quick-reference').value, '');
+});
+
+// The store answers after the popup has opened, so a reference left over from the prompt must never land on top of what is being typed now.
+test('a restored reference waits for an empty Reference box, and a browser without the session area keeps none', async () => {
+  const typed = await loadPopup({ session: new Map([['giga-pinax-pending-reference-v1', 'Price 23']]),
+    permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  typed.element('quick-reference').value = 'RRC 44/5';
+  await settle();
+  assert.equal(typed.element('quick-reference').value, 'RRC 44/5');
+
+  const session = new Map();
+  const old = await loadPopup({ session, sessionArea: false, permissionRequest: async () => false, priceFetch: async () => ({ status: 'empty' }) });
+  old.element('quick-reference').value = 'Price 23';
+  await old.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.size, 0);
+});
+
+// Every answer ends the lookup the reference was kept for, and an origin already granted opens no prompt to keep one for.
+test('an answered lookup keeps no reference, and access already granted was never a prompt', async () => {
+  const session = new Map();
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'none', corpus: 'pella', query: 'Price 23' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(popup.writes, ['Price 23']);
+  assert.equal(session.size, 0);
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(popup.writes, ['Price 23']);
+});
+
+// A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the
+// reference had already forgotten it, and every popup after that opened with the old reference in the box. Only what a closing popup would lose is kept.
+test('the price buttons keep no reference, so the next popup opens with an empty box', async () => {
+  const session = new Map();
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(session.size, 0);
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  await settle();
+  assert.equal(reopened.element('quick-reference').value, '');
+});
+
+// The reference was kept for a lookup nobody is waiting for any more: he has typed another one over it, and that lookup answers for the box now.
+test('a lookup a later one has replaced keeps no reference', async () => {
+  const session = new Map();
+  const first = deferred();
+  const second = deferred();
+  let lookups = 0;
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: () => (++lookups === 1 ? first.promise : second.promise) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  first.resolve({ status: 'none', corpus: 'pella', query: 'Price 23' });
+  await settle();
+  assert.deepEqual(popup.writes, ['Price 23']);
+  assert.equal(session.size, 0);
+});
+
+// The window was asked to show a card while the session store was still answering about an older reference: the card is its subject now, and a reference
+// the store hands over afterwards would land in the box of a window looking at something else.
+test('a lookup that arrives first leaves no room for a restored reference', async () => {
+  const gate = deferred();
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, sessionGate: gate.promise,
+    session: new Map([['giga-pinax-pending-reference-v1', 'Price 23']]),
+    permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, null, () => {});
+  gate.resolve();
+  await settle();
+  assert.equal(popup.element('quick-reference').value, '');
+});
+
+test('only the lookup window answers a lookup sent to an open window', async () => {
+  const fallback = [];
+  await loadPopup({ search: '?panel=1&window=1', messageListeners: fallback, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  assert.deepEqual(fallback, []);
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  assert.equal(listeners.length, 1);
+  const answers = [];
+  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, (answer) => answers.push(answer)), true);
+  await settle();
+  assert.equal(popup.element('quick-reference').value, 'Price 23');
+  assert.equal(answers.length, 1);
+  assert.equal(answers[0].windowId, 7);
 });
 
 test('refined Search validates before requesting permission or fetching', async () => {

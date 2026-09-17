@@ -4,7 +4,7 @@ import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recal
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { shouldRevealRefine } from './companion-popup.js';
+import { documentMode, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 
@@ -112,9 +112,16 @@ const labelCache = {
 };
 const localCatalogue = createLocalCatalogue({ cache: labelCache });
 
+// Origins this popup has already seen granted: permissions.request opens no prompt for them, so nothing it does can close the popup.
+const grantedOrigins = new Set();
+function noteGranted(origins, allowed) {
+  if (allowed) for (const origin of origins) grantedOrigins.add(origin);
+  return allowed;
+}
+
 async function hasHostAccess(origins) {
   if (!api?.permissions?.contains) return true;
-  try { return (await api.permissions.contains({ origins })) === true; } catch { return false; }
+  try { return noteGranted(origins, (await api.permissions.contains({ origins })) === true); } catch { return false; }
 }
 
 async function localFirstType(reference) {
@@ -508,7 +515,7 @@ async function openLotReference(found, rulers, button, note = '') {
   if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
   const reference = lotLookup(found, rulers);
   const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   beginResearch(reference, async () => {
     const context = researchContext;
     const allowed = localRic ? true : await access;
@@ -802,7 +809,10 @@ async function run(perform, note = '', failedReference = null) {
   try { outcome = await perform(); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === requestId) setBusy(false); }
-  if (id !== requestId) return;
+  // A lookup another has replaced: nobody is waiting for this answer, and the reference it was kept for has been typed over.
+  if (id !== requestId) { forgetPendingReference(); return; }
+  // The lookup the typed reference was kept for has answered, whatever it answered: only a cancelled lookup, and one still waiting for access, keep it.
+  if (!['cancelled', 'permission', 'online-required'].includes(outcome.status)) forgetPendingReference();
   if (outcome.status === 'ok') {
     // A card fills the fields from itself, so the acsearch term follows the chosen type: a BIGR card its King and Bop number (title and citation;
     // chips and suggestions carry no parsable Bop label), an OCRE card its RIC fields from its title (a lone "Hadrian 12" hit shows II.3² Hadrian 12),
@@ -892,18 +902,52 @@ async function runPrices(term, currency, { remember = true, context = researchCo
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.
 async function hasAcsearchAccess() {
   if (!api?.permissions?.contains) return true;
-  try { return (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true; }
+  try { return noteGranted([ACSEARCH_ORIGIN], (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true); }
   catch { return false; }
 }
 
+// Firefox closes the popup over its own permission prompt, taking what was typed with it, and "select Look up again" then has nothing to look up. The
+// Reference box is kept in the extension's own session area, which outlives that document; the popup's sessionStorage dies with it, which is the case
+// this exists for. ponytail: where storage.session is missing, nothing is kept - no other store survives the closing popup.
+const PENDING_KEY = 'giga-pinax-pending-reference-v1';
+const sessionArea = () => api?.storage?.session ?? null;
+function rememberPendingReference() {
+  // Never awaited: permissions.request must stay the first await after the user gesture, or the browser no longer treats it as one.
+  try { void Promise.resolve(sessionArea()?.set({ [PENDING_KEY]: $('quick-reference').value })).catch(() => {}); }
+  catch { /* the prompt still opens; only the refill is lost */ }
+}
+function forgetPendingReference() {
+  try { void Promise.resolve(sessionArea()?.remove(PENDING_KEY)).catch(() => {}); }
+  catch { /* nothing was kept */ }
+}
+// Counted so a reference the store is still fetching cannot land in a window that has since been sent a lookup of its own (openFrom below).
+let opening = 0;
+async function restorePendingReference(ticket) {
+  let stored;
+  try { stored = await sessionArea()?.get(PENDING_KEY); }
+  catch { return; }
+  const pending = selectionQuery(stored?.[PENDING_KEY] ?? '');
+  // The store answers after the popup has opened: whatever he has started typing by then is his, not the one the prompt interrupted.
+  if (pending && ticket === opening && !$('quick-reference').value) $('quick-reference').value = pending;
+}
+
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
-function requestHostAccess(origins) {
+// remember is for the two flows a closed popup costs something: a reference typed into the box and looked up. The price buttons and the online fallback
+// ask about a reference that is already on the card, so they keep none - keeping one there wrote it back after the lookup had forgotten it.
+function requestHostAccess(origins, { remember = false } = {}) {
   if (!api?.permissions?.request) return Promise.resolve(true);
+  // Only a prompt can close the popup, and only an origin this popup has not seen granted opens one.
+  const kept = remember && origins.some((origin) => !grantedOrigins.has(origin));
+  if (kept) rememberPendingReference();
   let pending;
   try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
   return Promise.resolve(pending).catch(() => {
     try { return Promise.resolve(api.permissions.contains({ origins })).catch(() => true); }
     catch { return true; }
+  }).then((allowed) => {
+    // Answered here, so this popup outlived its own prompt: the box still holds what was typed, and there is nothing left to put back.
+    if (kept) forgetPendingReference();
+    return noteGranted(origins, allowed);
   });
 }
 
@@ -923,9 +967,8 @@ showStored();
 applyStoredTheme();
 syncThemeButton();
 // A window opened with ?window=1 (right-click, the pop-out button) can be resized: the page fills it (popup.css) and offers no pop-out of its own.
-const parameters = new URLSearchParams(location.search);
-const panel = parameters.get('panel') === '1';
-const windowed = parameters.get('window') === '1';
+// What this document is, and whether it is the one a right-click's lookup should reach: documentMode answers both, for this page and its companion half.
+const { panel, windowed, acceptsLookupMessages } = documentMode(location.search);
 document.documentElement.classList.toggle('windowed', windowed);
 document.documentElement.classList.toggle('panel-mode', panel);
 
@@ -1030,10 +1073,23 @@ $('reference-form').addEventListener('input', (event) => {
   }
   savePreferences();
 });
+// Enter in a guided field is a refined search, and says so here rather than being guessed at from the focus when the form is submitted: a submission the
+// tool makes itself - a right-click's lookup, the captured coin's Research coin - leaves the cursor wherever it was, and reading that as a refined search
+// threw away the very reference it was sent to look up.
+// The key's own submission is the one it means: it follows in the same turn, and Enter that submitted nothing (a suggestion picked from the datalist)
+// leaves no refined search waiting to be claimed by the next lookup.
+let refinedEnter = false;
+for (const id of ['ric-section', 'reference-number']) {
+  $(id).addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    refinedEnter = true;
+    setTimeout(() => { refinedEnter = false; }, 0);
+  });
+}
 $('reference-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const activeRefinedInput = ['ric-section', 'reference-number'].includes(document.activeElement?.id);
-  const refinedSubmit = event.submitter?.id === 'refine-lookup-button' || activeRefinedInput;
+  const refinedSubmit = event.submitter?.id === 'refine-lookup-button' || refinedEnter;
+  refinedEnter = false;
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
@@ -1062,7 +1118,7 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
   const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   savePreferences();
   beginResearch(reference, async () => {
     const context = researchContext;
@@ -1174,10 +1230,14 @@ darkScheme.addEventListener('change', syncThemeButton);
 // The pop-out's window names a card instead and reopens it like a Recent chip: with the fields stored alongside it, and without a permission request.
 // Either way the cursor then waits in the Reference box (Alt+Shift+G, type, Enter): Firefox popups can ignore autofocus.
 function openFrom(search) {
+  const ticket = ++opening;
   const selected = queryFromSearch(search) || selectionQuery(new URLSearchParams(search).get('reference'));
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
   else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
+  // Nothing was sent here, so a reference a permission prompt interrupted is put back in the box, where Look up is waiting for it. It looks up nothing
+  // by itself: the prompt was the answer to the last Look up, and this one is his to press.
+  else if (!$('quick-reference').value) void restorePendingReference(ticket);
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its
@@ -1195,7 +1255,9 @@ window.addEventListener('storage', (event) => {
 // this page's own; the answer names the window so the sender brings it forward. The toolbar popup doesn't listen, so it never takes one. The window
 // first takes up what the sender saved, as a new window does at start-up: a card sent by corpus and id is priced with its own fields, term and currency,
 // and this window's older copy is never saved over the sender's Recent list, terms and currency.
-if (windowed) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+// The panel fallback (panel=1&window=1) stands in for a sidebar the browser wouldn't open, so it never takes a lookup: only the lookup window answers,
+// and a right-click made while just the fallback is open opens a lookup window of its own.
+if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
   if (message?.type !== LOOKUP_MESSAGE) return false;
   const search = new URL(String(message.url), location.href).search;
   const opened = cardFromSearch(search);
