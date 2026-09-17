@@ -232,7 +232,6 @@ export function summarise(lots, currency) {
   return {
     total: lots.length,
     count: amounts.length,
-    signedOut: amounts.length === 0 && lots.some((entry) => String(entry.price).trim() === '*'),
     capped: lots.length >= PAGE_SIZE,
     priced,
     median: has ? at(0.5) : null,
@@ -347,8 +346,22 @@ export function lastSale(summary) {
   return dated.reduce((last, entry) => (entry.date > last.date ? entry : last), dated[0])?.sale ?? null;
 }
 
+// acsearch hides a hammer price behind a "*" from a visitor who is not signed in, but a lot that has not been sold yet shows one too, so the stars
+// alone told a signed-in collector whose only hits are upcoming lots to sign in again. The page says which it is: its account menu offers the login
+// page to a visitor. Only when no marker is there at all do the stars decide, and then only if every lot has already been sold.
+const LOGIN_MARKER = /<a\b[^>]*\bhref=["']\/?login\.html(?:[?#][^"']*)?["']/i;
+export function signedOutPage(html, lots, now = new Date()) {
+  if (!lots.some((entry) => String(entry.price).trim() === '*')) return false;
+  if (LOGIN_MARKER.test(String(html ?? ''))) return true;
+  const today = localDay(now);
+  return lots.every((entry) => {
+    const date = saleDate(entry.date);
+    return date !== null && date <= today;
+  });
+}
+
 export async function fetchPrices({ term, currency, category }, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS } = options;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date() } = options;
   try {
     const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
@@ -360,7 +373,7 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds.
     const page = lots.slice(0, PAGE_SIZE);
     const summary = summarise(page, currency);
-    if (summary.signedOut) return { status: 'signed-out' };
+    if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out' };
     if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };

@@ -140,7 +140,6 @@ test('summarise computes median and interpolated quartiles over priced lots only
   const summary = summarise(lots);
   assert.equal(summary.total, 11);
   assert.equal(summary.count, 9);
-  assert.equal(summary.signedOut, false);
   assert.equal(summary.median, 180);
   assert.equal(summary.lowerQuartile, 135);
   assert.equal(summary.upperQuartile, 245);
@@ -152,7 +151,7 @@ test('summarise computes median and interpolated quartiles over priced lots only
   assert.deepEqual(summary.priced.map((entry) => entry.amount).slice(0, 3), [90, 110, 135]);
 });
 
-test('summarise handles one, two and a hundred lots, and flags signed-out pages', () => {
+test('summarise handles one, two and a hundred lots, and counts no hidden price', () => {
   const one = summarise([lot('500')]);
   assert.deepEqual([one.median, one.lowerQuartile, one.upperQuartile, one.min, one.max], [500, 500, 500, 500, 500]);
   const two = summarise([lot('100'), lot('300')]);
@@ -162,16 +161,12 @@ test('summarise handles one, two and a hundred lots, and flags signed-out pages'
   assert.equal(hundred.median, 50.5);
   assert.equal(hundred.capped, true);
   const out = summarise([lot('*'), lot('*')]);
-  assert.equal(out.signedOut, true);
   assert.equal(out.count, 0);
   assert.equal(out.median, null);
-  assert.equal(summarise([lot('*'), lot('')]).signedOut, true);
   const unsold = summarise([lot(''), lot('-')]);
-  assert.equal(unsold.signedOut, false);
   assert.equal(unsold.count, 0);
   const empty = summarise([]);
   assert.equal(empty.total, 0);
-  assert.equal(empty.signedOut, false);
   assert.equal(empty.earliest, null);
 });
 
@@ -219,6 +214,22 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
     signal.addEventListener('abort', () => { clearTimeout(alive); reject(new Error('aborted')); });
   });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+});
+
+// 0.32: "no counted price plus a star" also describes a signed-in collector whose only hits are lots not yet sold, and he was told to sign in again.
+test('a signed-out session is what the page says, with the stars only as a fallback', async () => {
+  const shell = (lots, header = '') => `<html><nav>${header}</nav><script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script></html>`;
+  const login = '<li><a href="login.html"><span>Log in</span></a></li>';
+  const hidden = [lot('*', '01.01.2024', 'a'), lot('*', '01.02.2024', 'b')];
+  const outcome = async (html) => (await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(html), now: NOW })).status;
+  assert.equal(await outcome(shell(hidden, login)), 'signed-out');
+  assert.equal(await outcome(fixture('acsearch-search-nero-306.html')), 'signed-out');
+  // No marker: the stars still read as hidden prices, but only while every lot has already been sold.
+  assert.equal(await outcome(shell(hidden)), 'signed-out');
+  assert.equal(await outcome(shell([...hidden, lot('*', '01.06.2028', 'c')])), 'unpriced');
+  assert.equal(await outcome(shell([...hidden, lot('*', 'n/a', 'c')])), 'unpriced');
+  // Lots nobody bid on are not hidden prices, with or without the marker.
+  assert.equal(await outcome(shell([lot('-', '01.01.2024', 'a'), lot('', '01.02.2024', 'b')], login)), 'unpriced');
 });
 
 test('defaultTerm leads on Crawford wording for RRC, which acsearch lists far more often', () => {
