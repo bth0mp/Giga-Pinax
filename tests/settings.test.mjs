@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 import { importWithSafetyCopy } from '../extension/core/backup.js';
+import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
 
 // The presets editor is built by a page that cannot run outside the extension, so what it writes
 // into the row is read here from its source, as the popup's own alert rule is.
@@ -124,4 +125,48 @@ test('a refused command is reported without claiming the import happened', async
   assert.equal(result.sent, true);
   assert.equal(result.reply.ok, false);
   assert.equal(result.copied, COPY.name, 'the copy still reached disk and is still worth naming');
+});
+
+// The bundled-data panel is a set of claims about what the package carries, so each one is checked against the package.
+const settingsHtml = readFileSync(new URL('../extension/settings.html', import.meta.url), 'utf8');
+const dataRoot = new URL('../extension/data/', import.meta.url);
+
+// The corpus directories, without the two files extension/data holds for all of them at once.
+const bundledCorpora = () => readdirSync(dataRoot).filter((name) => !name.includes('.')).sort();
+
+test('the bundled-data panel names every corpus the package carries, and only those', () => {
+  const bundled = bundledCorpora();
+  assert.deepEqual(Object.keys(LOCAL_CORPORA).sort(), bundled);
+  // One row per corpus, each built from that corpus's own metadata rather than from a sentence written here.
+  assert.match(settingsSource, /const corpora = Object\.keys\(LOCAL_CORPORA\);/);
+  assert.match(settingsSource, /catalogueRow\(corpus, metadata\[index\]\)/);
+  // The sentence beside the rows says which references are answered locally and which still go online. Bopearachchi
+  // is not bundled — BIGR's export carries no Bopearachchi citation to verify a hit against — so it must be named as
+  // online, and it must not be listed as a corpus the package carries.
+  assert.match(settingsHtml, /RIC, Crawford, Price and Seleucid Coins lookups use this local data\./);
+  assert.match(settingsHtml, /Bopearachchi references and any lookup the local data cannot answer go online/);
+  // The names travel with the package now, so the panel says so — and says what it still cannot name. It must not go
+  // back to claiming a local card shows nothing but identifiers, and it must not claim every concept has a name.
+  assert.match(settingsHtml, /English Nomisma\.org names for every authority, denomination, mint, material and portrait/);
+  assert.match(settingsHtml, /CC BY 3\.0/);
+  assert.match(settingsHtml, /shows as the identifier the record carries, and none is ever guessed/);
+  // Every name the panel promises is really in the file beside the records.
+  const labels = JSON.parse(readFileSync(new URL('nomisma-labels.json', dataRoot), 'utf8'));
+  assert.equal(labels.schemaVersion, 1);
+  assert.ok(Object.keys(labels.labels).length > 1000);
+  assert.match(readFileSync(new URL('NOTICE.txt', dataRoot), 'utf8'), /Creative Commons Attribution 3\.0/);
+  assert.equal(bundled.includes('bigr'), false);
+  assert.doesNotMatch(settingsHtml, /id="catalogue-coverage"/);
+});
+
+test('each panel row reports the counts and the date its own corpus metadata carries', () => {
+  for (const corpus of bundledCorpora()) {
+    const metadata = JSON.parse(readFileSync(new URL(`${corpus}/metadata.json`, dataRoot), 'utf8'));
+    const line = catalogueMetadataText(metadata);
+    assert.match(line, new RegExp(`${LOCAL_CORPORA[corpus].label} records`), corpus);
+    assert.match(line, /Local files generated \d+ \w+ \d{4}\./, corpus);
+    // A corpus bundled in part says how much it leaves out; one bundled whole makes no such claim.
+    assert.equal(/leaving out/.test(line), Object.hasOwn(metadata, 'excluded'), corpus);
+    assert.ok(metadata.sourceUrl.startsWith('https://'), corpus);
+  }
 });

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Trimmed from PELLA (Coinage of Alexander the Great), American Numismatic Society,
+https://numismatics.org/pella/nomisma.rdf retrieved 2026-09-17. Type data under the Open
+Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+Five records, verbatim; predicates the importer ignores are left out. The two Le Rider and
+PELLA-numbered records are the ones the bundle leaves out.
+-->
+<rdf:RDF xmlns:nmo="http://nomisma.org/ontology#" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:void="http://rdfs.org/ns/void#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:un="http://www.owl-ontologies.com/Ontology1181490123.owl#">
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/pella/id/price.23">
+    <skos:prefLabel xml:lang="en">Price 23</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/price1991"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/tetradrachm"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/alexander_iii"/>
+    <nmo:hasStatedAuthority rdf:resource="http://nomisma.org/id/alexander_iii"/>
+    <nmo:hasMint>
+      <rdf:Description>
+        <rdf:value rdf:resource="http://nomisma.org/id/amphipolis"/>
+        <un:hasUncertainty rdf:resource="http://nomisma.org/id/uncertain_value"/>
+      </rdf:Description>
+    </nmo:hasMint>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0336</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0323</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/pella/id/price.23#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/pella/id/price.23#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/price.23#obverse">
+    <dcterms:description xml:lang="en">Head of beardless Heracles right wearing lion skin headdress</dcterms:description>
+    <dcterms:description xml:lang="de">Kopf des jugendlichen Herakles nach r. mit Löwenfellexuvie</dcterms:description>
+    <dcterms:description xml:lang="fr">Tête d'Héraclès imberbe à dr. coiffé d'une dépouille de lion</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/heracles"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/price.23#reverse">
+    <nmo:hasLegend xml:lang="grc">ΑΛΕΞΑΝΔΡΟΥ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Zeus seated on stool-throne left, eagle on outstretched right hand, sceptre in left hand</dcterms:description>
+    <dcterms:description xml:lang="de">Zeus nach l. thronend, in der ausgestreckten R. Adler und in der L. Zepter haltend</dcterms:description>
+    <dcterms:description xml:lang="fr">Zeus assis à g. sur un trône, un aigle dans la main dr. tendue et un sceptre dans la main g.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/zeus"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/pella/id/price.24">
+    <skos:prefLabel xml:lang="en">Price 24</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/price1991"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/didrachm"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/alexander_iii"/>
+    <nmo:hasStatedAuthority rdf:resource="http://nomisma.org/id/alexander_iii"/>
+    <nmo:hasMint>
+      <rdf:Description>
+        <rdf:value rdf:resource="http://nomisma.org/id/amphipolis"/>
+        <un:hasUncertainty rdf:resource="http://nomisma.org/id/uncertain_value"/>
+      </rdf:Description>
+    </nmo:hasMint>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0336</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0323</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/pella/id/price.24#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/pella/id/price.24#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/price.24#obverse">
+    <dcterms:description xml:lang="en">Head of beardless Heracles right wearing lion skin headdress</dcterms:description>
+    <dcterms:description xml:lang="de">Kopf des jugendlichen Herakles nach r. mit Löwenfellexuvie</dcterms:description>
+    <dcterms:description xml:lang="fr">Tête d'Héraclès imberbe à dr. coiffé d'une dépouille de lion</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/heracles"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/price.24#reverse">
+    <nmo:hasLegend xml:lang="grc">ΑΛΕΞΑΝΔΡΟΥ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Zeus seated on stool-throne left, eagle on outstretched right hand, sceptre in left hand</dcterms:description>
+    <dcterms:description xml:lang="de">Zeus nach l. thronend, in der ausgestreckten R. Adler und in der L. Zepter haltend</dcterms:description>
+    <dcterms:description xml:lang="fr">Zeus assis à g. sur un trône, un aigle dans la main dr. tendue et un sceptre dans la main g.</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/zeus"/>
+  </rdf:Description>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/pella/id/lerider.philip_ii.2.109">
+    <skos:prefLabel xml:lang="en">LeRider Philip II 2.109</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/lerider_philip_ii"/>
+    <dcterms:isReplacedBy rdf:resource="http://numismatics.org/pella/id/pella.philip_ii.107"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/didrachm"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/philip_ii"/>
+    <nmo:hasStatedAuthority rdf:resource="http://nomisma.org/id/philip_ii"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/amphipolis"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0357</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0348</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/pella/id/lerider.philip_ii.2.109#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/pella/id/lerider.philip_ii.2.109#reverse"/>
+  </nmo:TypeSeriesItem>
+
+  <nmo:TypeSeriesItem rdf:about="http://numismatics.org/pella/id/pella.philip_ii.107">
+    <skos:prefLabel xml:lang="en">PELLA Philip II 107</skos:prefLabel>
+    <dcterms:source rdf:resource="http://nomisma.org/id/pella_type_series"/>
+    <dcterms:replaces rdf:resource="http://numismatics.org/pella/id/lerider.philip_ii.2.109"/>
+    <nmo:hasDenomination rdf:resource="http://nomisma.org/id/didrachm"/>
+    <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+    <nmo:hasAuthority rdf:resource="http://nomisma.org/id/philip_ii"/>
+    <nmo:hasStatedAuthority rdf:resource="http://nomisma.org/id/philip_ii"/>
+    <nmo:hasMint rdf:resource="http://nomisma.org/id/amphipolis"/>
+    <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0357</nmo:hasStartDate>
+    <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0348</nmo:hasEndDate>
+    <nmo:hasObverse rdf:resource="http://numismatics.org/pella/id/pella.philip_ii.107#obverse"/>
+    <nmo:hasReverse rdf:resource="http://numismatics.org/pella/id/pella.philip_ii.107#reverse"/>
+  </nmo:TypeSeriesItem>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/pella.philip_ii.107#obverse">
+    <dcterms:description xml:lang="en">Head of beardless Heracles right wearing lion skin headdress</dcterms:description>
+    <nmo:hasPortrait rdf:resource="http://nomisma.org/id/heracles"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="http://numismatics.org/pella/id/pella.philip_ii.107#reverse">
+    <nmo:hasLegend>ΦΙΛΙΠΠΟΥ</nmo:hasLegend>
+    <dcterms:description xml:lang="en">Philip II wearing causia, tunic, and chlamys riding horse to left</dcterms:description>
+  </rdf:Description>
+</rdf:RDF>

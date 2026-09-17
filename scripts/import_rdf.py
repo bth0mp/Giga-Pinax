@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert an OCRE RDF/XML export into deterministic extension data shards."""
+"""Convert an ANS RDF/XML type export into deterministic extension data shards."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 RDF = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}"
@@ -21,10 +23,64 @@ SKOS = "{http://www.w3.org/2004/02/skos/core#}"
 DC = "{http://purl.org/dc/terms/}"
 ABOUT = RDF + "about"
 RESOURCE = RDF + "resource"
-OCRE_ID = "http://numismatics.org/ocre/id/"
 NOMISMA_ID = "http://nomisma.org/id/"
-VOLUME = re.compile(r"^[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?$")
-SHARD_NAME = re.compile(r"records-[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?(?:\.[a-z])?\.json")
+VOLUME = r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?"
+# Every corpus this importer knows, and the three things that differ between them: the URI its records are published
+# under, which of the ids it publishes the extension can actually ask for, and how those ids are grouped into shard
+# files. Everything else — the parse, the cap, the split, the metadata, the reindex — is one path over this table.
+# A corpus whose export the extension only cites part of names the rest here as well, so an id that belongs to neither
+# set is an export shape this importer was not written for and stops the import rather than being dropped in silence.
+CORPORA = {
+    "ocre": {
+        "label": "OCRE",
+        "base": "http://numismatics.org/ocre/id/",
+        "url": "https://numismatics.org/ocre/",
+        "bundled": re.compile(rf"ric\.{VOLUME}\..+"),
+        # The RIC volume an id names, which is the book a collector has open and the file a lookup by id opens.
+        "group": lambda record_id: record_id.split(".")[1],
+        "groups": VOLUME,
+        "excluded": {},
+        "reason": "",
+        # 52,254 titles are too many to parse on every lookup, so OCRE ships an index of their RIC numbers beside them.
+        "numbers": True,
+    },
+    "crro": {
+        "label": "CRRO",
+        "base": "http://numismatics.org/crro/id/",
+        "url": "https://numismatics.org/crro/",
+        "bundled": re.compile(r"rrc-[0-9A-Za-z][0-9A-Za-z.\-]*"),
+        "group": lambda record_id: "rrc",
+        "groups": "rrc",
+        "excluded": {},
+        "reason": "",
+        "numbers": False,
+    },
+    "pella": {
+        "label": "PELLA",
+        "base": "http://numismatics.org/pella/id/",
+        "url": "https://numismatics.org/pella/",
+        "bundled": re.compile(r"price\.[0-9A-Za-z][0-9A-Za-z._\-]*"),
+        "group": lambda record_id: "price",
+        "groups": "price",
+        # PELLA publishes Le Rider's Philip II die combinations and its own PELLA numbers beside Price's catalogue.
+        # No reference shape the extension reads cites either, so bundling them would be weight nothing can reach.
+        "excluded": {"lerider": re.compile(r"lerider\..+"), "pella": re.compile(r"pella\..+")},
+        "reason": "only Price numbers are cited as PELLA references; Le Rider and PELLA type numbers are not",
+        "numbers": False,
+    },
+    "sco": {
+        "label": "SCO",
+        "base": "http://numismatics.org/sco/id/",
+        "url": "https://numismatics.org/sco/",
+        # Every SCO record is identified under sc.1, whichever part of Seleucid Coins its title names.
+        "bundled": re.compile(r"sc\.1\.[0-9A-Za-z][0-9A-Za-z._\-]*"),
+        "group": lambda record_id: "sc",
+        "groups": "sc",
+        "excluded": {},
+        "reason": "",
+        "numbers": False,
+    },
+}
 # Mozilla's add-on linter rejects any non-binary file of 5 MiB or more, so no generated file may pass this cap.
 CAP_BYTES = 4 * 1024 * 1024
 SHARD_LETTERS = "abcdefghijklmnopqrstuvwxyz"
@@ -52,6 +108,29 @@ TAGS = {
     "description": DC + "description",
     "isReplacedBy": DC + "isReplacedBy",
 }
+
+
+# The record fields that hold a Nomisma concept the card renders: authority or issuer, denomination, mint, material,
+# and the portrait of either side. A value that is not a bare Nomisma identifier is a concept published elsewhere
+# (CRRO cites four British Museum person URIs), which Nomisma cannot label and which is never rewritten here.
+CONCEPT_KEYS = ("a", "d", "m", "x")
+NOMISMA_SLUG = re.compile(r"[A-Za-z0-9._~()-]+")
+# Nomisma's public SPARQL endpoint, which scripts/import_people.py's fetch subcommand already reads the same concepts
+# from, under the same User-Agent. One request carries a batch of identifiers rather than one concept per request.
+LABEL_ENDPOINT = "https://nomisma.org/query"
+# The identifiers are relative to a BASE rather than written out: a batch of absolute URIs is many times longer once the
+# query string is percent-encoded, and the endpoint answers HTTP 414 long before the batch is worth making. A relative
+# IRI also needs none of the escaping a prefixed name would ("nm:-des_cos" and "nm:a(-)oros_colophon" are both illegal).
+LABEL_QUERY = ("BASE <http://nomisma.org/id/>\n"
+               "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>\n"
+               "SELECT ?id ?label WHERE { VALUES ?id { %s } ?id skos:prefLabel ?label . FILTER(lang(?label) = \"en\") }")
+LABEL_BATCH = 320
+LABEL_USER_AGENT = "Giga-Pinax-data-import/1"
+LABEL_LICENSE = "CC-BY-3.0"
+LABEL_LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
+LABEL_FILE = "nomisma-labels.json"
+DEFAULT_LABEL_SNAPSHOT = Path(__file__).resolve().parent / "data" / LABEL_FILE
+DEFAULT_DATA_ROOT = Path(__file__).resolve().parents[1] / "extension" / "data"
 
 
 class ImportFailure(ValueError):
@@ -96,7 +175,8 @@ def inspect_source(path: Path) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
-def parse_source(path: Path) -> tuple[dict[str, dict], dict[str, list[str]], set[str]]:
+def parse_source(path: Path, corpus: dict) -> tuple[dict[str, dict], dict[str, list[str]], set[str]]:
+    base, label = corpus["base"], corpus["label"]
     records: dict[str, dict] = {}
     replacements: dict[str, list[str]] = {}
     sides: dict[str, dict] = {}
@@ -119,11 +199,11 @@ def parse_source(path: Path) -> tuple[dict[str, dict], dict[str, list[str]], set
             if element.tag == NMO + "TypeSeriesItem":
                 if not uri:
                     raise ImportFailure("type record is missing rdf:about")
-                if not uri.startswith(OCRE_ID):
+                if not uri.startswith(base):
                     raise ImportFailure(f"unsupported type URI corpus: {uri}")
-                record_id = uri[len(OCRE_ID):]
+                record_id = uri[len(base):]
                 if not record_id or "/" in record_id:
-                    raise ImportFailure(f"invalid OCRE id: {uri}")
+                    raise ImportFailure(f"invalid {label} id: {uri}")
                 title = literal(element, "prefLabel")
                 if not title:
                     raise ImportFailure(f"type record is missing a label: {uri}")
@@ -209,7 +289,7 @@ def parse_source(path: Path) -> tuple[dict[str, dict], dict[str, list[str]], set
     return records, replacements, conflicting_records
 
 
-def replacement_aliases(records: dict[str, dict], replacements: dict[str, list[str]], excluded: set[str]) -> tuple[dict[str, str], dict[str, int]]:
+def replacement_aliases(records: dict[str, dict], replacements: dict[str, list[str]], excluded: set[str], base: str) -> tuple[dict[str, str], dict[str, int]]:
     targets = {}
     ambiguous_nodes = set()
     for old_id, uris in replacements.items():
@@ -217,7 +297,7 @@ def replacement_aliases(records: dict[str, dict], replacements: dict[str, list[s
             ambiguous_nodes.add(old_id)
             continue
         uri = uris[0]
-        targets[old_id] = uri[len(OCRE_ID):] if uri.startswith(OCRE_ID) else None
+        targets[old_id] = uri[len(base):] if uri.startswith(base) else None
 
     aliases = {}
     ambiguous = 0
@@ -313,69 +393,99 @@ def number_index(entries: list[list[str]]) -> dict[str, list[int]]:
     return {key: positions[key] for key in sorted(positions, key=int)}
 
 
-def write_data(output: Path, active: dict[str, dict], metadata: dict) -> dict:
-    """Every generated file, from the active records and the metadata fields only the source itself can supply."""
+def shard_name(corpus: dict) -> re.Pattern:
+    return re.compile(rf"records-{corpus['groups']}(?:\.[a-z])?\.json")
+
+
+def generated(active: dict[str, dict], metadata: dict) -> tuple[dict, list[tuple[str, bytes]]]:
+    """Every file the importer writes, by name, from the active records and the metadata the source itself supplies."""
+    corpus = CORPORA[metadata["corpus"]]
     shards = defaultdict(dict)
     for record_id in sorted(active):
-        parts = record_id.split(".")
-        if len(parts) < 3 or parts[0] != "ric" or not VOLUME.fullmatch(parts[1]):
-            raise ImportFailure(f"unsupported OCRE record id: {record_id}")
-        shards[parts[1]][record_id] = active[record_id]
+        if not corpus["bundled"].fullmatch(record_id):
+            raise ImportFailure(f"unsupported {corpus['label']} record id: {record_id}")
+        shards[corpus["group"](record_id)][record_id] = active[record_id]
 
     shard_files = {}
     files = []
     for prefix in sorted(shards):
         parts = shard_parts(prefix, shards[prefix])
         for part in parts:
-            files.append((output / part["file"], {"schemaVersion": 1, "records": part["records"]}))
+            files.append((part["file"], {"schemaVersion": 1, "records": part["records"]}))
         shard_files[prefix] = [{"file": part["file"], "from": part["from"]} for part in parts]
     entries = [[record_id, active[record_id]["l"]] for record_id in sorted(active)]
     complete = {**metadata, "activeRecordCount": len(active), "shards": shard_files}
-    files += [(output / "index.json", {"schemaVersion": 1, "entries": entries}),
-              # The entry count travels with the number index: it is the one thing that tells a reader the positions were
-              # taken from the index beside them, since a stale list of positions is still a perfectly valid one.
-              (output / "numbers.json", {"schemaVersion": 1, "entryCount": len(entries), "numbers": number_index(entries)}),
-              (output / "metadata.json", complete)]
+    files.append(("index.json", {"schemaVersion": 1, "entries": entries}))
+    if corpus["numbers"]:
+        # The entry count travels with the number index: it is the one thing that tells a reader the positions were
+        # taken from the index beside them, since a stale list of positions is still a perfectly valid one.
+        files.append(("numbers.json", {"schemaVersion": 1, "entryCount": len(entries), "numbers": number_index(entries)}))
+    files.append(("metadata.json", complete))
 
+    payloads = [(name, json_bytes(value)) for name, value in files]
+    for name, payload in payloads:
+        if len(payload) > CAP_BYTES:
+            raise ImportFailure(f"{name} is larger than the {CAP_BYTES} byte cap")
+    return complete, payloads
+
+
+def write_data(output: Path, active: dict[str, dict], metadata: dict) -> dict:
     # Every file is measured before any of them is written, so an import the cap refuses leaves the data directory
     # exactly as it found it rather than half replaced.
-    payloads = [(path, json_bytes(value)) for path, value in files]
-    for path, payload in payloads:
-        if len(payload) > CAP_BYTES:
-            raise ImportFailure(f"{path.name} is larger than the {CAP_BYTES} byte cap")
+    complete, payloads = generated(active, metadata)
     output.mkdir(parents=True, exist_ok=True)
-    written = [path for path, _ in payloads]
-    for path, payload in payloads:
-        write_file(path, payload)
+    written = {name for name, _ in payloads}
+    for name, payload in payloads:
+        write_file(output / name, payload)
     # A volume that stops being split leaves the file it was split into behind, which would ship in the package.
+    stale_names = shard_name(CORPORA[metadata["corpus"]])
     for stale in sorted(output.glob("records-*.json")):
-        if stale not in written and SHARD_NAME.fullmatch(stale.name):
+        if stale.name not in written and stale_names.fullmatch(stale.name):
             stale.unlink()
     return complete
 
 
-def convert(source: Path, output: Path, generated_on: str) -> dict:
+def excluded_counts(corpus: dict, record_ids: list[str]) -> dict:
+    """The records the export publishes that no reference the extension reads can ever cite, counted by their group."""
+    counts = {name: 0 for name in sorted(corpus["excluded"])}
+    for record_id in record_ids:
+        name = next((name for name, pattern in corpus["excluded"].items() if pattern.fullmatch(record_id)), None)
+        if name is None:
+            raise ImportFailure(f"unsupported {corpus['label']} record id: {record_id}")
+        counts[name] += 1
+    return {"count": len(record_ids), "reason": corpus["reason"], "byGroup": counts}
+
+
+def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     try:
         date.fromisoformat(generated_on)
     except ValueError as error:
         raise ImportFailure("generated date must be a real ISO date") from error
+    corpus = CORPORA[name]
     input_bytes, source_sha256 = inspect_source(source)
-    records, replacements, conflicts = parse_source(source)
-    aliases, replacement_skips = replacement_aliases(records, replacements, conflicts)
-    active = {record_id: record for record_id, record in records.items() if record_id not in replacements and record_id not in conflicts}
+    records, replacements, conflicts = parse_source(source, corpus)
+    kept = {record_id for record_id in records if corpus["bundled"].fullmatch(record_id)}
+    excluded = excluded_counts(corpus, sorted(set(records) - kept))
+    # An id the corpus publishes but the extension cannot ask for is no target for a redirect either, so it joins the
+    # conflicts as somewhere a replacement chain must not end.
+    aliases, replacement_skips = replacement_aliases(records, replacements, conflicts | (set(records) - kept), corpus["base"])
+    active = {record_id: record for record_id, record in records.items()
+              if record_id in kept and record_id not in replacements and record_id not in conflicts}
     metadata = {
         "schemaVersion": 1,
-        "corpus": "ocre",
+        "corpus": name,
         "sourceFilename": source.name,
         "inputBytes": input_bytes,
         "sourceSha256": source_sha256,
         "generatedOn": generated_on,
         "publicationDate": None,
-        "sourceUrl": "https://numismatics.org/ocre/",
+        "sourceUrl": corpus["url"],
         "license": "ODbL-1.0",
         "licenseUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
         "recordCount": len(records),
         "activeRecordCount": len(active),
+        # Only a corpus that leaves something out says so, so a corpus bundled whole carries no empty claim about it.
+        **({"excluded": excluded} if excluded["count"] else {}),
         "aliases": aliases,
         "replacementSkips": replacement_skips,
         "conflicts": {"count": len(conflicts), "ids": sorted(conflicts)},
@@ -388,6 +498,11 @@ def shard_count(metadata: dict) -> int:
     return sum(len(parts) for parts in metadata["shards"].values())
 
 
+def summary(metadata: dict) -> str:
+    return (f"{metadata['activeRecordCount']} active {CORPORA[metadata['corpus']]['label']} records "
+            f"into {shard_count(metadata)} shard files.")
+
+
 def read_json(path: Path) -> object:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -395,65 +510,213 @@ def read_json(path: Path) -> object:
         raise ImportFailure(f"cannot read {path.name}: {error}") from error
 
 
-def reindex(data: Path) -> dict:
-    """Rebuild every derived file from the records already in a data directory, where the RDF source is not at hand."""
-    metadata = read_json(data / "metadata.json")
-    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or metadata.get("corpus") != "ocre":
-        raise ImportFailure("unsupported OCRE metadata")
+def read_data(read) -> tuple[dict[str, dict], dict]:
+    """The records and metadata a generated data directory already holds, read back the way the reader reads them."""
+    metadata = read("metadata.json")
+    name = metadata.get("corpus") if isinstance(metadata, dict) else None
+    # The name is tested for being a name before it is looked up: a list or an object in that slot is broken metadata
+    # like any other, and an unhashable key would otherwise raise a TypeError straight past every caller's handling.
+    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or not isinstance(name, str) or name not in CORPORA:
+        raise ImportFailure("unsupported catalogue metadata")
+    label = CORPORA[name]["label"]
     shards = metadata.get("shards")
     if not isinstance(shards, dict) or not shards:
-        raise ImportFailure("OCRE metadata must name its shards")
+        raise ImportFailure(f"{label} metadata must name its shards")
+    safe = shard_name(CORPORA[name])
     active: dict[str, dict] = {}
     for prefix in sorted(shards):
         parts = shards[prefix]
         if not isinstance(parts, list) or not parts:
             raise ImportFailure(f"volume {prefix} names no shard file")
         for part in parts:
-            name = part.get("file") if isinstance(part, dict) else None
-            if not isinstance(name, str) or not SHARD_NAME.fullmatch(name):
+            file_name = part.get("file") if isinstance(part, dict) else None
+            if not isinstance(file_name, str) or not safe.fullmatch(file_name):
                 raise ImportFailure(f"unsafe shard name in volume {prefix}")
-            records = read_json(data / name)
+            records = read(file_name)
             records = records.get("records") if isinstance(records, dict) else None
             if not isinstance(records, dict):
-                raise ImportFailure(f"{name} holds no records")
+                raise ImportFailure(f"{file_name} holds no records")
             for record_id, record in records.items():
                 if not isinstance(record, dict) or record.get("i") != record_id or record_id in active:
-                    raise ImportFailure(f"{name} misfiles the record {record_id}")
+                    raise ImportFailure(f"{file_name} misfiles the record {record_id}")
                 active[record_id] = record
     # The counts are the source's own, so a data directory short of a shard is a broken input, never a smaller bundle.
     if metadata.get("activeRecordCount") != len(active):
         raise ImportFailure(f"the shards hold {len(active)} records, the metadata counts {metadata.get('activeRecordCount')}")
+    return active, metadata
+
+
+def reindex(data: Path) -> dict:
+    """Rebuild every derived file from the records already in a data directory, where the RDF source is not at hand."""
+    active, metadata = read_data(lambda name: read_json(data / name))
     return write_data(data, active, metadata)
+
+
+def rebuilt(read) -> dict[str, bytes]:
+    """What --reindex would write for a data directory, without writing it, so a build can compare it to what is there.
+    An index, a number index or a shard map that no longer matches the records beside it is still a valid file: every
+    position in it resolves and the lookup simply never sees what the two disagree about, so only rebuilding finds it."""
+    active, metadata = read_data(read)
+    return dict(generated(active, metadata)[1])
+
+
+def record_slugs(records: dict[str, dict]) -> set[str]:
+    """Every Nomisma concept the packed records name in a field the card renders."""
+    slugs: set[str] = set()
+    for record in records.values():
+        for key in CONCEPT_KEYS:
+            slugs.update(record.get(key, []))
+        for side in ("o", "r"):
+            slugs.update((record.get(side) or {}).get("p", []))
+    return {slug for slug in slugs if NOMISMA_SLUG.fullmatch(slug)}
+
+
+def bundled_slugs(read_corpus) -> set[str]:
+    """The concepts every bundled corpus references, read the way the reader reads the records themselves."""
+    slugs: set[str] = set()
+    for name in sorted(CORPORA):
+        read = read_corpus(name)
+        if read is None:
+            continue
+        slugs |= record_slugs(read_data(read)[0])
+    return slugs
+
+
+def label_payload(snapshot: object, slugs: set[str]) -> dict:
+    """The generated file: the English label of every bundled concept Nomisma names, and nothing else.
+
+    A concept the snapshot does not label is left out rather than title-cased into a label nobody published, so the
+    card falls back to the identifier exactly as it does today."""
+    labels = snapshot.get("labels") if isinstance(snapshot, dict) else None
+    if not isinstance(labels, dict):
+        raise ImportFailure(f"{LABEL_FILE} holds no labels")
+    kept = {}
+    for slug in sorted(slugs):
+        label = labels.get(slug)
+        if label is None:
+            continue
+        if not isinstance(label, str) or not label.strip():
+            raise ImportFailure(f"unusable Nomisma label for {slug}")
+        kept[slug] = label
+    return {"schemaVersion": 1, "labels": kept}
+
+
+def fetch_labels(slugs: set[str], retrieved_on: str) -> dict:
+    """One SPARQL request per batch of identifiers, and no other request: the snapshot the build reads instead of the network."""
+    try:
+        date.fromisoformat(retrieved_on)
+    except ValueError as error:
+        raise ImportFailure("retrieval date must be a real ISO date") from error
+    ordered = sorted(slugs)
+    labels: dict[str, str] = {}
+    requests = 0
+    for start in range(0, len(ordered), LABEL_BATCH):
+        batch = ordered[start:start + LABEL_BATCH]
+        query = LABEL_QUERY % " ".join(f"<{slug}>" for slug in batch)
+        request = Request(f"{LABEL_ENDPOINT}?{urlencode({'query': query, 'output': 'json'})}",
+                          headers={"Accept": "application/sparql-results+json", "User-Agent": LABEL_USER_AGENT})
+        with urlopen(request, timeout=120) as response:
+            if response.status != 200:
+                raise ImportFailure(f"Nomisma query returned HTTP {response.status}")
+            payload = json.loads(response.read())
+        requests += 1
+        for binding in payload.get("results", {}).get("bindings", []):
+            uri = (binding.get("id") or {}).get("value") or ""
+            label = " ".join(((binding.get("label") or {}).get("value") or "").split())
+            if not uri.startswith(NOMISMA_ID) or not label:
+                continue
+            slug = uri[len(NOMISMA_ID):]
+            # Two English preferred labels for one concept is not something to choose between: it stops the fetch.
+            if labels.setdefault(slug, label) != label:
+                raise ImportFailure(f"Nomisma gives {slug} two English labels")
+    return {
+        "endpoint": LABEL_ENDPOINT,
+        "query": LABEL_QUERY,
+        "batchSize": LABEL_BATCH,
+        "requestCount": requests,
+        "retrievedOn": retrieved_on,
+        "license": LABEL_LICENSE,
+        "licenseUrl": LABEL_LICENSE_URL,
+        "requestedCount": len(ordered),
+        "labelledCount": len(labels),
+        "labels": dict(sorted(labels.items())),
+    }
+
+
+def snapshot_bytes(snapshot: dict) -> bytes:
+    return (json.dumps(snapshot, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8")
+
+
+def corpus_reader(root: Path):
+    return lambda name: (lambda file_name: read_json(root / name / file_name)) if (root / name).is_dir() else None
+
+
+def write_labels(root: Path, snapshot: Path) -> int:
+    """Regenerate the bundled label file from the tracked snapshot and the records beside it. No network, same bytes every time."""
+    payload = json_bytes(label_payload(read_json(snapshot), bundled_slugs(corpus_reader(root))))
+    if len(payload) > CAP_BYTES:
+        raise ImportFailure(f"{LABEL_FILE} is larger than the {CAP_BYTES} byte cap")
+    write_file(root / LABEL_FILE, payload)
+    return len(json.loads(payload)["labels"])
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?")
     parser.add_argument("output", type=Path, nargs="?")
+    parser.add_argument("--corpus", choices=sorted(CORPORA),
+                        help="which ANS type series the source exports (default: ocre)")
     parser.add_argument("--generated-on", help="explicit YYYY-MM-DD data generation date")
     parser.add_argument("--reindex", type=Path, metavar="DATA_DIR",
                         help="rebuild the indexes and shards of an existing data directory, without the RDF source")
+    parser.add_argument("--fetch-labels", type=Path, nargs="?", const=DEFAULT_DATA_ROOT, metavar="DATA_ROOT",
+                        help=f"fetch the English Nomisma label of every concept the bundled records name into {DEFAULT_LABEL_SNAPSHOT.name}")
+    parser.add_argument("--write-labels", type=Path, nargs="?", const=DEFAULT_DATA_ROOT, metavar="DATA_ROOT",
+                        help="regenerate the bundled label file from the tracked snapshot, without the network")
+    parser.add_argument("--snapshot", type=Path, default=DEFAULT_LABEL_SNAPSHOT,
+                        help="the tracked Nomisma label snapshot to fetch into or generate from")
+    parser.add_argument("--retrieved-on", help="explicit YYYY-MM-DD retrieval date for --fetch-labels")
     args = parser.parse_args()
+    if args.fetch_labels is not None or args.write_labels is not None:
+        root = args.fetch_labels if args.fetch_labels is not None else args.write_labels
+        if args.source is not None or args.output is not None or args.reindex is not None or args.corpus is not None:
+            parser.error("--fetch-labels and --write-labels take no source, output, --corpus or --reindex")
+        try:
+            if args.fetch_labels is not None:
+                if not args.retrieved_on:
+                    parser.error("--fetch-labels needs --retrieved-on")
+                snapshot = fetch_labels(bundled_slugs(corpus_reader(root)), args.retrieved_on)
+                args.snapshot.parent.mkdir(parents=True, exist_ok=True)
+                write_file(args.snapshot, snapshot_bytes(snapshot))
+                print(f"Fetched {snapshot['labelledCount']} of {snapshot['requestedCount']} Nomisma labels "
+                      f"in {snapshot['requestCount']} requests.")
+            else:
+                print(f"Wrote {write_labels(root, args.snapshot)} Nomisma labels to {root / LABEL_FILE}.")
+        except (ImportFailure, OSError, json.JSONDecodeError) as error:
+            print(f"label import failed: {error}", file=sys.stderr)
+            return 1
+        return 0
     if args.reindex is not None:
-        if args.source is not None or args.output is not None or args.generated_on is not None:
-            parser.error("--reindex takes no source, output or --generated-on")
+        # The corpus of a data directory is its own metadata's, never the command line's.
+        if args.source is not None or args.output is not None or args.generated_on is not None or args.corpus is not None:
+            parser.error("--reindex takes no source, output, --corpus or --generated-on")
         try:
             metadata = reindex(args.reindex)
         except (ImportFailure, OSError) as error:
             print(f"reindex failed: {error}", file=sys.stderr)
             return 1
-        print(f"Reindexed {metadata['activeRecordCount']} active OCRE records into {shard_count(metadata)} shard files.")
+        print(f"Reindexed {summary(metadata)}")
         return 0
     if args.source is None or args.output is None or args.generated_on is None:
         parser.error("source, output and --generated-on are required")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.generated_on):
         parser.error("--generated-on must be YYYY-MM-DD")
     try:
-        metadata = convert(args.source, args.output, args.generated_on)
+        metadata = convert(args.corpus or "ocre", args.source, args.output, args.generated_on)
     except (ImportFailure, ET.ParseError, OSError) as error:
         print(f"RDF import failed: {error}", file=sys.stderr)
         return 1
-    print(f"Imported {metadata['activeRecordCount']} active OCRE records into {shard_count(metadata)} shard files.")
+    print(f"Imported {summary(metadata)}")
     return 0
 
 

@@ -8,7 +8,7 @@ import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid
 import * as bridge from './browser-api.js';
 import { initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
-import { catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
+import { LOCAL_CORPORA, catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 let preferencesSnapshot;
@@ -210,11 +210,29 @@ async function exportRaw() {
   download(file.text, file.name);
 }
 
+// One line per bundled corpus, each with the counts and the date its own metadata carries, its source and its licence.
+// A corpus whose files cannot be read says so on its own line rather than removing the corpus from the list.
+function catalogueRow(corpus, metadata) {
+  const row = document.createElement('li');
+  const name = document.createElement('strong');
+  name.textContent = `${LOCAL_CORPORA[corpus].label}: `;
+  row.append(name, document.createTextNode(catalogueMetadataText(metadata)));
+  for (const [url, text] of [[metadata?.sourceUrl, 'Source'], [metadata?.licenseUrl, 'Licence']]) {
+    if (!/^https:\/\//.test(String(url))) continue;
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = text;
+    row.append(document.createTextNode(' '), link, document.createTextNode('.'));
+  }
+  return row;
+}
+
 async function loadCatalogueInfo() {
-  const metadata = await defaultLocalCatalogue?.metadata?.();
-  $('catalogue-coverage').textContent = catalogueMetadataText(metadata);
-  $('catalogue-source').href = metadata?.sourceUrl ?? 'https://numismatics.org/ocre/';
-  $('catalogue-license').href = metadata?.licenseUrl ?? 'https://opendatacommons.org/licenses/odbl/';
+  const corpora = Object.keys(LOCAL_CORPORA);
+  const metadata = await Promise.all(corpora.map((corpus) => defaultLocalCatalogue?.metadata?.(corpus) ?? null));
+  $('catalogue-list').replaceChildren(...corpora.map((corpus, index) => catalogueRow(corpus, metadata[index])));
 }
 
 $('add-premium').addEventListener('click', () => $('premium-list').append(premiumRow()));

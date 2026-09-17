@@ -498,7 +498,7 @@ test('RIC local hit neither requests nor waits for ANS permission', async () => 
     permissionRequest: async () => { requested += 1; return false; },
     permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 306' }),
-    localProvider: { lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
   });
   popup.element('quick-reference').value = 'RIC I² Nero 306';
   await popup.element('reference-form').emit('submit');
@@ -514,7 +514,7 @@ test('RIC local miss offers an explicit online permission button', async () => {
   const popup = await loadPopup({
     permissionRequest: async () => { requested += 1; return false; }, permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 99999' }),
-    localProvider: { lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'none' }), lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 99999';
   await popup.element('reference-form').emit('submit');
@@ -527,6 +527,77 @@ test('RIC local miss offers an explicit online permission button', async () => {
   assert.equal(requested, 1);
 });
 
+// The corpora bundled beside OCRE, through the popup rather than through the catalogue: every gate here reads the
+// corpus the reference names, so a provider that serves only OCRE would never exercise one of them.
+const PRICE_CARD = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', authority: 'Alexander III of Macedon',
+  denomination: 'Tetradrachm', mint: null, material: 'Silver', portrait: null, dates: '336–323 BC',
+  obverse: { legend: null, description: 'Head of Herakles' }, reverse: { legend: 'ΑΛΕΞΑΝΔΡΟΥ', description: 'Zeus' } };
+
+// The online half of a lookup, counted and never made: the local half is the real code path under test.
+function onlineCounter(outcome) {
+  const attempts = [];
+  return {
+    attempts,
+    impl: async (reference, options = {}) => (options.online === false
+      ? lookup.lookupType(reference, options)
+      : (attempts.push(reference), outcome)),
+  };
+}
+
+test('a bundled Price reference costs no permission prompt and no request', async () => {
+  let requested = 0;
+  const online = onlineCounter({ status: 'none', corpus: 'pella', query: 'Price 23' });
+  const popup = await loadPopup({
+    permissionRequest: async () => { requested += 1; return false; }, permissionContains: async () => false,
+    priceFetch: async () => ({ status: 'empty', term: 'Price 23' }),
+    lookupTypeImpl: online.impl,
+    localProvider: { serves: (corpus) => corpus === 'pella', lookupType: async () => ({ status: 'ok', card: PRICE_CARD }),
+      lookupById: async () => ({ status: 'ok', card: PRICE_CARD }) },
+  });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(requested, 0);
+  assert.deepEqual(online.attempts, []);
+  assert.equal(popup.element('result-reference').textContent, 'Price 23');
+  assert.equal(popup.element('result-source').textContent, 'Local PELLA catalogue');
+});
+
+test('a local miss names the catalogue it really searched, not OCRE', async () => {
+  for (const [text, corpus, name] of [['Price 99999', 'pella', 'PELLA'], ['Crawford 999/9', 'crro', 'CRRO'],
+    ['SC 999999', 'sco', 'SCO'], ['RIC Nero 99999', 'ocre', 'OCRE']]) {
+    const online = onlineCounter({ status: 'none', corpus, query: text });
+    const popup = await loadPopup({
+      permissionRequest: async () => false, permissionContains: async () => false,
+      priceFetch: async () => ({ status: 'empty', term: text }),
+      lookupTypeImpl: online.impl,
+      localProvider: { serves: (served) => served === corpus, lookupType: async () => ({ status: 'none' }),
+        lookupById: async () => ({ status: 'none' }) },
+    });
+    popup.element('quick-reference').value = text;
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    assert.equal(popup.element('online-fallback').hidden, false, text);
+    assert.match(popup.element('form-error').textContent, new RegExp(`local ${name} catalogue`), text);
+  }
+});
+
+test('a local miss for a bundled corpus falls back online exactly once', async () => {
+  const online = onlineCounter({ status: 'none', corpus: 'pella', query: 'Price 99999' });
+  const popup = await loadPopup({
+    permissionRequest: async () => true, permissionContains: async () => true,
+    priceFetch: async () => ({ status: 'empty', term: 'Price 99999' }),
+    lookupTypeImpl: online.impl,
+    localProvider: { serves: (corpus) => corpus === 'pella', lookupType: async () => ({ status: 'none' }),
+      lookupById: async () => ({ status: 'none' }) },
+  });
+  popup.element('quick-reference').value = 'Price 99999';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(online.attempts.length, 1);
+  assert.match(popup.element('form-error').textContent, /No Price 99999 found in PELLA/);
+});
+
 test('editing cancels a delayed online permission retry', async () => {
   const permission = deferred();
   let localCalls = 0;
@@ -534,7 +605,7 @@ test('editing cancels a delayed online permission retry', async () => {
   const popup = await loadPopup({
     permissionRequest: () => permission.promise, permissionContains: async () => false,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 1' }),
-    localProvider: { lookupType: async () => (++localCalls === 1 ? { status: 'none' } : { status: 'ok', card }), lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => (++localCalls === 1 ? { status: 'none' } : { status: 'ok', card }), lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 1';
   await popup.element('reference-form').emit('submit');
@@ -555,7 +626,7 @@ test('editing during the granted-permission check prevents an obsolete online fa
   const popup = await loadPopup({
     permissionRequest: async () => true, permissionContains: () => contains.promise,
     priceFetch: async () => ({ status: 'empty', term: 'Nero 1' }),
-    localProvider: { lookupType: async () => { localCalls += 1; return { status: 'none' }; }, lookupById: async () => ({ status: 'none' }) },
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => { localCalls += 1; return { status: 'none' }; }, lookupById: async () => ({ status: 'none' }) },
   });
   popup.element('quick-reference').value = 'RIC Nero 1';
   const submission = popup.element('reference-form').emit('submit');

@@ -1,0 +1,26 @@
+Bundled SCO reference data
+
+Derived from Seleucid Coins Online (SCO), American Numismatic Society.
+Source: https://numismatics.org/sco/
+Data documentation: https://numismatics.org/sco/apis
+Source export: sco.rdf, retrieved 17 September 2026
+
+The source type database and this derived database are available under the
+Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Source filename, SHA-256, coverage, record counts and conversion date are in
+metadata.json. Every Seleucid Coins type in the export is bundled; SCO
+identifies the types of both parts of the book under sc.1, and the title of
+each record names the part it belongs to. The source publication date is
+unknown. This bundle excludes monograms, symbols, images and auction-price
+data. The converter and editable derived data are provided at
+https://github.com/bth0mp/Giga-Pinax .
+Conversion instructions:
+https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
+
+Nomisma.org concept labels are absent from this export. The English name of
+every concept these records carry for an authority, issuer, denomination, mint,
+material or portrait is bundled in ../nomisma-labels.json instead, under CC BY
+3.0; see ../NOTICE.txt. A concept Nomisma publishes no English name for is left
+unresolved rather than labelled from another source.
