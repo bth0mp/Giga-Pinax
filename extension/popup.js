@@ -515,7 +515,7 @@ async function openLotReference(found, rulers, button, note = '') {
   if (other && !defaultTerm(currentReference())) { fail(EMPTY_OTHER_MESSAGE); return; }
   const reference = lotLookup(found, rulers);
   const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   beginResearch(reference, async () => {
     const context = researchContext;
     const allowed = localRic ? true : await access;
@@ -809,7 +809,8 @@ async function run(perform, note = '', failedReference = null) {
   try { outcome = await perform(); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === requestId) setBusy(false); }
-  if (id !== requestId) return;
+  // A lookup another has replaced: nobody is waiting for this answer, and the reference it was kept for has been typed over.
+  if (id !== requestId) { forgetPendingReference(); return; }
   // The lookup the typed reference was kept for has answered, whatever it answered: only a cancelled lookup, and one still waiting for access, keep it.
   if (!['cancelled', 'permission', 'online-required'].includes(outcome.status)) forgetPendingReference();
   if (outcome.status === 'ok') {
@@ -929,16 +930,23 @@ async function restorePendingReference() {
 }
 
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
-function requestHostAccess(origins) {
+// remember is for the two flows a closed popup costs something: a reference typed into the box and looked up. The price buttons and the online fallback
+// ask about a reference that is already on the card, so they keep none - keeping one there wrote it back after the lookup had forgotten it.
+function requestHostAccess(origins, { remember = false } = {}) {
   if (!api?.permissions?.request) return Promise.resolve(true);
-  // Only a prompt can close the popup, and only an origin not yet granted opens one.
-  if (origins.some((origin) => !grantedOrigins.has(origin))) rememberPendingReference();
+  // Only a prompt can close the popup, and only an origin this popup has not seen granted opens one.
+  const kept = remember && origins.some((origin) => !grantedOrigins.has(origin));
+  if (kept) rememberPendingReference();
   let pending;
   try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
   return Promise.resolve(pending).catch(() => {
     try { return Promise.resolve(api.permissions.contains({ origins })).catch(() => true); }
     catch { return true; }
-  }).then((allowed) => noteGranted(origins, allowed));
+  }).then((allowed) => {
+    // Answered here, so this popup outlived its own prompt: the box still holds what was typed, and there is nothing left to put back.
+    if (kept) forgetPendingReference();
+    return noteGranted(origins, allowed);
+  });
 }
 
 // The saved fields, currency, sales period and Recent row: shown at start-up, and again when the lookup window takes a lookup sent to it (below).
@@ -1108,7 +1116,7 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (other && !defaultTerm(currentReference())) { clearOutput(); showError(EMPTY_OTHER_MESSAGE, 'reference-number'); return; }
   const reference = currentReference();
   const localRic = reference.catalogue === 'RIC';
-  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS]);
+  const access = localRic ? null : requestHostAccess(other ? [ACSEARCH_ORIGIN] : [...HOST_ORIGINS], { remember: true });
   savePreferences();
   beginResearch(reference, async () => {
     const context = researchContext;

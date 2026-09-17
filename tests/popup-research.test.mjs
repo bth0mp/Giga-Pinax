@@ -195,10 +195,11 @@ test('a right-click lookup is never read as a refined search, wherever focus was
 });
 
 // Firefox closes the popup over its own permission prompt, taking the typed reference and everything the document held with it; "select Look up again"
-// only works if the reference outlived that document, which only the extension's own session store does.
+// only works if the reference outlived that document, which only the extension's own session store does. A prompt that closes the popup never answers
+// this document, so the request is made here as that leaves it: pending for good.
 test('a reference typed before a permission prompt is waiting when the popup opens again', async () => {
   const session = new Map();
-  const popup = await loadPopup({ session, permissionRequest: async () => false, priceFetch: async () => ({ status: 'empty' }) });
+  const popup = await loadPopup({ session, permissionRequest: () => new Promise(() => {}), priceFetch: async () => ({ status: 'empty' }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -245,6 +246,43 @@ test('an answered lookup keeps no reference, and access already granted was neve
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.deepEqual(popup.writes, ['Price 23']);
+});
+
+// A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the
+// reference had already forgotten it, and every popup after that opened with the old reference in the box. Only what a closing popup would lose is kept.
+test('the price buttons keep no reference, so the next popup opens with an empty box', async () => {
+  const session = new Map();
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(session.size, 0);
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  await settle();
+  assert.equal(reopened.element('quick-reference').value, '');
+});
+
+// The reference was kept for a lookup nobody is waiting for any more: he has typed another one over it, and that lookup answers for the box now.
+test('a lookup a later one has replaced keeps no reference', async () => {
+  const session = new Map();
+  const first = deferred();
+  const second = deferred();
+  let lookups = 0;
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: () => (++lookups === 1 ? first.promise : second.promise) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  first.resolve({ status: 'none', corpus: 'pella', query: 'Price 23' });
+  await settle();
+  assert.deepEqual(popup.writes, ['Price 23']);
+  assert.equal(session.size, 0);
 });
 
 test('only the lookup window answers a lookup sent to an open window', async () => {
