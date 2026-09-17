@@ -1464,6 +1464,9 @@ window.addEventListener('storage', (event) => {
 // The panel fallback (panel=1&window=1) stands in for a sidebar the browser wouldn't open, so it never takes a lookup: only the lookup window answers,
 // and a right-click made while just the fallback is open opens a lookup window of its own.
 if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+  // The message chooses what this window looks up, and is answered with the window's own id, so it is taken only from
+  // this extension's own pages: its background, or another of its popups handing a lookup over.
+  if (sender?.id !== api.runtime.id || !String(sender?.url ?? '').startsWith(api.runtime.getURL(''))) return false;
   if (message?.type !== LOOKUP_MESSAGE) return false;
   const search = new URL(String(message.url), location.href).search;
   const opened = cardFromSearch(search);

@@ -24,9 +24,10 @@ const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'alert.claim', 'alert.delivery.record',
-  'scheduler.reconcile', 'backup.import',
+  'backup.import',
 ]);
+// The address this extension's own pages are served from; a sender outside it commands nothing.
+const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
@@ -186,7 +187,11 @@ function registerMenus() {
   return result;
 }
 
-api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Nothing here is a public API: a reply carries the collector's records, and alert.claim, alert.delivery.record and
+  // scheduler.reconcile are the background's own - a page that could send them could silence the reminders it claimed.
+  // Those three are no longer in COMMAND_TYPES, and a sender outside this extension is not answered at all.
+  if (sender?.id !== api.runtime.id || !String(sender?.url ?? '').startsWith(EXTENSION_PAGES)) return false;
   if (message?.type === LOOKUP_LAUNCH_MESSAGE) {
     if (!isLookupWindowUrl(message.url)) {
       sendResponse({ ok: false, message: 'Invalid lookup window address.' });

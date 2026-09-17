@@ -25,6 +25,7 @@ let tabCalls = 0;
 
 globalThis.browser = {
   runtime: {
+    id: 'giga-pinax@test',
     onMessage: { addListener(listener) { listeners.messages.push(listener); } },
     onInstalled: { addListener(listener) { listeners.installed.push(listener); } },
     onStartup: { addListener(listener) { listeners.startup.push(listener); } },
@@ -72,19 +73,21 @@ globalThis.browser = {
 await import(`../extension/background.js?integration=${Date.now()}`);
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const send = (message) => new Promise((resolve) => listeners.messages[0](message, {}, resolve));
+// A command comes from one of this extension's own pages, and the background answers nothing else.
+const PAGE = { id: 'giga-pinax@test', url: 'moz-extension://test/workspace.html' };
+const send = (message) => new Promise((resolve) => listeners.messages[0](message, PAGE, resolve));
 
 test('combined background ignores lookup-window messages and accepts companion commands', async () => {
   assert.equal(listeners.messages.length, 1);
   const listener = listeners.messages[0];
-  assert.equal(listener({ type: LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price+23' }, {}, () => {
+  assert.equal(listener({ type: LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price+23' }, PAGE, () => {
     assert.fail('background must not answer the lookup window message');
   }), false);
 
   const reply = new Promise((resolve) => {
     assert.equal(listener({
       type: 'snapshot.get', requestId: '10000000-0000-4000-8000-000000000001',
-    }, {}, resolve), true);
+    }, PAGE, resolve), true);
   });
   assert.equal((await reply).ok, true);
 
@@ -93,13 +96,33 @@ test('combined background ignores lookup-window messages and accepts companion c
   assert.equal(rawReply.value.schemaVersion, SCHEMA_VERSION);
 });
 
+// Nothing here is a public API: the reply carries the collector's records, and these three commands are the
+// background's own - a page that could claim an alert or record a delivery could silence the reminders it claimed.
+test('only this extension’s own pages command the store, and never through the background’s own commands', async () => {
+  const listener = listeners.messages[0];
+  const answered = [];
+  const ask = (message, sender) => listener(message, sender, (reply) => answered.push(reply));
+  const command = () => ({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  assert.equal(ask(command(), { id: 'somebody-else@test', url: 'moz-extension://other/page.html' }), false);
+  assert.equal(ask(command(), { id: 'giga-pinax@test', url: 'https://house.test/sale' }), false);
+  assert.equal(ask(command(), undefined), false);
+  assert.equal(ask({ type: LOOKUP_LAUNCH_MESSAGE, url: 'popup.html?window=1&q=Price+23' }, { id: 'giga-pinax@test', url: 'https://house.test/sale' }), false);
+  assert.deepEqual(answered, []);
+  // The commands the background sends itself are not reachable from a page, whoever sends them.
+  for (const type of ['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']) {
+    assert.equal(ask({ type, requestId: crypto.randomUUID(), eventId: 'x', triggerIds: [], delivered: false }, PAGE), false, type);
+  }
+  assert.deepEqual(answered, []);
+  assert.equal(ask(command(), PAGE), true);
+});
+
 test('Giga showInWindow opens a window when the combined background declines its message', async () => {
   const opened = [];
   const listener = listeners.messages[0];
   const api = {
     runtime: {
       async sendMessage(message) {
-        const handled = listener(message, {}, () => assert.fail('declined messages have no response'));
+        const handled = listener(message, PAGE, () => assert.fail('declined messages have no response'));
         if (handled === false) throw new Error('No receiver');
         return null;
       },
@@ -262,11 +285,16 @@ test('a capture that cannot be saved or shown is surfaced instead of silently dr
   assert.equal(titles.at(-1), '');
 });
 
+// The reconcile is the background's own command, so its own alarm is what asks for one.
+const wake = async () => {
+  listeners.alarms[0]({ name: 'auction-companion:scheduler' });
+  for (let index = 0; index < 12; index += 1) await flush();
+};
+
 test('a reconcile with nothing to change reads once and writes nothing', async () => {
-  await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
+  await wake();
   const before = { ...storageCalls };
-  const reply = await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
-  assert.equal(reply.ok, true);
+  await wake();
   assert.equal(storageCalls.set, before.set);
   assert.ok(storageCalls.get - before.get <= 2, `an idle reconcile read ${storageCalls.get - before.get} times`);
 });
@@ -299,7 +327,7 @@ test('a worker restarted after a failed capture leaves the warning standing', as
   assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
 
   const restarted = listeners.messages.at(-1);
-  await new Promise((resolve) => restarted({ type: 'snapshot.get', requestId: crypto.randomUUID() }, {}, resolve));
+  await new Promise((resolve) => restarted({ type: 'snapshot.get', requestId: crypto.randomUUID() }, PAGE, resolve));
   for (let index = 0; index < 12; index += 1) await flush();
   assert.notEqual(badges.at(-1), '!', 'the recovered warning must still be retired by a later capture');
   assert.equal(titles.at(-1), '');
@@ -315,8 +343,7 @@ test('a reconcile nobody asked for says so when it fails instead of stopping the
   const realError = console.error;
   console.error = (...args) => { logged.push(args.map(String).join(' ')); };
   try {
-    listeners.alarms[0]({ name: 'auction-companion:scheduler' });
-    for (let index = 0; index < 12; index += 1) await flush();
+    await wake();
   } finally {
     console.error = realError;
     stored[STORAGE_KEY] = intact;

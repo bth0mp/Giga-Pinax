@@ -13,6 +13,9 @@ import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
 
+// A lookup reaches this window from this extension's own background, or from another of its pages.
+const SENDER = { id: 'giga-pinax@test', url: 'moz-extension://test/background.js' };
+
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -93,7 +96,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       request: permissionRequest,
       contains: permissionContains,
     },
-    runtime: { onMessage: { addListener: (listener) => messageListeners.push(listener) } },
+    runtime: { id: 'giga-pinax@test', getURL: (path) => `moz-extension://test/${path}`, onMessage: { addListener: (listener) => messageListeners.push(listener) } },
     windows: { getCurrent: async () => ({ id: 7 }) },
     storage: sessionArea ? {
       session: {
@@ -301,7 +304,7 @@ test('a lookup that arrives first leaves no room for a restored reference', asyn
   const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, sessionGate: gate.promise,
     session: new Map([['giga-pinax-pending-reference-v1', 'Price 23']]),
     permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
-  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, null, () => {});
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, SENDER, () => {});
   gate.resolve();
   await settle();
   assert.equal(popup.element('quick-reference').value, '');
@@ -316,7 +319,7 @@ test('only the lookup window answers a lookup sent to an open window', async () 
     priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
   assert.equal(listeners.length, 1);
   const answers = [];
-  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, (answer) => answers.push(answer)), true);
+  assert.equal(listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, SENDER, (answer) => answers.push(answer)), true);
   await settle();
   assert.equal(popup.element('quick-reference').value, 'Price 23');
   assert.equal(answers.length, 1);
@@ -331,7 +334,7 @@ test('a lookup sent to this window is announced to the rest of the page before t
   const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
     priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
   popup.dispatched.length = 0;
-  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, () => {});
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, SENDER, () => {});
   await settle();
   const received = popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received');
   assert.equal(received.length, 1);
@@ -343,6 +346,26 @@ test('a lookup sent to this window is announced to the rest of the page before t
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.deepEqual(popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received'), []);
+});
+
+// The lookup window takes an address from a message and opens it. Only this extension sends one: a page that could send
+// this message would choose what the collector's open window looks up, and be answered with the window's own id.
+test('a lookup is taken only from this extension’s own pages', async () => {
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  const answers = [];
+  const ask = (sender) => listeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, sender, (answer) => answers.push(answer));
+  for (const sender of [{ id: 'somebody-else@test', url: 'moz-extension://other/background.js' },
+    { id: 'giga-pinax@test', url: 'https://house.test/sale' }, undefined]) {
+    assert.equal(ask(sender), false);
+  }
+  await settle();
+  assert.deepEqual(answers, []);
+  assert.equal(popup.element('quick-reference').value, '');
+  assert.equal(ask(SENDER), true);
+  await settle();
+  assert.equal(popup.element('quick-reference').value, 'Price 23');
 });
 
 test('refined Search validates before requesting permission or fetching', async () => {
@@ -1209,7 +1232,7 @@ test('a lookup handed to an open window keeps the cached currency', async () => 
     lookupTypeImpl: async () => ({ status: 'ok', card: priceTwentyThree }) });
   await settle();
   await settle();
-  messageListeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, null, () => {});
+  messageListeners[0]({ type: selection.LOOKUP_MESSAGE, url: 'popup.html?window=1&q=Price%2023' }, SENDER, () => {});
   await settle();
   await settle();
   assert.equal(open.element('currency').value, 'EUR');
