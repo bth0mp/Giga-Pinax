@@ -1,18 +1,20 @@
 import { PERIODS } from './prices.js';
+import { CATALOGUES, CORPORA, catalogueOf } from './catalogues.js';
 import { CURRENCIES } from './core/money.js';
 
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
-export const DEFAULT_NUMBER = Object.freeze({ Price: '23', RIC: '306', RRC: '44/5', SC: '1266.2', Bop: '24A', Other: 'BCD Boiotia 174b' });
-// The section field is the RIC ruler or mint section for RIC and the king for Bop; a catalogue change resets it like the number.
-export const DEFAULT_SECTION = Object.freeze({ RIC: 'Nero', Bop: 'Euthydemus I' });
+// The example the guided fields start from, and the ruler or king beside it, as the catalogue table holds them; the
+// catalogues with no section of their own keep RIC's ready, so choosing RIC fills the field rather than blanking it.
+const column = (field) => Object.freeze(Object.fromEntries(Object.entries(CATALOGUES)
+  .flatMap(([name, entry]) => (entry[field] === undefined ? [] : [[name, entry[field]]]))));
+export const DEFAULT_NUMBER = column('defaultNumber');
+export const DEFAULT_SECTION = column('defaultSection');
 export const RECENT_LIMIT = 6;
 export const THEME_KEY = 'giga-pinax-theme-v1';
 export const THEMES = Object.freeze(['light', 'dark']);
 // The stored light/dark choice, or '' for "follow the system"; theme.js applies the same rule before the first paint.
 export const restoreTheme = (raw) => (THEMES.includes(raw) ? raw : '');
 const TERM_LIMIT = 50;
-// The corpora a Recent chip, or the pop-out's window, may reopen.
-export const CORPORA = Object.freeze(['ocre', 'pella', 'crro', 'sco', 'bigr', 'other']);
 
 const text = (value, fallback) => (typeof value === 'string' ? value.slice(0, 120) : fallback);
 
@@ -33,11 +35,8 @@ function restoreRecent(value) {
 
 const boundedId = (id) => Array.from((String(id).toWellFormed?.() ?? String(id))).slice(0, 120).join('');
 const termKey = ({ corpus, id }) => `${corpus}:${encodeURIComponent(boundedId(id))}`;
-const canonicalCorpus = (id) => id.startsWith('price.') ? 'pella'
-  : id.startsWith('ric.') ? 'ocre'
-    : id.startsWith('rrc-') ? 'crro'
-      : id.startsWith('sc.') ? 'sco'
-        : id.startsWith('bigr.') ? 'bigr' : '';
+// A stored term keyed by a bare record id, from before the key carried its corpus: the corpus its identifier names.
+const canonicalCorpus = (id) => Object.values(CATALOGUES).find((entry) => entry.idPrefix && id.startsWith(entry.idPrefix))?.corpus ?? '';
 
 function restoreTerms(value, recent) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -64,7 +63,7 @@ export function restorePreferences(raw) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = null; }
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const catalogue = ['RIC', 'RRC', 'SC', 'Bop', 'Other'].includes(saved.catalogue) ? saved.catalogue : 'Price';
+  const catalogue = catalogueOf(saved.catalogue) ? saved.catalogue : 'Price';
   const recent = restoreRecent(saved.recent);
   return {
     currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',

@@ -1,7 +1,7 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quoteList, referenceName, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
-import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
+import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
+import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
@@ -25,17 +25,13 @@ const COINARCHIVES_HOME = 'https://www.coinarchives.com/';
 const EMPTY_OTHER_MESSAGE = 'Enter a reference, such as “BCD Boiotia 174b”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC 972”, “Titus 123”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
-const CORPUS_NAME = { ocre: 'OCRE', pella: 'PELLA', crro: 'CRRO', sco: 'SCO', bigr: 'BIGR' };
-const NOT_FOUND_HINT = { ocre: 'Check the ruler, volume and number.', crro: 'Check the number.', pella: 'Check the number.', sco: 'Check the number.', bigr: 'Check the king and Bop number.' };
-const REFERENCE_LABEL = { Price: 'Price number', RIC: 'RIC number (including any suffix)', RRC: 'Crawford number', SC: 'Seleucid Coins number', Bop: 'Bop number', Other: 'Reference, as the dealer cites it' };
-const REFERENCE_HELP = { Price: 'Example: Price 23', RIC: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.', RRC: 'Example: 44/5', SC: 'Example: 1266.2', Bop: 'Example: 24A. Leave the king blank to list every king with that number.', Other: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' };
 const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
-const onlineMessage = (corpus) => `This type was not available in the local ${CORPUS_NAME[corpus] ? `${CORPUS_NAME[corpus]} ` : ''}catalogue. `
+const onlineMessage = (corpus) => `This type was not available in the local ${catalogueForCorpus(corpus)?.corpusName ? `${catalogueForCorpus(corpus).corpusName} ` : ''}catalogue. `
   + 'Check online to search numismatics.org.';
 
 let rawPreferences = null;
@@ -232,8 +228,8 @@ function updateFields() {
   // and any refill of the fields — a chip, a chosen candidate, a card — drops the line written about the fields it replaced.
   $('ric-note').hidden = !isRic;
   clearRicNote();
-  $('reference-label').textContent = REFERENCE_LABEL[catalogue];
-  $('reference-help').textContent = REFERENCE_HELP[catalogue];
+  $('reference-label').textContent = catalogueOf(catalogue).label;
+  $('reference-help').textContent = catalogueOf(catalogue).help;
 }
 
 function fillFields(parsed) {
@@ -1022,7 +1018,7 @@ async function run(perform, note = '', failedReference = null) {
   }
   else if (outcome.status === 'cancelled') return;
   else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
-  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${CORPUS_NAME[outcome.corpus]}. ${NOT_FOUND_HINT[outcome.corpus]}`, 'reference-number');
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus).corpusName}. ${catalogueForCorpus(outcome.corpus).notFoundHint}`, 'reference-number');
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
