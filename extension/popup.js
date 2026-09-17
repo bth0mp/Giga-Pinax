@@ -1442,6 +1442,9 @@ if (acceptsLookupMessages) api?.runtime?.onMessage?.addListener((message, sender
     $('quick-reference').value = '';
     clearLot();
     showStored();
+    // The other half of this page holds the auction context of the page it captured; this lookup is about a different
+    // page, so it is told before the card it would be saved with is built.
+    dispatchEvent(new CustomEvent('giga-pinax-lookup-received'));
     openFrom(search);
   }
   Promise.resolve(api.windows.getCurrent()).catch(() => null).then((current) => sendResponse({ windowId: current?.id }));

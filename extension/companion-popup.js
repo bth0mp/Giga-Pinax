@@ -451,9 +451,10 @@ async function initCompanionPopup() {
     if (!draft) return;
     void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
   });
-  $('companion-clear-auction-context').addEventListener('click', () => {
-    if (!captureDraft) return;
-    captureDraft = { ...captureDraft, auctionContext: null };
+  // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
+  // stopped being about that page.
+  const dropAuctionContext = () => {
+    if (captureDraft) captureDraft = { ...captureDraft, auctionContext: null };
     researchAuctionContext = null;
     safeCard = clearAuctionContextFromPayload(safeCard);
     if (globalThis.gigaPinaxWatchlistReference) {
@@ -461,7 +462,17 @@ async function initCompanionPopup() {
     }
     $('companion-save-watchlist').disabled = !canSave(safeCard);
     $('companion-capture-source').textContent = 'Auction context cleared. Captured fields remain available for research.';
+  };
+  $('companion-clear-auction-context').addEventListener('click', () => {
+    if (!captureDraft) return;
+    dropAuctionContext();
     announce('Auction context cleared.');
+  });
+  // A lookup this window was SENT is about a page somebody right-clicked on, not the one captured here, so the captured
+  // page must not ride along on the coin saved from it. popup.js says so before it opens the card. A reference typed into
+  // this window by hand is still about the captured page and keeps it.
+  addEventListener('giga-pinax-lookup-received', () => {
+    if (researchAuctionContext) dropAuctionContext();
   });
   const navigate = async (action, fallback) => {
     const result = await runVisibleAction(action, fallback);

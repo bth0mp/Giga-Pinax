@@ -103,6 +103,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       },
     } : {},
   };
+  const dispatched = [];
   const window = new TestElement('window');
   window.open = () => {};
   window.close = () => {};
@@ -129,7 +130,9 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set,
     setTimeout: () => 0,
     clearTimeout() {},
-    dispatchEvent() {},
+    // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
+    // with the card still on screen at the time, so what the other half would have seen is what this records.
+    dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent }); return true; },
     console,
   };
   sandbox.globalThis = sandbox;
@@ -137,7 +140,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard, stored };
+  return { element, document, writes, clipboard, stored, dispatched };
 }
 
 const oneSale = {
@@ -318,6 +321,28 @@ test('only the lookup window answers a lookup sent to an open window', async () 
   assert.equal(popup.element('quick-reference').value, 'Price 23');
   assert.equal(answers.length, 1);
   assert.equal(answers[0].windowId, 7);
+});
+
+// The other half of this page holds the auction context of the page it captured, and a lookup sent here is about a page
+// somebody right-clicked on instead. It is told before the card is built, because the card is what carries the context into
+// a save. A reference typed into this window by hand says nothing: that lookup is still about the captured page.
+test('a lookup sent to this window is announced to the rest of the page before the card is opened', async () => {
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, permissionRequest: async () => true,
+    priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'network' }) });
+  popup.dispatched.length = 0;
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&q=Price%2023' }, null, () => {});
+  await settle();
+  const received = popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received');
+  assert.equal(received.length, 1);
+  assert.equal(received[0].reference, '', 'said while the window still shows no card, so the next one is built without the page');
+
+  // A hand-typed reference is not a lookup this window was sent.
+  popup.dispatched.length = 0;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(popup.dispatched.filter(({ type }) => type === 'giga-pinax-lookup-received'), []);
 });
 
 test('refined Search validates before requesting permission or fetching', async () => {
