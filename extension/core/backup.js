@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, validateSnapshot } from './records.js';
+import { SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 
 export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
@@ -56,7 +56,7 @@ export function validateBackup(document) {
   if (value.format !== BACKUP_FORMAT) return fail('invalid-format', 'Backup format is not recognized.', 'format');
   if (value.schemaVersion !== SCHEMA_VERSION) return fail('unsupported-schema', 'Backup schema version is unsupported.', 'schemaVersion');
   if (!canonicalInstant(value.exportedAt)) return fail('invalid-timestamp', 'Export time is invalid.', 'exportedAt');
-  const data = clone(value.data);
+  const data = migrateSnapshot(clone(value.data));
   if (!data || typeof data !== 'object') return fail('invalid-document', 'Backup data is missing.', 'data');
   if (Array.isArray(data.recentCommands) && data.recentCommands.length) {
     return fail('private-ledger', 'Backup must not contain recent request IDs.', 'data.recentCommands');

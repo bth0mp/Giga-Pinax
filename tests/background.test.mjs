@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
-const listeners = { messages: [], installed: [], startup: [], clicked: [], alarms: [], notificationClicks: [] };
+const listeners = {
+  messages: [], installed: [], startup: [], clicked: [], alarms: [], notificationClicks: [], permissionsAdded: [],
+};
 const menus = [];
 const stored = {};
+const badges = [];
+const titles = [];
+const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
+const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
 let notificationCalls = 0;
+let storageSetFails = false;
+let tabCreateFails = false;
+let tabCalls = 0;
 
 globalThis.browser = {
   runtime: {
@@ -24,8 +34,15 @@ globalThis.browser = {
   },
   storage: {
     local: {
-      async get(key) { return Object.hasOwn(stored, key) ? { [key]: structuredClone(stored[key]) } : {}; },
-      async set(items) { Object.assign(stored, structuredClone(items)); },
+      async get(key) {
+        storageCalls.get += 1;
+        return Object.hasOwn(stored, key) ? { [key]: structuredClone(stored[key]) } : {};
+      },
+      async set(items) {
+        storageCalls.set += 1;
+        if (storageSetFails) throw new Error('storage is full');
+        Object.assign(stored, structuredClone(items));
+      },
     },
   },
   alarms: {
@@ -33,10 +50,19 @@ globalThis.browser = {
     create() {},
     onAlarm: { addListener(listener) { listeners.alarms.push(listener); } },
   },
-  action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-  permissions: { async contains() { return notificationsAllowed; } },
-  notifications: { async create() { notificationCalls += 1; if (notificationResult instanceof Error) throw notificationResult; return notificationResult; }, onClicked: { addListener(listener) { listeners.notificationClicks.push(listener); } } },
-  tabs: { async create() {} },
+  action: {
+    // The browser keeps the badge across worker restarts, so the fake reports the last one set.
+    async getBadgeText() { return badges.at(-1) ?? ''; },
+    async setBadgeText({ text }) { badges.push(text); },
+    async setBadgeBackgroundColor() {},
+    async setTitle({ title }) { titles.push(title); },
+  },
+  permissions: {
+    async contains() { return notificationsAllowed; },
+    onAdded: { addListener(listener) { listeners.permissionsAdded.push(listener); } },
+  },
+  notifications: { async create() { notificationCalls += 1; if (notificationResult instanceof Error) throw notificationResult; return notificationResult; } },
+  tabs: { async create() { tabCalls += 1; if (tabCreateFails) throw new Error('no tab'); } },
   windows: { async create() {}, async update() {} },
 };
 
@@ -58,6 +84,10 @@ test('combined background ignores lookup-window messages and accepts companion c
     }, {}, resolve), true);
   });
   assert.equal((await reply).ok, true);
+
+  const rawReply = await send({ type: 'snapshot.raw', requestId: crypto.randomUUID() });
+  assert.equal(rawReply.ok, true);
+  assert.equal(rawReply.value.schemaVersion, 1);
 });
 
 test('Giga showInWindow opens a window when the combined background declines its message', async () => {
@@ -183,6 +213,93 @@ test('false and rejected notification deliveries retain a five-minute retry alar
     assert.equal(Date.parse(state.value.scheduler.nextWakeAt) - Date.parse(earliestClaim), 5 * 60 * 1000);
   }
   notificationResult = 'notification-id';
+});
+
+test('a notifications permission granted after start registers one click handler', () => {
+  assert.equal(listeners.notificationClicks.length, 0, 'the optional API is absent at worker start');
+  assert.equal(listeners.permissionsAdded.length, 1);
+  globalThis.browser.notifications.onClicked = {
+    addListener(listener) { listeners.notificationClicks.push(listener); },
+  };
+  for (let round = 0; round < 2; round += 1) {
+    for (const listener of listeners.permissionsAdded) listener({ permissions: ['notifications'] });
+  }
+  assert.equal(listeners.notificationClicks.length, 1);
+});
+
+test('a capture that cannot be saved or shown is surfaced instead of silently dropped', async () => {
+  const click = (menuItemId) => listeners.clicked[0]({
+    menuItemId, selectionText: 'Nero denarius, Rome', pageUrl: 'https://house.test/sale',
+  });
+  storageSetFails = true;
+  click('auction-companion:track-auction');
+  for (let index = 0; index < 6; index += 1) await flush();
+  storageSetFails = false;
+  assert.equal(badges.at(-1), '!');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE, 'the badge alone does not say what went wrong');
+
+  // A command can only come from an extension page, so the collector has the workspace open.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  for (let index = 0; index < 6; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'the failure must go away once the collector can see it');
+  assert.equal(titles.at(-1), '');
+
+  const tabsBefore = tabCalls;
+  tabCreateFails = true;
+  click('auction-companion:research-selection');
+  for (let index = 0; index < 6; index += 1) await flush();
+  tabCreateFails = false;
+  assert.equal(tabCalls, tabsBefore + 1, 'the saved draft must still try to open the workspace');
+  assert.equal(badges.at(-1), '!', 'a capture that could not be shown is surfaced too');
+  assert.equal(titles.at(-1), OPEN_FAILURE_TITLE, 'a draft that was saved must not be reported as lost');
+
+  click('auction-companion:research-selection');
+  for (let index = 0; index < 8; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'a capture that works clears the earlier failure');
+  assert.equal(titles.at(-1), '');
+});
+
+test('a reconcile with nothing to change reads once and writes nothing', async () => {
+  await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
+  const before = { ...storageCalls };
+  const reply = await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
+  assert.equal(reply.ok, true);
+  assert.equal(storageCalls.set, before.set);
+  assert.ok(storageCalls.get - before.get <= 2, `an idle reconcile read ${storageCalls.get - before.get} times`);
+});
+
+// A context-menu click is what wakes an idle worker, so the module's own reconcile is always in
+// flight when the capture fails, and its badge refresh lands after the failure badge.
+test('a capture that fails on a cold wake keeps its badge', async () => {
+  const clickedBefore = listeners.clicked.length;
+  storageSetFails = true;
+  await import(`../extension/background.js?coldwake=${Date.now()}`);
+  listeners.clicked[clickedBefore]({
+    menuItemId: 'auction-companion:track-auction',
+    selectionText: 'Nero denarius, Rome',
+    pageUrl: 'https://house.test/sale',
+  });
+  for (let index = 0; index < 40; index += 1) await flush();
+  storageSetFails = false;
+  assert.equal(badges.at(-1), '!', 'the waking reconcile wiped the only sign of a lost capture');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
+});
+
+// A worker idles out about thirty seconds after the click that woke it, while the browser keeps
+// the badge and the tooltip, so the flag has to be read back from the toolbar rather than assumed.
+test('a worker restarted after a failed capture leaves the warning standing', async () => {
+  badges.push('!');
+  titles.push(CAPTURE_FAILURE_TITLE);
+  await import(`../extension/background.js?restart=${Date.now()}`);
+  for (let index = 0; index < 40; index += 1) await flush();
+  assert.equal(badges.at(-1), '!', 'the restarted worker wiped a warning the browser still showed');
+  assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE);
+
+  const restarted = listeners.messages.at(-1);
+  await new Promise((resolve) => restarted({ type: 'snapshot.get', requestId: crypto.randomUUID() }, {}, resolve));
+  for (let index = 0; index < 12; index += 1) await flush();
+  assert.notEqual(badges.at(-1), '!', 'the recovered warning must still be retired by a later capture');
+  assert.equal(titles.at(-1), '');
 });
 
 test.after(() => { delete globalThis.browser; });

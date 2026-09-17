@@ -5,7 +5,8 @@ export function normalizeAuctionUrl(value) {
   try {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol)) return null;
-    url.hash = '';
+    // A hash route addresses the lot itself, so only cosmetic anchors such as #photo are dropped.
+    if (!/^#[/!]/.test(url.hash)) url.hash = '';
     for (const key of [...url.searchParams.keys()]) {
       if (key.toLowerCase().startsWith('utm_') || TRACKING.has(key.toLowerCase())) url.searchParams.delete(key);
     }
@@ -37,8 +38,12 @@ export function findDuplicateLot(lots, candidate, excludeId) {
   const candidateTuple = tuple(candidate.auctionContext);
   for (const lot of lots) {
     if (!lot || lot.id === excludeId) continue;
+    const lotTuple = tuple(lot.auctionContext);
+    // Two complete but different house, sale and lot identities are two lots, whatever page a
+    // single-page catalogue serves them from.
+    if (candidateTuple && lotTuple && lotTuple !== candidateTuple) continue;
     if ([...identityUrls(lot)].some((url) => candidateUrls.has(url))) return lot;
-    if (candidateTuple && tuple(lot.auctionContext) === candidateTuple) return lot;
+    if (candidateTuple && lotTuple === candidateTuple) return lot;
   }
   return null;
 }

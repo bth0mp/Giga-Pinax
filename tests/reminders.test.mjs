@@ -29,7 +29,7 @@ test('resolves a unique London local time and rejects DST gaps and overlaps', ()
   }).error.code, 'invalid-time-zone');
 });
 
-test('derives timed and date-only reminders with revisioned stable identities', () => {
+test('derives timed and date-only reminders with identities that survive an event edit', () => {
   const timed = {
     id: eventId, revision: 3, name: 'Timed', precision: 'timed',
     startsAt: '2026-10-10T12:00:00.000Z', timeZone: 'Europe/London', localDate: '2026-10-10',
@@ -42,8 +42,12 @@ test('derives timed and date-only reminders with revisioned stable identities', 
   };
   const triggers = deriveReminderTriggers([timed, dateOnly], '2026-01-01T00:00:00.000Z');
   assert.equal(triggers[0].triggerAt, '2026-10-10T11:00:00.000Z');
-  assert.match(triggers[0].id, new RegExp(`${eventId}:3:${reminderA}`));
+  assert.equal(triggers[0].id, `${eventId}:${reminderA}:2026-10-10T11:00:00.000Z`);
   assert.equal(triggers[1].triggerAt, '2026-12-31T09:00:00.000Z');
+
+  const renamed = deriveReminderTriggers([{ ...timed, revision: 4, name: 'Renamed' }], '2026-01-01T00:00:00.000Z');
+  assert.equal(renamed[0].id, triggers[0].id);
+  assert.equal(renamed[0].eventRevision, 4);
 });
 
 test('reconciliation returns one next wake, overdue batches, and expired precise reminders', () => {
@@ -72,6 +76,27 @@ test('reconciliation returns one next wake, overdue batches, and expired precise
   const expired = reconcileScheduler([event], { alerts: [] }, '2026-09-12T12:16:00.000Z');
   assert.equal(expired.missedTriggerIds.length, 2);
   assert.equal(expired.overdueByEvent[eventId], undefined);
+});
+
+test('an evening reminder survives a local midnight that does not exist or happens twice', () => {
+  const santiago = {
+    id: eventId, revision: 0, name: 'Santiago sale', precision: 'date-only',
+    timeZone: 'America/Santiago', localDate: '2026-09-05',
+    reminders: [{ id: reminderA, kind: 'wall-time', daysBefore: 0, localTime: '20:00' }],
+  };
+  assert.equal(deriveReminderTriggers([santiago])[0].triggerAt, '2026-09-06T00:00:00.000Z');
+  const plan = reconcileScheduler([santiago], { alerts: [] }, '2026-09-06T00:30:00.000Z');
+  assert.equal(plan.missedTriggerIds.length, 0);
+  assert.equal(plan.overdueByEvent[eventId].length, 1);
+  assert.equal(plan.nextWakeAt, '2026-09-06T04:00:00.001Z');
+
+  const havana = {
+    ...santiago, timeZone: 'America/Havana', localDate: '2026-10-31',
+    reminders: [{ id: reminderA, kind: 'wall-time', daysBefore: 0, localTime: '21:00' }],
+  };
+  const ambiguous = reconcileScheduler([havana], { alerts: [] }, '2026-11-01T04:30:00.000Z');
+  assert.equal(ambiguous.missedTriggerIds.length, 0);
+  assert.equal(ambiguous.nextWakeAt, '2026-11-01T05:00:00.001Z');
 });
 
 test('date-only reminders remain actionable through the confirmed local event day', () => {

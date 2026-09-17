@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createEmptySnapshot } from '../extension/core/records.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -235,6 +235,29 @@ test('sets an outcome and atomically creates reciprocal collection history', () 
   assert.equal(won.snapshot.collectionEntries[0].lotId, won.value.id);
 });
 
+test('correcting a lot back to won answers the collection review the mistake raised', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] },
+  }));
+  const won = reduce(created.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 0, outcome: { status: 'won' },
+    addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-12', sourceLinks: [] },
+  }));
+  const lost = reduce(won.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 1, outcome: { status: 'lost' },
+  }));
+  assert.equal(lost.value.collectionReviewReason, 'source-lot-no-longer-won');
+  assert.equal(lost.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+
+  const corrected = reduce(lost.snapshot, command('lot.outcome.set', {
+    lotId: created.value.id, expectedRevision: 2, outcome: { status: 'won' },
+  }));
+  assert.equal(Object.hasOwn(corrected.value, 'collectionReviewReason'), false);
+  assert.equal(Object.hasOwn(corrected.snapshot.collectionEntries[0], 'reviewReason'), false);
+  assert.equal(corrected.snapshot.collectionEntries[0].revision, 2);
+  assert.equal(corrected.value.collectionEntryId, corrected.snapshot.collectionEntries[0].id);
+});
+
 test('event save derives timed UTC instant and reminder IDs in the authority', () => {
   const saved = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,
@@ -256,6 +279,38 @@ test('event save derives timed UTC instant and reminder IDs in the authority', (
     },
   }), context());
   assert.equal(invalid.error.code, 'validation');
+});
+
+test('event save rejects a reminder whose wall time does not exist in the confirmed zone', () => {
+  const result = applyCommand(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Spring forward', eventKind: 'auction-day', precision: 'date-only',
+      localDate: '2026-03-29', timeZone: 'Europe/London', reminderScope: 'standalone',
+      reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '01:30' }],
+    },
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.path, 'event.reminders[0].localTime');
+});
+
+test('a stored event whose start instant drifted from its local fields still loads', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.auctionEvents.push({
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Shifted sale',
+    eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-10', localTime: '12:00',
+    timeZone: 'Europe/London', startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }],
+    createdAt: NOW, updatedAt: NOW,
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.auctionEvents[0].startsAt, '2026-10-10T12:00:00.000Z');
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().alerts[0].triggerAt, '2026-10-10T11:00:00.000Z');
 });
 
 test('migrates preferences once and bounds shared drafts by expiry and count', () => {
@@ -498,6 +553,54 @@ test('snapshot.get reads without writing or entering the request ledger', async 
   assert.equal(storage.read().recentCommands.length, 0);
 });
 
+test('a root with one corrupt lot still loads, exports, and keeps the lot quarantined', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const keep = {
+    id: uuid(), revision: 0, dataClass: 'collector', title: 'Sound lot', sourceLinks: [],
+    bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  };
+  const corrupt = { ...structuredClone(keep), id: uuid(), outcome: { status: 'maybe' } };
+  stored.lots.push(keep, corrupt);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value.lots.map(({ id }) => id), [keep.id]);
+  assert.deepEqual(reply.value.quarantine.map(({ collection, record }) => [collection, record.id]),
+    [['lots', corrupt.id]]);
+  assert.equal(reply.revision, 0);
+  assert.equal(storage.read().lots.length, 2, 'a read must not rewrite storage');
+  assert.equal(JSON.parse(exportBackup(reply.value, NOW).value).data.quarantine.length, 1);
+
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Added later', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true);
+  assert.deepEqual(storage.read().quarantine.map(({ record }) => record), [corrupt]);
+  assert.equal(storage.read().lots.length, 2);
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true);
+  assert.equal(storage.read().quarantine.length, 1);
+});
+
+test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
+  stored.scheduler = 'corrupt';
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const reply = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.revision, 0);
+  assert.deepEqual(reply.value, stored);
+  assert.deepEqual(storage.read(), stored);
+  const blocked = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'New', sourceLinks: [] },
+  }));
+  assert.equal(blocked.code, 'storage');
+});
+
 test('scheduler reconciliation persists occurrences and one next wake', () => {
   let state = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,
@@ -511,6 +614,30 @@ test('scheduler reconciliation persists occurrences and one next wake', () => {
   assert.equal(reconciled.snapshot.alerts.length, 1);
   assert.equal(reconciled.snapshot.alerts[0].status, 'pending');
   assert.equal(reconciled.snapshot.scheduler.nextWakeAt, '2026-10-10T11:00:00.000Z');
+});
+
+test('repeated reconciliation of an unchanged store neither writes nor bumps the revision', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const saved = await writer.commitCommand(command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  }));
+  assert.equal(saved.ok, true);
+  const first = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(first.ok, true);
+  const settled = storage.read();
+  for (let index = 0; index < 3; index += 1) {
+    const reply = await writer.commitCommand(command('scheduler.reconcile'));
+    assert.equal(reply.ok, true);
+    assert.equal(reply.revision, settled.revision);
+    assert.equal(reply.value.nextWakeAt, '2026-10-10T11:00:00.000Z');
+  }
+  assert.deepEqual(storage.read(), settled);
 });
 
 test('scheduler reconciliation supports more than 500 alerts from valid events', () => {
@@ -702,6 +829,129 @@ test('acknowledges alerts by the public trigger ID while preserving future sibli
   const acknowledged = reduce(state, command('alert.ack', { triggerIds: [due.triggerId] }));
   assert.equal(acknowledged.snapshot.alerts.find(({ triggerId }) => triggerId === due.triggerId).status, 'acknowledged');
   assert.equal(acknowledged.snapshot.alerts.find(({ triggerId }) => triggerId === pending.triggerId).status, 'pending');
+});
+
+function dueAlertState() {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Renamed sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [
+        { kind: 'offset', offsetMinutes: 20 }, { kind: 'offset', offsetMinutes: 10 },
+      ],
+    },
+  }));
+  const event = state.value;
+  state = reduce(state.snapshot, command('scheduler.reconcile'));
+  const [first, second] = state.snapshot.alerts;
+  state = reduce(state.snapshot, command('alert.ack', { triggerIds: [first.triggerId] }));
+  state = reduce(state.snapshot, command('alert.snooze', {
+    triggerIds: [second.triggerId], snoozedUntil: '2026-09-12T12:10:00.000Z',
+  }));
+  return { event, snapshot: state.snapshot };
+}
+
+function renameEvent(snapshot, event) {
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  return reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: { ...structuredClone(stored), name: 'Renamed sale, corrected' },
+  })).snapshot;
+}
+
+test('renaming an event keeps acknowledged and snoozed reminders through reconciliation', () => {
+  const { event, snapshot } = dueAlertState();
+  const reconciled = reduce(renameEvent(snapshot, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  const snoozed = reconciled.alerts.find(({ status }) => status === 'snoozed');
+  assert.equal(snoozed.snoozedUntil, '2026-09-12T12:10:00.000Z');
+  assert.equal(reconciled.alerts.every(({ eventRevision }) => eventRevision === 1), true);
+});
+
+test('reconciliation rewrites alert IDs stored in the older revision-scoped format', () => {
+  const { event, snapshot } = dueAlertState();
+  const legacy = structuredClone(snapshot);
+  for (const alert of legacy.alerts) {
+    alert.triggerId = `${alert.eventId}:${alert.eventRevision}:${alert.reminderId}:${alert.triggerAt}`;
+  }
+  const reconciled = reduce(renameEvent(legacy, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  assert.equal(reconciled.alerts.every(({ triggerId, eventId, reminderId, triggerAt }) =>
+    triggerId === `${eventId}:${reminderId}:${triggerAt}`), true);
+});
+
+// The event form rebuilds its command from the fields it shows, so the reminder IDs only survive
+// because workspace.js's mergeEventReminders carries them; this is that submitted shape.
+test('an event edited through the workspace form keeps its reminder identities', () => {
+  const { event, snapshot } = dueAlertState();
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  const edited = reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: {
+      id: stored.id, name: 'Renamed sale, corrected', eventKind: 'auction-starts',
+      precision: 'timed', localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone',
+      reminders: stored.reminders.map((reminder) => ({ ...reminder })),
+    },
+  })).snapshot;
+  assert.deepEqual(edited.auctionEvents[0].reminders.map(({ id }) => id),
+    stored.reminders.map(({ id }) => id));
+  const reconciled = reduce(edited, command('scheduler.reconcile')).snapshot;
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+});
+
+test('an unsupported stored schema is refused without being taken apart record by record', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.schemaVersion = SCHEMA_VERSION + 1;
+  // Judging a later version's records by today's validators is the bug, so the lot counts every
+  // read of it: the repair cannot copy or validate a record without going through these.
+  let readsOfTheLot = 0;
+  stored.lots.push(Object.defineProperties({}, {
+    id: { enumerable: true, get() { readsOfTheLot += 1; return '55555555-5555-4555-8555-555555555555'; } },
+    title: { enumerable: true, get() { readsOfTheLot += 1; return 'Written by a later version'; } },
+  }));
+  // The shared fake clones on read, which would strip the getters before the store sees them.
+  const storage = {
+    async get(key) { return { [key]: stored }; },
+    async set() { assert.fail('a root from a later version is left exactly as it is'); },
+  };
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'storage');
+  assert.equal(readsOfTheLot, 0, 'a root we cannot read must not be walked record by record');
+  const raw = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
+  assert.equal(readsOfTheLot, 0);
+});
+
+// The ledger is appended to and trimmed from the front everywhere else, and a retry can only be
+// answered from an entry that is still there, so an overflowing one must lose its oldest rows.
+test('a repaired ledger keeps its newest entries', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const ledgerId = (index) => `11111111-0000-4000-8000-${String(index).padStart(12, '0')}`;
+  for (let index = 0; index < LIMITS.recentCommands + 50; index += 1) {
+    stored.recentCommands.push({
+      requestId: ledgerId(index),
+      commandType: 'lot.save',
+      revision: index,
+      committedAt: NOW,
+      reply: { ok: true, requestId: ledgerId(index), revision: index, value: null },
+    });
+  }
+  const writer = createCommandWriter(memoryStorage(stored), context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, true);
+  assert.equal(reply.value.recentCommands.length, LIMITS.recentCommands);
+  assert.deepEqual(
+    [reply.value.recentCommands[0].requestId, reply.value.recentCommands.at(-1).requestId],
+    [ledgerId(50), ledgerId(LIMITS.recentCommands + 49)],
+  );
 });
 
 test('claims an overdue event before notification delivery and records the outcome', () => {

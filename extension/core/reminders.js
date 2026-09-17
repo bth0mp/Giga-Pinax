@@ -38,6 +38,30 @@ export function localDateAtInstant(timeZone, instant) {
   return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
+function zonedCandidates(date, localTime, format) {
+  const [hour, minute] = localTime.split(':').map(Number);
+  const target = { year: date[0], month: date[1], day: date[2], hour, minute, second: 0 };
+  const center = Date.UTC(date[0], date[1] - 1, date[2], hour, minute);
+  const offsets = new Set();
+  for (const days of [-2, -1, 0, 1, 2]) {
+    const probe = center + days * 86400000;
+    const parts = localParts(format, new Date(probe));
+    const representedAsUtc = Date.UTC(
+      parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second,
+    );
+    offsets.add(representedAsUtc - probe);
+  }
+  const all = [];
+  const matches = [];
+  for (const offset of offsets) {
+    const instant = new Date(center - offset);
+    const parts = localParts(format, instant);
+    all.push(instant.toISOString());
+    if (Object.keys(target).every((key) => parts[key] === target[key])) matches.push(instant.toISOString());
+  }
+  return { matches: [...new Set(matches)].sort(), all: [...new Set(all)].sort() };
+}
+
 export function resolveZonedDateTime(input) {
   if (!input || input.disambiguation !== 'reject') {
     return fail('invalid-disambiguation', 'Disambiguation must be reject.', 'disambiguation');
@@ -49,27 +73,9 @@ export function resolveZonedDateTime(input) {
   try { format = formatter(input.timeZone); } catch {
     return fail('invalid-time-zone', 'Time zone must be a valid IANA identifier.', 'timeZone');
   }
-  const [hour, minute] = input.localTime.split(':').map(Number);
-  const target = { year: date[0], month: date[1], day: date[2], hour, minute, second: 0 };
-  const center = Date.UTC(date[0], date[1] - 1, date[2], hour, minute);
   const cacheKey = `${input.localDate}|${input.localTime}|${input.timeZone}`;
   if (RESOLVED.has(cacheKey)) return structuredClone(RESOLVED.get(cacheKey));
-  const offsets = new Set();
-  for (const days of [-2, -1, 0, 1, 2]) {
-    const probe = center + days * 86400000;
-    const parts = localParts(format, new Date(probe));
-    const representedAsUtc = Date.UTC(
-      parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second,
-    );
-    offsets.add(representedAsUtc - probe);
-  }
-  const matches = [];
-  for (const offset of offsets) {
-    const instant = new Date(center - offset);
-    const parts = localParts(format, instant);
-    if (Object.keys(target).every((key) => parts[key] === target[key])) matches.push(instant.toISOString());
-  }
-  const unique = [...new Set(matches)];
+  const unique = zonedCandidates(date, input.localTime, format).matches;
   let result;
   if (unique.length === 0) result = fail('nonexistent', 'That local time does not exist in this time zone.', 'localTime');
   else if (unique.length > 1) result = fail('ambiguous', 'That local time occurs more than once in this time zone.', 'localTime');
@@ -104,7 +110,9 @@ export function deriveReminderTriggers(events, _now) {
         triggerAt = resolved.value.startsAt;
       } else continue;
       triggers.push({
-        id: `${event.id}:${event.revision}:${reminder.id}:${triggerAt}`,
+        // The identity deliberately excludes the event revision: editing an event must not
+        // discard the acknowledgements and snoozes the collector already gave its reminders.
+        id: `${event.id}:${reminder.id}:${triggerAt}`,
         eventId: event.id,
         eventRevision: event.revision,
         reminderId: reminder.id,
@@ -120,17 +128,23 @@ export function deriveReminderTriggers(events, _now) {
   return triggers.sort((left, right) => left.triggerAt.localeCompare(right.triggerAt));
 }
 
+function startOfLocalDay(localDate, timeZone) {
+  const date = dateParts(localDate);
+  if (!date) return null;
+  let format;
+  try { format = formatter(timeZone); } catch { return null; }
+  const { matches, all } = zonedCandidates(date, '00:00', format);
+  // A local midnight that does not exist or happens twice still ends the day before it. Taking
+  // the later instant keeps an evening reminder deliverable in the zones that change at midnight.
+  return (matches.length ? matches : all).at(-1) ?? null;
+}
+
 function relevanceEnd(trigger) {
   if (trigger.precision === 'timed') {
     return new Date(Date.parse(trigger.eventStartsAt) + 15 * 60000).toISOString();
   }
-  const nextMidnight = resolveZonedDateTime({
-    localDate: addDays(trigger.localDate, 1),
-    localTime: '00:00',
-    timeZone: trigger.timeZone,
-    disambiguation: 'reject',
-  });
-  return nextMidnight.ok ? nextMidnight.value.startsAt : `${trigger.localDate}T23:59:59.999Z`;
+  const nextMidnight = startOfLocalDay(addDays(trigger.localDate, 1), trigger.timeZone);
+  return nextMidnight ?? `${trigger.localDate}T23:59:59.999Z`;
 }
 
 function nextMillisecond(instant) {
