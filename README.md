@@ -13,7 +13,7 @@ Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin
 - **Current source** — capture the auction page you are looking at, review the extracted reference and auction context, then research it or save an editable draft.
 - **Calculator** — hammer plus buyer premium, or the highest affordable hammer from a budget, including shipping, percentage and fixed payment fees and a fixed bid increment.
 - **Watchlist and workspace** — Closing soon, Needs research, Planned, Active and Completed queues; auction identity with duplicate detection; measurements, condition, sourced provenance, external photo links, reminders and outcomes; and comparison of two to four saved coins.
-- **Local RIC data** — 52,254 Roman Imperial type records and 2,808 replacement redirects travel inside the package, so a RIC reference the bundle holds is answered without contacting anyone. A reference it does not hold can still fall back to the online catalogue.
+- **Local catalogue data** — 68,123 type records travel inside the package: 52,254 Roman Imperial (RIC) types with 2,808 replacement redirects, 2,602 Roman Republican (RRC) types, 4,573 Price types and 8,694 Seleucid Coins types. A RIC, Crawford, Price or SC reference the bundle holds is answered without contacting anyone. A reference it does not hold, and every Bopearachchi reference, can still fall back to the online catalogue.
 - **Backups** — records and settings export and import as JSON. Everything lives in your browser's extension storage; nothing is uploaded.
 
 ## Catalogues
@@ -40,7 +40,7 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 
 | Host | When |
 | --- | --- |
-| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC reference answered by the bundled data contacts neither. |
+| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price or SC reference answered by the bundled data contacts neither. Bopearachchi references are always online. |
 | `www.acsearch.info` | A requested price lookup, using your existing acsearch session. |
 | `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
 | `github.com` | Only when you choose a release or update download. |
@@ -65,8 +65,8 @@ npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
 
 ## Data attribution
 
-The bundled Roman Imperial type database is derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The RIC ruler suggestions — the ruler names and aliases the extension recognises and offers — come from a filtered derivative of [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+The bundled type databases are derived from the American Numismatic Society's [OCRE](https://numismatics.org/ocre/), [CRRO](https://numismatics.org/crro/), [PELLA](https://numismatics.org/pella/) and [SCO](https://numismatics.org/sco/) under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The RIC ruler suggestions — the ruler names and aliases the extension recognises and offers — come from a filtered derivative of [Nomisma.org](https://nomisma.org/) concept data under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The derived data keeps those licences. Coverage, provenance and the reproducible conversion are documented in [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
 
 ## License
 
-The code is released under the [MIT License](LICENSE). The bundled catalogue data keeps its own terms: OCRE type data under ODbL 1.0 and Nomisma.org concept data under CC BY 3.0; see [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
+The code is released under the [MIT License](LICENSE). The bundled catalogue data keeps its own terms: OCRE, CRRO, PELLA and SCO type data under ODbL 1.0 and Nomisma.org concept data under CC BY 3.0; see [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).

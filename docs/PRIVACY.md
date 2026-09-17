@@ -12,7 +12,7 @@ The extension stores information you choose to save in browser extension storage
 
 ## Network requests
 
-RIC reference lookups first check OCRE data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Other catalogues use online services. Auction-price research remains independent and can contact acsearch even when the type record is local.
+RIC, Crawford (RRC), Price and Seleucid Coins (SC) reference lookups first check the OCRE, CRRO, PELLA and SCO data packaged inside the extension. A local match does not transmit the reference to ANS or Nomisma. If the bundled data cannot answer the lookup, the extension can use online catalogue services with provider access. If that access is disabled, an explicit **Check online** action requests it. Bopearachchi references are not bundled and always use the online services, because the citation that identifies a Bopearachchi type is only in the online records. A local match makes no Nomisma request either: a card built from the bundled data shows the Nomisma identifier a record carries for its denomination, mint or material — and, outside RIC, for its authority — unless a name for that identifier is already in the browser's label cache from an earlier online lookup. It shows the identifier rather than a guess. Auction-price research remains independent and can contact acsearch even when the type record is local.
 
 When online research is requested, Giga Pinax sends the needed reference or derived search phrase over HTTPS to one or more independent providers:
 

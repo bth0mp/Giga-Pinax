@@ -142,6 +142,8 @@ test('the bundled-data panel names every corpus the package carries, and only th
   // online, and it must not be listed as a corpus the package carries.
   assert.match(settingsHtml, /RIC, Crawford, Price and Seleucid Coins lookups use this local data\./);
   assert.match(settingsHtml, /Bopearachchi references and any lookup the local data cannot answer go online/);
+  // A local card resolves no name of its own, and the panel must not imply that it does.
+  assert.match(settingsHtml, /shows the Nomisma identifier a record carries/);
   assert.equal(bundled.includes('bigr'), false);
   assert.doesNotMatch(settingsHtml, /id="catalogue-coverage"/);
 });
