@@ -1,4 +1,41 @@
 import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
+import { squash } from './core/validate.js';
+
+// Everything that differs between the six catalogues the Reference box offers: the corpus each is looked up in and the
+// name it goes by, how its key is spelled wherever a reference is read or searched, and what the guided fields say about
+// it. Plain data, so the table pulls nothing in behind it. prefixPattern strips a typed key from in front of the number
+// ("Cr. 44/5"); referencePattern reads a whole plain reference, which only the catalogues carrying neither a volume nor a
+// king have; termKeys are the phrases acsearch is asked for and citationKeys the spellings a dealer's own line may carry.
+// RIC and Bop need code as well, and it stays in lookup.js and prices.js and reads its spellings from here.
+export const CATALOGUES = Object.freeze({
+  Price: Object.freeze({ corpus: 'pella', corpusName: 'PELLA', idPrefix: 'price.', label: 'Price number', help: 'Example: Price 23',
+    defaultNumber: '23', notFoundHint: 'Check the number.', queryKey: 'Price', termKeys: ['Price'], citationKeys: ['Price'],
+    prefixPattern: /^Price\s*(?=\d|$)/i, referencePattern: /^Price\s*(\d\S*)$/i }),
+  RIC: Object.freeze({ corpus: 'ocre', corpusName: 'OCRE', idPrefix: 'ric.', label: 'RIC number (including any suffix)',
+    help: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.',
+    defaultNumber: '306', defaultSection: 'Nero', notFoundHint: 'Check the ruler, volume and number.', citationKeys: ['RIC', 'R.I.C'] }),
+  RRC: Object.freeze({ corpus: 'crro', corpusName: 'CRRO', idPrefix: 'rrc-', label: 'Crawford number', help: 'Example: 44/5',
+    defaultNumber: '44/5', notFoundHint: 'Check the number.', queryKey: 'RRC', termKeys: ['Crawford', 'Cr.', 'RRC'],
+    citationKeys: ['Crawford', 'Crawf', 'Craw', 'Cr', 'RRC'],
+    prefixPattern: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(?=\d|$)/i, referencePattern: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(\d\S*)$/i }),
+  // SCO's own titles ("Seleucid Coins (part 1) 1266.2", as a Recent chip stores them) read as SC too, so a chip fills the fields like the others.
+  SC: Object.freeze({ corpus: 'sco', corpusName: 'SCO', idPrefix: 'sc.', label: 'Seleucid Coins number', help: 'Example: 1266.2',
+    defaultNumber: '1266.2', notFoundHint: 'Check the number.', queryKey: 'SC', termKeys: ['SC', 'Seleucid Coins'], citationKeys: ['SC', 'Seleucid Coins'],
+    prefixPattern: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i, referencePattern: /^(?:SC|Seleucid Coins(?: \(part \d+\))?)\s*(\d\S*)$/i }),
+  Bop: Object.freeze({ corpus: 'bigr', corpusName: 'BIGR', idPrefix: 'bigr.', label: 'Bop number',
+    help: 'Example: 24A. Leave the king blank to list every king with that number.', defaultNumber: '24A', defaultSection: 'Euthydemus I',
+    notFoundHint: 'Check the king and Bop number.', citationKeys: ['Bopearachchi'], prefixPattern: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i }),
+  // Any other reference has no open type database, so no corpus name and no "not found" hint: its card is its own text.
+  Other: Object.freeze({ corpus: 'other', label: 'Reference, as the dealer cites it', defaultNumber: 'BCD Boiotia 174b',
+    help: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' }),
+});
+// A row by the catalogue a collector chose, or by the corpus a lookup answered about; null for anything else, so untrusted
+// text ("constructor") names no catalogue and nothing that merely reads as a name (["RIC"]) is coerced into one.
+export const catalogueOf = (name) => (typeof name === 'string' && Object.hasOwn(CATALOGUES, name) ? CATALOGUES[name] : null);
+const BY_CORPUS = new Map(Object.values(CATALOGUES).map((entry) => [entry.corpus, entry]));
+export const catalogueForCorpus = (corpus) => BY_CORPUS.get(corpus) ?? null;
+// The corpora a Recent chip, or the pop-out's window, may reopen.
+export const CORPORA = Object.freeze([...BY_CORPUS.keys()]);
 
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
@@ -101,7 +138,7 @@ export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 // "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name. Almost every name asked for is plain ASCII, which has no
 // diacritics to strip and no decomposition to do, and this runs once per bundled title.
 export function rulerKey(ruler) {
-  const text = String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const text = squash(ruler).toLowerCase();
   return /^[\x20-\x7e]*$/.test(text) ? text : text.normalize('NFD').replace(/\p{M}+/gu, '');
 }
 

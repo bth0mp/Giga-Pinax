@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, CURRENCIES, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
+import { CURRENCIES } from '../extension/core/money.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] };
 
@@ -22,6 +23,16 @@ test('saved preferences are constrained, trimmed to 120 characters and stripped 
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RIC' })).number, '306');
   assert.equal(STORAGE_KEY, 'giga-pinax-preferences-v1');
   assert.deepEqual([...CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
+});
+
+// The stored blob is untrusted JSON, so the catalogue may be any shape at all; only one of the six names is kept, and the rest restore Price 23.
+test('a stored catalogue that is not one of the six names restores as Price, whatever shape it has', () => {
+  for (const catalogue of [['RIC'], 'RPC', 'ric', 'constructor', '__proto__', 'toString', 'hasOwnProperty', null, 23, {}, '']) {
+    const restored = restorePreferences(JSON.stringify({ catalogue }));
+    assert.equal(restored.catalogue, 'Price', JSON.stringify(catalogue));
+    assert.equal(restored.number, '23', JSON.stringify(catalogue));
+    assert.equal(restored.section, 'Nero', JSON.stringify(catalogue));
+  }
 });
 
 test('the sales period restores as All, the last 5 years or the last 2 years, and anything else as All', () => {

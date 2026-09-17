@@ -1,4 +1,4 @@
-import { formatMoney } from './core/money.js';
+import { CURRENCIES, formatMoney } from './core/money.js';
 // The one definition of the message, shared with the function that returns it. Static because the
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
@@ -10,7 +10,6 @@ import { mountSourcesMenu } from './source-menu.js';
 import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
-const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 const bounded = (value, maximum) => typeof value === 'string'
   ? value.trim().replace(/\s+/g, ' ').slice(0, maximum)
   : '';

@@ -6,6 +6,7 @@ import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
 import { findDuplicateLot } from './core/lot-context.js';
+import { clone, failure, own } from './core/validate.js';
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
@@ -31,15 +32,8 @@ function storageBytesWithReserve(snapshot, commandHeadroom = true) {
 }
 
 const ok = (value) => ({ ok: true, value });
-const fail = (code, message, path, existingLotId) => ({
-  ok: false,
-  error: { code, message, ...(path === undefined ? {} : { path }), ...(existingLotId === undefined ? {} : { existingLotId }) },
-});
-const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
-
-function clone(value) {
-  return structuredClone(value);
-}
+// The only failure shape with a fourth field: a lot identity that collided names the lot it collided with.
+const fail = (code, message, path, existingLotId) => failure(code, message, path, existingLotId === undefined ? undefined : { existingLotId });
 
 function getNow(context) {
   return typeof context.now === 'function' ? context.now() : context.now;

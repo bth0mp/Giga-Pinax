@@ -1,4 +1,5 @@
-import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { squash } from './core/validate.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -26,15 +27,11 @@ export const HOST_ORIGINS = Object.freeze(['https://numismatics.org/*', 'https:/
 export const TIMEOUT_MS = 15000;
 
 const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const norm = (value) => squash(value).toLowerCase();
 // The hidden characters dealer pages add (soft hyphens, zero-width and direction marks, bidi controls, word joiners, a byte order mark) would split a
 // copied reference inside a word; parseReference and a right-click selection drop them first. NBSP and other Unicode spaces are squashed as spaces.
 export const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 
-// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Craw. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and
-// the acsearch term. It is stripped only before the number itself, so "Crawfrd 44/5" or "Cr . 44/5" stay as typed.
-const PREFIX = { RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(?=\d|$)/i, Price: /^Price\s*(?=\d|$)/i, SC: /^(?:SC|Seleucid Coins)\s*(?=\d|$)/i, Bop: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i };
 // Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
 const SCO_ID = 'sc.1.';
 // Bopearachchi (1991) references resolve through BIGR, whose own numbering ("Euthydemus I 13.1") differs from Bopearachchi's series ("Euthydème I 24A");
@@ -52,21 +49,18 @@ const unquote = (value) => squash(String(value ?? '').replace(/["“”„]/g, '
 // A volume as OCRE titles it, the edition spelled out: "I (2nd edition)" is "I (second edition)".
 const ocreVolume = (volume) => unquote(volume).replace(/\b(1st|2nd|3rd|4th)\b/gi, (match) => ORDINALS[match.toLowerCase()]);
 
+// A typed catalogue prefix ("RRC 44/5", "Cr. 44/5", "Craw. 44/5", "Price 23", "SC 1266.2", "Bop. 24A") would otherwise be doubled in the query and
+// the acsearch term. It is stripped only before the number itself, so "Crawfrd 44/5" or "Cr . 44/5" stay as typed.
 export function referenceNumber(catalogue, number) {
   const value = unquote(number);
-  return Object.hasOwn(PREFIX, catalogue) ? value.replace(PREFIX[catalogue], '') : value;
+  const prefix = catalogueOf(catalogue)?.prefixPattern;
+  return prefix ? value.replace(prefix, '') : value;
 }
 
 // Bopearachchi series letters are upper case in BIGR's citations ("24A"), so a typed "24a" is normalised before it is searched or compared.
 export const bopSeries = (number) => referenceNumber('Bop', number).toUpperCase();
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-// SCO's own titles ("Seleucid Coins (part 1) 1266.2", as a Recent chip stores them) read as SC too, so a chip fills the fields like the others.
-const SIMPLE_REFERENCE = {
-  RRC: /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?)\s*(\d\S*)$/i,
-  Price: /^Price\s*(\d\S*)$/i,
-  SC: /^(?:SC|Seleucid Coins(?: \(part \d+\))?)\s*(\d\S*)$/i,
-};
 // "Bop Euthydemus I 24A", "Bopearachchi 9C", "Bop-9C" (prefix first, king optional) or "Euthydemus I Bop. 24A", "Euthydemus I, Bop 24A" (king first).
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
@@ -93,7 +87,7 @@ export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
 export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
-// text; "RIC –" (not in RIC) has no number. The Crawford names are the ones PREFIX reads.
+// text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
@@ -229,8 +223,9 @@ function readType(text, clean = true) {
 }
 
 function readClean(value) {
-  for (const [catalogue, pattern] of Object.entries(SIMPLE_REFERENCE)) {
-    const number = value.match(pattern)?.[1];
+  // The catalogues whose whole reference is a key and a number; RIC and Bop carry a volume or a king and are read below.
+  for (const [catalogue, { referencePattern }] of Object.entries(CATALOGUES)) {
+    const number = referencePattern && value.match(referencePattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
   }
   const bop = value.match(BOP_REFERENCE);
@@ -275,11 +270,6 @@ export function buildQuery({ catalogue, number, volume, section }) {
     const siblings = Object.hasOwn(RIC_SECTIONS, unquote(volume)) && RIC_SECTIONS[unquote(volume)].some((name) => norm(name).startsWith(`${norm(ruler)} (`));
     return edition && ruler && !siblings ? { corpus: 'ocre', query } : { corpus: 'ocre', query, partial: true };
   }
-  if (catalogue === 'RRC') return { corpus: 'crro', query: squash(`RRC ${referenceNumber('RRC', number)}`) };
-  if (catalogue === 'SC') {
-    const sc = referenceNumber('SC', number);
-    return { corpus: 'sco', query: squash(`SC ${sc}`), id: `${SCO_ID}${sc}` };
-  }
   if (catalogue === 'Bop') {
     // The section field is the king (English, as BIGR titles it); the query names the reference the way the popup reports a miss.
     const king = unquote(section);
@@ -288,7 +278,11 @@ export function buildQuery({ catalogue, number, volume, section }) {
   }
   // Cleaned as parseReference cleans it, so the guided field and the Reference box give the same card, Recent chip and term.
   if (catalogue === 'Other') return { corpus: OTHER, query: otherNumber(unwrap(unquote(number))) };
-  return { corpus: 'pella', query: squash(`Price ${referenceNumber('Price', number)}`) };
+  // The rest are a key and a number: the key as the corpus titles its types, the number without the key a collector typed.
+  const { corpus, queryKey, prefixPattern } = catalogueOf(catalogue) ?? CATALOGUES.Price;
+  const digits = unquote(number).replace(prefixPattern, '');
+  const query = squash(`${queryKey} ${digits}`);
+  return catalogue === 'SC' ? { corpus, query, id: `${SCO_ID}${digits}` } : { corpus, query };
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };

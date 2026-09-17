@@ -202,7 +202,7 @@ export function mountBidCalculator(
     el('option', { value: 'budget', textContent: 'Maximum hammer from budget' }),
   );
   const currencyControl = el('select');
-  for (const code of ['USD', 'EUR', 'GBP', 'CHF']) {
+  for (const code of CURRENCIES) {
     currencyControl.append(el('option', { value: code, textContent: code }));
   }
   currencyControl.value = currency;

@@ -1,5 +1,6 @@
 import { parseReference } from './lookup.js';
 import { coinArchivesSection } from './prices.js';
+import { failure } from './core/validate.js';
 
 export const SOURCE_CAPABILITIES = Object.freeze({
   coinarchives: Object.freeze({
@@ -14,11 +15,6 @@ export const SOURCE_CAPABILITIES = Object.freeze({
       route: Object.freeze({ origin: 'https://www.acsearch.info', pathname: '/search.html' }),
     }),
   }),
-});
-
-const failure = (code, message, path) => ({
-  ok: false,
-  error: { code, message, ...(path === undefined ? {} : { path }) },
 });
 
 function validateQuery(query) {

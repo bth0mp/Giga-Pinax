@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
+import { buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -251,6 +251,22 @@ test('defaultTerm ignores a typed catalogue prefix', () => {
   assert.equal(defaultTerm({ catalogue: 'RRC', number: 'RRC 44/5' }), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
   assert.equal(defaultTerm({ catalogue: 'RRC', number: 'Cr. 44/5' }), '("Crawford 44/5" "Cr. 44/5" "RRC 44/5")');
   assert.equal(defaultTerm({ catalogue: 'Price', number: 'Price 23' }), '"Price 23"');
+});
+
+// A catalogue name the table does not hold is Price's search, name and all: the fallback picks the whole Price row, so the typed prefix it strips is
+// Price's too and nothing doubles it. Every function the term feeds reads the same one reference.
+test('a catalogue outside the table searches as Price does, prefix and all', () => {
+  const reference = { catalogue: 'price', number: 'Price 23' };
+  assert.equal(defaultTerm(reference), '"Price 23"');
+  assert.deepEqual(citationPhrases(reference), ['Price 23']);
+  assert.equal(referenceName(reference), 'Price 23');
+  assert.equal(coinArchivesTerm(reference), '"Price 23"');
+  assert.equal(chooseTerm(reference, ''), '"Price 23"');
+  assert.equal(searchesReference('"Price 23"', reference), true);
+  assert.equal(searchesReference('"Price 230"', reference), false);
+  for (const catalogue of [['RIC'], 'constructor', '__proto__', null, 23]) {
+    assert.equal(defaultTerm({ catalogue, number: 'Price 23' }), '"Price 23"', JSON.stringify(catalogue) ?? String(catalogue));
+  }
 });
 
 test('summarise lists up to five raw prices it could not count, skipping blanks, * and digit-free markers', () => {

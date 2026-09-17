@@ -1,39 +1,20 @@
 import { CURRENCIES, validateMoney } from './money.js';
+import { UUID, failure, isIsoDate, isIsoInstant, stableUuid, stripTracking } from './validate.js';
 
 const SOURCES = Object.freeze(['coinarchives', 'acsearch', 'manual', 'authorized-import']);
 const SOURCE_SET = new Set(SOURCES);
 const DATA_CLASSES = new Set(['collector', 'authorized']);
 const PRICE_BASES = new Set(['hammer', 'hammer-plus-bp', 'estimate', 'unsold', 'missing']);
-const TRACKING_PARAMETERS = new Set(['gclid', 'fbclid']);
 const CONFLICT_FIELD_ORDER = [
   'houseSaleId', 'auctionHouse', 'auctionName', 'auctionDate', 'lotNumber',
   'amount', 'currency', 'priceBasis',
 ];
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXCLUSION_REASONS = new Set([
   'duplicate', 'currency', 'date', 'source-filter', 'not-comparable', 'conflict',
   'estimate', 'unsold', 'missing-price', 'collector-excluded',
 ]);
 
-const failure = (code, message, path) => ({
-  ok: false,
-  error: { code, message, ...(path === undefined ? {} : { path }) },
-});
-
 const normalizedIdentity = (value) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
-
-function isIsoDate(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [year, month, day] = value.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
-
-function isIsoInstant(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
-}
 
 function requiredText(value, path) {
   return typeof value === 'string' && value.trim() ? null : failure('invalid-observation', 'A required evidence field is missing.', path);
@@ -48,7 +29,7 @@ function validateObservation(observation, index, options = {}) {
     const invalid = requiredText(observation[field], `${base}.${field}`);
     if (invalid) return invalid;
   }
-  if (options.requireUuid && (!UUID_PATTERN.test(observation.id) || !UUID_PATTERN.test(observation.queryId))) {
+  if (options.requireUuid && (!UUID.test(observation.id) || !UUID.test(observation.queryId))) {
     return failure('invalid-id', 'Durable observation and query IDs must be UUID strings.', `${base}.id`);
   }
   for (const field of ['id', 'queryId', 'sourceRecordId', 'houseSaleId', 'auctionHouse', 'auctionName', 'lotNumber']) {
@@ -102,24 +83,6 @@ function validateObservation(observation, index, options = {}) {
   return { ok: true, value: observation };
 }
 
-function hash32(value, seed) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
-function stableUuid(value) {
-  const seeds = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
-  const chars = seeds.map((seed, index) => hash32(`${index}:${value}`, seed).toString(16).padStart(8, '0')).join('').split('');
-  chars[12] = '4';
-  chars[16] = ((Number.parseInt(chars[16], 16) & 0x3) | 0x8).toString(16);
-  const hex = chars.join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
 export function normalizeSourceUrl(value) {
   if (typeof value !== 'string' || value.length === 0) {
     return failure('invalid-url', 'Source URL must be a non-empty HTTPS URL.', 'url');
@@ -133,10 +96,7 @@ export function normalizeSourceUrl(value) {
   if (url.protocol !== 'https:' || url.username || url.password) {
     return failure('invalid-url', 'Source URL must use HTTPS without embedded credentials.', 'url');
   }
-  for (const name of [...url.searchParams.keys()]) {
-    const normalized = name.toLowerCase();
-    if (normalized.startsWith('utm_') || TRACKING_PARAMETERS.has(normalized)) url.searchParams.delete(name);
-  }
+  stripTracking(url);
   return { ok: true, value: url.href };
 }
 
@@ -232,7 +192,7 @@ function makeEvidence(group, key) {
 
 export function validateSaleEvidence(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-evidence', 'Sale evidence must be an object.', 'evidence');
-  if (typeof value.id !== 'string' || !value.id || !UUID_PATTERN.test(value.id)) {
+  if (typeof value.id !== 'string' || !value.id || !UUID.test(value.id)) {
     return failure('invalid-id', 'Durable sale evidence ID must be a UUID string.', 'evidence.id');
   }
   if (!DATA_CLASSES.has(value.dataClass)) {

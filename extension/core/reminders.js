@@ -1,19 +1,9 @@
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+import { dateParts, failure, shiftDate } from './validate.js';
+
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const FORMATTERS = new Map();
 const RESOLVED = new Map();
 const CLAIM_RETRY_MS = 5 * 60 * 1000;
-
-const fail = (code, message, path) => ({ ok: false, error: { code, message, ...(path ? { path } : {}) } });
-
-function dateParts(value) {
-  const match = typeof value === 'string' ? DATE.exec(value) : null;
-  if (!match) return null;
-  const parts = match.slice(1).map(Number);
-  const probe = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
-  return probe.getUTCFullYear() === parts[0] && probe.getUTCMonth() === parts[1] - 1 && probe.getUTCDate() === parts[2]
-    ? parts : null;
-}
 
 function formatter(timeZone) {
   if (FORMATTERS.has(timeZone)) return FORMATTERS.get(timeZone);
@@ -64,32 +54,25 @@ function zonedCandidates(date, localTime, format) {
 
 export function resolveZonedDateTime(input) {
   if (!input || input.disambiguation !== 'reject') {
-    return fail('invalid-disambiguation', 'Disambiguation must be reject.', 'disambiguation');
+    return failure('invalid-disambiguation', 'Disambiguation must be reject.', 'disambiguation');
   }
   const date = dateParts(input.localDate);
-  if (!date) return fail('invalid-date', 'Date must be an explicit real YYYY-MM-DD date.', 'localDate');
-  if (!TIME.test(input.localTime)) return fail('invalid-time', 'Time must use HH:mm.', 'localTime');
+  if (!date) return failure('invalid-date', 'Date must be an explicit real YYYY-MM-DD date.', 'localDate');
+  if (!TIME.test(input.localTime)) return failure('invalid-time', 'Time must use HH:mm.', 'localTime');
   let format;
   try { format = formatter(input.timeZone); } catch {
-    return fail('invalid-time-zone', 'Time zone must be a valid IANA identifier.', 'timeZone');
+    return failure('invalid-time-zone', 'Time zone must be a valid IANA identifier.', 'timeZone');
   }
   const cacheKey = `${input.localDate}|${input.localTime}|${input.timeZone}`;
   if (RESOLVED.has(cacheKey)) return structuredClone(RESOLVED.get(cacheKey));
   const unique = zonedCandidates(date, input.localTime, format).matches;
   let result;
-  if (unique.length === 0) result = fail('nonexistent', 'That local time does not exist in this time zone.', 'localTime');
-  else if (unique.length > 1) result = fail('ambiguous', 'That local time occurs more than once in this time zone.', 'localTime');
+  if (unique.length === 0) result = failure('nonexistent', 'That local time does not exist in this time zone.', 'localTime');
+  else if (unique.length > 1) result = failure('ambiguous', 'That local time occurs more than once in this time zone.', 'localTime');
   else result = { ok: true, value: { startsAt: unique[0] } };
   if (RESOLVED.size >= 5000) RESOLVED.clear();
   RESOLVED.set(cacheKey, result);
   return structuredClone(result);
-}
-
-function addDays(localDate, amount) {
-  const parts = dateParts(localDate);
-  if (!parts) return null;
-  const result = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + amount));
-  return result.toISOString().slice(0, 10);
 }
 
 export function deriveReminderTriggers(events, _now) {
@@ -101,7 +84,7 @@ export function deriveReminderTriggers(events, _now) {
         triggerAt = new Date(Date.parse(event.startsAt) - reminder.offsetMinutes * 60000).toISOString();
       } else if (reminder.kind === 'wall-time' && event.precision === 'date-only') {
         const resolved = resolveZonedDateTime({
-          localDate: addDays(event.localDate, -reminder.daysBefore),
+          localDate: shiftDate(event.localDate, -reminder.daysBefore),
           localTime: reminder.localTime,
           timeZone: event.timeZone,
           disambiguation: 'reject',
@@ -143,7 +126,7 @@ function relevanceEnd(trigger) {
   if (trigger.precision === 'timed') {
     return new Date(Date.parse(trigger.eventStartsAt) + 15 * 60000).toISOString();
   }
-  const nextMidnight = startOfLocalDay(addDays(trigger.localDate, 1), trigger.timeZone);
+  const nextMidnight = startOfLocalDay(shiftDate(trigger.localDate, 1), trigger.timeZone);
   return nextMidnight ?? `${trigger.localDate}T23:59:59.999Z`;
 }
 

@@ -1,11 +1,10 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
-import { canonicalRicPerson } from './catalogues.js';
+import { canonicalRicPerson, CATALOGUES, catalogueOf } from './catalogues.js';
+import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
 const MARKER = 'acsearch.initSearchResults = ';
-
-const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
 // category is acsearch's own: '1' Ancient coins, '2' Modern coins. Ancients is the default, as it was before Krause.
 export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
@@ -161,16 +160,11 @@ export function defaultTerm(reference) {
   const { catalogue, number, section } = reference;
   if (catalogue === 'RIC') return ricTerm(reference);
   if (catalogue === 'Other') return otherTerm(number);
-  if (catalogue === 'RRC') {
-    const digits = referenceNumber('RRC', number);
-    return group([phrase('Crawford', digits), phrase('Cr.', digits), phrase('RRC', digits)]);
-  }
-  if (catalogue === 'SC') {
-    const digits = referenceNumber('SC', number);
-    return group([phrase('SC', digits), phrase('Seleucid Coins', digits)]);
-  }
   if (catalogue === 'Bop') return bopTerm(section, number);
-  return phrase('Price', referenceNumber('Price', number));
+  // A catalogue name outside the table is Price's whole row, the typed prefix it strips included, exactly as buildQuery looks one up as Price.
+  const name = catalogueOf(catalogue) ? catalogue : 'Price';
+  const digits = referenceNumber(name, number);
+  return group(CATALOGUES[name].termKeys.map((key) => phrase(key, digits)));
 }
 
 // The exact phrases the default term looks for, bare, and the first of them as the panel names the reference ("Price 23", "RIC 306"). The citation
@@ -206,10 +200,9 @@ function oldDefaultTerm(reference) {
     const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
     return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
   }
-  if (catalogue === 'RRC') return squash(`Crawford ${referenceNumber('RRC', number)}`);
-  if (catalogue === 'SC') return squash(`SC ${referenceNumber('SC', number)}`);
-  if (catalogue === 'Price') return squash(`Price ${referenceNumber('Price', number)}`);
-  return '';
+  // The key each of the rest was written under, which is the first of the phrases the default term now offers.
+  const [key] = catalogueOf(catalogue)?.termKeys ?? [];
+  return key ? squash(`${key} ${referenceNumber(catalogue, number)}`) : '';
 }
 export function chooseTerm(reference, saved) {
   const term = squash(saved);
@@ -279,11 +272,10 @@ const eitherCase = (text) => [...String(text)].map((char) => {
   return lower === upper ? escaped(char) : `[${lower}${upper}]`;
 }).join('');
 
-// The spellings dealers write each key in. A key ending in a full stop needs no entry of its own — the separator below already eats the stop, so
-// "Cr" covers "Cr." and "Craw" covers "Craw." — and an Other reference is already searched as the exact citation, so every row it finds cites it.
-const CITATION_KEYS = {
-  Price: ['Price'], RIC: ['RIC', 'R.I.C'], RRC: ['Crawford', 'Crawf', 'Craw', 'Cr', 'RRC'], SC: ['SC', 'Seleucid Coins'], Bop: ['Bopearachchi'],
-};
+// The spellings dealers write each key in are the table's citationKeys. A key ending in a full stop needs no entry of its own — the separator below
+// already eats the stop, so "Cr" covers "Cr." and "Craw" covers "Craw." — and an Other reference is already searched as the exact citation, so every
+// row it finds cites it and the table gives it no keys.
+const citationKeys = (reference) => catalogueOf(reference?.catalogue)?.citationKeys ?? null;
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
@@ -345,8 +337,7 @@ const CITATION_LIMIT = 10000;
 
 // Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
 // has no citation to look for, so their rows all count and the panel offers no filter to switch off.
-export const filtersCitations = (reference) =>
-  Object.hasOwn(CITATION_KEYS, reference?.catalogue ?? '') && Boolean(citationNumber(reference));
+export const filtersCitations = (reference) => Boolean(citationKeys(reference)) && Boolean(citationNumber(reference));
 
 // Whether a lot's description cites the searched reference: the catalogue key in any spelling, at most a volume and a ruler between, then the number
 // as a whole token — not inside a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" are not sales of Price 23 or RIC 306,
@@ -357,7 +348,7 @@ export const filtersCitations = (reference) =>
 // description once; the text is cut to CITATION_LIMIT first, as the grade reader cuts its own, so no page of literature is ever read whole.
 export function citesReference(description, reference) {
   const text = squash(description).slice(0, CITATION_LIMIT);
-  const keys = Object.hasOwn(CITATION_KEYS, reference?.catalogue) ? CITATION_KEYS[reference.catalogue] : null;
+  const keys = citationKeys(reference);
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
@@ -565,12 +556,7 @@ export function ungradedText(lots) {
 export function stableResultId(lot, provider) {
   if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `${provider}:${String(lot.id).trim()}`;
   const source = [lot?.title, lot?.date, lot?.price].map((value) => String(value ?? '').trim()).join('\u001f');
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${provider}:derived:${(hash >>> 0).toString(36)}`;
+  return `${provider}:derived:${fnv32(source).toString(36)}`;
 }
 
 // What the statistics rest on: the filters leave a row out by default and say why, and the collector's own decisions override them either way.

@@ -1,14 +1,10 @@
+import { failure } from './validate.js';
+
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 
 const CURRENCY_SET = new Set(CURRENCIES);
 const FRACTION_DIGITS = 2;
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
-
-function failure(code, message, path) {
-  const error = { code, message };
-  if (path !== undefined) error.path = path;
-  return { ok: false, error };
-}
 
 const DECIMAL = /^(\d+)([.,])(\d+)$/;
 // Auction houses group with a comma, a point, an apostrophe or a space, so a grouped amount is

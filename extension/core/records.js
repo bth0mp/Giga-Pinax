@@ -1,6 +1,7 @@
 import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
+import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
 
 export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
@@ -44,16 +45,7 @@ const ALERT_STATES = new Set([
   'pending', 'due', 'claimed', 'delivered', 'acknowledged', 'snoozed', 'missed',
 ]);
 const DRAFT_KINDS = new Set(['research-highlight', 'current-lot', 'auction-capture']);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-
-function failure(code, message, path) {
-  const error = { code, message };
-  if (path !== undefined) error.path = path;
-  return { ok: false, error };
-}
 
 function firstFailure(...results) {
   return results.find((result) => !result.ok) ?? { ok: true, value: undefined };
@@ -97,33 +89,13 @@ function uuidResult(value, path) {
 
 function instantResult(value, path, { nullable = false } = {}) {
   if (nullable && value === null) return { ok: true, value };
-  let canonical = false;
-  if (typeof value === 'string' && ISO_INSTANT.test(value)) {
-    const parsed = new Date(value);
-    canonical = Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
-  }
-  if (!canonical) {
-    return failure('invalid-timestamp', 'Expected a UTC ISO timestamp.', path);
-  }
-  return { ok: true, value };
+  return isIsoInstant(value) ? { ok: true, value } : failure('invalid-timestamp', 'Expected a UTC ISO timestamp.', path);
 }
 
+// The two answers are told apart: text that is no date at all, and a date spelling naming no day of any month.
 function dateResult(value, path) {
-  const match = typeof value === 'string' ? DATE.exec(value) : null;
-  if (!match) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
-    return failure('invalid-date', 'Expected a real calendar date.', path);
-  }
-  return { ok: true, value };
-}
-
-function shiftDate(value, days) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  if (typeof value !== 'string' || !ISO_DATE.test(value)) return failure('invalid-date', 'Expected an explicit YYYY-MM-DD date.', path);
+  return dateParts(value) ? { ok: true, value } : failure('invalid-date', 'Expected a real calendar date.', path);
 }
 
 function urlResult(value, path) {
