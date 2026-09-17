@@ -1,4 +1,4 @@
-import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -193,12 +193,12 @@ function readType(text, clean = true) {
     if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
     const roman = /^\d/.test(numeral) ? ROMAN[Number(numeral) - 1] : numeral.toUpperCase();
     const volume = `${roman}${part ? `, Part ${part}` : ''}${edition ? ' (2nd edition)' : ''}`;
-    return { catalogue: 'RIC', number, volume, section };
+    return { catalogue: 'RIC', number, volume, section: ricMintSection(section) || section };
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
   if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
-  return { catalogue: 'RIC', number: any[3], volume: '', section: ruler };
+  return { catalogue: 'RIC', number: any[3], volume: '', section: ricMintSection(ruler) || ruler };
 }
 
 // RPC has no open type data here, but RPC Online has a page per type, which only the user opens (Giga Pinax never fetches RPC): "RPC I 1234" and

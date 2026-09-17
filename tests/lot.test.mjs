@@ -892,6 +892,13 @@ test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abb
   ]) assert.deepEqual(findReferences(text).rulers, [], text);
 });
 
+// A mint is a place, so its other name is only ever a section: Nomisma titles the concept "Trier" and keeps "Treveri" beside it.
+test('a mint written by the name on the map today is RIC\'s own section, and no ruler at all', () => {
+  const lot = findReferences('Constantine I. Follis. RIC VII Trier 12.');
+  assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Treveri', number: '12' });
+  assert.deepEqual(lot.rulers, ['Constantine I']);
+});
+
 test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {
   const rulers = (text) => findReferences(text).rulers;
   for (const [heading, expected] of [

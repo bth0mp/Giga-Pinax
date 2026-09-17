@@ -1,4 +1,4 @@
-import { RIC_PEOPLE } from './ric-people.js';
+import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
 
 // Static pick-lists for the guided fields, bundled with the extension and never fetched at runtime.
 // RIC volumes and sections: the nomisma.org SPARQL endpoint (https://nomisma.org/query) on 2026-09-11, query
@@ -162,6 +162,14 @@ for (const { value } of RIC_VOLUMES) {
       if (!VOLUMES_BY_SECTION.get(key).includes(value)) VOLUMES_BY_SECTION.get(key).push(value);
     }
   }
+}
+// The RIC section a mint's other English name stands for ("Trier" is RIC's Treveri), from Nomisma's own labels. A mint is a place, so this name
+// is only ever read as a section: it never names a ruler.
+const MINT_BY_ALIAS = new Map();
+for (const { section, aliases } of RIC_MINTS) for (const alias of aliases) MINT_BY_ALIAS.set(rulerKey(alias), section);
+export const ricMintSection = (name) => MINT_BY_ALIAS.get(rulerKey(name)) ?? '';
+for (const [alias, section] of MINT_BY_ALIAS) {
+  if (!VOLUMES_BY_SECTION.has(alias)) VOLUMES_BY_SECTION.set(alias, [...(VOLUMES_BY_SECTION.get(rulerKey(section)) ?? [])]);
 }
 export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
 

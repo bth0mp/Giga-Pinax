@@ -58,6 +58,81 @@ def read_memberships(data_dir: Path) -> dict[str, set[str]]:
     return memberships
 
 
+MINT_VOLUMES = {"6", "7", "8", "9"}
+# RIC VI-IX are filed by mint, so a record's own title names the mint section it belongs to. A subtype title ("Treveri 17A: Subtype") is not a
+# section, and a record naming no mint or several cannot say which section is whose.
+MINT_TITLE = re.compile(r"^RIC (?:VI|VII|VIII|IX) ([^:]+) \S+$")
+MINT_ENDPOINT = "https://nomisma.org/id/{concept_id}.rdf"
+
+
+def read_mints(data_dir: Path) -> dict[str, str]:
+    """The Nomisma mint concept behind each RIC VI-IX section, read from the bundled records' own titles."""
+    metadata = json.loads((data_dir / "metadata.json").read_text(encoding="utf-8"))
+    sections: dict[str, set[str]] = {}
+    for prefix, filename in metadata["shards"].items():
+        if prefix not in MINT_VOLUMES:
+            continue
+        payload = json.loads((data_dir / filename).read_text(encoding="utf-8"))
+        for record in payload["records"].values():
+            title = MINT_TITLE.match(record.get("l") or "")
+            ids = record.get("m") or []
+            if not title or len(ids) != 1:
+                continue
+            if not SLUG.fullmatch(ids[0]):
+                raise ValueError(f"unsupported Nomisma concept id: {ids[0]}")
+            sections.setdefault(ids[0], set()).add(title.group(1))
+    # A concept whose records disagree about the section names it: nothing is guessed, and it is left out.
+    return {concept_id: next(iter(names)) for concept_id, names in sorted(sections.items()) if len(names) == 1}
+
+
+def fetch_mint_snapshot(mint_ids, output: Path, retrieved_on: str) -> int:
+    """One GET per mint concept, saved verbatim as one snapshot the build reads instead of the network."""
+    date.fromisoformat(retrieved_on)
+    concepts = {}
+    for concept_id in sorted(set(mint_ids)):
+        url = MINT_ENDPOINT.format(concept_id=concept_id)
+        request = Request(url, headers={"Accept": "application/rdf+xml", "User-Agent": "Giga-Pinax-data-import/1"})
+        with urlopen(request, timeout=60) as response:
+            if response.status != 200:
+                raise OSError(f"Nomisma returned HTTP {response.status} for {url}")
+            payload = response.read()
+        root = ET.fromstring(payload)
+        labels = sorted({(child.tag.replace(SKOS, ""), (child.get(XML + "lang") or "").lower(), " ".join(child.text.split()))
+                         for node in root if (node.get(RDF + "about") or "") == NOMISMA_ID + concept_id
+                         for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text})
+        concepts[concept_id] = {"url": url, "labels": [list(label) for label in labels]}
+    snapshot = {
+        "requestUrl": MINT_ENDPOINT,
+        "retrievedOn": retrieved_on,
+        "license": LICENSE,
+        "licenseUrl": LICENSE_URL,
+        "concepts": concepts,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes((json.dumps(snapshot, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+    return len(concepts)
+
+
+def mint_rows(snapshot_bytes: bytes, sections: dict[str, str]) -> list[tuple[str, str, list[str]]]:
+    """Each RIC mint section with the modern English name Nomisma gives its concept.
+
+    Nomisma titles a mint concept by its modern name and keeps the ancient one beside it ("Trier", altLabel "Treveri"), so the alias is every
+    English label that is not the section RIC files the coins under. A concept with no English label of its own is left out rather than invented.
+    """
+    snapshot = json.loads(snapshot_bytes)
+    rows = []
+    for concept_id, section in sorted(sections.items(), key=lambda item: item[1]):
+        concept = snapshot.get("concepts", {}).get(concept_id)
+        if not concept:
+            continue
+        own = normalise_alias(section)
+        aliases = sorted({alias for _, lang, value in concept["labels"] if lang.split("-")[0] == "en"
+                          for alias in [normalise_alias(value)] if alias and alias != own})
+        if aliases:
+            rows.append((concept_id, section, aliases))
+    return rows
+
+
 def fetch_snapshot(concept_ids, output: Path) -> None:
     identifiers = "|".join(sorted(set(concept_ids)))
     request = Request(
@@ -153,7 +228,7 @@ def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
     return concepts
 
 
-def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, generated_on: str) -> dict:
+def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, generated_on: str, mints=()) -> dict:
     date.fromisoformat(generated_on)
     snapshot_bytes = snapshot.read_bytes()
     concepts = read_concepts(snapshot_bytes, memberships)
@@ -185,6 +260,8 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         "excludedMissingLabelCount": missing_label,
         "missingConceptCount": missing_concept,
         "aliasCount": sum(len(aliases) for _, _, _, aliases in rows),
+        "mintCount": len(mints),
+        "mintAliasCount": sum(len(aliases) for _, _, aliases in mints),
     }
     source = {
         "endpoint": ENDPOINT,
@@ -195,7 +272,7 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         **report,
     }
     lines = [
-        "// Generated from the bundled OCRE records and one official Nomisma aggregate RDF snapshot.",
+        "// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.",
         "export const RIC_PEOPLE_SOURCE = Object.freeze({",
         *(f"  {key}: {json.dumps(value, ensure_ascii=False)}," for key, value in source.items()),
         "});",
@@ -207,6 +284,20 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
             "  Object.freeze({ "
             f"id: {json.dumps(concept_id, ensure_ascii=False)}, name: {json.dumps(name, ensure_ascii=False)}, "
             f"volumes: Object.freeze({json.dumps(volumes, ensure_ascii=False)}), "
+            f"aliases: Object.freeze({json.dumps(aliases, ensure_ascii=False)})"
+            " }),"
+        )
+    lines.append("]);")
+    lines += [
+        "",
+        "// The modern name Nomisma gives each RIC VI-IX mint section, in English only. A mint whose concept carries no English name but the one RIC",
+        "// files it under has no alias here, and none was invented for it.",
+        "export const RIC_MINTS = Object.freeze([",
+    ]
+    for concept_id, section, aliases in mints:
+        lines.append(
+            "  Object.freeze({ "
+            f"id: {json.dumps(concept_id, ensure_ascii=False)}, section: {json.dumps(section, ensure_ascii=False)}, "
             f"aliases: Object.freeze({json.dumps(aliases, ensure_ascii=False)})"
             " }),"
         )
@@ -222,19 +313,29 @@ def main() -> int:
     fetch = subparsers.add_parser("fetch", help="make the single official Nomisma bulk request")
     fetch.add_argument("data_dir", type=Path)
     fetch.add_argument("snapshot", type=Path)
+    mints = subparsers.add_parser("fetch-mints", help="fetch one Nomisma concept per RIC VI-IX mint section")
+    mints.add_argument("data_dir", type=Path)
+    mints.add_argument("snapshot", type=Path)
+    mints.add_argument("--retrieved-on", required=True)
     build = subparsers.add_parser("generate", help="generate the offline JavaScript people index")
     build.add_argument("data_dir", type=Path)
     build.add_argument("snapshot", type=Path)
     build.add_argument("output", type=Path)
+    build.add_argument("--mints", type=Path)
     build.add_argument("--generated-on", required=True)
     args = parser.parse_args()
     try:
+        if args.command == "fetch-mints":
+            sections = read_mints(args.data_dir)
+            print(f"Fetched {fetch_mint_snapshot(sections, args.snapshot, args.retrieved_on)} Nomisma mint concepts, one request each.")
+            return 0
         memberships = read_memberships(args.data_dir)
         if args.command == "fetch":
             fetch_snapshot(memberships, args.snapshot)
             print(f"Fetched {len(memberships)} Nomisma concepts in one query.")
         else:
-            report = generate(args.snapshot, memberships, args.output, args.generated_on)
+            report = generate(args.snapshot, memberships, args.output, args.generated_on,
+                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir)) if args.mints else [])
             print(json.dumps(report, sort_keys=True))
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"People import failed: {error}", file=sys.stderr)

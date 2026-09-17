@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
@@ -138,4 +138,18 @@ test('a person is found by the English and Latin spellings Nomisma files, folded
   // Aliases never make a name a volume's section: the volume lists are RIC's own.
   assert.deepEqual(volumesOf('Valerian I'), []);
   assert.deepEqual(volumesOf('Valerian'), ['V']);
+});
+
+// Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.
+test('a RIC mint section is found by the other English name Nomisma gives it, and never as a ruler', () => {
+  assert.equal(ricMintSection('Trier'), 'Treveri');
+  assert.equal(ricMintSection('  ISTANBUL '), 'Constantinople');
+  assert.deepEqual(volumesOf('Trier'), volumesOf('Treveri'));
+  assert.deepEqual(ricPeople('Trier'), []);
+  // Nomisma gives these no English name but the one RIC files them under, and none is invented: their modern names live only in its French and
+  // German labels.
+  for (const mint of ['London', 'Lyon', 'Lyons', 'Arles', 'Milan', 'Pavia']) {
+    assert.equal(ricMintSection(mint), '', mint);
+    assert.deepEqual(volumesOf(mint), [], mint);
+  }
 });

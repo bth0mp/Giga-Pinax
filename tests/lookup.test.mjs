@@ -1344,6 +1344,9 @@ test('a typed reference takes the lot path\'s clean-up: remarks, a bracketed sec
   assert.deepEqual(parseReference('HGC 4, 1218-1220'), { catalogue: 'Other', number: 'HGC 4, 1218-1220', volume: '', section: '' });
   assert.deepEqual(parseReference('cr. 197-198B/1a'), { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' });
   assert.deepEqual(parseReference('RIC 266 (aureus)'), ric('', '', '266 (aureus)'));
+  // A mint written by the name on the map today is RIC's own Latin section.
+  assert.deepEqual(parseReference('RIC VII Trier 12'), ric('VII', 'Treveri', '12'));
+  assert.deepEqual(parseReference('Trier 12'), ric('', 'Treveri', '12'));
 });
 
 test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, never a hand-written table', async () => {

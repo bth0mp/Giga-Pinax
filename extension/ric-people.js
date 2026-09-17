@@ -1,4 +1,4 @@
-// Generated from the bundled OCRE records and one official Nomisma aggregate RDF snapshot.
+// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.
 export const RIC_PEOPLE_SOURCE = Object.freeze({
   endpoint: "https://nomisma.org/apis/getRdf",
   snapshotSha256: "0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e",
@@ -11,6 +11,8 @@ export const RIC_PEOPLE_SOURCE = Object.freeze({
   excludedMissingLabelCount: 0,
   missingConceptCount: 0,
   aliasCount: 120,
+  mintCount: 8,
+  mintAliasCount: 9,
 });
 
 export const RIC_PEOPLE = Object.freeze([
@@ -228,4 +230,17 @@ export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "volusian", name: "Volusian", volumes: Object.freeze(["IV"]), aliases: Object.freeze(["gaius vibius volusianus", "volusianus"]) }),
   Object.freeze({ id: "zeno", name: "Zeno", volumes: Object.freeze(["X"]), aliases: Object.freeze([]) }),
   Object.freeze({ id: "zenobia", name: "Zenobia", volumes: Object.freeze(["V"]), aliases: Object.freeze([]) }),
+]);
+
+// The modern name Nomisma gives each RIC VI-IX mint section, in English only. A mint whose concept carries no English name but the one RIC
+// files it under has no alias here, and none was invented for it.
+export const RIC_MINTS = Object.freeze([
+  Object.freeze({ id: "ambianum", section: "Amiens", aliases: Object.freeze(["ambianum"]) }),
+  Object.freeze({ id: "antiocheia_syria", section: "Antioch", aliases: Object.freeze(["antioch, syria", "antiokheia pros oronten"]) }),
+  Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["istanbul"]) }),
+  Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["kyzikos"]) }),
+  Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["nikomedia"]) }),
+  Object.freeze({ id: "serdica", section: "Serdica", aliases: Object.freeze(["serdika"]) }),
+  Object.freeze({ id: "thessalonica", section: "Thessalonica", aliases: Object.freeze(["thessalonika"]) }),
+  Object.freeze({ id: "treveri", section: "Treveri", aliases: Object.freeze(["trier"]) }),
 ]);

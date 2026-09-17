@@ -39,6 +39,8 @@ class PeopleImportTests(unittest.TestCase):
             "excludedMissingLabelCount": 1,
             "missingConceptCount": 1,
             "aliasCount": 2,
+            "mintCount": 0,
+            "mintAliasCount": 0,
         }, report)
         self.assertIn("export const RIC_PEOPLE_SOURCE", text)
         self.assertIn('license: "CC-BY-3.0"', text)
@@ -99,6 +101,37 @@ class PeopleImportTests(unittest.TestCase):
         # it on one of them would open the wrong coin. "valerianus" and "Valérian" fold onto an alias and onto the name itself.
         self.assertEqual(["valerian i", "valerianus"], rows["valerian"])
         self.assertEqual(["valerian the younger", "valerianus"], rows["valerian_ii"])
+
+    def test_mint_rows_keep_only_a_distinct_english_modern_name(self):
+        module = load_module()
+        snapshot = json.dumps({"concepts": {
+            "treveri": {"url": "https://nomisma.org/id/treveri.rdf",
+                        "labels": [["prefLabel", "en", "Trier"], ["altLabel", "en", "Treveri"], ["prefLabel", "de", "Trier"]]},
+            "londinium": {"url": "https://nomisma.org/id/londinium.rdf",
+                          "labels": [["prefLabel", "en", "Londinium"], ["prefLabel", "fr", "Londres"]]},
+            "unused": {"url": "https://nomisma.org/id/unused.rdf", "labels": [["prefLabel", "en", "Nowhere"]]},
+        }}).encode("utf-8")
+        rows = module.mint_rows(snapshot, {"treveri": "Treveri", "londinium": "Londinium", "missing": "Ostia"})
+        # Nomisma titles Treveri by its modern name, so "Trier" is the alias; it gives Londinium no English name but the ancient one, and a French
+        # "Londres" is not an English modern name, so nothing is invented for it.
+        self.assertEqual([("treveri", "Treveri", ["trier"])], rows)
+
+    def test_mints_are_read_from_the_bundled_titles_of_the_mint_volumes(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "metadata.json").write_text(json.dumps({"shards": {"7": "records-7.json", "2": "records-2.json"}}), encoding="utf-8")
+            (root / "records-7.json").write_text(json.dumps({"records": {
+                "ric.7.tr.1": {"l": "RIC VII Treveri 1", "m": ["treveri"]},
+                "ric.7.tr.17a": {"l": "RIC VII Treveri 17A: Subtype 1", "m": ["treveri"]},
+                "ric.7.lon.1": {"l": "RIC VII Londinium 1", "m": ["londinium", "treveri"]},
+            }}), encoding="utf-8")
+            (root / "records-2.json").write_text(json.dumps({"records": {
+                "ric.2.tr.1": {"l": "RIC II Trajan 1", "m": ["rome"]},
+            }}), encoding="utf-8")
+            # A subtype title names no section, a record naming two mints says nothing, and the ruler volumes are filed by person, not by mint.
+            self.assertEqual({"treveri": "Treveri"}, module.read_mints(root))
+
 
 if __name__ == "__main__":
     unittest.main()
