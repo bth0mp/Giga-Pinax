@@ -11,6 +11,9 @@ const SCHEDULE_CHANGING_COMMANDS = new Set([
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
 const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
+const ALERT_STATE_RANK = {
+  pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
+};
 
 function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   const reserved = clone(snapshot);
@@ -150,13 +153,29 @@ function compactGroupPriorities(lots, groupId, now) {
     });
 }
 
+function adoptTriggerIds(alerts) {
+  // Alerts written before 0.32 embed the event revision in their trigger ID, so an edited event
+  // recreated every alert as pending. Rebuild the current identity from the alert's own fields
+  // rather than by parsing the stored string, and keep the collector's decision if two legacy
+  // alerts collapse onto one identity.
+  const byTrigger = new Map();
+  for (const alert of alerts) {
+    alert.triggerId = `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
+    const kept = byTrigger.get(alert.triggerId);
+    if (!kept || ALERT_STATE_RANK[alert.status] > ALERT_STATE_RANK[kept.status]) {
+      byTrigger.set(alert.triggerId, alert);
+    }
+  }
+  return [...byTrigger.values()];
+}
+
 function reconcileIntoSnapshot(next, context) {
   const now = getNow(context);
   const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
     next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
   const triggers = deriveReminderTriggers(events, now);
-  const triggerIds = new Set(triggers.map(({ id }) => id));
-  next.alerts = next.alerts.filter((alert) => triggerIds.has(alert.triggerId));
+  const triggersById = new Map(triggers.map((trigger) => [trigger.id, trigger]));
+  next.alerts = adoptTriggerIds(next.alerts).filter((alert) => triggersById.has(alert.triggerId));
   const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
   for (const trigger of triggers) {
     if (existing.has(trigger.id)) continue;
@@ -177,9 +196,12 @@ function reconcileIntoSnapshot(next, context) {
     if (missed.has(alert.triggerId)) status = 'missed';
     else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
       (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
-    if (status === alert.status) continue;
+    // The event revision is copied onto the alert for display, so a surviving alert refreshes it.
+    const eventRevision = triggersById.get(alert.triggerId)?.eventRevision ?? alert.eventRevision;
+    if (status === alert.status && eventRevision === alert.eventRevision) continue;
+    if (status !== alert.status && status === 'missed') alert.missedAt = now;
     alert.status = status;
-    if (status === 'missed') alert.missedAt = now;
+    alert.eventRevision = eventRevision;
     alert.revision += 1;
     alert.updatedAt = now;
   }

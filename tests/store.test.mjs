@@ -728,6 +728,58 @@ test('acknowledges alerts by the public trigger ID while preserving future sibli
   assert.equal(acknowledged.snapshot.alerts.find(({ triggerId }) => triggerId === pending.triggerId).status, 'pending');
 });
 
+function dueAlertState() {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Renamed sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [
+        { kind: 'offset', offsetMinutes: 20 }, { kind: 'offset', offsetMinutes: 10 },
+      ],
+    },
+  }));
+  const event = state.value;
+  state = reduce(state.snapshot, command('scheduler.reconcile'));
+  const [first, second] = state.snapshot.alerts;
+  state = reduce(state.snapshot, command('alert.ack', { triggerIds: [first.triggerId] }));
+  state = reduce(state.snapshot, command('alert.snooze', {
+    triggerIds: [second.triggerId], snoozedUntil: '2026-09-12T12:10:00.000Z',
+  }));
+  return { event, snapshot: state.snapshot };
+}
+
+function renameEvent(snapshot, event) {
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  return reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: { ...structuredClone(stored), name: 'Renamed sale, corrected' },
+  })).snapshot;
+}
+
+test('renaming an event keeps acknowledged and snoozed reminders through reconciliation', () => {
+  const { event, snapshot } = dueAlertState();
+  const reconciled = reduce(renameEvent(snapshot, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  const snoozed = reconciled.alerts.find(({ status }) => status === 'snoozed');
+  assert.equal(snoozed.snoozedUntil, '2026-09-12T12:10:00.000Z');
+  assert.equal(reconciled.alerts.every(({ eventRevision }) => eventRevision === 1), true);
+});
+
+test('reconciliation rewrites alert IDs stored in the older revision-scoped format', () => {
+  const { event, snapshot } = dueAlertState();
+  const legacy = structuredClone(snapshot);
+  for (const alert of legacy.alerts) {
+    alert.triggerId = `${alert.eventId}:${alert.eventRevision}:${alert.reminderId}:${alert.triggerAt}`;
+  }
+  const reconciled = reduce(renameEvent(legacy, event), command('scheduler.reconcile')).snapshot;
+  assert.equal(reconciled.alerts.length, 2);
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+  assert.equal(reconciled.alerts.every(({ triggerId, eventId, reminderId, triggerAt }) =>
+    triggerId === `${eventId}:${reminderId}:${triggerAt}`), true);
+});
+
 test('claims an overdue event before notification delivery and records the outcome', () => {
   let state = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,

@@ -29,7 +29,7 @@ test('resolves a unique London local time and rejects DST gaps and overlaps', ()
   }).error.code, 'invalid-time-zone');
 });
 
-test('derives timed and date-only reminders with revisioned stable identities', () => {
+test('derives timed and date-only reminders with identities that survive an event edit', () => {
   const timed = {
     id: eventId, revision: 3, name: 'Timed', precision: 'timed',
     startsAt: '2026-10-10T12:00:00.000Z', timeZone: 'Europe/London', localDate: '2026-10-10',
@@ -42,8 +42,12 @@ test('derives timed and date-only reminders with revisioned stable identities', 
   };
   const triggers = deriveReminderTriggers([timed, dateOnly], '2026-01-01T00:00:00.000Z');
   assert.equal(triggers[0].triggerAt, '2026-10-10T11:00:00.000Z');
-  assert.match(triggers[0].id, new RegExp(`${eventId}:3:${reminderA}`));
+  assert.equal(triggers[0].id, `${eventId}:${reminderA}:2026-10-10T11:00:00.000Z`);
   assert.equal(triggers[1].triggerAt, '2026-12-31T09:00:00.000Z');
+
+  const renamed = deriveReminderTriggers([{ ...timed, revision: 4, name: 'Renamed' }], '2026-01-01T00:00:00.000Z');
+  assert.equal(renamed[0].id, triggers[0].id);
+  assert.equal(renamed[0].eventRevision, 4);
 });
 
 test('reconciliation returns one next wake, overdue batches, and expired precise reminders', () => {

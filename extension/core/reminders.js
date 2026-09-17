@@ -104,7 +104,9 @@ export function deriveReminderTriggers(events, _now) {
         triggerAt = resolved.value.startsAt;
       } else continue;
       triggers.push({
-        id: `${event.id}:${event.revision}:${reminder.id}:${triggerAt}`,
+        // The identity deliberately excludes the event revision: editing an event must not
+        // discard the acknowledgements and snoozes the collector already gave its reminders.
+        id: `${event.id}:${reminder.id}:${triggerAt}`,
         eventId: event.id,
         eventRevision: event.revision,
         reminderId: reminder.id,
