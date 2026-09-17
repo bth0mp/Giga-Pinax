@@ -453,17 +453,15 @@ export function quarantineDocument(entries, now) {
   });
 }
 
-// The last resort: whatever storage holds, unvalidated, minus the bookkeeping a backup never
-// carries. A file the collector can keep is worth more than a refusal they cannot act on.
+// The last resort: whatever storage holds, verbatim and unvalidated, down to unsaved drafts. This
+// is the collector's rescue copy when nothing else will load, so it strips nothing - a file that
+// still holds everything is worth more than a tidy one that quietly leaves data behind.
 export function rawExportDocument(raw, now) {
-  const data = raw && typeof raw === 'object' && !Array.isArray(raw)
-    ? { ...raw, recentCommands: [], drafts: [] }
-    : raw;
   return JSON.stringify({
     format: BACKUP_FORMAT,
-    schemaVersion: Number.isSafeInteger(data?.schemaVersion) ? data.schemaVersion : SCHEMA_VERSION,
+    schemaVersion: Number.isSafeInteger(raw?.schemaVersion) ? raw.schemaVersion : SCHEMA_VERSION,
     exportedAt: now,
-    data,
+    data: raw,
   });
 }
 

@@ -570,15 +570,17 @@ test('set-aside records are summarized, listed and downloadable on their own', (
   assert.deepEqual(document.quarantine, entries);
 });
 
-test('the raw export copies stored data verbatim without the request ledger', () => {
-  const raw = { schemaVersion: 1, revision: 4, lots: 'not a list', recentCommands: [{ requestId: 'secret-retry-id' }] };
-  const document = rawExportDocument(raw, NOW);
-  assert.equal(document.includes('secret-retry-id'), false);
-  const parsed = JSON.parse(document);
+test('the raw export copies stored data verbatim, unsaved drafts and all', () => {
+  const raw = {
+    schemaVersion: 1, revision: 4, lots: 'not a list',
+    drafts: [{ id: uuid(1), payload: { rawText: 'RIC 306' } }],
+    recentCommands: [{ requestId: 'retry-id' }],
+  };
+  const parsed = JSON.parse(rawExportDocument(raw, NOW));
   assert.equal(parsed.format, 'ancient-coin-auction-companion');
   assert.equal(parsed.exportedAt, NOW);
-  assert.equal(parsed.data.lots, 'not a list');
-  assert.deepEqual(parsed.data.recentCommands, []);
+  // The rescue file is the collector's last copy of whatever storage holds: it strips nothing.
+  assert.deepEqual(parsed.data, raw);
   // Nothing readable at all still produces a file rather than an error.
   assert.equal(JSON.parse(rawExportDocument(null, NOW)).data, null);
 });
