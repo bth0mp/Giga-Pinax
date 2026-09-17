@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
+import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
-import { lookupType, parseReference, pickRicEntries } from '../extension/lookup.js';
+import { lookupType, parseReference } from '../extension/lookup.js';
 
 const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
 const metadata = {
@@ -315,7 +315,7 @@ test('over the bundled catalogue, guided fields naming a mint by its modern name
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
 // keys every title exactly where parseReference reads its number, so the two are compared over all 52,254 bundled titles: a title whose entry sat in
 // the wrong list, or in none, would hide a coin from every lookup for that number.
-const leadingInteger = (number) => String(number).trim().match(/^\d+/)?.[0].replace(/^0+(?=\d)/, '') ?? null;
+// The key is the runtime's own, not a copy of it, so that a change to the way a lookup keys a number is caught here rather than in the field.
 test('every bundled title is listed under the number parseReference reads in it', { skip }, () => {
   const { entries } = bundleJson('index.json');
   const listed = new Map();
@@ -328,7 +328,7 @@ test('every bundled title is listed under the number parseReference reads in it'
   let ric = 0;
   entries.forEach(([id, title], position) => {
     const hit = parseReference(title, false);
-    const key = hit?.catalogue === 'RIC' ? leadingInteger(hit.number) : null;
+    const key = hit?.catalogue === 'RIC' ? numberKey(hit.number) : null;
     if (key === null) return;
     ric += 1;
     assert.equal(listed.get(position), key, `${id}: ${title}`);
@@ -336,25 +336,56 @@ test('every bundled title is listed under the number parseReference reads in it'
   assert.equal(ric, 51248);
 });
 
-test('the number index gives a lookup exactly what a scan of the whole index gives', { skip }, () => {
-  const entries = bundleJson('index.json').entries.map(([id, title]) => ({ id, title }));
-  const { numbers } = bundleJson('numbers.json');
-  const scoped = (reference) => {
-    const keys = [reference.number, ...(reference.range ? [reference.range] : [])].map(leadingInteger);
-    const positions = [...new Set(keys.flatMap((key) => numbers[key] ?? []))].sort((a, b) => a - b);
-    return positions.map((position) => entries[position]);
-  };
-  // Three hundred plain numbers, the shapes that are not plain, and numbers nothing carries: a range OCRE titles a type
-  // over, letters in either case, numbers a dozen volumes share, and numbers past the end of every volume. A few are
-  // asked for again under a volume and a section, which narrow the same entries the number gave.
-  const sample = [...Array(300).keys()].map((value) => String(value + 1))
-    .concat(['1009-1012', '10-11', '27b', '27B', '56a', '56A', '266 (aureus)', '0', '007', '99999', '3819', '1000000']);
-  const written = sample.map((number) => `RIC ${number}`)
-    .concat(['1', '12', '27b', '1009-1012', '99999'].flatMap((number) => [`RIC II ${number}`, `RIC VII Londinium ${number}`]));
-  for (const text of written) {
-    const reference = parseReference(text);
-    if (!reference) continue;
-    assert.deepEqual(pickRicEntries(scoped(reference), reference), pickRicEntries(entries, reference), text);
+// The same bundle, served a number index that lists every entry under every number: numbered() then hands pickRicEntries the whole index in index
+// order, which is the scan the lookup made before numbers.json existed. Whole answers are compared, cards and candidates and all, so a reference
+// whose entries the pre-filter narrowed differently cannot come out looking the same.
+const scanned = createLocalCatalogue({
+  baseUrl: 'moz-extension://test/data/ocre/',
+  fetchImpl: async (url) => {
+    const name = decodeURIComponent(String(url).split('/').pop());
+    if (name !== 'numbers.json') return { ok: true, status: 200, json: async () => bundleJson(name) };
+    const everyPosition = bundleJson('index.json').entries.map((entry, position) => position);
+    return { ok: true, status: 200, json: async () => ({ ...bundleJson(name), numbers: new Proxy({}, { get: () => everyPosition }) }) };
+  },
+});
+const lotReference = (text) => {
+  const found = findReferences(text);
+  return lotLookup(found.references[0], found.rulers);
+};
+
+test('the number index answers every shape of reference exactly as a scan of the whole index does', { skip }, async () => {
+  const references = [
+    // A plain number, the number the most volumes carry, and a number written with the zeros a dealer sometimes pads it to.
+    parseReference('RIC 972'), parseReference('RIC 1'), parseReference('RIC 007'),
+    // A heading that is a man's name, and a heading RIC heads a section with.
+    lotReference('Vespasian. AR Denarius. RIC 972.'), lotReference('Philip I. AR Antoninianus. Rome. RIC 27b; RSC 9.'),
+    // A volume with a ruler section, a volume with a mint section, and a mint under the modern name RIC does not file it under.
+    parseReference('RIC II Vespasian 972'), parseReference('RIC VII Londinium 12'),
+    { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' },
+    // A letter in either case, alone and under the volume that heads it.
+    parseReference('RIC 27b'), parseReference('RIC IV Philip I 27B'),
+    // A range OCRE titles a type over, its first number alone, and a range OCRE has no record of.
+    parseReference('RIC II.3 Hadrian 1009-1012'), parseReference('RIC II.3 Hadrian 1009'), parseReference('RIC II.3 Hadrian 10-12'),
+    // A plain volume numeral over a family whose parts number the same ruler differently.
+    parseReference('RIC II Hadrian 720'), parseReference('RIC II Domitian 720'),
+    // The one split volume: 264 stands on both sides of the cut, and each side is asked for again by its own id.
+    parseReference('RIC V Gallienus 264'),
+    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264' },
+    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264.1' },
+    // A second-edition volume by id, and an id nothing carries.
+    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).ner.306' },
+    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).nobody.306' },
+    // A number past the end of every volume, and one the volume asked for does not reach.
+    parseReference('RIC 1000000'), parseReference('RIC VII Londinium 99999'),
+    // Answers only the broadened passes find: the same mint in another volume, and a section no volume has.
+    parseReference('RIC VIII Londinium 287'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Ostia', number: '306' },
+    // A heading naming a ruler who is on no coin of that number.
+    lotReference('Otho. AR Denarius. RIC II 720.'),
+  ];
+  assert.equal(references.length, 25);
+  for (const reference of references) {
+    assert.ok(reference, JSON.stringify(reference));
+    assert.deepEqual(await bundle.lookupType(reference), await scanned.lookupType(reference), JSON.stringify(reference));
   }
 });
 

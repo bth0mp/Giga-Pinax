@@ -13,7 +13,7 @@ const shardPart = (parts, id) => parts.reduce((chosen, part) => (part.from <= id
 // The key numbers.json lists an index position under: the leading integer of the RIC number, zeros stripped as the importer strips them. Null for a
 // number no key can be taken from — pickRicEntries drops quotes and backslashes from anywhere in the number, which could uncover other digits, and
 // such a lookup reads the whole index as it always did rather than the wrong part of it.
-const numberKey = (value) => {
+export const numberKey = (value) => {
   const text = String(value ?? '').trim();
   const digits = /["“”„\\]/.test(text) ? undefined : text.match(/^\d+/)?.[0];
   return digits ? digits.replace(/^0+(?=\d)/, '') : null;
