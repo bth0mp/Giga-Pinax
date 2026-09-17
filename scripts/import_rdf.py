@@ -24,6 +24,16 @@ RESOURCE = RDF + "resource"
 OCRE_ID = "http://numismatics.org/ocre/id/"
 NOMISMA_ID = "http://nomisma.org/id/"
 VOLUME = re.compile(r"^[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?$")
+SHARD_NAME = re.compile(r"records-[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?(?:\.[a-z])?\.json")
+# Mozilla's add-on linter rejects any non-binary file of 5 MiB or more, so no generated file may pass this cap.
+CAP_BYTES = 4 * 1024 * 1024
+SHARD_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+SHARD_OVERHEAD = len(b'{"schemaVersion":1,"records":{}}\n')
+# The leading integer of the RIC number an OCRE title ends with ("RIC II.3 Hadrian 1009-1012" -> 1009), which is the
+# first thing a lookup filters on. It reads the number exactly where lookup.js reads it, as the last whitespace- or
+# comma-separated token, before the word OCRE brackets after some numbers ("266 (aureus)");
+# tests/local-catalogue.test.mjs proves the two agree over every bundled title.
+TITLE_NUMBER = re.compile(r"(?:^|[\s,])(\d+)\S*?(?:\s\([^()]*\))?$")
 TAGS = {
     "prefLabel": SKOS + "prefLabel",
     "hasAuthority": NMO + "hasAuthority",
@@ -235,14 +245,105 @@ def replacement_aliases(records: dict[str, dict], replacements: dict[str, list[s
     return aliases, {"ambiguous": ambiguous, "cyclic": cyclic, "dangling": dangling}
 
 
+def encoded(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 def json_bytes(value: object) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    return encoded(value) + b"\n"
 
 
 def write_file(path: Path, value: object) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_bytes(json_bytes(value))
     temporary.replace(path)
+
+
+def grouped(ids: list[str], weights: list[int], count: int) -> list[list[str]]:
+    # Each part carries its share of the volume's bytes: a record opens the next part once the bytes before it have
+    # passed that part's boundary, so the parts come out as even as whole records allow, in id order.
+    total = sum(weights)
+    groups: list[list[str]] = [[]]
+    carried = 0
+    for record_id, weight in zip(ids, weights):
+        if groups[-1] and len(groups) < count and carried * count >= total * len(groups):
+            groups.append([])
+        groups[-1].append(record_id)
+        carried += weight
+    return groups
+
+
+def shard_parts(prefix: str, records: dict[str, dict], cap: int = CAP_BYTES) -> list[dict]:
+    """One volume's records as the files they are written to: one file, or several named .a, .b, ... under the cap."""
+    ids = list(records)
+    # What each record costs inside the file: its quoted id, the colon, the record and the comma that follows it.
+    weights = [len(encoded(record_id)) + 1 + len(encoded(records[record_id])) + 1 for record_id in ids]
+    sizes = dict(zip(ids, weights))
+
+    def measure(group: list[str]) -> int:
+        return SHARD_OVERHEAD + sum(sizes[record_id] for record_id in group) - 1
+
+    for record_id, weight in zip(ids, weights):
+        if SHARD_OVERHEAD + weight - 1 > cap:
+            raise ImportFailure(f"record {record_id} alone is larger than the {cap} byte shard cap")
+    count = 1
+    while True:
+        groups = grouped(ids, weights, count)
+        if all(measure(group) <= cap for group in groups):
+            break
+        count += 1
+        if count > len(SHARD_LETTERS):
+            raise ImportFailure(f"volume {prefix} needs more shards than there are letters to name them")
+    if len(groups) == 1:
+        return [{"file": f"records-{prefix}.json", "from": "", "records": records}]
+    return [{"file": f"records-{prefix}.{SHARD_LETTERS[position]}.json", "from": "" if position == 0 else group[0],
+             "records": {record_id: records[record_id] for record_id in group}}
+            for position, group in enumerate(groups)]
+
+
+def number_index(entries: list[list[str]]) -> dict[str, list[int]]:
+    """Index positions by the leading integer of each title's RIC number, so a lookup reads a few dozen titles."""
+    positions: dict[str, list[int]] = defaultdict(list)
+    for position, (_, title) in enumerate(entries):
+        match = TITLE_NUMBER.search(title)
+        if match:
+            positions[match.group(1).lstrip("0") or "0"].append(position)
+    return {key: positions[key] for key in sorted(positions, key=int)}
+
+
+def write_data(output: Path, active: dict[str, dict], metadata: dict) -> dict:
+    """Every generated file, from the active records and the metadata fields only the source itself can supply."""
+    shards = defaultdict(dict)
+    for record_id in sorted(active):
+        parts = record_id.split(".")
+        if len(parts) < 3 or parts[0] != "ric" or not VOLUME.fullmatch(parts[1]):
+            raise ImportFailure(f"unsupported OCRE record id: {record_id}")
+        shards[parts[1]][record_id] = active[record_id]
+
+    output.mkdir(parents=True, exist_ok=True)
+    shard_files = {}
+    written = []
+    for prefix in sorted(shards):
+        parts = shard_parts(prefix, shards[prefix])
+        for part in parts:
+            write_file(output / part["file"], {"schemaVersion": 1, "records": part["records"]})
+            written.append(output / part["file"])
+        shard_files[prefix] = [{"file": part["file"], "from": part["from"]} for part in parts]
+    entries = [[record_id, active[record_id]["l"]] for record_id in sorted(active)]
+    complete = {**metadata, "activeRecordCount": len(active), "shards": shard_files}
+    for name, value in (("index.json", {"schemaVersion": 1, "entries": entries}),
+                        ("numbers.json", {"schemaVersion": 1, "numbers": number_index(entries)}),
+                        ("metadata.json", complete)):
+        write_file(output / name, value)
+        written.append(output / name)
+    # A volume that stops being split leaves the file it was split into behind, which would ship in the package.
+    for stale in sorted(output.glob("records-*.json")):
+        if stale not in written and SHARD_NAME.fullmatch(stale.name):
+            stale.unlink()
+    for path in written:
+        if path.stat().st_size > CAP_BYTES:
+            raise ImportFailure(f"{path.name} is larger than the {CAP_BYTES} byte cap")
+    return complete
 
 
 def convert(source: Path, output: Path, generated_on: str) -> dict:
@@ -254,23 +355,6 @@ def convert(source: Path, output: Path, generated_on: str) -> dict:
     records, replacements, conflicts = parse_source(source)
     aliases, replacement_skips = replacement_aliases(records, replacements, conflicts)
     active = {record_id: record for record_id, record in records.items() if record_id not in replacements and record_id not in conflicts}
-    shards = defaultdict(dict)
-    for record_id in sorted(active):
-        parts = record_id.split(".")
-        if len(parts) < 3 or parts[0] != "ric" or not VOLUME.fullmatch(parts[1]):
-            raise ImportFailure(f"unsupported OCRE record id: {record_id}")
-        shards[parts[1]][record_id] = active[record_id]
-
-    output.mkdir(parents=True, exist_ok=True)
-    shard_files = {}
-    for prefix in sorted(shards):
-        filename = f"records-{prefix}.json"
-        shard_files[prefix] = filename
-        write_file(output / filename, {"schemaVersion": 1, "records": shards[prefix]})
-    write_file(output / "index.json", {
-        "schemaVersion": 1,
-        "entries": [[record_id, active[record_id]["l"]] for record_id in sorted(active)],
-    })
     metadata = {
         "schemaVersion": 1,
         "corpus": "ocre",
@@ -287,18 +371,73 @@ def convert(source: Path, output: Path, generated_on: str) -> dict:
         "aliases": aliases,
         "replacementSkips": replacement_skips,
         "conflicts": {"count": len(conflicts), "ids": sorted(conflicts)},
-        "shards": shard_files,
+        "shards": {},
     }
-    write_file(output / "metadata.json", metadata)
-    return metadata
+    return write_data(output, active, metadata)
+
+
+def shard_count(metadata: dict) -> int:
+    return sum(len(parts) for parts in metadata["shards"].values())
+
+
+def read_json(path: Path) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ImportFailure(f"cannot read {path.name}: {error}") from error
+
+
+def reindex(data: Path) -> dict:
+    """Rebuild every derived file from the records already in a data directory, where the RDF source is not at hand."""
+    metadata = read_json(data / "metadata.json")
+    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or metadata.get("corpus") != "ocre":
+        raise ImportFailure("unsupported OCRE metadata")
+    shards = metadata.get("shards")
+    if not isinstance(shards, dict) or not shards:
+        raise ImportFailure("OCRE metadata must name its shards")
+    active: dict[str, dict] = {}
+    for prefix in sorted(shards):
+        parts = shards[prefix]
+        if not isinstance(parts, list) or not parts:
+            raise ImportFailure(f"volume {prefix} names no shard file")
+        for part in parts:
+            name = part.get("file") if isinstance(part, dict) else None
+            if not isinstance(name, str) or not SHARD_NAME.fullmatch(name):
+                raise ImportFailure(f"unsafe shard name in volume {prefix}")
+            records = read_json(data / name)
+            records = records.get("records") if isinstance(records, dict) else None
+            if not isinstance(records, dict):
+                raise ImportFailure(f"{name} holds no records")
+            for record_id, record in records.items():
+                if not isinstance(record, dict) or record.get("i") != record_id or record_id in active:
+                    raise ImportFailure(f"{name} misfiles the record {record_id}")
+                active[record_id] = record
+    # The counts are the source's own, so a data directory short of a shard is a broken input, never a smaller bundle.
+    if metadata.get("activeRecordCount") != len(active):
+        raise ImportFailure(f"the shards hold {len(active)} records, the metadata counts {metadata.get('activeRecordCount')}")
+    return write_data(data, active, metadata)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("output", type=Path)
-    parser.add_argument("--generated-on", required=True, help="explicit YYYY-MM-DD data generation date")
+    parser.add_argument("source", type=Path, nargs="?")
+    parser.add_argument("output", type=Path, nargs="?")
+    parser.add_argument("--generated-on", help="explicit YYYY-MM-DD data generation date")
+    parser.add_argument("--reindex", type=Path, metavar="DATA_DIR",
+                        help="rebuild the indexes and shards of an existing data directory, without the RDF source")
     args = parser.parse_args()
+    if args.reindex is not None:
+        if args.source is not None or args.output is not None or args.generated_on is not None:
+            parser.error("--reindex takes no source, output or --generated-on")
+        try:
+            metadata = reindex(args.reindex)
+        except (ImportFailure, OSError) as error:
+            print(f"reindex failed: {error}", file=sys.stderr)
+            return 1
+        print(f"Reindexed {metadata['activeRecordCount']} active OCRE records into {shard_count(metadata)} shard files.")
+        return 0
+    if args.source is None or args.output is None or args.generated_on is None:
+        parser.error("source, output and --generated-on are required")
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.generated_on):
         parser.error("--generated-on must be YYYY-MM-DD")
     try:
@@ -306,7 +445,7 @@ def main() -> int:
     except (ImportFailure, ET.ParseError, OSError) as error:
         print(f"RDF import failed: {error}", file=sys.stderr)
         return 1
-    print(f"Imported {metadata['activeRecordCount']} active OCRE records into {len(metadata['shards'])} shards.")
+    print(f"Imported {metadata['activeRecordCount']} active OCRE records into {shard_count(metadata)} shard files.")
     return 0
 
 

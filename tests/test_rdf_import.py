@@ -1,5 +1,7 @@
 import hashlib
+import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "import_rdf.py"
 FIXTURE = ROOT / "tests" / "fixtures" / "local-rdf-small.rdf"
+BUNDLE = ROOT / "extension" / "data" / "ocre"
 NAMESPACES = ("xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
               "xmlns:nmo='http://nomisma.org/ontology#' "
               "xmlns:skos='http://www.w3.org/2004/02/skos/core#' "
@@ -20,8 +23,23 @@ def run_import(source, output, generated_on="2026-09-14"):
                            "--generated-on", generated_on], text=True, capture_output=True)
 
 
+def run_reindex(data):
+    return subprocess.run([sys.executable, str(SCRIPT), "--reindex", str(data)], text=True, capture_output=True)
+
+
 def load(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_import_script():
+    spec = importlib.util.spec_from_file_location("giga_pinax_import_rdf", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def written_bytes(directory):
+    return {path.name: path.read_bytes() for path in sorted(directory.iterdir())}
 
 
 class RdfImportTests(unittest.TestCase):
@@ -41,12 +59,17 @@ class RdfImportTests(unittest.TestCase):
                 "aliases": {"ric.3.old.1": "ric.3.current.3", "ric.3.old.2": "ric.3.current.3"},
                 "replacementSkips": {"ambiguous": 0, "cyclic": 2, "dangling": 1},
                 "conflicts": {"count": 0, "ids": []},
-                "shards": {"1": "records-1.json", "2": "records-2.json", "3": "records-3.json"},
+                "shards": {"1": [{"file": "records-1.json", "from": ""}],
+                           "2": [{"file": "records-2.json", "from": ""}],
+                           "3": [{"file": "records-3.json", "from": ""}]},
             }, load(output / "metadata.json"))
             self.assertEqual({"schemaVersion": 1, "entries": [
                 ["ric.1.test.1", "RIC I Test 1"], ["ric.2.test.2", "RIC II Test 2"],
                 ["ric.3.current.3", "Current three"],
             ]}, load(output / "index.json"))
+            # The leading integer of each title's RIC number, against the index positions carrying it. "Current three"
+            # is no RIC title and no number can reach it, so it is in no list.
+            self.assertEqual({"schemaVersion": 1, "numbers": {"1": [0], "2": [1]}}, load(output / "numbers.json"))
             self.assertEqual({
                 "i": "ric.1.test.1", "l": "RIC I Test 1",
                 "a": ["authority_one", "authority_two"], "d": ["denarius", "aureus"],
@@ -122,6 +145,89 @@ class RdfImportTests(unittest.TestCase):
                 result = run_import(source, root / "out", generated_on)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn(message, result.stderr)
+
+
+class ShardCapTests(unittest.TestCase):
+    def setUp(self):
+        self.imports = load_import_script()
+
+    def records(self, count, size=200):
+        return {f"ric.5.x.{number:03d}": {"i": f"ric.5.x.{number:03d}", "l": "x" * size}
+                for number in range(1, count + 1)}
+
+    def part_bytes(self, part):
+        return self.imports.json_bytes({"schemaVersion": 1, "records": part["records"]})
+
+    def test_a_volume_under_the_cap_stays_one_file(self):
+        records = self.records(4)
+        parts = self.imports.shard_parts("5", records, cap=4096)
+        self.assertEqual([{"file": "records-5.json", "from": ""}],
+                         [{"file": part["file"], "from": part["from"]} for part in parts])
+        self.assertEqual(records, parts[0]["records"])
+
+    def test_an_oversized_volume_splits_by_id_order_within_the_cap(self):
+        records = self.records(20)
+        parts = self.imports.shard_parts("5", records, cap=2048)
+        self.assertEqual(["records-5.a.json", "records-5.b.json", "records-5.c.json"],
+                         [part["file"] for part in parts])
+        # The first part takes everything before the second part's first id, so a reader needs no lower bound for it.
+        self.assertEqual(["", "ric.5.x.008", "ric.5.x.015"], [part["from"] for part in parts])
+        for part in parts:
+            self.assertLessEqual(len(self.part_bytes(part)), 2048, part["file"])
+            self.assertEqual(sorted(part["records"]), list(part["records"]))
+        self.assertEqual(list(records), [record_id for part in parts for record_id in part["records"]])
+
+    def test_a_record_too_large_for_any_shard_fails_loudly(self):
+        with self.assertRaises(self.imports.ImportFailure):
+            self.imports.shard_parts("5", self.records(2, size=4096), cap=2048)
+
+    def test_the_bundled_data_stays_under_the_cap(self):
+        if not (BUNDLE / "metadata.json").is_file():
+            self.skipTest("extension/data/ocre is not bundled here")
+        for path in sorted(BUNDLE.glob("*.json")):
+            self.assertLessEqual(path.stat().st_size, 4 * 1024 * 1024, path.name)
+
+
+class ReindexTests(unittest.TestCase):
+    def test_reindex_reproduces_the_full_import_byte_for_byte(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            imported, reindexed = root / "imported", root / "reindexed"
+            self.assertEqual(0, run_import(FIXTURE, imported).returncode)
+            shutil.copytree(imported, reindexed)
+            # The derived files go first: a rebuild that silently kept them would prove nothing.
+            for name in ("index.json", "numbers.json"):
+                (reindexed / name).unlink()
+            result = run_reindex(reindexed)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(written_bytes(imported), written_bytes(reindexed))
+
+    def test_reindex_reproduces_the_bundled_data_byte_for_byte(self):
+        if not (BUNDLE / "metadata.json").is_file():
+            self.skipTest("extension/data/ocre is not bundled here")
+        with tempfile.TemporaryDirectory() as temporary:
+            copy = Path(temporary) / "ocre"
+            shutil.copytree(BUNDLE, copy)
+            result = run_reindex(copy)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual({path.name: path.read_bytes() for path in sorted(BUNDLE.glob("*.json"))},
+                             {name: data for name, data in written_bytes(copy).items() if name.endswith(".json")})
+
+    def test_reindex_refuses_a_data_directory_missing_records(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "ocre"
+            self.assertEqual(0, run_import(FIXTURE, root).returncode)
+            (root / "records-2.json").unlink()
+            result = run_reindex(root)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("reindex failed", result.stderr.lower())
+
+    def test_reindex_takes_no_source_output_or_generated_date(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = subprocess.run([sys.executable, str(SCRIPT), "--reindex", str(root), str(FIXTURE), str(root / "out")],
+                                    text=True, capture_output=True)
+            self.assertNotEqual(0, result.returncode)
 
 
 if __name__ == "__main__":
