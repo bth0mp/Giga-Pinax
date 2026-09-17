@@ -1,4 +1,7 @@
 import { formatMoney } from './core/money.js';
+// The one definition of the message, shared with the function that returns it. Static because the
+// note is owed even where the import below could not run; only browser-api.js needs that tolerance.
+import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
@@ -46,6 +49,17 @@ export function moveCompanionTab(current, key) {
   if (key === 'ArrowRight') return TABS[(index + 1) % TABS.length];
   if (key === 'ArrowLeft') return TABS[(index - 1 + TABS.length) % TABS.length];
   return current;
+}
+
+// The stored preference wins over the display cache the research half showed, but it is applied
+// through that half's own change handler rather than by assigning the value: a start-up or
+// handed-over lookup has already priced under the cached currency, and those prices, the acsearch
+// link and the cache itself all have to follow. A value the select already shows is not a change.
+export function applyPreferredCurrency(select, preferred) {
+  if (!select || !CURRENCIES.includes(preferred) || select.value === preferred) return false;
+  select.value = preferred;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 }
 
 export function buildWatchlistDraftPayload(input) {
@@ -208,8 +222,6 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
-// Only for a bridge that throws rather than answering: saveCurrency names every failure it returns.
-const CURRENCY_NOT_SAVED = 'The currency could not be saved.';
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
 // background, so the note must not promise a loss that is not one.
 const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
@@ -460,6 +472,8 @@ async function initCompanionPopup() {
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
+  // Set once the snapshot has been read: only then is there a revision to write the currency against.
+  let currencyWritable = false;
   if (!bridge || !initializeCompanionPreferences) {
     $('companion-runtime-note').hidden = false;
     document.querySelectorAll('[data-companion-runtime]').forEach((element) => { element.disabled = true; });
@@ -475,25 +489,12 @@ async function initCompanionPopup() {
     const reply = await initializeCompanionPreferences(answering, stored).catch((error) => ({ ok: false, message: error?.message }));
     if (reply?.ok) {
       snapshot = reply.value;
+      currencyWritable = true;
       const currency = snapshot.preferences?.currency;
-      if (CURRENCIES.includes(currency)) {
-        calculator.setValues({ currency });
-        // The stored preference is the one home for the default currency: it replaces the seed the
-        // research half showed before this reply arrived. Nothing is looked up at start-up, so the
-        // select is set without the change its own handler answers.
-        $('currency').value = currency;
-      }
-      // Price research never waits on storage, so the write is sent and answered for on its own.
-      $('currency').addEventListener('change', () => {
-        const chosen = $('currency').value;
-        if (!CURRENCIES.includes(chosen)) return;
-        void saveCurrency(bridge, chosen, snapshot.preferences)
-          .then((saved) => {
-            if (saved?.ok) snapshot = { ...snapshot, preferences: saved.value };
-            else announce(saved?.message || CURRENCY_NOT_SAVED, true);
-          })
-          .catch((error) => announce(error?.message || CURRENCY_NOT_SAVED, true));
-      });
+      if (CURRENCIES.includes(currency)) calculator.setValues({ currency });
+      // Applied before the listener below is registered: this is the stored value itself, so there is
+      // nothing for it to write back.
+      applyPreferredCurrency($('currency'), currency);
       renderSummary();
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
@@ -503,6 +504,26 @@ async function initCompanionPopup() {
     }
     bridge.subscribeToSnapshots((incoming) => { snapshot = incoming; renderSummary(); });
   }
+  // Registered whether or not the snapshot could be read: the research half has already cached the
+  // choice for the next window, so what a failed start-up owes the collector is the reason it will
+  // not outlive this profile's session - said once, rather than silence on every change.
+  let currencyNoteShown = false;
+  $('currency').addEventListener('change', () => {
+    const chosen = $('currency').value;
+    if (!CURRENCIES.includes(chosen)) return;
+    if (!currencyWritable) {
+      if (!currencyNoteShown) announce(CURRENCY_NOT_SAVED, true);
+      currencyNoteShown = true;
+      return;
+    }
+    // Price research never waits on storage, so the write is sent and answered for on its own.
+    void saveCurrency(bridge, chosen, snapshot.preferences)
+      .then((saved) => {
+        if (saved?.ok) snapshot = { ...snapshot, preferences: saved.value };
+        else announce(saved?.message || CURRENCY_NOT_SAVED, true);
+      })
+      .catch((error) => announce(error?.message || CURRENCY_NOT_SAVED, true));
+  });
   activate('research');
   renderSummary();
 }

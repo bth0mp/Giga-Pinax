@@ -4,7 +4,9 @@ export const GIGA_PREFERENCES_KEY = 'giga-pinax-preferences-v1';
 export const LEGACY_COMPANION_PREFERENCES_KEY = 'coin-lookup-test-preferences-v1';
 
 const DEFAULT_CURRENCY = 'USD';
-const CURRENCY_NOT_SAVED = 'The currency could not be saved.';
+// Said by saveCurrency for a bridge that answers nothing, and by the popup for one that cannot be
+// asked at all: one wording for the same loss, defined where the function that returns it lives.
+export const CURRENCY_NOT_SAVED = 'The currency could not be saved.';
 
 function storedValue(storage, key) {
   try { return storage?.getItem?.(key) ?? null; }

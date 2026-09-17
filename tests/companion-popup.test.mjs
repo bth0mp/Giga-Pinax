@@ -64,6 +64,8 @@ class TestElement {
     const event = { target: this, preventDefault() {}, ...detail };
     return Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)));
   }
+  // As the page reaches the research half's own handlers: the same listeners, run synchronously.
+  dispatchEvent(event) { void this.emit(event?.type); return true; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(name, value) { this[name] = String(value); }
@@ -74,7 +76,12 @@ class TestElement {
 
 let loaded = 0;
 // Starts the real page: its own document, its own extension replies, and the card event the result panel sends it once it is running.
-async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = false, search = '' }) {
+async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = false, search = '',
+  currency = 'USD', currencyChanges = [] }) {
+  // A start-up reads globalThis.document where it resumes, not where it began, so a page still
+  // starting when this one takes the document over would finish inside it and answer for it - the
+  // wait below would end on that page's word rather than this one's. They settle in a few turns.
+  for (let tick = 0; tick < 100; tick += 1) await settle();
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -83,6 +90,12 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   answerCommand = sendMessage;
   if (tabs) answerTabs = tabs;
   if (script) answerScript = script;
+  // popup.js is the other half of this document and is not loaded here, so its own change handler -
+  // the one that clears the prices, refreshes the acsearch link and writes the display cache - stands
+  // in as a recorder: the select opens on the cached choice, and every change it is put through lands
+  // in currencyChanges.
+  element('currency').value = currency;
+  element('currency').addEventListener('change', () => currencyChanges.push(element('currency').value));
   // As popup.html starts: the notes and the capture's error are hidden, and the two save buttons wait for something to save.
   for (const id of ['storage-note', 'companion-runtime-note', 'companion-capture-error']) element(id).hidden = true;
   for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) element(id).disabled = true;
@@ -362,6 +375,64 @@ test('blocked site data costs the remembered preferences, not the watchlist save
   await page.element('companion-capture-ruler').emit('input');
   assert.equal(page.element('companion-capture-watchlist').disabled, false);
 });
+// The durable root is the one home for the default currency, but the research half has already shown
+// and cached the last choice and may have priced a start-up lookup under it: the stored value is
+// applied through that half's own change handler, which clears those prices and refreshes its links.
+test('the stored currency reaches the research select through its change handler, not past it', async () => {
+  const commands = [];
+  const currencyChanges = [];
+  const reply = async (command) => {
+    commands.push(command);
+    return command.type === 'preferences.save'
+      ? { ok: true, value: { currency: command.preferences.currency, revision: command.expectedRevision + 1 } }
+      : { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'GBP', revision: 4 } } };
+  };
+  const page = await loadCompanion({ sendMessage: reply, currency: 'EUR', currencyChanges });
+  assert.equal(page.element('currency').value, 'GBP');
+  // The prices the window already fetched under EUR, its acsearch link and the cache all follow.
+  assert.deepEqual(currencyChanges, ['GBP']);
+  // The stored value is not a choice of the collector's, so nothing is written back over it.
+  assert.deepEqual(commands.filter(({ type }) => type === 'preferences.save'), []);
+
+  // A choice of his own is the one that writes, against the revision that was read.
+  page.element('currency').value = 'CHF';
+  await page.element('currency').emit('change');
+  await settle();
+  const saved = commands.filter(({ type }) => type === 'preferences.save');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].expectedRevision, 4);
+  assert.deepEqual(saved[0].preferences, { currency: 'CHF' });
+});
+
+// Nothing to clear and nothing to announce: the cache and the stored preference already agree, which
+// is what every start-up after the first looks like.
+test('a stored currency the research select already shows disturbs nothing', async () => {
+  const currencyChanges = [];
+  const page = await loadCompanion({ currency: 'GBP', currencyChanges, sendMessage: async () => (
+    { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'GBP', revision: 4 } } }) });
+  assert.equal(page.element('currency').value, 'GBP');
+  assert.deepEqual(currencyChanges, []);
+});
+
+// The research half caches the choice either way, so it survives this window; what a start-up that
+// never reached the background owes the collector is the reason it goes no further than that.
+test('a currency change after a failed start-up is explained once rather than dropped in silence', async () => {
+  const page = await loadCompanion({ sendMessage: async () => undefined });
+  assert.equal(page.element('companion-status').textContent, 'Extension storage is unavailable.');
+
+  page.element('currency').value = 'CHF';
+  await page.element('currency').emit('change');
+  await settle();
+  assert.equal(page.element('companion-status').textContent, 'The currency could not be saved.');
+
+  // Said once: every later change would only repeat it over whatever the page is saying by then.
+  page.element('companion-status').textContent = 'Nothing to report.';
+  page.element('currency').value = 'EUR';
+  await page.element('currency').emit('change');
+  await settle();
+  assert.equal(page.element('companion-status').textContent, 'Nothing to report.');
+});
+
 const capturedPage = (candidates = {}) => async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates } }];
 
 // The fields are where he is looking and where he is fixing it: the reason the button is off must not vanish at the first keystroke.
