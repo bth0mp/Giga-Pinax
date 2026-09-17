@@ -69,10 +69,18 @@ export function validateBackup(document) {
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fail('invalid-document', 'Backup must be an object.');
   if (value.format !== BACKUP_FORMAT) return fail('invalid-format', 'Backup format is not recognized.', 'format');
-  // Only a backup from a later build is refused on sight. An older one is migrated first and then
-  // judged on what the migration produced, so a version this build can still read imports.
-  if (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion > SCHEMA_VERSION) {
+  // Only a backup from a later build is refused on sight, and it is told what would let it in. An
+  // older one is migrated first and then judged on what the migration produced, so a version this
+  // build can still read imports. Version one is the first there was: below it is not a backup.
+  if (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion < 1) {
     return fail('unsupported-schema', 'Backup schema version is unsupported.', 'schemaVersion');
+  }
+  if (value.schemaVersion > SCHEMA_VERSION) {
+    return fail(
+      'unsupported-schema',
+      'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',
+      'schemaVersion',
+    );
   }
   if (!canonicalInstant(value.exportedAt)) return fail('invalid-timestamp', 'Export time is invalid.', 'exportedAt');
   const data = migrateSnapshot(clone(value.data));

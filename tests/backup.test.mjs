@@ -234,13 +234,27 @@ test('a five-thousand-lot store exports compact and its pretty-printed backup st
 
 test('a backup written by an older schema migrates instead of being refused', () => {
   const data = createEmptySnapshot(NOW);
-  const document = { format: 'ancient-coin-auction-companion', schemaVersion: 0, exportedAt: NOW, data: { ...data, schemaVersion: 0 } };
+  const document = { format: BACKUP_FORMAT, schemaVersion: 1, exportedAt: NOW, data: { ...data, schemaVersion: 0 } };
   // No migration step exists from version 0, so it still fails - but on the migrated data, not on
-  // the document header, and a future build's backup is what is refused outright.
+  // the document header.
   assert.equal(validateBackup(document).error.path, 'data.schemaVersion');
-  const future = { ...document, schemaVersion: 99, data };
-  assert.equal(validateBackup(future).error.code, 'unsupported-schema');
-  assert.equal(validateBackup(future).error.path, 'schemaVersion');
+});
+
+test('a newer backup says what to do, and a header version below one is refused outright', () => {
+  const data = createEmptySnapshot(NOW);
+  const document = { format: BACKUP_FORMAT, schemaVersion: 2, exportedAt: NOW, data };
+  assert.equal(
+    validateBackup(document).error.message,
+    'This backup was made by a newer version of Giga Pinax. Update the extension, then import it again.',
+  );
+  assert.equal(validateBackup(document).error.path, 'schemaVersion');
+  for (const version of [0, -1, 1.5, '1', undefined, null]) {
+    const refused = validateBackup({ ...document, schemaVersion: version });
+    assert.equal(refused.ok, false, `schemaVersion ${String(version)} must be refused`);
+    assert.equal(refused.error.code, 'unsupported-schema');
+    assert.equal(refused.error.path, 'schemaVersion');
+    assert.equal(refused.error.message, 'Backup schema version is unsupported.');
+  }
 });
 
 test('merge keeps local preferences and alerts, whatever bookkeeping the backup carries', () => {
