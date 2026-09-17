@@ -7,7 +7,7 @@ import { findReferences, lotLookup } from '../extension/lot.js';
 const metadata = {
   schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
-  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '4': 'records-4.json', '7': 'records-7.json' },
+  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '2_3(2)': 'records-2_3(2).json', '4': 'records-4.json', '7': 'records-7.json' },
 };
 const index = { schemaVersion: 1, entries: [
   ['ric.1(2).ner.306', 'RIC I (second edition) Nero 306'],
@@ -18,6 +18,7 @@ const index = { schemaVersion: 1, entries: [
   ['ric.7.rom.287', 'RIC VII Rome 287'],
   ['ric.2.tr.720', 'RIC II Trajan 720'],
   ['ric.2_1(2).dom.720', 'RIC II, Part 1 (second edition) Domitian 720'],
+  ['ric.2_3(2).hdn.720', 'RIC II, Part 3 (second edition) Hadrian 720'],
   ['ric.4.ph_i.27A', 'RIC IV Philip I 27A'],
   ['ric.4.ph_i.27B', 'RIC IV Philip I 27B'],
 ] };
@@ -30,12 +31,13 @@ const records = {
   'ric.7.rom.287': { i: 'ric.7.rom.287', l: 'RIC VII Rome 287', a: ['licinius'], o: { p: ['licinius'] }, r: {} },
   'ric.2.tr.720': { i: 'ric.2.tr.720', l: 'RIC II Trajan 720', a: ['trajan'], o: { p: ['trajan'] }, r: {} },
   'ric.2_1(2).dom.720': { i: 'ric.2_1(2).dom.720', l: 'RIC II, Part 1 (second edition) Domitian 720', a: ['domitian'], o: { p: ['domitian'] }, r: {} },
+  'ric.2_3(2).hdn.720': { i: 'ric.2_3(2).hdn.720', l: 'RIC II, Part 3 (second edition) Hadrian 720', a: ['hadrian'], o: { p: ['hadrian'] }, r: {} },
   'ric.4.ph_i.27A': { i: 'ric.4.ph_i.27A', l: 'RIC IV Philip I 27A', a: ['philip_the_arab'], o: { p: ['philip_the_arab'] }, r: {} },
   'ric.4.ph_i.27B': { i: 'ric.4.ph_i.27B', l: 'RIC IV Philip I 27B', a: ['philip_the_arab'], o: { p: ['philip_the_arab'] }, r: {} },
 };
 
 function fixtureFetch(overrides = {}) {
-  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-4.json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
+  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-2_3(2).json': { schemaVersion: 1, records }, 'records-4.json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(String(url));
@@ -131,14 +133,23 @@ test('catalogue metadata reports actual coverage and separates generation from u
 
 test('a plain volume numeral finds the part of its family that has the ruler, and never answers with another ruler', async () => {
   const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/ocre/' });
-  // RIC II has no Domitian, II.1² does: the family's hit is the coin, and Trajan 720 is never the answer to a Domitian reference.
+  // RIC II has no Domitian, II.1² does: the family's hit is found and offered, since II.1² numbers Domitian's coins its own way and the dealer
+  // wrote II. Trajan 720 is never the answer to a Domitian reference.
   const domitian = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Domitian', number: '720' });
-  assert.equal(domitian.status, 'ok');
-  assert.equal(domitian.card.id, 'ric.2_1(2).dom.720');
+  assert.equal(domitian.status, 'candidates');
+  assert.deepEqual(domitian.candidates.map((entry) => entry.id), ['ric.2_1(2).dom.720']);
+  // The same on the person path, where the section is blanked before the final pick: a ruler RIC II does have, in a part that numbers him
+  // differently, is still only ever offered.
+  for (const reference of [{ catalogue: 'RIC', volume: 'II', section: 'Hadrian', number: '720' },
+    { catalogue: 'RIC', volume: 'II', section: '', number: '720', rulers: ['Hadrian'] }]) {
+    const hadrian = await local.lookupType(reference);
+    assert.equal(hadrian.status, 'candidates', JSON.stringify(reference));
+    assert.deepEqual(hadrian.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.720'], JSON.stringify(reference));
+  }
   // A ruler in no part of the family leaves the family's other sections as choices, never as the one result.
   const missing = await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Otho', number: '720' });
   assert.equal(missing.status, 'candidates');
-  assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2.tr.720', 'ric.2_1(2).dom.720']);
+  assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2.tr.720', 'ric.2_1(2).dom.720', 'ric.2_3(2).hdn.720']);
 });
 
 // RIC heads a section "Philip I", but no person is called that: read as a ruler the name reached neither OCRE's facets nor the local index, and a
@@ -187,10 +198,10 @@ test('a failed bundle load is retried, never remembered', async () => {
 test('the shards a person filter needs are loaded together, not one after another', async () => {
   const waiting = [];
   const barrier = fixtureFetch();
-  // Every shard request is held until both are in flight: loaded one after another, this lookup could never finish.
+  // Every shard request is held until all three are in flight: loaded one after another, this lookup could never finish.
   const held = (url) => (String(url).includes('records-') ? new Promise((resolve) => {
     waiting.push(() => resolve(barrier(url)));
-    if (waiting.length === 2) for (const release of waiting.splice(0)) release();
+    if (waiting.length === 3) for (const release of waiting.splice(0)) release();
   }) : barrier(url));
   const local = createLocalCatalogue({ fetchImpl: held, baseUrl: 'moz-extension://test/data/ocre/' });
   const result = await local.lookupType({ catalogue: 'RIC', volume: '', section: 'Trajan', number: '720' });

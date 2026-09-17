@@ -1,4 +1,4 @@
-import { formatDates, pickRicEntries } from './lookup.js';
+import { formatDates, otherVolumePart, pickRicEntries } from './lookup.js';
 import { isRicPerson, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 
@@ -120,8 +120,11 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
           const records = await Promise.all(entries.map((entry) => recordById(entry.id)));
           const matched = entries.filter((entry, index) => hasPerson(records[index], people));
           if (matched.length > 0) {
-            const final = pickRicEntries(matched, citationRef);
-            if (final.status === 'ok') return await byId(final.entry.id);
+            let final = pickRicEntries(matched, citationRef);
+            // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
+            // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out.
+            if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title)) return await byId(final.entry.id);
+            if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
             return { ...final, candidates: final.candidates?.map((entry) => ({ ...entry, source: 'local' })), corpus: 'ocre', query: squash(`RIC ${reference.volume} ${reference.number}`) };
           }
           const candidates = entries.map((entry) => ({ ...entry, source: 'local' }));

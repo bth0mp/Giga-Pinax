@@ -617,6 +617,17 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   return { status: 'candidates', candidates: chosen.map(({ entry }) => entry), partial: true };
 }
 
+// Whether a hit comes from another part of the volume family the reference names: "RIC II" reaches II.1² and II.3² too, and those parts number
+// their rulers their own way, so such a hit answers a different book. pickRicEntries only ever offers one; the local person path, which blanks the
+// section before its final pick, asks here rather than slipping past that rule.
+export function otherVolumePart(reference, title) {
+  const volume = unquote(reference.volume);
+  const [numeral, part] = shelf(volume);
+  if (!numeral || part || norm(volume) !== numeral) return false;
+  const hit = parseReference(title, false);
+  return Boolean(hit) && norm(hit.volume) !== norm(volume);
+}
+
 function pickRic(xml, reference) {
   const entries = parseFeed(xml);
   const total = Number(xml.match(/<opensearch:totalResults>(\d+)</)?.[1] ?? entries.length);
