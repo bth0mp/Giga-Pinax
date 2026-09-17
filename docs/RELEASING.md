@@ -23,6 +23,6 @@ Release assets must include three versioned browser packages (for example, `giga
 
 For store releases, also verify the listing, privacy answers, reviewer notes and assets under [store](store/README.md) against the exact package. Keep the stable Firefox ID `giga-pinax@local.invalid`; Mozilla recommends a stable unique ID and does not require that the ID be a deliverable mailbox. Do not describe an unsigned GitHub ZIP as permanently installable in Firefox, and do not claim signing or publication until the relevant dashboard confirms it.
 
-The source has no license file. Do not select or state an open-source license, grant reuse rights, or accept a legal attestation on behalf of the publisher. Resolve any required store license field with the publisher before submission.
+The code is MIT licensed (`LICENSE`); the bundled catalogue data keeps its own terms (ODbL 1.0 and CC BY 3.0, see `docs/LOCAL-CATALOGUE.md`). Use MIT for a store's licence field. Do not accept a legal attestation on behalf of the publisher.
 
 The store screenshots must show the released UI at 1280×800 with private auction data and photo URLs removed. Chrome also requires the packaged 128×128 icon and 440×280 small promotional tile. The reproducible source and rendering instructions for the tile are in [store/assets](store/assets/README.md).

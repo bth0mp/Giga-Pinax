@@ -14,4 +14,4 @@ Records, settings and manual comparable evidence use browser-local extension sto
 
 The shipped JavaScript is readable and unminified. `scripts/build.py` uses only the Python standard library to copy the allowlisted extension files and the browser-specific manifest into deterministic ZIPs; it performs no transpilation, bundling or minification. From the repository root run `python scripts/build.py`. Development-only icon rendering uses Pillow through `python scripts/make_icons.py`; Pillow and store artwork tools are not packaged.
 
-The Firefox package retains the stable ID `giga-pinax@local.invalid`. The repository has no `LICENSE`; no licence claim is included in this note.
+The Firefox package retains the stable ID `giga-pinax@local.invalid`. The code is MIT licensed; bundled catalogue data keeps its ODbL 1.0 and CC BY 3.0 terms.

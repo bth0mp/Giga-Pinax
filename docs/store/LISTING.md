@@ -60,4 +60,4 @@ Keep `browser_specific_settings.gecko.id` as `giga-pinax@local.invalid` and keep
 
 Submit only after Firefox 142+ validation supports the manifest floor. A listed public release requires Mozilla signing. The unsigned GitHub ZIP is suitable only for temporary loading through `about:debugging` and is removed when Firefox restarts.
 
-The repository has no `LICENSE`. Do not select a licence, grant rights, or accept publisher agreements and legal attestations without the publisher's decision.
+The code is MIT licensed (`LICENSE`); bundled catalogue data keeps its ODbL 1.0 and CC BY 3.0 terms. Do not accept publisher agreements and legal attestations without the publisher's decision.

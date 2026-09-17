@@ -69,4 +69,4 @@ The bundled Roman Imperial type database is derived from the American Numismatic
 
 ## License
 
-LICENSE-PLACEHOLDER
+The code is released under the [MIT License](LICENSE). The bundled catalogue data keeps its own terms: OCRE type data under ODbL 1.0 and Nomisma.org concept data under CC BY 3.0; see [local catalogue data and attribution](docs/LOCAL-CATALOGUE.md).
