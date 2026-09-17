@@ -377,67 +377,156 @@ export function filterableDenomination(label) {
 const FINE = 'Fine and below';
 const MINT = 'FDC/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
-// The dealer's grade, in the four languages acsearch lists, as the four buckets a collector compares in, each spelled as its own trade writes it.
-// A name may also open a sentence, so its first letter counts capitalised too, but nothing else does: a bare lower-case "fine" is the ordinary
-// adjective ("a fine portrait", "as fine as any"), never a grade.
-const GRADE_NAMES = {
-  Fine: FINE, 'schön': FINE, 'très beau': FINE, 'molto bello': FINE,
-  'Very Fine': 'VF', 'sehr schön': 'VF', 'très très beau': 'VF', bellissimo: 'VF',
-  'Extremely Fine': 'EF', 'vorzüglich': 'EF', superbe: 'EF', splendido: 'EF',
-  'Mint State': MINT, Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT,
+// A grade the reader knows and cannot place in one of the four buckets: "AU" ("About Uncirculated") sits between EF and Mint State. Reading it is
+// still worth it — it keeps a qualifier from turning it into "Uncirculated" — and the row simply comes out ungraded. A wrong bucket is the failure
+// here; an empty one is not.
+const UNPLACED = 'unplaced';
+
+// Class 1. The English abbreviations, exactly as the trade writes them: nothing else in a lot description is spelled this way, so a closing edge is
+// all they need.
+const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: UNPLACED };
+// Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
+// ordinary adjective, and only a range whose first half was read lends it a grade's standing.
+const NAMES = {
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'About Uncirculated': UNPLACED,
+  Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
-// Read exactly as written: capitals are all that tells "BB" the Italian grade from "BB" the collection, or "st" from the middle of "ist".
-const GRADE_MARKS = {
-  gF: FINE, aF: FINE, VG: FINE, TB: FINE, MB: FINE, s: FINE,
-  VF: 'VF', gVF: 'VF', aVF: 'VF', ss: 'VF', TTB: 'VF', BB: 'VF',
-  EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', vz: 'EF', SUP: 'EF', SPL: 'EF',
-  FDC: MINT, MS: MINT, UNC: MINT, st: MINT,
-};
-// German "s." is "siehe", see, far more often than it is the grade "schön": a German description points at a comment, a plate or another catalogue
-// with it, and as the lower of two grades it took every one of those lots down to Fine. It is read as a grade only inside a range with another mark
-// ("s-ss", "s/ss") or directly behind "Erhaltung", never alone, so it is kept out of the marks the pattern reads anywhere.
-const SEE = 's';
-// A qualifier in front of a grade keeps its bucket, exactly as the gVF and aEF it abbreviates: the trades' own "nearly", "choice" and "otherwise",
-// and the two slabbers whose line opens with their name. The name behind one needs no capital of its own ("Good very fine", "Gutes sehr schön").
-// Each is written as its own trade writes it and read like a grade name, first letter capitalised or as listed, so lower-case prose is still prose.
-const GRADE_QUALIFIERS = ['Near', 'Nearly', 'Almost', 'About', 'Good', 'Choice', 'Ch', 'Superb', 'Nice', 'Toned', 'otherwise',
-  'NGC', 'PCGS', 'Fast', 'Gutes', 'Knapp', 'Buon', 'Presque'];
-// A name as the pattern reads it: the first letter as the trade writes it or capitalised, every other letter in either case.
-const namePattern = (name, opening) => [...name].map((char, index) => {
+// Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
+// never stands in front of the words a compliment carries on with.
+const BARE_FINE = { Fine: FINE };
+// Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials.
+const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF' };
+// Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
+// bellissimo" praise the coin, "Sehr schön." grades it.
+const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE };
+// Class 7. The marks that are a word of their own far more often than a grade: German "s." is "siehe", see; a lone "F" is an initial; and "schön" is
+// what a dealer calls any pretty coin. Each is read only as a half of a range with another grade, or directly behind a grade label.
+const RANGE_ONLY = { s: FINE, F: FINE, 'schön': FINE };
+const EXACT = { ...ABBREVIATIONS, ...MARKS, s: RANGE_ONLY.s, F: RANGE_ONLY.F };
+const SPELLED = { ...NAMES, ...BARE_FINE, ...PRAISE, 'schön': RANGE_ONLY['schön'] };
+const SPELLED_BUCKETS = new Map(Object.entries(SPELLED).map(([name, bucket]) => [name.toLowerCase(), bucket]));
+
+// A qualifier in front of a grade keeps its bucket, exactly as the gVF and aEF it abbreviates, and gives a mark the opening edge it needs. Read in
+// either case, since a dealer writes "fast vz" as readily as "Fast vorzüglich"; it is the capital rule above, not the qualifier, that keeps prose out.
+const GRADE_QUALIFIERS = ['Near', 'Nearly', 'Almost', 'About', 'Good', 'Choice', 'Ch', 'Superb', 'Nice', 'Toned', 'otherwise', 'sonst',
+  'Fast', 'Gutes', 'Knapp', 'Buon', 'Presque', 'NGC', 'PCGS'];
+// The qualifiers bare "Fine" takes in place of an opening edge.
+const FINE_QUALIFIERS = /^(?:About|Good|Near|Nearly|Almost|Choice)\b/i;
+// The slabbers: only their line prints a score behind the grade.
+const SLABBERS = /\b(?:NGC|PCGS)\b/;
+
+// A word read whatever its capitals. (eitherCase above reads a catalogue number, where a full stop is also the comma dealers write.)
+const anyCase = (text) => [...String(text)].map((char) => {
   const [lower, upper] = [char.toLowerCase(), char.toUpperCase()];
-  if (lower === upper) return escaped(char);
-  return index === 0 && opening ? (char === upper ? char : `[${lower}${upper}]`) : `[${lower}${upper}]`;
+  return lower === upper ? escaped(char) : `[${lower}${upper}]`;
 }).join('');
-// Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it.
+// Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it, and "About Uncirculated" is not "Uncirculated".
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
-const names = (opening) => alternation(Object.keys(GRADE_NAMES).map((name) => namePattern(name, opening)));
-const marks = alternation(Object.keys(GRADE_MARKS).filter((mark) => mark !== SEE).map(escaped));
-const qualifiers = alternation(GRADE_QUALIFIERS.map((word) => namePattern(word, true)));
-// A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"). Two digits or a
-// score, and no more: a lone digit behind a grade is a weight or a die axis ("Very Fine 3.41 g").
-const SLAB = String.raw`(?:\s(?:\d\d|\d\d?/\d\d?))?`;
-// What a grade may run into: the end, the punctuation that closes a clause, or the words a dealer carries on with. It is the closing edge that tells
-// a grade from prose — "a fine portrait." and "the BB collection." run into a word, "Good very fine." does not — and it is why a range reads as its
-// lower grade ("ss-vz" stops at the dash, "VF/EF" gives both and the lower is taken).
-const GRADE_CLOSE = String.raw`$|[.;,+\-)/]|\s(?:[-–(+&]|and\b|for\b|with\b|à)`;
-const SOFT_SEE = String.raw`(?:(?<=Erhaltung:?\s)s|s(?=\s?[-/–]\s?(?:${marks})))`;
-const GRADE_PHRASE = new RegExp(`(?<![\\p{L}\\d])(?:(?:${qualifiers})\\s+(?:${names(false)}|${marks})|${names(true)}|${marks}|${SOFT_SEE})${SLAB}(?=${GRADE_CLOSE})`, 'gu');
-const NAME_BUCKETS = new Map(Object.entries(GRADE_NAMES).map(([name, bucket]) => [name.toLowerCase(), bucket]));
-const QUALIFIED = new RegExp(`^(?:${GRADE_QUALIFIERS.join('|')})\\s+`, 'i');
-const SLAB_TAIL = /\s(?:\d\d|\d\d?\/\d\d?)$/;
-const bucketOf = (phrase) => {
-  const graded = phrase.replace(SLAB_TAIL, '').replace(QUALIFIED, '');
-  return NAME_BUCKETS.get(graded.toLowerCase()) ?? (Object.hasOwn(GRADE_MARKS, graded) ? GRADE_MARKS[graded] : null);
+const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(SPELLED).map(anyCase)]);
+// "q" and "q." bind straight onto the mark they qualify (qBB, qSPL, q.FDC); every other qualifier is a word of its own.
+const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?)`;
+// A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
+// eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
+const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;
+// The qualifiers are lazy so that "About Uncirculated" is read as the grade AU and not as "Uncirculated" behind a qualifier.
+const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${TOKENS})(\\+*)(${SLAB})(?![\\p{L}\\d])`, 'gu');
+
+// How far to either side an edge is looked for. Both are bounded, so one pass over a description costs the same per character however long it is.
+const EDGE = 24;
+// The closing edge, which is what tells a grade from prose: "a fine portrait." and "the BB collection." run into a word, "Good very fine." does not.
+const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:]|^\s[-–(+&/]|^\sà(?![\p{L}\d])`
+  + String.raw`|^\s(?:and|for|with|to|bis|but|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
+// The opening edge a mark needs, and the narrower one a praise adjective needs: it must start its clause, so a word of the same clause may not stand
+// in front of it.
+const OPENS = /[.;,:(/]\s*$/;
+const PRAISE_OPENS = /[.;,:/]\s*$/;
+// The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s").
+const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|dritto|rovescio)`;
+const SIDE_OPENS = new RegExp(String.raw`(?<![\p{L}\d])${SIDE}\.?\s+$`, 'iu');
+const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
+// A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
+const LABEL = /(?:Erhaltung|Grade|Condition)\s*:?\s*$/i;
+// Two grades a range separator joins are one statement, read as the lower of the two.
+const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
+// A mark in brackets is a control mark or a catalogue's own aside ("Cohen 302 (MB)."), and one behind a colon that follows an all-lower-case word is a
+// label's value ("control: TB."); neither is a grade. A capitalised label is the collector's own ("Erhaltung: ss", "Rev: MS").
+const LOWER_COLON = /(?<![\p{L}\d])\p{Ll}+:\s*$/u;
+// What bare "Fine" may not stand in front of: the compliment a dealer pays the dies ("Fine Style", "Fine-style"), the "and" that joins it to one, and
+// a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
+const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
+const CAPITAL = /\p{Lu}/u;
+
+const kindOf = (token) => {
+  if (Object.hasOwn(RANGE_ONLY, token)) return 'range-only';
+  if (Object.hasOwn(ABBREVIATIONS, token)) return 'abbreviation';
+  if (Object.hasOwn(MARKS, token)) return 'mark';
+  const spelled = token.toLowerCase();
+  if (Object.hasOwn(RANGE_ONLY, spelled)) return 'range-only';
+  if (Object.hasOwn(BARE_FINE, token) || spelled === 'fine') return 'bare-fine';
+  return Object.hasOwn(PRAISE, spelled) ? 'praise' : 'name';
 };
+const bucketOf = (token) => EXACT[token] ?? SPELLED_BUCKETS.get(token.toLowerCase()) ?? null;
 
 // A dealer's grade stands in the first line or two of a description; past this the text is provenance and literature, and reading it only costs time.
 const GRADE_LIMIT = 3000;
-// The one grade a row is counted under: the lower of two ("VF/EF", "ss-vz"), and null when the description names none. One pass over the text, so a
-// long description costs no more per character than a short one.
+const lower = (buckets) => GRADE_BUCKETS[Math.min(...buckets.map((bucket) => GRADE_BUCKETS.indexOf(bucket)))];
+
+// The one grade a row is counted under. Every token the four trades write is found in a single pass; each is then kept or dropped by the edges around
+// it, read from a bounded window, so a long description costs no more per character than a short one. Grades a range separator or a named side joins
+// are one statement, worth the lower of the two ("VF/EF", "ss-vz", "Obverse VF, reverse Fine."); of several separate statements the last one counts,
+// since a dealer closes with his grade, unless one of them stands behind an explicit grade label. A row this cannot read comes out null.
 export function gradeOf(description) {
   const text = squash(description).slice(0, GRADE_LIMIT);
-  const found = [...text.matchAll(GRADE_PHRASE)].map((match) => bucketOf(match[0])).filter(Boolean);
-  return found.length ? GRADE_BUCKETS[Math.min(...found.map((bucket) => GRADE_BUCKETS.indexOf(bucket)))] : null;
+  const candidates = [...text.matchAll(GRADE_CANDIDATE)];
+  const ends = [];
+  const statements = [];
+  let previous = null;
+  for (const [index, match] of candidates.entries()) {
+    const start = match.index;
+    const [, quals, token, plus, slab] = match;
+    const before = text.slice(Math.max(0, start - EDGE), start);
+    // The slab's own tail is read only where a slab prints one: behind NGC or PCGS in the same clause, or as the numeric Mint State grade opening the
+    // text ("MS 63"). Anywhere else " 12" behind a grade is a lot number or a weight ("Slg. vz 12.", "Very Fine 17.23 g").
+    const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && token === 'MS');
+    const end = start + quals.length + token.length + plus.length + (slabbed ? slab.length : 0);
+    ends.push(end);
+    if (!CLOSES.test(text.slice(end, end + EDGE))) continue;
+    const gap = previous === null ? '' : text.slice(previous.end, start);
+    const joinable = previous !== null && gap.length <= EDGE;
+    const ranged = joinable && RANGE_GAP.test(gap);
+    const sided = joinable && SIDE_GAP.test(gap);
+    const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before);
+    const capital = CAPITAL.test(quals + token) || ranged;
+    const kind = kindOf(token);
+    const rest = text.slice(start + quals.length + token.length);
+    let read = false;
+    if (kind === 'abbreviation') read = true;
+    else if (kind === 'name') read = capital;
+    else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
+    else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before);
+    // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
+    // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
+    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || ranged;
+    else read = ranged || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
+    if (!read) continue;
+    const bucket = bucketOf(token);
+    previous = { end };
+    if (bucket === UNPLACED || bucket === null) continue;
+    if (ranged || sided) statements.at(-1).buckets.push(bucket);
+    else statements.push({ buckets: [bucket], labelled: LABEL.test(before) });
+  }
+  const labelled = statements.filter((statement) => statement.labelled);
+  const counted = (labelled.length ? labelled : statements).at(-1);
+  return counted ? lower(counted.buckets) : null;
+}
+
+// Whether a class-7 mark opens a range: the next token a grade may be read as follows it across a range separator or a named side ("s-ss", "F/VF",
+// "Av. s, Rs. ss"). Only the token beside it is looked at, so this stays one step per candidate.
+function opensRange(candidates, ends, index, text) {
+  const next = candidates[index + 1];
+  if (!next || Object.hasOwn(RANGE_ONLY, next[2]) || Object.hasOwn(RANGE_ONLY, next[2].toLowerCase())) return false;
+  const gap = text.slice(ends[index], next.index);
+  return gap.length <= EDGE && (RANGE_GAP.test(gap) || SIDE_GAP.test(gap));
 }
 
 // The grade the page read when it arrived; a row from elsewhere is read here, once, rather than once per bucket.

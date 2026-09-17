@@ -870,6 +870,18 @@ test('citesReference never reads an amount, a unit or a die axis as the number',
   assert.equal(citesReference('Antiochos. AE. SC 12. Very Fine.', sc12), true);
 });
 
+// The grade reader is bounded the same way, and the worst shape the reviewer found is timed at both lengths.
+test('the grade reader reads an adversarial description in one bounded pass', () => {
+  for (const length of [3000, 100000]) {
+    for (const shape of ['. Good Very ', '. ss-', '. Extremely Fin', 'NGC Ch VF 5/5 - ', 'Av. ss, Rs. s / vz. ', '. , : ( / ', '. sehr schön-']) {
+      const text = shape.repeat(Math.ceil(length / shape.length)).slice(0, length);
+      const began = Date.now();
+      gradeOf(text);
+      assert.ok(Date.now() - began < 250, `gradeOf took ${Date.now() - began} ms on ${length} characters of “${shape}”`);
+    }
+  }
+});
+
 // 75,000 characters of repeated lowercase marks took the reviewer's machine 948 ms, because every match sliced the description again.
 test('a long description is read once and quickly', () => {
   const long = `Fine. ${'ss ss ss '.repeat(8000)}`;
@@ -907,7 +919,10 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), 'VF');
   assert.equal(gradeOf('gVF'), 'VF');
   assert.equal(gradeOf('VF/EF'), 'VF');
-  assert.equal(gradeOf('Fine, rough surfaces.'), 'Fine and below');
+  // Consciously changed in round 3: bare "Fine" never stands in front of a comma opening a lower-case adjective and its noun, which is what tells
+  // "Fine, high-relief portrait" from a grade. "Fine, porous" — one word, no noun — is still the grade.
+  assert.equal(gradeOf('Fine, rough surfaces.'), null);
+  assert.equal(gradeOf('Fine, porous.'), 'Fine and below');
   assert.equal(gradeOf('FDC.'), 'FDC/Mint State');
   assert.equal(gradeOf('Mint State, fully lustrous.'), 'FDC/Mint State');
   // German, French and Italian grades.
@@ -987,6 +1002,21 @@ test('gradeOf reads the German "s." as see, never as a grade of its own', () => 
   assert.equal(gradeOf('Nero. Denar. RIC 306. s-ss'), 'Fine and below');
   assert.equal(gradeOf('s/ss'), 'Fine and below');
   assert.equal(gradeOf('Erhaltung: s'), 'Fine and below');
+});
+
+// 0.32 review, round 3: three rounds of patching the reader traded one class of error for another, so it was redesigned against a corpus instead of
+// patched again. Every description the reviewer's probes and the report's own tables name is in the corpus with the bucket the design reads it into;
+// a row the design cannot read carries null there, and its note says why. A wrong bucket is what this guards against — an ungraded row is not one.
+test('every description in the grade corpus reads into the bucket the corpus records', () => {
+  const corpus = JSON.parse(fixture('grade-corpus.json'));
+  const buckets = { fine: 'Fine and below', vf: 'VF', ef: 'EF', mint: 'FDC/Mint State' };
+  const disagreements = corpus.flatMap((row) => {
+    const wanted = row.grade === null ? null : buckets[row.grade];
+    const read = gradeOf(row.text);
+    return read === wanted ? [] : [`${JSON.stringify(row.text)}: corpus ${wanted}, read ${read} — ${row.note}`];
+  });
+  for (const line of disagreements) console.log(line);
+  assert.equal(disagreements.length, 0, `${disagreements.length} of ${corpus.length} corpus rows disagree`);
 });
 
 test('filterableDenomination offers only a label that can be matched as a word', () => {
