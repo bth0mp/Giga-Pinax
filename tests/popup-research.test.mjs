@@ -63,7 +63,7 @@ class TestElement {
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
-  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [] }) {
+  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map() }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -114,7 +114,10 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     document,
     window,
     globalThis: null,
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => (stored.has(key) ? stored.get(key) : null),
+      setItem: (key, value) => { stored.set(key, String(value)); },
+    },
     location: { search, href: `moz-extension://test/popup.html${search}` },
     navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
@@ -132,7 +135,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard };
+  return { element, document, writes, clipboard, stored };
 }
 
 const oneSale = {
@@ -971,4 +974,25 @@ test('a failed CoinArchives re-fetch takes the toggles down with the panel', asy
   await settle();
   assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
   assert.equal(popup.element('price-filters').hidden, true);
+});
+
+// One home for the default currency: the snapshot preference the background keeps. The research
+// form's own storage seeds it for a profile written before that, and is never written back - a
+// currency changed here would otherwise be remembered in two places that can disagree.
+test('the research currency is seeded from local storage and never written back to it', async () => {
+  const key = 'giga-pinax-preferences-v1';
+  const stored = new Map([[key, JSON.stringify({ currency: 'CHF', catalogue: 'Price', number: '23' })]]);
+  const popup = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  assert.equal(popup.element('currency').value, 'CHF');
+
+  popup.element('currency').value = 'GBP';
+  await popup.element('currency').emit('change');
+  assert.equal(JSON.parse(stored.get(key)).currency, 'CHF');
+
+  // Any other saved field still writes, and still carries the seed rather than this session's choice.
+  popup.element('catalogue').value = 'RRC';
+  await popup.element('catalogue').emit('change');
+  const saved = JSON.parse(stored.get(key));
+  assert.equal(saved.catalogue, 'RRC');
+  assert.equal(saved.currency, 'CHF');
 });

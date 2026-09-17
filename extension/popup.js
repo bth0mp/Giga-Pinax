@@ -193,8 +193,11 @@ function currentReference() {
     volume: $('ric-volume').value, section: visible('ric-section') };
 }
 
+// The default currency lives in the durable root, written through the background bridge by the
+// companion half of this page; the copy here is only the seed that migration reads once, so it is
+// kept exactly as it was found rather than following the select.
 function savePreferences() {
-  preferences = { ...preferences, ...currentReference(), currency: $('currency').value };
+  preferences = { ...preferences, ...currentReference() };
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences)); }
   catch { $('storage-note').hidden = false; }
 }

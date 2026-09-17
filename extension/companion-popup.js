@@ -224,6 +224,8 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// Only for a bridge that throws rather than answering: saveCurrency names every failure it returns.
+const CURRENCY_NOT_SAVED = 'The currency could not be saved.';
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
 // background, so the note must not promise a loss that is not one.
 const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
@@ -255,6 +257,7 @@ async function initCompanionPopup() {
   const $ = (id) => document.getElementById(id);
   let bridge;
   let initializeCompanionPreferences;
+  let saveCurrency;
   let snapshot = { lots: [], auctionEvents: [], alerts: [] };
   let safeCard = null;
   let captureDraft = null;
@@ -266,7 +269,7 @@ async function initCompanionPopup() {
   mountSourcesMenu($('sources-menu'));
   try {
     bridge = await import('./browser-api.js');
-    ({ initializeCompanionPreferences } = await import('./companion-preferences.js'));
+    ({ initializeCompanionPreferences, saveCurrency } = await import('./companion-preferences.js'));
   } catch { /* the calculator remains useful in a standalone page */ }
   if (!extensionRuntimeAvailable(globalThis.browser ?? globalThis.chrome)) bridge = null;
 
@@ -489,7 +492,24 @@ async function initCompanionPopup() {
     if (reply?.ok) {
       snapshot = reply.value;
       const currency = snapshot.preferences?.currency;
-      if (CURRENCIES.includes(currency)) calculator.setValues({ currency });
+      if (CURRENCIES.includes(currency)) {
+        calculator.setValues({ currency });
+        // The stored preference is the one home for the default currency: it replaces the seed the
+        // research half showed before this reply arrived. Nothing is looked up at start-up, so the
+        // select is set without the change its own handler answers.
+        $('currency').value = currency;
+      }
+      // Price research never waits on storage, so the write is sent and answered for on its own.
+      $('currency').addEventListener('change', () => {
+        const chosen = $('currency').value;
+        if (!CURRENCIES.includes(chosen)) return;
+        void saveCurrency(bridge, chosen, snapshot.preferences)
+          .then((saved) => {
+            if (saved?.ok) snapshot = { ...snapshot, preferences: saved.value };
+            else announce(saved?.message || CURRENCY_NOT_SAVED, true);
+          })
+          .catch((error) => announce(error?.message || CURRENCY_NOT_SAVED, true));
+      });
       renderSummary();
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);

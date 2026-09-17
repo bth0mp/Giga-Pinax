@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initializeCompanionPreferences } from '../extension/companion-preferences.js';
+import { initializeCompanionPreferences, saveCurrency } from '../extension/companion-preferences.js';
 
 const GIGA_KEY = 'giga-pinax-preferences-v1';
 const LEGACY_KEY = 'coin-lookup-test-preferences-v1';
@@ -47,9 +47,7 @@ test('a missing companion preference copies only a validated Giga currency', asy
   const local = storage({ [GIGA_KEY]: JSON.stringify({ currency: 'CHF', catalogue: 'Bop', number: '9C', terms: { x: 'secret' } }) });
 
   assert.deepEqual(await initializeCompanionPreferences(api, local), { ok: true, value: final });
-  assert.deepEqual(api.commands[0].preferences, {
-    currency: 'CHF', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', sampleMode: false,
-  });
+  assert.deepEqual(api.commands[0].preferences, { currency: 'CHF' });
   assert.deepEqual(local.removed, []);
 });
 
@@ -63,8 +61,7 @@ test('unsupported Giga currency falls back and old companion migration takes pre
   });
 
   assert.deepEqual(await initializeCompanionPreferences(api, local), { ok: true, value: final });
-  assert.equal(api.commands[0].preferences.currency, 'GBP');
-  assert.equal(api.commands[0].preferences.catalogue, 'RIC');
+  assert.deepEqual(api.commands[0].preferences, { currency: 'GBP' });
   assert.deepEqual(local.removed, [LEGACY_KEY]);
 });
 
@@ -77,4 +74,67 @@ test('failed migration is returned and never removes the legacy preference', asy
     ok: false, code: 'storage', outcome: 'not-committed', message: 'failed',
   });
   assert.deepEqual(local.removed, []);
+});
+
+function writer(replies, snapshots = []) {
+  const commands = [];
+  let reads = 0;
+  return {
+    commands,
+    reads: () => reads,
+    newRequestId: () => `00000000-0000-4000-8000-00000000000${commands.length + 1}`,
+    getSnapshot: async () => { reads += 1; return snapshots.shift() ?? { ok: false, message: 'no snapshot' }; },
+    sendCommand: async (command) => { commands.push(command); return replies.shift(); },
+  };
+}
+
+test('a currency change is written against the revision it was read at', async () => {
+  const saved = { revision: 3, currency: 'EUR' };
+  const api = writer([{ ok: true, value: saved }]);
+
+  assert.deepEqual(await saveCurrency(api, 'EUR', { revision: 2, currency: 'USD' }), { ok: true, value: saved });
+  assert.deepEqual(api.commands, [{
+    type: 'preferences.save',
+    requestId: '00000000-0000-4000-8000-000000000001',
+    expectedRevision: 2,
+    preferences: { currency: 'EUR' },
+  }]);
+  assert.equal(api.reads(), 0);
+});
+
+test('a conflicting currency change re-reads and retries exactly once', async () => {
+  const saved = { revision: 9, currency: 'GBP' };
+  const api = writer(
+    [{ ok: false, code: 'conflict', message: 'Preferences changed in another view.' }, { ok: true, value: saved }],
+    [{ ok: true, value: { preferences: { revision: 8, currency: 'CHF' } } }],
+  );
+
+  assert.deepEqual(await saveCurrency(api, 'GBP', { revision: 2, currency: 'USD' }), { ok: true, value: saved });
+  assert.deepEqual(api.commands.map(({ expectedRevision }) => expectedRevision), [2, 8]);
+  assert.equal(api.reads(), 1);
+});
+
+test('a second conflict is left to the view that is still writing', async () => {
+  const conflict = { ok: false, code: 'conflict', message: 'Preferences changed in another view.' };
+  const api = writer([conflict, conflict], [{ ok: true, value: { preferences: { revision: 8 } } }]);
+
+  assert.deepEqual(await saveCurrency(api, 'GBP', { revision: 2 }), conflict);
+  assert.equal(api.commands.length, 2);
+  assert.equal(api.reads(), 1);
+});
+
+test('a currency change with nothing to write against, or an unreadable re-read, reports it', async () => {
+  const none = writer([]);
+  const absent = await saveCurrency(none, 'GBP', null);
+  assert.equal(absent.ok, false);
+  assert.equal(none.commands.length, 0);
+
+  const unreadable = writer([{ ok: false, code: 'conflict', message: 'gone' }], [{ ok: false, message: 'storage' }]);
+  assert.deepEqual(await saveCurrency(unreadable, 'GBP', { revision: 1 }), { ok: false, message: 'storage' });
+  assert.equal(unreadable.commands.length, 1);
+});
+
+test('a failure the bridge answers nothing for still reads as a failure', async () => {
+  const api = writer([undefined]);
+  assert.equal((await saveCurrency(api, 'GBP', { revision: 1 })).ok, false);
 });
