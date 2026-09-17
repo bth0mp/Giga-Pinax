@@ -19,6 +19,10 @@ const numberKey = (value) => {
   return digits ? digits.replace(/^0+(?=\d)/, '') : null;
 };
 
+// A JSON object and nothing else: a number or a string in place of a map has no entries and no keys, so it would read as a bundle that simply holds
+// nothing, and a lookup would answer "not in RIC" from a file that is plainly not the one the package ships.
+const isMap = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 function labelFor(values, cache) {
   if (!Array.isArray(values) || values.length !== 1) return null;
   return cache?.get?.(values[0]) ?? values[0];
@@ -68,9 +72,11 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   };
   const metadata = async () => {
     const value = await json(fetchImpl, new URL('metadata.json', baseUrl));
-    if (value?.schemaVersion !== 1 || value.corpus !== 'ocre' || !value.shards || Array.isArray(value.shards) || !value.aliases || Array.isArray(value.aliases)) throw new Error('Invalid local OCRE metadata');
+    if (value?.schemaVersion !== 1 || value.corpus !== 'ocre' || !isMap(value.shards) || !isMap(value.aliases)) throw new Error('Invalid local OCRE metadata');
     for (const [prefix, parts] of Object.entries(value.shards)) {
       if (!validPrefix(prefix) || !Array.isArray(parts) || parts.length === 0) throw new Error('Invalid local OCRE shard map');
+      // Past the twenty-sixth part there is no letter left to name one, and fromCharCode would carry on past "z".
+      if (parts.length > 26) throw new Error(`Local OCRE volume ${prefix} has more parts than there are letters to name them`);
       // The parts of a volume are its own files in id order: each named as it was written, the first taking everything before the second's first id.
       if (parts.some((part, position) => part?.file !== shardFile(prefix, parts, position) || typeof part.from !== 'string'
         || (position === 0 ? part.from !== '' : part.from <= parts[position - 1].from))) throw new Error('Invalid local OCRE shard map');
@@ -87,7 +93,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   const indexEntries = () => (indexPromise ??= retried(loadIndex, () => { indexPromise = undefined; }));
   const loadNumbers = async () => {
     const value = await json(fetchImpl, new URL('numbers.json', baseUrl));
-    if (value?.schemaVersion !== 1 || !value.numbers || Array.isArray(value.numbers)) throw new Error('Invalid local OCRE number index');
+    if (value?.schemaVersion !== 1 || !isMap(value.numbers)) throw new Error('Invalid local OCRE number index');
     return value.numbers;
   };
   const numberIndex = () => (numbersPromise ??= retried(loadNumbers, () => { numbersPromise = undefined; }));
@@ -107,7 +113,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   };
   const shardRecords = async (url) => {
     const value = await json(fetchImpl, url);
-    if (value?.schemaVersion !== 1 || !value.records || Array.isArray(value.records)) throw new Error('Invalid local OCRE shard');
+    if (value?.schemaVersion !== 1 || !isMap(value.records)) throw new Error('Invalid local OCRE shard');
     return value.records;
   };
   const shard = (prefix, meta, id) => {

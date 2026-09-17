@@ -51,6 +51,8 @@ function fixtureFetch(overrides = {}) {
     if (!key) return { ok: false, status: 404, json: async () => ({}) };
     const value = routes[key];
     if (value instanceof Error) throw value;
+    // A number stands for the status a file comes back with, so a bundle with one file missing can be served as the package would serve it.
+    if (typeof value === 'number') return { ok: false, status: value, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => value };
   };
   fetchImpl.calls = calls;
@@ -119,6 +121,18 @@ test('missing and corrupt bundles fail closed and never claim a catalogue miss',
   assert.equal((await missing.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1' })).status, 'unavailable');
   const corrupt = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': { schemaVersion: 2 } }), baseUrl: 'moz-extension://test/data/ocre/' });
   assert.equal((await corrupt.lookupById('ocre', 'ric.1(2).ner.306')).status, 'unavailable');
+  // numbers.json decides which titles a number is read from, so a bundle whose number index is missing, foreign or pointing outside the index it
+  // was built for must fail closed. "none" from any of these would tell a collector the coin is not in RIC when only the file is wrong.
+  for (const override of [{ 'numbers.json': 404 }, { 'numbers.json': { schemaVersion: 2, numbers: { 306: [0] } } },
+    { 'numbers.json': { schemaVersion: 1, numbers: 306 } }, { 'numbers.json': { schemaVersion: 1, numbers: { 306: [99] } } },
+    { 'metadata.json': { ...metadata, shards: 7 } }, { 'records-1(2).json': { schemaVersion: 1, records: 306 } },
+    // Past "z" there is no letter left to name a part, and fromCharCode would carry on into punctuation.
+    { 'metadata.json': { ...metadata, shards: { ...metadata.shards, 3: Array.from({ length: 27 }, (value, position) => (
+      { file: `records-3.${String.fromCharCode(97 + position)}.json`, from: position === 0 ? '' : `ric.3.x.${String(position).padStart(3, '0')}` })) } } }]) {
+    const local = createLocalCatalogue({ fetchImpl: fixtureFetch(override), baseUrl: 'moz-extension://test/data/ocre/' });
+    const result = await local.lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+    assert.equal(result.status, 'unavailable', JSON.stringify(override));
+  }
 });
 
 test('packed cards use verified cached labels and omit ambiguous summaries and portraits', () => {
