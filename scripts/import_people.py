@@ -78,6 +78,12 @@ def binding_value(binding, key):
     return value.get("value") if isinstance(value, dict) else None
 
 
+def written_language(tag) -> bool:
+    """Whether a label's language is one a dealer writes a Roman ruler's name in: English or Latin."""
+    code = (tag.get("xml:lang") if isinstance(tag, dict) else tag) or ""
+    return code.lower().split("-")[0] in ("en", "la")
+
+
 def normalise_alias(label: str) -> str | None:
     """One alias as the extension compares names: folded, its diacritics stripped, its spacing squashed.
 
@@ -91,7 +97,12 @@ def normalise_alias(label: str) -> str | None:
 
 
 def alias_rows(people: dict[str, tuple[str, list[str]]]) -> dict[str, list[str]]:
-    """The aliases each person keeps: normalised, de-duplicated, never their own name, never one that names two people."""
+    """The aliases each person keeps: normalised, de-duplicated, never their own name.
+
+    A spelling two people share ("Valerianus" is the Latin name of both Valerians) is kept on both of them. The lookup already handles a name with
+    several owners by offering them all, and that is the honest answer: dropping the alias loses the name, and keeping it on one owner alone would
+    open somebody else's coin.
+    """
     normalised = {}
     for concept_id, (name, labels) in people.items():
         own = normalise_alias(name)
@@ -101,11 +112,7 @@ def alias_rows(people: dict[str, tuple[str, list[str]]]) -> dict[str, list[str]]
             if alias and alias != own and alias not in aliases:
                 aliases.append(alias)
         normalised[concept_id] = aliases
-    owners: dict[str, int] = {}
-    for aliases in normalised.values():
-        for alias in aliases:
-            owners[alias] = owners.get(alias, 0) + 1
-    return {concept_id: sorted(alias for alias in aliases if owners[alias] == 1) for concept_id, aliases in normalised.items()}
+    return {concept_id: sorted(aliases) for concept_id, aliases in normalised.items()}
 
 
 def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
@@ -114,7 +121,8 @@ def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
         payload = json.loads(snapshot_bytes)
         bindings = payload.get("results", {}).get("bindings", [])
         rows = ((binding_value(b, "id"), binding_value(b, "label"),
-                 binding_value(b, "altLabel"), binding_value(b, "type")) for b in bindings)
+                 binding_value(b, "altLabel") if written_language(b.get("altLabel")) else None,
+                 binding_value(b, "type")) for b in bindings)
     else:
         root = ET.fromstring(snapshot_bytes)
         extracted = []
@@ -124,9 +132,11 @@ def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
             types += [child.get(RDF + "resource") for child in node if child.tag == RDF + "type"]
             labels = [child.text.strip() for child in node if child.tag == SKOS + "prefLabel" and child.text
                       and (child.get(XML + "lang") or "").lower().startswith("en")]
-            # Every prefLabel and altLabel Nomisma files, whatever language it is under: a heading spelling is a heading spelling ("Valerian I" is
-            # Nomisma's Norwegian label for Valerian, "Constantius I" its Romanian one), and normalise_alias drops the scripts a dealer never writes.
-            aliases = [child.text.strip() for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text]
+            # Only the English and Latin labels, which are the spellings a dealer writes. Every other language was tried and had to be taken out:
+            # its labels are ordinary words of that language as often as they are names ("August", "Severe", "Marc", "Juan", "Mario"), and a lot's
+            # prose then named rulers nobody wrote down.
+            aliases = [child.text.strip() for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text
+                       and written_language(child.get(XML + "lang"))]
             extracted.extend((uri, label, alias, concept_type) for concept_type in types if concept_type
                              for label in labels or [None] for alias in aliases or [None])
         rows = extracted
@@ -166,7 +176,6 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         rows.append((concept_id, name, volumes, sorted(concept["aliases"])))
 
     kept = alias_rows({concept_id: (name, labels) for concept_id, name, _, labels in rows})
-    offered = sum(len({normalise_alias(label) for label in labels} - {None, normalise_alias(name)}) for _, name, _, labels in rows)
     rows = [(concept_id, name, volumes, kept[concept_id]) for concept_id, name, volumes, _ in rows]
 
     report = {
@@ -176,7 +185,6 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         "excludedMissingLabelCount": missing_label,
         "missingConceptCount": missing_concept,
         "aliasCount": sum(len(aliases) for _, _, _, aliases in rows),
-        "droppedAliasCount": offered - sum(len(aliases) for _, _, _, aliases in rows),
     }
     source = {
         "endpoint": ENDPOINT,

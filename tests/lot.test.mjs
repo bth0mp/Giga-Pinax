@@ -96,7 +96,7 @@ test('a typed reference ends at its first number: a second one after a comma is 
 
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
-  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], ['Faustina the Elder'], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
+  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
   assert.deepEqual(findReferences('Claudius with Nero, as Caesar. RIC 107').rulers, ['Claudius', 'Nero']);
   assert.deepEqual(findReferences('Divus Vespasian. Struck under Titus. RIC 357').rulers, ['Vespasian', 'Titus']);
   // A mint is a RIC section too, but not a person; a name after the first reference is not the lot's ruler.
@@ -122,11 +122,12 @@ test('an arbitrary or malformed OCRE token is never carried as a record hint', (
   }
 });
 
-test('several distinct OCRE ids disable the hint, and a Latin spelling two rulers share names neither of them', () => {
+test('several distinct OCRE ids disable the hint, and an ambiguous Latin person alias keeps every identity', () => {
   const several = findReferences('Constantine II. RIC VII 287 OCRE ric.7.lon.287; OCRE ric.7.rom.287');
   assert.equal(lotLookup(several.references[0], several.rulers).id, undefined);
-  // Nomisma files "Valerianus" under Valerian and under Valerian II alike, so the importer keeps it for neither and the heading names no ruler.
-  assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, []);
+  // Nomisma files "Valerianus" under Valerian and under Valerian II alike: the heading names both, and the lookup offers the two rather than
+  // opening one of them.
+  assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, ['Valerian', 'Valerian II']);
   assert.deepEqual(findReferences('Valerian II. RIC 1').rulers, ['Valerian II']);
   assert.deepEqual(findReferences('Valerian I. RIC 1').rulers, ['Valerian']);
 });
@@ -874,18 +875,37 @@ test('a regnal numeral after a name is read in capitals only, so a lower-case le
   assert.deepEqual(rulers('Valerian II. RIC 1.'), ['Valerian II']);
 });
 
-test('the numbered and variant heading spellings Nomisma knows resolve to the ruler they name', () => {
+// Reading every language's labels turned ordinary words into emperors: a Portuguese "Faustina", an Estonian "Severus", a German "August", a French
+// "Sévère", a Spanish "Juan" and a Latin dative "Iovi" all became rulers, and "Sept. Severus. RIC 16" then opened a Severus II follis. Each of these
+// is prose, a month, a legend or an abbreviation, and none of them named a ruler before the aliases were widened.
+test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abbreviation stay text', () => {
+  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina Senior, 138-141. AR Denarius. RIC III 344.',
+    'Severe scratches and a flan crack. RIC 1', 'Denarius. Rev: Pietas Augusti. RIC 1', 'Struck August 70. RIC 1', 'Jovi Statori. RIC 1',
+    'Marc Antony legionary denarius. RIC 1', 'Juan Carlos collection. RIC 1', 'Mario Ratto, 1962. RIC 1', 'Drusus. RIC 1', 'Maximinus. RIC 1',
+  ]) assert.deepEqual(findReferences(text).rulers, [], text);
+});
+
+test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {
   const rulers = (text) => findReferences(text).rulers;
   for (const [heading, expected] of [
+    // A regnal "I" names the plain person only where the table holds the "II" it is told apart from.
     ['Valerian I', ['Valerian']],
-    ['Maximinus II', ['Maximinus Daia']],
-    ['Constantius I', ['Constantius Chlorus']],
-    ['Faustina II', ['Faustina the Younger']],
-    ['Diva Faustina I', ['Faustina the Elder']],
+    ['Licinius I', ['Licinius']],
+    ['Philippus Arabs', ['Philip the Arab']],
+    ['Claudius Gothicus', ['Claudius Gothicus']],
+    // RIC's own section names, which need no alias at all.
     ['Philip I', ['Philip I']],
     ['Florian', ['Florian']],
     ['Severina', ['Severina']],
     ['Mariniana', ['Mariniana']],
+    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: they name nobody rather than somebody.
+    ['Maximinus I', []],
+    ['Maximinus II', []],
+    ['Constantius I', []],
+    ['Faustina II', []],
+    ['Faustina Junior', []],
+    ['Diva Faustina I', []],
+    ['Julian II', []],
   ]) assert.deepEqual(rulers(`${heading}. Denarius. RIC 12.`), expected, heading);
 });
 

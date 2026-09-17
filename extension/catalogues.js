@@ -105,15 +105,45 @@ export function rulerKey(ruler) {
   return /^[\x20-\x7e]*$/.test(text) ? text : text.normalize('NFD').replace(/\p{M}+/gu, '');
 }
 
-// Every name and alias, indexed once: a lot heading is compared against two thousand of them, and a Map has no inherited keys ("constructor").
+// Every name and alias Nomisma files, indexed once: a lot heading is compared against all of them, and a Map has no inherited keys ("constructor").
+// A spelling two people share ("Valerianus" is the Latin name of both Valerians) keeps both: the lookup offers a choice, which is the honest answer.
 const PEOPLE_BY_NAME = new Map();
-for (const person of RIC_PEOPLE) {
-  for (const label of new Set([person.name, ...person.aliases].map(rulerKey))) {
-    if (!PEOPLE_BY_NAME.has(label)) PEOPLE_BY_NAME.set(label, []);
-    PEOPLE_BY_NAME.get(label).push(person);
-  }
+const own = (label, person) => {
+  if (!PEOPLE_BY_NAME.has(label)) PEOPLE_BY_NAME.set(label, []);
+  if (!PEOPLE_BY_NAME.get(label).includes(person)) PEOPLE_BY_NAME.get(label).push(person);
+};
+for (const person of RIC_PEOPLE) for (const label of new Set([person.name, ...person.aliases].map(rulerKey))) own(label, person);
+
+// The people each spelling names outright, before any is widened below: a numeral is read against these, never against a widened one.
+const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label, [...people]]));
+
+const SECTION_NAMES = new Set(Object.values(RIC_SECTIONS).flat().flatMap((name) => [rulerKey(name), rulerKey(name.split(' (')[0])]));
+const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const labelsOf = (person) => [person.name, ...person.aliases].map(rulerKey);
+// A bare one-word name is a nomen or a cognomen at least as often as it is one man: "Severus" stands in Septimius Severus, Severus Alexander,
+// Severus II and Libius Severus alike, and "Licinius" in Gallienus's own Latin name. Such a name means every person carrying it as a whole word in
+// an English or Latin label, or in a RIC section, so it is offered and never resolved to one of them. A one-word name RIC heads a section with
+// ("Nero", "Titus", "Valerian") is settled by RIC's own usage and keeps the person it names.
+for (const [label, people] of [...PEOPLE_BY_NAME]) {
+  if (label.includes(' ') || SECTION_NAMES.has(label)) continue;
+  const word = new RegExp(String.raw`(?<![\p{L}\d])${escaped(label)}(?![\p{L}\d])`, 'u');
+  const sharing = RIC_PEOPLE.filter((person) => !people.includes(person) && labelsOf(person).some((text) => word.test(text)));
+  const sections = [...SECTION_NAMES].filter((name) => word.test(name)).flatMap((name) => PEOPLE_BY_NAME.get(name) ?? []);
+  for (const person of [...sharing, ...sections]) own(label, person);
+}
+// A regnal "I" tells two people of the same name apart and says nothing else, so it names the plain one only where the table really holds the
+// other: "Licinius I" is Licinius because there is a Licinius II. Nothing more is read into a numeral — "Maximinus I" and "Julian II" stay unknown
+// unless a label spells them out.
+for (const [label, people] of NAMED_PEOPLE) {
+  const second = NAMED_PEOPLE.get(`${label} ii`);
+  if (!second || PEOPLE_BY_NAME.has(`${label} i`) || second.some((person) => people.includes(person))) continue;
+  PEOPLE_BY_NAME.set(`${label} i`, [...people]);
 }
 export const ricPeople = (name) => [...(PEOPLE_BY_NAME.get(rulerKey(name)) ?? [])];
+// Every spelling the table answers to, with the people each one names: a lot heading reads them straight, so a shared spelling and a derived one
+// behave in a heading exactly as they do in a typed field.
+export const PEOPLE_SPELLINGS = Object.freeze([...PEOPLE_BY_NAME]
+  .map(([label, people]) => Object.freeze([label, Object.freeze(people.map(({ name }) => name))])));
 
 export const isRicPerson = (name) => ricPeople(name).length > 0;
 export function canonicalRicPerson(name) {

@@ -1170,7 +1170,7 @@ test('a facet miss retries the number search without rulers once, and offers eve
   assert.equal(nero.calls[1], `https://numismatics.org/ocre/apis/search?q=${encodeURIComponent('(typeNumber:"972" OR typeNumber:972_*)')}`);
   const single = fakeFetch({ 'portrait_facet': '<feed></feed>', 'ocre/apis/search': feed('RIC III Faustina I 394a') });
   assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: 'III', section: '', number: '394a', rulers: ['Faustina'] }, { fetchImpl: single }),
-    { status: 'candidates', corpus: 'ocre', query: 'RIC III 394a (Faustina the Younger)', partial: true, candidates: [{ id: 'x0', title: 'RIC III Faustina I 394a' }] });
+    { status: 'candidates', corpus: 'ocre', query: 'RIC III 394a (Faustina)', partial: true, candidates: [{ id: 'x0', title: 'RIC III Faustina I 394a' }] });
   assert.equal(single.calls.length, 2);
   const none = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '99999', rulers: ['Nero'] }, { fetchImpl: none }), { status: 'none', corpus: 'ocre', query: 'RIC 99999 (Nero)' });
@@ -1335,9 +1335,10 @@ test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, 
   assert.deepEqual(pickRicEntries([valerian], { catalogue: 'RIC', volume: 'V', section: 'Constantius I', number: '1' }), { status: 'none' });
   // The facets hold OCRE's names, so a lot heading's spelling is asked for under the name the aliases resolve it to.
   const feed = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
-  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius II'] }, { fetchImpl: feed });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius Gothicus'] }, { fetchImpl: feed });
   assert.ok(feed.calls[0].includes(encodeURIComponent('portrait_facet:"Claudius II Gothicus"')), feed.calls[0]);
+  // A spelling no English or Latin label carries is asked for exactly as it was written, never resolved to a guess.
   const daia = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
-  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus Daia"')), daia.calls[0]);
+  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
 });

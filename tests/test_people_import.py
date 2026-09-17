@@ -38,20 +38,20 @@ class PeopleImportTests(unittest.TestCase):
             "excludedNonPersonCount": 1,
             "excludedMissingLabelCount": 1,
             "missingConceptCount": 1,
-            "aliasCount": 1,
-            "droppedAliasCount": 2,
+            "aliasCount": 2,
         }, report)
         self.assertIn("export const RIC_PEOPLE_SOURCE", text)
         self.assertIn('license: "CC-BY-3.0"', text)
         self.assertIn('id: "constantine_ii", name: "Constantine II"', text)
         self.assertIn('volumes: Object.freeze(["VII", "VIII"])', text)
-        # Aliases are case-folded with their diacritics stripped, so a heading reaches them however a dealer spells it; one both Constantines
-        # carry names neither of them and is dropped, and a label in another script could never match the text the extension reads.
-        self.assertIn('id: "constantine_ii", name: "Constantine II", volumes: Object.freeze(["VII", "VIII"]), aliases: Object.freeze(["constantin el joven"])', text)
-        self.assertIn('id: "other_constantine", name: "Constantine II"', text)
+        # Aliases are case-folded with their diacritics stripped, so a heading reaches them however a dealer spells it. A Latin label both
+        # Constantines carry stays on both of them, so the lookup offers the two rather than picking one; a Spanish or Greek label is no spelling
+        # a dealer writes and is never read.
+        self.assertIn('id: "constantine_ii", name: "Constantine II", volumes: Object.freeze(["VII", "VIII"]), aliases: Object.freeze(["constantinus ii"])', text)
+        self.assertIn('id: "other_constantine", name: "Constantine II", volumes: Object.freeze(["X"]), aliases: Object.freeze(["constantinus ii"])', text)
         self.assertNotIn("Constantinus II.", text)
         self.assertNotIn("constantinus ii.", text)
-        self.assertNotIn("constantine ii", text)
+        self.assertNotIn("constantin el joven", text)
         self.assertNotIn("Constantín", text)
         self.assertNotIn("constantinopolis_personfication", text)
         self.assertNotIn("unlabelled_person", text)
@@ -62,8 +62,9 @@ class PeopleImportTests(unittest.TestCase):
         snapshot = b"""<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' xmlns:foaf='http://xmlns.com/foaf/0.1/' xmlns:skos='http://www.w3.org/2004/02/skos/core#'><foaf:Person rdf:about='http://nomisma.org/id/person'><skos:prefLabel xml:lang='en'>Person</skos:prefLabel><skos:prefLabel xml:lang='la'>Persona</skos:prefLabel><skos:altLabel xml:lang='la'>Persona.</skos:altLabel><skos:altLabel xml:lang='de'>Person DE</skos:altLabel></foaf:Person><rdf:Description rdf:about='http://nomisma.org/id/person#provenance'/></rdf:RDF>"""
         concepts = module.read_concepts(snapshot, {"person": {"7"}})
         self.assertEqual({"person"}, set(concepts))
-        # Every label Nomisma carries is a possible heading spelling, whatever language it is filed under; the English one is still the name.
-        self.assertEqual({"Person", "Persona", "Persona.", "Person DE"}, concepts["person"]["aliases"])
+        # Only the English and Latin labels are spellings a dealer writes. A label in any other language is an ordinary word of that language as
+        # often as it is a name ("August", "Severe", "Marc", "Juan"), and reading those turned lot prose into rulers.
+        self.assertEqual({"Person", "Persona", "Persona."}, concepts["person"]["aliases"])
         self.assertEqual({"Person"}, concepts["person"]["labels"])
 
     def test_memberships_use_active_authority_or_obverse_portrait(self):
@@ -84,7 +85,7 @@ class PeopleImportTests(unittest.TestCase):
         self.assertEqual({"7", "8"}, memberships["constantine_ii"])
 
 
-    def test_aliases_are_normalised_deduplicated_and_never_ambiguous(self):
+    def test_aliases_are_normalised_deduplicated_and_kept_on_every_owner(self):
         module = load_module()
         self.assertEqual("faustina the younger", module.normalise_alias("  Faustina   the Younger "))
         self.assertEqual("juliano el apostata", module.normalise_alias("Juliano el Apóstata"))
@@ -94,9 +95,10 @@ class PeopleImportTests(unittest.TestCase):
             "valerian": ("Valerian", ["Valerianus", "Valerian I", "valerianus", "Valérian"]),
             "valerian_ii": ("Valerian II", ["Valerianus", "Valerian the Younger"]),
         })
-        # "Valerianus" names both, so it names neither, and "Valerian" and "Valerian" fold onto the name itself.
-        self.assertEqual(["valerian i"], rows["valerian"])
-        self.assertEqual(["valerian the younger"], rows["valerian_ii"])
+        # "Valerianus" names both Valerians, so it stays on both and the lookup offers the two: dropping it lost the name altogether, and keeping
+        # it on one of them would open the wrong coin. "valerianus" and "Valérian" fold onto an alias and onto the name itself.
+        self.assertEqual(["valerian i", "valerianus"], rows["valerian"])
+        self.assertEqual(["valerian the younger", "valerianus"], rows["valerian_ii"])
 
 if __name__ == "__main__":
     unittest.main()

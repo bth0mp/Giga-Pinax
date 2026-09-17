@@ -1,6 +1,5 @@
 import { EDITION, INVISIBLE, kmNumber, parseReference, readable, REMARKS, ricSection, sectionBracket, sgNumber, VARIANT } from './lookup.js';
-import { RIC_SECTIONS } from './catalogues.js';
-import { RIC_PEOPLE } from './ric-people.js';
+import { PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -189,34 +188,34 @@ const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((cha
   return upper === lower || upper.length !== 1 || lower.length !== 1
     ? character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : `[${upper}${lower}]`;
 }).join('');
-const NON_PERSON_SECTION = /^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
+// A heading is folded the way the importer folded every alias: its diacritics stripped, so "Filipo el Árabe" is compared as the table holds it.
+// Stripping only ever shortens the text, so the names are still found in the order they stand in. Almost every heading is plain ASCII and skips it.
+const fold = (text) => (/[^\x20-\x7e\n]/.test(text) ? text.normalize('NFD').replace(/\p{M}+/gu, '') : text);
+const NON_PERSON_SECTION =/^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
 const SECTION_SPELLINGS = Object.freeze({ 'Claudius Gothicus': ['Claudius II', 'Claudius II Gothicus'] });
 const sectionPeople = [...new Set(Object.entries(RIC_SECTIONS).filter(([volume]) => !['VI', 'VII', 'VIII', 'IX'].includes(volume))
   .flatMap(([, sections]) => sections.map((section) => section.split(' (')[0])).filter((name) => !NON_PERSON_SECTION.test(name)))];
-const rulerLabels = [
-  ...sectionPeople.flatMap((name) => [...name.split('/'), ...(SECTION_SPELLINGS[name] ?? [])].map((label) => ({ name, label, preferred: true }))),
-  ...RIC_PEOPLE.flatMap((person) => [...new Set([person.name, ...person.aliases])].map((label) => ({ name: person.name, label }))),
-];
-const labelGroups = new Map();
-for (const row of rulerLabels) {
-  const key = row.label.replace(/\s+/g, ' ').trim().toLowerCase();
-  if (!labelGroups.has(key)) labelGroups.set(key, []);
-  labelGroups.get(key).push(row);
+// Every spelling the people table answers to, then RIC's own section names over the top: a spelling RIC heads a section with is that section's
+// ruler and nobody else, since RIC's titles are what the lookup has to match.
+const labelGroups = new Map(PEOPLE_SPELLINGS.map(([label, names]) => [label, [...names]]));
+const fromSection = new Set();
+for (const name of sectionPeople) {
+  for (const spelling of [...name.split('/'), ...(SECTION_SPELLINGS[name] ?? [])]) {
+    const label = rulerKey(spelling);
+    if (!fromSection.has(label)) { labelGroups.set(label, []); fromSection.add(label); }
+    if (!labelGroups.get(label).includes(name)) labelGroups.get(label).push(name);
+  }
 }
-const RULERS = Object.freeze([...labelGroups.entries()].map(([key, rows]) => {
-  const preferred = rows.filter((row) => row.preferred);
-  const exact = rows.filter(({ name, label }) => name.toLowerCase() === label.toLowerCase());
-  const names = [...new Set((preferred.length > 0 ? preferred : exact.length > 0 ? exact : rows).map(({ name }) => name))];
-  const label = rows[0].label;
-  return [names, label, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), key.split(' ')[0]];
-}).sort((a, b) => b[1].length - a[1].length));
+const RULERS = Object.freeze([...labelGroups.entries()]
+  .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
+  .sort((a, b) => b[1].length - a[1].length));
 const LABELS = new Set(labelGroups.keys());
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
 function rulersIn(text) {
-  let rest = text.replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
   // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
   const lower = rest.toLowerCase();
