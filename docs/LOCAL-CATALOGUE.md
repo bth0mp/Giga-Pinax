@@ -39,6 +39,8 @@ The label file is read lazily, once, the first time a card is built, and never f
 
 `ric-people.js` includes the 214 concepts that Nomisma classifies as `foaf:Person`; it excludes 58 deities, personifications, groups and other concepts. Canonical names are English preferred labels. English and Latin preferred or alternate labels are search aliases. Missing legends, descriptions and dates remain absent.
 
+The same generated module carries the modern English name Nomisma gives a RIC VI–IX mint section, so a typed "Trier" reaches RIC's **Treveri**. Of the 21 mint concepts in the tracked snapshot, 8 carry an English name that differs from the section RIC files them under. The other 13 carry no English name beyond the one RIC already uses — Londinium, Lugdunum, Arelate and the rest keep their own spelling — and none was invented for them, so those sections are reached by RIC's spelling alone.
+
 The people concept snapshot was retrieved on 15 September 2026 with one request to Nomisma's documented [`getRdf` aggregate API](https://nomisma.org/documentation/apis/), rather than one request per identifier. Its SHA-256 is `0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e`. The generated module records the endpoint, snapshot hash, generation date and inclusion counts. Volume membership is derived from active OCRE authority and obverse-portrait links; it helps suggest searches but does not alter RIC's catalogue sections or claim that every source link is historically correct.
 
 ## Runtime

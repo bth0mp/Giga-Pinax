@@ -1,6 +1,6 @@
-# Store publication pack for 0.29.0
+# Store publication pack
 
-This directory contains prepared copy and reproducible artwork for Chrome Web Store and Firefox Add-ons. It does not record a submission, signature or publication. Both publisher dashboards were signed out when this pack was prepared.
+This directory contains prepared copy and reproducible artwork for Chrome Web Store and Firefox Add-ons. It describes the current release; check it against the exact package before every submission. It does not record a submission, signature or publication. Both publisher dashboards were signed out when this pack was prepared.
 
 - [LISTING.md](LISTING.md): shared and store-specific listing copy, permission explanations and privacy declarations.
 - [REVIEWER-NOTES.md](REVIEWER-NOTES.md): functional review steps and build facts.
