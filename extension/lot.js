@@ -341,7 +341,11 @@ function normalise(written, key, cf) {
   const parsed = withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false));
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
-  const reference = type ? parsed : { catalogue: 'Other', number: text, volume: '', section: '' };
+  // A RIC key cites RIC whatever follows it, so its row is a RIC row even where the words are no reference this extension can place ("RIC 1,2" is two
+  // of a dealer's numbers under one key, "RIC XI" a volume RIC has not got): the lookup then reports a clean miss. Built as an Other row it was prices
+  // only, and its own text went to the sale sites as the phrase to median.
+  const unread = ric ? { catalogue: 'RIC', number: text.slice(key.length).replace(/^[\s.:#-]+/, '').trim(), volume: '', section: '' } : null;
+  const reference = type ? parsed : unread ?? { catalogue: 'Other', number: text, volume: '', section: '' };
   return { text, reference, cf, variant, typed: TYPED.includes(reference.catalogue) };
 }
 

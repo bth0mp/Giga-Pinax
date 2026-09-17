@@ -251,6 +251,19 @@ test('a lot row looks up its parsed reference, with the rulers only on a RIC ref
   assert.equal(lotLabel(only('Cf. RIC 20 var.'), []), 'RIC 20 · cf. · var.');
 });
 
+// A RIC key names a book with type data, so its row is a RIC row and the lookup reports a clean miss. Built as an Other row instead, each of these
+// sent its own text to the sale sites as the phrase to median a price from.
+test('a RIC key always makes a RIC row, never a prices-only Other one', () => {
+  for (const [text, number] of [['Denarius. RIC 1,2', '1,2'], ['Denarius. RIC XI Nero 1', 'XI Nero 1'], ['Denarius. RIC 1073 18', '1073 18']]) {
+    const found = only(text);
+    assert.deepEqual(found.reference, { catalogue: 'RIC', volume: '', section: '', number }, text);
+    assert.equal(found.typed, true, text);
+  }
+  // A row a reading rule refuses outright keeps no number at all and is still no row, and another catalogue's key still makes its prices-only row.
+  assert.deepEqual(texts('Trajan. RIC II, 2, 123'), []);
+  assert.deepEqual(texts('Denarius. RIC 972; Cohen 17'), ['RIC 972', 'Cohen 17']);
+});
+
 test('isLot: lot text, or a reference inside other words, but a mistyped type reference stays an error', () => {
   for (const text of ['RIC 972; Cohen 17', 'Diva Faustina I (Died 140/1) AR Denarius. RIC III (Antoninus Pius) 394a', 'cf. RIC 972', 'Lot 80: RIC 972',
     'SELEUCID KINGDOM. Antiochus VII Euergetes, 138-129 BC. AE. SC 2069']) {
