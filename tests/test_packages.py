@@ -301,12 +301,16 @@ class LocalCataloguePackageTests(unittest.TestCase):
             root = Path(temporary)
             data = root / "data/ocre"
             data.mkdir(parents=True)
-            metadata = {"schemaVersion": 1, "corpus": "ocre", "shards": {"2_1(2)": "records-2_1(2).json", "3": "records-3.json"}}
+            metadata = {"schemaVersion": 1, "corpus": "ocre", "shards": {
+                "2_1(2)": [{"file": "records-2_1(2).json", "from": ""}],
+                "3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json", "from": "ric.3.x.5"}],
+            }}
             (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
             (data / "unrelated-private.json").write_text("{}", encoding="utf-8")
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 self.assertEqual(
-                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/NOTICE.txt", "data/ocre/records-2_1(2).json", "data/ocre/records-3.json"),
+                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/numbers.json", "data/ocre/NOTICE.txt",
+                     "data/ocre/records-2_1(2).json", "data/ocre/records-3.a.json", "data/ocre/records-3.b.json"),
                     build.local_catalogue_assets(),
                 )
 
@@ -316,14 +320,25 @@ class LocalCataloguePackageTests(unittest.TestCase):
             root = Path(temporary)
             data = root / "data/ocre"
             data.mkdir(parents=True)
+            part = [{"file": "records-3.json", "from": ""}]
             cases = [
-                {"schemaVersion": 2, "corpus": "ocre", "shards": {"3": "records-3.json"}},
-                {"schemaVersion": 1, "corpus": "crro", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 2, "corpus": "ocre", "shards": {"3": part}},
+                {"schemaVersion": 1, "corpus": "crro", "shards": {"3": part}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": {}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"../secret": "records-../secret.json"}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "../../secret.json"}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "records-4.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"../secret": [{"file": "records-../secret.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "../../secret.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-4.json", "from": ""}]}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": ["records-3.json"]},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": []}},
+                # One part is the whole volume and carries no letter; several are lettered in order from the first.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.json", "from": ""}, {"file": "records-3.b.json", "from": "ric.3.x.5"}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.c.json", "from": "ric.3.x.5"}]}},
+                # A part's first id is what a lookup compares against, so the first must have none and the rest must rise.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": "ric.3.x.1"}, {"file": "records-3.b.json", "from": "ric.3.x.5"}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json"}]}},
             ]
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 for metadata in cases:

@@ -125,11 +125,22 @@ def local_catalogue_assets() -> tuple[str, ...]:
     shards = metadata.get("shards")
     if not isinstance(shards, dict) or not shards:
         raise ValueError("bundled OCRE metadata must name its shards")
-    for prefix, filename in shards.items():
-        if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?", prefix) or filename != f"records-{prefix}.json":
+    files = []
+    for prefix in sorted(shards):
+        parts = shards[prefix]
+        if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?", prefix) or not isinstance(parts, list) or not parts:
             raise ValueError("unsafe bundled OCRE shard name")
-    return (f"{base}/metadata.json", f"{base}/index.json", f"{base}/NOTICE.txt",
-            *(f"{base}/{shards[prefix]}" for prefix in sorted(shards)))
+        # A volume over the file cap is split into lettered parts in id order; one part is the whole volume and takes
+        # no letter. Every name is derived here, and a part starts where the one before it ended.
+        for position, part in enumerate(parts):
+            letter = "" if len(parts) == 1 else f".{chr(ord('a') + position)}"
+            if not isinstance(part, dict) or part.get("file") != f"records-{prefix}{letter}.json":
+                raise ValueError("unsafe bundled OCRE shard name")
+            first = part.get("from")
+            if not isinstance(first, str) or (first == "") != (position == 0) or (position and first <= parts[position - 1].get("from")):
+                raise ValueError("unsafe bundled OCRE shard order")
+            files.append(f"{base}/{part['file']}")
+    return (f"{base}/metadata.json", f"{base}/index.json", f"{base}/numbers.json", f"{base}/NOTICE.txt", *files)
 
 
 def read_manifest(browser: str) -> tuple[bytes, dict]:
