@@ -906,16 +906,27 @@ test('an event edited through the workspace form keeps its reminder identities',
 test('an unsupported stored schema is refused without being taken apart record by record', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.schemaVersion = SCHEMA_VERSION + 1;
-  stored.lots.push({ id: uuid(), title: 'Written by a later version' });
-  const storage = memoryStorage(stored);
+  // Judging a later version's records by today's validators is the bug, so the lot counts every
+  // read of it: the repair cannot copy or validate a record without going through these.
+  let readsOfTheLot = 0;
+  stored.lots.push(Object.defineProperties({}, {
+    id: { enumerable: true, get() { readsOfTheLot += 1; return '55555555-5555-4555-8555-555555555555'; } },
+    title: { enumerable: true, get() { readsOfTheLot += 1; return 'Written by a later version'; } },
+  }));
+  // The shared fake clones on read, which would strip the getters before the store sees them.
+  const storage = {
+    async get(key) { return { [key]: stored }; },
+    async set() { assert.fail('a root from a later version is left exactly as it is'); },
+  };
   const writer = createCommandWriter(storage, context());
 
   const reply = await writer.commitCommand(command('snapshot.get'));
   assert.equal(reply.ok, false);
   assert.equal(reply.code, 'storage');
-  assert.deepEqual(storage.read(), stored, 'a root from a later version is left exactly as it is');
+  assert.equal(readsOfTheLot, 0, 'a root we cannot read must not be walked record by record');
   const raw = await writer.commitCommand(command('snapshot.raw'));
-  assert.deepEqual(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
+  assert.equal(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
+  assert.equal(readsOfTheLot, 0);
 });
 
 // The ledger is appended to and trimmed from the front everywhere else, and a retry can only be
