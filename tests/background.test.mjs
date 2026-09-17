@@ -3,12 +3,19 @@ import assert from 'node:assert/strict';
 
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
-const listeners = { messages: [], installed: [], startup: [], clicked: [], alarms: [], notificationClicks: [] };
+const listeners = {
+  messages: [], installed: [], startup: [], clicked: [], alarms: [], notificationClicks: [], permissionsAdded: [],
+};
 const menus = [];
 const stored = {};
+const badges = [];
+const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
 let notificationCalls = 0;
+let storageSetFails = false;
+let tabCreateFails = false;
+let tabCalls = 0;
 
 globalThis.browser = {
   runtime: {
@@ -24,8 +31,15 @@ globalThis.browser = {
   },
   storage: {
     local: {
-      async get(key) { return Object.hasOwn(stored, key) ? { [key]: structuredClone(stored[key]) } : {}; },
-      async set(items) { Object.assign(stored, structuredClone(items)); },
+      async get(key) {
+        storageCalls.get += 1;
+        return Object.hasOwn(stored, key) ? { [key]: structuredClone(stored[key]) } : {};
+      },
+      async set(items) {
+        storageCalls.set += 1;
+        if (storageSetFails) throw new Error('storage is full');
+        Object.assign(stored, structuredClone(items));
+      },
     },
   },
   alarms: {
@@ -33,10 +47,16 @@ globalThis.browser = {
     create() {},
     onAlarm: { addListener(listener) { listeners.alarms.push(listener); } },
   },
-  action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
-  permissions: { async contains() { return notificationsAllowed; } },
-  notifications: { async create() { notificationCalls += 1; if (notificationResult instanceof Error) throw notificationResult; return notificationResult; }, onClicked: { addListener(listener) { listeners.notificationClicks.push(listener); } } },
-  tabs: { async create() {} },
+  action: {
+    async setBadgeText({ text }) { badges.push(text); },
+    async setBadgeBackgroundColor() {},
+  },
+  permissions: {
+    async contains() { return notificationsAllowed; },
+    onAdded: { addListener(listener) { listeners.permissionsAdded.push(listener); } },
+  },
+  notifications: { async create() { notificationCalls += 1; if (notificationResult instanceof Error) throw notificationResult; return notificationResult; } },
+  tabs: { async create() { tabCalls += 1; if (tabCreateFails) throw new Error('no tab'); } },
   windows: { async create() {}, async update() {} },
 };
 
@@ -187,6 +207,45 @@ test('false and rejected notification deliveries retain a five-minute retry alar
     assert.equal(Date.parse(state.value.scheduler.nextWakeAt) - Date.parse(earliestClaim), 5 * 60 * 1000);
   }
   notificationResult = 'notification-id';
+});
+
+test('a notifications permission granted after start registers one click handler', () => {
+  assert.equal(listeners.notificationClicks.length, 0, 'the optional API is absent at worker start');
+  assert.equal(listeners.permissionsAdded.length, 1);
+  globalThis.browser.notifications.onClicked = {
+    addListener(listener) { listeners.notificationClicks.push(listener); },
+  };
+  for (let round = 0; round < 2; round += 1) {
+    for (const listener of listeners.permissionsAdded) listener({ permissions: ['notifications'] });
+  }
+  assert.equal(listeners.notificationClicks.length, 1);
+});
+
+test('a capture that cannot be saved or shown is surfaced instead of silently dropped', async () => {
+  const click = (menuItemId) => listeners.clicked[0]({
+    menuItemId, selectionText: 'Nero denarius, Rome', pageUrl: 'https://house.test/sale',
+  });
+  storageSetFails = true;
+  click('auction-companion:track-auction');
+  for (let index = 0; index < 6; index += 1) await flush();
+  storageSetFails = false;
+  assert.equal(badges.at(-1), '!');
+
+  const tabsBefore = tabCalls;
+  tabCreateFails = true;
+  click('auction-companion:research-selection');
+  for (let index = 0; index < 6; index += 1) await flush();
+  tabCreateFails = false;
+  assert.equal(tabCalls, tabsBefore + 1, 'the saved draft must still try to open the workspace');
+});
+
+test('a reconcile with nothing to change reads once and writes nothing', async () => {
+  await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
+  const before = { ...storageCalls };
+  const reply = await send({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
+  assert.equal(reply.ok, true);
+  assert.equal(storageCalls.set, before.set);
+  assert.ok(storageCalls.get - before.get <= 2, `an idle reconcile read ${storageCalls.get - before.get} times`);
 });
 
 test.after(() => { delete globalThis.browser; });

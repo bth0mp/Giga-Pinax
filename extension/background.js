@@ -49,15 +49,21 @@ async function snapshot() {
   return reply.ok ? reply.value : null;
 }
 
-async function refreshBadge() {
-  const state = await snapshot();
-  if (!state) return;
+async function showBadge(text) {
+  await invokeExtensionMethod(api.action.setBadgeText, api.action, { text });
+  if (text) await invokeExtensionMethod(api.action.setBadgeBackgroundColor, api.action, { color: '#9f2d20' });
+}
+
+async function showDueBadge(state) {
   const dueEvents = new Set(state.alerts
     .filter(({ status }) => ['due', 'claimed', 'delivered'].includes(status))
     .map(({ eventId }) => eventId));
-  const text = dueEvents.size === 0 ? '' : dueEvents.size > 99 ? '99+' : String(dueEvents.size);
-  await invokeExtensionMethod(api.action.setBadgeText, api.action, { text });
-  if (text) await invokeExtensionMethod(api.action.setBadgeBackgroundColor, api.action, { color: '#9f2d20' });
+  await showBadge(dueEvents.size === 0 ? '' : dueEvents.size > 99 ? '99+' : String(dueEvents.size));
+}
+
+async function refreshBadge() {
+  const state = await snapshot();
+  if (state) await showDueBadge(state);
 }
 
 async function notificationsAllowed(state) {
@@ -65,15 +71,16 @@ async function notificationsAllowed(state) {
   return invokeExtensionMethod(api.permissions.contains, api.permissions, { permissions: ['notifications'] });
 }
 
-async function deliverOverdue(plan) {
-  const state = await snapshot();
-  if (!state || !(await notificationsAllowed(state))) return;
+async function deliverOverdue(plan, state) {
+  if (!(await notificationsAllowed(state))) return false;
+  let claimedAny = false;
   for (const [eventId, triggers] of Object.entries(plan.overdueByEvent)) {
     const triggerIds = triggers.map(({ id }) => id);
     const claimed = await commit({
       type: 'alert.claim', requestId: crypto.randomUUID(), eventId, triggerIds,
     });
     if (!claimed.ok) continue;
+    claimedAny = true;
     const recovery = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
     if (recovery.ok) await setAlarm(recovery.value.nextWakeAt);
     let delivered = false;
@@ -100,20 +107,21 @@ async function deliverOverdue(plan) {
     const settled = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
     if (settled.ok) await setAlarm(settled.value.nextWakeAt);
   }
+  return claimedAny;
 }
 
 async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
   if (!reply.ok) return reply;
   await setAlarm(reply.value.nextWakeAt);
-  await refreshBadge();
+  // One read serves both the badge and delivery: an idle wake must not re-read the whole root.
   const state = await snapshot();
-  if (state) {
-    const events = state.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
-      state.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
-    await deliverOverdue(reconcileScheduler(events, { alerts: state.alerts }, new Date().toISOString()));
-  }
-  await refreshBadge();
+  if (!state) return reply;
+  await showDueBadge(state);
+  const events = state.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
+    state.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
+  const plan = reconcileScheduler(events, { alerts: state.alerts }, new Date().toISOString());
+  if (await deliverOverdue(plan, state)) await refreshBadge();
   return reply;
 }
 
@@ -182,10 +190,16 @@ api.runtime.onStartup.addListener(() => {
   void reconcileRuntime().catch(() => undefined);
 });
 
-api.contextMenus.onClicked.addListener((info) => {
+// No workspace is open when a context menu is used, so the badge is the only place a capture
+// that never arrived can be seen without asking for a further permission.
+function showCaptureFailure() {
+  return showBadge('!').catch(() => undefined);
+}
+
+async function runMenuAction(info) {
   if (info.menuItemId === MENU_LOOKUP) {
     const query = selectionQuery(info.selectionText);
-    if (query) void showInWindow(api, popupUrlFor(query));
+    if (query) await showInWindow(api, popupUrlFor(query));
     return;
   }
   if (info.menuItemId !== MENU_RESEARCH && info.menuItemId !== MENU_TRACK) return;
@@ -193,23 +207,40 @@ api.contextMenus.onClicked.addListener((info) => {
   const rawText = String(info.selectionText ?? '').trim().slice(0, 500);
   const pageUrl = String(info.pageUrl ?? '').slice(0, 2048);
   const requestId = crypto.randomUUID();
-  processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } })
-    .then((reply) => {
-      if (!reply.ok) return;
-      const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
-      api.tabs.create({ url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`) });
-    });
+  const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
+  if (!reply.ok) {
+    await showCaptureFailure();
+    return;
+  }
+  const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
+  await invokeExtensionMethod(api.tabs.create, api.tabs, {
+    url: api.runtime.getURL(`workspace.html#${route}=${reply.value.id}`),
+  });
+}
+
+api.contextMenus.onClicked.addListener((info) => {
+  void runMenuAction(info).catch(showCaptureFailure);
 });
 
 api.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SCHEDULER_ALARM) void reconcileRuntime().catch(() => undefined);
 });
 
-if (api.notifications?.onClicked) {
+// The notifications API only exists once its optional permission is granted, which can happen
+// long after the worker started, so the click handler is registered again on every grant.
+let notificationClicksRegistered = false;
+function registerNotificationClicks() {
+  if (notificationClicksRegistered || !api.notifications?.onClicked) return;
   api.notifications.onClicked.addListener(() => {
-    api.tabs.create({ url: api.runtime.getURL('workspace.html#auctions') });
+    void invokeExtensionMethod(api.tabs.create, api.tabs, {
+      url: api.runtime.getURL('workspace.html#auctions'),
+    }).catch(() => undefined);
   });
+  notificationClicksRegistered = true;
 }
+
+registerNotificationClicks();
+api.permissions?.onAdded?.addListener(() => registerNotificationClicks());
 
 void registerMenus().catch(() => undefined);
 void reconcileRuntime().catch(() => undefined);
