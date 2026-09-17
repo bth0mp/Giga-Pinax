@@ -20,8 +20,9 @@ the retrieval date, the licence and the full fetched result are recorded in
 scripts/data/nomisma-labels.json; the generated file is rebuilt from it with
 `python scripts/import_rdf.py --write-labels`.
 
-RIC ruler names come from extension/ric-people.js, not from this file: where
-the two spell a ruler differently, an OCRE card keeps RIC's own spelling.
+RIC ruler names come from extension/ric-people.js, not from this file: that
+snapshot of Nomisma's own person concepts takes precedence over the labels
+here for an OCRE authority or portrait. Both spell all 214 people the same.
 
 Each corpus directory beside this file carries its own NOTICE.txt for the
 American Numismatic Society type data it holds, which is under ODbL 1.0.

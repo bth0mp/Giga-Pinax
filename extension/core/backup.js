@@ -131,6 +131,10 @@ function evidenceBody(row) {
 // than to the call, so it is remembered here for the snapshot `validateBackup` produced instead of
 // being threaded through every caller; a snapshot from anywhere else has no file and no ceiling.
 // The file's own claim is bounded in turn: an export more than a day ahead of now is read as now.
+// The key is the object identity `validateBackup` returned, so a caller must pass that exact object or an explicit
+// `{ exportedAt }`: a clone of it is a different object, finds no ceiling here and compares every record by the time it
+// claims. That fails safe - a hand-edited write time then wins where it would have been capped - but it is a weaker
+// merge than the one the file earns, so pass the snapshot through, not a copy of it.
 const exportTimes = new WeakMap();
 
 function comparisonCeiling(incoming, exportedAt, now) {
