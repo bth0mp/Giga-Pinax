@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, extractLots, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
+import { buildSearchUrl, citesReference, extractLots, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -693,4 +693,100 @@ test('a remembered term is dropped when its Other reference gives no searchable 
   // Every reference that still searches keeps the term the collector saved.
   assert.equal(chooseTerm({ catalogue: 'Other', number: 'BCD Boiotia 174b', section: '' }, 'BCD Boiotia 174'), 'BCD Boiotia 174');
   assert.equal(chooseTerm({ catalogue: 'RIC', section: 'Nero', number: '306' }, 'Nero denarius'), 'Nero denarius');
+});
+
+// 0.32: the search brings back every lot that holds the words, so a row is counted only when its description cites the reference itself.
+test('citesReference asks for the catalogue key next to the number, as a whole token', () => {
+  const price23 = { catalogue: 'Price', number: '23' };
+  assert.equal(citesReference('Macedon. Tetradrachm. Price 23. Very Fine.', price23), true);
+  assert.equal(citesReference('Cf. Price 23; unpublished variety.', price23), true);
+  // The two the reviewer found under the bare words: another number that begins with it, and a weight.
+  assert.equal(citesReference('Alexander III. Tetradrachm. Price 3014. Good Very Fine.', price23), false);
+  assert.equal(citesReference('Drachm (4.23 g), Miletos. Fine.', price23), false);
+  assert.equal(citesReference('Starting price 23 EUR. No reference given.', price23), false);
+  assert.equal(citesReference('PRICE 23, this coin.', price23), true);
+  const ric306 = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  for (const cited of ['Nero. As. RIC 306.', 'RIC I 306; BMC 227.', 'Cited as RIC I, 306.', 'RIC I² 306, rare.', 'RIC II.1 306.', 'RIC 306 var.']) {
+    assert.equal(citesReference(cited, ric306), true, cited);
+  }
+  for (const other of ['Nero. Dupondius (4.23 g). RIC 3061.', 'RIC 306a, a different obverse.', 'RIC 30.', 'Sold with 306 other lots.']) {
+    assert.equal(citesReference(other, ric306), false, other);
+  }
+  assert.equal(citesReference('Seleucid Coins 1266.2, this coin.', { catalogue: 'SC', number: '1266.2' }), true);
+  assert.equal(citesReference('SC 1266.25.', { catalogue: 'SC', number: '1266.2' }), false);
+  assert.equal(citesReference('Roman Republic. Denarius. Cr. 44/5.', { catalogue: 'RRC', number: '44/5' }), true);
+  assert.equal(citesReference('Crawford 44/5a.', { catalogue: 'RRC', number: '44/5' }), false);
+  assert.equal(citesReference('Bopearachchi 24A.', { catalogue: 'Bop', number: 'Bop 24a' }), true);
+  // An Other reference already searches as the exact citation, and a row with no description is never dropped on missing data.
+  assert.equal(citesReference('Anything at all.', { catalogue: 'Other', number: 'HGC 4, 1218' }), true);
+  assert.equal(citesReference('', price23), true);
+  assert.equal(citesReference(undefined, price23), true);
+});
+
+test('namesDenomination matches the card word as a whole word, plural tolerated', () => {
+  assert.equal(namesDenomination('Nero. AR denarius, Rome.', 'denarius'), true);
+  assert.equal(namesDenomination('Group of three denarii.', 'denarius'), true);
+  assert.equal(namesDenomination('Nero. AR Denarius.', 'Denarius'), true);
+  assert.equal(namesDenomination('Nero. Sestertius, Rome.', 'denarius'), false);
+  assert.equal(namesDenomination('Drachms of Amphipolis.', 'drachm'), true);
+  assert.equal(namesDenomination('A denariusish thing.', 'denarius'), false);
+  // Positive match only: a row with nothing to read does not name it, and a card with no denomination filters nothing.
+  assert.equal(namesDenomination('', 'denarius'), false);
+  assert.equal(namesDenomination('Nero. Sestertius.', ''), true);
+});
+
+test('gradeOf reads the dealer grade into one of four buckets, the lower of two', () => {
+  assert.equal(gradeOf('Nero. As. RIC 306. Very Fine, dark patina.'), 'VF');
+  assert.equal(gradeOf('Good very fine, lightly toned.'), 'VF');
+  assert.equal(gradeOf('Extremely Fine, minor marks.'), 'EF');
+  assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), 'VF');
+  assert.equal(gradeOf('gVF'), 'VF');
+  assert.equal(gradeOf('VF/EF'), 'VF');
+  assert.equal(gradeOf('Fine, rough surfaces.'), 'Fine and below');
+  assert.equal(gradeOf('FDC.'), 'FDC/Mint State');
+  assert.equal(gradeOf('Mint State, fully lustrous.'), 'FDC/Mint State');
+  // German, French and Italian grades.
+  assert.equal(gradeOf('Schoene Patina. ss-vz.'), 'VF');
+  assert.equal(gradeOf('Erhaltung: st'), 'FDC/Mint State');
+  assert.equal(gradeOf('Herrliche Patina, vorzüglich.'), 'EF');
+  assert.equal(gradeOf('Belle patine. TTB.'), 'VF');
+  assert.equal(gradeOf('Patina verde. SPL.'), 'EF');
+  assert.equal(gradeOf('Stempelglanz.'), 'FDC/Mint State');
+  // A two-letter lowercase token is a grade only at the end of a sentence or behind Erhaltung; "fine style" is not a grade at all.
+  assert.equal(gradeOf('Die Erhaltung ist gut, ss ist untertrieben, schaut selbst'), null);
+  assert.equal(gradeOf('Of fine style, some wear.'), null);
+  assert.equal(gradeOf('Nero. As. RIC 306.'), null);
+  assert.equal(gradeOf(''), null);
+});
+
+test('gradeMedians reports only a bucket resting on at least three counted sales', () => {
+  const graded = (price, grade, id) => lot(price, '01.01.2024', id, `Nero. As. RIC 306. ${grade}`);
+  const lots = [graded('100', 'Very Fine', 'a'), graded('200', 'gVF', 'b'), graded('300', 'VF', 'c'), graded('*', 'VF', 'd'),
+    graded('900', 'Extremely Fine', 'e'), graded('1100', 'EF', 'f')];
+  assert.deepEqual(gradeMedians(lots, 'USD'), [{ bucket: 'VF', median: 200, count: 3 }]);
+  assert.deepEqual(gradeMedians([], 'USD'), []);
+  assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF: median $180 (9)');
+});
+
+// The filters leave a row out of the statistics by default and say why; the collector may still count it by hand, and Reset restores the default.
+test('curation drops a row the filters name, until the collector says otherwise', () => {
+  const cited = lot('100', '01.01.2024', 'a', 'Nero. As. RIC 306. VF');
+  const stranger = lot('300', '01.01.2024', 'b', 'Nero. Dupondius. RIC 3061. VF');
+  const lots = [cited, stranger];
+  const curation = createPriceCuration();
+  curation.filter((entry) => (citesReference(entry.description, { catalogue: 'RIC', number: '306' }) ? null : 'not-cited'));
+  assert.equal(curation.reasonFor(stranger), 'not-cited');
+  assert.equal(curation.reasonFor(cited), null);
+  assert.deepEqual(curation.counts(lots), { included: 1, excluded: 1 });
+  assert.equal(summarise(curation.included(lots), 'USD').median, 100);
+  curation.include(stranger);
+  assert.equal(curation.reasonFor(stranger), null);
+  assert.equal(summarise(curation.included(lots), 'USD').median, 200);
+  curation.exclude(cited);
+  assert.equal(curation.reasonFor(cited), 'by-hand');
+  assert.equal(curation.changed(), true);
+  curation.reset();
+  assert.equal(curation.changed(), false);
+  assert.deepEqual(curation.counts(lots), { included: 1, excluded: 1 });
+  assert.equal(curation.reasonFor(stranger), 'not-cited');
 });

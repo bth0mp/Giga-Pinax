@@ -248,6 +248,92 @@ export function summarise(lots, currency) {
   };
 }
 
+const escaped = (value) => String(value).replace(/[\\^$.*+?()[\]{}|/-]/g, '\\$&');
+
+// The spellings each catalogue's own term offers, which are the ones dealers write. An Other reference is already searched as the exact citation, so
+// every row it finds cites it; a Krause or Sear part comes back through that path too.
+const CITATION_KEYS = { Price: ['Price'], RIC: ['RIC'], RRC: ['Crawford', 'Cr.', 'RRC'], SC: ['SC', 'Seleucid Coins'], Bop: ['Bopearachchi'] };
+const citationNumber = ({ catalogue, number }) => {
+  if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
+  if (catalogue === 'Bop') return bopSeries(number);
+  return referenceNumber(catalogue, number);
+};
+// A volume between the key and the number, as dealers write it ("RIC I 306", "RIC I², 306", "RIC II.1 306"), and the punctuation around it.
+const BETWEEN = String.raw`[\s.,:;-]*(?:[IVXLC][IVXLC.\d²³]*[\s.,:;-]*)?`;
+
+// Whether a lot's description cites the searched reference: the catalogue key, at most a volume between, then the number as a whole token — not inside
+// a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" no longer count as sales of Price 23 or RIC 306. A key is read as
+// written or in full capitals, never in lower case, so a "Starting price 23" line is no citation. A row with no description at all is never dropped:
+// the page simply says nothing to judge it by.
+export function citesReference(description, reference) {
+  const text = squash(description);
+  const keys = Object.hasOwn(CITATION_KEYS, reference?.catalogue) ? CITATION_KEYS[reference.catalogue] : null;
+  const number = keys ? citationNumber(reference) : '';
+  if (!text || !number) return true;
+  const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].map(escaped);
+  return new RegExp(`(?<![\\p{L}\\d])(?:${spellings.join('|')})${BETWEEN}${escaped(number)}(?![\\p{L}\\d])`, 'u').test(text);
+}
+
+// The card's own denomination word in a description, whole and whatever its capitals; a plural is tolerated by the two endings that cover the Latin
+// and English forms ("denarius"/"denarii", "drachm"/"drachms"). No table of denominations, no translation and nothing else guessed. The match is
+// positive only: a row the page gives no description for does not name it, and a card without a denomination filters nothing.
+export function namesDenomination(description, denomination) {
+  const word = squash(denomination).toLowerCase();
+  if (!word) return true;
+  const forms = [word, `${word}s`, `${word}es`, ...(word.endsWith('us') ? [`${word.slice(0, -2)}i`] : [])];
+  return new RegExp(`(?<![\\p{L}\\d])(?:${forms.map(escaped).join('|')})(?![\\p{L}\\d])`, 'iu').test(squash(description));
+}
+
+const FINE = 'Fine and below';
+const MINT = 'FDC/Mint State';
+export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
+// The dealer's grade, in the four languages acsearch lists, as the four buckets a collector compares in. A spelled-out name is read whatever its
+// capitals ("Good very fine"); an abbreviation is read exactly as written, since capitals are all that tells one from an ordinary word. Nothing one
+// letter long ("F", "s", "B"): a legend, a mint mark or an initial would read as a grade.
+const GRADE_NAMES = {
+  fine: FINE, 'schön': FINE, 'très beau': FINE, 'molto bello': FINE,
+  'very fine': 'VF', 'sehr schön': 'VF', 'très très beau': 'VF', bellissimo: 'VF',
+  'extremely fine': 'EF', 'vorzüglich': 'EF', superbe: 'EF', splendido: 'EF',
+  'mint state': MINT, stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT,
+};
+const GRADE_MARKS = {
+  gF: FINE, aF: FINE, VG: FINE, TB: FINE, MB: FINE,
+  VF: 'VF', gVF: 'VF', aVF: 'VF', ss: 'VF', TTB: 'VF', BB: 'VF',
+  EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', vz: 'EF', SUP: 'EF', SPL: 'EF',
+  FDC: MINT, MS: MINT, UNC: MINT, st: MINT,
+};
+// Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it.
+const alternation = (words) => [...words].sort((a, b) => b.length - a.length).map(escaped).join('|');
+// "of fine style" is a compliment about the die cutter, not a grade.
+const NAMED_GRADE = new RegExp(`(?<![\\p{L}\\d])(?:${alternation(Object.keys(GRADE_NAMES))})(?![\\p{L}\\d])(?!\\s+style)`, 'giu');
+const MARKED_GRADE = new RegExp(`(?<![\\p{L}\\d])(?:${alternation(Object.keys(GRADE_MARKS))})(?![\\p{L}\\d])`, 'gu');
+// "ss", "vz" and "st" are two letters of ordinary German prose, so they count only where a dealer puts a grade: ending a sentence, alone or beside the
+// second grade of a range ("Schöne Patina. ss-vz."), or standing right behind "Erhaltung".
+const LOWER_MARKS = ['ss', 'vz', 'st'];
+const GRADE_TAIL = /^\s*(?:[-–/]\s*(?:ss|vz|st)\s*)*[.;!]?\s*$/;
+const GRADED_BY = /Erhaltung\s*:?\s*(?:(?:ss|vz|st)\s*[-–/]\s*)*$/;
+const marksGrade = (text, index, mark) => GRADE_TAIL.test(text.slice(index + mark.length)) || GRADED_BY.test(text.slice(0, index));
+
+// The one grade a row is counted under: the lower of two ("VF/EF", "ss-vz"), and null when the description names none.
+export function gradeOf(description) {
+  const text = squash(description);
+  const found = [...text.matchAll(NAMED_GRADE)].map((match) => GRADE_NAMES[match[0].toLowerCase()]);
+  for (const match of text.matchAll(MARKED_GRADE)) {
+    if (!LOWER_MARKS.includes(match[0]) || marksGrade(text, match.index, match[0])) found.push(GRADE_MARKS[match[0]]);
+  }
+  return found.length ? GRADE_BUCKETS[Math.min(...found.map((bucket) => GRADE_BUCKETS.indexOf(bucket)))] : null;
+}
+
+const GRADE_MIN = 3;
+// A median per grade, from the rows on show: a bucket resting on fewer than GRADE_MIN counted sales says nothing and is left out.
+export function gradeMedians(lots, currency) {
+  return GRADE_BUCKETS.flatMap((bucket) => {
+    const summary = summarise(lots.filter((entry) => gradeOf(entry.description) === bucket), currency);
+    return summary.count >= GRADE_MIN ? [{ bucket, median: summary.median, count: summary.count }] : [];
+  });
+}
+export const gradeText = ({ bucket, median, count }, format) => `${bucket}: median ${format(median)} (${count})`;
+
 export function stableResultId(lot) {
   if (lot?.id !== undefined && lot?.id !== null && String(lot.id).trim()) return `acsearch:${String(lot.id).trim()}`;
   const source = [lot?.title, lot?.date, lot?.price].map((value) => String(value ?? '').trim()).join('\u001f');
@@ -259,18 +345,29 @@ export function stableResultId(lot) {
   return `acsearch:derived:${(hash >>> 0).toString(36)}`;
 }
 
+// What the statistics rest on: the filters leave a row out by default and say why, and the collector's own decisions override them either way.
+// Reset drops his decisions, so the default comes back rather than an empty set.
 export function createPriceCuration() {
-  const excluded = new Set();
+  const byHand = new Map();
+  let byDefault = () => null;
+  const reasonFor = (lot) => {
+    const decided = byHand.get(stableResultId(lot));
+    return decided === undefined ? byDefault(lot) ?? null : decided ? 'by-hand' : null;
+  };
   return {
-    exclude(lot) { excluded.add(stableResultId(lot)); },
-    include(lot) { excluded.delete(stableResultId(lot)); },
-    isExcluded(lot) { return excluded.has(stableResultId(lot)); },
-    included(lots) { return lots.filter((lot) => !excluded.has(stableResultId(lot))); },
+    // The filters the panel is drawing with; a redraw sets them before it asks anything.
+    filter(reason) { byDefault = reason ?? (() => null); },
+    reasonFor,
+    exclude(lot) { byHand.set(stableResultId(lot), true); },
+    include(lot) { byHand.set(stableResultId(lot), false); },
+    isExcluded(lot) { return reasonFor(lot) !== null; },
+    included(lots) { return lots.filter((lot) => reasonFor(lot) === null); },
     counts(lots) {
-      const excludedCount = lots.reduce((count, lot) => count + Number(excluded.has(stableResultId(lot))), 0);
-      return { included: lots.length - excludedCount, excluded: excludedCount };
+      const excluded = lots.reduce((count, lot) => count + Number(reasonFor(lot) !== null), 0);
+      return { included: lots.length - excluded, excluded };
     },
-    reset() { excluded.clear(); },
+    changed() { return byHand.size > 0; },
+    reset() { byHand.clear(); },
   };
 }
 
