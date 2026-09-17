@@ -13,8 +13,11 @@ function failure(code, message, path) {
 const DECIMAL = /^(\d+)([.,])(\d+)$/;
 // Auction houses group with a comma, a point, an apostrophe or a space, so a grouped amount is
 // recognized by its shape rather than by the browser locale, which is often not the seller's.
-const GROUPED = /^(\d{1,3})((['   ,.])\d{3}(?:\3\d{3})*)(?:([.,])(\d{1,2}))?$/;
-const AMBIGUOUS_MESSAGE = 'Write 1200 or 1200.00; “1,200” could mean two different amounts.';
+// Swiss listings group with the typographic apostrophe; a grouping space may be plain, no-break
+// or narrow, written as escapes here so an invisible byte cannot be lost in an edit.
+const GROUPED = /^(\d{1,3})((['\u2019 \u00a0\u202f,.])\d{3}(?:\3\d{3})*)(?:([.,])(\d{1,2}))?$/;
+const ambiguousMessage = (input) =>
+  `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
 
 // Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
 // `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
@@ -47,7 +50,7 @@ function parseFixed(text, maximumMinor, subject) {
       `${subject} must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.`,
     );
   }
-  if (parts.ambiguous) return failure('ambiguous-amount', AMBIGUOUS_MESSAGE);
+  if (parts.ambiguous) return failure('ambiguous-amount', ambiguousMessage(input));
 
   const whole = BigInt(parts.whole);
   const fraction = BigInt(parts.fraction.padEnd(FRACTION_DIGITS, '0'));

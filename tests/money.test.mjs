@@ -139,7 +139,8 @@ test('accepts either decimal separator and grouped amounts whatever the locale',
   for (const locale of ['en-US', 'de-DE', 'de-CH']) {
     for (const [text, minor] of [
       ['12.50', 1250], ['12,50', 1250], ['1,200.50', 120050], ['1.200,50', 120050],
-      ["1'200.50", 120050], ['1 200,50', 120050], ['1 200', 120000], ['1,200,000', 120000000],
+      ["1'200.50", 120050], ['1’200.50', 120050], ['1 200,50', 120050], ['1 200', 120000],
+      ['1 200,50', 120050], ['1 200,50', 120050], ['1,200,000', 120000000],
       ['0.05', 5], ['1200', 120000],
     ]) {
       assert.deepEqual(parseMoney(text, 'USD', locale), { ok: true, value: { currency: 'USD', minor } }, `${text} in ${locale}`);
@@ -147,11 +148,11 @@ test('accepts either decimal separator and grouped amounts whatever the locale',
   }
 });
 
-test('refuses a lone separator before three digits instead of guessing the amount', () => {
+test('refuses a lone separator before three digits and quotes the amount that was typed', () => {
   for (const text of ['1,200', '1.200', '1.001', '12,345']) {
     const parsed = parseMoney(text, 'USD', 'en-US');
     assert.equal(parsed.error.code, 'ambiguous-amount', text);
-    assert.equal(parsed.error.message, 'Write 1200 or 1200.00; “1,200” could mean two different amounts.');
+    assert.equal(parsed.error.message, `“${text}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`);
   }
   assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'ambiguous-amount');
 });
