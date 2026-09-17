@@ -367,8 +367,9 @@ export function planCommit({
     preserved = editorCompletion(submittedVersion ?? 0, versions.get(editor) ?? 0) === 'preserve';
     if (preserved) {
       // The form keeps what the collector typed while the save was in flight, on top of the
-      // committed record rather than on top of the revision it replaced.
-      if (isStoredRecord(value) && nextBases.get(editor)?.record) merge.push(editor);
+      // committed record rather than on top of the revision it replaced. It is never merged with
+      // the record it saved itself: a field typed back to what it was looks untouched, so the merge
+      // would undo the collector's own revert and the next save would store the value they removed.
       if (isStoredRecord(value)) rebase(editor, value);
       nextDirty.add(editor);
     } else {
