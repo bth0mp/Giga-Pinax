@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
-  parseIncrementLadder, presetFromFields, snapshotSupersedes,
+  parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
 } from '../extension/bid-tools.js';
 
 test('calculator includes shipping and percentage plus fixed payment fees', () => {
@@ -107,6 +107,18 @@ test('a preset row reports which field its error belongs to', () => {
   assert.equal(presetFromFields({ name: '  ', premiumText: '22.5' }).error.field, 'name');
   assert.equal(presetFromFields({ name: 'Nomos', premiumText: 'about 20' }).error.field, 'premium');
   assert.equal(presetFromFields({ name: 'Nomos', premiumText: '20', ladderText: '5: 5' }).error.field, 'ladder');
+});
+
+test('saving a premium from the calculator keeps the ladder that editor never showed', () => {
+  const presets = [
+    { name: 'Nomos AG', buyerPremiumBps: 2000, incrementLadder: [{ from: 0, step: 500 }] },
+    { name: 'Other House', buyerPremiumBps: 1500 },
+  ];
+  assert.deepEqual(presetsWithPremium(presets, ' nomos   ag ', 2250), [
+    { name: 'Other House', buyerPremiumBps: 1500 },
+    { name: 'nomos ag', buyerPremiumBps: 2250, incrementLadder: [{ from: 0, step: 500 }] },
+  ]);
+  assert.deepEqual(presetsWithPremium(undefined, 'New House', 1000), [{ name: 'New House', buyerPremiumBps: 1000 }]);
 });
 
 test('the budget calculator walks a house ladder instead of the fixed increment', () => {

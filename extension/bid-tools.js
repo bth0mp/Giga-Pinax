@@ -64,6 +64,17 @@ export function presetFromFields({ name, premiumText, ladderText } = {}, { curre
   return { ok: true, value: preset };
 }
 
+// The calculator's own preset editor knows about the premium and nothing else, so it replaces that
+// one field and leaves the rest of the house's preset — its ladder — as Settings wrote it.
+export function presetsWithPremium(presets, name, buyerPremiumBps) {
+  const key = presetKey(name);
+  const existing = (presets ?? []).find((item) => presetKey(item.name) === key);
+  return [
+    ...(presets ?? []).filter((item) => presetKey(item.name) !== key),
+    { ...existing, name: String(name).trim().replace(/\s+/g, ' '), buyerPremiumBps },
+  ];
+}
+
 export function buildBidCalculation(input) {
   const optionalMoney = (text, defaultMinor) => typeof text === 'string' && text.trim()
     ? parseMoney(text, input.currency, input.locale)
@@ -204,8 +215,9 @@ export function mountBidCalculator(
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; it does not follow a house schedule. Tax is excluded.',
+    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s terms. Tax is excluded.',
   });
+  const ladderNote = el('p', { className: 'bid-calculator-ladder', hidden: true });
   const status = el('p', {
     className: 'bid-calculator-status', role: 'status', ariaLive: 'polite',
   });
@@ -223,13 +235,14 @@ export function mountBidCalculator(
   });
   editor.append(editorSummary, presetName, save);
   actions.append(use);
-  root.append(title, fields, fees, output, note, actions, editor, status);
+  root.append(title, fields, fees, output, ladderNote, note, actions, editor, status);
   container.replaceChildren(root);
 
   let result = null;
   let preferences = null;
   let destroyed = false;
   let loadedLotId;
+  let ladder = null;
   const showError = (message) => {
     status.textContent = message;
     status.dataset.error = 'true';
@@ -238,16 +251,39 @@ export function mountBidCalculator(
     const selected = preset.value;
     preset.replaceChildren(el('option', { value: '', textContent: 'Choose house premium' }));
     (preferences?.housePremiumPresets ?? []).forEach((item) => {
+      const tiers = item.incrementLadder?.length ? ` · ${item.incrementLadder.length}-tier ladder` : '';
       preset.append(el('option', {
         value: presetKey(item.name),
-        textContent: `${item.name} — ${(item.buyerPremiumBps / 100).toFixed(2)}%`,
+        textContent: `${item.name} — ${(item.buyerPremiumBps / 100).toFixed(2)}%${tiers}`,
       }));
     });
     if ([...preset.options].some(({ value }) => value === selected)) preset.value = selected;
   };
+  // While a house ladder is in use the fixed increment has nothing to say, so it is taken out of
+  // reach rather than left to look as if it still applied.
+  const renderLadder = () => {
+    increment.disabled = Boolean(ladder);
+    ladderNote.hidden = !ladder;
+    if (!ladder) return;
+    const tiers = `${ladder.tiers.length} increment ${ladder.tiers.length === 1 ? 'tier' : 'tiers'}`;
+    ladderNote.textContent = `${ladder.name}: ${tiers} you entered in Settings. The fixed increment is ignored while this ladder is in use.`;
+  };
+  const selectedPreset = () => (preset.value === ''
+    ? null
+    : preferences?.housePremiumPresets?.find((entry) => presetKey(entry.name) === preset.value) ?? null);
+  // Tiers edited in Settings reach an open calculator through the same snapshot the premiums do.
+  const selectLadder = () => {
+    const item = selectedPreset();
+    const tiers = item?.incrementLadder?.length ? item.incrementLadder : null;
+    const changed = formatIncrementLadder(tiers) !== formatIncrementLadder(ladder?.tiers ?? null);
+    ladder = tiers ? { name: item.name, tiers } : null;
+    renderLadder();
+    return changed;
+  };
   const takePreferences = createPreferenceRevisionGate((incoming) => {
     preferences = incoming;
     renderPresets();
+    if (selectLadder()) calculate();
   }, () => !destroyed);
   const calculate = () => {
     status.textContent = '';
@@ -257,7 +293,8 @@ export function mountBidCalculator(
     const untouched = amount.value.trim() === '' && premium.value.trim() === '';
     const calculated = buildBidCalculation({ mode: mode.value, amountText: amount.value, premiumText: premium.value,
       shippingText: shipping.value, paymentPercentText: paymentPercent.value, paymentFixedText: paymentFixed.value,
-      incrementText: increment.value, minimumText: minimum.value, currency: currencyControl.value, locale: language() });
+      incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.tiers ?? null,
+      currency: currencyControl.value, locale: language() });
     if (!calculated.ok) {
       output.textContent = 'Enter an amount and buyer premium.';
       if (!untouched) showError(calculated.error.message);
@@ -265,7 +302,9 @@ export function mountBidCalculator(
     }
     const hammer = calculated.value.hammer;
     const locale = language();
-    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}`;
+    const next = calculated.nextValidBid.minor === hammer.minor
+      ? '' : ` · Next valid bid ${formatMoney(calculated.nextValidBid, locale)}`;
+    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
@@ -277,12 +316,11 @@ export function mountBidCalculator(
     control.addEventListener('input', calculate);
   }
   preset.addEventListener('change', () => {
-    if (preset.value === '') return;
-    const item = preferences?.housePremiumPresets?.find((entry) => presetKey(entry.name) === preset.value);
-    if (item) {
-      premium.value = formatMinorInput(item.buyerPremiumBps, language());
-      calculate();
-    }
+    const item = selectedPreset();
+    if (preset.value !== '' && !item) return;
+    selectLadder();
+    if (item) premium.value = formatMinorInput(item.buyerPremiumBps, language());
+    calculate();
   });
   use.addEventListener('click', () => {
     if (result && typeof onUseHammer === 'function') {
@@ -311,7 +349,7 @@ export function mountBidCalculator(
         requestId: newRequestId(),
         expectedRevision: preferences.revision,
         preferences: {
-          housePremiumPresets: [...(preferences.housePremiumPresets ?? []).filter((item) => presetKey(item.name) !== presetKey(name)), { name: name.replace(/\s+/g, ' '), buyerPremiumBps: parsed.value }],
+          housePremiumPresets: presetsWithPremium(preferences.housePremiumPresets, name, parsed.value),
         },
       });
       if (!reply.ok) {

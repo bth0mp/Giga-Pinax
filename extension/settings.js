@@ -3,8 +3,7 @@ import {
   importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineLines,
   quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
-import { parsePremiumPercent } from './core/money.js';
-import { formatMinorInput } from './bid-tools.js';
+import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
@@ -66,9 +65,29 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   remove.className = 'quiet';
   remove.textContent = 'Remove';
   remove.addEventListener('click', () => row.remove());
-  row.append(nameLabel, bpsLabel, remove);
+  const ladderLabel = document.createElement('label');
+  ladderLabel.className = 'premium-ladder-field';
+  const ladderCaption = document.createElement('span');
+  ladderCaption.textContent = 'Increment ladder (optional)';
+  const ladderHint = document.createElement('span');
+  ladderHint.className = 'premium-hint';
+  // Giga Pinax ships no house's schedule: the tiers are the collector's own transcription, so the
+  // example in the box says only what the format is.
+  ladderHint.textContent = 'One tier per line, written “from: step”, in the house’s own currency. Copy the tiers from that house’s published terms — Giga Pinax ships no house’s ladder, and the example in the box is only the format.';
+  const ladder = document.createElement('textarea');
+  ladder.className = 'premium-ladder';
+  ladder.rows = 4;
+  ladder.placeholder = '0: 5\n100: 10\n500: 25';
+  ladder.value = formatIncrementLadder(item.incrementLadder, navigator.language);
+  ladderLabel.append(ladderCaption, ladderHint, ladder);
+  const error = document.createElement('p');
+  error.className = 'premium-error';
+  error.setAttribute('role', 'alert');
+  row.append(nameLabel, bpsLabel, remove, ladderLabel, error);
   return row;
 }
+
+const PRESET_FIELD_CLASS = { name: 'premium-name', premium: 'premium-value', ladder: 'premium-ladder' };
 
 function renderDataHealth(entries) {
   quarantined = Array.isArray(entries) ? entries : [];
@@ -91,16 +110,28 @@ function render() {
 }
 
 function collectPresets() {
+  const rows = [...document.querySelectorAll('.premium-row')];
+  for (const row of rows) {
+    row.querySelector('.premium-error').textContent = '';
+    for (const control of row.querySelectorAll('input, textarea')) control.removeAttribute('aria-invalid');
+  }
   const values = [];
-  for (const [index, row] of [...document.querySelectorAll('.premium-row')].entries()) {
-    const name = row.querySelector('.premium-name').value.trim();
-    const parsed = parsePremiumPercent(
-      row.querySelector('.premium-value').value,
-      navigator.language,
-    );
-    if (!name) throw new Error(`House ${index + 1} needs a name.`);
-    if (!parsed.ok) throw new Error(`House ${index + 1}: ${parsed.error.message}`);
-    values.push({ name, buyerPremiumBps: parsed.value });
+  for (const [index, row] of rows.entries()) {
+    const field = presetFromFields({
+      name: row.querySelector('.premium-name').value,
+      premiumText: row.querySelector('.premium-value').value,
+      ladderText: row.querySelector('.premium-ladder').value,
+    }, { currency: $('currency').value, locale: navigator.language });
+    if (field.ok) {
+      values.push(field.value);
+      continue;
+    }
+    // The message belongs beside the field it is about; the status line only says which house.
+    const control = row.querySelector(`.${PRESET_FIELD_CLASS[field.error.field]}`);
+    row.querySelector('.premium-error').textContent = field.error.message;
+    control.setAttribute('aria-invalid', 'true');
+    control.focus();
+    throw new Error(`House ${index + 1}: ${field.error.message}`);
   }
   return values;
 }
