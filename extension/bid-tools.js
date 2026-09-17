@@ -240,7 +240,7 @@ export function mountBidCalculator(
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected. Tax is excluded.',
+    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. Tax is excluded.',
   });
   const ladderNote = el('p', { className: 'bid-calculator-ladder', hidden: true });
   const status = el('p', {
