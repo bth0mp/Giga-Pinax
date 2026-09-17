@@ -25,6 +25,10 @@ XML = "{http://www.w3.org/XML/1998/namespace}"
 LICENSE = "CC-BY-3.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
 SLUG = re.compile(r"^[A-Za-z0-9._~-]+$")
+# scripts/import_rdf.py refuses the same two declarations before it parses anything. Its check is not importable: it lives inside inspect_source(),
+# which takes a Path and digests the whole file as it goes, and this script is loaded by its file path (the tests load it that way too), so "scripts"
+# is on no import path. The pattern and the raise are copied here instead, once, in front of every parse this script makes.
+FORBIDDEN_DECLARATION = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 VOLUMES = {
     "1(2)": "I (2nd edition)",
     "2": "II",
@@ -40,6 +44,13 @@ VOLUMES = {
     "10": "X",
 }
 VOLUME_ORDER = {volume: index for index, volume in enumerate(VOLUMES.values())}
+
+
+def parsed_xml(payload: bytes):
+    """The RDF/XML of a snapshot or a fetched response, parsed. ElementTree expands internal entities, so a declaration is refused before it can."""
+    if FORBIDDEN_DECLARATION.search(payload):
+        raise ValueError("DTD and entity declarations are not allowed")
+    return ET.fromstring(payload)
 
 
 def read_memberships(data_dir: Path) -> dict[str, set[str]]:
@@ -96,7 +107,7 @@ def fetch_mint_snapshot(mint_ids, output: Path, retrieved_on: str) -> int:
             if response.status != 200:
                 raise OSError(f"Nomisma returned HTTP {response.status} for {url}")
             payload = response.read()
-        root = ET.fromstring(payload)
+        root = parsed_xml(payload)
         labels = sorted({(child.tag.replace(SKOS, ""), (child.get(XML + "lang") or "").lower(), " ".join(child.text.split()))
                          for node in root if (node.get(RDF + "about") or "") == NOMISMA_ID + concept_id
                          for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text})
@@ -143,7 +154,7 @@ def fetch_snapshot(concept_ids, output: Path) -> None:
         if response.status != 200:
             raise OSError(f"Nomisma query returned HTTP {response.status}")
         payload = response.read()
-    ET.fromstring(payload)
+    parsed_xml(payload)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(payload)
 
@@ -199,7 +210,7 @@ def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
                  binding_value(b, "altLabel") if written_language(b.get("altLabel")) else None,
                  binding_value(b, "type")) for b in bindings)
     else:
-        root = ET.fromstring(snapshot_bytes)
+        root = parsed_xml(snapshot_bytes)
         extracted = []
         for node in root:
             uri = node.get(RDF + "about")

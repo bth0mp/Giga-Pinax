@@ -132,6 +132,20 @@ class PeopleImportTests(unittest.TestCase):
             # A subtype title names no section, a record naming two mints says nothing, and the ruler volumes are filed by person, not by mint.
             self.assertEqual({"treveri": "Treveri"}, module.read_mints(root))
 
+    def test_a_dtd_or_entity_declaration_is_refused_before_any_xml_is_parsed(self):
+        """ElementTree resolves no external entity but expands internal ones, so the declaration is refused first, as import_rdf.py refuses it."""
+        module = load_module()
+        rdf = ('<?xml version="1.0"?>{doctype}<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"'
+               ' xmlns:skos="http://www.w3.org/2004/02/skos/core#"><skos:Concept rdf:about="http://nomisma.org/id/nero">'
+               '<skos:prefLabel xml:lang="en">Nero</skos:prefLabel></skos:Concept></rdf:RDF>')
+        for doctype in ('<!DOCTYPE rdf:RDF [<!ENTITY name "Nero">]>', '<!doctype rdf:RDF>', '<!  ENTITY name "Nero">'):
+            payload = rdf.format(doctype=doctype).encode("utf-8")
+            with self.assertRaises(ValueError):
+                module.read_concepts(payload, {"nero": {"1(2)"}})
+        # The same bytes without a declaration are read as before, so the guard costs a sound snapshot nothing.
+        concepts = module.read_concepts(rdf.format(doctype="").encode("utf-8"), {"nero": {"1(2)"}})
+        self.assertEqual({"Nero"}, concepts["nero"]["labels"])
+
 
 if __name__ == "__main__":
     unittest.main()
