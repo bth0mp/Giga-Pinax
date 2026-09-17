@@ -73,7 +73,7 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
     const date = isoDate(rawDate);
     if (!date) { candidates.push({ id, fingerprint, exclusion: 'malformedDate' }); continue; }
     // The collector's own day, as prices.js draws its periods: the UTC date is another day for part of every day away from UTC.
-    if (date > localDay(new Date(now)).toISOString().slice(0, 10)) { candidates.push({ id, fingerprint, exclusion: 'futureDate' }); continue; }
+    if (date > localDay(now).toISOString().slice(0, 10)) { candidates.push({ id, fingerprint, exclusion: 'futureDate' }); continue; }
     const amount = Number(priceMatch[1].replaceAll(',', ''));
     if (!Number.isSafeInteger(amount) || amount <= 0) { candidates.push({ id, fingerprint, exclusion: 'malformedPrice' }); continue; }
     candidates.push({ id, fingerprint, lot: { id, title, description, date, price: `${priceMatch[1]} ${priceMatch[2]}`, amount, currency: priceMatch[2], url: lotUrl.href, source: 'coinarchives' } });

@@ -330,51 +330,77 @@ export function namesDenomination(description, denomination) {
   return new RegExp(`(?<![\\p{L}\\d])(?:${forms.map(escaped).join('|')})(?![\\p{L}\\d])`, 'iu').test(squash(description));
 }
 
+// The card's denomination as a filter word, or nothing when matching it would say more about English than about the coin: "as" is the conjunction far
+// more often than the copper coin, and any short label reads the same way, while a label the catalogue never resolved ("266_aureus", "ae_unit") is no
+// word at all. ponytail: short denominations (As, AE units) simply get no filter; telling the coin from the word needs the whole sentence read.
+export function filterableDenomination(label) {
+  const word = squash(label).toLowerCase();
+  return word.length >= 4 && !/[\d_]/.test(word) ? word : '';
+}
+
 const FINE = 'Fine and below';
 const MINT = 'FDC/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
-// The dealer's grade, in the four languages acsearch lists, as the four buckets a collector compares in. A spelled-out name is read whatever its
-// capitals ("Good very fine"); an abbreviation is read exactly as written, since capitals are all that tells one from an ordinary word. Nothing one
-// letter long ("F", "s", "B"): a legend, a mint mark or an initial would read as a grade.
+// The dealer's grade, in the four languages acsearch lists, as the four buckets a collector compares in, each spelled as its own trade writes it.
+// A name may also open a sentence, so its first letter counts capitalised too, but nothing else does: a bare lower-case "fine" is the ordinary
+// adjective ("a fine portrait", "as fine as any"), never a grade.
 const GRADE_NAMES = {
-  fine: FINE, 'schön': FINE, 'très beau': FINE, 'molto bello': FINE,
-  'very fine': 'VF', 'sehr schön': 'VF', 'très très beau': 'VF', bellissimo: 'VF',
-  'extremely fine': 'EF', 'vorzüglich': 'EF', superbe: 'EF', splendido: 'EF',
-  'mint state': MINT, stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT,
+  Fine: FINE, 'schön': FINE, 'très beau': FINE, 'molto bello': FINE,
+  'Very Fine': 'VF', 'sehr schön': 'VF', 'très très beau': 'VF', bellissimo: 'VF',
+  'Extremely Fine': 'EF', 'vorzüglich': 'EF', superbe: 'EF', splendido: 'EF',
+  'Mint State': MINT, Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT,
 };
+// Read exactly as written: capitals are all that tells "BB" the Italian grade from "BB" the collection, or "st" from the middle of "ist".
 const GRADE_MARKS = {
-  gF: FINE, aF: FINE, VG: FINE, TB: FINE, MB: FINE,
+  gF: FINE, aF: FINE, VG: FINE, TB: FINE, MB: FINE, s: FINE,
   VF: 'VF', gVF: 'VF', aVF: 'VF', ss: 'VF', TTB: 'VF', BB: 'VF',
   EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', vz: 'EF', SUP: 'EF', SPL: 'EF',
   FDC: MINT, MS: MINT, UNC: MINT, st: MINT,
 };
+// "Good" and "About" qualify a grade without moving it to another bucket, exactly as the gVF and aEF they abbreviate; the name behind one needs no
+// capital of its own ("Good very fine").
+const GRADE_QUALIFIERS = ['Good', 'About'];
+// A name as the pattern reads it: the first letter as the trade writes it or capitalised, every other letter in either case.
+const namePattern = (name, opening) => [...name].map((char, index) => {
+  const [lower, upper] = [char.toLowerCase(), char.toUpperCase()];
+  if (lower === upper) return escaped(char);
+  return index === 0 && opening ? (char === upper ? char : `[${lower}${upper}]`) : `[${lower}${upper}]`;
+}).join('');
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it.
-const alternation = (words) => [...words].sort((a, b) => b.length - a.length).map(escaped).join('|');
-// "of fine style" is a compliment about the die cutter, not a grade.
-const NAMED_GRADE = new RegExp(`(?<![\\p{L}\\d])(?:${alternation(Object.keys(GRADE_NAMES))})(?![\\p{L}\\d])(?!\\s+style)`, 'giu');
-const MARKED_GRADE = new RegExp(`(?<![\\p{L}\\d])(?:${alternation(Object.keys(GRADE_MARKS))})(?![\\p{L}\\d])`, 'gu');
-// "ss", "vz" and "st" are two letters of ordinary German prose, so they count only where a dealer puts a grade: ending a sentence, alone or beside the
-// second grade of a range ("Schöne Patina. ss-vz."), or standing right behind "Erhaltung".
-const LOWER_MARKS = ['ss', 'vz', 'st'];
-const GRADE_TAIL = /^\s*(?:[-–/]\s*(?:ss|vz|st)\s*)*[.;!]?\s*$/;
-const GRADED_BY = /Erhaltung\s*:?\s*(?:(?:ss|vz|st)\s*[-–/]\s*)*$/;
-const marksGrade = (text, index, mark) => GRADE_TAIL.test(text.slice(index + mark.length)) || GRADED_BY.test(text.slice(0, index));
+const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
+const names = (opening) => alternation(Object.keys(GRADE_NAMES).map((name) => namePattern(name, opening)));
+const marks = alternation(Object.keys(GRADE_MARKS).map(escaped));
+// A grade is a clause of its own, or it is not a grade: it opens the description or follows one of . ; , : ( / and it closes the description or runs
+// into one of . ; , + - ) /. That is what tells the grade in "…with a fine portrait. Good very fine." from the prose in front of it, "ss." from
+// "Kassel", and it is why a range reads as its lower grade ("ss-vz" stops at the dash, "VF/EF" gives both and the lower is taken).
+const GRADE_PHRASE = new RegExp(`(?<=^|[.;,:(/]\\s?)(?:(?:${GRADE_QUALIFIERS.join('|')})\\s+(?:${names(false)}|${marks})|${names(true)}|${marks})(?=$|[.;,+\\-)/])`, 'gu');
+const NAME_BUCKETS = new Map(Object.entries(GRADE_NAMES).map(([name, bucket]) => [name.toLowerCase(), bucket]));
+const QUALIFIED = new RegExp(`^(?:${GRADE_QUALIFIERS.join('|')})\\s+`);
+const bucketOf = (phrase) => {
+  const graded = phrase.replace(QUALIFIED, '');
+  return NAME_BUCKETS.get(graded.toLowerCase()) ?? (Object.hasOwn(GRADE_MARKS, graded) ? GRADE_MARKS[graded] : null);
+};
 
-// The one grade a row is counted under: the lower of two ("VF/EF", "ss-vz"), and null when the description names none.
+// A dealer's grade stands in the first line or two of a description; past this the text is provenance and literature, and reading it only costs time.
+const GRADE_LIMIT = 3000;
+// The one grade a row is counted under: the lower of two ("VF/EF", "ss-vz"), and null when the description names none. One pass over the text, so a
+// long description costs no more per character than a short one.
 export function gradeOf(description) {
-  const text = squash(description);
-  const found = [...text.matchAll(NAMED_GRADE)].map((match) => GRADE_NAMES[match[0].toLowerCase()]);
-  for (const match of text.matchAll(MARKED_GRADE)) {
-    if (!LOWER_MARKS.includes(match[0]) || marksGrade(text, match.index, match[0])) found.push(GRADE_MARKS[match[0]]);
-  }
+  const text = squash(description).slice(0, GRADE_LIMIT);
+  const found = [...text.matchAll(GRADE_PHRASE)].map((match) => bucketOf(match[0])).filter(Boolean);
   return found.length ? GRADE_BUCKETS[Math.min(...found.map((bucket) => GRADE_BUCKETS.indexOf(bucket)))] : null;
 }
+
+// The grade the page read when it arrived; a row from elsewhere is read here, once, rather than once per bucket.
+const gradeOfLot = (lot) => (lot.grade === undefined ? gradeOf(lot.description) : lot.grade);
 
 const GRADE_MIN = 3;
 // A median per grade, from the rows on show: a bucket resting on fewer than GRADE_MIN counted sales says nothing and is left out.
 export function gradeMedians(lots, currency) {
+  const graded = new Map(GRADE_BUCKETS.map((bucket) => [bucket, []]));
+  for (const entry of lots) graded.get(gradeOfLot(entry))?.push(entry);
   return GRADE_BUCKETS.flatMap((bucket) => {
-    const summary = summarise(lots.filter((entry) => gradeOf(entry.description) === bucket), currency);
+    const summary = summarise(graded.get(bucket), currency);
     return summary.count >= GRADE_MIN ? [{ bucket, median: summary.median, count: summary.count }] : [];
   });
 }
@@ -492,7 +518,8 @@ export function lastSale(summary) {
 // acsearch hides a hammer price behind a "*" from a visitor who is not signed in, but a lot that has not been sold yet shows one too, so the stars
 // alone told a signed-in collector whose only hits are upcoming lots to sign in again. The page says which it is: its account menu offers the login
 // page to a visitor. Only when no marker is there at all do the stars decide, and then only if every lot has already been sold.
-const LOGIN_MARKER = /<a\b[^>]*\bhref=["']\/?login\.html(?:[?#][^"']*)?["']/i;
+// The menu links to the login page from wherever the collector is on the site, so the address is relative on one page and absolute on the next.
+const LOGIN_MARKER = /<a\b[^>]*\bhref=["'](?:[^"']*\/)?login\.html(?:[?#][^"']*)?["']/i;
 export function signedOutPage(html, lots, now = new Date()) {
   if (!lots.some((entry) => String(entry.price).trim() === '*')) return false;
   if (LOGIN_MARKER.test(String(html ?? ''))) return true;
@@ -513,8 +540,9 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // A search without hits comes back as acsearch's "No results found" page, which has no results array at all.
     if (!lots) return /No results found/i.test(html) ? { status: 'empty', term } : { status: 'network' };
     if (lots.length === 0) return { status: 'empty', term };
-    // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds.
-    const page = lots.slice(0, PAGE_SIZE);
+    // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds. Each lot's
+    // grade is read here, once, and travels with it: a redraw would otherwise read every description again, once per bucket.
+    const page = lots.slice(0, PAGE_SIZE).map((entry) => ({ ...entry, grade: gradeOf(entry.description) }));
     const summary = summarise(page, currency);
     if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out' };
     if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };

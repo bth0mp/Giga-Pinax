@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { fetchCoinArchivesPrices, parseCoinArchivesPublic } from '../extension/coinarchives-prices.js';
-import { coinArchivesUrl, localDay } from '../extension/prices.js';
+import { coinArchivesUrl } from '../extension/prices.js';
 
 const row = (id, date, price, title = `Auction, Lot ${id}`, description = '') => `<tr id="${id}"><td><a class='R' href='lotviewer.php?LotID=${id}&amp;AucID=7&amp;Lot=${id}&amp;Val=x'><div class="auctiontitle">${title}</div><span class="lottext">${description}</span></a></td><td><nobr>${date}</nobr></td><td class="price">${price}</td><td></td></tr>`;
 const page = (rows, count = rows.length) => `<div class="resultsinfo"><span class="headertext">Your search for <b>'test</b>' matched ${count} lots from auctions added in the last six months.</span><br>Only the first 100 results are shown.</div><table class='results'>${rows.join('')}</table>`;
@@ -117,14 +117,17 @@ test('an apostrophe in the term is no redirect', async () => {
 });
 
 // The cutoff is the collector's own day, as it is for acsearch: for part of every day away from UTC the UTC date is another day, so a lot he can still
-// see as today's was posted as future-dated, or tomorrow's counted as sold.
+// see as today's was posted as future-dated, or tomorrow's counted as sold. The clock is injected, so the test can fail on a machine set to UTC too.
+const inZone = (iso, offsetMinutes) => {
+  const shifted = new Date(new Date(iso).getTime() + offsetMinutes * 60000);
+  return { getFullYear: () => shifted.getUTCFullYear(), getMonth: () => shifted.getUTCMonth(), getDate: () => shifted.getUTCDate() };
+};
+
 test('a lot is future-dated by the local calendar day, not the UTC one', () => {
-  const day = (date) => `${date.getUTCDate()} Sep ${date.getUTCFullYear()}`;
-  const midnight = new Date(2026, 8, 15);
-  const tomorrow = new Date(Date.UTC(2026, 8, 16));
-  assert.equal(parseCoinArchivesPublic(page([row('1', day(localDay(midnight)), '10&nbsp;USD')]), { ...options, now: midnight }).status, 'ok');
-  const late = new Date(2026, 8, 15, 23, 59);
-  assert.equal(parseCoinArchivesPublic(page([row('1', day(tomorrow), '10&nbsp;USD')]), { ...options, now: late }).excluded.futureDate, 1);
+  // 23:59 on 15 September five hours west of UTC, where UTC has already reached the 16th.
+  const late = inZone('2026-09-16T04:59:00Z', -5 * 60);
+  assert.equal(parseCoinArchivesPublic(page([row('1', '15 Sep 2026', '10&nbsp;USD')]), { ...options, now: late }).status, 'ok');
+  assert.equal(parseCoinArchivesPublic(page([row('1', '16 Sep 2026', '10&nbsp;USD')]), { ...options, now: late }).excluded.futureDate, 1);
 });
 
 test('a stalled request is cut off by its own timeout', async () => {

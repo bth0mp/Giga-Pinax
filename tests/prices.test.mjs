@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citesReference, extractLots, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
+import { buildSearchUrl, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -197,8 +197,8 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.equal(ok.status, 'ok');
   assert.equal(ok.summary.median, 200);
   assert.equal(ok.summary.total, 3);
-  // The page's lots come back too, for the popup to draw a period from without another request.
-  assert.deepEqual(ok.lots, [lot('100'), lot('300'), lot('*')]);
+  // The page's lots come back too, for the popup to draw a period from without another request, each carrying the grade read once here.
+  assert.deepEqual(ok.lots, [lot('100'), lot('300'), lot('*')].map((entry) => ({ ...entry, grade: null })));
   const many = await fetchPrices({ term: 'Nero', currency: 'USD' }, { fetchImpl: fakeFetch(page(Array.from({ length: 150 }, (_, index) => lot(String(index + 1), '01.01.2024', String(index))))) });
   assert.equal(many.summary.priced.length, 100);
   assert.equal(many.summary.capped, true);
@@ -483,13 +483,20 @@ test('lotsInPeriod keeps the lots sold on or after the same day N years ago, and
   assert.deepEqual(lotsInPeriod(leap, '2y', new Date(Date.UTC(2028, 1, 29, 18))).map((entry) => entry.id), ['kept']);
 });
 
-test('localDay keeps the local date of a moment, at midnight UTC like a sale date, whatever the time of day', () => {
-  // Built from the local clock, so this holds in any time zone: late on 10 September is still the 10th, just after midnight the 11th.
-  assert.equal(localDay(new Date(2026, 8, 10, 21)).toISOString(), '2026-09-10T00:00:00.000Z');
-  assert.equal(localDay(new Date(2026, 8, 11, 0, 30)).toISOString(), '2026-09-11T00:00:00.000Z');
-  assert.equal(localDay(new Date(2028, 1, 29, 23, 59)).toISOString(), '2028-02-29T00:00:00.000Z');
-  // West of UTC, 21:00 on the 10th is already the 11th in UTC; the collector's 10th still keeps a sale from exactly two years before.
-  assert.deepEqual(lotsInPeriod([lot('100', '10.09.2024', 'edge')], '2y', localDay(new Date(2026, 8, 10, 21))).map((entry) => entry.id), ['edge']);
+// A moment as a clock in a fixed zone reports it, whatever zone the machine running the tests keeps: the local getters are the UTC ones, shifted.
+// The host's own zone would leave this test unable to fail on a machine set to UTC, which is what a build server usually is.
+const inZone = (iso, offsetMinutes) => {
+  const shifted = new Date(new Date(iso).getTime() + offsetMinutes * 60000);
+  return { getFullYear: () => shifted.getUTCFullYear(), getMonth: () => shifted.getUTCMonth(), getDate: () => shifted.getUTCDate() };
+};
+
+test('localDay keeps the local date of a moment, at midnight UTC like a sale date, whatever the zone', () => {
+  // 02:00 UTC on the 11th is still the 10th five hours west, and 22:00 UTC on the 10th is already the 11th ten hours east.
+  assert.equal(localDay(inZone('2026-09-11T02:00:00Z', -5 * 60)).toISOString(), '2026-09-10T00:00:00.000Z');
+  assert.equal(localDay(inZone('2026-09-10T22:00:00Z', 10 * 60)).toISOString(), '2026-09-11T00:00:00.000Z');
+  assert.equal(localDay(inZone('2028-02-29T23:59:00Z', 0)).toISOString(), '2028-02-29T00:00:00.000Z');
+  // The collector's own 10th still keeps a sale from exactly two years before, though UTC has moved on to the 11th.
+  assert.deepEqual(lotsInPeriod([lot('100', '10.09.2024', 'edge')], '2y', localDay(inZone('2026-09-11T02:00:00Z', -5 * 60))).map((entry) => entry.id), ['edge']);
 });
 
 // Three counted sales in the last 2 years (median 250), with a lot without a price and one in euros; three before (median 150).
@@ -815,7 +822,8 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   assert.equal(gradeOf('Nero. As. RIC 306. Very Fine, dark patina.'), 'VF');
   assert.equal(gradeOf('Good very fine, lightly toned.'), 'VF');
   assert.equal(gradeOf('Extremely Fine, minor marks.'), 'EF');
-  assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), 'VF');
+  // A slab's grading line is not a clause ("Choice VF 5/5 - 4/5"), so 0.32 leaves it ungraded rather than reading a grade out of the middle of prose.
+  assert.equal(gradeOf('NGC Choice VF 5/5 - 4/5.'), null);
   assert.equal(gradeOf('gVF'), 'VF');
   assert.equal(gradeOf('VF/EF'), 'VF');
   assert.equal(gradeOf('Fine, rough surfaces.'), 'Fine and below');
@@ -828,11 +836,58 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   assert.equal(gradeOf('Belle patine. TTB.'), 'VF');
   assert.equal(gradeOf('Patina verde. SPL.'), 'EF');
   assert.equal(gradeOf('Stempelglanz.'), 'FDC/Mint State');
-  // A two-letter lowercase token is a grade only at the end of a sentence or behind Erhaltung; "fine style" is not a grade at all.
+  // A two-letter lowercase token is a grade only as a clause of its own; "fine style" is not a grade at all.
   assert.equal(gradeOf('Die Erhaltung ist gut, ss ist untertrieben, schaut selbst'), null);
   assert.equal(gradeOf('Of fine style, some wear.'), null);
   assert.equal(gradeOf('Nero. As. RIC 306.'), null);
   assert.equal(gradeOf(''), null);
+});
+
+// 0.32 review: the dealer's prose was read as a grade. "a fine portrait" and "as fine as any" are the adjective, "the BB collection" is a name, and
+// the lower-of-two rule then put every one of those lots in the wrong bucket. A grade is a clause of its own or it is not a grade.
+test('gradeOf reads a grade only where a dealer writes one: at a clause edge', () => {
+  assert.equal(gradeOf('An attractive example with a fine portrait. Good very fine.'), 'VF');
+  assert.equal(gradeOf('Extremely Fine, with a fine old cabinet tone.'), 'EF');
+  assert.equal(gradeOf('A portrait as fine as any. EF'), 'EF');
+  assert.equal(gradeOf('From the BB collection. EF'), 'EF');
+  // The clause rule replaces the end-of-description rule for the German, French and Italian marks.
+  assert.equal(gradeOf('Schöne Patina. ss. Aus Sammlung Müller.'), 'VF');
+  assert.equal(gradeOf('ss, R!'), 'VF');
+  assert.equal(gradeOf('ss+'), 'VF');
+  assert.equal(gradeOf('Er ist stolz'), null);
+  assert.equal(gradeOf('Kassel'), null);
+  // A name needs the capitals dealers give it; an abbreviation needs its own, which is all that tells it from an ordinary word.
+  for (const graded of [['Fine', 'Fine and below'], ['Very Fine', 'VF'], ['Very fine', 'VF'], ['Good very fine', 'VF'], ['Good VF', 'VF'],
+    ['About EF', 'EF'], ['Extremely fine', 'EF'], ['vorzüglich', 'EF'], ['Vorzüglich', 'EF']]) {
+    assert.equal(gradeOf(graded[0]), graded[1], graded[0]);
+  }
+  for (const prose of ['fine', 'very fine', 'a fine coin', 'vf', 'ef', 'fdc', 'good very fine']) assert.equal(gradeOf(prose), null, prose);
+  // Split grades still go to the lower bucket.
+  assert.equal(gradeOf('Erhaltung: ss-vz.'), 'VF');
+  assert.equal(gradeOf('(VF/EF)'), 'VF');
+});
+
+test('filterableDenomination offers only a label that can be matched as a word', () => {
+  assert.equal(filterableDenomination('Denarius'), 'denarius');
+  assert.equal(filterableDenomination(' Tetradrachm '), 'tetradrachm');
+  // "as" is the English word as often as the coin, and nothing shorter than four letters reads any better.
+  assert.equal(filterableDenomination('As'), '');
+  assert.equal(filterableDenomination('AE'), '');
+  // An unresolved slug is no word at all.
+  assert.equal(filterableDenomination('266_aureus'), '');
+  assert.equal(filterableDenomination('AE 3'), '');
+  assert.equal(filterableDenomination(''), '');
+  assert.equal(filterableDenomination(null), '');
+});
+
+// acsearch's account menu links to the login page from every page of the site, so the address is relative on one and absolute on another.
+test('signedOutPage reads the login link wherever the page keeps it', () => {
+  const hidden = [lot('*', '01.01.2024', 'a')];
+  for (const href of ['login.html', '/login.html', 'https://www.acsearch.info/login.html', '/en/login.html?next=search']) {
+    assert.equal(signedOutPage(`<nav><a href="${href}"><span>Log in</span></a></nav>`, hidden, NOW), true, href);
+  }
+  // Not the marker, and a lot that has yet to be sold: the stars are no longer evidence of anything.
+  assert.equal(signedOutPage('<a href="/prelogin.htmlx">x</a>', [...hidden, lot('*', '01.06.2028', 'c')], NOW), false);
 });
 
 test('gradeMedians reports only a bucket resting on at least three counted sales', () => {
@@ -842,6 +897,17 @@ test('gradeMedians reports only a bucket resting on at least three counted sales
   assert.deepEqual(gradeMedians(lots, 'USD'), [{ bucket: 'VF', median: 200, count: 3 }]);
   assert.deepEqual(gradeMedians([], 'USD'), []);
   assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF: median $180 (9)');
+});
+
+// A description was read four times over at every redraw, once per bucket. The page reads it once, when it arrives, and the grade travels with the lot.
+test('the grade is read once, when the page is read', async () => {
+  const page = (lots) => `<script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script>`;
+  const lots = [lot('100', '01.01.2024', '1', 'Nero. As. RIC 306. Very Fine.'), lot('300', '01.01.2024', '2', 'Nero. As. RIC 306.')];
+  const ok = await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page(lots)) });
+  assert.deepEqual(ok.lots.map((entry) => entry.grade), ['VF', null]);
+  // gradeMedians counts the grade the page read, never the description again.
+  const carried = ['100', '200', '300'].map((price, index) => ({ ...lot(price, '01.01.2024', String(index), 'Fine.'), grade: 'EF' }));
+  assert.deepEqual(gradeMedians(carried, 'USD'), [{ bucket: 'EF', median: 200, count: 3 }]);
 });
 
 // The filters leave a row out of the statistics by default and say why; the collector may still count it by hand, and Reset restores the default.
