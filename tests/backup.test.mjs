@@ -431,6 +431,44 @@ test('merge keeps local alerts and never reports the rescheduled ones as conflic
   assert.deepEqual(preview.value.snapshot.alerts, [alert]);
 });
 
+// The reconcile derives the schedule again from the merged events, so a reminder the collector had already answered on
+// the other install came back due on this one: an acknowledgement is the collector's answer, not the other install's
+// bookkeeping. A trigger this install already holds still keeps its own alert.
+test('merge takes an answered reminder the other install carries and this one has never had', () => {
+  const event = {
+    id: uuid(1), revision: 0, dataClass: 'collector', name: 'Sale', eventKind: 'auction-starts',
+    precision: 'timed', localDate: '2026-10-10', localTime: '12:00', timeZone: 'Europe/London',
+    startsAt: '2026-10-10T11:00:00.000Z', reminderScope: 'standalone',
+    reminders: [{ id: uuid(2), kind: 'offset', offsetMinutes: 60 }, { id: uuid(3), kind: 'offset', offsetMinutes: 30 }],
+    createdAt: NOW, updatedAt: NOW,
+  };
+  const alert = (id, reminderId, triggerAt, extra = {}) => ({
+    id, revision: 0, dataClass: 'collector', triggerId: `${event.id}:${reminderId}:${triggerAt}`,
+    eventId: event.id, eventRevision: 0, reminderId, triggerAt, status: 'pending', createdAt: NOW, updatedAt: NOW, ...extra,
+  });
+  const local = alert(uuid(4), event.reminders[0].id, '2026-10-10T10:00:00.000Z');
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(event);
+  current.alerts.push(local);
+  const incoming = structuredClone(current);
+  incoming.alerts[0] = { ...local, id: uuid(9), status: 'acknowledged', acknowledgedAt: LATER, updatedAt: LATER };
+  const answered = alert(uuid(5), event.reminders[1].id, '2026-10-10T10:30:00.000Z',
+    { status: 'acknowledged', acknowledgedAt: LATER, updatedAt: LATER });
+  incoming.alerts.push(answered);
+  // A reminder the merge does not bring an event for has nothing to be derived from and is left alone.
+  incoming.alerts.push(alert(uuid(6), uuid(7), '2026-10-10T09:00:00.000Z', { status: 'acknowledged', acknowledgedAt: LATER }));
+  incoming.auctionEvents[0].reminders.push({ id: uuid(7), kind: 'offset', offsetMinutes: 120 });
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  const alerts = preview.value.snapshot.alerts;
+  assert.deepEqual(alerts.map(({ id }) => id), [local.id, answered.id]);
+  assert.equal(alerts[0].status, 'pending', 'the trigger this install already holds keeps its own alert');
+  assert.equal(alerts[1].status, 'acknowledged');
+  assert.equal(alerts[1].triggerId, `${event.id}:${event.reminders[1].id}:2026-10-10T10:30:00.000Z`);
+  assert.equal(validateSnapshot(preview.value.snapshot).ok, true);
+});
+
 test('merge skips an incoming lot that is the same auction lot under a new ID', () => {
   const auctionContext = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
   const current = createEmptySnapshot(NOW);

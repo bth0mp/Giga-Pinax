@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
+import { LIMITS, SCHEMA_VERSION, migrateSnapshot, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, own } from './validate.js';
@@ -236,6 +236,33 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
   });
 }
 
+// The identity of a trigger, rebuilt from the three things it is derived from, exactly as the reconcile rebuilds it.
+const triggerKey = (alert) => `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
+
+// Alerts are not merged record by record - the reconcile derives the schedule again from the merged events - but an
+// acknowledgement or a snooze is the collector's own answer, not the other install's bookkeeping, and deriving the
+// schedule again brought a reminder they had already answered there back as due here. An incoming alert whose trigger
+// this install does not already hold is taken, provided the event and the reminder it names came through the merge; a
+// trigger this install does hold keeps its own alert, which is the row in front of the collector.
+function adoptIncomingAlerts(snapshot, incoming) {
+  const held = new Set(snapshot.alerts.map(triggerKey));
+  const ids = new Set(snapshot.alerts.map(({ id }) => id));
+  const remindersByEvent = new Map(snapshot.auctionEvents.map((event) =>
+    [event.id, new Set(event.reminders.map(({ id }) => id))]));
+  let adopted = 0;
+  for (const alert of incoming.alerts ?? []) {
+    if (snapshot.alerts.length >= LIMITS.alerts) break;
+    const key = triggerKey(alert);
+    if (held.has(key) || ids.has(alert.id)) continue;
+    if (remindersByEvent.get(alert.eventId)?.has(alert.reminderId) !== true) continue;
+    snapshot.alerts.push({ ...clone(alert), triggerId: key });
+    held.add(key);
+    ids.add(alert.id);
+    adopted += 1;
+  }
+  return adopted;
+}
+
 // Alerts are the collector's local schedule and are kept verbatim, but the merge can take an event
 // that no longer carries the reminder one of them was derived from. The reconcile that follows an
 // import derives the schedule again, so a stale alert is dropped rather than failing the merge and
@@ -418,6 +445,7 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
     if (survivors.has(id)) tally[outcome] += 1;
   }
   const attached = (row) => row.collection !== 'collectionEntries' || survivors.has(row.id);
+  tally.added += adoptIncomingAlerts(snapshot, incoming);
   dropStaleAlerts(snapshot);
   compactPriorities(snapshot, new Set(current.lots.map(({ id }) => id)));
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);
