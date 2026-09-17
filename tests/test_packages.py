@@ -209,16 +209,54 @@ class PackageBuildTests(unittest.TestCase):
 
     def test_builder_leaves_the_previous_output_when_a_later_browser_fails(self) -> None:
         build = load_build_script()
+        real_stage_browser = build.stage_browser
+
+        def stage_every_browser_but_firefox(stage_root: Path, browser: str):
+            if browser == "firefox":
+                raise ValueError("staging failed")
+            return real_stage_browser(stage_root, browser)
+
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_root = Path(temporary_directory).resolve()
             build.build(["brave"], output_root)
-            before = self.digest(output_root / f"giga-pinax-brave-{VERSION}.zip")
-            with mock.patch.object(build, "stage_browser", side_effect=ValueError("staging failed")):
+            # A witness inside the previous dist/brave/: swapping the new Brave in would delete the whole directory,
+            # so this file surviving is what tells a staged build apart from one that swaps as each browser finishes.
+            witness = output_root / "brave" / "previous-build.marker"
+            witness.write_text("the output standing before the failed build", encoding="utf-8")
+            before = {path.name: self.digest(path) for path in output_root.glob("*.zip")}
+
+            with mock.patch.object(build, "stage_browser", side_effect=stage_every_browser_but_firefox) as staging:
                 with self.assertRaises(ValueError):
                     build.build(list(build.BROWSERS), output_root)
-            self.assertEqual(before, self.digest(output_root / f"giga-pinax-brave-{VERSION}.zip"))
+            # Brave really was staged: the guard is about the swap, not about failing before any work happened.
+            self.assertEqual(["brave", "firefox"], [call.args[1] for call in staging.call_args_list])
+
+            self.assertTrue(witness.is_file(), "the failed build replaced dist/brave/ before firefox failed")
+            self.assertEqual(before, {path.name: self.digest(path) for path in output_root.glob("*.zip")})
             self.assertFalse((output_root / "firefox").exists())
             self.assertEqual([], [path for path in output_root.iterdir() if path.name.startswith(".giga-pinax-build-")])
+
+    def test_builder_clears_release_zips_left_by_an_older_version(self) -> None:
+        # `gh release upload dist/giga-pinax-*.zip` would attach a stale package alongside the new ones.
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_root = Path(temporary_directory).resolve()
+            build.build(list(build.BROWSERS), output_root)
+            stale = [output_root / f"giga-pinax-{name}-0.0.1.zip" for name in ("brave", "chrome", "firefox")]
+            for path in stale:
+                path.write_bytes(b"an older release")
+            unrelated = output_root / "notes.zip"
+            unrelated.write_bytes(b"not a release package")
+
+            build.build(list(build.BROWSERS), output_root)
+
+            self.assertEqual([], [path.name for path in stale if path.exists()])
+            self.assertTrue(unrelated.is_file())
+            self.assertEqual(
+                {f"giga-pinax-{name}-{VERSION}.zip" for name in ("brave", "chrome", "firefox")}
+                | {f"giga-pinax-{browser}.zip" for browser in build.BROWSERS},
+                {path.name for path in output_root.glob("giga-pinax-*.zip")},
+            )
 
     def test_builder_rejects_unknown_browser_without_changing_outputs(self) -> None:
         before = sorted(path.name for path in DIST.glob("*")) if DIST.is_dir() else None

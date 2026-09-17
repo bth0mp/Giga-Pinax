@@ -23,6 +23,7 @@ DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "dist"
 
 BROWSERS = ("brave", "firefox")
 CHROME_TWIN = "brave"  # Chrome loads the Brave package unchanged, so its release asset is a byte-identical copy.
+CHROME_TWIN_NAME = "chrome"
 ASSET_PATHS = (
     "background.js",
     "bid-tools.css",
@@ -147,12 +148,13 @@ def manifest_version(manifest: dict, browser: str) -> str:
     return version
 
 
-def check_manifest_versions() -> None:
+def check_manifest_versions() -> str:
     # One release carries one version: manifests that disagree would ship packages a collector cannot tell apart.
     versions = {browser: manifest_version(read_manifest(browser)[1], browser) for browser in BROWSERS}
     if len(set(versions.values())) > 1:
         listed = ", ".join(f"{browser} {version}" for browser, version in sorted(versions.items()))
         raise ValueError(f"manifest versions disagree: {listed}")
+    return versions[BROWSERS[0]]
 
 
 def load_inputs(browser: str) -> tuple[dict, list[tuple[str, bytes]]]:
@@ -214,33 +216,51 @@ def replace_with_retry(source: Path, destination: Path, attempts: int = 5) -> No
             time.sleep(0.2)
 
 
+def release_zip_names(version: str) -> set[str]:
+    return {f"giga-pinax-{name}-{version}.zip" for name in (*BROWSERS, CHROME_TWIN_NAME)} | {
+        f"giga-pinax-{browser}.zip" for browser in BROWSERS
+    }
+
+
+def stale_release_zips(output_root: Path, version: str) -> list[Path]:
+    # `gh release upload dist/giga-pinax-*.zip` matches by name, so an older version left in dist/ would be
+    # attached to the new release beside the right packages. Clear it as part of the swap.
+    current = release_zip_names(version)
+    return sorted(
+        path for path in output_root.glob("giga-pinax-*.zip")
+        if path.name not in current and path.is_file() and not path.is_symlink()
+    )
+
+
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
-    check_manifest_versions()
+    version = check_manifest_versions()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
-    staged: list[tuple[str, Path, Path, str]] = []
     try:
+        # Every output — directories, versioned zips, the Chrome twin and the stable aliases — exists in staging
+        # before anything moves, so a failure part-way through can never leave dist/ half old and half new.
+        staged: list[tuple[Path, Path]] = []
         for browser in selected_browsers:
-            staged_directory, staged_zip, version = stage_browser(stage_root, browser)
-            staged.append((browser, staged_directory, staged_zip, version))
-
-        results: list[Path] = []
-        for browser, staged_directory, staged_zip, version in staged:
-            destination_directory = output_root / browser
-            destination_zip = output_root / f"giga-pinax-{browser}-{version}.zip"
+            staged_directory, staged_zip, browser_version = stage_browser(stage_root, browser)
+            staged.append((staged_directory, output_root / browser))
+            staged.append((staged_zip, output_root / staged_zip.name))
             # Copies of the same bytes: the stable alias the update buttons resolve, and Chrome's own release asset.
-            copies = [(stage_root / f"giga-pinax-{browser}-stable.zip", output_root / f"giga-pinax-{browser}.zip")]
+            copies = [f"giga-pinax-{browser}.zip"]
             if browser == CHROME_TWIN:
-                chrome_zip = f"giga-pinax-chrome-{version}.zip"
-                copies.append((stage_root / chrome_zip, output_root / chrome_zip))
-            for staged_copy, _ in copies:
+                copies.append(f"giga-pinax-{CHROME_TWIN_NAME}-{browser_version}.zip")
+            for name in copies:
+                staged_copy = stage_root / f"copy-{name}"
                 shutil.copyfile(staged_zip, staged_copy)
-            replace_known_directory(staged_directory, destination_directory, output_root)
-            replace_with_retry(staged_zip, destination_zip)
-            for staged_copy, destination_copy in copies:
-                replace_with_retry(staged_copy, destination_copy)
-            results.extend((destination_directory, destination_zip, *(destination for _, destination in copies)))
-        return results
+                staged.append((staged_copy, output_root / name))
+
+        for stale in stale_release_zips(output_root, version):
+            stale.unlink()
+        for staged_path, destination in staged:
+            if staged_path.is_dir():
+                replace_known_directory(staged_path, destination, output_root)
+            else:
+                replace_with_retry(staged_path, destination)
+        return [destination for _, destination in staged]
     finally:
         if stage_root.exists():
             if stage_root.resolve().parent != output_root:

@@ -2,7 +2,7 @@
 
 1. Set the same `version` in `manifests/brave.json` and `manifests/firefox.json`. The build refuses to run while they disagree.
 2. Move the entries under `## [Unreleased]` in [CHANGELOG.md](../CHANGELOG.md) into a new `## [x.y.z] - YYYY-MM-DD` section, add its link at the foot of the file, and leave `## [Unreleased]` empty.
-3. Run `python scripts/build.py`. One command writes all five release assets into `dist/`: the versioned Brave, Chrome and Firefox ZIPs and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases. Every browser is staged first and swapped into `dist/` only once all of them have built, so a failure never leaves a mixed-version `dist/`.
+3. Run `python scripts/build.py`. One command writes all five release assets into `dist/`: the versioned Brave, Chrome and Firefox ZIPs and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases. Every one of them is built in a staging directory first and moved into `dist/` only once they all exist, so a failure part-way through leaves the previous `dist/` untouched rather than a mixed-version one. The same step clears any `giga-pinax-*.zip` of another version out of `dist/`, so `dist/giga-pinax-*.zip` is exactly this release's five assets and nothing older.
 4. Push the commit, then push the tag `vx.y.z`. The `release` workflow runs both test suites, the build and the Firefox lint, creates the release as a **draft** if it does not exist, and uploads the five ZIPs with `gh release upload --clobber`. It never publishes.
 5. Open the draft, check that all five assets are present and downloadable, paste the install section below beside the changelog entries, and publish it as the latest release.
 
