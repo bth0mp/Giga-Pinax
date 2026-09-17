@@ -289,9 +289,10 @@ const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'Bop') return bopSeries(number);
   return referenceNumber(catalogue, number);
 };
-// Between the key and the number: the punctuation and the bracket dealers put there ("Cited as RIC I, 306", "RIC (306)"). No colon, no dash and no
-// semicolon — those start the next citation on the line.
-const SEP = String.raw`[\s.,(]*`;
+// Between the key and the number: the punctuation dealers put there ("Cited as RIC I, 306", "R.I.C. 306"). No colon, no dash and no semicolon — those
+// start the next citation on the line. One group, and never two of them side by side: two split a run of separators between themselves every way there
+// is, which is what made 'RIC ' followed by 100,000 full stops cost seconds. The bracket of "RIC (306)" belongs to the number and is taken there.
+const SEP = String.raw`[\s.,]*`;
 // An edition mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC I (2) 306".
 const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\d)?`;
 // The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
@@ -307,14 +308,17 @@ const RULERS = String.raw`(?:${WORD}(?:\s+${NUMERAL}(?![\p{L}\d]))?,?\s+){0,4}`;
 // A volume published in parts, as the dealer punctuates it: "RIC IV-1", "RIC IV/1", "RIC II.1", "RIC IV, part I,".
 const PART_NUMERALS = Object.freeze({ 1: 'I', 2: 'II', 3: 'III', 4: 'IV' });
 const partPattern = (forms) => String.raw`(?:[-/.](?:${forms})|,?\s*[Pp]art\s+(?:${forms}),?)?`;
-// A full-number range that ends at the number ("RIC 305-306"); one that starts at it ("RIC 306-307") already ends at a character no number may hold.
-const RANGE = String.raw`(?:\d+\s*[-–]\s*)?`;
+// The types a dealer lists behind one key before the one being looked for ("RIC 305-306", "RIC 304, 305, 306"); a list that starts at the number
+// ("RIC 306-307") already ends at a character no number may hold. Bounded, so a page of digits costs no more per character than a line of them.
+const LIST = String.raw`(?:\d+[a-z]?\s*[-–,]\s*){0,8}`;
 // A line about money, not about a type: the key carries one of these words in front of it, or the number is an amount, a measurement or a die axis.
 const PRICE_WORDS = ['starting', 'start', 'opening', 'reserve', 'asking', 'sale', 'hammer', 'estimate', 'estimated', 'realized', 'realised'];
 const CURRENCY = String.raw`(?:USD|EUR|GBP|CHF|AUD)(?![\p{L}\d])|[Ee]uros?(?![\p{L}\d])|US\$|[$€£]`;
 // The weight, the diameter and the die axis a dealer prints beside a lot's number.
 const UNIT = String.raw`(?:mm|cm|gr|g|h)(?![\p{L}\d])`;
-const NOT_AMOUNT = String.raw`(?![.,][\d-])(?!\s?(?:${CURRENCY}))(?!\s(?:${UNIT}))`;
+// A decimal part, a "23,-", a currency or a unit behind the number says it is money or a measurement. A comma and three or more digits is the next
+// type in the dealer's list rather than a decimal: no amount is written "23,307".
+const NOT_AMOUNT = String.raw`(?![.,]-)(?!\.\d)(?!,\d{1,2}(?!\d))(?!\s?(?:${CURRENCY}))(?!\s(?:${UNIT}))`;
 
 // The part of a volume the card names ("II, Part 1", "II.1"), which the dealer may write as a digit or as a numeral. A card whose volume names no
 // part takes a citation with any part, but a card that names one takes only its own: volume II part 1's 123 is not part 3's.
@@ -326,13 +330,18 @@ function volumeParts(volume) {
 }
 
 // Only RIC carries a volume, and only its own: a card on volume I is not cited by "RIC II 306", while a card without a volume takes any numeral.
+// A ".1", "-1" or "/1" glued to the numeral is that volume's part and nothing else — the guard behind the part makes it impossible to leave one
+// unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1.
 function between({ catalogue, volume }) {
   if (catalogue !== 'RIC') return SEP;
   const text = squash(volume);
   const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
   const part = partPattern(volumeParts(text));
-  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${part}${EDITION}${SEP})?${RULERS}${SEP}`;
+  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
 }
+
+// A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
+const CITATION_LIMIT = 10000;
 
 // Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
 // has no citation to look for, so their rows all count and the panel offers no filter to switch off.
@@ -344,15 +353,16 @@ export const filtersCitations = (reference) =>
 // nor is a line about the money ("Starting Price: 100 EUR", "Hammer Price 100", "Price 23 EUR"), nor another catalogue's prefixed number ("Price L23").
 // A key is read as written or in full capitals, never in lower case. A lettered number is its own type, so "Price 23a" does not cite Price 23 and
 // "Seleucid Coins 1266.2a" does not cite SC 1266.2, exactly as "RIC 306a" never cited RIC 306. A row with no description at all is never dropped: the
-// page simply says nothing to judge it by. Every part is bounded, so the pattern reads a description once however long it is.
+// page simply says nothing to judge it by. Every repetition is bounded and no two of them may consume the same characters, so the pattern reads a
+// description once; the text is cut to CITATION_LIMIT first, as the grade reader cuts its own, so no page of literature is ever read whole.
 export function citesReference(description, reference) {
-  const text = squash(description);
+  const text = squash(description).slice(0, CITATION_LIMIT);
   const keys = Object.hasOwn(CITATION_KEYS, reference?.catalogue) ? CITATION_KEYS[reference.catalogue] : null;
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${RANGE}(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
+    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
   return new RegExp(pattern, 'u').test(text);
 }
 

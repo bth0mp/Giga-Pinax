@@ -870,6 +870,47 @@ test('citesReference never reads an amount, a unit or a die axis as the number',
   assert.equal(citesReference('Antiochos. AE. SC 12. Very Fine.', sc12), true);
 });
 
+// 0.32 review, round 3: a ".1" behind the volume numeral was read as the separator between key and number, so the part's own digit answered for the
+// type number and "RIC IV.1 266" cited a card on RIC IV type 1.
+test('a part glued to the volume numeral is a part, never the type number', () => {
+  const ricIv1 = { catalogue: 'RIC', number: '1', volume: 'IV', section: 'Septimius Severus' };
+  for (const cited of ['RIC IV.1 266', 'RIC IV-1 266', 'RIC IV/1 266']) {
+    assert.equal(citesReference(`Septimius Severus. Denarius. ${cited}. VF.`, ricIv1), false, cited);
+  }
+  assert.equal(citesReference('Titus. Denarius. RIC II.1 123. VF.', { catalogue: 'RIC', number: '1', volume: 'II' }), false);
+  // The volume's own type 1 still cites it, written with the part or without.
+  assert.equal(citesReference('Septimius Severus. Denarius. RIC IV 1. VF.', ricIv1), true);
+  assert.equal(citesReference('Septimius Severus. Denarius. RIC IV.1 1. VF.', ricIv1), true);
+});
+
+// 0.32 review, round 3: dealers list several types behind one key. "RIC 306,307" lost its citation to the amount rule (a comma and digits read as a
+// decimal), and "RIC 305, 306" never had one, since only a dash joined two numbers.
+test('citesReference reads a list of type numbers behind one key', () => {
+  const ric306 = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  for (const line of ['Nero. As. RIC 306, 307.', 'Nero. As. RIC 305, 306.', 'Nero. As. RIC 306,307.', 'Nero. As. RIC 305-306.', 'Nero. As. RIC 304, 305, 306.']) {
+    assert.equal(citesReference(line, ric306), true, line);
+  }
+  // A decimal amount is still an amount: one or two digits behind the comma and nothing after them.
+  const price23 = { catalogue: 'Price', number: '23' };
+  assert.equal(citesReference('Price 23,50', price23), false);
+  assert.equal(citesReference('Price 23,5', price23), false);
+  assert.equal(citesReference('Price 23.00', price23), false);
+});
+
+// 0.32 review, round 3: two adjacent separator groups behind the key split a run of them between themselves, so 'RIC ' followed by 100,000 full stops
+// took 4-7 seconds. They are one group now, and a description is cut to CITATION_LIMIT characters before the pattern reads it at all.
+test('a run of separators behind the key costs no more than the text it stands in', () => {
+  const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
+  for (const text of [`RIC ${'.'.repeat(100000)}`, `RIC ${'.'.repeat(3000)}`, `RIC ${'. '.repeat(50000)}`, `RIC ${', '.repeat(50000)}306`, `RIC ${'(('.repeat(50000)}306`]) {
+    const began = Date.now();
+    citesReference(text, ric);
+    assert.ok(Date.now() - began < 250, `citesReference took ${Date.now() - began} ms on ${text.length} characters`);
+  }
+  // Only the opening of a description is read, as the grade reader already did: what stands 10,000 characters in is a group lot's literature.
+  assert.equal(citesReference(`${'x '.repeat(100)}RIC 306`, ric), true);
+  assert.equal(citesReference(`${'x '.repeat(6000)}RIC 306`, ric), false);
+});
+
 // The grade reader is bounded the same way, and the worst shape the reviewer found is timed at both lengths.
 test('the grade reader reads an adversarial description in one bounded pass', () => {
   for (const length of [3000, 100000]) {
