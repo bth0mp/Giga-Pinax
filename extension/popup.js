@@ -112,9 +112,16 @@ const labelCache = {
 };
 const localCatalogue = createLocalCatalogue({ cache: labelCache });
 
+// Origins this popup has already seen granted: permissions.request opens no prompt for them, so nothing it does can close the popup.
+const grantedOrigins = new Set();
+function noteGranted(origins, allowed) {
+  if (allowed) for (const origin of origins) grantedOrigins.add(origin);
+  return allowed;
+}
+
 async function hasHostAccess(origins) {
   if (!api?.permissions?.contains) return true;
-  try { return (await api.permissions.contains({ origins })) === true; } catch { return false; }
+  try { return noteGranted(origins, (await api.permissions.contains({ origins })) === true); } catch { return false; }
 }
 
 async function localFirstType(reference) {
@@ -803,6 +810,8 @@ async function run(perform, note = '', failedReference = null) {
   catch { outcome = { status: 'network' }; }
   finally { if (id === requestId) setBusy(false); }
   if (id !== requestId) return;
+  // The lookup the typed reference was kept for has answered, whatever it answered: only a cancelled lookup, and one still waiting for access, keep it.
+  if (!['cancelled', 'permission', 'online-required'].includes(outcome.status)) forgetPendingReference();
   if (outcome.status === 'ok') {
     // A card fills the fields from itself, so the acsearch term follows the chosen type: a BIGR card its King and Bop number (title and citation;
     // chips and suggestions carry no parsable Bop label), an OCRE card its RIC fields from its title (a lone "Hadrian 12" hit shows II.3² Hadrian 12),
@@ -825,8 +834,6 @@ async function run(perform, note = '', failedReference = null) {
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
     renderRecent();
-    // The lookup it was kept for has answered.
-    forgetPendingReference();
   }
   else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
@@ -894,36 +901,44 @@ async function runPrices(term, currency, { remember = true, context = researchCo
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.
 async function hasAcsearchAccess() {
   if (!api?.permissions?.contains) return true;
-  try { return (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true; }
+  try { return noteGranted([ACSEARCH_ORIGIN], (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true); }
   catch { return false; }
 }
 
 // Firefox closes the popup over its own permission prompt, taking what was typed with it, and "select Look up again" then has nothing to look up. The
-// Reference box is kept for this browsing session alone - never on disk, and never past the window - and put back when the popup opens again.
+// Reference box is kept in the extension's own session area, which outlives that document; the popup's sessionStorage dies with it, which is the case
+// this exists for. ponytail: where storage.session is missing, nothing is kept - no other store survives the closing popup.
 const PENDING_KEY = 'giga-pinax-pending-reference-v1';
+const sessionArea = () => api?.storage?.session ?? null;
 function rememberPendingReference() {
-  try { globalThis.sessionStorage?.setItem(PENDING_KEY, $('quick-reference').value); }
+  // Never awaited: permissions.request must stay the first await after the user gesture, or the browser no longer treats it as one.
+  try { void Promise.resolve(sessionArea()?.set({ [PENDING_KEY]: $('quick-reference').value })).catch(() => {}); }
   catch { /* the prompt still opens; only the refill is lost */ }
 }
 function forgetPendingReference() {
-  try { globalThis.sessionStorage?.removeItem(PENDING_KEY); }
+  try { void Promise.resolve(sessionArea()?.remove(PENDING_KEY)).catch(() => {}); }
   catch { /* nothing was kept */ }
 }
-function pendingReference() {
-  try { return selectionQuery(globalThis.sessionStorage?.getItem(PENDING_KEY)); }
-  catch { return ''; }
+async function restorePendingReference() {
+  let stored;
+  try { stored = await sessionArea()?.get(PENDING_KEY); }
+  catch { return; }
+  const pending = selectionQuery(stored?.[PENDING_KEY] ?? '');
+  // The store answers after the popup has opened: whatever he has started typing by then is his, not the one the prompt interrupted.
+  if (pending && !$('quick-reference').value) $('quick-reference').value = pending;
 }
 
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
 function requestHostAccess(origins) {
   if (!api?.permissions?.request) return Promise.resolve(true);
-  rememberPendingReference();
+  // Only a prompt can close the popup, and only an origin not yet granted opens one.
+  if (origins.some((origin) => !grantedOrigins.has(origin))) rememberPendingReference();
   let pending;
   try { pending = api.permissions.request({ origins }); } catch (error) { pending = Promise.reject(error); }
   return Promise.resolve(pending).catch(() => {
     try { return Promise.resolve(api.permissions.contains({ origins })).catch(() => true); }
     catch { return true; }
-  });
+  }).then((allowed) => noteGranted(origins, allowed));
 }
 
 // The saved fields, currency, sales period and Recent row: shown at start-up, and again when the lookup window takes a lookup sent to it (below).
@@ -1212,7 +1227,7 @@ function openFrom(search) {
   else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
   // Nothing was sent here, so a reference a permission prompt interrupted is put back in the box, where Look up is waiting for it. It looks up nothing
   // by itself: the prompt was the answer to the last Look up, and this one is his to press.
-  else if (!$('quick-reference').value) $('quick-reference').value = pendingReference();
+  else if (!$('quick-reference').value) void restorePendingReference();
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its
