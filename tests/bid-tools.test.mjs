@@ -37,6 +37,17 @@ test('preference revision gate follows a replace import that restarted the prefe
   assert.deepEqual(applied, [5, 1, 2]);
 });
 
+test('preference revision gate refuses a snapshot older than the one it already accepted', () => {
+  const applied = [];
+  const take = createPreferenceRevisionGate((preferences) => applied.push(preferences.revision));
+  assert.equal(take({ revision: 9, updatedAt: '2026-09-17T10:00:00.000Z', preferences: { revision: 5 } }), true);
+  assert.equal(take({ revision: 10, updatedAt: '2026-09-17T11:00:00.000Z', preferences: { revision: 1 } }), true);
+  // A reply that was already in flight when the replace import landed: its higher preferences
+  // revision belongs to the records that were replaced.
+  assert.equal(take({ revision: 9, updatedAt: '2026-09-17T10:00:00.000Z', preferences: { revision: 5 } }), false);
+  assert.deepEqual(applied, [5, 1]);
+});
+
 test('a snapshot supersedes the accepted one only on a newer revision or timestamp', () => {
   assert.equal(snapshotSupersedes({ revision: 3 }, { revision: 2 }), true);
   assert.equal(snapshotSupersedes({ revision: 2 }, { revision: 3 }), false);

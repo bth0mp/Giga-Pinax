@@ -58,6 +58,9 @@ export function createPreferenceRevisionGate(apply, isActive = () => true) {
   return (snapshot) => {
     const incoming = snapshot?.preferences;
     if (!isActive() || !incoming || !Number.isInteger(incoming.revision)) return false;
+    // A reply still in flight when a newer snapshot arrived is stale whatever preferences revision
+    // it carries: after a replace import that revision can be higher than the current one.
+    if (snapshotSupersedes(latestSnapshot, snapshot)) return false;
     // A replace import restarts the preferences revision, so a lower one is still current when the
     // snapshot that carries it is itself newer than the last one this gate accepted.
     if (incoming.revision <= latestRevision && !snapshotSupersedes(snapshot, latestSnapshot)) return false;
