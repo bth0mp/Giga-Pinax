@@ -307,12 +307,31 @@ class LocalCataloguePackageTests(unittest.TestCase):
             }}
             (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
             (data / "unrelated-private.json").write_text("{}", encoding="utf-8")
+            # A corpus whose references name their record outright ships no number index, so none is packaged for it.
+            sco = root / "data/sco"
+            sco.mkdir(parents=True)
+            (sco / "metadata.json").write_text(json.dumps(
+                {"schemaVersion": 1, "corpus": "sco", "shards": {"sc": [{"file": "records-sc.json", "from": ""}]}}), encoding="utf-8")
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 self.assertEqual(
                     ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/numbers.json", "data/ocre/NOTICE.txt",
-                     "data/ocre/records-2_1(2).json", "data/ocre/records-3.a.json", "data/ocre/records-3.b.json"),
+                     "data/ocre/records-2_1(2).json", "data/ocre/records-3.a.json", "data/ocre/records-3.b.json",
+                     "data/sco/metadata.json", "data/sco/index.json", "data/sco/NOTICE.txt", "data/sco/records-sc.json"),
                     build.local_catalogue_assets(),
                 )
+
+    def test_a_directory_under_extension_data_that_is_no_bundled_corpus_is_refused(self):
+        # extension/data is walked rather than listed, so anything left there would otherwise be packaged unchecked.
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                (root / "data").mkdir()
+                with self.assertRaises(ValueError):
+                    build.local_catalogue_assets()
+                (root / "data/bigr").mkdir()
+                with self.assertRaises(ValueError):
+                    build.local_catalogue_assets()
 
     def test_catalogue_manifest_rejects_unsafe_or_unsupported_shards(self):
         build = load_build_script()
@@ -350,39 +369,65 @@ class LocalCataloguePackageTests(unittest.TestCase):
                         (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
                         with self.assertRaises(ValueError):
                             build.local_catalogue_assets()
+            # A group name is the corpus's own: SCO files its records under sc and nothing else, and a lookup derives
+            # every shard file name from that group, so a foreign one would name a file the extension never asks for.
+            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "shards": {"3": part}}), encoding="utf-8")
+            sco = root / "data/sco"
+            sco.mkdir(parents=True)
+            for metadata in ({"schemaVersion": 1, "corpus": "sco", "shards": {"rrc": [{"file": "records-rrc.json", "from": ""}]}},
+                             {"schemaVersion": 1, "corpus": "sco", "shards": {"sc": [{"file": "records-sc.a.json", "from": ""}]}},
+                             {"schemaVersion": 1, "corpus": "ocre", "shards": {"sc": [{"file": "records-sc.json", "from": ""}]}}):
+                with self.subTest(metadata=metadata), mock.patch.object(build, "EXTENSION_ROOT", root):
+                    (sco / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+                    with self.assertRaises(ValueError):
+                        build.local_catalogue_assets()
 
-    def test_a_number_index_that_is_not_the_index_beside_it_is_not_packaged(self):
+    def staged_corpus(self, build, corpus: str) -> Path:
+        """A real data directory for a corpus, imported from its own trimmed fixture, under a mocked extension root."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        data = Path(temporary.name) / "data" / corpus
+        fixture = ROOT / "tests" / "fixtures" / ("local-rdf-small.rdf" if corpus == "ocre" else f"{corpus}-rdf-small.rdf")
+        result = subprocess.run([sys.executable, str(ROOT / "scripts" / "import_rdf.py"), "--corpus", corpus,
+                                 str(fixture), str(data), "--generated-on", "2026-09-17"],
+                                text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        (data / "NOTICE.txt").write_text("attribution", encoding="utf-8")
+        return data
+
+    def test_data_that_is_not_what_the_importer_writes_is_not_packaged(self):
+        # A stale index, number index or shard map is a valid file whose every position resolves, so only rebuilding the
+        # whole directory catches one: what the two disagree about is a coin no lookup would ever reach again.
         build = load_build_script()
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            data = root / "data/ocre"
-            data.mkdir(parents=True)
-            entries = [["ric.1.x.1", "RIC I Test 1"], ["ric.1.x.2", "RIC I Test 2"]]
-            (data / "index.json").write_text(json.dumps({"schemaVersion": 1, "entries": entries}), encoding="utf-8")
-            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 2}), encoding="utf-8")
-            current = {"schemaVersion": 1, "entryCount": 2, "numbers": {"1": [0], "2": [1]}}
-            with mock.patch.object(build, "EXTENSION_ROOT", root):
-                (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
-                build.check_number_index()
-                # A stale index is a valid file whose positions all resolve, so only recomputing it catches one: the
-                # dropped list is a coin no lookup would ever reach again, and the two counts are the cheap half.
-                for numbers in ({**current, "numbers": {"1": [0]}}, {**current, "numbers": {"1": [0], "2": [0]}},
-                                {**current, "entryCount": 3}, {**current, "schemaVersion": 2},
-                                {"schemaVersion": 1, "numbers": current["numbers"]}):
-                    (data / "numbers.json").write_text(json.dumps(numbers), encoding="utf-8")
-                    with self.subTest(numbers=numbers):
-                        with self.assertRaises(ValueError):
-                            build.check_number_index()
-            # A metadata that counts other records than the index holds is the same disagreement from the other side.
-            (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
-            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 3}), encoding="utf-8")
-            with mock.patch.object(build, "EXTENSION_ROOT", root):
-                with self.assertRaises(ValueError):
-                    build.check_number_index()
 
-    def test_the_bundled_number_index_is_the_one_the_importer_writes(self):
-        # The gate over the real bundle: the committed numbers.json must be what --reindex would write today.
-        load_build_script().check_number_index()
+        def retitle(value):
+            first = next(iter(value["records"]))
+            return {**value, "records": {**value["records"], first: {**value["records"][first], "l": "Another title"}}}
+
+        for corpus, name, edit in (
+            ("ocre", "numbers.json", lambda value: {**value, "numbers": {"1": [0]}}),
+            ("ocre", "numbers.json", lambda value: {**value, "entryCount": 99}),
+            ("ocre", "index.json", lambda value: {**value, "entries": value["entries"][:1]}),
+            ("crro", "index.json", lambda value: {**value, "entries": [[i, f"{t} B"] for i, t in value["entries"]]}),
+            ("pella", "metadata.json", lambda value: {**value, "activeRecordCount": 99}),
+            # A title changed in a shard and not in the index beside it: the lookup would match the old title and open
+            # a record that no longer carries it.
+            ("sco", "records-sc.json", retitle),
+        ):
+            with self.subTest(corpus=corpus, damaged=name):
+                data = self.staged_corpus(build, corpus)
+                with mock.patch.object(build, "EXTENSION_ROOT", data.parents[1]):
+                    build.check_catalogue_data()
+                    # Written as the importer writes it, byte for byte, so only the change itself can be what is caught.
+                    current = json.loads((data / name).read_text(encoding="utf-8"))
+                    payload = json.dumps(edit(current), ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+                    (data / name).write_bytes(payload)
+                    with self.assertRaises(ValueError):
+                        build.check_catalogue_data()
+
+    def test_the_bundled_data_is_what_the_importer_writes(self):
+        # The gate over the real bundle: every generated file of every corpus must be what --reindex would write today.
+        load_build_script().check_catalogue_data()
 
 
 if __name__ == "__main__":

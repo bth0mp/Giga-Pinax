@@ -114,66 +114,94 @@ def read_asset(relative_path: str) -> bytes:
     return source.read_bytes()
 
 
-def local_catalogue_assets() -> tuple[str, ...]:
-    base = "data/ocre"
+def importer():
+    """The importer module itself, so a packaged file is checked against the code that writes it, not a copy of it."""
+    global _IMPORTER
+    if _IMPORTER is None:
+        spec = importlib.util.spec_from_file_location("giga_pinax_import_rdf", PROJECT_ROOT / "scripts" / "import_rdf.py")
+        _IMPORTER = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_IMPORTER)
+    return _IMPORTER
+
+
+_IMPORTER = None
+
+
+def bundled_corpora() -> tuple[str, ...]:
+    """Every corpus directory under extension/data, so the package carries what is checked in and nothing else."""
+    root = EXTENSION_ROOT / "data"
+    known = importer().CORPORA
+    corpora = []
+    for path in sorted(root.iterdir()):
+        if path.is_symlink() or not path.is_dir() or path.name not in known:
+            raise ValueError(f"unexpected entry under extension/data: {path.name}")
+        corpora.append(path.name)
+    if not corpora:
+        raise ValueError("extension/data holds no bundled catalogue")
+    return tuple(corpora)
+
+
+def catalogue_assets(corpus: str) -> tuple[str, ...]:
+    base = f"data/{corpus}"
+    label = importer().CORPORA[corpus]["label"]
     try:
         metadata = json.loads(read_asset(f"{base}/metadata.json"))
     except (OSError, json.JSONDecodeError) as error:
-        raise ValueError("cannot read bundled OCRE metadata") from error
-    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or metadata.get("corpus") != "ocre":
-        raise ValueError("unsupported bundled OCRE metadata")
+        raise ValueError(f"cannot read bundled {label} metadata") from error
+    if not isinstance(metadata, dict) or metadata.get("schemaVersion") != 1 or metadata.get("corpus") != corpus:
+        raise ValueError(f"unsupported bundled {label} metadata")
     shards = metadata.get("shards")
     if not isinstance(shards, dict) or not shards:
-        raise ValueError("bundled OCRE metadata must name its shards")
+        raise ValueError(f"bundled {label} metadata must name its shards")
     files = []
     for prefix in sorted(shards):
         parts = shards[prefix]
-        if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?", prefix) or not isinstance(parts, list) or not parts:
-            raise ValueError("unsafe bundled OCRE shard name")
+        if not re.fullmatch(importer().CORPORA[corpus]["groups"], prefix) or not isinstance(parts, list) or not parts:
+            raise ValueError(f"unsafe bundled {label} shard name")
         # Past the twenty-sixth part there is no letter left to name one, and chr() would carry on past "z".
         if len(parts) > 26:
-            raise ValueError(f"bundled OCRE volume {prefix} has more parts than there are letters to name them")
-        # A volume over the file cap is split into lettered parts in id order; one part is the whole volume and takes
+            raise ValueError(f"bundled {label} group {prefix} has more parts than there are letters to name them")
+        # A group over the file cap is split into lettered parts in id order; one part is the whole group and takes
         # no letter. Every name is derived here, and a part starts where the one before it ended.
         for position, part in enumerate(parts):
             letter = "" if len(parts) == 1 else f".{chr(ord('a') + position)}"
             if not isinstance(part, dict) or part.get("file") != f"records-{prefix}{letter}.json":
-                raise ValueError("unsafe bundled OCRE shard name")
+                raise ValueError(f"unsafe bundled {label} shard name")
             first = part.get("from")
             if not isinstance(first, str) or (first == "") != (position == 0) or (position and first <= parts[position - 1].get("from")):
-                raise ValueError("unsafe bundled OCRE shard order")
+                raise ValueError(f"unsafe bundled {label} shard order")
             files.append(f"{base}/{part['file']}")
-    return (f"{base}/metadata.json", f"{base}/index.json", f"{base}/numbers.json", f"{base}/NOTICE.txt", *files)
+    # Only a corpus whose lookups need a number index ships one, and the importer's table is what says which.
+    indexes = ["index.json"] + (["numbers.json"] if importer().CORPORA[corpus]["numbers"] else [])
+    return (f"{base}/metadata.json", *(f"{base}/{name}" for name in indexes), f"{base}/NOTICE.txt", *files)
 
 
-def importer_number_index(entries: list) -> dict:
-    """The importer's own function, so the packaged file is checked against the code that writes it, not a copy of it."""
-    spec = importlib.util.spec_from_file_location("giga_pinax_import_rdf", PROJECT_ROOT / "scripts" / "import_rdf.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.number_index(entries)
+def local_catalogue_assets() -> tuple[str, ...]:
+    return tuple(path for corpus in bundled_corpora() for path in catalogue_assets(corpus))
 
 
-def check_number_index() -> None:
-    """numbers.json is derived from index.json, and a stale one is still a perfectly valid file: every position it lists
-    resolves, and the lookup simply never sees the coins the rebuild added. Nothing at runtime can tell the two apart, so
-    the index is recomputed here and a bundle that disagrees is not packaged."""
-    base = "data/ocre"
-    try:
-        index = json.loads(read_asset(f"{base}/index.json"))
-        numbers = json.loads(read_asset(f"{base}/numbers.json"))
-        metadata = json.loads(read_asset(f"{base}/metadata.json"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError("cannot read the bundled OCRE index") from error
-    entries = index.get("entries") if isinstance(index, dict) else None
-    if not isinstance(entries, list):
-        raise ValueError("unsupported bundled OCRE index")
-    if metadata.get("activeRecordCount") != len(entries):
-        raise ValueError("the bundled OCRE index and metadata disagree about how many records there are")
-    if not isinstance(numbers, dict) or numbers.get("schemaVersion") != 1 or numbers.get("entryCount") != len(entries):
-        raise ValueError("the bundled OCRE number index does not count the entries of the index beside it")
-    if numbers.get("numbers") != importer_number_index(entries):
-        raise ValueError("the bundled OCRE number index is stale: rerun python scripts/import_rdf.py --reindex extension/data/ocre")
+def check_catalogue_data() -> None:
+    """An index, a number index or a shard map that no longer matches the records beside it is still a perfectly valid
+    file: every position it lists resolves, and the lookup simply never sees what the two disagree about. Nothing at
+    runtime can tell the two apart, so every derived file is rebuilt here with the importer's own code and a bundle that
+    disagrees is not packaged."""
+    for corpus in bundled_corpora():
+        base = f"data/{corpus}"
+        label = importer().CORPORA[corpus]["label"]
+
+        def read(name: str, base: str = base, label: str = label) -> object:
+            try:
+                return json.loads(read_asset(f"{base}/{name}"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ValueError(f"cannot read the bundled {label} data: {error}") from error
+
+        rebuilt = importer().rebuilt(read)
+        for name, payload in rebuilt.items():
+            if read_asset(f"{base}/{name}") != payload:
+                raise ValueError(f"the bundled {label} data is stale: rerun python scripts/import_rdf.py --reindex extension/{base}")
+        packaged = {path.rsplit("/", 1)[1] for path in catalogue_assets(corpus)} - {"NOTICE.txt"}
+        if packaged != set(rebuilt):
+            raise ValueError(f"the bundled {label} data does not hold the files the importer writes")
 
 
 def read_manifest(browser: str) -> tuple[bytes, dict]:
@@ -278,7 +306,7 @@ def stale_release_zips(output_root: Path, version: str) -> list[Path]:
 
 def build(selected_browsers: list[str], output_root: Path) -> list[Path]:
     version = check_manifest_versions()
-    check_number_index()
+    check_catalogue_data()
     output_root.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".giga-pinax-build-", dir=output_root))
     try:
