@@ -816,8 +816,12 @@ export function createCommandWriter(storageArea, context) {
     const current = validateSnapshot(stored);
     if (!current.ok) {
       // Continue with the records that still validate; the rest wait in quarantine for the
-      // collector. The repair reaches storage with the next write, not with this read.
-      const rescued = quarantineInvalidRecords(stored, getNow(context));
+      // collector. The repair reaches storage with the next write, not with this read. A root
+      // migration could not bring to this version is not a broken record: judging its records by
+      // today's validators would condemn a shape they were never meant to read.
+      const rescued = current.error.code === 'unsupported-schema'
+        ? current
+        : quarantineInvalidRecords(stored, getNow(context));
       if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
       stored = rescued.value;
     }

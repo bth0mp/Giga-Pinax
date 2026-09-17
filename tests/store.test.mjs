@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createEmptySnapshot } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -881,6 +881,41 @@ test('reconciliation rewrites alert IDs stored in the older revision-scoped form
   assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
   assert.equal(reconciled.alerts.every(({ triggerId, eventId, reminderId, triggerAt }) =>
     triggerId === `${eventId}:${reminderId}:${triggerAt}`), true);
+});
+
+// The event form rebuilds its command from the fields it shows, so the reminder IDs only survive
+// because workspace.js's mergeEventReminders carries them; this is that submitted shape.
+test('an event edited through the workspace form keeps its reminder identities', () => {
+  const { event, snapshot } = dueAlertState();
+  const stored = snapshot.auctionEvents.find(({ id }) => id === event.id);
+  const edited = reduce(snapshot, command('event.save', {
+    expectedRevision: stored.revision,
+    event: {
+      id: stored.id, name: 'Renamed sale, corrected', eventKind: 'auction-starts',
+      precision: 'timed', localDate: '2026-09-12', localTime: '12:05', timeZone: 'UTC',
+      reminderScope: 'standalone',
+      reminders: stored.reminders.map((reminder) => ({ ...reminder })),
+    },
+  })).snapshot;
+  assert.deepEqual(edited.auctionEvents[0].reminders.map(({ id }) => id),
+    stored.reminders.map(({ id }) => id));
+  const reconciled = reduce(edited, command('scheduler.reconcile')).snapshot;
+  assert.deepEqual(reconciled.alerts.map(({ status }) => status).sort(), ['acknowledged', 'snoozed']);
+});
+
+test('an unsupported stored schema is refused without being taken apart record by record', async () => {
+  const stored = createEmptySnapshot(NOW);
+  stored.schemaVersion = SCHEMA_VERSION + 1;
+  stored.lots.push({ id: uuid(), title: 'Written by a later version' });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const reply = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'storage');
+  assert.deepEqual(storage.read(), stored, 'a root from a later version is left exactly as it is');
+  const raw = await writer.commitCommand(command('snapshot.raw'));
+  assert.deepEqual(raw.value, stored, 'snapshot.raw is the escape hatch for a root we cannot read');
 });
 
 test('claims an overdue event before notification delivery and records the outcome', () => {
