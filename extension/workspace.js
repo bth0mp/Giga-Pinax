@@ -211,11 +211,6 @@ export function buildLotUndoCommand(undo, newRequestId = requestId) {
   return buildLotSaveCommand({ ...lot, notes: lot.notes ?? '' }, undo.saved.revision, newRequestId);
 }
 
-export function selectionAfterLotSave(current, submitted, submittedVersion, currentVersion, savedId) {
-  if (submittedVersion !== currentVersion || current.selectedLotId !== submitted.selectedLotId || current.mode !== submitted.mode) return current;
-  return { selectedLotId: savedId, mode: 'detail' };
-}
-
 export function lotSaveFollowup(current, submitted, saved, editorPreserved, hasPrevious = true, interactionChanged = false) {
   const sameSelection = current.selectedLotId === submitted.selectedLotId && current.mode === submitted.mode;
   const savedMatches = submitted.selectedLotId === null || submitted.selectedLotId === saved?.id;
@@ -552,10 +547,6 @@ export function reminderControlsForPrecision(reminders, precision) {
   }
   const [first, second] = (reminders ?? []).filter((item) => item.kind === 'offset');
   return { firstEnabled: Boolean(first), firstValue: first?.offsetMinutes ?? 1440, secondEnabled: Boolean(second), secondValue: second?.offsetMinutes ?? 60 };
-}
-
-export function buildBackupImportCommand(pendingImport, newRequestId = requestId) {
-  return { type: 'backup.import', requestId: newRequestId(), expectedRevision: pendingImport.expectedRevision, mode: pendingImport.mode, document: pendingImport.document };
 }
 
 async function initWorkspace() {

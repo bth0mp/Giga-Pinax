@@ -1,29 +1,18 @@
 import { parseReference } from './lookup.js';
 import { coinArchivesSection } from './prices.js';
 
-const ACCESS_UNAVAILABLE = Object.freeze({
-  status: 'unavailable',
-  label: 'Unavailable — access not approved',
-});
-
 export const SOURCE_CAPABILITIES = Object.freeze({
   coinarchives: Object.freeze({
     label: 'CoinArchives',
     launch: Object.freeze({
-      transfer: 'verified',
-      searchPageUrl: 'https://www.coinarchives.com/a/',
       route: Object.freeze({ origin: 'https://www.coinarchives.com', pathname: '/a/results.php' }),
     }),
-    automaticEvidence: ACCESS_UNAVAILABLE,
   }),
   acsearch: Object.freeze({
     label: 'acsearch',
     launch: Object.freeze({
-      transfer: 'verified',
-      searchPageUrl: 'https://www.acsearch.info/',
       route: Object.freeze({ origin: 'https://www.acsearch.info', pathname: '/search.html' }),
     }),
-    automaticEvidence: ACCESS_UNAVAILABLE,
   }),
 });
 
@@ -47,19 +36,6 @@ export function buildUserInitiatedSearch(source, query) {
   const capability = SOURCE_CAPABILITIES[source];
   const normalizedQuery = validateQuery(query);
   if (!normalizedQuery) return failure('invalid-query', 'Enter a query of 1 to 400 characters without control characters.', 'query');
-
-  if (capability.launch.transfer !== 'verified') {
-    return {
-      ok: true,
-      value: {
-        source,
-        query: normalizedQuery,
-        url: capability.launch.searchPageUrl,
-        transfer: 'unsupported',
-        manualInstruction: 'Search page opened — paste query',
-      },
-    };
-  }
 
   const { origin } = capability.launch.route;
   const pathname = source === 'coinarchives'

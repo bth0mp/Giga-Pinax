@@ -1,19 +1,18 @@
 // Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.
-export const RIC_PEOPLE_SOURCE = Object.freeze({
-  endpoint: "https://nomisma.org/apis/getRdf",
-  snapshotSha256: "0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e",
-  generatedOn: "2026-09-15",
-  license: "CC-BY-3.0",
-  licenseUrl: "https://creativecommons.org/licenses/by/3.0/",
-  referencedConceptCount: 272,
-  personCount: 214,
-  excludedNonPersonCount: 58,
-  excludedMissingLabelCount: 0,
-  missingConceptCount: 0,
-  aliasCount: 120,
-  mintCount: 8,
-  mintAliasCount: 9,
-});
+// Source:
+//   endpoint: "https://nomisma.org/apis/getRdf"
+//   snapshotSha256: "0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e"
+//   generatedOn: "2026-09-15"
+//   license: "CC-BY-3.0"
+//   licenseUrl: "https://creativecommons.org/licenses/by/3.0/"
+//   referencedConceptCount: 272
+//   personCount: 214
+//   excludedNonPersonCount: 58
+//   excludedMissingLabelCount: 0
+//   missingConceptCount: 0
+//   aliasCount: 120
+//   mintCount: 8
+//   mintAliasCount: 9
 
 export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "aelia_ariadne", name: "Aelia Ariadne", volumes: Object.freeze(["X"]), aliases: Object.freeze(["ariadna"]) }),

@@ -282,11 +282,12 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         "licenseUrl": LICENSE_URL,
         **report,
     }
+    # The provenance is a header comment, not an export: nothing in the extension read it, and the
+    # licence, snapshot digest and counts have to travel with the file whether or not code uses them.
     lines = [
         "// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.",
-        "export const RIC_PEOPLE_SOURCE = Object.freeze({",
-        *(f"  {key}: {json.dumps(value, ensure_ascii=False)}," for key, value in source.items()),
-        "});",
+        "// Source:",
+        *(f"//   {key}: {json.dumps(value, ensure_ascii=False)}" for key, value in source.items()),
         "",
         "export const RIC_PEOPLE = Object.freeze([",
     ]

@@ -42,8 +42,10 @@ class PeopleImportTests(unittest.TestCase):
             "mintCount": 0,
             "mintAliasCount": 0,
         }, report)
-        self.assertIn("export const RIC_PEOPLE_SOURCE", text)
-        self.assertIn('license: "CC-BY-3.0"', text)
+        # Provenance travels with the file as a header comment; nothing in the extension imports it.
+        self.assertNotIn("export const RIC_PEOPLE_SOURCE", text)
+        self.assertIn('//   license: "CC-BY-3.0"', text)
+        self.assertIn('//   snapshotSha256: "', text)
         self.assertIn('id: "constantine_ii", name: "Constantine II"', text)
         self.assertIn('volumes: Object.freeze(["VII", "VIII"])', text)
         # Aliases are case-folded with their diacritics stripped, so a heading reaches them however a dealer spells it. A Latin label both

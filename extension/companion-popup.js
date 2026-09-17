@@ -1,4 +1,4 @@
-import { calculatePremium, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { formatMoney } from './core/money.js';
 import { projectExposure } from './core/records.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
@@ -46,22 +46,6 @@ export function moveCompanionTab(current, key) {
   if (key === 'ArrowRight') return TABS[(index + 1) % TABS.length];
   if (key === 'ArrowLeft') return TABS[(index - 1 + TABS.length) % TABS.length];
   return current;
-}
-
-export function buildCalculatorView({ hammerText, premiumPercentText, currency, locale = 'en-US' }) {
-  const hammer = parseMoney(hammerText, currency, locale);
-  if (!hammer.ok) return { status: 'invalid', hammer: null, premium: null, total: null, error: hammer.error };
-  if (typeof premiumPercentText !== 'string' || !premiumPercentText.trim()) {
-    return { status: 'unknown-premium', hammer: hammer.value, premium: null, total: null, error: null };
-  }
-  const basisPoints = parsePremiumPercent(premiumPercentText, locale);
-  if (!basisPoints.ok) return { status: 'invalid', hammer: hammer.value, premium: null, total: null, error: basisPoints.error };
-  const calculated = calculatePremium(hammer.value, basisPoints.value);
-  if (!calculated.ok) return { status: 'invalid', hammer: hammer.value, premium: null, total: null, error: calculated.error };
-  return {
-    status: 'complete', hammer: hammer.value, buyerPremiumBps: basisPoints.value,
-    premium: calculated.value.premium, total: calculated.value.hammerPlusPremium, error: null,
-  };
 }
 
 export function buildWatchlistDraftPayload(input) {

@@ -22,7 +22,6 @@ globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
 
 // Imported after the surroundings exist: browser-api.js takes up the extension API as it is evaluated, and the page starts itself where a document is.
 const {
-  buildCalculatorView,
   buildWatchlistDraftPayload,
   buildWatchlistSummary,
   canSaveWatchlist,
@@ -429,17 +428,6 @@ test('both watchlist actions visibly share one synchronous pending guard', () =>
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
   assert.match(source, /if \(draftSavePending\) return;[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
   assert.match(source, /finally \{[\s\S]*draftSavePending = false;[\s\S]*companion-save-watchlist[\s\S]*companion-capture-watchlist/);
-});
-
-test('calculator uses exact CHF minor units and clears unknown premium output', () => {
-  const valid = buildCalculatorView({ hammerText: '100.00', premiumPercentText: '25', currency: 'CHF', locale: 'de-CH' });
-  assert.deepEqual(valid.premium, { currency: 'CHF', minor: 2500 });
-  assert.deepEqual(valid.total, { currency: 'CHF', minor: 12500 });
-  assert.equal(valid.error, null);
-
-  const unknown = buildCalculatorView({ hammerText: '100.00', premiumPercentText: '', currency: 'CHF', locale: 'de-CH' });
-  assert.equal(unknown.status, 'unknown-premium');
-  assert.equal(unknown.total, null);
 });
 
 test('watchlist transfer whitelists reference fields and excludes acsearch results', () => {
