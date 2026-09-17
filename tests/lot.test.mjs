@@ -846,3 +846,55 @@ test('a comma between a RIC volume and its number keeps the reference whole', ()
   // The volume still ends the reference when no number follows it, and a second number after the first is another type.
   assert.deepEqual(texts('Hadrian. RIC II.3, 2345, 2346.'), ['RIC II.3, 2345']);
 });
+
+test('rulers are read from the heading alone: not from a legend, not from what the coin pictures', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  // A legend is the coin's own words: three unpunctuated capitals in a row start it, and the names in it are not the issuer.
+  assert.deepEqual(rulers('Trajan. Denarius. IMP CAES NERVA TRAIAN AVG GERM. RIC 12.'), ['Trajan']);
+  assert.deepEqual(rulers('Denarius, Rome. IMP CAES NERVA TRAIAN AVG. RIC 12.'), []);
+  // Two capitals in a row are a house's classification or a ruler's own name, and a ruler's name in capitals is never a legend however long it is.
+  assert.deepEqual(rulers('ROMAN IMPERIAL. Titus. Denarius. RIC 972.'), ['Titus']);
+  assert.deepEqual(rulers('SEVERUS ALEXANDER. RIC 12'), ['Severus Alexander']);
+  assert.deepEqual(rulers('CLAUDIUS II GOTHICUS AE Antoninianus. RIC 36.'), ['Claudius Gothicus']);
+  // Everything from the type description on is what is pictured, not who struck it.
+  assert.deepEqual(rulers('Vespasian. Denarius. Head of Titus, laureate, right. RIC 972.'), ['Vespasian']);
+  assert.deepEqual(rulers('Denarius. Bust of Titus right. RIC 972.'), []);
+  assert.deepEqual(rulers('Denarius. Wolf suckling Romulus and Remus. RIC 1.'), []);
+  assert.deepEqual(rulers('Hadrian. Sestertius. Victory standing left, Aurelian behind. RIC 1.'), ['Hadrian']);
+  assert.deepEqual(rulers('Hadrian seated. Aurelian. RIC 1.'), ['Hadrian']);
+});
+
+test('a regnal numeral after a name is read in capitals only, so a lower-case letter never hides the ruler', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  assert.deepEqual(rulers('Gallienus x 3 antoniniani. RIC 1.'), ['Gallienus']);
+  assert.deepEqual(rulers('Nero i.e. the emperor. RIC 1.'), ['Nero']);
+  assert.deepEqual(rulers('Titus v Vespasian. RIC 1.'), ['Titus', 'Vespasian']);
+  // The capital numeral still makes the name someone else's.
+  assert.deepEqual(rulers('Constantine II. RIC 1.'), ['Constantine II']);
+  assert.deepEqual(rulers('Valerian II. RIC 1.'), ['Valerian II']);
+});
+
+test('the numbered and variant heading spellings Nomisma knows resolve to the ruler they name', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [heading, expected] of [
+    ['Valerian I', ['Valerian']],
+    ['Maximinus II', ['Maximinus Daia']],
+    ['Constantius I', ['Constantius Chlorus']],
+    ['Faustina II', ['Faustina the Younger']],
+    ['Diva Faustina I', ['Faustina the Elder']],
+    ['Philip I', ['Philip I']],
+    ['Florian', ['Florian']],
+    ['Severina', ['Severina']],
+    ['Mariniana', ['Mariniana']],
+  ]) assert.deepEqual(rulers(`${heading}. Denarius. RIC 12.`), expected, heading);
+});
+
+test('a heading of three thousand characters, and a long run of capitals in it, resolve quickly', () => {
+  // The heading is scanned against every spelling Nomisma knows, and its legend runs are walked token by token: both must stay linear in its length.
+  const heading = 'Titus, as Caesar, 69-79. Denarius, Rome. Fine style, lovely old cabinet tone, well centred. '.repeat(40).slice(0, 2900);
+  for (const text of [`${heading} RIC 1073.`, `${'AAAA '.repeat(600).slice(0, 2900)} RIC 1073.`, `${'NERO '.repeat(600).slice(0, 2900)} RIC 1073.`]) {
+    const start = Date.now();
+    findReferences(text);
+    assert.ok(Date.now() - start < 2000, `a 2,900-character heading must not freeze the reader: ${text.slice(0, 20)}`);
+  }
+});

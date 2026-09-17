@@ -181,7 +181,14 @@ const depths = (text) => {
 const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
-const regexText = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+// A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
+// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler.
+const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
+  if (character === ' ') return String.raw`\s+`;
+  const [upper, lower] = [character.toUpperCase(), character.toLowerCase()];
+  return upper === lower || upper.length !== 1 || lower.length !== 1
+    ? character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : `[${upper}${lower}]`;
+}).join('');
 const NON_PERSON_SECTION = /^(?:Anonymous|Civil Wars|Burgundians or Franks|Non-Imperial African|Suevi|Visigoths)$|\band\b|,| issuing /;
 const SECTION_SPELLINGS = Object.freeze({ 'Claudius Gothicus': ['Claudius II', 'Claudius II Gothicus'] });
 const sectionPeople = [...new Set(Object.entries(RIC_SECTIONS).filter(([volume]) => !['VI', 'VII', 'VIII', 'IX'].includes(volume))
@@ -196,23 +203,56 @@ for (const row of rulerLabels) {
   if (!labelGroups.has(key)) labelGroups.set(key, []);
   labelGroups.get(key).push(row);
 }
-const RULERS = Object.freeze([...labelGroups.values()].map((rows) => {
+const RULERS = Object.freeze([...labelGroups.entries()].map(([key, rows]) => {
   const preferred = rows.filter((row) => row.preferred);
   const exact = rows.filter(({ name, label }) => name.toLowerCase() === label.toLowerCase());
   const names = [...new Set((preferred.length > 0 ? preferred : exact.length > 0 ? exact : rows).map(({ name }) => name))];
   const label = rows[0].label;
-  return [names, label, new RegExp(`(?<!\\p{L})(?:${regexText(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'giu')];
+  return [names, label, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), key.split(' ')[0]];
 }).sort((a, b) => b[1].length - a[1].length));
+const LABELS = new Set(labelGroups.keys());
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
 function rulersIn(text) {
   let rest = text.replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
+  // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
+  const lower = rest.toLowerCase();
   const found = [];
-  for (const [names, , pattern] of RULERS) rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
+  for (const [names, , pattern, probe] of RULERS) {
+    if (!lower.includes(probe)) continue;
+    rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
+  }
   return [...new Set(found.sort((a, b) => a[0] - b[0]).map(([, name]) => name))];
 }
+
+// Where a lot's heading ends. The rulers are read from it alone: a legend is the coin's own words ("IMP CAES NERVA TRAIAN AVG"), and from the type
+// description on the text says what is pictured, not who struck it.
+const DESCRIBES = /\b(?:head of|bust of|suckling|standing|seated)\b/i;
+// A legend is three unpunctuated capitals in a row. Two are a house's classification or a ruler's own name ("ROMAN IMPERIAL", "SEVERUS ALEXANDER",
+// "PLON AE"), and a ruler named in capitals is no legend however many words it takes ("CLAUDIUS II GOTHICUS"), so a run that opens on one of RIC's own
+// names is counted from after it. The tokens are walked in JavaScript rather than matched by one pattern, so no run of capitals can make it backtrack.
+function legendAt(text) {
+  const tokens = [...text.matchAll(/\S+/g)];
+  let run = [];
+  for (const token of [...tokens, null]) {
+    if (token && /^\p{Lu}+$/u.test(token[0])) { run.push(token); continue; }
+    for (let start = 0; start + 3 <= run.length; start += 1) {
+      const named = [4, 3, 2, 1].find((words) => start + words <= run.length
+        && LABELS.has(run.slice(start, start + words).map((word) => word[0]).join(' ').toLowerCase()));
+      if (!named) return run[start].index;
+      start += named - 1;
+    }
+    run = [];
+  }
+  return -1;
+}
+const heading = (text) => {
+  const cuts = [text.search(DESCRIBES), legendAt(text)].filter((at) => at >= 0);
+  return cuts.length > 0 ? text.slice(0, Math.min(...cuts)) : text;
+};
 
 // Split what follows a key at its top-level separators; a ")" it never opened ends it.
 function chunks(span) {
@@ -327,7 +367,7 @@ export function findReferences(input) {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
     return !seen.has(id) && seen.add(id);
   });
-  return { references, rulers: rulersIn(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length)) };
+  return { references, rulers: rulersIn(heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length))) };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
