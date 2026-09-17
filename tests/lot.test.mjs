@@ -96,7 +96,7 @@ test('a typed reference ends at its first number: a second one after a comma is 
 
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
-  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
+  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], ['Faustina the Elder'], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
   assert.deepEqual(findReferences('Claudius with Nero, as Caesar. RIC 107').rulers, ['Claudius', 'Nero']);
   assert.deepEqual(findReferences('Divus Vespasian. Struck under Titus. RIC 357').rulers, ['Vespasian', 'Titus']);
   // A mint is a RIC section too, but not a person; a name after the first reference is not the lot's ruler.
@@ -122,11 +122,13 @@ test('an arbitrary or malformed OCRE token is never carried as a record hint', (
   }
 });
 
-test('several distinct OCRE ids disable the hint, and an ambiguous Latin person alias keeps every identity', () => {
+test('several distinct OCRE ids disable the hint, and a Latin spelling two rulers share names neither of them', () => {
   const several = findReferences('Constantine II. RIC VII 287 OCRE ric.7.lon.287; OCRE ric.7.rom.287');
   assert.equal(lotLookup(several.references[0], several.rulers).id, undefined);
-  assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, ['Valerian', 'Valerian II']);
+  // Nomisma files "Valerianus" under Valerian and under Valerian II alike, so the importer keeps it for neither and the heading names no ruler.
+  assert.deepEqual(findReferences('Valerianus. RIC 1').rulers, []);
   assert.deepEqual(findReferences('Valerian II. RIC 1').rulers, ['Valerian II']);
+  assert.deepEqual(findReferences('Valerian I. RIC 1').rulers, ['Valerian']);
 });
 
 test('a mint section keeps the lot ruler so an id hint must satisfy both', () => {

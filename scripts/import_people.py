@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import unicodedata
 import xml.etree.ElementTree as ET
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -77,6 +78,36 @@ def binding_value(binding, key):
     return value.get("value") if isinstance(value, dict) else None
 
 
+def normalise_alias(label: str) -> str | None:
+    """One alias as the extension compares names: folded, its diacritics stripped, its spacing squashed.
+
+    None for anything the extension could never match: a label in another script, or nothing at all. Dealers write Latin script, so a Greek or
+    Cyrillic spelling of a ruler's name would only weigh down the bundled table. The full stop of an abbreviated Latin label ("Constantinus II.")
+    is no part of the name either, and left on it would outrank the same name without it.
+    """
+    stripped = "".join(part for part in unicodedata.normalize("NFD", label or "") if not unicodedata.combining(part))
+    folded = " ".join(stripped.casefold().split()).rstrip(".").strip()
+    return folded if folded and folded.isascii() else None
+
+
+def alias_rows(people: dict[str, tuple[str, list[str]]]) -> dict[str, list[str]]:
+    """The aliases each person keeps: normalised, de-duplicated, never their own name, never one that names two people."""
+    normalised = {}
+    for concept_id, (name, labels) in people.items():
+        own = normalise_alias(name)
+        aliases = []
+        for label in labels:
+            alias = normalise_alias(label)
+            if alias and alias != own and alias not in aliases:
+                aliases.append(alias)
+        normalised[concept_id] = aliases
+    owners: dict[str, int] = {}
+    for aliases in normalised.values():
+        for alias in aliases:
+            owners[alias] = owners.get(alias, 0) + 1
+    return {concept_id: sorted(alias for alias in aliases if owners[alias] == 1) for concept_id, aliases in normalised.items()}
+
+
 def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
     concepts = {}
     if snapshot_bytes.lstrip().startswith(b"{"):
@@ -91,13 +122,11 @@ def read_concepts(snapshot_bytes: bytes, memberships) -> dict:
             uri = node.get(RDF + "about")
             types = [node.tag[1:].replace("}", "", 1)] if node.tag.startswith("{") else []
             types += [child.get(RDF + "resource") for child in node if child.tag == RDF + "type"]
-            pref_labels = [child for child in node if child.tag == SKOS + "prefLabel" and child.text]
-            labels = [child.text.strip() for child in pref_labels
-                      if (child.get(XML + "lang") or "").lower().startswith("en")]
-            aliases = [child.text.strip() for child in pref_labels
-                       if (child.get(XML + "lang") or "").lower().startswith("la")]
-            aliases += [child.text.strip() for child in node if child.tag == SKOS + "altLabel" and child.text
-                        and (child.get(XML + "lang") or "").lower() in ("en", "la")]
+            labels = [child.text.strip() for child in node if child.tag == SKOS + "prefLabel" and child.text
+                      and (child.get(XML + "lang") or "").lower().startswith("en")]
+            # Every prefLabel and altLabel Nomisma files, whatever language it is under: a heading spelling is a heading spelling ("Valerian I" is
+            # Nomisma's Norwegian label for Valerian, "Constantius I" its Romanian one), and normalise_alias drops the scripts a dealer never writes.
+            aliases = [child.text.strip() for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text]
             extracted.extend((uri, label, alias, concept_type) for concept_type in types if concept_type
                              for label in labels or [None] for alias in aliases or [None])
         rows = extracted
@@ -134,8 +163,11 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
             continue
         name = next(iter(concept["labels"]))
         volumes = sorted((VOLUMES[prefix] for prefix in memberships[concept_id]), key=VOLUME_ORDER.get)
-        aliases = sorted(alias for alias in concept["aliases"] if alias != name)
-        rows.append((concept_id, name, volumes, aliases))
+        rows.append((concept_id, name, volumes, sorted(concept["aliases"])))
+
+    kept = alias_rows({concept_id: (name, labels) for concept_id, name, _, labels in rows})
+    offered = sum(len({normalise_alias(label) for label in labels} - {None, normalise_alias(name)}) for _, name, _, labels in rows)
+    rows = [(concept_id, name, volumes, kept[concept_id]) for concept_id, name, volumes, _ in rows]
 
     report = {
         "referencedConceptCount": len(memberships),
@@ -143,6 +175,8 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         "excludedNonPersonCount": non_person,
         "excludedMissingLabelCount": missing_label,
         "missingConceptCount": missing_concept,
+        "aliasCount": sum(len(aliases) for _, _, _, aliases in rows),
+        "droppedAliasCount": offered - sum(len(aliases) for _, _, _, aliases in rows),
     }
     source = {
         "endpoint": ENDPOINT,

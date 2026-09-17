@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, isRicPerson, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
@@ -107,4 +107,26 @@ test('selectOptions lists the entries and appends an unlisted, non-blank value a
   assert.equal(selectOptions(RIC_VOLUMES, 'II, Part 1 (2nd edition)').length, 12);
   assert.equal(selectOptions(VOLUME_OPTIONS, '').length, 13);
   assert.equal(selectOptions(VOLUME_OPTIONS, 'IV, Part 1').length, 14);
+});
+
+// Nomisma files every spelling of a ruler it knows; the importer folds them onto each person, so a heading reaches the person however it is written.
+test('a person is found by any Nomisma alias, folded and without its diacritics', () => {
+  assert.deepEqual(ricPeople('Valerian I').map(({ id }) => id), ['valerian']);
+  assert.equal(canonicalRicPerson('Constantius I'), 'Constantius Chlorus');
+  assert.equal(canonicalRicPerson('  FAUSTINA   II '), 'Faustina the Younger');
+  assert.equal(canonicalRicPerson('Maximinus II'), 'Maximinus Daia');
+  assert.equal(canonicalRicPerson('Faustina I'), 'Faustina the Elder');
+  assert.equal(canonicalRicPerson('Julien'), 'Julian the Apostate');
+  assert.equal(canonicalRicPerson('Filipo el Árabe'), 'Philip the Arab');
+  assert.equal(isRicPerson('Mariniana'), true);
+  // A spelling two people share names neither of them: the importer drops it rather than let it pick one. A name RIC does not use is unknown too.
+  assert.deepEqual(ricPeople('Valerianus'), []);
+  assert.deepEqual(ricPeople('Domitianus'), []);
+  assert.equal(canonicalRicPerson('Valerianus'), '');
+  for (const unknown of ['', '  ', 'hello', 'Tit', 'Leo', 'Theodosius', 'Croesus', 'constructor', '__proto__', 'toString', undefined, null]) {
+    assert.deepEqual(ricPeople(unknown), [], String(unknown));
+  }
+  // Aliases never make a name a volume's section: the volume lists are RIC's own.
+  assert.deepEqual(volumesOf('Valerian I'), []);
+  assert.deepEqual(volumesOf('Valerian'), ['V']);
 });

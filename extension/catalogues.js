@@ -97,11 +97,19 @@ export const RIC_RULERS = Object.freeze([...new Set([...Object.values(RIC_SECTIO
 export const ANY_VOLUME = Object.freeze({ value: '', label: 'Any volume' });
 export const VOLUME_OPTIONS = Object.freeze([ANY_VOLUME, ...RIC_VOLUMES]);
 
-const rulerKey = (ruler) => String(ruler ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-export function ricPeople(name) {
-  const wanted = rulerKey(name);
-  return wanted ? RIC_PEOPLE.filter((person) => [person.name, ...person.aliases].some((label) => rulerKey(label) === wanted)) : [];
+// A name as the tables compare it: spacing squashed, case folded and diacritics stripped, the way the importer normalises every Nomisma alias, so
+// "Filipo el Árabe" in a heading and "filipo el arabe" in the table are the same name.
+export const rulerKey = (ruler) => String(ruler ?? '').normalize('NFD').replace(/\p{M}+/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// Every name and alias, indexed once: a lot heading is compared against two thousand of them, and a Map has no inherited keys ("constructor").
+const PEOPLE_BY_NAME = new Map();
+for (const person of RIC_PEOPLE) {
+  for (const label of new Set([person.name, ...person.aliases].map(rulerKey))) {
+    if (!PEOPLE_BY_NAME.has(label)) PEOPLE_BY_NAME.set(label, []);
+    PEOPLE_BY_NAME.get(label).push(person);
+  }
 }
+export const ricPeople = (name) => [...(PEOPLE_BY_NAME.get(rulerKey(name)) ?? [])];
 
 export const isRicPerson = (name) => ricPeople(name).length > 0;
 export function canonicalRicPerson(name) {

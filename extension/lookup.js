@@ -1,4 +1,4 @@
-import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, volumesOf } from './catalogues.js';
+import { canonicalRicPerson, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -581,7 +581,11 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const family = Boolean(numeral) && norm(volume) === numeral;
   const onShelf = ([n, p]) => n === numeral && (!part || !DIVIDED.has(n) || p === part);
   const inVolume = (hit) => (exact && !family ? !volume || norm(hit.volume) === norm(volume) : onShelf(shelf(hit.volume)));
-  const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`);
+  // A section written the way Nomisma spells the person ("Valerian I" for OCRE's "Valerian") is the same section: the aliases say so, and they are
+  // read once into a set of keys, since this filter runs over every entry of the bundled index.
+  const aliases = new Set(ricPeople(reference.section).flatMap((person) => [person.name, ...person.aliases].map(rulerKey)));
+  const byRuler = (section) => !ruler || norm(section) === ruler || norm(section).startsWith(`${ruler} (`)
+    || (aliases.size > 0 && aliases.has(rulerKey(section.split(' (')[0])));
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
   const kept = entries.map((entry) => ({ entry, hit: parseReference(entry.title) }))
     .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && [spaced(hit.number), bareNumber(hit.number)].includes(number)
@@ -604,9 +608,10 @@ function pickRic(xml, reference) {
 }
 
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
-// hold OCRE's names: "Gaius/Caligula" whole (either half finds nothing), and Claudius Gothicus as "Claudius II Gothicus".
-const FACET_NAMES = Object.freeze({ 'Claudius Gothicus': 'Claudius II Gothicus' });
-const facetName = (name) => phrase(FACET_NAMES[squash(name)] ?? (canonicalRicPerson(name) || String(name ?? '')));
+// hold OCRE's names, which are the names the aliases resolve a heading's spelling to ("Claudius II" and "Claudius Gothicus" are both Claudius II
+// Gothicus, "Maximinus II" is Maximinus Daia, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot
+// place, or one two people share, is asked for as it was written rather than guessed at.
+const facetName = (name) => phrase(canonicalRicPerson(name) || String(name ?? ''));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
   .map(facetName).filter(Boolean))];
 
