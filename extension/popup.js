@@ -228,8 +228,8 @@ function updateFields() {
   // and any refill of the fields — a chip, a chosen candidate, a card — drops the line written about the fields it replaced.
   $('ric-note').hidden = !isRic;
   clearRicNote();
-  $('reference-label').textContent = catalogueOf(catalogue).label;
-  $('reference-help').textContent = catalogueOf(catalogue).help;
+  $('reference-label').textContent = catalogueOf(catalogue)?.label;
+  $('reference-help').textContent = catalogueOf(catalogue)?.help;
 }
 
 function fillFields(parsed) {
@@ -1018,7 +1018,7 @@ async function run(perform, note = '', failedReference = null) {
   }
   else if (outcome.status === 'cancelled') return;
   else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
-  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus).corpusName}. ${catalogueForCorpus(outcome.corpus).notFoundHint}`, 'reference-number');
+  else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus)?.corpusName}. ${catalogueForCorpus(outcome.corpus)?.notFoundHint}`, 'reference-number');
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
