@@ -7,10 +7,14 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 // The page's own surroundings, hand-made as the other popup tests make them: the extension API answers what each case is about, and the listeners the
 // page registers on the window are kept so a result card can be delivered to it afterwards.
 let answerCommand = async () => ({ ok: true });
+let answerTabs = async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }];
+let answerScript = async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: {} } }];
 const cardListeners = [];
 globalThis.browser = {
   runtime: { sendMessage: (command) => answerCommand(command) },
   storage: { onChanged: { addListener() {}, removeListener() {} } },
+  tabs: { query: (query) => answerTabs(query), create: async () => ({ id: 9 }) },
+  scripting: { executeScript: (request) => answerScript(request) },
 };
 globalThis.addEventListener = (type, listener) => { if (type === 'giga-pinax-card') cardListeners.push(listener); };
 globalThis.dispatchEvent = () => true;
@@ -71,13 +75,15 @@ class TestElement {
 
 let loaded = 0;
 // Starts the real page: its own document, its own extension replies, and the card event the result panel sends it once it is running.
-async function loadCompanion({ sendMessage, blockedLocalStorage = false, search = '' }) {
+async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = false, search = '' }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
     return elements.get(id);
   };
   answerCommand = sendMessage;
+  if (tabs) answerTabs = tabs;
+  if (script) answerScript = script;
   // As popup.html starts: the notes and the capture's error are hidden, and the two save buttons wait for something to save.
   for (const id of ['storage-note', 'companion-runtime-note', 'companion-capture-error']) element(id).hidden = true;
   for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) element(id).disabled = true;
@@ -96,7 +102,13 @@ async function loadCompanion({ sendMessage, blockedLocalStorage = false, search 
   for (let tick = 0; tick < 100 && element('companion-tab-research')['aria-selected'] !== 'true'; tick += 1) await settle();
   await settle();
   // Only this page's own listener, so an earlier case's page cannot answer for it.
-  return { element, card: (detail) => cardListeners[before]?.({ type: 'giga-pinax-card', detail }) };
+  return {
+    element,
+    card: (detail) => cardListeners[before]?.({ type: 'giga-pinax-card', detail }),
+    setTabs: (answer) => { answerTabs = answer; },
+    async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
+    async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
+  };
 }
 
 test('capture controls prevent edits and stale actions while extraction is pending', () => {
@@ -331,6 +343,69 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
   working.element('companion-capture-ruler').value = 'Nero';
   await working.element('companion-capture-ruler').emit('input');
   assert.equal(working.element('companion-capture-watchlist').disabled, false);
+});
+
+const WORKING_SNAPSHOT = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+const capturedPage = (candidates = {}) => async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates } }];
+
+// The fields are where he is looking and where he is fixing it: the reason the button is off must not vanish at the first keystroke.
+test('the reason Research coin is off stays in view until the fields can be looked up', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, script: capturedPage() });
+  await page.click('companion-capture-current');
+  const message = page.element('companion-capture-error').textContent;
+  assert.match(message, /reference/i);
+  assert.equal(page.element('companion-use-capture').disabled, true);
+
+  await page.type('ruler', 'Nero');
+  assert.equal(page.element('companion-capture-error').textContent, message);
+  assert.equal(page.element('companion-capture-error').hidden, false);
+  assert.equal(page.element('companion-use-capture').disabled, true);
+
+  await page.type('reference', 'RIC 306');
+  assert.equal(page.element('companion-capture-error').textContent, '');
+  assert.equal(page.element('companion-capture-error').hidden, true);
+  assert.equal(page.element('companion-use-capture').disabled, false);
+});
+
+test('a capture message is said once and never takes back what the lookup wrote', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, script: capturedPage() });
+  await page.click('companion-capture-current');
+  assert.equal(page.element('form-error').textContent, page.element('companion-capture-error').textContent);
+  // One alert carries it; the live region is not given the same line to read out again.
+  assert.equal(page.element('announcement').textContent, '');
+
+  // The lookup answers about something else entirely, and the capture editor has no business erasing it.
+  page.element('form-error').textContent = 'No Price 23 found in PELLA.';
+  page.element('form-error').hidden = false;
+  await page.type('reference', 'RIC 306');
+  assert.equal(page.element('form-error').textContent, 'No Price 23 found in PELLA.');
+  assert.equal(page.element('form-error').hidden, false);
+});
+
+// Only one element carries the message as an alert; the other shows it without asking to be read out.
+test('the capture error is announced by one element, not by every place it appears', () => {
+  const markup = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.match(markup, /id="form-error"[^>]*role="alert"/);
+  assert.doesNotMatch(markup, /id="companion-capture-error"[^>]*role="alert"/);
+});
+
+// A page that could not be read leaves no context behind - including the one the last page left, which the editor no longer shows.
+test('a capture that fails takes the earlier page off the card it would be saved with', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    script: capturedPage({ reference: { value: 'RIC 306', provenance: 'structured-data' } }),
+  });
+  await page.click('companion-capture-current');
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  await page.click('companion-save-watchlist');
+  assert.deepEqual(commands.filter(({ type }) => type === 'draft.save').at(-1).payload.auctionContext, { pageUrl: 'https://auction.example/27' });
+
+  page.setTabs(async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }]);
+  await page.click('companion-capture-current');
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  await page.click('companion-save-watchlist');
+  assert.equal(Object.hasOwn(commands.filter(({ type }) => type === 'draft.save').at(-1).payload, 'auctionContext'), false);
 });
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {

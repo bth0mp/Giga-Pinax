@@ -200,7 +200,8 @@ export function capturableTab(tabs) {
 }
 
 const CAPTURE_UNREADABLE = 'This page can\'t be read. Open the auction lot in a tab, then select Capture again.';
-const CAPTURE_NO_REFERENCE = 'No catalogue reference was found on this page. Add one below, such as “RIC 306”, or type it in the Reference box.';
+// Said of a capture as it arrives and of the fields as they are edited, so it names neither the page nor the keystroke.
+const CAPTURE_NO_REFERENCE = 'These details hold no catalogue reference to look up. Add one below, such as “RIC 306”, or type it in the Reference box.';
 const PANEL_ACCESS_HINT = 'The Giga Pinax toolbar button grants access to the page you are on.';
 const captureFailureMessage = (mode) => mode?.panel ? `${CAPTURE_UNREADABLE} ${PANEL_ACCESS_HINT}` : CAPTURE_UNREADABLE;
 
@@ -351,11 +352,22 @@ async function initCompanionPopup() {
   };
   const captureFieldIds = ['ruler', 'denomination', 'mint', 'reference'].map((field) => `companion-capture-${field}`);
   // The reason Research coin is disabled belongs where the fields are being edited, and beside the Reference box the lookup would have answered in.
+  // #form-error is popup.js's line as much as this one's, so only the line this page put there is ever taken back.
+  let shownFormError = '';
   const showCaptureError = (message) => {
+    // Written again, the alert beside the fields is read out again: the same reason, still true, is left as it stands.
+    if ($('companion-capture-error').textContent === message) return;
     $('companion-capture-error').textContent = message;
     $('companion-capture-error').hidden = !message;
-    $('form-error').textContent = message;
-    $('form-error').hidden = !message;
+    if (message) {
+      $('form-error').textContent = message;
+      $('form-error').hidden = false;
+      shownFormError = message;
+    } else if (shownFormError && $('form-error').textContent === shownFormError) {
+      $('form-error').textContent = '';
+      $('form-error').hidden = true;
+      shownFormError = '';
+    }
   };
   const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
     const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())));
@@ -366,8 +378,10 @@ async function initCompanionPopup() {
   };
   for (const id of captureFieldIds) $(id).addEventListener('input', () => {
     if (!captureDraft) captureDraft = buildResearchDraft({ pageTitle: '', pageUrl: '', candidates: {} });
-    showCaptureError('');
-    applyCaptureState(false, captureFieldIds.some((fieldId) => $(fieldId).value.trim()));
+    const edited = captureFieldIds.some((fieldId) => $(fieldId).value.trim());
+    // Read again from the fields as they now stand: the reason Research coin is off goes when they can be looked up, and not at the first keystroke.
+    showCaptureError(edited && !buildResearchQuery(reviewedCapture()) ? CAPTURE_NO_REFERENCE : '');
+    applyCaptureState(false, edited);
   });
   $('companion-capture-current').addEventListener('click', async () => {
     const requestId = ++captureRequestId;
@@ -391,14 +405,20 @@ async function initCompanionPopup() {
       $('companion-capture-source').textContent = captureDraft.pageUrl ? `From ${captureDraft.pageTitle || captureDraft.pageUrl}` : 'Page extraction unavailable. Enter the fields manually.';
       applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
+      // The message is an alert beside the Reference box already: announcing it as well would have it read out twice.
       if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.');
-      else {
-        showCaptureError(CAPTURE_NO_REFERENCE);
-        announce(CAPTURE_NO_REFERENCE, true);
-      }
+      else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
       captureDraft = null;
+      // The page nothing could be read from is now the page being looked at: the last one's context is no longer shown in the editor, so it must not
+      // travel with the next coin saved from this page either.
+      researchAuctionContext = null;
+      safeCard = clearAuctionContextFromPayload(safeCard);
+      if (globalThis.gigaPinaxWatchlistReference) {
+        globalThis.gigaPinaxWatchlistReference = clearAuctionContextFromPayload(globalThis.gigaPinaxWatchlistReference);
+      }
+      $('companion-save-watchlist').disabled = !canSave(safeCard);
       for (const id of captureFieldIds) $(id).value = '';
       $('companion-capture-source').textContent = error.message;
       applyCaptureState(false, false);
