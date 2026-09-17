@@ -347,6 +347,9 @@ export function planCommit({
     const basis = nextBases.get(other);
     if (!basis?.id || replaced[basis.id] !== basis.revision) continue;
     const record = isStoredRecord(value) && value.id === basis.id ? value : editorRecord(snapshot, other, basis.id);
+    // Only the revision this commit itself produced: a higher one in the refreshed snapshot is a
+    // write from another view, and following it would carry the form past a change it never saw.
+    if (record && record.revision !== basis.revision + 1) continue;
     if (record) {
       rebase(other, record);
       // A form with unsaved input cannot be repopulated, so it is merged field by field instead.

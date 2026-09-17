@@ -350,6 +350,20 @@ test('the details form reads the same values the merge compares', () => {
   assert.deepEqual(bidFormValues(null, 'en-US', 'CHF'), { amount: '', currency: 'CHF', premium: '' });
 });
 
+test('a coin written again between the commit and the refresh conflicts instead of being followed', () => {
+  // The reorder took lot-a from 5 to 6; the snapshot already holds 7, so another view wrote it in
+  // between. Rebasing onto 7 would carry the dirty form past a change it never saw.
+  const plan = planCommit(commitInput({
+    editor: null, submittedRevisions: { 'group-a': 2, 'lot-a': 5 },
+    value: { id: 'group-a', revision: 3 },
+    lots: [{ id: 'lot-a', revision: 7 }], alternativeGroups: [{ id: 'group-a', revision: 3 }],
+    bases: [['lot', { id: 'lot-a', revision: 5, record: { id: 'lot-a', revision: 5 } }]], dirty: ['lot'],
+  }));
+  assert.equal(plan.bases.get('lot').revision, 5, 'the basis is kept');
+  assert.deepEqual(plan.conflicts, ['lot']);
+  assert.deepEqual(plan.merge, []);
+});
+
 test('commands name the records they claim to replace', () => {
   assert.deepEqual(commandExpectedRevisions({ type: 'lot.save', expectedRevision: 8, lot: { id: 'lot-a' } }), { 'lot-a': 8 });
   assert.deepEqual(commandExpectedRevisions({ type: 'lot.delete', lotId: 'lot-a', expectedRevision: 2 }), { 'lot-a': 2 });
