@@ -27,6 +27,8 @@ The extension requests access to the HTTPS research providers `numismatics.org`,
 
 To update, open **Settings**, find **Updates**, and select **Download latest update**. Download and extract the new Brave ZIP, replace the files in the same extracted folder, select **Reload** on `brave://extensions` or `chrome://extensions`, and reopen Giga Pinax. The extension does not install files silently.
 
+The **Updates** card is hidden on a Chrome Web Store install, where the store keeps the extension up to date: the card goes by the update URL the store writes into the manifest it serves. An unpacked install, a temporary Firefox install and an install from addons.mozilla.org — which sets no update URL — all keep it.
+
 ## Temporary Firefox installation
 
 Use Firefox 142 or later.

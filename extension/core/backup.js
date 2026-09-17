@@ -105,11 +105,10 @@ export function validateBackup(document) {
   }
   data.recentCommands = [];
   data.drafts = [];
-  const valid = validateSnapshot(data);
-  if (!valid.ok) return failure(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
-  // Validation accepts every revision a stored root may carry, including ones no export ever wrote. Those are turned
-  // away here rather than restarted as a stored one is: a record taken in above the usable ceiling would be refused by
-  // its own next save, and there is no reason to take it in at all.
+  // Before validation, because validation says only that a revision is an integer within the ceiling a stored root may
+  // carry: it cannot say that no run of writes produced it. A revision above the usable ceiling is turned away here
+  // rather than restarted as a stored one is - a record taken in above it would be refused by its own next save - and
+  // it is told what the file is, instead of being reported as an integer out of range.
   const unusable = unusableRevisions(data);
   if (unusable.length) {
     return failure(
@@ -118,6 +117,8 @@ export function validateBackup(document) {
       `data.${unusable[0].collection}`,
     );
   }
+  const valid = validateSnapshot(data);
+  if (!valid.ok) return failure(valid.error.code, valid.error.message, `data.${valid.error.path ?? ''}`);
   exportTimes.set(data, value.exportedAt);
   return { ok: true, value: data };
 }

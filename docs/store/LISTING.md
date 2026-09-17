@@ -49,7 +49,7 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 - `alarms`: schedules local reminder due checks.
 - `sidePanel`: opens the research workspace in Brave/Chrome's side panel.
 - optional `notifications`: shows desktop reminders only after the collector enables and grants them.
-- HTTPS host permissions: request public catalogue/type/label data from `numismatics.org` and `nomisma.org`, and user-requested sale-result research from `www.acsearch.info`.
+- HTTPS host permissions: request public catalogue/type/label data from `numismatics.org` and `nomisma.org`, and the sale-result search that starts with every lookup from `www.acsearch.info`, using the collector's existing acsearch session.
 - optional host permission `https://www.coinarchives.com/*`: reads one public results page, only after the collector selects **Get CoinArchives prices** and grants it.
 
 The permission set is unchanged from the previous release: the bundled catalogue data removed network requests, not permissions, and the online fallback still needs the same hosts.
