@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = ROOT / "extension" / "icons"
-SVG = ROOT / "extension" / "icon.svg"
+SVG = ROOT / "scripts" / "icon.svg"
 SCRIPT = ROOT / "scripts" / "make_icons.py"
 SIZES = (16, 32, 48, 128)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"

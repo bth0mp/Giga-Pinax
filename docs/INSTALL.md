@@ -1,12 +1,14 @@
-# Install Giga Pinax 0.31.1
+# Install Giga Pinax
 
-Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Version 0.30.0 adds bundled OCRE/RIC reference data; acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
+Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Bundled OCRE/RIC reference data answers RIC lookups without a network request, and acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
 
-Version 0.30.1 expands RIC ruler suggestions and fixes lookups in mint-organised volumes. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**. The included catalogue resolves **RIC VII Londinium 287** locally. Updating only requires replacing the extension files and reloading as described below.
+RIC ruler suggestions cover the mint-organised volumes too. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**; the included catalogue resolves **RIC VII Londinium 287** locally.
 
-Version 0.31.0 adds a separate CoinArchives public-results median. After a lookup, select **Get CoinArchives prices** and allow optional site access. It uses public hammer prices in the selected currency, with the archive's recent-additions and first-100-results limits shown alongside the sample. CoinArchives Pro remains a link to its own site.
+A separate CoinArchives public-results median sits beside the acsearch one. After a lookup, select **Get CoinArchives prices** and allow optional site access. It uses public hammer prices in the selected currency, with the archive's recent-additions and first-100-results limits shown alongside the sample. CoinArchives Pro remains a link to its own site.
 
-Version 0.31.1 restores direct searches from **Refine reference**. Leave the top box empty, choose a catalogue, fill its reference fields, and select **Search** or press Enter in a field. For RIC, the volume and ruler fields participate in the same search. Restored valid field values also work, while stale text in the top box no longer replaces the refined reference.
+**Refine reference** searches directly: leave the top box empty, choose a catalogue, fill its reference fields, and select **Search** or press Enter in a field. For RIC, the volume and ruler fields participate in the same search.
+
+What changed in each version is listed in the [changelog](../CHANGELOG.md).
 
 Fetched acsearch and CoinArchives rows and acsearch inclusion choices stay in the current Research session and do not enter saved evidence or backups. Current-page extraction runs only after your action and remains editable before research or saving. Optional desktop notifications are requested only when you enable them.
 
@@ -50,7 +52,7 @@ CoinArchives public prices load only when you select **Get CoinArchives prices**
 
 ## Developer build
 
-End users do not need Python. From the repository root, `python scripts/build.py` creates unpacked `dist/brave/` and `dist/firefox/` directories, versioned Brave and Firefox ZIPs, and stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases. Build one target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+End users do not need Python. From the repository root, `python scripts/build.py` creates unpacked `dist/brave/` and `dist/firefox/` directories, versioned Brave, Chrome and Firefox ZIPs, and stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases — every release asset in one command. Build one unpacked target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 A GitHub release includes five ZIP assets: versioned Brave, Chrome and Firefox packages plus both stable aliases. The versioned Chrome package is a byte-identical copy of the versioned Brave package. Every release body must include brief browser installation and update instructions. See [RELEASING.md](RELEASING.md).
 

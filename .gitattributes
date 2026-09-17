@@ -1,3 +1,10 @@
+# Store and check out every text file with LF, whatever the contributor's platform does.
+* text=auto eol=lf
+
+# Packaged and rendered assets are bytes, never line-converted.
+*.png binary
+*.zip binary
+
 # Preserve deterministic generated data bytes and collapse large generated diffs.
 extension/data/ocre/*.json -text linguist-generated=true
 extension/ric-people.js -text linguist-generated=true
