@@ -665,6 +665,12 @@ function mutation(snapshot, command, context) {
       const plan = reconcileIntoSnapshot(next, context);
       value = { nextWakeAt: plan.nextWakeAt, dueEventCount: Object.keys(plan.overdueByEvent).length };
       effects.push({ type: 'alarm.schedule', nextWakeAt: plan.nextWakeAt }, { type: 'badge.refresh' });
+      // Every service-worker wake reconciles. A reconcile that changes no alert and no wake time
+      // must leave the root alone, or an idle worker would invalidate an import's expectedRevision.
+      if (next.scheduler.nextWakeAt === snapshot.scheduler.nextWakeAt &&
+          JSON.stringify(next.alerts) === JSON.stringify(snapshot.alerts)) {
+        return ok({ snapshot, effects, value, mutated: false });
+      }
       break;
     }
     case 'backup.import': {

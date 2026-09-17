@@ -513,6 +513,30 @@ test('scheduler reconciliation persists occurrences and one next wake', () => {
   assert.equal(reconciled.snapshot.scheduler.nextWakeAt, '2026-10-10T11:00:00.000Z');
 });
 
+test('repeated reconciliation of an unchanged store neither writes nor bumps the revision', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const saved = await writer.commitCommand(command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Future sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  }));
+  assert.equal(saved.ok, true);
+  const first = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(first.ok, true);
+  const settled = storage.read();
+  for (let index = 0; index < 3; index += 1) {
+    const reply = await writer.commitCommand(command('scheduler.reconcile'));
+    assert.equal(reply.ok, true);
+    assert.equal(reply.revision, settled.revision);
+    assert.equal(reply.value.nextWakeAt, '2026-10-10T11:00:00.000Z');
+  }
+  assert.deepEqual(storage.read(), settled);
+});
+
 test('scheduler reconciliation supports more than 500 alerts from valid events', () => {
   let state = createEmptySnapshot(NOW);
   for (let eventIndex = 0; eventIndex < 26; eventIndex += 1) {
