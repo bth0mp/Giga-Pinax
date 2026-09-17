@@ -316,7 +316,6 @@ test('a retained retry belongs to its own coin, and an answerless send is not re
 test('a companion start-up that cannot reach storage leaves its save buttons disabled for good', async () => {
   const snapshot = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
   const cases = [
-    ['blocked site data', { blockedLocalStorage: true, sendMessage: async () => snapshot }, ''],
     ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, 'Storage is blocked.'],
     ['a background that answers nothing', { sendMessage: async () => undefined }, 'Extension storage is unavailable.'],
   ];
@@ -346,6 +345,22 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
 });
 
 const WORKING_SNAPSHOT = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+
+// A watchlist save goes to extension storage through the background and never touches localStorage, which is read once to carry an old preference over
+// and copes with no store at all: a profile that blocks site data costs the remembered appearance and fields, and nothing a collector records.
+test('blocked site data costs the remembered preferences, not the watchlist saves', async () => {
+  const page = await loadCompanion({ blockedLocalStorage: true, sendMessage: async () => WORKING_SNAPSHOT });
+  assert.equal(page.element('storage-note').hidden, false);
+  assert.equal(page.element('storage-note').textContent,
+    'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.');
+  assert.equal(page.element('companion-status').textContent, '');
+
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  assert.equal(page.element('companion-save-watchlist').disabled, false);
+  page.element('companion-capture-ruler').value = 'Nero';
+  await page.element('companion-capture-ruler').emit('input');
+  assert.equal(page.element('companion-capture-watchlist').disabled, false);
+});
 const capturedPage = (candidates = {}) => async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates } }];
 
 // The fields are where he is looking and where he is fixing it: the reason the button is off must not vanish at the first keystroke.

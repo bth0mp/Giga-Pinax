@@ -224,17 +224,27 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
+// background, so the note must not promise a loss that is not one.
+const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
 
 // Nothing durable can be saved for the rest of this page's life: every later answer - a result card, a finished save, an edited capture - asks this
 // before putting a save button back, so the note and the disabled buttons never disagree.
 let storageUnavailable = false;
 
-// The note popup.js shows for its own unreadable preferences, shown here for the same reason: nothing durable can be saved, so the two buttons that
-// would save something are the ones that go. Written without the page's helpers, since start-up may have failed before they existed.
+// The note popup.js shows for its own unreadable preferences. Written without the page's helpers, since start-up may have failed before they existed.
+function showStorageNote(message = '') {
+  const note = document.getElementById('storage-note');
+  if (!note) return;
+  if (message) note.textContent = message;
+  note.hidden = false;
+}
+
+// Only the background bridge can say a record cannot be kept, and when it does nothing durable can be saved for the rest of this page's life: the two
+// buttons that would save something are the ones that go, and the note keeps the wording it already had for that.
 function showStorageUnavailable() {
   storageUnavailable = true;
-  const note = document.getElementById('storage-note');
-  if (note) note.hidden = false;
+  showStorageNote();
   for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) {
     const button = document.getElementById(id);
     if (button) button.disabled = true;
@@ -470,16 +480,19 @@ async function initCompanionPopup() {
     // Blocked site data makes reading localStorage itself throw, and a background that answers nothing leaves no reply to read: either way the page
     // still calculates and looks up references, so it says what it cannot do instead of stopping here.
     let stored = null;
-    try { stored = localStorage; } catch { showStorageUnavailable(); }
-    // A reply that could not be read at all - an absent one makes reading its outcome throw - names no reason a collector could act on, so the note
-    // speaks for it instead of a TypeError from inside the tool.
-    const reply = await initializeCompanionPreferences(bridge, stored)
-      .catch((error) => ({ ok: false, message: error instanceof TypeError ? '' : error?.message }));
+    let preferencesBlocked = false;
+    try { stored = localStorage; } catch { preferencesBlocked = true; }
+    // A background that answers nothing at all leaves a reply the migration would read an outcome from and throw over, naming no reason a collector
+    // could act on: it is answered for here, where it arrives, so every other failure still speaks for itself.
+    const answering = { ...bridge, getSnapshot: async () => (await bridge.getSnapshot()) ?? { ok: false, message: '' } };
+    const reply = await initializeCompanionPreferences(answering, stored).catch((error) => ({ ok: false, message: error?.message }));
     if (reply?.ok) {
       snapshot = reply.value;
       const currency = snapshot.preferences?.currency;
       if (CURRENCIES.includes(currency)) calculator.setValues({ currency });
       renderSummary();
+      // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
+      if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
       showStorageUnavailable();
       announce(reply?.message || STORAGE_UNAVAILABLE, true);
