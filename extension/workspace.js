@@ -404,6 +404,15 @@ export function eventAttachDecision({
 
 export const COIN_REMOVED_NOTICE = 'The coin you were editing was removed in another view. Unsaved input for it was discarded.';
 
+const SELECTED_LOT_EDITORS = Object.freeze(['lot', 'bid', 'outcome']);
+
+// Losing typed input is said out loud, but only when the coin went behind the collector's back: a
+// delete they confirmed in this page clears its own forms without accusing another view.
+export function removedCoinNotice(selection, nextSelection, dirtyEditors, removedHere = null) {
+  if (nextSelection === selection || selection?.selectedLotId === removedHere) return false;
+  return SELECTED_LOT_EDITORS.some((editor) => dirtyEditors?.has(editor));
+}
+
 export function selectionAfterSnapshot(selection, snapshot) {
   if (!selection?.selectedLotId) return selection;
   if ((snapshot?.lots ?? []).some((lot) => lot.id === selection.selectedLotId)) return selection;
@@ -637,8 +646,11 @@ async function initWorkspace() {
   };
   const updateConflictNote = () => showConflictNote(conflictNoteMessage(editorsWithChangedBasis(snapshot, dirtyEditors, editorBases, savesInFlight)));
   const clearSelectedEditors = () => {
-    for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); }
+    for (const editor of SELECTED_LOT_EDITORS) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); }
   };
+  // The coin this page is deleting: any snapshot that drops it, including one that arrives before
+  // the reply does, clears its editors without the "removed in another view" notice.
+  let removedHere = null;
   // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
   // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
@@ -646,7 +658,7 @@ async function initWorkspace() {
     snapshot = incoming;
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
     const selected = selectionAfterSnapshot(selection, snapshot);
-    const clearedInput = selected !== selection && ['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor));
+    const clearedInput = removedCoinNotice(selection, selected, dirtyEditors, removedHere);
     if (selected !== selection) {
       selection = selected;
       lotInteractionGeneration += 1;
@@ -1128,7 +1140,13 @@ async function initWorkspace() {
     dirtyEditors.delete('lot');
     void send(command).then((reply) => { if (reply?.ok) { lastLotUndo = null; $('undo-lot').hidden = true; $('lot-action-status').textContent = 'Last details edit undone.'; } });
   });
-  $('delete-lot').addEventListener('click', () => { const basis = editorBases.get('lot'); if (basis?.id && confirm(`Remove “${basis.record.title}”?`)) void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot'); });
+  $('delete-lot').addEventListener('click', () => {
+    const basis = editorBases.get('lot');
+    if (!basis?.id || !confirm(`Remove “${basis.record.title}”?`)) return;
+    removedHere = basis.id;
+    void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot')
+      .then((reply) => { if (!reply?.ok && removedHere === basis.id) removedHere = null; });
+  });
   $('group-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('group') ?? { id: null, revision: null }; void send({ type: 'group.save', requestId: requestId(), expectedRevision: basis.revision, group: { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim() } }, 'group'); });
 
   const bidMoney = (form) => {

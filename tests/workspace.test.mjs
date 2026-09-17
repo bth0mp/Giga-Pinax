@@ -29,6 +29,7 @@ import {
   commandReplacedRevisions,
   eventAttachDecision,
   selectionAfterSnapshot,
+  removedCoinNotice,
   routeFromHash,
   applyActiveRoute,
   editorCompletion,
@@ -552,6 +553,14 @@ test('an auction saved from a coin is attached to it, and never skipped in silen
 
 test('a coin removed in another view is announced, not left to a hidden banner', () => {
   assert.equal(COIN_REMOVED_NOTICE, 'The coin you were editing was removed in another view. Unsaved input for it was discarded.');
+  const selected = { selectedLotId: 'lot-a', mode: 'detail' };
+  const cleared = { selectedLotId: null, mode: 'list' };
+  assert.equal(removedCoinNotice(selected, cleared, new Set(['bid'])), true);
+  // The collector confirmed this delete in this page, so nothing was removed behind their back.
+  assert.equal(removedCoinNotice(selected, cleared, new Set(['bid']), 'lot-a'), false);
+  assert.equal(removedCoinNotice(selected, cleared, new Set(['bid']), 'lot-b'), true);
+  assert.equal(removedCoinNotice(selected, selected, new Set(['bid'])), false);
+  assert.equal(removedCoinNotice(selected, cleared, new Set(['event'])), false);
 });
 
 test('command builders use the background contract and complete group order', () => {
