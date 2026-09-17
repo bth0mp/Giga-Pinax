@@ -63,7 +63,7 @@ class TestElement {
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
-  session = new Map(), sessionArea = true, messageListeners = [] }) {
+  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [] }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -95,7 +95,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     windows: { getCurrent: async () => ({ id: 7 }) },
     storage: sessionArea ? {
       session: {
-        get: async (key) => (session.has(key) ? { [key]: session.get(key) } : {}),
+        get: async (key) => { if (sessionGate) await sessionGate; return session.has(key) ? { [key]: session.get(key) } : {}; },
         set: async (items) => { for (const [key, value] of Object.entries(items)) { writes.push(value); session.set(key, String(value)); } },
         remove: async (key) => { session.delete(key); },
       },
@@ -283,6 +283,20 @@ test('a lookup a later one has replaced keeps no reference', async () => {
   await settle();
   assert.deepEqual(popup.writes, ['Price 23']);
   assert.equal(session.size, 0);
+});
+
+// The window was asked to show a card while the session store was still answering about an older reference: the card is its subject now, and a reference
+// the store hands over afterwards would land in the box of a window looking at something else.
+test('a lookup that arrives first leaves no room for a restored reference', async () => {
+  const gate = deferred();
+  const listeners = [];
+  const popup = await loadPopup({ search: '?window=1', messageListeners: listeners, sessionGate: gate.promise,
+    session: new Map([['giga-pinax-pending-reference-v1', 'Price 23']]),
+    permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  listeners[0]({ type: 'giga-pinax-lookup', url: 'popup.html?window=1&corpus=pella&id=price.23' }, null, () => {});
+  gate.resolve();
+  await settle();
+  assert.equal(popup.element('quick-reference').value, '');
 });
 
 test('only the lookup window answers a lookup sent to an open window', async () => {

@@ -920,13 +920,15 @@ function forgetPendingReference() {
   try { void Promise.resolve(sessionArea()?.remove(PENDING_KEY)).catch(() => {}); }
   catch { /* nothing was kept */ }
 }
-async function restorePendingReference() {
+// Counted so a reference the store is still fetching cannot land in a window that has since been sent a lookup of its own (openFrom below).
+let opening = 0;
+async function restorePendingReference(ticket) {
   let stored;
   try { stored = await sessionArea()?.get(PENDING_KEY); }
   catch { return; }
   const pending = selectionQuery(stored?.[PENDING_KEY] ?? '');
   // The store answers after the popup has opened: whatever he has started typing by then is his, not the one the prompt interrupted.
-  if (pending && !$('quick-reference').value) $('quick-reference').value = pending;
+  if (pending && ticket === opening && !$('quick-reference').value) $('quick-reference').value = pending;
 }
 
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
@@ -1228,13 +1230,14 @@ darkScheme.addEventListener('change', syncThemeButton);
 // The pop-out's window names a card instead and reopens it like a Recent chip: with the fields stored alongside it, and without a permission request.
 // Either way the cursor then waits in the Reference box (Alt+Shift+G, type, Enter): Firefox popups can ignore autofocus.
 function openFrom(search) {
+  const ticket = ++opening;
   const selected = queryFromSearch(search) || selectionQuery(new URLSearchParams(search).get('reference'));
   const opened = cardFromSearch(search);
   if (selected) { $('quick-reference').value = selected; $('reference-form').requestSubmit(); }
   else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
   // Nothing was sent here, so a reference a permission prompt interrupted is put back in the box, where Look up is waiting for it. It looks up nothing
   // by itself: the prompt was the answer to the last Look up, and this one is his to press.
-  else if (!$('quick-reference').value) void restorePendingReference();
+  else if (!$('quick-reference').value) void restorePendingReference(ticket);
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its
