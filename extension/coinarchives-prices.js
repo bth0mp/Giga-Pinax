@@ -6,6 +6,8 @@ const ORIGIN = 'https://www.coinarchives.com';
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 // The header sits in the first screenful of markup; this is the most of the page the pattern for it ever reads.
 const HEADER_SLICE = 4096;
+// How many places the word may appear before the header itself. A real page carries a rule and a heading or two.
+const HEADER_TRIES = 8;
 const emptyExcluded = () => ({ upcoming: 0, toBePosted: 0, unpriced: 0, malformedPrice: 0, malformedDate: 0, futureDate: 0, duplicateId: 0, conflictingId: 0 });
 const NAMED_ENTITY = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 // One pass over the whole text, so an escaped entity is decoded once and stays text: "&amp;quot;" is the characters "&quot;", not a quotation mark.
@@ -41,12 +43,26 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
   if (!['a', 'w'].includes(section) || !String(term || '').trim() || !/^[A-Z]{3}$/.test(currency || '')) return { ...result, status: 'layout', reason: 'input' };
   if (/closest\s+matches/i.test(html)) return { ...result, status: 'closest' };
   // The word is found first and the pattern run on a slice around it: on a page of nothing but "<span class='" the
-  // pattern would otherwise try every one of them and take half a minute over half a megabyte.
+  // pattern would otherwise try every one of them and take half a minute over half a megabyte. A stylesheet rule that
+  // styles the class, or a heading that carries it, comes before the header on some pages, so the first few places the
+  // word appears are read in turn until one of them is the header. Still linear: each slice is bounded and so is the
+  // number of them.
   const source = String(html);
-  const at = source.toLowerCase().indexOf('headertext');
-  const around = at < 0 ? '' : source.slice(Math.max(0, at - 512), at + HEADER_SLICE);
-  const header = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(around)?.[1];
-  const countMatch = header && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(header);
+  const lower = source.toLowerCase();
+  let header;
+  let countMatch;
+  for (let at = lower.indexOf('headertext'), tried = 0; at >= 0 && tried < HEADER_TRIES; tried += 1) {
+    // From the start tag that carries this occurrence, so each try reads its own element rather than an earlier one.
+    const lookBack = Math.max(0, at - 512);
+    const tagAt = source.slice(lookBack, at).lastIndexOf('<');
+    const around = source.slice(tagAt < 0 ? at : lookBack + tagAt, at + HEADER_SLICE);
+    const candidate = /<(?:span|div)\b[^>]*class=["'][^"']*\bheadertext\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|div)>/i.exec(around)?.[1];
+    countMatch = candidate && /^\s*Your search for\s*<b>\s*'?([\s\S]*?)<\/b>\s*'?\s*matched\s+(\d+)\s+lots?\s+from auctions added in the last six months\./i.exec(candidate);
+    // The first element that carries the class is what an empty result is read from, as it was when only one was read.
+    if (header === undefined && candidate !== undefined) header = candidate;
+    if (countMatch) break;
+    at = lower.indexOf('headertext', at + 1);
+  }
   if (!countMatch) return { ...result, status: /(?:matched\s+0\s+lots?|no\s+(?:matching\s+)?lots)/i.test(header || '') ? 'empty' : 'layout' };
   if (normalizedQuery(countMatch[1]) !== normalizedQuery(term)) return { ...result, status: 'closest' };
   result.matchedCount = Number(countMatch[2]);
