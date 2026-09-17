@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
+import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
 import { lookupType, parseReference } from '../extension/lookup.js';
 
+const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
 const metadata = {
-  schemaVersion: 1, corpus: 'ocre', recordCount: 3, activeRecordCount: 2,
+  schemaVersion: 1, corpus: 'ocre', recordCount: 12, activeRecordCount: 11,
   aliases: { 'ric.1(2).ner.306-old': 'ric.1(2).ner.306' },
-  shards: { '1(2)': 'records-1(2).json', '2': 'records-2.json', '2_1(2)': 'records-2_1(2).json', '2_3(2)': 'records-2_3(2).json', '4': 'records-4.json', '7': 'records-7.json' },
+  shards: Object.fromEntries(['1(2)', '2', '2_1(2)', '2_3(2)', '4', '7'].map((prefix) => [prefix, whole(prefix)])),
 };
 const index = { schemaVersion: 1, entries: [
   ['ric.1(2).ner.306', 'RIC I (second edition) Nero 306'],
@@ -25,6 +26,9 @@ const index = { schemaVersion: 1, entries: [
   ['ric.4.ph_i.27A', 'RIC IV Philip I 27A'],
   ['ric.4.ph_i.27B', 'RIC IV Philip I 27B'],
 ] };
+// The index positions each RIC number's leading integer reaches, as the importer writes them beside the index, under the
+// count of the entries they were taken from.
+const numbers = { schemaVersion: 1, entryCount: index.entries.length, numbers: { 27: [9, 10], 287: [2, 3, 4, 5], 306: [0], 720: [6, 7, 8], 972: [1] } };
 const records = {
   'ric.1(2).ner.306': { i: 'ric.1(2).ner.306', l: 'RIC I (second edition) Nero 306', a: ['nero'], d: ['as'], m: ['rome'], x: ['ae'], s: '0062', e: '0068', o: { l: 'NERO', d: 'Head of Nero', p: ['nero'] }, r: { d: 'Temple' } },
   'ric.2_1(2).ves.972': { i: 'ric.2_1(2).ves.972', l: 'RIC II, Part 1 (second edition) Vespasian 972', a: ['vespasian'], d: ['denarius', 'aureus'], o: { p: ['titus'] }, r: {} },
@@ -40,7 +44,7 @@ const records = {
 };
 
 function fixtureFetch(overrides = {}) {
-  const routes = { 'metadata.json': metadata, 'index.json': index, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-2_3(2).json': { schemaVersion: 1, records }, 'records-4.json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
+  const routes = { 'metadata.json': metadata, 'index.json': index, 'numbers.json': numbers, 'records-1(2).json': { schemaVersion: 1, records }, 'records-2.json': { schemaVersion: 1, records }, 'records-2_1(2).json': { schemaVersion: 1, records }, 'records-2_3(2).json': { schemaVersion: 1, records }, 'records-4.json': { schemaVersion: 1, records }, 'records-7.json': { schemaVersion: 1, records }, ...overrides };
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(String(url));
@@ -48,6 +52,8 @@ function fixtureFetch(overrides = {}) {
     if (!key) return { ok: false, status: 404, json: async () => ({}) };
     const value = routes[key];
     if (value instanceof Error) throw value;
+    // A number stands for the status a file comes back with, so a bundle with one file missing can be served as the package would serve it.
+    if (typeof value === 'number') return { ok: false, status: value, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => value };
   };
   fetchImpl.calls = calls;
@@ -61,7 +67,7 @@ test('local catalogue resolves exact RIC titles without loading an unrelated sha
   assert.equal(result.status, 'ok');
   assert.equal(result.card.id, 'ric.1(2).ner.306');
   assert.equal(result.card.source, 'local');
-  assert.deepEqual(fetchImpl.calls.map((url) => url.split('/').pop()), ['metadata.json', 'index.json', 'records-1(2).json']);
+  assert.deepEqual(fetchImpl.calls.map((url) => url.split('/').pop()), ['metadata.json', 'index.json', 'numbers.json', 'records-1(2).json']);
 });
 
 test('local catalogue preserves RIC partial, suffix, volume and sibling candidate rules', async () => {
@@ -116,6 +122,20 @@ test('missing and corrupt bundles fail closed and never claim a catalogue miss',
   assert.equal((await missing.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1' })).status, 'unavailable');
   const corrupt = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'metadata.json': { schemaVersion: 2 } }), baseUrl: 'moz-extension://test/data/ocre/' });
   assert.equal((await corrupt.lookupById('ocre', 'ric.1(2).ner.306')).status, 'unavailable');
+  // numbers.json decides which titles a number is read from, so a bundle whose number index is missing, foreign or pointing outside the index it
+  // was built for must fail closed. "none" from any of these would tell a collector the coin is not in RIC when only the file is wrong.
+  for (const override of [{ 'numbers.json': 404 }, { 'numbers.json': { ...numbers, schemaVersion: 2 } },
+    { 'numbers.json': { ...numbers, numbers: 306 } }, { 'numbers.json': { ...numbers, numbers: { 306: [99] } } },
+    // A schema-valid index of another, smaller catalogue: every position in it resolves, and the answers would be its answers, not this bundle's.
+    { 'numbers.json': { ...numbers, entryCount: 10 } }, { 'numbers.json': { schemaVersion: 1, numbers: numbers.numbers } },
+    { 'metadata.json': { ...metadata, shards: 7 } }, { 'records-1(2).json': { schemaVersion: 1, records: 306 } },
+    // Past "z" there is no letter left to name a part, and fromCharCode would carry on into punctuation.
+    { 'metadata.json': { ...metadata, shards: { ...metadata.shards, 3: Array.from({ length: 27 }, (value, position) => (
+      { file: `records-3.${String.fromCharCode(97 + position)}.json`, from: position === 0 ? '' : `ric.3.x.${String(position).padStart(3, '0')}` })) } } }]) {
+    const local = createLocalCatalogue({ fetchImpl: fixtureFetch(override), baseUrl: 'moz-extension://test/data/ocre/' });
+    const result = await local.lookupType({ catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' });
+    assert.equal(result.status, 'unavailable', JSON.stringify(override));
+  }
 });
 
 test('packed cards use verified cached labels and omit ambiguous summaries and portraits', () => {
@@ -181,7 +201,7 @@ test('the local fallback broadens the volume before the section, and a section i
 });
 
 test('a failed bundle load is retried, never remembered', async () => {
-  const failures = new Set(['metadata.json', 'index.json', 'records-1(2).json']);
+  const failures = new Set(['metadata.json', 'index.json', 'numbers.json', 'records-1(2).json']);
   const fetchImpl = fixtureFetch();
   const once = async (url) => {
     const failing = [...failures].find((name) => String(url).endsWith(name));
@@ -190,7 +210,8 @@ test('a failed bundle load is retried, never remembered', async () => {
   };
   const local = createLocalCatalogue({ fetchImpl: once, baseUrl: 'moz-extension://test/data/ocre/' });
   const reference = { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306' };
-  // One dropped request each for the metadata, the index and the shard; a cached rejection would make any of them permanent.
+  // One dropped request each for the metadata, the two index files (asked for together) and the shard; a cached
+  // rejection would make any of them permanent.
   for (let attempt = 0; attempt < 3; attempt += 1) assert.equal((await local.lookupType(reference)).status, 'unavailable', String(attempt));
   const found = await local.lookupType(reference);
   assert.equal(found.status, 'ok');
@@ -199,8 +220,8 @@ test('a failed bundle load is retried, never remembered', async () => {
 });
 
 // The bundled catalogue itself, not the fixture above: what a heading's ruler costs only shows against OCRE's own numbering, where one man's name
-// stands inside another's. The index is served one number at a time — the entries carrying that RIC number, which is the first thing pickRicEntries
-// keeps — so every answer is the one the whole bundle gives while the sweep stays a few seconds. Skipped where the bundle is not checked out.
+// stands inside another's. Every file is served as the package serves it, parsed once here, and numbers.json is what keeps the sweep to a few
+// seconds. Skipped where the bundle is not checked out.
 const BUNDLE = fileURLToPath(new URL('../extension/data/ocre/', import.meta.url));
 const skip = existsSync(`${BUNDLE}index.json`) ? false : 'extension/data/ocre is not bundled here';
 const files = new Map();
@@ -208,25 +229,11 @@ const bundleJson = (name) => {
   if (!files.has(name)) files.set(name, JSON.parse(readFileSync(`${BUNDLE}${name}`, 'utf8')));
   return files.get(name);
 };
-let byNumber;
-const bundleIndex = () => {
-  if (byNumber) return byNumber;
-  byNumber = new Map();
-  for (const entry of bundleJson('index.json').entries) {
-    const hit = parseReference(entry[1], false);
-    if (hit?.catalogue !== 'RIC') continue;
-    const number = String(hit.number).toLowerCase().replace(/\s*\([^()]*\)$/, '').trim();
-    if (!byNumber.has(number)) byNumber.set(number, []);
-    byNumber.get(number).push(entry);
-  }
-  return byNumber;
-};
-const bundleCatalogue = (...numbers) => createLocalCatalogue({
+const bundle = createLocalCatalogue({
   baseUrl: 'moz-extension://test/data/ocre/',
   fetchImpl: async (url) => {
     const name = decodeURIComponent(String(url).split('/').pop());
-    const entries = numbers.flatMap((number) => bundleIndex().get(number) ?? []);
-    return { ok: true, status: 200, json: async () => (name === 'index.json' ? { schemaVersion: 1, entries } : bundleJson(name)) };
+    return { ok: true, status: 200, json: async () => bundleJson(name) };
   },
 });
 // Every coin a heading opens on its own over RIC numbers 1 to 400, read exactly as a pasted lot is read.
@@ -236,15 +243,19 @@ async function openedOver(heading) {
     const lot = findReferences(`${heading}. RIC ${number}`);
     const found = lot.references[0];
     if (!found) continue;
-    const result = await bundleCatalogue(String(number)).lookupType(lotLookup(found, lot.rulers));
+    const result = await bundle.lookupType(lotLookup(found, lot.rulers));
     if (result?.status === 'ok') opened.push({ number, card: result.card });
   }
   return opened;
 }
 // Who is on a coin, as the record itself says: its authorities and its obverse portraits. The card names neither where a type has two authorities
 // (RIC V's joint reigns), and it is the record the person filter reads anyway.
+const shardPartOf = (id) => {
+  const parts = bundleJson('metadata.json').shards[String(id).split('.')[1]] ?? [];
+  return parts.reduce((chosen, part) => (part.from <= id ? part : chosen), parts[0]);
+};
 const peopleOn = (id) => {
-  const record = bundleJson(bundleJson('metadata.json').shards[String(id).split('.')[1]])?.records?.[id];
+  const record = bundleJson(shardPartOf(id)?.file)?.records?.[id];
   return [...(record?.a ?? []), ...(record?.o?.p ?? [])];
 };
 const opensOnly = (opened, ids, heading) => {
@@ -282,24 +293,121 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
 });
 
 test('over the bundled catalogue, a cited range reaches the record OCRE titles over it', { skip }, async () => {
-  const local = bundleCatalogue('10-11', '10');
-  const typed = await local.lookupType(parseReference('RIC II.3 Hadrian 10-11'));
+  const typed = await bundle.lookupType(parseReference('RIC II.3 Hadrian 10-11'));
   assert.deepEqual(typed.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
   const lot = findReferences('Hadrian. AR Denarius. RIC II.3 Hadrian 10-11.');
-  const row = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  const row = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
   assert.deepEqual(row.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
   // A range OCRE has no record of falls back to the first number, which is the type the other 654 ranges share.
-  const missing = await bundleCatalogue('10').lookupType(parseReference('RIC II.3 Hadrian 10-11'));
+  const missing = await bundle.lookupType(parseReference('RIC II.3 Hadrian 10-12'));
   assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10']);
 });
 
 test('over the bundled catalogue, guided fields naming a mint by its modern name open the coin', { skip }, async () => {
-  const localProvider = bundleCatalogue('12');
+  const localProvider = bundle;
   const guided = await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, { localProvider, online: false });
   assert.equal(guided.status, 'ok');
   assert.equal(guided.card.id, 'ric.7.tri.12');
   // Unmapped, the name is no section of any volume and the sixteen mints of RIC VII are all that is left to offer.
   assert.equal((await localProvider.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' })).candidates.length, 16);
+});
+
+// numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
+// keys every title exactly where parseReference reads its number, so the two are compared over all 52,254 bundled titles: a title whose entry sat in
+// the wrong list, or in none, would hide a coin from every lookup for that number.
+// The key is the runtime's own, not a copy of it, so that a change to the way a lookup keys a number is caught here rather than in the field.
+test('every bundled title is listed under the number parseReference reads in it', { skip }, () => {
+  const { entries } = bundleJson('index.json');
+  const listed = new Map();
+  for (const [key, positions] of Object.entries(bundleJson('numbers.json').numbers)) {
+    for (const position of positions) {
+      assert.equal(listed.has(position), false, `position ${position} is listed twice`);
+      listed.set(position, key);
+    }
+  }
+  let ric = 0;
+  entries.forEach(([id, title], position) => {
+    const hit = parseReference(title, false);
+    const key = hit?.catalogue === 'RIC' ? numberKey(hit.number) : null;
+    if (key === null) return;
+    ric += 1;
+    assert.equal(listed.get(position), key, `${id}: ${title}`);
+  });
+  assert.equal(ric, 51248);
+});
+
+// The same bundle, served a number index that lists every entry under every number: numbered() then hands pickRicEntries the whole index in index
+// order, which is the scan the lookup made before numbers.json existed. Whole answers are compared, cards and candidates and all, so a reference
+// whose entries the pre-filter narrowed differently cannot come out looking the same.
+const scanned = createLocalCatalogue({
+  baseUrl: 'moz-extension://test/data/ocre/',
+  fetchImpl: async (url) => {
+    const name = decodeURIComponent(String(url).split('/').pop());
+    if (name !== 'numbers.json') return { ok: true, status: 200, json: async () => bundleJson(name) };
+    const everyPosition = bundleJson('index.json').entries.map((entry, position) => position);
+    return { ok: true, status: 200, json: async () => ({ ...bundleJson(name), numbers: new Proxy({}, { get: () => everyPosition }) }) };
+  },
+});
+const lotReference = (text) => {
+  const found = findReferences(text);
+  return lotLookup(found.references[0], found.rulers);
+};
+
+test('the number index answers every shape of reference exactly as a scan of the whole index does', { skip }, async () => {
+  const references = [
+    // A plain number, the number the most volumes carry, and a number written with the zeros a dealer sometimes pads it to.
+    parseReference('RIC 972'), parseReference('RIC 1'), parseReference('RIC 007'),
+    // A heading that is a man's name, and a heading RIC heads a section with.
+    lotReference('Vespasian. AR Denarius. RIC 972.'), lotReference('Philip I. AR Antoninianus. Rome. RIC 27b; RSC 9.'),
+    // A volume with a ruler section, a volume with a mint section, and a mint under the modern name RIC does not file it under.
+    parseReference('RIC II Vespasian 972'), parseReference('RIC VII Londinium 12'),
+    { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' },
+    // A letter in either case, alone and under the volume that heads it.
+    parseReference('RIC 27b'), parseReference('RIC IV Philip I 27B'),
+    // A range OCRE titles a type over, its first number alone, and a range OCRE has no record of.
+    parseReference('RIC II.3 Hadrian 1009-1012'), parseReference('RIC II.3 Hadrian 1009'), parseReference('RIC II.3 Hadrian 10-12'),
+    // A plain volume numeral over a family whose parts number the same ruler differently.
+    parseReference('RIC II Hadrian 720'), parseReference('RIC II Domitian 720'),
+    // The one split volume: 264 stands on both sides of the cut, and each side is asked for again by its own id.
+    parseReference('RIC V Gallienus 264'),
+    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264' },
+    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264.1' },
+    // A second-edition volume by id, and an id nothing carries.
+    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).ner.306' },
+    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).nobody.306' },
+    // A number past the end of every volume, and one the volume asked for does not reach.
+    parseReference('RIC 1000000'), parseReference('RIC VII Londinium 99999'),
+    // Answers only the broadened passes find: the same mint in another volume, and a section no volume has.
+    parseReference('RIC VIII Londinium 287'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Ostia', number: '306' },
+    // A heading naming a ruler who is on no coin of that number.
+    lotReference('Otho. AR Denarius. RIC II 720.'),
+  ];
+  assert.equal(references.length, 25);
+  for (const reference of references) {
+    assert.ok(reference, JSON.stringify(reference));
+    assert.deepEqual(await bundle.lookupType(reference), await scanned.lookupType(reference), JSON.stringify(reference));
+  }
+});
+
+test('a split volume is read from the part its id falls in, and no index is touched for it', { skip }, async () => {
+  const asked = [];
+  const local = createLocalCatalogue({
+    baseUrl: 'moz-extension://test/data/ocre/',
+    fetchImpl: async (url) => {
+      const name = decodeURIComponent(String(url).split('/').pop());
+      asked.push(name);
+      return { ok: true, status: 200, json: async () => bundleJson(name) };
+    },
+  });
+  // RIC V is the one volume over the 4 MiB cap: the first id of its second part, and the id before it, must come from their own files.
+  const [first, second] = bundleJson('metadata.json').shards['5'].map((part) => part.file);
+  const boundary = bundleJson('metadata.json').shards['5'][1].from;
+  const before = Object.keys(bundleJson(first).records).at(-1);
+  assert.equal((await local.lookupById('ocre', boundary)).card.id, boundary);
+  assert.deepEqual(asked, ['metadata.json', second]);
+  assert.equal((await local.lookupById('ocre', before)).card.id, before);
+  assert.deepEqual(asked, ['metadata.json', second, first]);
+  assert.equal((await local.lookupById('ocre', 'ric.5.nobody.1')).status, 'none');
 });
 
 test('the shards a person filter needs are loaded together, not one after another', async () => {

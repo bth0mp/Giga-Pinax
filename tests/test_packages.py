@@ -301,12 +301,16 @@ class LocalCataloguePackageTests(unittest.TestCase):
             root = Path(temporary)
             data = root / "data/ocre"
             data.mkdir(parents=True)
-            metadata = {"schemaVersion": 1, "corpus": "ocre", "shards": {"2_1(2)": "records-2_1(2).json", "3": "records-3.json"}}
+            metadata = {"schemaVersion": 1, "corpus": "ocre", "shards": {
+                "2_1(2)": [{"file": "records-2_1(2).json", "from": ""}],
+                "3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json", "from": "ric.3.x.5"}],
+            }}
             (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
             (data / "unrelated-private.json").write_text("{}", encoding="utf-8")
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 self.assertEqual(
-                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/NOTICE.txt", "data/ocre/records-2_1(2).json", "data/ocre/records-3.json"),
+                    ("data/ocre/metadata.json", "data/ocre/index.json", "data/ocre/numbers.json", "data/ocre/NOTICE.txt",
+                     "data/ocre/records-2_1(2).json", "data/ocre/records-3.a.json", "data/ocre/records-3.b.json"),
                     build.local_catalogue_assets(),
                 )
 
@@ -316,14 +320,29 @@ class LocalCataloguePackageTests(unittest.TestCase):
             root = Path(temporary)
             data = root / "data/ocre"
             data.mkdir(parents=True)
+            part = [{"file": "records-3.json", "from": ""}]
             cases = [
-                {"schemaVersion": 2, "corpus": "ocre", "shards": {"3": "records-3.json"}},
-                {"schemaVersion": 1, "corpus": "crro", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 2, "corpus": "ocre", "shards": {"3": part}},
+                {"schemaVersion": 1, "corpus": "crro", "shards": {"3": part}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": {}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"../secret": "records-../secret.json"}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "../../secret.json"}},
-                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "records-4.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"../secret": [{"file": "records-../secret.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "../../secret.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-4.json", "from": ""}]}},
                 {"schemaVersion": 1, "corpus": "ocre", "shards": ["records-3.json"]},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": "records-3.json"}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": []}},
+                # One part is the whole volume and carries no letter; several are lettered in order from the first.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.json", "from": ""}, {"file": "records-3.b.json", "from": "ric.3.x.5"}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.c.json", "from": "ric.3.x.5"}]}},
+                # A part's first id is what a lookup compares against, so the first must have none and the rest must rise.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": "ric.3.x.1"}, {"file": "records-3.b.json", "from": "ric.3.x.5"}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json", "from": ""}]}},
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [{"file": "records-3.a.json", "from": ""}, {"file": "records-3.b.json"}]}},
+                # Past "z" there is no letter left to name a part, and chr() would carry on into punctuation.
+                {"schemaVersion": 1, "corpus": "ocre", "shards": {"3": [
+                    {"file": f"records-3.{chr(ord('a') + position)}.json", "from": "" if position == 0 else f"ric.3.x.{position:03d}"}
+                    for position in range(27)]}},
             ]
             with mock.patch.object(build, "EXTENSION_ROOT", root):
                 for metadata in cases:
@@ -331,6 +350,39 @@ class LocalCataloguePackageTests(unittest.TestCase):
                         (data / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
                         with self.assertRaises(ValueError):
                             build.local_catalogue_assets()
+
+    def test_a_number_index_that_is_not_the_index_beside_it_is_not_packaged(self):
+        build = load_build_script()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data/ocre"
+            data.mkdir(parents=True)
+            entries = [["ric.1.x.1", "RIC I Test 1"], ["ric.1.x.2", "RIC I Test 2"]]
+            (data / "index.json").write_text(json.dumps({"schemaVersion": 1, "entries": entries}), encoding="utf-8")
+            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 2}), encoding="utf-8")
+            current = {"schemaVersion": 1, "entryCount": 2, "numbers": {"1": [0], "2": [1]}}
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
+                build.check_number_index()
+                # A stale index is a valid file whose positions all resolve, so only recomputing it catches one: the
+                # dropped list is a coin no lookup would ever reach again, and the two counts are the cheap half.
+                for numbers in ({**current, "numbers": {"1": [0]}}, {**current, "numbers": {"1": [0], "2": [0]}},
+                                {**current, "entryCount": 3}, {**current, "schemaVersion": 2},
+                                {"schemaVersion": 1, "numbers": current["numbers"]}):
+                    (data / "numbers.json").write_text(json.dumps(numbers), encoding="utf-8")
+                    with self.subTest(numbers=numbers):
+                        with self.assertRaises(ValueError):
+                            build.check_number_index()
+            # A metadata that counts other records than the index holds is the same disagreement from the other side.
+            (data / "numbers.json").write_text(json.dumps(current), encoding="utf-8")
+            (data / "metadata.json").write_text(json.dumps({"schemaVersion": 1, "corpus": "ocre", "activeRecordCount": 3}), encoding="utf-8")
+            with mock.patch.object(build, "EXTENSION_ROOT", root):
+                with self.assertRaises(ValueError):
+                    build.check_number_index()
+
+    def test_the_bundled_number_index_is_the_one_the_importer_writes(self):
+        # The gate over the real bundle: the committed numbers.json must be what --reindex would write today.
+        load_build_script().check_number_index()
 
 
 if __name__ == "__main__":
