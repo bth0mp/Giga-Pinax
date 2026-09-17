@@ -767,14 +767,16 @@ async function initWorkspace() {
       }
       // A conflict reply means the stored record moved on: nothing of this page's is in flight any
       // more, and the fresh snapshot decides which editors the note belongs to.
-      if (reply.code === 'conflict') { released(); await refresh(); }
+      let removed = false;
+      if (reply.code === 'conflict') { released(); removed = Boolean((await refresh()).removed); }
       if (reply.outcome === 'unknown') {
         const committed = await refresh();
         if (commandWasCommitted(committed.value, command.requestId)) {
           const ledgerValue = committed.value?.recentCommands?.find((item) => item.requestId === command.requestId)?.reply?.value;
           commit(ledgerValue, committed.value, true);
           pendingRetry = null; $('unknown-note').hidden = true;
-          announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
+          // Losing the coin has already been said out loud; the outcome of the save would bury it.
+          if (!committed.removed) announce(preserved ? 'The save was committed. Newer edits remain in the form for review.' : 'The save was committed and has been verified from the request ledger.');
           return { ok: true, requestId: command.requestId, value: ledgerValue ?? null, editorPreserved: preserved };
         }
         released();
@@ -784,7 +786,7 @@ async function initWorkspace() {
         return reply;
       }
       released();
-      announce(reply.message, true);
+      if (!removed) announce(reply.message, true);
       return reply;
     }
     const refreshed = await commitAndRefresh(reply.value);
