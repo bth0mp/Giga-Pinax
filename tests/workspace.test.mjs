@@ -22,6 +22,7 @@ import {
   editorsWithChangedBasis,
   conflictNoteMessage,
   planCommit,
+  submissionContext,
   lotFormValues,
   bidFormValues,
   mergeRebasedFields,
@@ -421,6 +422,26 @@ test('the comparable form is cleared after an add because it has no record to re
     dirty: ['evidence'], versions: [['evidence', 3]],
   }));
   assert.deepEqual([plan.reset, plan.repopulate], [['evidence'], []]);
+});
+
+test('retrying the same request keeps the version and basis the first attempt submitted', () => {
+  const basis = { id: 'lot-a', revision: 4, record: { id: 'lot-a', revision: 4 } };
+  const versions = new Map([['lot', 6]]);
+  const bases = new Map([['lot', basis]]);
+  const attempt = submissionContext(null, 'lot', versions, bases);
+  assert.deepEqual(attempt, { submittedVersion: 6, submittedBasis: basis });
+  assert.deepEqual(submissionContext(null, null, versions, bases), { submittedVersion: null, submittedBasis: null });
+  // The collector kept typing while the outcome of the first attempt was unknown.
+  versions.set('lot', 9);
+  const retry = submissionContext(attempt, 'lot', versions, bases);
+  assert.equal(retry.submittedVersion, 6);
+  const plan = planCommit(commitInput({
+    editor: 'lot', ...retry, value: { id: 'lot-a', revision: 5 }, lots: [{ id: 'lot-a', revision: 5 }],
+    bases: [['lot', basis]], dirty: ['lot'], versions: [['lot', 9]],
+  }));
+  assert.equal(plan.preserved, true, 'typing after the failed attempt is not treated as saved');
+  assert.deepEqual(plan.repopulate, []);
+  assert.deepEqual([...plan.dirty], ['lot']);
 });
 
 test('a selected coin that left the snapshot clears the selection instead of editing a ghost', () => {

@@ -312,6 +312,16 @@ export function commandReplacedRevisions(command, snapshot) {
   return revisions;
 }
 
+// What an attempt submitted. A retry of the same request replays the first attempt's context: the
+// collector's typing since then is newer than the save, not part of it.
+export function submissionContext(previousAttempt, editor, versions, bases) {
+  if (previousAttempt) return { submittedVersion: previousAttempt.submittedVersion, submittedBasis: previousAttempt.submittedBasis };
+  return {
+    submittedVersion: editor ? versions?.get(editor) ?? 0 : null,
+    submittedBasis: editor ? bases?.get(editor) ?? null : null,
+  };
+}
+
 // What a committed command does to the open editors. One coin is edited through the details, bid
 // and outcome forms at once, and a group reorder rewrites several coins, so a commit moves every
 // editor that was based on a record it replaced onto the committed revision — and only those: an
@@ -728,11 +738,10 @@ async function initWorkspace() {
     if (!removed) announce('Local records loaded.');
     return { ok: true, value: reply.value, removed };
   };
-  const send = async (command, editor) => {
+  const send = async (command, editor, previousAttempt = null) => {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
-    const submittedVersion = editor ? editorVersions.get(editor) ?? 0 : null;
-    const submittedBasis = editor ? editorBases.get(editor) ?? null : null;
-    const submittedRevisions = commandReplacedRevisions(command, snapshot);
+    const { submittedVersion, submittedBasis } = submissionContext(previousAttempt, editor, editorVersions, editorBases);
+    const submittedRevisions = previousAttempt?.submittedRevisions ?? commandReplacedRevisions(command, snapshot);
     let preserved = false;
     const commit = (value, incoming, snapshotFresh) => {
       // The reply is being applied now, so this editor stops being in flight and this plan is what
@@ -764,7 +773,7 @@ async function initWorkspace() {
     catch {
       released();
       // The worker may or may not have committed: the same request ID makes a retry idempotent.
-      pendingRetry = { command, editor };
+      pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
       $('unknown-note').hidden = false;
       announce(WORKER_UNREACHABLE, true);
       return { ok: false, requestId: command.requestId, code: 'unreachable', outcome: 'unknown', message: WORKER_UNREACHABLE };
@@ -792,7 +801,7 @@ async function initWorkspace() {
           return { ok: true, requestId: command.requestId, value: ledgerValue ?? null, editorPreserved: preserved };
         }
         released();
-        pendingRetry = { command, editor };
+        pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
         $('unknown-note').hidden = false;
         announce('Save outcome is uncertain. Review committed records before retrying the same request.', true);
         return reply;
@@ -833,8 +842,10 @@ async function initWorkspace() {
   });
   $('retry-uncertain').addEventListener('click', () => {
     if (!pendingRetry) return;
+    // The same request, resubmitted as it was first submitted: anything typed since the attempt
+    // failed is newer than the save and stays in the form.
     const retry = pendingRetry; pendingRetry = null; $('unknown-note').hidden = true;
-    void send(retry.command, retry.editor);
+    void send(retry.command, retry.editor, retry);
   });
 
   const openSource = async (source) => {
