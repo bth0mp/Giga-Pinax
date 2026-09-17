@@ -817,6 +817,30 @@ test('a merge import commits with the local rows a conflict kept', () => {
   assert.equal(imported.value.counts.keptLocal, 1);
 });
 
+
+test('an imported root keeps only the keys the snapshot knows', () => {
+  const data = createEmptySnapshot(NOW);
+  // A hand-edited or hostile backup whose root carries an own "__proto__" key and an unknown one.
+  const text = JSON.stringify({
+    format: 'ancient-coin-auction-companion', schemaVersion: SCHEMA_VERSION, exportedAt: NOW, data,
+  }).replace('"lots":[]', '"lots":[],"__proto__":{"polluted":true},"extraRootKey":1');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(JSON.parse(text).data, '__proto__'), true,
+    'the fixture really does carry an own __proto__ key',
+  );
+  const imported = reduce(createEmptySnapshot(NOW), command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: text,
+  }));
+  const root = imported.snapshot;
+  assert.equal(Object.getPrototypeOf(root), Object.prototype, 'the live root keeps its prototype');
+  assert.equal(root.polluted, undefined);
+  assert.equal(({}).polluted, undefined);
+  assert.equal('extraRootKey' in root, false, 'an unknown root key never reaches the store');
+  assert.equal(Object.prototype.hasOwnProperty.call(root, '__proto__'), false);
+  assert.equal(root.lots.length, 0);
+  assert.equal(root.revision, 1);
+});
+
 test('adds manual evidence through authority metadata and resolves a conflicting retained claim', () => {
   let state = createEmptySnapshot(NOW);
   const queryId = uuid();
