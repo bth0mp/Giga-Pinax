@@ -56,16 +56,18 @@ def parsed_xml(payload: bytes):
 def read_memberships(data_dir: Path) -> dict[str, set[str]]:
     metadata = json.loads((data_dir / "metadata.json").read_text(encoding="utf-8"))
     memberships: dict[str, set[str]] = {}
-    for prefix, filename in metadata["shards"].items():
+    for prefix, parts in metadata["shards"].items():
         if prefix not in VOLUMES:
             raise ValueError(f"unsupported RIC volume prefix: {prefix}")
-        payload = json.loads((data_dir / filename).read_text(encoding="utf-8"))
-        for record in payload["records"].values():
-            ids = list(record.get("a", [])) + list(record.get("o", {}).get("p", []))
-            for concept_id in ids:
-                if not SLUG.fullmatch(concept_id):
-                    raise ValueError(f"unsupported Nomisma concept id: {concept_id}")
-                memberships.setdefault(concept_id, set()).add(prefix)
+        # A volume over the packaging file cap ships as several parts, and every one of them holds records of that volume.
+        for part in parts:
+            payload = json.loads((data_dir / part["file"]).read_text(encoding="utf-8"))
+            for record in payload["records"].values():
+                ids = list(record.get("a", [])) + list(record.get("o", {}).get("p", []))
+                for concept_id in ids:
+                    if not SLUG.fullmatch(concept_id):
+                        raise ValueError(f"unsupported Nomisma concept id: {concept_id}")
+                    memberships.setdefault(concept_id, set()).add(prefix)
     return memberships
 
 
@@ -80,18 +82,19 @@ def read_mints(data_dir: Path) -> dict[str, str]:
     """The Nomisma mint concept behind each RIC VI-IX section, read from the bundled records' own titles."""
     metadata = json.loads((data_dir / "metadata.json").read_text(encoding="utf-8"))
     sections: dict[str, set[str]] = {}
-    for prefix, filename in metadata["shards"].items():
+    for prefix, parts in metadata["shards"].items():
         if prefix not in MINT_VOLUMES:
             continue
-        payload = json.loads((data_dir / filename).read_text(encoding="utf-8"))
-        for record in payload["records"].values():
-            title = MINT_TITLE.match(record.get("l") or "")
-            ids = record.get("m") or []
-            if not title or len(ids) != 1:
-                continue
-            if not SLUG.fullmatch(ids[0]):
-                raise ValueError(f"unsupported Nomisma concept id: {ids[0]}")
-            sections.setdefault(ids[0], set()).add(title.group(1))
+        for part in parts:
+            payload = json.loads((data_dir / part["file"]).read_text(encoding="utf-8"))
+            for record in payload["records"].values():
+                title = MINT_TITLE.match(record.get("l") or "")
+                ids = record.get("m") or []
+                if not title or len(ids) != 1:
+                    continue
+                if not SLUG.fullmatch(ids[0]):
+                    raise ValueError(f"unsupported Nomisma concept id: {ids[0]}")
+                sections.setdefault(ids[0], set()).add(title.group(1))
     # A concept whose records disagree about the section names it: nothing is guessed, and it is left out.
     return {concept_id: next(iter(names)) for concept_id, names in sorted(sections.items()) if len(names) == 1}
 

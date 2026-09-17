@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "import_people.py"
 SNAPSHOT = ROOT / "tests" / "fixtures" / "nomisma-people-small.json"
+DATA = ROOT / "extension" / "data" / "ocre"
+PEOPLE = ROOT / "extension" / "ric-people.js"
+CONCEPTS = ROOT / "scripts" / "data" / "nomisma-ocre-concepts.rdf"
+MINTS = ROOT / "scripts" / "data" / "nomisma-mints.json"
 
 
 def load_module():
@@ -73,11 +78,16 @@ class PeopleImportTests(unittest.TestCase):
         module = load_module()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            # A volume over the file cap ships as several parts, and every part holds records this index must see.
             (root / "metadata.json").write_text(json.dumps({
-                "shards": {"7": "records-7.json", "8": "records-8.json"},
+                "shards": {"7": [{"file": "records-7.a.json", "from": ""}, {"file": "records-7.b.json", "from": "ric.7.rom.1"}],
+                           "8": [{"file": "records-8.json", "from": ""}]},
             }), encoding="utf-8")
-            (root / "records-7.json").write_text(json.dumps({"records": {
+            (root / "records-7.a.json").write_text(json.dumps({"records": {
                 "ric.7.lon.287": {"a": ["constantine_i"], "o": {"p": ["constantine_ii"]}},
+            }}), encoding="utf-8")
+            (root / "records-7.b.json").write_text(json.dumps({"records": {
+                "ric.7.rom.4": {"a": ["licinius"], "o": {}},
             }}), encoding="utf-8")
             (root / "records-8.json").write_text(json.dumps({"records": {
                 "ric.8.lon.1": {"a": ["constantine_ii"], "o": {}},
@@ -85,6 +95,7 @@ class PeopleImportTests(unittest.TestCase):
             memberships = module.read_memberships(root)
         self.assertEqual({"7"}, memberships["constantine_i"])
         self.assertEqual({"7", "8"}, memberships["constantine_ii"])
+        self.assertEqual({"7"}, memberships["licinius"])
 
 
     def test_aliases_are_normalised_deduplicated_and_kept_on_every_owner(self):
@@ -120,11 +131,16 @@ class PeopleImportTests(unittest.TestCase):
         module = load_module()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "metadata.json").write_text(json.dumps({"shards": {"7": "records-7.json", "2": "records-2.json"}}), encoding="utf-8")
-            (root / "records-7.json").write_text(json.dumps({"records": {
+            (root / "metadata.json").write_text(json.dumps({"shards": {
+                "7": [{"file": "records-7.a.json", "from": ""}, {"file": "records-7.b.json", "from": "ric.7.tr.1"}],
+                "2": [{"file": "records-2.json", "from": ""}],
+            }}), encoding="utf-8")
+            (root / "records-7.a.json").write_text(json.dumps({"records": {
+                "ric.7.lon.1": {"l": "RIC VII Londinium 1", "m": ["londinium", "treveri"]},
+            }}), encoding="utf-8")
+            (root / "records-7.b.json").write_text(json.dumps({"records": {
                 "ric.7.tr.1": {"l": "RIC VII Treveri 1", "m": ["treveri"]},
                 "ric.7.tr.17a": {"l": "RIC VII Treveri 17A: Subtype 1", "m": ["treveri"]},
-                "ric.7.lon.1": {"l": "RIC VII Londinium 1", "m": ["londinium", "treveri"]},
             }}), encoding="utf-8")
             (root / "records-2.json").write_text(json.dumps({"records": {
                 "ric.2.tr.1": {"l": "RIC II Trajan 1", "m": ["rome"]},
@@ -145,6 +161,43 @@ class PeopleImportTests(unittest.TestCase):
         # The same bytes without a declaration are read as before, so the guard costs a sound snapshot nothing.
         concepts = module.read_concepts(rdf.format(doctype="").encode("utf-8"), {"nero": {"1(2)"}})
         self.assertEqual({"Nero"}, concepts["nero"]["labels"])
+
+
+@unittest.skipUnless((DATA / "metadata.json").is_file(), "extension/data/ocre is not bundled here")
+class BundledDataTests(unittest.TestCase):
+    """The documented rebuild command over the real bundle, which is the only place a volume is really split."""
+
+    def test_memberships_and_mints_read_every_part_of_a_split_volume(self):
+        module = load_module()
+        shards = json.loads((DATA / "metadata.json").read_text(encoding="utf-8"))["shards"]
+        split = {prefix: parts for prefix, parts in shards.items() if len(parts) > 1}
+        self.assertTrue(split, "the bundle has no split volume for this to prove anything over")
+        memberships = module.read_memberships(DATA)
+        self.assertEqual(272, len(memberships))
+        for prefix, parts in split.items():
+            concepts = []
+            for part in parts:
+                records = json.loads((DATA / part["file"]).read_text(encoding="utf-8"))["records"]
+                concepts.append({concept_id for record in records.values()
+                                 for concept_id in list(record.get("a", [])) + list(record.get("o", {}).get("p", []))})
+            # A reader that stopped at the first part would lose whoever only the later parts name.
+            later = set().union(*concepts[1:]) - concepts[0]
+            self.assertTrue(later, prefix)
+            for concept_id in sorted(later):
+                self.assertIn(prefix, memberships[concept_id])
+        self.assertEqual("Treveri", module.read_mints(DATA)["treveri"])
+        self.assertEqual(21, len(module.read_mints(DATA)))
+
+    def test_generate_reproduces_the_committed_people_index_byte_for_byte(self):
+        module = load_module()
+        committed = PEOPLE.read_bytes()
+        generated_on = re.search(r'generatedOn: "(\d{4}-\d{2}-\d{2})"', committed.decode("utf-8")).group(1)
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "ric-people.js"
+            # Exactly what docs/LOCAL-CATALOGUE.md tells a contributor to run.
+            module.generate(CONCEPTS, module.read_memberships(DATA), output, generated_on,
+                            module.mint_rows(MINTS.read_bytes(), module.read_mints(DATA)))
+            self.assertEqual(committed, output.read_bytes())
 
 
 if __name__ == "__main__":
