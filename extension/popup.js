@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, lastSale, localDay, lotsInPeriod, parsePrice, priceCheck, pricePanelVisibility, quoteList, searchCategory, summarise, summaryText, trendOf, trendText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quoteList, referenceName, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
 import { CORPORA, DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
@@ -48,7 +48,14 @@ let researchContext = null;
 let shownPrices = null;
 let shownCoinArchivesPrices = null;
 let coinArchivesRequestId = 0;
-const priceCuration = createPriceCuration();
+const priceCuration = createPriceCuration('acsearch');
+// The public panel curates its own rows: the same filter, the same Include, over the results CoinArchives returned.
+const coinArchivesCuration = createPriceCuration('coinarchives');
+// The two toggles above the median, and the sale whose toggle the keyboard was on when a list was redrawn. All live in this view only; the citation
+// filter starts on, because a result that never cites the reference is not a sale of this type until the collector says it is.
+let onlyCiting = true;
+let onlyDenomination = false;
+let focusSaleId = null;
 const verifiedPriceCards = new WeakMap();
 const requestedPriceContexts = new WeakSet();
 let copiedTimer = 0;
@@ -257,6 +264,7 @@ function clearAcsearchPrices() {
   priceRequestId += 1;
   priceCuration.reset();
   shownPrices = null;
+  renderPriceFilters();
   resetCopyLabel();
   $('prices-panel').hidden = true;
   // A new result starts with Inspect sales folded; a period redraw leaves it as it was.
@@ -272,7 +280,9 @@ function clearAcsearchPrices() {
 
 function clearCoinArchivesPrices() {
   coinArchivesRequestId += 1;
+  coinArchivesCuration.reset();
   shownCoinArchivesPrices = null;
+  renderPriceFilters();
   $('coinarchives-prices-panel').hidden = true;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-error').textContent = '';
@@ -355,13 +365,15 @@ function updateCoinArchivesLink() {
 }
 
 function priceCard(context) {
-  return verifiedPriceCards.get(context) ?? { label: context.label };
+  return verifiedPriceCards.get(context) ?? { label: context?.label ?? '' };
 }
 
 function initialisePriceResearch(reference, identity = null) {
   const term = defaultTerm(reference);
   if (!term) return false;
   clearPrices();
+  // Another coin is another question: the citation filter comes back on for a new lookup, while a re-fetch of the same one keeps what the collector set.
+  onlyCiting = true;
   const chosen = identity ? chooseTerm(reference, rememberedTerm(preferences, identity)) : term;
   researchContext = Object.freeze({ reference: Object.freeze({ ...reference }), label: buildQuery(reference).query, identity, term: chosen,
     currency: $('currency').value, priceTicket: priceRequestId });
@@ -591,16 +603,77 @@ function lotLink(sale, text) {
   return link;
 }
 
+// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. The rows counted are the
+// ones the median itself rests on — the period on show — and a row counts in N when the statistics count it and it either passes that filter or the
+// collector counted it by hand. A row he put back and took out again is out of the median, so it is out of the count: it never cited the reference.
+// The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole instead, and says so.
+function filterLines(periodLots, curation, { name, denomination, citing, uncited, passes }) {
+  const total = periodLots.length;
+  if (uncited) return [`No result text names ${name}, so all ${total} ${total === 1 ? 'result is' : 'results are'} counted.`];
+  const counted = (test) => periodLots.filter((sale) => curation.reasonFor(sale) === null && (test(sale) || curation.includedByHand(sale))).length;
+  const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
+  const lines = [];
+  if (citing && dropped(passes.citing)) {
+    lines.push(`${counted(passes.citing)} of ${total} ${total === 1 ? 'result cites' : 'results cite'} ${name}`);
+  }
+  if (denomination && dropped(passes.denomination)) {
+    lines.push(`${counted(passes.denomination)} of ${total} ${total === 1 ? 'result names' : 'results name'} “${denomination}”`);
+  }
+  return lines;
+}
+
+// The two toggles stand above both providers' panels: one state governs both medians, and either panel may be the only one a collector fetched — the
+// public CoinArchives search is the whole of the signed-out path. Each is offered while a panel on show has rows it applies to.
+function renderPriceFilters() {
+  const shown = shownPrices ?? shownCoinArchivesPrices;
+  const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched);
+  // Both panels filter on the denomination the verified card carries, so either may be the one offering the toggle.
+  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || '';
+  $('citing-row').hidden = !citing;
+  $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
+  $('citing-filter').checked = onlyCiting;
+  $('denomination-row').hidden = !denomination;
+  $('denomination-label').textContent = denomination ? `Only results naming “${denomination}”` : '';
+  $('denomination-filter').checked = onlyDenomination && Boolean(denomination);
+  $('price-filters').hidden = !citing && !denomination;
+}
+
+// The filter lines as a screen reader hears them, each its own sentence.
+const spokenFilters = (filters) => filters.map((line) => (line.endsWith('.') ? line : `${line}.`)).join(' ');
+
 // Draws the chosen period from the page's lots, with no request, as of the collector's own date: everything on the panel follows the period
 // except the trend and the last sale, which come from the whole page. A period without a counted sale keeps only the buttons, the trend and the
 // last sale. The announcement names a period other than All, and All too when the collector has just chosen it (named).
-function renderPrices(lots, currency, term, named = false, context = shownPrices?.context ?? researchContext,
-  card = shownPrices?.context === context ? shownPrices.card : priceCard(context)) {
+// The card comes from the current state at every redraw, never from the one frozen at the first: a lookup still running when the prices arrived
+// verifies it a moment later, and Copy summary must head the text with that label.
+function renderPrices(lots, currency, term, named = false, context = shownPrices?.context ?? researchContext, card = priceCard(context)) {
   if (!context) return;
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const now = localDay(new Date());
   const period = PERIODS.find((entry) => entry.value === preferences.period);
-  const eligibleLots = summarise(lots, currency).priced;
+  const reference = context.reference;
+  const name = referenceName(reference);
+  // The whole page, before a filter or a hand decision: how far it reaches is the page's own fact, not the median's.
+  const pageSummary = summarise(lots, currency);
+  const eligibleLots = pageSummary.priced;
+  // The rows the median rests on, before any filter: everything counted below is counted over these, so the panel's figures agree with each other.
+  const periodLots = lotsInPeriod(eligibleLots, period.value, now);
+  // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
+  const denomination = filterableDenomination(card.denomination);
+  const wanted = onlyDenomination ? denomination : '';
+  // The citation filter judges the reference the card is about, so it only applies while the term still searches it: a term the collector edited to
+  // find something else is his own search, and every row it found is counted. It also never empties the statistics — a page whose text names the
+  // reference nowhere (a provider that gives no lot text, a layout nobody reads any more) is counted whole and says so. Whether the text can be read
+  // at all is a fact about the page acsearch returned, not about the period on show: a period of that page holding no citation is simply a period
+  // without a sale of this type, and the count beside the empty median says so.
+  const searched = filtersCitations(reference) && searchesReference(term, reference);
+  const uncited = searched && lots.length > 0 && !lots.some((sale) => citesReference(sale.description, reference));
+  const citing = searched && onlyCiting && !uncited;
+  const passes = { citing: (sale) => citesReference(sale.description, reference), denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
+  // A row that does not cite the reference is no sale of this type; with the toggle on, nor is one that never names the denomination. Either can
+  // still be counted by hand, and Reset restores this default rather than an empty set.
+  priceCuration.filter((sale) => (citing && !passes.citing(sale) ? 'not-cited'
+    : wanted && !passes.denomination(sale) ? 'other-denomination' : null));
   const includedLots = priceCuration.included(eligibleLots);
   const page = summarise(includedLots, currency);
   const summary = summarise(lotsInPeriod(includedLots, period.value, now), currency);
@@ -608,7 +681,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('median-amount').textContent = median;
   $('median-currency').textContent = currency;
   $('median-currency').hidden = median.includes(currency);
-  const { count, unpriced, total } = summary;
+  const { count } = summary;
   const empty = count === 0;
   const visibility = pricePanelVisibility(count, eligibleLots.length);
   for (const id of ['median-line', 'range-block', 'check-row', 'check-result', 'copy-summary']) $(id).hidden = !visibility.statistics;
@@ -616,10 +689,17 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
-  const counts = priceCuration.counts(eligibleLots);
-  const none = counts.included === 0 ? 'All sales are excluded. Reset to include them.'
-    : period.years ? `No sales with a price in the last ${period.years} years.` : 'No included sales have a recorded price.';
+  const counts = priceCuration.counts(periodLots);
+  // Nothing counted: either the period holds no sale with a price, or every sale in it is excluded. Reset undoes only the collector's own decisions,
+  // so it is offered as the way back only where it would leave a sale counted.
+  const noPeriodSales = period.years ? `No sales with a price in the last ${period.years} years.` : 'No included sales have a recorded price.';
+  const none = periodLots.length === 0 ? noPeriodSales
+    : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
+      : 'No results are counted. Include one under Inspect sales.';
   $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
+  const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, passes });
+  $('cited-count').textContent = filters.join(' · ');
+  $('cited-count').hidden = filters.length === 0;
   const trend = trendOf(includedLots, currency, now);
   $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
   $('sale-trend').hidden = !trend;
@@ -631,14 +711,18 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     link.setAttribute('aria-label', `Last sale ${last.date} on acsearch, opens a new tab`);
     $('last-sale').replaceChildren('Last sale ', link, ` · ${money.format(last.amount)}`);
   }
-  const skipped = total - count - unpriced;
+  // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" and the note below say how much acsearch held.
+  // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
+  const drawnFrom = summarise(lotsInPeriod(lots, period.value, now), currency);
+  const { total, unpriced } = drawnFrom;
+  const skipped = total - drawnFrom.count - unpriced;
   // "+" only when every lot on the page falls in the period, so acsearch may hold more of them.
-  let drawn = `Out of ${total}${summary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for “${term}”`;
+  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for “${term}”`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
-  $('reset-curation').disabled = counts.excluded === 0;
+  $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
   $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
@@ -647,9 +731,22 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
   $('range-box').style.width = `${span > 0 ? percent(summary.upperQuartile) - percent(summary.lowerQuartile) : 0}%`;
   $('range-median').style.left = `${percent(summary.median)}%`;
+  // A median for each grade the dealers gave, under the range it splits up; only the rows now counted, and only a bucket that rests on enough of them.
+  const countedLots = lotsInPeriod(includedLots, period.value, now);
+  const grades = gradeMedians(countedLots, currency);
+  $('grade-medians').replaceChildren(...grades.map((bucket) => {
+    const line = document.createElement('li');
+    line.textContent = gradeText(bucket, money.format);
+    return line;
+  }));
+  $('grade-medians').hidden = grades.length === 0 || !visibility.statistics;
+  // How much of the sample the buckets leave unsaid, so a thin bucket is never read as the whole of it.
+  const ungraded = grades.length ? ungradedText(countedLots) : '';
+  $('ungraded-count').textContent = ungraded;
+  $('ungraded-count').hidden = !ungraded || $('grade-medians').hidden;
   $('sale-count').textContent = String(count);
-  const displayed = summarise(lotsInPeriod(lots, period.value, now), currency).priced;
-  $('sale-list').replaceChildren(...displayed.map((sale) => {
+  let restore = null;
+  $('sale-list').replaceChildren(...periodLots.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
     label.append(`${sale.date} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
@@ -664,21 +761,28 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     toggle.setAttribute('aria-label', `${excluded ? 'Include' : 'Exclude'} ${sale.title || `lot ${sale.id}`} ${excluded ? 'in' : 'from'} statistics`);
     toggle.addEventListener('click', () => {
       if (excluded) priceCuration.include(sale); else priceCuration.exclude(sale);
+      // The list is rebuilt from scratch, so the keyboard is put back on this row's own button, as Recent does with its chips.
+      focusSaleId = stableResultId(sale, 'acsearch');
       renderPrices(lots, currency, term, true, context);
     });
+    if (focusSaleId === stableResultId(sale, 'acsearch')) restore = toggle;
     row.append(label, amount, toggle);
     return row;
   }));
-  // About the page, whatever the period: it holds only the 100 most recent lots.
-  $('price-note').textContent = page.capped
+  focusSaleId = null;
+  if (restore) restore.focus();
+  // About the page, whatever the period and whatever the filters left: it holds only the 100 most recent lots.
+  $('price-note').textContent = pageSummary.capped
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
-  shownPrices = { context, card, lots, currency, term, summary, extras: { period, last, trend } };
+  shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded } };
+  renderPriceFilters();
   showCheck();
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
-  $('announcement').textContent = empty ? none : `${heading} ${spoken} from ${count} recorded ${count === 1 ? 'sale' : 'sales'}.`;
+  const left = filters.length ? ` ${spokenFilters(filters)}` : '';
+  $('announcement').textContent = empty ? `${none}${left}` : `${heading} ${spoken} from ${count} recorded ${count === 1 ? 'sale' : 'sales'}.${left}`;
 }
 
 function setCoinArchivesBusy(busy) {
@@ -703,7 +807,24 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   if (!shown || shown.context !== researchContext) return;
   const { outcome, currency, context } = shown;
   const period = PERIODS.find((entry) => entry.value === preferences.period);
-  const used = lotsInPeriod(outcome.selectedLots, period.value, localDay(new Date()));
+  const reference = context.reference;
+  const name = referenceName(reference);
+  // The public search takes one spelling of the citation, so a row that never cites the reference is no sale of this type here either. It reads by
+  // the same rules as the acsearch panel, under the same toggle, and a row left out stays in the list below, one click from being counted.
+  const periodLots = lotsInPeriod(outcome.selectedLots, period.value, localDay(new Date()));
+  const searched = filtersCitations(reference) && searchesReference(outcome.term, reference);
+  // Readable or not is a fact about the page CoinArchives returned, as on the acsearch panel, so a period of it may still hold no citation at all.
+  const uncited = searched && outcome.selectedLots.length > 0 && !outcome.selectedLots.some((sale) => citesReference(sale.description, reference));
+  const citing = searched && onlyCiting && !uncited;
+  // The denomination toggle governs this median too: it is the verified card's own word, and the card is the same one the acsearch panel reads. A
+  // public row whose page carried no lot text says nothing about its denomination either, and nothing here is ever dropped on missing data.
+  const denomination = filterableDenomination(priceCard(context).denomination);
+  const wanted = onlyDenomination ? denomination : '';
+  const passes = { citing: (sale) => citesReference(sale.description, reference),
+    denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
+  coinArchivesCuration.filter((sale) => (citing && !passes.citing(sale) ? 'not-cited'
+    : wanted && !passes.denomination(sale) ? 'other-denomination' : null));
+  const used = coinArchivesCuration.included(periodLots);
   const summary = summarise(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = used;
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
@@ -720,9 +841,15 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
+  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, passes });
+  $('coinarchives-cited').textContent = filters.join(' · ');
+  $('coinarchives-cited').hidden = filters.length === 0;
+  const counts = coinArchivesCuration.counts(periodLots);
+  $('coinarchives-curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('coinarchives-sale-count').textContent = String(summary.count);
-  $('coinarchives-details').hidden = summary.count === 0;
-  $('coinarchives-sale-list').replaceChildren(...summary.priced.map((sale) => {
+  $('coinarchives-details').hidden = periodLots.length === 0;
+  let restore = null;
+  $('coinarchives-sale-list').replaceChildren(...periodLots.map((sale) => {
     const row = document.createElement('li');
     const link = document.createElement('a');
     link.href = sale.url;
@@ -731,21 +858,41 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     link.textContent = `${sale.date} · ${sale.title || `Lot ${sale.id}`}`;
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
-    row.append(link, amount);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'text-button sale-toggle';
+    const excluded = coinArchivesCuration.isExcluded(sale);
+    row.classList.toggle('excluded', excluded);
+    toggle.textContent = excluded ? 'Include' : 'Exclude';
+    toggle.setAttribute('aria-label', `${excluded ? 'Include' : 'Exclude'} ${sale.title || `lot ${sale.id}`} ${excluded ? 'in' : 'from'} statistics`);
+    toggle.addEventListener('click', () => {
+      if (excluded) coinArchivesCuration.include(sale); else coinArchivesCuration.exclude(sale);
+      // The list is rebuilt from scratch, so the keyboard is put back on this row's own button, as the acsearch list does.
+      focusSaleId = stableResultId(sale, 'coinarchives');
+      renderCoinArchivesPrices(shown, true);
+    });
+    if (focusSaleId === stableResultId(sale, 'coinarchives')) restore = toggle;
+    row.append(link, amount, toggle);
     return row;
   }));
+  focusSaleId = null;
+  if (restore) restore.focus();
   $('coinarchives-source-link').href = outcome.url;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-panel').hidden = false;
-  shownCoinArchivesPrices = { context, outcome, currency, summary };
+  shownCoinArchivesPrices = { context, outcome, currency, summary, searched, denomination };
+  renderPriceFilters();
+  const left = filters.length ? ` ${spokenFilters(filters)}` : '';
   if (named) $('announcement').textContent = summary.count
-    ? `${period.label}: CoinArchives median ${median} from ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}.`
-    : 'CoinArchives: No recorded sales in this period.';
+    ? `${period.label}: CoinArchives median ${median} from ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}.${left}`
+    : `CoinArchives: No recorded sales in this period.${left}`;
 }
 
 function showCoinArchivesError(message) {
   shownCoinArchivesPrices = null;
   $('coinarchives-prices-panel').hidden = true;
+  // The toggles above both panels follow the one that has just gone: a failed re-fetch left the citation switch on screen with no rows behind it.
+  renderPriceFilters();
   $('coinarchives-prices-error').textContent = message;
   $('coinarchives-prices-error').hidden = false;
   $('announcement').textContent = message;
@@ -1216,6 +1363,24 @@ $('pop-out').addEventListener('click', async () => {
   try { reply = await api.runtime.sendMessage({ type: LOOKUP_LAUNCH_MESSAGE, url }); } catch { /* background unavailable */ }
   if (lookupLaunchSucceeded(reply)) window.close();
   else announce(reply?.message || 'Couldn’t open the lookup window. Try again.');
+});
+// Both toggles are remembered for this view only, never stored, and each governs both providers — the citation filter and the denomination alike —
+// so the two medians are drawn from the same rule and changing one redraws both panels. A new lookup puts the citation filter back on; a re-fetch or
+// a period keeps what the collector set.
+const redrawPrices = () => {
+  if (shownPrices) {
+    const { lots, currency, term } = shownPrices;
+    renderPrices(lots, currency, term, true);
+  }
+  if (shownCoinArchivesPrices) renderCoinArchivesPrices(shownCoinArchivesPrices, true);
+};
+$('citing-filter').addEventListener('change', () => {
+  onlyCiting = $('citing-filter').checked === true;
+  redrawPrices();
+});
+$('denomination-filter').addEventListener('change', () => {
+  onlyDenomination = $('denomination-filter').checked === true;
+  redrawPrices();
 });
 $('reset-curation').addEventListener('click', () => {
   if (!shownPrices) return;

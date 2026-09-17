@@ -59,10 +59,16 @@
       <section id="research-prices" class="research-prices card" aria-labelledby="research-prices-title" hidden>
         <h2 id="research-prices-title">Auction research</h2>
         <fieldset id="period" class="period source-period"><legend class="sr-only">Sales period for auction sources</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
+        <div id="price-filters" class="price-filters" hidden>
+          <label id="citing-row" class="denomination-row" hidden><input type="checkbox" id="citing-filter" checked><span id="citing-label"></span></label>
+          <label id="denomination-row" class="denomination-row" hidden><input type="checkbox" id="denomination-filter"><span id="denomination-label"></span></label>
+        </div>
         <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
           <h3 class="price-source-title">acsearch</h3>
-          <div class="median-block"><p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
+          <div class="median-block"><p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="cited-count" class="sale-filtered" hidden></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
+          <ul id="grade-medians" class="grade-medians" hidden></ul>
+          <p id="ungraded-count" class="sale-filtered" hidden></p>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
           <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="curation-controls"><span id="curation-count"></span><button id="reset-curation" class="text-button" type="button">Reset</button></div><ol id="sale-list" class="sale-list"></ol></details>
@@ -83,10 +89,11 @@
             <p id="coinarchives-query" class="price-query"></p>
             <p class="metric-label">Recorded hammer median</p><p id="coinarchives-median-line" class="coinarchives-median-line"><strong id="coinarchives-median"></strong><span id="coinarchives-median-currency"></span></p>
             <p id="coinarchives-sample" class="sale-strength"></p>
+            <p id="coinarchives-cited" class="sale-filtered" hidden></p>
             <p id="coinarchives-counts" class="price-note"></p>
             <p id="coinarchives-coverage" class="price-basis">Coverage: auctions added in the past 6 months; first 100 results.</p>
             <p class="price-basis">Basis: public CoinArchives hammer prices; buyer’s premium, tax and shipping excluded. No currency conversion.</p>
-            <details id="coinarchives-details" class="sale-details"><summary><span>Inspect used prices</span><span class="sale-count"><span id="coinarchives-sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><ol id="coinarchives-sale-list" class="sale-list"></ol></details>
+            <details id="coinarchives-details" class="sale-details"><summary><span>Inspect used prices</span><span class="sale-count"><span id="coinarchives-sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="curation-controls"><span id="coinarchives-curation-count"></span></div><ol id="coinarchives-sale-list" class="sale-list"></ol></details>
             <a id="coinarchives-source-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results <span aria-hidden="true">↗</span></a>
           </div>
         </section>
