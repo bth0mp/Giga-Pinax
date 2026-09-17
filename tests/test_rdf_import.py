@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -436,6 +437,33 @@ class LabelTests(unittest.TestCase):
         for corpus in ([], {}, {"ocre": 1}, 7, None):
             with self.subTest(corpus=corpus), self.assertRaises(self.imports.ImportFailure):
                 self.imports.read_data(lambda name: {"schemaVersion": 1, "corpus": corpus, "shards": {}})
+
+
+class CorpusTableTests(unittest.TestCase):
+    """The importer's CORPORA table and the extension's LOCAL_CORPORA are two languages saying the same thing. They stay
+    apart on purpose, but a corpus added, renamed or relabelled in one and not the other would write files no lookup can
+    find, so the two are checked against each other and against the directories the data actually lives in."""
+
+    def setUp(self):
+        source = (ROOT / "extension" / "local-catalogue.js").read_text(encoding="utf-8")
+        body = source.split("LOCAL_CORPORA = Object.freeze({", 1)[1].split("\n});", 1)[0]
+        self.local = {name: {"uri": uri, "label": label} for name, uri, label
+                      in re.findall(r"(\w+): \{ uri: '([^']+)', label: '([^']+)'", body)}
+        self.assertEqual(4, len(self.local), "LOCAL_CORPORA could not be read")
+
+    def test_the_two_tables_name_the_same_corpora_as_the_bundled_directories(self):
+        corpora = sorted(load_import_script().CORPORA)
+        self.assertEqual(corpora, sorted(self.local))
+        self.assertEqual(corpora, sorted(path.name for path in DATA.iterdir() if path.is_dir()))
+
+    def test_each_corpus_agrees_on_its_label_and_its_identifier_prefix(self):
+        corpora = load_import_script().CORPORA
+        for name, entry in sorted(self.local.items()):
+            with self.subTest(corpus=name):
+                self.assertEqual(corpora[name]["label"], entry["label"])
+                # OCRE's card has written https since the bundle existed and the importer writes ANS's own http, which is
+                # the one field where the two deliberately differ; the path they name must still be the same.
+                self.assertEqual(corpora[name]["base"].split("://", 1)[1], entry["uri"].split("://", 1)[1])
 
 
 if __name__ == "__main__":

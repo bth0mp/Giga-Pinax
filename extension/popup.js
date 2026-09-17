@@ -6,7 +6,7 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
-import { LOCAL_CORPORA, createLocalCatalogue } from './local-catalogue.js';
+import { createLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 const api = globalThis.browser ?? globalThis.chrome;
@@ -425,7 +425,7 @@ function renderCard(card) {
   const other = card.corpus === 'other';
   $('result-reference').textContent = card.label;
   // The card names the catalogue it came out of, so a collector reading "Local PELLA catalogue" knows which bundle answered.
-  $('result-source').textContent = card.source === 'local' ? `Local ${LOCAL_CORPORA[card.corpus].label} catalogue` : '';
+  $('result-source').textContent = card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '';
   $('result-source').hidden = card.source !== 'local';
   $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
