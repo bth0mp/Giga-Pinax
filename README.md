@@ -13,7 +13,7 @@ Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin
 - **Current source** — capture the auction page you are looking at, review the extracted reference and auction context, then research it or save an editable draft.
 - **Calculator** — hammer plus buyer premium, or the highest affordable hammer from a budget, including shipping, percentage and fixed payment fees and a fixed bid increment.
 - **Watchlist and workspace** — Closing soon, Needs research, Planned, Active and Completed queues; auction identity with duplicate detection; measurements, condition, sourced provenance, external photo links, reminders and outcomes; and comparison of two to four saved coins.
-- **Local RIC data** — 52,254 Roman Imperial type records and 2,808 replacement redirects travel inside the package, so RIC lookups answer without contacting anyone.
+- **Local RIC data** — 52,254 Roman Imperial type records and 2,808 replacement redirects travel inside the package, so a RIC reference the bundle holds is answered without contacting anyone. A reference it does not hold can still fall back to the online catalogue.
 - **Backups** — records and settings export and import as JSON. Everything lives in your browser's extension storage; nothing is uploaded.
 
 ## Catalogues
