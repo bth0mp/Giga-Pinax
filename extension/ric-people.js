@@ -11,8 +11,8 @@
 //   excludedMissingLabelCount: 0
 //   missingConceptCount: 0
 //   aliasCount: 120
-//   mintCount: 8
-//   mintAliasCount: 9
+//   mintCount: 13
+//   mintAliasCount: 16
 
 export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "aelia_ariadne", name: "Aelia Ariadne", volumes: Object.freeze(["X"]), aliases: Object.freeze(["ariadna"]) }),
@@ -231,15 +231,22 @@ export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "zenobia", name: "Zenobia", volumes: Object.freeze(["V"]), aliases: Object.freeze([]) }),
 ]);
 
-// The modern name Nomisma gives each RIC VI-IX mint section, in English only. A mint whose concept carries no English name but the one RIC
-// files it under has no alias here, and none was invented for it.
+// The modern names Nomisma gives each RIC VI-IX mint section: its labels in the language of the country the mint stands in today, its English
+// labels, and the Latin-script exonym several of English, French, German, Italian and Spanish spell alike. A name that is also a ruler's, that
+// two mints share or that is an ordinary English word is dropped, and a mint Nomisma gives no modern name has no alias here: none was invented
+// for it, and RIC's own spelling always reaches it.
 export const RIC_MINTS = Object.freeze([
   Object.freeze({ id: "ambianum", section: "Amiens", aliases: Object.freeze(["ambianum"]) }),
-  Object.freeze({ id: "antiocheia_syria", section: "Antioch", aliases: Object.freeze(["antioch, syria", "antiokheia pros oronten"]) }),
-  Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["istanbul"]) }),
+  Object.freeze({ id: "antiocheia_syria", section: "Antioch", aliases: Object.freeze(["antakya", "antioch, syria", "antiokheia pros oronten"]) }),
+  Object.freeze({ id: "arelate", section: "Arelate", aliases: Object.freeze(["arles"]) }),
+  Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["istanbul", "konstantinopolis"]) }),
   Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["kyzikos"]) }),
+  Object.freeze({ id: "heraclea_thracica", section: "Heraclea", aliases: Object.freeze(["marmara ereglisi"]) }),
   Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["nikomedia"]) }),
+  Object.freeze({ id: "rome", section: "Rome", aliases: Object.freeze(["roma"]) }),
   Object.freeze({ id: "serdica", section: "Serdica", aliases: Object.freeze(["serdika"]) }),
+  Object.freeze({ id: "sirmium", section: "Sirmium", aliases: Object.freeze(["sirmio"]) }),
+  Object.freeze({ id: "siscia", section: "Siscia", aliases: Object.freeze(["sisak"]) }),
   Object.freeze({ id: "thessalonica", section: "Thessalonica", aliases: Object.freeze(["thessalonika"]) }),
   Object.freeze({ id: "treveri", section: "Treveri", aliases: Object.freeze(["trier"]) }),
 ]);

@@ -6,7 +6,13 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- A RIC VI–IX mint section is now found by the modern names Nomisma really publishes for it, not by its English label alone: **Arles**, **Sisak**, **Roma**, **Antakya**, **Sirmio**, **Konstantinopolis** and **Marmara Ereğlisi** join **Trier**, **Istanbul** and the rest, so thirteen of the twenty-one mints answer to a name other than RIC's. Type one into the Reference box or the **Ruler or section** field, or paste a lot whose heading names the mint and nobody else — `Arles. RIC 12`, `Sisak mint, RIC 12` — and the coin opens from the bundled catalogue with no network at all. A mint named beside a ruler is still looked up by the ruler, as before, and a mint name never opens a person's coin. Four mints keep RIC's spelling alone: Nomisma publishes no other name for Londinium, Lugdunum, Mediolanum or Ticinum in any language it labels them in, so **London**, **Lyon**, **Lyons**, **Milan** and **Pavia** are still not recognised and none of them was invented. (#9)
+
 ### Fixed
+
+- A lot heading that named only a mint — `Londinium. RIC 12` — used to leave the number searched across every mint of four volumes; it is now read as that mint's section. (#9)
 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
