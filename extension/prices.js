@@ -382,20 +382,18 @@ export function filterableDenomination(label) {
 }
 
 const FINE = 'Fine and below';
-const MINT = 'FDC/Mint State';
+// "AU" ("About Uncirculated") sits between EF and Mint State, which is a bucket the four do not have; the top bucket is where it counts, and the
+// label says so. FDC, Stempelglanz and Uncirculated count there too — the label names the bucket, it does not list the grades in it.
+const MINT = 'AU/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
-// A grade the reader knows and cannot place in one of the four buckets: "AU" ("About Uncirculated") sits between EF and Mint State. Reading it is
-// still worth it — it keeps a qualifier from turning it into "Uncirculated" — and the row simply comes out ungraded. A wrong bucket is the failure
-// here; an empty one is not.
-const UNPLACED = 'unplaced';
 
 // Class 1. The English abbreviations, exactly as the trade writes them: nothing else in a lot description is spelled this way, so a closing edge is
 // all they need.
-const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: UNPLACED };
+const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT };
 // Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
 // ordinary adjective, and only a range whose first half was read lends it a grade's standing.
 const NAMES = {
-  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'About Uncirculated': UNPLACED,
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'About Uncirculated': MINT,
   Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
@@ -518,7 +516,7 @@ export function gradeOf(description) {
     if (!read) continue;
     const bucket = bucketOf(token);
     previous = { end };
-    if (bucket === UNPLACED || bucket === null) continue;
+    // Every token the reader knows has a bucket, so a range or a named side always has the statement of its first half to join.
     if (ranged || sided) statements.at(-1).buckets.push(bucket);
     else statements.push({ buckets: [bucket], labelled: LABEL.test(before) });
   }

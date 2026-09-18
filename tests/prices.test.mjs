@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
+import { buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -67,7 +67,7 @@ test('the fixture page reads as two citations of another type, and the grades th
   const lots = extractLots(fixture('acsearch-search-nero-306.html'));
   const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
   assert.deepEqual(lots.map((entry) => citesReference(entry.description, nero)), [true, true, false, false, true]);
-  assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'FDC/Mint State']);
+  assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'AU/Mint State']);
 });
 
 // A page is untrusted text off the network, and every retry parses the whole slice from the marker again: half a
@@ -1017,15 +1017,15 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   // "Fine, high-relief portrait" from a grade. "Fine, porous" — one word, no noun — is still the grade.
   assert.equal(gradeOf('Fine, rough surfaces.'), null);
   assert.equal(gradeOf('Fine, porous.'), 'Fine and below');
-  assert.equal(gradeOf('FDC.'), 'FDC/Mint State');
-  assert.equal(gradeOf('Mint State, fully lustrous.'), 'FDC/Mint State');
+  assert.equal(gradeOf('FDC.'), 'AU/Mint State');
+  assert.equal(gradeOf('Mint State, fully lustrous.'), 'AU/Mint State');
   // German, French and Italian grades.
   assert.equal(gradeOf('Schoene Patina. ss-vz.'), 'VF');
-  assert.equal(gradeOf('Erhaltung: st'), 'FDC/Mint State');
+  assert.equal(gradeOf('Erhaltung: st'), 'AU/Mint State');
   assert.equal(gradeOf('Herrliche Patina, vorzüglich.'), 'EF');
   assert.equal(gradeOf('Belle patine. TTB.'), 'VF');
   assert.equal(gradeOf('Patina verde. SPL.'), 'EF');
-  assert.equal(gradeOf('Stempelglanz.'), 'FDC/Mint State');
+  assert.equal(gradeOf('Stempelglanz.'), 'AU/Mint State');
   // A two-letter lowercase token is a grade only as a clause of its own; "fine style" is not a grade at all.
   assert.equal(gradeOf('Die Erhaltung ist gut, ss ist untertrieben, schaut selbst'), null);
   assert.equal(gradeOf('Of fine style, some wear.'), null);
@@ -1067,7 +1067,7 @@ test('gradeOf reads the qualifiers, slab lines and closing edges dealers write',
     ['A few light marks, otherwise EF.', 'EF'], ['Minor porosity, otherwise Very Fine.', 'VF'],
     ['Fast vorzüglich.', 'EF'], ['Gutes sehr schön.', 'VF'], ['Fast sehr schön.', 'VF'], ['Knapp sehr schön.', 'VF'], ['fast vz.', 'EF'], ['Buon BB.', 'VF'],
     // A slab's own line: the grade, then its strike and surface scores.
-    ['NGC Choice VF 5/5 - 4/5', 'VF'], ['NGC MS 5/5 - 4/5, Fine Style', 'FDC/Mint State'], ['NGC XF 4/5', 'EF'], ['NGC Ch VF', 'VF'], ['MS 63', 'FDC/Mint State'],
+    ['NGC Choice VF 5/5 - 4/5', 'VF'], ['NGC MS 5/5 - 4/5, Fine Style', 'AU/Mint State'], ['NGC XF 4/5', 'EF'], ['NGC Ch VF', 'VF'], ['MS 63', 'AU/Mint State'],
     // The closing edges: a dash, a bracket, a conjunction, a preposition, the French "à", a plus.
     ['Very Fine and rare.', 'VF'], ['Very Fine & Rare.', 'VF'], ['Very Fine - Extremely Fine.', 'VF'], ['VF - EF.', 'VF'],
     ['VF (scratch).', 'VF'], ['Very Fine (light scratches).', 'VF'], ['Extremely Fine for the issue.', 'EF'], ['EF with luster.', 'EF'],
@@ -1081,7 +1081,22 @@ test('gradeOf reads the qualifiers, slab lines and closing edges dealers write',
   assert.equal(gradeOf('A portrait as fine as any. EF'), 'EF');
   assert.equal(gradeOf('From the BB collection. EF'), 'EF');
   assert.equal(gradeOf('EF, Fine Style'), 'EF');
-  assert.equal(gradeOf('NGC AU 5/5.'), null);
+});
+
+// Issue #6: "AU" ("About Uncirculated") is the American trade's grade between EF and Mint State, and a whole house style writes nothing else. It has
+// no bucket of its own, so the decision is that it counts in the top one, which is what that bucket is now labelled. Left unplaced it ungraded every
+// such row, and a range that opened with it ("AU/EF") had no statement of its own for the second grade to join.
+test('gradeOf counts AU in the top bucket', () => {
+  for (const [text, bucket] of [['AU', 'AU/Mint State'], ['AU.', 'AU/Mint State'], ['About Uncirculated', 'AU/Mint State'],
+    ['Choice AU', 'AU/Mint State'], ['NGC AU 5/5 - 4/5', 'AU/Mint State'], ['NGC AU 58', 'AU/Mint State'],
+    ['Nero. AR Denarius. NGC AU 5/5.', 'AU/Mint State'], ['NGC Choice AU★ 5/5 - 5/5, Fine Style.', 'AU/Mint State'],
+    // A range that opens with AU is the lower of the two, as any other pair.
+    ['AU/EF', 'EF'], ['AU - EF.', 'EF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // The qualifier still keeps "About Uncirculated" from reading as "Uncirculated", and the top bucket is still one bucket.
+  assert.equal(GRADE_BUCKETS.length, 4);
+  assert.equal(GRADE_BUCKETS.at(-1), 'AU/Mint State');
 });
 
 // "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of
@@ -1103,7 +1118,7 @@ test('gradeOf reads the German "s." as see, never as a grade of its own', () => 
 // a row the design cannot read carries null there, and its note says why. A wrong bucket is what this guards against — an ungraded row is not one.
 test('every description in the grade corpus reads into the bucket the corpus records', () => {
   const corpus = JSON.parse(fixture('grade-corpus.json'));
-  const buckets = { fine: 'Fine and below', vf: 'VF', ef: 'EF', mint: 'FDC/Mint State' };
+  const buckets = { fine: 'Fine and below', vf: 'VF', ef: 'EF', mint: 'AU/Mint State' };
   const disagreements = corpus.flatMap((row) => {
     const wanted = row.grade === null ? null : buckets[row.grade];
     const read = gradeOf(row.text);

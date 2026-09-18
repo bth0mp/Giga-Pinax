@@ -141,8 +141,8 @@
  },
  {
   "text": "NGC Ch AU 5/5 - 4/5, Fine Style.",
-  "grade": null,
-  "note": "r3_hunt.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC Choice XF 5/5 - 3/5, Fine Style.",
@@ -646,13 +646,13 @@
  },
  {
   "text": "NGC AU 5/5 - 4/5.",
-  "grade": null,
-  "note": "r3_hunt.mjs; AU sits between EF and Mint State, so it is read and left unplaced, probe_c.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC Choice AU★ 5/5 - 5/5, Fine Style.",
-  "grade": null,
-  "note": "r3_hunt.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC MS★ 5/5 - 5/5",
@@ -1311,18 +1311,18 @@
  },
  {
   "text": "About Uncirculated",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "AU",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Choice AU",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Brilliant UNC",
@@ -1996,8 +1996,8 @@
  },
  {
   "text": "Nero. AR Denarius. NGC AU 5/5.",
-  "grade": null,
-  "note": "probe_b.mjs"
+  "grade": "mint",
+  "note": "probe_b.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Nero. AR Denarius. NGC Ch XF.",
@@ -2643,5 +2643,20 @@
   "text": "Schoene Patina. ss-vz.",
   "grade": "vf",
   "note": "round 1 test"
+ },
+ {
+  "text": "NGC AU 58",
+  "grade": "mint",
+  "note": "#6: AU counts in the top bucket, and the slab prints its numeric grade behind it"
+ },
+ {
+  "text": "AU/EF",
+  "grade": "ef",
+  "note": "#6: AU counts in the top bucket; a range takes the lower grade, and before it the second grade had no statement to join"
+ },
+ {
+  "text": "AU - EF.",
+  "grade": "ef",
+  "note": "#6: AU counts in the top bucket; a range takes the lower grade"
  }
 ]
