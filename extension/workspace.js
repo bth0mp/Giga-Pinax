@@ -295,14 +295,37 @@ export function commandExpectedRevisions(command) {
   return revisions;
 }
 
-// `group.delete` clears the group from every member coin, bumping each coin's revision, but the
-// command itself names only the group. The members are read from the snapshot the command was sent
-// against, so a dirty editor on one of them follows the commit instead of raising a false conflict.
+// Losing a member renumbers a group's coins from 1, and the store writes only the ones whose
+// priority actually moves: those ordered after the coin that left.
+const renumberedGroupMembers = (lots, groupId, removedLotId) => lots
+  .filter((lot) => lot.alternativeGroupId === groupId && lot.id !== removedLotId)
+  .sort((left, right) => left.priority - right.priority)
+  .filter((lot, index) => lot.priority !== index + 1);
+
+// Some commands write records they never name: `group.delete` clears the group from every member
+// coin, `lot.delete` stamps the group the coin leaves and renumbers the members after it, and
+// `collection.review.resolve` clears the review from the linked coin while naming only the entry.
+// Each of those records is read from the snapshot the command was sent against, so a dirty editor
+// on one of them follows the commit instead of raising a false conflict.
 export function commandReplacedRevisions(command, snapshot) {
   const revisions = commandExpectedRevisions(command);
-  if (command?.type !== 'group.delete' || !command.groupId) return revisions;
-  for (const lot of snapshot?.lots ?? []) {
-    if (lot.alternativeGroupId === command.groupId && Number.isInteger(lot.revision)) revisions[lot.id] = lot.revision;
+  const lots = snapshot?.lots ?? [];
+  const claim = (record) => {
+    if (record && Number.isInteger(record.revision)) revisions[record.id] = record.revision;
+  };
+  if (command?.type === 'group.delete' && command.groupId) {
+    for (const lot of lots) if (lot.alternativeGroupId === command.groupId) claim(lot);
+  }
+  if (command?.type === 'lot.delete' && command.lotId) {
+    const groupId = lots.find((lot) => lot.id === command.lotId)?.alternativeGroupId;
+    if (groupId) {
+      claim((snapshot?.alternativeGroups ?? []).find((group) => group.id === groupId));
+      for (const member of renumberedGroupMembers(lots, groupId, command.lotId)) claim(member);
+    }
+  }
+  if (command?.type === 'collection.review.resolve' && command.collectionEntryId) {
+    const entry = (snapshot?.collectionEntries ?? []).find((item) => item.id === command.collectionEntryId);
+    if (entry) claim(lots.find((lot) => lot.id === entry.lotId));
   }
   return revisions;
 }
@@ -417,6 +440,14 @@ const SELECTED_LOT_EDITORS = Object.freeze(['lot', 'bid', 'outcome']);
 export function removedCoinNotice(selection, nextSelection, dirtyEditors, removedHere = null) {
   if (nextSelection === selection || selection?.selectedLotId === removedHere) return false;
   return SELECTED_LOT_EDITORS.some((editor) => dirtyEditors?.has(editor));
+}
+
+// Whether the page still owns the removal it started. Only a reply that proves nothing was written
+// hands the coin back to the other views: a delete whose outcome is unknown may well have
+// committed, and disowning it there would accuse another view of the collector's own delete.
+export function removedHereAfterDeleteReply(removedHere, lotId, reply) {
+  if (removedHere !== lotId || reply?.ok || reply?.outcome === 'unknown') return removedHere;
+  return null;
 }
 
 export function selectionAfterSnapshot(selection, snapshot) {
@@ -838,7 +869,11 @@ async function initWorkspace() {
     // The same request, resubmitted as it was first submitted: anything typed since the attempt
     // failed is newer than the save and stays in the form.
     const retry = pendingRetry; pendingRetry = null; $('unknown-note').hidden = true;
-    void send(retry.command, retry.editor, retry);
+    // The retry is where an uncertain delete becomes certain, so it is also where the page finds
+    // out whether the coin is still its own removal.
+    void send(retry.command, retry.editor, retry).then((reply) => {
+      if (retry.command.type === 'lot.delete') removedHere = removedHereAfterDeleteReply(removedHere, retry.command.lotId, reply);
+    });
   });
 
   const openSource = async (source) => {
@@ -1149,7 +1184,7 @@ async function initWorkspace() {
     if (!basis?.id || !confirm(`Remove “${basis.record.title}”?`)) return;
     removedHere = basis.id;
     void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot')
-      .then((reply) => { if (!reply?.ok && removedHere === basis.id) removedHere = null; });
+      .then((reply) => { removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply); });
   });
   $('group-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('group') ?? { id: null, revision: null }; void send({ type: 'group.save', requestId: requestId(), expectedRevision: basis.revision, group: { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim() } }, 'group'); });
 

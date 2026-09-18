@@ -11,6 +11,8 @@ Each date is the date of that version's release tag. Every release also carries 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
 - A part of RIC IV written after a comma, as dealers write it — `RIC IV, 1, 123a`, `RIC IV, part 1, 123` — is now read as RIC IV number 123a, the way `RIC IV.1 123a` always was. RIC IV is bound in three parts; a comma followed by a part the volume does not have, such as `RIC IV, 4, 12`, is still left unread. (#2)
+- Removing a coin from a group, or settling a collection review, no longer claims the group name or the coin details you were half way through typing "changed in another view": the forms follow your own edit instead of asking you to reload it away. (#5)
+- A removal the extension could not confirm — the background worker went quiet, or the write could not be read back — is no longer reported to you as the coin being "removed in another view" once it turns out to have gone through. (#5)
 
 ## [0.32.0] - 2026-09-17
 
