@@ -1341,10 +1341,12 @@ test('a comma after the RIC volume is read, wherever the volume names its part o
 // read only where RIC really divides the volume that way. The volume's own punctuation ("IV.1", "II.3") is unambiguous and is left alone.
 test('a part written after a comma is read only for a volume RIC really divides', () => {
   const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
-  for (const text of ['RIC III, 2, 3', 'RIC X, 2, 123', 'RIC II, 2, 123', 'RIC IV, 1, 123a', 'RIC VII, 2, 12']) assert.equal(parseReference(text), null, text);
-  // The two divisions the data evidences: OCRE's own II, Part 1 and II, Part 3, and the V.1/V.2 dealers cite although OCRE merges them.
+  for (const text of ['RIC III, 2, 3', 'RIC X, 2, 123', 'RIC II, 2, 123', 'RIC IV, 4, 12', 'RIC VII, 2, 12']) assert.equal(parseReference(text), null, text);
+  // The divisions the data evidences: OCRE's own II, Part 1 and II, Part 3, the V.1/V.2 dealers cite although OCRE merges them, and IV's three parts.
   for (const [text, expected] of [['RIC II, 1, 123', ric('II, Part 1', '', '123')], ['RIC II, 3, 123', ric('II, Part 3', '', '123')],
-    ['RIC V, 1, 123', ric('V, Part 1', '', '123')], ['RIC V, 2, 123', ric('V, Part 2', '', '123')]]) {
+    ['RIC V, 1, 123', ric('V, Part 1', '', '123')], ['RIC V, 2, 123', ric('V, Part 2', '', '123')],
+    ['RIC IV, 1, 123a', ric('IV, Part 1', '', '123a')], ['RIC IV, part 1, 123', ric('IV, Part 1', '', '123')],
+    ['RIC IV, 2, 123', ric('IV, Part 2', '', '123')], ['RIC IV, 3, 123', ric('IV, Part 3', '', '123')]]) {
     assert.deepEqual(parseReference(text), expected, text);
   }
   // A part the volume itself carries is the citation's own spelling and is read whatever volume it names.

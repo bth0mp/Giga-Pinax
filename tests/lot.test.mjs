@@ -864,9 +864,12 @@ test('a comma between a RIC volume and its number keeps the reference whole', ()
   // A volume, its part and its number, each parted by a comma. Read as "RIC V 2" this opened Probus 2, a coin the dealer never cited.
   assert.deepEqual(only('Probus. RIC V, 2, 123').reference, { catalogue: 'RIC', volume: 'V, Part 2', section: '', number: '123' });
   assert.deepEqual(only('Trajan. RIC II, 1, 123').reference, { catalogue: 'RIC', volume: 'II, Part 1', section: '', number: '123' });
+  // RIC IV is bound in three parts, and a dealer punctuates them with commas as he does V's.
+  assert.deepEqual(only('Caracalla. RIC IV, 1, 123a').reference, ric('123a', 'IV, Part 1'));
+  assert.deepEqual(only('Gordian III. RIC IV, 3, 12').reference, ric('12', 'IV, Part 3'));
   // Only a part the volume really has, since a comma is also how a dealer lists numbers: "RIC III, 2, 3" is two of RIC III's numbers, and the
   // Reference box must read these the same way, which is to say not at all.
-  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 1, 123a']) {
+  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 4, 12']) {
     assert.deepEqual(texts(`Trajan. ${text}`), [], text);
     assert.equal(parseReference(text), null, text);
   }
