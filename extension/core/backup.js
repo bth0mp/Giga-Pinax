@@ -273,14 +273,22 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
 // lot it duplicates tracks no sale at all, in which case the sale the backup knows about is worth
 // keeping and the lot that stayed is linked to it, or unless a lot the merge did take is attached to
 // it too. Only an event this merge itself brought in is ever taken back out: a local one stays.
-function settleSkippedLotEvents(snapshot, skipped, localEventIds, conflicts) {
+function settleSkippedLotEvents(snapshot, skipped, localEventIds, conflicts, { attach, change, updates, counted, now }) {
   for (const { record, local } of skipped) {
     if (!own(record, 'auctionEventId') || own(local, 'auctionEventId')) continue;
     if (!snapshot.auctionEvents.some(({ id }) => id === record.auctionEventId)) continue;
+    // The link is a body from before the export, so a lot written since wins over it exactly as
+    // every other record does: an old backup merged again no longer puts the sale back on a lot the
+    // collector had unlinked. The event then points at nothing here and goes out below.
+    if (!attach(local)) continue;
+    updates.push({ ...change('lots', record, local), reason: 'auction-attached', fields: ['auctionEventId'] });
     local.auctionEventId = record.auctionEventId;
     // The link is content this install never had, so the row is stamped: an editor holding the row
-    // from before the import is answered with a conflict instead of saving the link away again.
+    // from before the import is answered with a conflict instead of saving the link away again, and
+    // the write time says when the link was put on. A stamp never moves a write time backwards.
     local.revision += 1;
+    if (now > local.updatedAt) local.updatedAt = now;
+    counted();
   }
   const referenced = new Set(snapshot.lots.flatMap((row) =>
     (own(row, 'auctionEventId') ? [row.auctionEventId] : [])));
@@ -510,7 +518,13 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
   if (current.preferences === null) snapshot.preferences = clone(incoming.preferences);
 
   // An event kept out was counted as added when the collections loop took it.
-  tally.added -= settleSkippedLotEvents(snapshot, skippedLots, localEventIds, conflicts);
+  tally.added -= settleSkippedLotEvents(snapshot, skippedLots, localEventIds, conflicts, {
+    attach: (local) => !beyondCeiling(local),
+    change,
+    updates,
+    counted: () => { tally.updated += 1; },
+    now,
+  });
   repairCollectionPairs(snapshot, conflicts, entryReviews);
   const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
   for (const [id, outcome] of entryOutcomes) {
@@ -573,6 +587,12 @@ export function importChangeLines(preview) {
     ...(preview.updates ?? []).map((row) => {
       const alias = row.incomingTitle ? ` (in the backup: "${row.incomingTitle}")` : '';
       const fields = row.fields?.length ? `, differing in ${fieldsText(row.fields)}` : '';
+      // Nothing of the record is replaced when it only takes the sale of a duplicate the merge
+      // skipped, so that line says what really happens to it.
+      if (row.reason === 'auction-attached') {
+        return `${row.collection}: "${row.title}" takes the auction of a duplicate this merge skipped ` +
+          `(backup ${row.incomingUpdatedAt}, local ${row.localUpdatedAt})${compared(row)}`;
+      }
       return `${row.collection}: "${row.title}"${alias} is replaced by the backup's copy ` +
         `(backup ${row.incomingUpdatedAt}, local ${row.localUpdatedAt})${fields}${compared(row)}`;
     }),

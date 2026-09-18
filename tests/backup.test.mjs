@@ -558,6 +558,58 @@ test('a merge adopts the auction of a skipped duplicate when the local lot has n
   assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
 });
 
+// Taking the backup's sale for the lot that stayed is a write to that lot, so it is reported and
+// stamped like any other: unlisted and unstamped, the preview said nothing, the settings page took
+// no safety copy before overwriting the lot, and the row still claimed the write time it had before
+// the link was put on it.
+test('a lot that takes the auction of a skipped duplicate is listed, counted and stamped', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.deepEqual([merged.id, merged.auctionEventId], [uuid(1), uuid(2)]);
+  assert.equal(merged.revision, 1, 'a holder of the unlinked lot is asked again');
+  assert.equal(merged.updatedAt, LATEST, 'and the row carries the time the link was written');
+  assert.equal(preview.value.counts.updated, 1, 'so the settings page takes its safety copy');
+  assert.deepEqual(importChangeLines(preview.value), [
+    `lots: "Nero denarius" takes the auction of a duplicate this merge skipped (backup ${NOW}, local ${NOW})`,
+  ]);
+
+  // The same file merged again changes nothing: the lot is already attached.
+  const again = previewImport(preview.value.snapshot, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(again.value.counts.updated, 0);
+  assert.deepEqual(importChangeLines(again.value), []);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+// An old backup re-merged used to put the sale back on a lot the collector had deliberately
+// unlinked since: the link is content from before the export, and a local row written after the
+// export wins over it exactly as every other record does.
+test('a lot edited after the backup was exported is not attached to that backup\'s auction again', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE, updatedAt: LATEST, revision: 3 }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.equal(Object.hasOwn(merged, 'auctionEventId'), false, 'the lot the collector unlinked stays unlinked');
+  assert.deepEqual([merged.revision, merged.updatedAt], [3, LATEST], 'and is not touched at all');
+  assert.equal(preview.value.counts.updated, 0);
+  assert.deepEqual(preview.value.snapshot.auctionEvents, [], 'the sale nothing points at is kept out');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+    'auctionEvents: "Triton XXIX" is the auction of a lot this merge skipped as a duplicate, kept out',
+  ]);
+});
+
 test('merge is idempotent and adds unseen records once', () => {
   const current = createEmptySnapshot(NOW);
   current.lots.push(lot(uuid(1), { title: 'Local' }));
