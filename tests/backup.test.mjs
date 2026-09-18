@@ -489,6 +489,75 @@ test('merge skips an incoming lot that is the same auction lot under a new ID', 
   ]);
 });
 
+// The skipped lot's auction event had merged by ID a moment before the lot was skipped, so one sale
+// ended up as two events here and its reminders fired twice.
+const SAME_SALE = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+
+test('an auction event arriving only with a skipped duplicate lot is kept out and said so', () => {
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(dateEvent(uuid(1), { name: 'Triton XXIX' }));
+  current.lots.push(lot(uuid(2), { title: 'Nero denarius', auctionContext: SAME_SALE, auctionEventId: uuid(1) }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(3), { name: 'Triton XXIX (laptop)' }));
+  incoming.lots.push(lot(uuid(4), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(3) }));
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(1)], 'one sale, one event');
+  assert.equal(preview.value.counts.added, 0, 'and nothing of the skipped lot is counted as added');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+    'auctionEvents: "Triton XXIX (laptop)" is the auction of a lot this merge skipped as a duplicate, kept out',
+  ]);
+  const again = previewImport(preview.value.snapshot, incoming, 'merge');
+  assert.equal(again.ok, true, again.error?.message);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+test('a merge keeps the auction of a skipped lot when a lot it did take is attached to it', () => {
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(dateEvent(uuid(1), { name: 'Triton XXIX' }));
+  current.lots.push(lot(uuid(2), { title: 'Nero denarius', auctionContext: SAME_SALE, auctionEventId: uuid(1) }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(3), { name: 'Triton XXIX (laptop)' }));
+  incoming.lots.push(
+    lot(uuid(4), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(3) }),
+    lot(uuid(5), {
+      title: 'Attic tetradrachm', auctionEventId: uuid(3),
+      auctionContext: { ...SAME_SALE, lotNumber: '77', pageUrl: 'https://house.test/lot/77' },
+    }),
+  );
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(1), uuid(3)],
+    'a lot the merge did take is attached to it, so the sale comes with it');
+  assert.equal(preview.value.counts.added, 2);
+});
+
+test('a merge adopts the auction of a skipped duplicate when the local lot has none', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(2)]);
+  const [merged] = preview.value.snapshot.lots;
+  assert.deepEqual([merged.id, merged.auctionEventId], [uuid(1), uuid(2)],
+    'the lot that stayed is the one the sale is attached to');
+  assert.equal(merged.revision, 1, 'a holder of the unlinked lot is asked again');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+  ]);
+
+  const again = previewImport(preview.value.snapshot, incoming, 'merge');
+  assert.equal(again.ok, true, again.error?.message);
+  assert.equal(again.value.counts.added, 0);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
 test('merge is idempotent and adds unseen records once', () => {
   const current = createEmptySnapshot(NOW);
   current.lots.push(lot(uuid(1), { title: 'Local' }));

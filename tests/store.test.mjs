@@ -1026,6 +1026,66 @@ test('a merge import folds a duplicated auction lot into the local one and leave
   assert.equal(saved.value.title, 'Nero denarius, retoned');
 });
 
+// A lot the merge skips as a duplicate brings the other install's auction event with it, and that
+// event merged by ID a moment earlier: one sale became two events, and its reminders fired twice.
+const sameSale = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+const saleEvent = (name) => ({
+  id: uuid(), revision: 0, dataClass: 'collector', name, eventKind: 'auction-starts', precision: 'timed',
+  localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-10-10T12:00:00.000Z',
+  reminderScope: 'linked-lots', reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }],
+  createdAt: NOW, updatedAt: NOW,
+});
+const saleLot = (title, extra = {}) => ({
+  id: uuid(), revision: 0, dataClass: 'collector', title, sourceLinks: [], bidHistory: [],
+  outcome: { status: 'open' }, outcomeHistory: [], auctionContext: sameSale,
+  createdAt: NOW, updatedAt: NOW, ...extra,
+});
+
+test('a merge that skips a duplicated lot keeps out the auction event it carried', () => {
+  const current = createEmptySnapshot(NOW);
+  const localEvent = saleEvent('Triton XXIX');
+  current.auctionEvents.push(localEvent);
+  current.lots.push(saleLot('Nero denarius', { auctionEventId: localEvent.id }));
+  const incoming = createEmptySnapshot(NOW);
+  const otherEvent = saleEvent('Triton XXIX (laptop)');
+  incoming.auctionEvents.push(otherEvent);
+  incoming.lots.push(saleLot('Nero denarius (laptop)', { auctionEventId: otherEvent.id }));
+
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.auctionEvents.map(({ id }) => id), [localEvent.id],
+    'one sale, one auction event');
+  assert.equal(imported.snapshot.lots.length, 1);
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1, 'and one reminder for it, not two');
+});
+
+test('a merge links the lot it kept to the auction the backup knew about', () => {
+  const current = createEmptySnapshot(NOW);
+  const localLot = saleLot('Nero denarius');
+  current.lots.push(localLot);
+  const incoming = createEmptySnapshot(NOW);
+  const otherEvent = saleEvent('Triton XXIX');
+  incoming.auctionEvents.push(otherEvent);
+  incoming.lots.push(saleLot('Nero denarius (laptop)', { auctionEventId: otherEvent.id }));
+
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.auctionEvents.map(({ id }) => id), [otherEvent.id]);
+  assert.deepEqual(imported.snapshot.lots.map(({ id, auctionEventId }) => [id, auctionEventId]),
+    [[localLot.id, otherEvent.id]], 'the lot that stayed is the one the sale is attached to');
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  // The link is a change to a record the collector may have open, so it is stamped: a save holding
+  // the revision from before the import is told rather than allowed to drop the link again.
+  const stale = applyCommand(imported.snapshot, command('lot.save', {
+    expectedRevision: localLot.revision, lot: { id: localLot.id, title: 'Nero denarius', sourceLinks: [] },
+  }), context());
+  assert.equal(stale.error.code, 'conflict');
+});
+
 test('a merge import commits with the local rows a conflict kept', () => {
   const observation = {
     id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'collector', retrievedAt: NOW,

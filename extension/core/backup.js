@@ -37,6 +37,7 @@ const CONFLICT_SENTENCES = {
   'same-sale-collision': 'is the same sale with different numbers, kept local',
   'lot-not-merged': 'is attached to a lot this merge did not take, skipped',
   'entry-kept-local': 'arrived for a lot that already has a collection entry here, kept local',
+  'event-for-skipped-lot': 'is the auction of a lot this merge skipped as a duplicate, kept out',
 };
 function bytes(value) {
   return new TextEncoder().encode(value).length;
@@ -263,6 +264,37 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
   });
 }
 
+// Auction events merge before the lots that point at them, so the event of a lot the merge then
+// skipped as a duplicate had already been taken: the same sale stood here twice and its reminders
+// fired twice. The event belongs to the skipped lot, so it follows that lot out - unless the local
+// lot it duplicates tracks no sale at all, in which case the sale the backup knows about is worth
+// keeping and the lot that stayed is linked to it, or unless a lot the merge did take is attached to
+// it too. Only an event this merge itself brought in is ever taken back out: a local one stays.
+function settleSkippedLotEvents(snapshot, skipped, localEventIds, conflicts) {
+  for (const { record, local } of skipped) {
+    if (!own(record, 'auctionEventId') || own(local, 'auctionEventId')) continue;
+    if (!snapshot.auctionEvents.some(({ id }) => id === record.auctionEventId)) continue;
+    local.auctionEventId = record.auctionEventId;
+    // The link is content this install never had, so the row is stamped: an editor holding the row
+    // from before the import is answered with a conflict instead of saving the link away again.
+    local.revision += 1;
+  }
+  const referenced = new Set(snapshot.lots.flatMap((row) =>
+    (own(row, 'auctionEventId') ? [row.auctionEventId] : [])));
+  const orphaned = new Set(skipped
+    .map(({ record }) => (own(record, 'auctionEventId') ? record.auctionEventId : null))
+    .filter((id) => id !== null && !referenced.has(id) && !localEventIds.has(id)));
+  if (!orphaned.size) return 0;
+  snapshot.auctionEvents = snapshot.auctionEvents.filter((event) => {
+    if (!orphaned.has(event.id)) return true;
+    conflicts.push({
+      collection: 'auctionEvents', id: event.id, title: recordLabel(event), reason: 'event-for-skipped-lot',
+    });
+    return false;
+  });
+  return orphaned.size;
+}
+
 // The identity of a trigger, rebuilt from the three things it is derived from, exactly as the reconcile rebuilds it.
 const triggerKey = (alert) => `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
 
@@ -350,6 +382,10 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
   const duplicates = [];
   const updates = [];
   const keptLocal = [];
+  // Each incoming lot passed over as a duplicate, with the local lot it duplicates: what becomes of
+  // the auction event it carried is settled once the lots are merged and that map is final.
+  const skippedLots = [];
+  const localEventIds = new Set(current.auctionEvents.map(({ id }) => id));
   const tally = { added: 0, updated: 0, keptLocal: 0, skippedDuplicate: 0, quarantine: 0 };
   // Entries only count once it is known which of them survived the pairing repair, or a re-merge
   // would report adding the same entry again every time.
@@ -449,6 +485,7 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
         const duplicate = findDuplicateLot(rows, record);
         if (duplicate) {
           duplicates.push({ id: record.id, title: recordLabel(record), duplicateOf: recordLabel(duplicate) });
+          skippedLots.push({ record, local: duplicate });
           tally.skippedDuplicate += 1;
           continue;
         }
@@ -475,6 +512,8 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
   // with different revisions, which is bookkeeping rather than a disagreement worth reporting.
   if (current.preferences === null) snapshot.preferences = clone(incoming.preferences);
 
+  // An event kept out was counted as added when the collections loop took it.
+  tally.added -= settleSkippedLotEvents(snapshot, skippedLots, localEventIds, conflicts);
   repairCollectionPairs(snapshot, conflicts, entryReviews);
   const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
   for (const [id, outcome] of entryOutcomes) {
