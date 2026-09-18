@@ -846,6 +846,51 @@ export function quarantineEntryId(entry) {
   return stableUuid(typeof encoded === 'string' ? encoded : 'unreadable-entry');
 }
 
+// One record set aside for one reason is one entry, however often it has been through a repair or
+// arrived in a merged backup. Entries fold only when they carry the very same record, so two
+// different duplicates of one ID keep both bodies. An entry that holds no record is the note of a
+// cause that was never in storage, and has no ID to be named by: it is the same note as another
+// naming the same cause with the same cleared links, and folds with nothing else.
+export function quarantineFoldKey(entry) {
+  const id = entry?.record?.id ?? entry?.record?.requestId;
+  if (typeof id === 'string') return `${entry.collection}:${id}:${entry.reason}`;
+  if (entry?.record === null || entry?.record === undefined) {
+    return `${entry?.collection}::${entry?.reason}:${JSON.stringify(entry?.clearedReferences ?? [])}`;
+  }
+  return null;
+}
+
+// The entry already held, having gained the earlier date and whatever links the other one recorded,
+// or null where the two are not the same entry after all.
+export function foldQuarantineInto(held, entry) {
+  if (JSON.stringify(held.record) !== JSON.stringify(entry.record)) return null;
+  if (entry.quarantinedAt < held.quarantinedAt) held.quarantinedAt = entry.quarantinedAt;
+  for (const reference of entry.clearedReferences ?? []) {
+    const text = JSON.stringify(reference);
+    held.clearedReferences ??= [];
+    if (!held.clearedReferences.some((kept) => JSON.stringify(kept) === text)) {
+      held.clearedReferences.push(reference);
+    }
+  }
+  return held;
+}
+
+// One bin, folded. Every entry already held for a key is tried, not only the first: three copies of
+// one ID, two of them the same body, are two entries - and never two entries of identical bytes,
+// which would answer to one entry ID and give Settings two Restore buttons that do the same thing.
+export function foldQuarantine(entries) {
+  const kept = [];
+  const held = new Map();
+  for (const entry of entries) {
+    const key = quarantineFoldKey(entry);
+    const candidates = key === null ? [] : (held.get(key) ?? []);
+    if (candidates.some((candidate) => foldQuarantineInto(candidate, entry))) continue;
+    kept.push(entry);
+    if (key !== null) held.set(key, [...candidates, entry]);
+  }
+  return kept;
+}
+
 const COLLECTION_VALIDATORS = new Map(COLLECTIONS.map(({ key, validator }) => [key, validator]));
 // Where a record can go back to: the live collections. The bookkeeping the repair discards outright
 // is never in the bin to be put back, and the bin itself is not a collection.
@@ -930,31 +975,20 @@ export function quarantineInvalidRecords(stored, now) {
   const quarantine = [];
   const hosts = new Map();
   const folded = new Map();
-  // One record set aside for one reason is one entry. Two bins unioned by an import hold the same
-  // record twice, and a repair running again over a bin it already wrote must not open a second
-  // entry beside the one that is already there: the entry already held keeps the earlier date and
-  // gains whatever links the other one recorded. Only entries carrying the very same record fold,
-  // so two duplicates of one ID keep both bodies, and an entry with no record folds with nothing.
-  const foldInto = (held, entry) => {
-    if (JSON.stringify(held.record) !== JSON.stringify(entry.record)) return null;
-    if (entry.quarantinedAt < held.quarantinedAt) held.quarantinedAt = entry.quarantinedAt;
-    for (const reference of entry.clearedReferences ?? []) {
-      const text = JSON.stringify(reference);
-      held.clearedReferences ??= [];
-      if (!held.clearedReferences.some((kept) => JSON.stringify(kept) === text)) {
-        held.clearedReferences.push(reference);
-      }
-    }
-    return held;
-  };
+  // A repair running again over a bin it already wrote must not open a second entry beside the one
+  // that is already there: the entry already held keeps the earlier date and gains whatever links
+  // the other one recorded. An entry holding no record is folded at the end instead, because the
+  // links that identify it are only pushed onto it once this repair has found them.
   const keep = (entry) => {
     const id = entry.record?.id ?? entry.record?.requestId;
     const key = typeof id === 'string' ? `${entry.collection}:${id}:${entry.reason}` : null;
-    const held = key === null ? undefined : folded.get(key);
-    const merged = held ? foldInto(held, entry) : null;
-    if (merged) return merged;
+    const candidates = key === null ? [] : (folded.get(key) ?? []);
+    for (const candidate of candidates) {
+      const merged = foldQuarantineInto(candidate, entry);
+      if (merged) return merged;
+    }
     quarantine.push(entry);
-    if (key !== null && !held) folded.set(key, entry);
+    if (key !== null) folded.set(key, [...candidates, entry]);
     // A record in the bin is the cause of every reference to it the repair has to clear, whether it
     // was set aside just now or by an earlier one.
     if (typeof id === 'string') hosts.set(`${entry.collection}:${id}`, entry);
@@ -1071,7 +1105,9 @@ export function quarantineInvalidRecords(stored, now) {
     });
   }
 
-  if (quarantine.length) root.quarantine = quarantine;
+  // Last, because a note of a cause is identified by the links it carries and those are only pushed
+  // onto it as this repair finds them: two notes of one cause are one note by the time it is over.
+  if (quarantine.length) root.quarantine = foldQuarantine(quarantine);
   const valid = validateSnapshot(root);
   return valid.ok ? { ok: true, value: root } : valid;
 }
