@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+import { parseHtmlFile } from './helpers/dom.mjs';
+
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 // The page's own surroundings, hand-made as the other popup tests make them: the extension API answers what each case is about, and the listeners the
@@ -481,9 +483,9 @@ test('a capture message is said once and never takes back what the lookup wrote'
 
 // Only one element carries the message as an alert; the other shows it without asking to be read out.
 test('the capture error is announced by one element, not by every place it appears', () => {
-  const markup = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  assert.match(markup, /id="form-error"[^>]*role="alert"/);
-  assert.doesNotMatch(markup, /id="companion-capture-error"[^>]*role="alert"/);
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  assert.equal(markup.getElementById('form-error').getAttribute('role'), 'alert');
+  assert.equal(markup.getElementById('companion-capture-error').getAttribute('role'), null);
 });
 
 // A page that could not be read leaves no context behind - including the one the last page left, which the editor no longer shows.

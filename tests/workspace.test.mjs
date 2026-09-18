@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-
+import { parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildExposureSections,
   buildGroupReorderCommand,
@@ -790,11 +789,14 @@ test('workspace bid command carries only a matching calculator estimate atomical
 });
 
 test('the bid calculator sits outside the bid form so Enter in it cannot save a plan', () => {
-  const markup = readFileSync(new URL('../extension/workspace.html', import.meta.url), 'utf8');
-  const bidForm = /<form id="bid-form"[\s\S]*?<\/form>/.exec(markup);
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  const calculator = markup.getElementById('workspace-calculator');
+  const bidForm = markup.getElementById('bid-form');
+  assert.ok(calculator, 'the calculator is still mounted');
   assert.ok(bidForm, 'the bid form is present');
-  assert.equal(bidForm[0].includes('workspace-calculator'), false);
-  assert.ok(markup.includes('id="workspace-calculator"'), 'the calculator is still mounted');
+  // The control that is inside the form shows the reading is real before the one outside it is read.
+  assert.equal(bidForm.querySelector('input').closest('form'), bidForm);
+  assert.equal(calculator.closest('form'), null, 'and no form encloses the calculator');
 });
 
 test('workspace rejects malformed nonempty measurements instead of omitting them', () => {
