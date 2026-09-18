@@ -949,16 +949,22 @@ test('a heading that names only a mint is read as that mint\'s RIC section, by R
     ['Marmara Ereğlisi, AE follis. RIC 12', 'Heraclea'],
     // The names Wikidata adds through Nomisma's closeMatch links read the same way in a heading as Nomisma's own.
     ['Sofia. RIC 12', 'Serdica'], ['Roman London. RIC 12', 'Londinium'], ['Ostia Antica. RIC 12', 'Ostia'],
-    ['Carthago mint, AE follis. RIC 12', 'Carthage']]) {
+    ['Carthago mint, AE follis. RIC 12', 'Carthage'],
+    // And the towns the one statement hop reaches, which are the names a dealer is likeliest of all to write: the Wikidata item Nomisma links each
+    // of these mints to is the Roman city, and its P1366, P276 or P131 statement is what names the town standing there now.
+    ['London. RIC 12', 'Londinium'], ['London mint, AE follis. RIC 12', 'Londinium'], ['Lyon mint. RIC 12', 'Lugdunum'],
+    ['Milan. RIC 12', 'Mediolanum'], ['Milano mint, AE follis. RIC 12', 'Mediolanum'], ['Pavia. RIC 12', 'Ticinum'],
+    ['Erdek. RIC 12', 'Cyzicus'], ['İzmit mint. RIC 12', 'Nicomedia']]) {
     const lot = findReferences(text);
     assert.deepEqual(lot.rulers, [], text);
     // The mint rides on the row, never on the rulers: nothing may ask OCRE's portrait facet for a place.
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, text);
     assert.ok(lotLabel(lot.references[0], lot.rulers).endsWith(` · ${section}`), text);
   }
-  // Neither Nomisma nor the Wikidata items it links publish a modern name for these, so a heading written that way still names no section and the
-  // row is looked up as it always was. A nickname names none either: a coin described in prose about the Eternal City is not Rome's by that alone.
-  for (const text of ['London. RIC 12', 'Lyon mint. RIC 12', 'Milan. RIC 12', 'Pavia. RIC 12',
+  // "Lyons" is published as a name of Lyon in no language kept, so a heading written that way still names no section and the row is looked up as it
+  // always was. A nickname names none either: a coin described in prose about the Eternal City is not Rome's by that alone, and the codes and the
+  // honorific London's item carries beside its names are refused for exactly that reason.
+  for (const text of ['Lyons. RIC 12', 'Augusta. RIC 12', 'LDN. RIC 12', 'The Big Smoke. RIC 12', 'Capitale des Gaules. RIC 12',
     'From the days of the Eternal City. RIC 12', 'Caput Mundi. RIC 12']) {
     const lot = findReferences(text);
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', text);

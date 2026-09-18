@@ -14,8 +14,8 @@
 //   excludedMissingLabelCount: 0
 //   missingConceptCount: 0
 //   aliasCount: 120
-//   mintCount: 18
-//   mintAliasCount: 64
+//   mintCount: 20
+//   mintAliasCount: 99
 
 export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "aelia_ariadne", name: "Aelia Ariadne", volumes: Object.freeze(["X"]), aliases: Object.freeze(["ariadna"]) }),
@@ -246,16 +246,18 @@ export const RIC_MINTS = Object.freeze([
   Object.freeze({ id: "arelate", section: "Arelate", aliases: Object.freeze(["arles"]) }),
   Object.freeze({ id: "carthage", section: "Carthage", aliases: Object.freeze(["carthago", "colonia julia carthago", "mint of carthage"]) }),
   Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["constantinopolis", "czargrad", "istanbul", "konstantiniyye", "konstantinopolis", "mint of constantinople", "tsargorod", "tsarigrad", "tzargrad"]) }),
-  Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["cizico", "kizikos", "kyzikos"]) }),
+  Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["artake", "cizico", "erdek", "kizikos", "kyzikos"]) }),
   Object.freeze({ id: "heraclea_thracica", section: "Heraclea", aliases: Object.freeze(["marmara eregli", "marmara ereglisi", "marmaraereglisi"]) }),
-  Object.freeze({ id: "londinium", section: "Londinium", aliases: Object.freeze(["roman london"]) }),
-  Object.freeze({ id: "lugdunum", section: "Lugdunum", aliases: Object.freeze(["colonia copia augusta lugdunum", "colonia copia claudia augusta lugdunum", "colonia copia felix munatia", "lugudunum"]) }),
-  Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["nikomedeia", "nikomedia", "nikomedya"]) }),
+  Object.freeze({ id: "londinium", section: "Londinium", aliases: Object.freeze(["kaerlud", "karelundein", "llan dian", "llyn dain", "londini", "londiniensium", "londinio", "londinion", "london", "london uk", "london, england", "london, uk", "london, united kingdom", "londres", "loniniensi", "lunden", "lundenburgh", "lundenburh", "lundenwic", "roman london", "trinovantum"]) }),
+  Object.freeze({ id: "lugdunum", section: "Lugdunum", aliases: Object.freeze(["city of lyon", "colonia copia augusta lugdunum", "colonia copia claudia augusta lugdunum", "colonia copia felix munatia", "commune-affranchie", "lugudunum", "lyon"]) }),
+  Object.freeze({ id: "mediolanum", section: "Mediolanum", aliases: Object.freeze(["mailand", "milan", "milan, italy", "milan, lombardy", "milano", "milano, italy"]) }),
+  Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["ismid", "ismit", "izmit", "nikomedeia", "nikomedia", "nikomedya"]) }),
   Object.freeze({ id: "ostia", section: "Ostia", aliases: Object.freeze(["ancient ostia", "ostia antica"]) }),
   Object.freeze({ id: "rome", section: "Rome", aliases: Object.freeze(["citta di roma", "roma", "rome, italy"]) }),
   Object.freeze({ id: "serdica", section: "Serdica", aliases: Object.freeze(["serdika", "sofia", "sofija", "sredets", "sredez"]) }),
   Object.freeze({ id: "sirmium", section: "Sirmium", aliases: Object.freeze(["sirmio"]) }),
   Object.freeze({ id: "siscia", section: "Siscia", aliases: Object.freeze(["sisak"]) }),
   Object.freeze({ id: "thessalonica", section: "Thessalonica", aliases: Object.freeze(["thessalonika"]) }),
+  Object.freeze({ id: "ticinum", section: "Ticinum", aliases: Object.freeze(["pavia"]) }),
   Object.freeze({ id: "treveri", section: "Treveri", aliases: Object.freeze(["augusta treverorum", "treverer", "trevirer", "treviri", "trier", "triers"]) }),
 ]);

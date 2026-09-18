@@ -228,11 +228,34 @@ test('a RIC mint section is found by the names Wikidata adds through Nomisma\'s 
     'Pearl of the Mediterranean', 'The City of the World\'s Desire', 'Longpré-lès-Amiens', 'History of Pavia']) {
     assert.equal(ricMintSection(nickname), '', nickname);
   }
-  // The names the mint volumes were asked for are still not among them, and none was invented to answer for them. The Wikidata items Nomisma links
-  // Londinium, Lugdunum, Mediolanum and Ticinum to are the Roman city — Q927198, Q665, Q729978, Q28215083 — and every language kept titles those by
-  // the Latin name. RIC's own spelling is what reaches all four.
-  for (const mint of ['London', 'Lyon', 'Lyons', 'Milan', 'Pavia']) {
-    assert.equal(ricMintSection(mint), '', mint);
-    assert.deepEqual(volumesOf(mint), [], mint);
+});
+
+// The Wikidata items Nomisma links Londinium, Lugdunum, Mediolanum and Ticinum to are the Roman city — Q927198, Q665, Q729978, Q28215083 — and every
+// language kept titles those by the Latin name, so the town standing there now is in no label of them. Each of those items does publish a statement
+// naming that town, and the importer follows one: the first of P1366 (replaced by), P276 (location) and P131 (located in the administrative
+// territorial entity) the item carries, and only when what it reaches is a populated place. That is where these names come from and nowhere else.
+test('a RIC mint section is found by the modern town the linked Wikidata item points at', () => {
+  for (const [written, section] of [['London', 'Londinium'], ['LONDON, UK', 'Londinium'], ['Londres', 'Londinium'], ['Lyon', 'Lugdunum'],
+    [' lyon ', 'Lugdunum'], ['Milan', 'Mediolanum'], ['Milano', 'Mediolanum'], ['Mailand', 'Mediolanum'], ['Pavia', 'Ticinum'],
+    ['İzmit', 'Nicomedia'], ['Erdek', 'Cyzicus'], ['Trier', 'Treveri']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    // A mint is a place here too: a town reached by a statement answers for a section and never for a ruler.
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+  // "Lyons" is the one name of the five the mint volumes were asked for that is still unreachable: Wikidata publishes it as a name of Lyon in no
+  // language kept, and nothing is invented to answer for it.
+  assert.equal(ricMintSection('Lyons'), '');
+  assert.deepEqual(volumesOf('Lyons'), []);
+  // London's item lists these beside its names, and not one of them may read a mint out of a heading: "Augusta" is an honorific several cities and
+  // several empresses carry, "Lon", "Lond" and "LDN" are codes short enough to fall out of ordinary words, and the Smoke is a nickname. Lyon's
+  // "capitale des Gaules" is the same kind of thing in the language of its own country.
+  for (const refused of ['Augusta', 'Lon', 'Lond.', 'LDN', 'Big Smoke', 'The Big Smoke', 'Capitale des Gaules', 'Greater London']) {
+    assert.equal(ricMintSection(refused), '', refused);
+  }
+  // What the hop reaches is not always a town, and what is not a town names no mint: Carthage's item leads to the Exarchate of Africa, a Byzantine
+  // province, and Ostia's to the Lido di Ostia, a frazione and a seaside resort. Both were fetched, and both were refused by their own P31.
+  for (const refused of ['Exarchate of Africa', 'Esarcato di Cartagine', 'Lido di Ostia', 'Ostia Lido', 'Ostia Beach']) {
+    assert.equal(ricMintSection(refused), '', refused);
   }
 });
