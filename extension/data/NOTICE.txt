@@ -24,5 +24,18 @@ RIC ruler names come from extension/ric-people.js, not from this file: that
 snapshot of Nomisma's own person concepts takes precedence over the labels
 here for an OCRE authority or portrait. Both spell all 214 people the same.
 
+The same file carries the modern names of the RIC VI-IX mint sections, and
+those come from two sources. The Nomisma mint concepts are CC BY 3.0, as
+above. Each of them links the same place in Wikidata with skos:closeMatch or
+skos:exactMatch, and the labels and aliases of those Wikidata items are used
+too: Wikidata dedicates its structured data to the public domain under the
+Creative Commons CC0 1.0 Universal Public Domain Dedication,
+https://creativecommons.org/publicdomain/zero/1.0/. Both were retrieved on
+18 September 2026. The source URLs, retrieval dates and licence statements
+are recorded in scripts/data/nomisma-mints.json and
+scripts/data/wikidata-mints.json, and the generated file's own header names
+both licences. The names are taken verbatim; no mint was given a name
+neither source publishes.
+
 Each corpus directory beside this file carries its own NOTICE.txt for the
 American Numismatic Society type data it holds, which is under ODbL 1.0.

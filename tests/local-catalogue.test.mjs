@@ -347,11 +347,26 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
     assert.equal(found.status, 'ok', written);
     assert.equal(found.card.id, id, written);
   }
-  // RIC's own spelling still reaches the same coin, and Rome — the one mint section that is an ordinary English word — is untouched.
-  for (const [written, id] of [['RIC VII Arelate 12', 'ric.7.ar.12'], ['RIC VI Rome 12', 'ric.6.rom.12'], ['RIC VII Londinium 12', 'ric.7.lon.12']]) {
+  // The names Wikidata adds through Nomisma's own closeMatch links open the same coins. Sofia is the one that matters most: it is what Serdica is
+  // called today, and Nomisma writes it in Cyrillic alone.
+  for (const [written, id] of [['RIC VII Sofia 1', 'ric.7.serd.1'], ['RIC VI Carthago 1', 'ric.6.carth.1'], ['RIC VI Triers 12', 'ric.6.tri.12'],
+    ['RIC VIII Samarobriva 12', 'ric.8.amb.12'], ['RIC VI Nikomedya 12', 'ric.6.nic.12']]) {
     const found = await lookupType(parseReference(written), { localProvider, online: false });
     assert.equal(found.status, 'ok', written);
     assert.equal(found.card.id, id, written);
+  }
+  // RIC's own spelling still reaches the same coin, and Rome — the one mint section that is an ordinary English word — is untouched.
+  for (const [written, id] of [['RIC VII Arelate 12', 'ric.7.ar.12'], ['RIC VI Rome 12', 'ric.6.rom.12'], ['RIC VII Londinium 12', 'ric.7.lon.12'],
+    ['RIC VI Serdica 16', 'ric.6.serd.16']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // The four the mint volumes were asked for still open nothing: the Wikidata items Nomisma links them to are the Roman city, titled by the Latin
+  // name in every language kept, so no modern spelling was found for them and none was invented.
+  for (const written of ['RIC VII London 12', 'RIC VII Lyon 12', 'RIC VII Lyons 12', 'RIC VII Milan 12', 'RIC VI Pavia 12']) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.notEqual(found.status, 'ok', written);
   }
 });
 
@@ -360,15 +375,22 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
 test('over the bundled catalogue, a heading naming only a mint opens that mint\'s coins and no others', { skip }, async () => {
   for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
     ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
-    ['Londinium', 'londinium']]) {
+    ['Londinium', 'londinium'],
+    // Every spelling Wikidata added, over the same sweep: a name that opened a stranger's coin would be worse than one that opened nothing.
+    ['Sofia', 'serdica'], ['Sredets', 'serdica'], ['Carthago', 'carthage'], ['Ostia Antica', 'ostia'], ['Roman London', 'londinium'],
+    ['Triers', 'treveri'], ['Augusta Treverorum', 'treveri'], ['Treviri', 'treveri'], ['Nikomedya', 'nicomedia'], ['Nikomedeia', 'nicomedia'],
+    ['Samarobriva', 'ambianum'], ['Amians', 'ambianum'], ['Lugudunum', 'lugdunum'], ['Cizico', 'cyzicus'], ['Kizikos', 'cyzicus'],
+    ['Antioch on the Orontes', 'antiocheia_syria'], ['Antiochia', 'antiocheia_syria'], ['Konstantiniyye', 'constantinople'],
+    ['Tsarigrad', 'constantinople'], ['Marmaraereğlisi', 'heraclea_thracica']]) {
     const opened = await openedOver(heading);
     assert.ok(opened.length > 0, heading);
     for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
   }
   // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
   assert.deepEqual(await openedOver('Roma'), []);
-  // A heading Nomisma gives no modern name for names no section, and the row is looked up as it was before.
-  for (const heading of ['London', 'Lyon', 'Milan', 'Pavia']) {
+  // A heading neither source gives a modern name for names no section, and the row is looked up as it was before. A city's nickname names none
+  // either: kept, "the Eternal City" in a Trier lot's prose would have been the earliest mint spelling in it and filed the coin under Rome.
+  for (const heading of ['London', 'Lyon', 'Lyons', 'Milan', 'Pavia', 'Eternal City', 'Caput Mundi', 'Urbe']) {
     const lot = findReferences(`${heading}. RIC 12`);
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', heading);
   }

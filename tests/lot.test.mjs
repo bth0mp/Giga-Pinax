@@ -946,18 +946,26 @@ test('a mint written by the name on the map today is a section, and no ruler at 
 test('a heading that names only a mint is read as that mint\'s RIC section, by RIC\'s spelling or the modern one', () => {
   for (const [text, section] of [['Londinium. RIC 12', 'Londinium'], ['Arles. RIC 12', 'Arelate'], ['Arles mint, RIC 12', 'Arelate'],
     ['Lugdunum mint. RIC 34', 'Lugdunum'], ['Trier. RIC 12', 'Treveri'], ['Sisak. RIC 12', 'Siscia'], ['Roma. RIC 12', 'Rome'],
-    ['Marmara Ereğlisi, AE follis. RIC 12', 'Heraclea']]) {
+    ['Marmara Ereğlisi, AE follis. RIC 12', 'Heraclea'],
+    // The names Wikidata adds through Nomisma's closeMatch links read the same way in a heading as Nomisma's own.
+    ['Sofia. RIC 12', 'Serdica'], ['Roman London. RIC 12', 'Londinium'], ['Ostia Antica. RIC 12', 'Ostia'],
+    ['Carthago mint, AE follis. RIC 12', 'Carthage']]) {
     const lot = findReferences(text);
     assert.deepEqual(lot.rulers, [], text);
     // The mint rides on the row, never on the rulers: nothing may ask OCRE's portrait facet for a place.
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, text);
     assert.ok(lotLabel(lot.references[0], lot.rulers).endsWith(` · ${section}`), text);
   }
-  // Nomisma publishes no modern name for these, so a heading written that way still names no section and the row is looked up as it always was.
-  for (const text of ['London. RIC 12', 'Lyon mint. RIC 12', 'Milan. RIC 12', 'Pavia. RIC 12']) {
+  // Neither Nomisma nor the Wikidata items it links publish a modern name for these, so a heading written that way still names no section and the
+  // row is looked up as it always was. A nickname names none either: a coin described in prose about the Eternal City is not Rome's by that alone.
+  for (const text of ['London. RIC 12', 'Lyon mint. RIC 12', 'Milan. RIC 12', 'Pavia. RIC 12',
+    'From the days of the Eternal City. RIC 12', 'Caput Mundi. RIC 12']) {
     const lot = findReferences(text);
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', text);
   }
+  // The heading that most needs it: a mint named in prose about another city's epithet is still that mint's coin, not the epithet's.
+  const trier = findReferences('From the days of the Eternal City. Trier mint. RIC 12');
+  assert.equal(lotLookup(trier.references[0], trier.rulers).section, 'Treveri');
   // A heading that names a ruler as well is the ruler's, exactly as it was before: a mint volume's coin is found by the man on it, and a ruler
   // volume's number would otherwise be thrown away for a mint that only says where the coin was struck.
   for (const text of ['Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.', 'Constantine I. Follis. Trier. RIC 12.']) {
