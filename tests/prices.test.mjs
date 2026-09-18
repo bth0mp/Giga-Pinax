@@ -643,6 +643,20 @@ test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop def
   assert.equal(chooseTerm({ catalogue: 'Price', number: '23' }, undefined), '"Price 23"');
 });
 
+// The first signed-in acsearch run showed `"RIC  237"` in acsearch's own search field for a RIC reference typed without a ruler, where defaultTerm
+// returns `"RIC 237"`. Every place the term passes through on its way there squashes its whitespace — the RIC builder with no ruler and no volume to
+// put in front of the number, a term the collector saved with two spaces in it, and the search URL the popup fetches and links to — so a second space
+// cannot enter from any of them. (The one unsquashed path left in the extension is the workspace's own query box, which is not this term.)
+test('an acsearch term carries one space, wherever the second one was typed', () => {
+  const ric237 = { catalogue: 'RIC', number: '237', section: '', volume: '', rulers: [] };
+  assert.equal(defaultTerm(ric237), '"RIC 237"');
+  assert.equal(defaultTerm({ ...ric237, number: ' 237 ' }), '"RIC 237"');
+  for (const saved of ['"RIC  237"', ' "RIC\t237" ', '"RIC  237"']) assert.equal(chooseTerm(ric237, saved), '"RIC 237"');
+  // What the popup fetches and what its link opens are the same URL, and both carry the one space.
+  assert.equal(buildSearchUrl({ term: '"RIC  237"', currency: 'USD' }), buildSearchUrl({ term: '"RIC 237"', currency: 'USD' }));
+  assert.match(buildSearchUrl({ term: '"RIC  237"', currency: 'USD' }), /[?&]term=%22RIC\+237%22(?:&|$)/);
+});
+
 // The unquoted default of 0.31 and before was stored under the type whenever Get prices ran, so it would hide the exact-phrase default for good;
 // it counts as unsaved, as the v0.12 Bop default does. Anything else the collector saved still wins.
 test('chooseTerm drops a remembered term that is only the old unquoted default', () => {
