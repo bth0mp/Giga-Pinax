@@ -1,7 +1,7 @@
 import {
   MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText,
-  importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineLines,
-  quarantineSummaryText, rawExportDocument, validateBackup,
+  importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineRestoreText,
+  quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
 import { CURRENCIES } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
@@ -128,16 +128,53 @@ const PRESET_FIELD_CLASS = {
   ladderCurrency: 'premium-ladder-currency',
 };
 
+// Putting a record back is a command like any other: the store decides whether it can go back, and
+// the page says what the reply says and reads the list again.
+async function restoreSetAside(entryId, button) {
+  button.disabled = true;
+  try {
+    const reply = await bridge.sendCommand({
+      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId,
+    });
+    if (!reply?.ok) {
+      throw new Error(reply?.message || reply?.error?.message || 'That record could not be put back.');
+    }
+    status(quarantineRestoreText(reply.value));
+    await load();
+  } catch (error) {
+    button.disabled = false;
+    status(error.message || 'That record could not be put back.', true);
+  }
+}
+
+let quarantineRowSequence = 0;
+
+// Untrusted text from a repaired record, so the line is written as text and never as markup.
+function quarantineItem(row) {
+  const item = document.createElement('li');
+  const line = document.createElement('span');
+  line.textContent = row.line;
+  item.append(line);
+  if (!row.restorable) return item;
+  quarantineRowSequence += 1;
+  line.id = `quarantine-line-${quarantineRowSequence}`;
+  const restore = document.createElement('button');
+  restore.type = 'button';
+  restore.className = 'quiet';
+  restore.textContent = 'Restore';
+  // Every row carries a button of this name, so the line beside it is what tells them apart.
+  restore.setAttribute('aria-describedby', line.id);
+  restore.addEventListener('click', () => { void restoreSetAside(row.id, restore); });
+  item.append(' ', restore);
+  return item;
+}
+
 function renderDataHealth(entries) {
   quarantined = Array.isArray(entries) ? entries : [];
   const summary = quarantineSummaryText(quarantined);
   $('data-health').hidden = !summary;
   $('quarantine-summary').textContent = summary;
-  $('quarantine-list').replaceChildren(...quarantineLines(quarantined).map((line) => {
-    const item = document.createElement('li');
-    item.textContent = line;
-    return item;
-  }));
+  $('quarantine-list').replaceChildren(...quarantineRows(quarantined).map(quarantineItem));
 }
 
 function render() {

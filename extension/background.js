@@ -24,14 +24,14 @@ const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import',
+  'backup.import', 'quarantine.restore',
 ]);
 // The address this extension's own pages are served from; a sender outside it commands nothing.
 const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
-  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import',
+  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import', 'quarantine.restore',
 ]);
 let reconcileQueue = Promise.resolve();
 let menuQueue = Promise.resolve();

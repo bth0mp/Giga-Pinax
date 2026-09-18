@@ -1,7 +1,9 @@
 import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
-import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, isRecursionError, shiftDate, tooDeeplyNested } from './validate.js';
+import {
+  ISO_DATE, UUID, dateParts, failure, isIsoInstant, isRecursionError, shiftDate, stableUuid, tooDeeplyNested,
+} from './validate.js';
 
 export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
@@ -834,6 +836,41 @@ export function migrateSnapshot(stored) {
 
 const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 
+// The bin keeps no identifier of its own, and entries written by older builds or by another install
+// carry none either, so an entry is named by what it holds: the same bytes name the same entry on
+// every device, and no bin holds two entries with identical bytes - the repair folds them and an
+// import unions the two bins by exactly that comparison.
+export function quarantineEntryId(entry) {
+  let encoded;
+  try { encoded = JSON.stringify(entry ?? null); } catch { encoded = null; }
+  return stableUuid(typeof encoded === 'string' ? encoded : 'unreadable-entry');
+}
+
+const COLLECTION_VALIDATORS = new Map(COLLECTIONS.map(({ key, validator }) => [key, validator]));
+// Where a record can go back to: the live collections. The bookkeeping the repair discards outright
+// is never in the bin to be put back, and the bin itself is not a collection.
+const RESTORABLE_COLLECTIONS = COLLECTIONS
+  .map(({ key }) => key).filter((key) => !DISCARDED_ON_REPAIR.has(key));
+
+// The bin keeps a record verbatim, so one set aside by an older build can predate today's shapes.
+// Today's validator judges it first, and only a record that fails is offered the migration a stored
+// root gets, from the first version there was: a record already in today's shape is never walked
+// through a migration step a second time.
+export function validateQuarantinedRecord(collection, record) {
+  const validator = RESTORABLE_COLLECTIONS.includes(collection) ? COLLECTION_VALIDATORS.get(collection) : null;
+  if (!validator) {
+    return failure('invalid-record', 'This entry is not a record that can be put back.', 'entry.collection');
+  }
+  const asStored = validator(record, collection);
+  if (asStored.ok) return { ok: true, value: record };
+  let migrated;
+  try { migrated = migrateSnapshot({ schemaVersion: 1, [collection]: [record] })?.[collection]?.[0]; }
+  catch { migrated = undefined; }
+  if (migrated === undefined) return asStored;
+  const asMigrated = validator(migrated, collection);
+  return asMigrated.ok ? { ok: true, value: migrated } : asStored;
+}
+
 // Every place a root keeps a revision, named as the collection and record that carries it so a warning can say which.
 function* revisionSites(root) {
   if (isObject(root?.preferences)) yield { host: root.preferences, key: 'revision', collection: 'preferences', id: null };
@@ -892,19 +929,42 @@ export function quarantineInvalidRecords(stored, now) {
 
   const quarantine = [];
   const hosts = new Map();
-  const setAside = (collection, record, reason) => {
-    const entry = { collection, record, reason, quarantinedAt: now };
+  const folded = new Map();
+  // One record set aside for one reason is one entry. Two bins unioned by an import hold the same
+  // record twice, and a repair running again over a bin it already wrote must not open a second
+  // entry beside the one that is already there: the entry already held keeps the earlier date and
+  // gains whatever links the other one recorded. Only entries carrying the very same record fold,
+  // so two duplicates of one ID keep both bodies, and an entry with no record folds with nothing.
+  const foldInto = (held, entry) => {
+    if (JSON.stringify(held.record) !== JSON.stringify(entry.record)) return null;
+    if (entry.quarantinedAt < held.quarantinedAt) held.quarantinedAt = entry.quarantinedAt;
+    for (const reference of entry.clearedReferences ?? []) {
+      const text = JSON.stringify(reference);
+      held.clearedReferences ??= [];
+      if (!held.clearedReferences.some((kept) => JSON.stringify(kept) === text)) {
+        held.clearedReferences.push(reference);
+      }
+    }
+    return held;
+  };
+  const keep = (entry) => {
+    const id = entry.record?.id ?? entry.record?.requestId;
+    const key = typeof id === 'string' ? `${entry.collection}:${id}:${entry.reason}` : null;
+    const held = key === null ? undefined : folded.get(key);
+    const merged = held ? foldInto(held, entry) : null;
+    if (merged) return merged;
     quarantine.push(entry);
-    const id = record?.id ?? record?.requestId;
-    if (typeof id === 'string') hosts.set(`${collection}:${id}`, entry);
+    if (key !== null && !held) folded.set(key, entry);
+    // A record in the bin is the cause of every reference to it the repair has to clear, whether it
+    // was set aside just now or by an earlier one.
+    if (typeof id === 'string') hosts.set(`${entry.collection}:${id}`, entry);
     return entry;
   };
+  const setAside = (collection, record, reason) => keep({ collection, record, reason, quarantinedAt: now });
   // Clearing a reference alters a record the collector still holds, so the value goes on the
   // quarantine entry of whatever caused the clearing and the link can be put back. A cause that
   // was never in storage, or one that is itself kept, has no entry of its own, so an entry with a
   // null record is opened to carry the note.
-  // ponytail: entries carried in from an earlier repair are not reused as causes, so a root
-  // repaired, written, then broken the same way again opens a second entry for the same cause.
   const noteCleared = (cause, causeId, reason, record, collection, field) => {
     const key = `${cause}:${causeId}`;
     const host = hosts.get(key) ?? setAside(cause, null, reason);
@@ -915,7 +975,7 @@ export function quarantineInvalidRecords(stored, now) {
   if (OWN(root, 'quarantine')) {
     const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];
     for (const entry of entries) {
-      if (quarantineEntryResult(entry, 'quarantine').ok) quarantine.push(entry);
+      if (quarantineEntryResult(entry, 'quarantine').ok) keep(entry);
       else setAside('quarantine', entry, 'invalid-entry');
     }
   }

@@ -6,10 +6,15 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- Records set aside because they could not be read can be put back. Each one listed under **Data health** in Settings has a **Restore** button: the record is checked against today's rules and, if it passes, goes back into your watchlist, auctions or collection, together with the links its removal had to clear. A link whose field you have used since is left exactly as it is and named in the reply, and a record that still cannot be read stays where it is, with the reason it cannot go back. (#7)
+
 ### Fixed
 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
+- One record set aside for one reason is now one entry under **Data health**, however often it has been through a repair or arrived in a merged backup, and a link cleared to a record already set aside is recorded on the entry that record is already in. (#7)
 - Merging a backup no longer adds a second copy of an auction for a lot it skipped as one you already have, which left one sale standing twice and its reminders firing twice. The auction you already track keeps its reminders, the backup's copy is listed in the import summary as kept out, and where the lot you keep was attached to no auction at all, the one the backup knew about is taken and attached to it. (#3)
 - A backup too big for the 5 MiB local store is now turned away as a backup that does not fit, instead of as reminders that would exceed the bound — removing reminders was never the way out of it. (#4)
 - A right-click lookup whose window cannot be opened now says that, instead of warning that the last page capture could not be saved. A lookup saves nothing, so nothing was lost. (#4)

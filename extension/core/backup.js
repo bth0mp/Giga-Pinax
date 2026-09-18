@@ -1,4 +1,6 @@
-import { LIMITS, SCHEMA_VERSION, migrateSnapshot, unusableRevisions, validateSnapshot } from './records.js';
+import {
+  LIMITS, SCHEMA_VERSION, migrateSnapshot, quarantineEntryId, unusableRevisions, validateSnapshot,
+} from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
@@ -626,12 +628,40 @@ export function quarantineSummaryText(entries) {
     : `${records} records could not be read and were set aside.`;
 }
 
+function quarantineLine(entry) {
+  const cleared = entry.clearedReferences?.length ?? 0;
+  const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
+  return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
+}
+
 export function quarantineLines(entries) {
-  return (Array.isArray(entries) ? entries : []).map((entry) => {
-    const cleared = entry.clearedReferences?.length ?? 0;
-    const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
-    return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
-  });
+  return (Array.isArray(entries) ? entries : []).map(quarantineLine);
+}
+
+// One row per set-aside entry as the page draws it: the line to read, the identifier a restore names,
+// and whether the entry holds a record to put back at all. An entry with no record of its own exists
+// only to carry links the repair cleared, and there is nothing in it to restore.
+export function quarantineRows(entries) {
+  return (Array.isArray(entries) ? entries : []).map((entry) => ({
+    id: quarantineEntryId(entry),
+    line: quarantineLine(entry),
+    restorable: entry?.record !== null && entry?.record !== undefined,
+  }));
+}
+
+// What the store answered a restore with, as a sentence: what went back, and what was left alone.
+export function quarantineRestoreText(value) {
+  if (!value || typeof value !== 'object') return 'The record was put back.';
+  const restored = value.restoredReferences?.length ?? 0;
+  const kept = value.keptReferences ?? [];
+  const parts = [`The record was put back into ${value.collection}.`];
+  if (restored) parts.push(`${restored} link${restored === 1 ? ' was' : 's were'} restored with it.`);
+  if (kept.length) {
+    parts.push(`${kept.length} link${kept.length === 1 ? '' : 's'} could not be put back, because what ` +
+      `${kept.length === 1 ? 'it points' : 'they point'} from has changed since: ` +
+      `${kept.map(({ collection, field }) => `${collection}.${field}`).join(', ')}.`);
+  }
+  return parts.join(' ');
 }
 
 export function quarantineDocument(entries, now) {

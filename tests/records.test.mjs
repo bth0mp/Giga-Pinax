@@ -260,6 +260,51 @@ test('quarantine writes down every reference it clears so a recovery can restore
   );
 });
 
+// An entry carried in from an earlier repair used not to count as a cause, so a root repaired,
+// written, and then broken the same way again opened a second entry for a record already in the bin.
+test('a reference cleared to a record already set aside lands on the entry it is already in', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const broken = { ...makeEvent(IDS.eventEur, 'EUR auction'), eventKind: 'bring-your-own' };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventEur }));
+  snapshot.auctionEvents = snapshot.auctionEvents.filter(({ id }) => id !== IDS.eventEur);
+  snapshot.quarantine = [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+  }];
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [
+      { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventEur },
+    ],
+  }]);
+});
+
+// Only entries carrying the very same record fold, so two duplicates of one ID keep both bodies.
+test('two set-aside copies of one record fold, while two different bodies do not', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const broken = { ...makeLot(IDS.lotEur), outcome: { status: 'maybe' } };
+  const reference = { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventUsd };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventUsd }));
+  snapshot.quarantine = [
+    { collection: 'lots', record: broken, reason: 'invalid-enum', quarantinedAt: LATER, clearedReferences: [reference] },
+    { collection: 'lots', record: structuredClone(broken), reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'lots', record: { ...structuredClone(broken), title: 'Another body' }, reason: 'invalid-enum', quarantinedAt: NOW },
+  ];
+  // Something has to take the root through a repair: the bin is only folded while one runs.
+  snapshot.lots.push(makeLot(IDS.lotChf, { outcome: { status: 'maybe' } }));
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.deepEqual(rescued.value.quarantine, [
+    { collection: 'lots', record: broken, reason: 'invalid-enum', quarantinedAt: NOW, clearedReferences: [reference] },
+    { collection: 'lots', record: { ...broken, title: 'Another body' }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'lots', record: snapshot.lots[1], reason: 'invalid-enum', quarantinedAt: LATER },
+  ]);
+});
+
 test('a collection entry claimed by a second lot unlinks the impostor and keeps both lots', () => {
   const snapshot = snapshotWith(
     makeLot(IDS.lotUsdKnown, { collectionEntryId: IDS.collection }),

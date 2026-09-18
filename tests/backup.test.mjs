@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SCHEMA_VERSION, createEmptySnapshot, validateSnapshot } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
   importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
-  quarantineSummaryText, rawExportDocument, validateBackup,
+  quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -852,6 +852,43 @@ test('set-aside records are summarized, listed and downloadable on their own', (
   const document = JSON.parse(quarantineDocument(entries, NOW));
   assert.equal(document.exportedAt, NOW);
   assert.deepEqual(document.quarantine, entries);
+});
+
+// The page draws one row per entry and the button on it names the entry the store will look for, so
+// the identifier and the sentence the reply becomes are worked out here rather than in the page.
+test('each set-aside row carries the line, the entry it names, and whether there is a record to put back', () => {
+  const entries = [
+    { collection: 'lots', record: { id: uuid(1) }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: LATER },
+  ];
+  const rows = quarantineRows(entries);
+  assert.deepEqual(rows.map(({ line }) => line), quarantineLines(entries));
+  assert.deepEqual(rows.map(({ restorable }) => restorable), [true, false],
+    'an entry that carries only cleared links has no record to put back');
+  assert.deepEqual(rows.map(({ id }) => id), entries.map((entry) => quarantineEntryId(entry)));
+  assert.equal(new Set(rows.map(({ id }) => id)).size, 2);
+  assert.deepEqual(quarantineRows(null), []);
+});
+
+test('a restore reply reads as a sentence naming what went back and what was left alone', () => {
+  const put = { collection: 'auctionEvents', id: uuid(1), restoredReferences: [], keptReferences: [] };
+  assert.equal(quarantineRestoreText(put), 'The record was put back into auctionEvents.');
+  assert.equal(
+    quarantineRestoreText({ ...put, restoredReferences: [{ collection: 'lots', id: uuid(2), field: 'auctionEventId' }] }),
+    'The record was put back into auctionEvents. 1 link was restored with it.',
+  );
+  assert.equal(
+    quarantineRestoreText({
+      ...put,
+      restoredReferences: [{ collection: 'lots', id: uuid(2), field: 'auctionEventId' }],
+      keptReferences: [
+        { collection: 'lots', id: uuid(3), field: 'alternativeGroupId' },
+        { collection: 'lots', id: uuid(4), field: 'priority' },
+      ],
+    }),
+    'The record was put back into auctionEvents. 1 link was restored with it. 2 links could not be ' +
+    'put back, because what they point from has changed since: lots.alternativeGroupId, lots.priority.',
+  );
 });
 
 test('the raw export copies stored data verbatim, unsaved drafts and all', () => {

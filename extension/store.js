@@ -1,6 +1,7 @@
 import {
-  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineInvalidRecords,
-  restartUnusableRevisions, setOutcome, validateDraftPayload, validateEventLocalTimes, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineEntryId, quarantineInvalidRecords,
+  restartUnusableRevisions, setOutcome, validateDraftPayload, validateEventLocalTimes,
+  validateQuarantinedRecord, validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -12,6 +13,7 @@ export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set', 'backup.import',
+  'quarantine.restore',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
 const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
@@ -208,6 +210,44 @@ function reconcileIntoSnapshot(next, context) {
     lastReconciledAt: now,
   };
   return plan;
+}
+
+// A link the repair had to clear goes back only where nothing has taken its place: a field the
+// collector has filled since is their own later work, and is left exactly as it is and named in the
+// reply, as is one whose record is no longer there to carry it. The changes are handed back with an
+// undo, because a link can be one the rest of the root has no room for any more.
+function restoreClearedReferences(snapshot, references, now) {
+  const restored = [];
+  const kept = [];
+  const applied = [];
+  for (const reference of references) {
+    const at = { collection: reference.collection, id: reference.id, field: reference.field };
+    const host = Array.isArray(snapshot[reference.collection])
+      ? snapshot[reference.collection].find((row) => row?.id === reference.id)
+      : undefined;
+    // A hand-edited bin can name "__proto__" as the field a record lost, and assigning that runs
+    // the setter instead of writing a key. Nothing the repair clears is called that.
+    if (!host || reference.field === '__proto__') {
+      kept.push(at);
+    } else if (own(host, reference.field)) {
+      const unchanged = JSON.stringify(host[reference.field]) === JSON.stringify(reference.value);
+      (unchanged ? restored : kept).push(at);
+    } else {
+      applied.push({ host, field: reference.field, revision: host.revision, updatedAt: host.updatedAt });
+      host[reference.field] = clone(reference.value);
+      host.revision += 1;
+      host.updatedAt = now;
+      restored.push(at);
+    }
+  }
+  const undo = () => {
+    for (const { host, field, revision, updatedAt } of applied) {
+      delete host[field];
+      host.revision = revision;
+      host.updatedAt = updatedAt;
+    }
+  };
+  return { restored, kept, undo };
 }
 
 function mutation(snapshot, command, context) {
@@ -684,6 +724,50 @@ function mutation(snapshot, command, context) {
           JSON.stringify(next.alerts) === JSON.stringify(snapshot.alerts)) {
         return ok({ snapshot, value, mutated: false });
       }
+      break;
+    }
+    case 'quarantine.restore': {
+      // The bin is a recovery bin, not a second copy of the store: a record put back has to be one
+      // today's validator accepts, and it goes back where it was set aside from.
+      const entries = Array.isArray(next.quarantine) ? next.quarantine : [];
+      const index = entries.findIndex((entry) => quarantineEntryId(entry) === command.entryId);
+      if (index < 0) {
+        return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
+      }
+      const entry = entries[index];
+      if (entry.record === null || entry.record === undefined) {
+        return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');
+      }
+      const candidate = validateQuarantinedRecord(entry.collection, entry.record);
+      if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
+      const home = next[entry.collection];
+      if (!Array.isArray(home)) {
+        return fail('validation', 'This entry is not a record that can be put back.', 'entryId');
+      }
+      const record = clone(candidate.value);
+      if (home.some(({ id }) => id === record.id)) {
+        return fail('conflict', 'A record with this ID is already saved, so the copy set aside cannot be put back beside it.', `${entry.collection}.id`);
+      }
+      // The bin is not the collection: a record coming back out of it is counted again from zero
+      // rather than from wherever its last write left it. Nothing can be holding the old number -
+      // the record was not there to be read - and a save composed before it was set aside is told.
+      record.revision = 0;
+      record.updatedAt = now;
+      home.push(record);
+      const links = restoreClearedReferences(next, entry.clearedReferences ?? [], now);
+      let restoredReferences = links.restored;
+      let keptReferences = links.kept;
+      // A link can be one the rest of the root has no room for any more - a priority in a group
+      // renumbered since. The record is what the collector asked for, so the links give way rather
+      // than the whole restore failing over one of them, and each of them is named in the reply.
+      if (!validateSnapshot(next).ok) {
+        links.undo();
+        restoredReferences = [];
+        keptReferences = [...links.restored, ...links.kept];
+      }
+      entries.splice(index, 1);
+      if (!entries.length) delete next.quarantine;
+      value = { collection: entry.collection, id: record.id, restoredReferences, keptReferences };
       break;
     }
     case 'backup.import': {
