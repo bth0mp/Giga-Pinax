@@ -6,6 +6,11 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
+- The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
+
 ## [0.32.0] - 2026-09-17
 
 ### Added

@@ -1298,3 +1298,13 @@ test('a profile whose bridge never answers keeps the chosen currency across sess
   const later = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   assert.equal(later.element('currency').value, 'GBP');
 });
+
+// The default term is already an exact phrase in acsearch's own quotes; wrapping it in curly quotes again read as “"Price 23"”.
+test('a quoted search term is not quoted a second time in the matches line', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('sale-period').textContent, /matches for "Price 23"$/);
+  assert.doesNotMatch(popup.element('sale-period').textContent, /[“”]/);
+});

@@ -733,7 +733,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const { total, unpriced } = drawnFrom;
   const skipped = total - drawnFrom.count - unpriced;
   // "+" only when every lot on the page falls in the period, so acsearch may hold more of them.
-  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for “${term}”`;
+  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${/^["(]/.test(term) ? term : `“${term}”`}`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
