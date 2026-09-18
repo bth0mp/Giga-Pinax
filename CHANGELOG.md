@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-09-18
+
 ### Added
 
 - A RIC VI–IX mint section is now found by the modern names Nomisma really publishes for it, not by its English label alone: **Arles**, **Sisak**, **Roma**, **Antakya**, **Sirmio**, **Konstantinopolis** and **Marmara Ereğlisi** join **Trier**, **Istanbul** and the rest. Type one into the Reference box or the **Ruler or section** field, or paste a lot whose heading names the mint and nobody else — `Arles. RIC 12`, `Sisak mint, RIC 12` — and the number is looked up in that mint's own section, from the bundled catalogue with no network at all. A mint named beside a ruler is still looked up by the ruler, as before, and a mint name never opens a person's coin. (#9)
@@ -250,6 +252,7 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
 [Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.32.0...HEAD
+[0.32.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.32.1
 [0.32.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.32.0
 [0.31.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.31.1
 [0.31.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.31.0
