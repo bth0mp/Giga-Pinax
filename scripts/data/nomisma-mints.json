@@ -488,6 +488,21 @@
      "亚历山大港"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb11865912m",
+    "http://collection.britishmuseum.org/id/place/x21094",
+    "http://d-nb.info/gnd/4001138-0",
+    "http://dbpedia.org/resource/Alexandria",
+    "http://isni.org/000000012111630X",
+    "http://viaf.org/viaf/129002681",
+    "http://vocab.getty.edu/tgn/7001188",
+    "http://www.idref.fr/069889481",
+    "http://www.wikidata.org/entity/Q87",
+    "https://ikmk.smb.museum/ndp/ort/13",
+    "https://pleiades.stoa.org/places/727070",
+    "https://sws.geonames.org/361058/",
+    "https://www.freebase.com/m/013g3"
+   ],
    "url": "https://nomisma.org/id/alexandreia_egypt.rdf"
   },
   "ambianum": {
@@ -898,6 +913,21 @@
      "Amiens"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb15276507w",
+    "http://collection.britishmuseum.org/id/place/x26618",
+    "http://d-nb.info/gnd/4085690-2",
+    "http://dbpedia.org/resource/Amiens",
+    "http://viaf.org/viaf/132149210",
+    "http://viaf.org/viaf/162797643",
+    "http://vocab.getty.edu/tgn/7010588",
+    "http://www.idref.fr/028085027",
+    "http://www.wikidata.org/entity/Q41604",
+    "https://ikmk.smb.museum/ndp/ort/306",
+    "https://pleiades.stoa.org/places/109321",
+    "https://sws.geonames.org/3037854/",
+    "https://www.freebase.com/m/0l17s"
+   ],
    "url": "https://nomisma.org/id/ambianum.rdf"
   },
   "antiocheia_syria": {
@@ -1168,6 +1198,18 @@
      "安条克"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x39946",
+    "http://d-nb.info/gnd/4112544-7",
+    "http://dbpedia.org/resource/Antioch",
+    "http://viaf.org/viaf/257569269",
+    "http://vocab.getty.edu/tgn/7002354",
+    "http://vocab.getty.edu/tgn/7594295",
+    "http://www.wikidata.org/entity/Q200441",
+    "https://ikmk.smb.museum/ndp/ort/885",
+    "https://pleiades.stoa.org/places/658381",
+    "https://sws.geonames.org/438115/"
+   ],
    "url": "https://nomisma.org/id/antiocheia_syria.rdf"
   },
   "aquileia": {
@@ -1407,6 +1449,18 @@
      "zh",
      "阿奎萊亞"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x31012",
+    "http://dbpedia.org/resource/Aquileia",
+    "http://viaf.org/viaf/148893013",
+    "http://vocab.getty.edu/tgn/7005553",
+    "http://www.wikidata.org/entity/Q53216",
+    "https://ikmk.smb.museum/ndp/ort/615",
+    "https://pleiades.stoa.org/places/187290",
+    "https://sws.geonames.org/3182943/",
+    "https://sws.geonames.org/6539930/",
+    "https://www.freebase.com/m/0k1v0"
    ],
    "url": "https://nomisma.org/id/aquileia.rdf"
   },
@@ -1798,6 +1852,21 @@
      "Arles"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb15247286t",
+    "http://collection.britishmuseum.org/id/place/x28181",
+    "http://d-nb.info/gnd/4085928-9",
+    "http://dbpedia.org/resource/Arles",
+    "http://viaf.org/viaf/243449555",
+    "http://viaf.org/viaf/293632224",
+    "http://vocab.getty.edu/tgn/7008775",
+    "http://www.wikidata.org/entity/Q48292",
+    "https://ikmk.smb.museum/ndp/ort/310",
+    "https://pleiades.stoa.org/places/148217",
+    "https://sws.geonames.org/3036938/",
+    "https://sws.geonames.org/6455353/",
+    "https://www.freebase.com/m/0knf8"
+   ],
    "url": "https://nomisma.org/id/arelate.rdf"
   },
   "carthage": {
@@ -2183,6 +2252,17 @@
      "迦太基"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x30600",
+    "http://d-nb.info/gnd/4029802-4",
+    "http://dbpedia.org/resource/Carthage",
+    "http://vocab.getty.edu/tgn/7016143",
+    "http://www.wikidata.org/entity/Q6343",
+    "https://ikmk.smb.museum/ndp/ort/999",
+    "https://pleiades.stoa.org/places/314921",
+    "https://sws.geonames.org/2468244/",
+    "https://www.freebase.com/m/01xpg"
+   ],
    "url": "https://nomisma.org/id/carthage.rdf"
   },
   "constantinople": {
@@ -2558,6 +2638,18 @@
      "君士坦丁堡"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x21179",
+    "http://d-nb.info/gnd/4073697-0",
+    "http://dbpedia.org/resource/Constantinople",
+    "http://viaf.org/viaf/234146023",
+    "http://vocab.getty.edu/tgn/7002473",
+    "http://www.wikidata.org/entity/Q16869",
+    "https://ikmk.smb.museum/ndp/ort/898",
+    "https://pleiades.stoa.org/places/520985",
+    "https://sws.geonames.org/745044/",
+    "https://www.freebase.com/m/01q0l"
+   ],
    "url": "https://nomisma.org/id/constantinople.rdf"
   },
   "cyzicus": {
@@ -2723,6 +2815,17 @@
      "基齐库斯"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x31080",
+    "http://dbpedia.org/resource/Cyzicus",
+    "http://viaf.org/viaf/235018562",
+    "http://vocab.getty.edu/tgn/7002394",
+    "http://www.wikidata.org/entity/Q615449",
+    "https://ikmk.smb.museum/ndp/ort/923",
+    "https://pleiades.stoa.org/places/511218",
+    "https://sws.geonames.org/10642748/",
+    "https://www.freebase.com/m/0l554"
+   ],
    "url": "https://nomisma.org/id/cyzicus.rdf"
   },
   "heraclea_thracica": {
@@ -2847,6 +2950,15 @@
      "zh",
      "馬爾馬拉埃雷利西"
     ]
+   ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb13741739t",
+    "http://dbpedia.org/resource/Marmara_Ere%C4%9Flisi",
+    "http://gazetteer.dainst.org/place/2289386",
+    "http://www.wikidata.org/entity/Q985638",
+    "https://pleiades.stoa.org/places/511357",
+    "https://sws.geonames.org/741725/",
+    "https://www.freebase.com/m/0bnmy4"
    ],
    "url": "https://nomisma.org/id/heraclea_thracica.rdf"
   },
@@ -3012,6 +3124,15 @@
      "zu",
      "Londinium"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x17731",
+    "http://dbpedia.org/resource/Londinium",
+    "http://vocab.getty.edu/tgn/7011781",
+    "http://www.wikidata.org/entity/Q927198",
+    "https://pleiades.stoa.org/places/79574",
+    "https://sws.geonames.org/2643741/",
+    "https://www.freebase.com/m/025s3y4"
    ],
    "url": "https://nomisma.org/id/londinium.rdf"
   },
@@ -3183,6 +3304,17 @@
      "卢格杜努姆"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x29284",
+    "http://dbpedia.org/resource/Lugdunum",
+    "http://viaf.org/viaf/316732274",
+    "http://vocab.getty.edu/tgn/7008772",
+    "http://www.wikidata.org/entity/Q665",
+    "https://ikmk.smb.museum/ndp/ort/355",
+    "https://pleiades.stoa.org/places/167717",
+    "https://sws.geonames.org/2996944/",
+    "https://www.freebase.com/m/02tt4l"
+   ],
    "url": "https://nomisma.org/id/lugdunum.rdf"
   },
   "mediolanum": {
@@ -3277,6 +3409,16 @@
      "tr",
      "Milano"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x27178",
+    "http://dbpedia.org/resource/Mediolanum",
+    "http://vocab.getty.edu/tgn/7005903",
+    "http://www.wikidata.org/entity/Q729978",
+    "https://ikmk.smb.museum/ndp/ort/610",
+    "https://pleiades.stoa.org/places/383706",
+    "https://sws.geonames.org/3173435/",
+    "https://www.freebase.com/m/02fhyz"
    ],
    "url": "https://nomisma.org/id/mediolanum.rdf"
   },
@@ -3483,6 +3625,19 @@
      "尼科米底亞"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb12535653c",
+    "http://collection.britishmuseum.org/id/place/x45677",
+    "http://d-nb.info/gnd/4109182-6",
+    "http://dbpedia.org/resource/Nicomedia",
+    "http://viaf.org/viaf/244579528",
+    "http://vocab.getty.edu/tgn/7002376",
+    "http://www.wikidata.org/entity/Q209349",
+    "https://ikmk.smb.museum/ndp/ort/2659",
+    "https://ikmk.smb.museum/ndp/ort/946",
+    "https://pleiades.stoa.org/places/511337",
+    "https://sws.geonames.org/745028/"
+   ],
    "url": "https://nomisma.org/id/nicomedia.rdf"
   },
   "ostia": {
@@ -3667,6 +3822,18 @@
      "zh",
      "奧斯提亞安提卡"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x45678",
+    "http://d-nb.info/gnd/4044080-1",
+    "http://dbpedia.org/resource/Ostia_Antica",
+    "http://viaf.org/viaf/248965681",
+    "http://vocab.getty.edu/tgn/7007018",
+    "http://www.wikidata.org/entity/Q1012797",
+    "https://ikmk.smb.museum/ndp/ort/668",
+    "https://pleiades.stoa.org/places/422995",
+    "https://sws.geonames.org/3171796/",
+    "https://www.freebase.com/m/02835zc"
    ],
    "url": "https://nomisma.org/id/ostia.rdf"
   },
@@ -4438,6 +4605,20 @@
      "古罗马"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb11932804j",
+    "http://collection.britishmuseum.org/id/place/x25706",
+    "http://d-nb.info/gnd/4050471-2",
+    "http://dbpedia.org/resource/Rome",
+    "http://viaf.org/viaf/251380480",
+    "http://vocab.getty.edu/tgn/7000874",
+    "http://www.idref.fr/02724301X",
+    "http://www.wikidata.org/entity/Q220",
+    "https://ikmk.smb.museum/ndp/ort/678",
+    "https://pleiades.stoa.org/places/423025",
+    "https://sws.geonames.org/3169070/",
+    "https://www.freebase.com/m/06c62"
+   ],
    "url": "https://nomisma.org/id/rome.rdf"
   },
   "serdica": {
@@ -4452,6 +4633,19 @@
      "en",
      "Serdica"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x41717",
+    "http://d-nb.info/gnd/4077502-1",
+    "http://dbpedia.org/resource/Sofia",
+    "http://viaf.org/viaf/130177211",
+    "http://vocab.getty.edu/tgn/7009977",
+    "http://www.wikidata.org/entity/Q472",
+    "https://ikmk.smb.museum/ndp/ort/69",
+    "https://pleiades.stoa.org/places/207439",
+    "https://sws.geonames.org/727011/",
+    "https://sws.geonames.org/731061/",
+    "https://www.freebase.com/m/0ftjx"
    ],
    "url": "https://nomisma.org/id/serdica.rdf"
   },
@@ -4612,6 +4806,18 @@
      "ur",
      "سرمیوم"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x38508",
+    "http://d-nb.info/gnd/4101044-9",
+    "http://dbpedia.org/resource/Sirmium",
+    "http://viaf.org/viaf/267016150",
+    "http://vocab.getty.edu/tgn/7015491",
+    "http://www.wikidata.org/entity/Q833060",
+    "https://ikmk.smb.museum/ndp/ort/823",
+    "https://pleiades.stoa.org/places/207447",
+    "https://sws.geonames.org/3190103/",
+    "https://www.freebase.com/m/03bcsf"
    ],
    "url": "https://nomisma.org/id/sirmium.rdf"
   },
@@ -4848,6 +5054,19 @@
      "錫薩克"
     ]
    ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x117474",
+    "http://d-nb.info/gnd/4348036-6",
+    "http://dbpedia.org/resource/Sisak",
+    "http://viaf.org/viaf/244263628",
+    "http://vocab.getty.edu/tgn/7015557",
+    "http://www.wikidata.org/entity/Q192119",
+    "https://ikmk.smb.museum/ndp/ort/706",
+    "https://pleiades.stoa.org/places/197504",
+    "https://sws.geonames.org/3190812/",
+    "https://sws.geonames.org/3190813/",
+    "https://www.freebase.com/m/0135gk"
+   ],
    "url": "https://nomisma.org/id/siscia.rdf"
   },
   "thessalonica": {
@@ -4882,6 +5101,14 @@
      "tr",
      "Thessalonica"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x29742",
+    "http://dbpedia.org/resource/Thessalonica",
+    "http://vocab.getty.edu/tgn/7011182",
+    "https://ikmk.smb.museum/ndp/ort/527",
+    "https://pleiades.stoa.org/places/491741",
+    "https://sws.geonames.org/734077/"
    ],
    "url": "https://nomisma.org/id/thessalonica.rdf"
   },
@@ -4927,6 +5154,17 @@
      "tr",
      "Ticinum"
     ]
+   ],
+   "matches": [
+    "http://collection.britishmuseum.org/id/place/x37971",
+    "http://dbpedia.org/resource/Ticinum",
+    "http://vocab.getty.edu/tgn/7003151",
+    "http://vocab.getty.edu/tgn/7006026",
+    "http://www.wikidata.org/entity/Q28215083",
+    "http://www.wikidata.org/entity/Q396445",
+    "https://ikmk.smb.museum/ndp/ort/1086",
+    "https://pleiades.stoa.org/places/383798",
+    "https://sws.geonames.org/3171366/"
    ],
    "url": "https://nomisma.org/id/ticinum.rdf"
   },
@@ -5283,11 +5521,28 @@
      "特维希"
     ]
    ],
+   "matches": [
+    "http://catalogue.bnf.fr/ark:/12148/cb120608288",
+    "http://collection.britishmuseum.org/id/place/x29357",
+    "http://d-nb.info/gnd/4060877-3",
+    "http://viaf.org/viaf/135701727",
+    "http://vocab.getty.edu/tgn/7004447",
+    "http://www.dbpedia.org/resource/Trier",
+    "http://www.idref.fr/028860365",
+    "http://www.wikidata.org/entity/Q3138",
+    "http://www.wikidata.org/entity/Q322168",
+    "https://ikmk.smb.museum/ndp/ort/270",
+    "https://pleiades.stoa.org/places/109390",
+    "https://sws.geonames.org/2821164/",
+    "https://sws.geonames.org/3247911/",
+    "https://www.freebase.com/m/030lz_",
+    "https://www.freebase.com/m/07gdw"
+   ],
    "url": "https://nomisma.org/id/treveri.rdf"
   }
  },
  "license": "CC-BY-3.0",
  "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
  "requestUrl": "https://nomisma.org/id/{concept_id}.rdf",
- "retrievedOn": "2026-09-17"
+ "retrievedOn": "2026-09-18"
 }

@@ -209,9 +209,28 @@ test('a RIC mint section is found by the modern names Nomisma gives it, and neve
     // A mint is a place: it answers for a section and never for a ruler, whatever the one-word widening does with a ruler's own spellings.
     assert.deepEqual(ricPeople(written), [], written);
   }
-  // Nomisma publishes no modern name for these four in any language it labels them in, so none is invented and RIC's own spelling is what reaches
-  // them: "London" and "Lyons" appear in no label at all, "Milan" only as the Italian "Milano" in Danish, Romanian and Turkish, and "Pavia" only
-  // inside the Italian article title "Storia di Pavia".
+});
+
+// Nomisma's mint concepts carry skos:closeMatch links to the same place in Wikidata, and Wikidata's labels and aliases go through the same three
+// rules. Bulgaria's capital is the clearest gain: Nomisma writes "Sofia" in Cyrillic alone, which is no script a ticket is typed in, and Wikidata
+// writes it in English and in every exonym language.
+test('a RIC mint section is found by the names Wikidata adds through Nomisma\'s own closeMatch links', () => {
+  for (const [written, section] of [['Sofia', 'Serdica'], ['Sredets', 'Serdica'], ['Carthago', 'Carthage'], ['Ostia Antica', 'Ostia'],
+    ['Roman London', 'Londinium'], ['Triers', 'Treveri'], ['Augusta Treverorum', 'Treveri'], ['Nikomedya', 'Nicomedia'],
+    ['Antioch on the Orontes', 'Antioch'], ['Lugudunum', 'Lugdunum'], ['Samarobriva', 'Amiens']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+  // Wikidata lists a city's nicknames beside its names, and a heading naming no ruler is read for the earliest mint spelling in it — so a Trier
+  // coin described in prose about the Eternal City would have been filed under Rome. A nickname is not a name and none of them is in the table.
+  for (const nickname of ['Eternal City', 'The Eternal City', 'Caput Mundi', 'Città Eterna', 'Urbe', 'RM', 'City of Seven Hills',
+    'Pearl of the Mediterranean', 'The City of the World\'s Desire', 'Longpré-lès-Amiens', 'History of Pavia']) {
+    assert.equal(ricMintSection(nickname), '', nickname);
+  }
+  // The names the mint volumes were asked for are still not among them, and none was invented to answer for them. The Wikidata items Nomisma links
+  // Londinium, Lugdunum, Mediolanum and Ticinum to are the Roman city — Q927198, Q665, Q729978, Q28215083 — and every language kept titles those by
+  // the Latin name. RIC's own spelling is what reaches all four.
   for (const mint of ['London', 'Lyon', 'Lyons', 'Milan', 'Pavia']) {
     assert.equal(ricMintSection(mint), '', mint);
     assert.deepEqual(volumesOf(mint), [], mint);

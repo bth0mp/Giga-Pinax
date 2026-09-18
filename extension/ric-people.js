@@ -1,18 +1,21 @@
-// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.
+// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma and Wikidata mint snapshots.
 // Source:
 //   endpoint: "https://nomisma.org/apis/getRdf"
 //   snapshotSha256: "0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e"
-//   generatedOn: "2026-09-15"
+//   generatedOn: "2026-09-18"
 //   license: "CC-BY-3.0"
 //   licenseUrl: "https://creativecommons.org/licenses/by/3.0/"
+//   mintAliasSources: ["https://nomisma.org/apis/getRdf", "https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"]
+//   wikidataLicense: "CC0-1.0"
+//   wikidataLicenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/"
 //   referencedConceptCount: 272
 //   personCount: 214
 //   excludedNonPersonCount: 58
 //   excludedMissingLabelCount: 0
 //   missingConceptCount: 0
 //   aliasCount: 120
-//   mintCount: 13
-//   mintAliasCount: 16
+//   mintCount: 18
+//   mintAliasCount: 64
 
 export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "aelia_ariadne", name: "Aelia Ariadne", volumes: Object.freeze(["X"]), aliases: Object.freeze(["ariadna"]) }),
@@ -231,22 +234,28 @@ export const RIC_PEOPLE = Object.freeze([
   Object.freeze({ id: "zenobia", name: "Zenobia", volumes: Object.freeze(["V"]), aliases: Object.freeze([]) }),
 ]);
 
-// The modern names Nomisma gives each RIC VI-IX mint section: its labels in the language of the country the mint stands in today, its English
-// labels, and the Latin-script exonym several of English, French, German, Italian and Spanish spell alike. A name that is also a ruler's, that
-// two mints share or that is an ordinary English word is dropped, and a mint Nomisma gives no modern name has no alias here: none was invented
-// for it, and RIC's own spelling always reaches it.
+// The modern names Nomisma and Wikidata give each RIC VI-IX mint section: their labels in the language of the country the mint stands in today,
+// their English labels, and the Latin-script exonym several of English, French, German, Italian and Spanish spell alike. The Wikidata items are
+// the ones Nomisma's own skos:closeMatch links name, and their labels and aliases are CC0. A name that is also a ruler's, that two mints share,
+// that is an ordinary English word or that names a whole different place is dropped, and a mint neither source gives a modern name has no alias
+// here: none was invented for it, and RIC's own spelling always reaches it.
 export const RIC_MINTS = Object.freeze([
-  Object.freeze({ id: "ambianum", section: "Amiens", aliases: Object.freeze(["ambianum"]) }),
-  Object.freeze({ id: "antiocheia_syria", section: "Antioch", aliases: Object.freeze(["antakya", "antioch, syria", "antiokheia pros oronten"]) }),
+  Object.freeze({ id: "alexandreia_egypt", section: "Alexandria", aliases: Object.freeze(["al iskandariya", "alexandria, egypt", "iskandariyya"]) }),
+  Object.freeze({ id: "ambianum", section: "Amiens", aliases: Object.freeze(["ambianum", "amians", "samarobriva"]) }),
+  Object.freeze({ id: "antiocheia_syria", section: "Antioch", aliases: Object.freeze(["antakya", "antakya antik kenti", "antioch near daphne", "antioch of syria", "antioch on the orontes", "antioch, syria", "antiochia", "antiochia ad orontem", "antiokheia", "antiokheia pros oronten", "mint of antioch, syria", "syrian antioch"]) }),
   Object.freeze({ id: "arelate", section: "Arelate", aliases: Object.freeze(["arles"]) }),
-  Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["istanbul", "konstantinopolis"]) }),
-  Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["kyzikos"]) }),
-  Object.freeze({ id: "heraclea_thracica", section: "Heraclea", aliases: Object.freeze(["marmara ereglisi"]) }),
-  Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["nikomedia"]) }),
-  Object.freeze({ id: "rome", section: "Rome", aliases: Object.freeze(["roma"]) }),
-  Object.freeze({ id: "serdica", section: "Serdica", aliases: Object.freeze(["serdika"]) }),
+  Object.freeze({ id: "carthage", section: "Carthage", aliases: Object.freeze(["carthago", "colonia julia carthago", "mint of carthage"]) }),
+  Object.freeze({ id: "constantinople", section: "Constantinople", aliases: Object.freeze(["constantinopolis", "czargrad", "istanbul", "konstantiniyye", "konstantinopolis", "mint of constantinople", "tsargorod", "tsarigrad", "tzargrad"]) }),
+  Object.freeze({ id: "cyzicus", section: "Cyzicus", aliases: Object.freeze(["cizico", "kizikos", "kyzikos"]) }),
+  Object.freeze({ id: "heraclea_thracica", section: "Heraclea", aliases: Object.freeze(["marmara eregli", "marmara ereglisi", "marmaraereglisi"]) }),
+  Object.freeze({ id: "londinium", section: "Londinium", aliases: Object.freeze(["roman london"]) }),
+  Object.freeze({ id: "lugdunum", section: "Lugdunum", aliases: Object.freeze(["colonia copia augusta lugdunum", "colonia copia claudia augusta lugdunum", "colonia copia felix munatia", "lugudunum"]) }),
+  Object.freeze({ id: "nicomedia", section: "Nicomedia", aliases: Object.freeze(["nikomedeia", "nikomedia", "nikomedya"]) }),
+  Object.freeze({ id: "ostia", section: "Ostia", aliases: Object.freeze(["ancient ostia", "ostia antica"]) }),
+  Object.freeze({ id: "rome", section: "Rome", aliases: Object.freeze(["citta di roma", "roma", "rome, italy"]) }),
+  Object.freeze({ id: "serdica", section: "Serdica", aliases: Object.freeze(["serdika", "sofia", "sofija", "sredets", "sredez"]) }),
   Object.freeze({ id: "sirmium", section: "Sirmium", aliases: Object.freeze(["sirmio"]) }),
   Object.freeze({ id: "siscia", section: "Siscia", aliases: Object.freeze(["sisak"]) }),
   Object.freeze({ id: "thessalonica", section: "Thessalonica", aliases: Object.freeze(["thessalonika"]) }),
-  Object.freeze({ id: "treveri", section: "Treveri", aliases: Object.freeze(["trier"]) }),
+  Object.freeze({ id: "treveri", section: "Treveri", aliases: Object.freeze(["augusta treverorum", "treverer", "trevirer", "treviri", "trier", "triers"]) }),
 ]);
