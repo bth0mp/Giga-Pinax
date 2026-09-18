@@ -423,6 +423,28 @@ test('over the bundled catalogue, a heading naming only a mint opens that mint\'
   }
 });
 
+// "Rome mint" stands in most RIC I-V descriptions and a heading is ruler-less wherever the table does not hold its spelling, so a mint that discarded
+// the lot's own volume sent the number to four volumes it is not in. Over the bundle, each of these opened the wrong coin or the wrong choice.
+test('over the bundled catalogue, a mint beside a volume of another part of RIC leaves the volume standing', { skip }, async () => {
+  const lookup = async (text) => { const lot = findReferences(text); return bundle.lookupType(lotLookup(lot.references[0], lot.rulers)); };
+  // RIC IV has no Rome section: the number belongs to the two RIC IV coins that carry it, not to RIC VIII Rome 460.
+  const four = await lookup('Rome mint. RIC IV 460');
+  assert.equal(four.status, 'candidates');
+  assert.deepEqual(four.candidates.map((entry) => entry.id), ['ric.4.crl.460', 'ric.4.sa.460']);
+  // And the volume the lot states opens its own coin instead of a choice of mints that never held the number.
+  for (const [text, id] of [['Diva Faustina. AR Denarius, Rome mint. RIC III 360', 'ric.3.m_aur.360'],
+    ['Constantinople. RIC X 12', 'ric.10.arc_e.12']]) {
+    const found = await lookup(text);
+    assert.equal(found.status, 'ok', text);
+    assert.equal(found.card.id, id, text);
+  }
+  // A mint beside one of its own volumes is unchanged, and so is a citation with no volume at all.
+  assert.equal((await lookup('Trier mint. RIC VII 12')).card?.id, 'ric.7.tri.12');
+  assert.deepEqual((await lookup('Londinium. RIC 12')).candidates.map((entry) => entry.id), ['ric.6.lon.12', 'ric.7.lon.12']);
+  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own (see Known issues).
+  assert.equal((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).card?.id, 'ric.6.rom.12');
+});
+
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
 // keys every title exactly where parseReference reads its number, so the two are compared over all 52,254 bundled titles: a title whose entry sat in
 // the wrong list, or in none, would hide a coin from every lookup for that number.

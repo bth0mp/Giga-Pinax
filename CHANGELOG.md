@@ -20,6 +20,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - The calculator's house-preset controls all say **preset** now (a preset carries a premium and an increment ladder), and a doubled space typed into the workspace's own search box no longer reaches the site as two (#8).
 - A lot heading that named only a mint — `Londinium. RIC 12` — used to leave the number searched across every mint of four volumes; it is now read as that mint's section. (#9)
+- A mint named in a lot no longer overrules the volume the lot itself cites. `Rome mint. RIC IV 460` opened a RIC VIII coin of Rome and `Constantinople. RIC X 12` a RIC VII one, because "Rome mint" and "Constantinople" stand in descriptions of every part of RIC while only RIC VI–IX are filed by mint: the mint is now read as a section only where the reference gives no volume, or gives one of the volumes that mint is a section of. (#9)
 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
@@ -40,6 +41,10 @@ Each date is the date of that version's release tag. Every release also carries 
 - A lot and the collection entry that goes with it can now be put back together. Set aside one at a time, each of them refused to come back without the other, so neither ever could: **Restore** on either one now brings both, and says so. Where the other half is not in the list at all, the refusal names the record that is missing. (#7)
 - A record that cannot be put back now says why in the words of the check that refused it, instead of being reported as reminders that could not be scheduled — nothing about it was ever a reminder. A record too big for the remaining space says that putting it back would not fit, and points at the records you could remove. (#7, #4)
 - Putting a set-aside record back no longer counts a record forward that it left alone: where two of the links had to be given up, the lot or auction they pointed from used to be saved one step on from where it started, which told an open editor it had changed when nothing about it had. (#7)
+
+### Known issues
+
+- A lot whose heading names no ruler is still read as a mint's coin wherever a mint spelling stands anywhere in its text — a sale line such as `Roma Numismatics E-Sale 100` included — as long as its RIC reference gives no volume, or gives one of RIC VI–IX. `Rome mint. RIC 460` is searched in Rome's four volumes only. Where that is not where the coin is filed, name the ruler or the volume in the text you look up. (#9)
 
 ## [0.32.0] - 2026-09-17
 

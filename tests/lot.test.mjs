@@ -981,6 +981,36 @@ test('a heading that names only a mint is read as that mint\'s RIC section, by R
   }
 });
 
+// A mint section says which of RIC VI-IX a number lives in; it can never say that of a volume it is no section of. "Rome mint" stands in most RIC
+// I-V descriptions, and a heading is ruler-less whenever the table does not hold its spelling, so the mint used to throw away the volume the lot had
+// stated and search four mint volumes for a number that was never in them.
+test('a mint named beside a volume of its own is that section, and one beside any other volume is only where the coin was struck', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  // The volume the lot states stands, and no mint section is put on it: RIC IV, III and X have no Rome or Constantinople section at all.
+  for (const [text, volume] of [['Rome mint. RIC IV 460', 'IV'], ['Diva Faustina. AR Denarius, Rome mint. RIC III 360', 'III'],
+    ['Constantinople. RIC X 12', 'X'], ['Trier mint. RIC II 972', 'II']]) {
+    assert.deepEqual(lookup(text), { catalogue: 'RIC', number: text.match(/(\d+)$/)[1], volume, section: '' }, text);
+  }
+  // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
+  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri' });
+  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium' });
+  // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome' });
+});
+
+test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
+  for (const [text, rulers] of [['Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.', ['Magnus Maximus']],
+    ['Constantine I. Follis. Trier. RIC VII 12.', ['Constantine I']], ['Antoninus Pius. Denarius, Rome mint. RIC III 360.', ['Antoninus Pius']],
+    ['Nero. Denarius, Rome mint. RIC 460.', ['Nero']]]) {
+    const lot = findReferences(text);
+    assert.deepEqual(lot.rulers, rulers, text);
+    const found = lotLookup(lot.references[0], lot.rulers);
+    assert.equal(found.section ?? '', '', text);
+    assert.deepEqual(found.rulers, rulers, text);
+    assert.equal(found.volume, lot.references[0].reference.volume, text);
+  }
+});
+
 test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {
   const rulers = (text) => findReferences(text).rulers;
   for (const [heading, expected] of [
