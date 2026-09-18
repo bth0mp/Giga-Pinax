@@ -1047,6 +1047,23 @@ test('gradeOf reads the dealer grade into one of four buckets, the lower of two'
   assert.equal(gradeOf(''), null);
 });
 
+// "AU" is the chemical symbol for gold as often as it is "About Uncirculated", and a gold lot that says so was being counted in the top bucket
+// without a dealer ever grading it. A metal says what the coin is made of: the weight or diameter printed straight behind it, the bracket it stands
+// in behind "Gold", and the denomination it follows are the three shapes that say which of the two it is.
+test('gradeOf reads AU as the metal where the lot says gold, and as the grade everywhere else', () => {
+  for (const text of ['Solidus. AU 4.45 g.', 'Aureus. AU, 7.25 g.', 'Gold (AU) solidus', 'AU 21 mm.', 'Tremissis. AU 1.48 g, 15 mm.',
+    'Byzantine. Solidus. AU.']) {
+    assert.equal(gradeOf(text), null, text);
+  }
+  // The grade is untouched wherever the lot is not saying gold: a slab's own line, the spelled-out name, a range, and the die axis a dealer prints
+  // behind a grade, which is no weight at all.
+  for (const [text, bucket] of [['NGC AU 58', 'AU/Mint State'], ['About Uncirculated', 'AU/Mint State'], ['AU', 'AU/Mint State'],
+    ['Choice AU', 'AU/Mint State'], ['AU/EF', 'EF'], ['AU - EF.', 'EF'], ['AU 12 h.', 'AU/Mint State'],
+    ['Nero. AR Denarius. NGC AU 5/5.', 'AU/Mint State'], ['Solidus. NGC AU 58', 'AU/Mint State']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+});
+
 // 0.32 review: the dealer's prose was read as a grade. "a fine portrait" and "as fine as any" are the adjective, "the BB collection" is a name, and
 // the lower-of-two rule then put every one of those lots in the wrong bucket. A grade is a clause of its own or it is not a grade.
 test('gradeOf reads a grade only where a dealer writes one: at a clause edge', () => {

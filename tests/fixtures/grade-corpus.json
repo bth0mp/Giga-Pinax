@@ -2803,5 +2803,30 @@
   "text": "Ex Slg. MS 12 hours later.",
   "grade": null,
   "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not; the number alone is a lot number, and the unit must be the unit"
+ },
+ {
+  "text": "Solidus. AU 4.45 g.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Aureus. AU, 7.25 g.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Gold (AU) solidus",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Tremissis. AU 1.48 g, 15 mm.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Byzantine. Solidus. AU.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
  }
 ]

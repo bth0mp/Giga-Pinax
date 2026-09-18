@@ -447,6 +447,19 @@ const EDGE = 24;
 // in "Slg. vz 12." is a lot number, and without one of those units nothing closes there.
 const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
   + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
+// "AU" is the chemical symbol for gold as often as it is "About Uncirculated", so a gold lot that never graded anything was counted in the top
+// bucket. Three shapes say the metal is meant: the weight or diameter printed straight behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g."), the
+// bracket it stands in behind "Gold" ("Gold (AU) solidus"), and the denomination it follows ("Byzantine. Solidus. AU."). A die axis is no such tail —
+// "AU 12 h." is the grade with the axis behind it — and a slab's own line is never read this way, since "Solidus. NGC AU 58" is what NGC graded.
+const METAL_TAIL = new RegExp(String.raw`^,?\s?\d{1,3}(?:[.,]\d{1,3})?\s?(?:mm|cm|gr|g)(?![\p{L}\d])`, 'u');
+const GOLD_BRACKET = /(?<![\p{L}\d])gold\s*\(\s*$/iu;
+// The denominations a dealer writes the metal behind. A closed list, as every other word list here is: any word at all would take the grade off a
+// row that really was graded.
+const DENOMINATION_BEFORE = new RegExp(String.raw`(?<![\p{L}\d])(?:solidus|aureus|tremissis|semissis|stater|nomisma|histamenon|hyperpyron|siliqua`
+  + String.raw`|miliarense|denarius|antoninianus|sestertius|dupondius|follis|tetradrachm|didrachm|drachm|obol|quinarius|dinar)\.?[\s,]*$`, 'iu');
+const metalAu = (before, tail) => METAL_TAIL.test(tail) || (GOLD_BRACKET.test(before) && tail.startsWith(')'))
+  || DENOMINATION_BEFORE.test(before);
+
 // The opening edge a mark needs, and the narrower one a praise adjective needs: it must start its clause, so a word of the same clause may not stand
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
@@ -501,7 +514,10 @@ export function gradeOf(description) {
     const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && token === 'MS');
     const end = start + quals.length + token.length + plus.length + (slabbed ? slab.length : 0);
     ends.push(end);
-    if (!CLOSES.test(text.slice(end, end + EDGE))) continue;
+    const tail = text.slice(end, end + EDGE);
+    // The metal, not the grade: the lot says what the coin is made of and grades nothing.
+    if (token === 'AU' && !slabbed && metalAu(before, tail)) continue;
+    if (!CLOSES.test(tail)) continue;
     const gap = previous === null ? '' : text.slice(previous.end, start);
     const joinable = previous !== null && gap.length <= EDGE;
     const ranged = joinable && RANGE_GAP.test(gap);
