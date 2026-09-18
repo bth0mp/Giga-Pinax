@@ -17,6 +17,12 @@ const SCHEDULE_CHANGING_COMMANDS = new Set([
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
 const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
+// What a command that no longer fits in local storage says, where the reminder preflight's own
+// sentence would name the wrong thing: the message and the field it belongs to.
+const OVER_THE_BOUND = new Map([
+  ['backup.import', ['This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document']],
+  ['quarantine.restore', ['Putting this record back would exceed the 5 MiB local storage bound. Remove records you no longer need, then put it back.', 'entryId']],
+]);
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
@@ -252,6 +258,45 @@ function restoreClearedReferences(snapshot, references, now) {
     }
   };
   return { restored, kept, undo };
+}
+
+// A lot and its collection entry name each other, and the validator insists both ways, so neither is
+// a valid record without the other. A repair sets them aside one at a time - the lot for its own
+// reason, its entry following as a foreign key - and until now neither could ever come back: each
+// was refused over the one still in the bin. So the pair comes back in one command, or neither does.
+const PAIRED_COLLECTIONS = new Map([
+  ['lots', { self: 'lot', field: 'collectionEntryId', collection: 'collectionEntries', label: 'collection entry' }],
+  ['collectionEntries', { self: 'collection entry', field: 'lotId', collection: 'lots', label: 'lot' }],
+]);
+
+// The record this one is linked to and the root does not hold, or null where it needs nothing that
+// is not already there. A partner that is there but names another record is no pairing this command
+// can settle: the ordinary validation refusal says so in the validator's own words.
+function missingPartner(snapshot, collection, record) {
+  const pair = PAIRED_COLLECTIONS.get(collection);
+  if (!pair || typeof record[pair.field] !== 'string') return null;
+  const home = snapshot[pair.collection];
+  const held = Array.isArray(home) ? home.some(({ id }) => id === record[pair.field]) : false;
+  return held ? null : { ...pair, id: record[pair.field] };
+}
+
+// Everything the store can judge about one entry before anything is written: it holds a record,
+// today's validator accepts that record, its collection is one a record can go back to, and nothing
+// with its ID is saved there already.
+function readyToRestore(snapshot, entry) {
+  if (entry.record === null || entry.record === undefined) {
+    return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');
+  }
+  const candidate = validateQuarantinedRecord(entry.collection, entry.record);
+  if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
+  const home = snapshot[entry.collection];
+  if (!Array.isArray(home)) {
+    return fail('validation', 'This entry is not a record that can be put back.', 'entryId');
+  }
+  if (home.some(({ id }) => id === candidate.value.id)) {
+    return fail('conflict', 'A record with this ID is already saved, so the copy set aside cannot be put back beside it.', `${entry.collection}.id`);
+  }
+  return ok({ home, record: clone(candidate.value) });
 }
 
 function mutation(snapshot, command, context) {
@@ -738,40 +783,60 @@ function mutation(snapshot, command, context) {
       if (index < 0) {
         return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
       }
-      const entry = entries[index];
-      if (entry.record === null || entry.record === undefined) {
-        return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');
+      const chosen = entries[index];
+      const first = readyToRestore(next, chosen);
+      if (!first.ok) return first;
+      const restoring = [{ entry: chosen, ...first.value }];
+      const partner = missingPartner(next, chosen.collection, first.value.record);
+      if (partner) {
+        const held = entries.find((entry) => entry !== chosen &&
+          entry.collection === partner.collection && entry.record?.id === partner.id);
+        if (!held) {
+          return fail('validation', `Putting this ${partner.self} back needs the ${partner.label} it is ` +
+            `linked to (${partner.id}), which is neither saved here nor in this list to be put back with it.`, 'entryId');
+        }
+        const second = readyToRestore(next, held);
+        if (!second.ok) return second;
+        restoring.push({ entry: held, ...second.value });
       }
-      const candidate = validateQuarantinedRecord(entry.collection, entry.record);
-      if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
-      const home = next[entry.collection];
-      if (!Array.isArray(home)) {
-        return fail('validation', 'This entry is not a record that can be put back.', 'entryId');
+      const references = [];
+      for (const { entry, home, record } of restoring) {
+        // The bin is not the collection: a record coming back out of it is counted again from zero
+        // rather than from wherever its last write left it. Nothing can be holding the old number -
+        // the record was not there to be read - and a save composed before it was set aside is told.
+        record.revision = 0;
+        record.updatedAt = now;
+        home.push(record);
+        references.push(...(entry.clearedReferences ?? []));
       }
-      const record = clone(candidate.value);
-      if (home.some(({ id }) => id === record.id)) {
-        return fail('conflict', 'A record with this ID is already saved, so the copy set aside cannot be put back beside it.', `${entry.collection}.id`);
-      }
-      // The bin is not the collection: a record coming back out of it is counted again from zero
-      // rather than from wherever its last write left it. Nothing can be holding the old number -
-      // the record was not there to be read - and a save composed before it was set aside is told.
-      record.revision = 0;
-      record.updatedAt = now;
-      home.push(record);
-      const links = restoreClearedReferences(next, entry.clearedReferences ?? [], now);
+      const links = restoreClearedReferences(next, references, now);
       let restoredReferences = links.restored;
       let keptReferences = links.kept;
       // A link can be one the rest of the root has no room for any more - a priority in a group
       // renumbered since. The record is what the collector asked for, so the links give way rather
       // than the whole restore failing over one of them, and each of them is named in the reply.
-      if (!validateSnapshot(next).ok) {
+      let validated = validateSnapshot(next);
+      if (!validated.ok) {
         links.undo();
         restoredReferences = [];
         keptReferences = [...links.restored, ...links.kept];
+        validated = validateSnapshot(next);
       }
-      entries.splice(index, 1);
+      // Without its links the root can still refuse the record itself, and that refusal is the
+      // validator's own. It is not the reminder preflight's to repeat as a schedule that could not
+      // be made: nothing here was ever about reminders.
+      if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
+      for (const { entry } of restoring) entries.splice(entries.indexOf(entry), 1);
       if (!entries.length) delete next.quarantine;
-      value = { collection: entry.collection, id: record.id, restoredReferences, keptReferences };
+      value = {
+        collection: chosen.collection,
+        id: first.value.record.id,
+        restoredReferences,
+        keptReferences,
+        ...(restoring.length > 1
+          ? { alsoRestored: restoring.slice(1).map(({ entry, record }) => ({ collection: entry.collection, id: record.id })) }
+          : {}),
+      };
       break;
     }
     case 'backup.import': {
@@ -841,11 +906,11 @@ function mutation(snapshot, command, context) {
       return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
     }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      // The bound is shared, but the way out of it is not: a backup that does not fit is not
-      // answered by removing reminders, and the file is what the collector would change.
-      return command.type === 'backup.import'
-        ? fail('storage-bound', 'This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document')
-        : fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
+      // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a
+      // record being put back is answered by removing reminders, and each names what to change.
+      const bounded = OVER_THE_BOUND.get(command.type) ??
+        ['These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders'];
+      return fail('storage-bound', bounded[0], bounded[1]);
     }
   }
 

@@ -20,6 +20,8 @@ Each date is the date of that version's release tag. Every release also carries 
 - A right-click lookup whose window cannot be opened now says that, instead of warning that the last page capture could not be saved. A lookup saves nothing, so nothing was lost. (#4)
 - A backup that cannot be merged now says so in a plain sentence, with the technical detail after it rather than on its own. (#4)
 - A backup holding a record nested thousands of levels deep is now refused as a file that cannot be read, instead of leaving the page that asked for the import waiting for an answer that never came. (#8)
+- A lot and the collection entry that goes with it can now be put back together. Set aside one at a time, each of them refused to come back without the other, so neither ever could: **Restore** on either one now brings both, and says so. Where the other half is not in the list at all, the refusal names the record that is missing. (#7)
+- A record that cannot be put back now says why in the words of the check that refused it, instead of being reported as reminders that could not be scheduled — nothing about it was ever a reminder. A record too big for the remaining space says that putting it back would not fit, and points at the records you could remove. (#7, #4)
 - Putting a set-aside record back no longer counts a record forward that it left alone: where two of the links had to be given up, the lot or auction they pointed from used to be saved one step on from where it started, which told an open editor it had changed when nothing about it had. (#7)
 
 ## [0.32.0] - 2026-09-17

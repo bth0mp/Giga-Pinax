@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
-import { BACKUP_FORMAT, exportBackup } from '../extension/core/backup.js';
+import { BACKUP_FORMAT, exportBackup, quarantineRestoreText } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -738,6 +738,101 @@ test('a set-aside record that still does not validate is refused and stays in th
   assert.equal(missing.code, 'validation');
 });
 
+// A lot and its collection entry refer to each other both ways, so a repair that sets the lot aside
+// as a duplicate ID sends its entry after it as a foreign key - and neither could ever come back,
+// because each was refused over the one still in the bin. They come back together now.
+const pairedRoot = () => {
+  const lotId = uuid();
+  const entryId = uuid();
+  const stored = createEmptySnapshot(NOW);
+  stored.quarantine = [
+    {
+      collection: 'lots', reason: 'duplicate-id', quarantinedAt: NOW,
+      record: plainLot(lotId, { collectionEntryId: entryId, outcome: { status: 'won' } }),
+    },
+    {
+      collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW,
+      record: {
+        id: entryId, revision: 0, dataClass: 'collector', lotId, title: 'Acquired',
+        acquisitionDate: '2026-09-12', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+      },
+    },
+  ];
+  return { stored, lotId, entryId };
+};
+
+test('a lot and the collection entry set aside with it are put back by one command', async () => {
+  const { stored, lotId, entryId } = pairedRoot();
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.collection, 'lots');
+  assert.equal(restored.value.id, lotId);
+  assert.deepEqual(restored.value.alsoRestored, [{ collection: 'collectionEntries', id: entryId }],
+    'the reply lists the partner that came back with it');
+  const after = storage.read();
+  assert.deepEqual(after.lots.map(({ id }) => id), [lotId]);
+  assert.deepEqual(after.collectionEntries.map(({ id }) => id), [entryId]);
+  assert.equal(Object.hasOwn(after, 'quarantine'), false, 'both entries have left the bin');
+  assert.match(quarantineRestoreText(restored.value), /linked to went back into collectionEntries/);
+});
+
+test('the collection entry of the pair puts its lot back the same way', async () => {
+  const { stored, lotId, entryId } = pairedRoot();
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[1]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.id, entryId);
+  assert.deepEqual(restored.value.alsoRestored, [{ collection: 'lots', id: lotId }]);
+  assert.equal(storage.read().lots.length, 1);
+});
+
+test('half a pair alone is refused by naming the partner that is not there', async () => {
+  const { stored, entryId } = pairedRoot();
+  stored.quarantine = [stored.quarantine[0]];
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const refused = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'validation');
+  assert.match(refused.message, /collection entry/, 'it says what kind of record is missing');
+  assert.ok(refused.message.includes(entryId), 'and names it');
+  assert.doesNotMatch(refused.message, /reminder/i, 'and blames no reminder');
+  assert.equal(storage.read().quarantine.length, 1, 'nothing is lost by the refusal');
+});
+
+// A restore the root refuses is refused in the validator's own words. The reminder preflight runs
+// over every schedule-changing command, so its sentence used to be put in front of a refusal that
+// was never about reminders at all.
+test('a restore the root refuses says what the validator said, without blaming reminders', async () => {
+  const lot = plainLot(uuid(), { auctionEventId: uuid() });
+  const stored = setAsideRoot([{
+    collection: 'lots', record: lot, reason: 'collection-limit', quarantinedAt: NOW,
+  }], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const refused = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'validation');
+  assert.equal(refused.message, 'Lot refers to an unknown auction event.');
+  assert.doesNotMatch(refused.message, /reminder/i);
+  assert.equal(storage.read().lots.length, 0, 'and nothing is written');
+});
+
 // Two bins unioned by an import hold the same record twice, and a repair that runs again over a bin
 // it already wrote must not open a second entry for a cause that is already in there.
 test('a bin holding one set-aside record twice folds it into a single entry on repair', async () => {
@@ -896,6 +991,18 @@ test('an import over the storage bound is refused as an import, not as a reminde
   assert.equal(result.error.code, 'storage-bound');
   assert.match(result.error.message, /backup/i);
   assert.doesNotMatch(result.error.message, /reminder/i);
+
+  // Nor is a record coming back out of the bin: the way out of that is the records already saved.
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push(...incoming.lots);
+  stored.quarantine = [{ collection: 'lots', record: fat(999999), reason: 'collection-limit', quarantinedAt: NOW }];
+  const restore = applyCommand(stored, command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }), context());
+  assert.equal(restore.ok, false);
+  assert.equal(restore.error.code, 'storage-bound');
+  assert.match(restore.error.message, /put(ting)? (this record )?back/i);
+  assert.doesNotMatch(restore.error.message, /reminder/i);
 });
 
 test('writer preflights linked reminders when a lot activates their event', async () => {

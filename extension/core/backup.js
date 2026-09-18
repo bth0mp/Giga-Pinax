@@ -655,6 +655,11 @@ export function quarantineRestoreText(value) {
   const restored = value.restoredReferences?.length ?? 0;
   const kept = value.keptReferences ?? [];
   const parts = [`The record was put back into ${value.collection}.`];
+  // A lot and its collection entry are only valid together, so one of them going back takes the
+  // other with it, and the reply says so rather than leaving a second entry seemingly untouched.
+  for (const also of value.alsoRestored ?? []) {
+    parts.push(`The record it is linked to went back into ${also.collection} with it.`);
+  }
   if (restored) parts.push(`${restored} link${restored === 1 ? ' was' : 's were'} restored with it.`);
   if (kept.length) {
     parts.push(`${kept.length} link${kept.length === 1 ? '' : 's'} could not be put back, because what ` +
