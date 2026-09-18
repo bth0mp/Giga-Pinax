@@ -1004,7 +1004,13 @@ export function quarantineInvalidRecords(stored, now) {
     const host = hosts.get(key) ?? setAside(cause, null, reason);
     hosts.set(key, host);
     host.clearedReferences ??= [];
-    host.clearedReferences.push({ collection, id: record.id, field, value: record[field] });
+    // The entry may have been carried in from an earlier repair with this very link on it, so a
+    // link is written down once however often it is cleared, exactly as folding two entries does:
+    // a root repaired, written, linked to the same broken record again and repaired again said
+    // "2 links cleared" for one link, and offered to put it back twice.
+    const note = { collection, id: record.id, field, value: record[field] };
+    const text = JSON.stringify(note);
+    if (!host.clearedReferences.some((kept) => JSON.stringify(kept) === text)) host.clearedReferences.push(note);
   };
   if (OWN(root, 'quarantine')) {
     const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];

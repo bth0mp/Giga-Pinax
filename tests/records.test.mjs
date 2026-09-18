@@ -283,6 +283,35 @@ test('a reference cleared to a record already set aside lands on the entry it is
   }]);
 });
 
+// The note lands on an entry carried in from an earlier repair, which may already hold it: a root
+// repaired, written, linked to the same broken record again and repaired again wrote the same link
+// down twice, and Settings said "2 links cleared" for the one link.
+test('a link cleared twice to one set-aside record is written down once', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const reference = { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventEur };
+  const broken = { ...makeEvent(IDS.eventEur, 'EUR auction'), eventKind: 'bring-your-own' };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventEur }));
+  snapshot.auctionEvents = snapshot.auctionEvents.filter(({ id }) => id !== IDS.eventEur);
+  snapshot.quarantine = [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }];
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }], 'one link, one line, however often the repair clears it');
+  // A second link from the same field of another lot is a different link and is still written down.
+  const other = { ...reference, id: IDS.lotEur };
+  snapshot.lots.push(makeLot(IDS.lotEur, { auctionEventId: IDS.eventEur }));
+  const both = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(both.ok, true);
+  assert.deepEqual(both.value.quarantine[0].clearedReferences, [reference, other]);
+});
+
 // Only entries carrying the very same record fold, so two duplicates of one ID keep both bodies.
 test('two set-aside copies of one record fold, while two different bodies do not', () => {
   const LATER = '2026-09-13T12:00:00.000Z';
