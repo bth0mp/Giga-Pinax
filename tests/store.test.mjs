@@ -1508,6 +1508,8 @@ test('a backup nested thousands of levels deep is answered, not thrown out of th
     assert.equal(refused.ok, false, mode);
     assert.equal(refused.code, 'validation', mode);
     assert.equal(refused.outcome, 'not-committed', mode);
+    assert.match(refused.message, /Export raw data/,
+      'and the collector is told the one thing that still works on data nobody here can read');
     assert.equal(Object.hasOwn(storage.read(), 'quarantine'), false, 'nothing of the file reached storage');
   }
   // The queue is still the collector's to write to.

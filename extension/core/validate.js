@@ -19,7 +19,10 @@ export const isRecursionError = (error) =>
   error instanceof RangeError || /call stack|too much recursion/i.test(String(error?.message ?? ''));
 
 // Depth is a shape the data should not have, so it is reported where any other bad shape is.
-export const TOO_DEEPLY_NESTED = 'This data is nested too deeply to be read. Records this deep are not written by Giga Pinax.';
+// Nothing here can walk such a record, so nothing here can offer to remove it either. What still
+// works is the one export that walks nothing: the rescue copy, which the collector can edit the
+// record out of. Saying so is the difference between a dead end and a way through.
+export const TOO_DEEPLY_NESTED = 'This data is nested too deeply to be read. Records this deep are not written by Giga Pinax. Export raw data in Settings still works, and the record can be removed from the copy it writes.';
 export const tooDeeplyNested = (path) => failure('too-deeply-nested', TOO_DEEPLY_NESTED, path);
 
 export const clone = (value) => structuredClone(value);
