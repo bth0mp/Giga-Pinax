@@ -1051,7 +1051,8 @@ test('gradeOf reads a grade only where a dealer writes one: at a clause edge', (
     ['About EF', 'EF'], ['Extremely fine', 'EF'], ['vorzüglich', 'EF'], ['Vorzüglich', 'EF']]) {
     assert.equal(gradeOf(graded[0]), graded[1], graded[0]);
   }
-  for (const prose of ['fine', 'very fine', 'a fine coin', 'vf', 'ef', 'fdc', 'good very fine']) assert.equal(gradeOf(prose), null, prose);
+  // A bare lower-case name is the ordinary adjective; issue #6 gives a qualified one ("good very fine") a grade's standing, tested below.
+  for (const prose of ['fine', 'very fine', 'a fine coin', 'vf', 'ef', 'fdc']) assert.equal(gradeOf(prose), null, prose);
   // Split grades still go to the lower bucket.
   assert.equal(gradeOf('Erhaltung: ss-vz.'), 'VF');
   assert.equal(gradeOf('(VF/EF)'), 'VF');
@@ -1110,6 +1111,19 @@ test('gradeOf reads the quote, star and "though" a dealer closes a grade with', 
   // A quote closes a grade; it does not open one, and it lends the prose inside it nothing.
   assert.equal(gradeOf('A "fine" portrait.'), null);
   assert.equal(gradeOf('Ex "MS" collection.'), null);
+});
+
+// Issue #6: a name spelled out needs a capital somewhere, since "very fine" is the ordinary adjective — but a dealer who qualifies it is grading the
+// coin whatever his capitals, and "Flan crack, otherwise very fine" was the commonest description the reader left ungraded.
+test('gradeOf reads a lower-case grade name behind a lower-case qualifier', () => {
+  for (const [text, bucket] of [['otherwise very fine', 'VF'], ['Flan crack, otherwise very fine.', 'VF'],
+    ['nearly extremely fine', 'EF'], ['Flan crack, otherwise nearly extremely fine.', 'EF'],
+    ['Flan crack, otherwise good very fine', 'VF'], ['about uncirculated with luster', 'AU/Mint State']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // Without the qualifier it is the adjective again, and with one it still needs its closing edge.
+  assert.equal(gradeOf('Some corrosion, very fine portrait.'), null);
+  assert.equal(gradeOf('a nearly extremely fine example of the type'), null);
 });
 
 // "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of

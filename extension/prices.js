@@ -393,7 +393,7 @@ const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 
 // Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
 // ordinary adjective, and only a range whose first half was read lends it a grade's standing.
 const NAMES = {
-  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'About Uncirculated': MINT,
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT,
   Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
@@ -433,7 +433,8 @@ const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+
 // A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
 // eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
 const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;
-// The qualifiers are lazy so that "About Uncirculated" is read as the grade AU and not as "Uncirculated" behind a qualifier.
+// The qualifiers are lazy, so a name a qualifier stands in front of is read as that name qualified ("About Uncirculated" is Uncirculated with the
+// qualifier every qualifier keeps: the same bucket), whatever the dealer's capitals.
 const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${TOKENS})(\\+*)(${SLAB})(?![\\p{L}\\d])`, 'gu');
 
 // How far to either side an edge is looked for. Both are bounded, so one pass over a description costs the same per character however long it is.
@@ -507,7 +508,9 @@ export function gradeOf(description) {
     const rest = text.slice(start + quals.length + token.length);
     let read = false;
     if (kind === 'abbreviation') read = true;
-    else if (kind === 'name') read = capital;
+    // A qualifier stands in for the capitals: a dealer who writes "otherwise very fine" or "nearly extremely fine" all in lower case is grading the
+    // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
+    else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before);
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
