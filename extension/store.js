@@ -1,7 +1,7 @@
 import {
-  LIMITS, SCHEMA_VERSION, createEmptySnapshot, migrateSnapshot, quarantineEntryId, quarantineInvalidRecords,
-  restartUnusableRevisions, setOutcome, validateDraftPayload, validateEventLocalTimes,
-  validateQuarantinedRecord, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, migrateSnapshot, quarantineEntryId,
+  quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
+  validateEventLocalTimes, validateQuarantinedRecord, validateSnapshot,
 } from './core/records.js';
 import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -854,10 +854,11 @@ function mutation(snapshot, command, context) {
       }
       const imported = clone(preview.value.snapshot);
       imported.recentCommands = command.mode === 'merge' ? clone(snapshot.recentCommands) : [];
-      // Quarantine is a recovery bin rather than live data, so no import discards what is in it.
-      const rescued = new Map([...(snapshot.quarantine ?? []), ...(imported.quarantine ?? [])]
-        .map((entry) => [JSON.stringify(entry), entry]));
-      if (rescued.size) imported.quarantine = [...rescued.values()];
+      // Quarantine is a recovery bin rather than live data, so no import discards what is in it. The
+      // two bins fold together the way a repair folds one: a record set aside on both installs is
+      // one entry with one Restore, not two differing only in the moment each install repaired it.
+      const rescued = foldQuarantine(clone([...(snapshot.quarantine ?? []), ...(imported.quarantine ?? [])]));
+      if (rescued.length) imported.quarantine = rescued;
       // Only the root keys the snapshot has are copied, one at a time: `Object.assign` would run a
       // backup's own `"__proto__"` key through the setter and replace the live root's prototype,
       // and any other key a hand-edited file carries would settle into storage unvalidated.

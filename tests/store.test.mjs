@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
-import { BACKUP_FORMAT, exportBackup, quarantineRestoreText } from '../extension/core/backup.js';
+import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -1318,6 +1318,33 @@ test('a merge that skips a duplicated lot keeps out the auction event it carried
   assert.equal(imported.snapshot.lots.length, 1);
   const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
   assert.equal(reconciled.snapshot.alerts.length, 1, 'and one reminder for it, not two');
+});
+
+// An import unioned the two bins by exact bytes, so the same record set aside on both installs -
+// each at the moment that install repaired it - came through as two entries with two Restore
+// buttons for one record. The import folds the way the repair does, in both modes.
+test('a backup whose bin holds a record already set aside here leaves one entry', async () => {
+  for (const mode of ['merge', 'replace']) {
+    const record = { ...setAsideEvent(), eventKind: 'bring-your-own' };
+    const stored = setAsideRoot([{
+      collection: 'auctionEvents', record, reason: 'invalid-enum', quarantinedAt: LATER,
+    }], []);
+    const incoming = createEmptySnapshot(NOW);
+    incoming.quarantine = [{
+      collection: 'auctionEvents', record: structuredClone(record), reason: 'invalid-enum', quarantinedAt: NOW,
+    }];
+    const storage = memoryStorage(stored);
+    const writer = createCommandWriter(storage, context());
+
+    const imported = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document: exportBackup(incoming, NOW).value,
+    }));
+    assert.equal(imported.ok, true, imported.message);
+    const bin = storage.read().quarantine;
+    assert.equal(bin.length, 1, `one record set aside twice is one entry after a ${mode}`);
+    assert.equal(bin[0].quarantinedAt, NOW, 'set aside when it first was');
+    assert.equal(quarantineRows(bin).length, 1, 'so Settings offers one Restore');
+  }
 });
 
 test('a merge links the lot it kept to the auction the backup knew about', () => {

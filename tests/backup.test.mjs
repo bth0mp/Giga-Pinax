@@ -605,6 +605,32 @@ test('merge unions the quarantine bin and counts only the entries it gained', ()
   assert.equal(preview.value.counts.quarantine, 1);
 });
 
+// The bins were unioned by exact bytes, so the same record set aside on both installs - at the
+// moment each of them repaired it - arrived as two entries with two Restore buttons, although the
+// folding the repair does would have made them one. The merge folds the way the repair does.
+test('merge folds one record set aside on both installs into a single entry', () => {
+  const record = { id: 'broken', title: 'Nero denarius' };
+  const reference = { collection: 'lots', id: 'host', field: 'auctionEventId', value: 'broken' };
+  const current = createEmptySnapshot(NOW);
+  current.quarantine = [{ collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: LATER }];
+  const incoming = createEmptySnapshot(NOW);
+  incoming.quarantine = [{
+    collection: 'lots', record: structuredClone(record), reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }];
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.quarantine, [{
+    collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: NOW, clearedReferences: [reference],
+  }], 'one entry, set aside when it first was, carrying every link either install recorded');
+  assert.equal(preview.value.counts.quarantine, 0, 'and nothing was gained by the merge');
+  assert.deepEqual(current.quarantine,
+    [{ collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: LATER }],
+    'the preview leaves local data exactly as it found it');
+  assert.equal(quarantineRows(preview.value.snapshot.quarantine).length, 1, 'so Settings offers one Restore');
+});
+
 test('merge renumbers alternative priorities two installs assigned independently', () => {
   const current = createEmptySnapshot(NOW);
   current.alternativeGroups.push(group(uuid(1)));

@@ -1,5 +1,6 @@
 import {
-  LIMITS, SCHEMA_VERSION, migrateSnapshot, quarantineEntryId, unusableRevisions, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, foldQuarantine, migrateSnapshot, quarantineEntryId, unusableRevisions,
+  validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
@@ -335,21 +336,15 @@ function dropStaleAlerts(snapshot) {
     remindersByEvent.get(alert.eventId)?.has(alert.reminderId) === true);
 }
 
-// Quarantine is a recovery bin rather than live data, so a merge unions both bins and drops only
-// entries that are identical to one already there.
+// Quarantine is a recovery bin rather than live data, so a merge unions both bins. Comparing whole
+// entries let one record through twice, because two installs set the same record aside at the moment
+// each of them repaired it and the dates differ; the union folds the way a repair does, by the
+// record and the reason, so one record set aside for one reason stays one entry with one Restore.
 function mergeQuarantine(snapshot, current, incoming) {
-  const entries = clone(current.quarantine ?? []);
-  const seen = new Set(entries.map((entry) => JSON.stringify(entry)));
-  let gained = 0;
-  for (const entry of incoming.quarantine ?? []) {
-    const key = JSON.stringify(entry);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    entries.push(clone(entry));
-    gained += 1;
-  }
+  const held = foldQuarantine(clone(current.quarantine ?? []));
+  const entries = foldQuarantine([...held, ...clone(incoming.quarantine ?? [])]);
   if (entries.length) snapshot.quarantine = entries;
-  return gained;
+  return entries.length - held.length;
 }
 
 export function previewImport(current, incoming, mode, options = {}) {
