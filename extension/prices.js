@@ -428,8 +428,10 @@ const anyCase = (text) => [...String(text)].map((char) => {
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it, and "About Uncirculated" is not "Uncirculated".
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
 const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(SPELLED).map(anyCase)]);
-// "q" and "q." bind straight onto the mark they qualify (qBB, qSPL, q.FDC); every other qualifier is a word of its own.
-const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?)`;
+// The Italian "q" ("quasi") and "m" ("migliore di") bind straight onto the mark they qualify (qBB, qSPL, q.FDC, mBB); every other qualifier is a word
+// of its own. Both keep the bucket, as a qualifier does. The "m" is read in lower case only and only in front of a capital, so the "mss" of a
+// manuscript and a monogram's own capitals are never a qualified mark.
+const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?|m(?=\\p{Lu}))`;
 // A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
 // eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
 const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;

@@ -1126,6 +1126,19 @@ test('gradeOf reads a lower-case grade name behind a lower-case qualifier', () =
   assert.equal(gradeOf('a nearly extremely fine example of the type'), null);
 });
 
+// Issue #6: the Italian trade qualifies its marks with a letter glued to the front — "q" for quasi, "m" for migliore di — and with a plus. Each keeps
+// the bucket of the mark it qualifies, exactly as "gVF" keeps VF's.
+test('gradeOf reads the Italian qualified marks', () => {
+  for (const [text, bucket] of [['qBB', 'VF'], ['q.BB', 'VF'], ['qSPL', 'EF'], ['qFDC', 'AU/Mint State'],
+    ['BB+', 'VF'], ['SPL+', 'EF'], ['mBB', 'VF'], ['Bella patina. mBB.', 'VF'], ['Moneta con patina, BB+.', 'VF'],
+    ['Roma. Sesterzio. RIC 306. qSPL', 'EF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // The "m" is read in lower case and only in front of a capital, so a manuscript and a monogram keep their own letters.
+  assert.equal(gradeOf('Vgl. mss. Kommentar.'), null);
+  assert.equal(gradeOf('Monogramma mBB nel campo.'), null);
+});
+
 // "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of
 // two grades it took every one of those lots down to Fine.
 test('gradeOf reads the German "s." as see, never as a grade of its own', () => {

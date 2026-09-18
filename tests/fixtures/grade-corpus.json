@@ -2456,8 +2456,8 @@
  },
  {
   "text": "mBB.",
-  "grade": null,
-  "note": "probe_c.mjs (no expectation stated); no word boundary in front of BB"
+  "grade": "vf",
+  "note": "probe_c.mjs (no expectation stated); #6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
  },
  {
   "text": "SPL+.",
@@ -2743,5 +2743,35 @@
   "text": "struck on a good very fine flan",
   "grade": null,
   "note": "#6: a qualifier gives a lower-case name a grade's standing; a name still needs its closing edge, and a bare lower-case one is the adjective"
+ },
+ {
+  "text": "mBB",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "mSPL",
+  "grade": "ef",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Bella patina. mBB.",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Moneta con patina, BB+.",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Vgl. mss. Kommentar.",
+  "grade": null,
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does; read in lower case and only in front of a capital, and the mark still needs its closing edge"
+ },
+ {
+  "text": "Monogramma mBB nel campo.",
+  "grade": null,
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does; read in lower case and only in front of a capital, and the mark still needs its closing edge"
  }
 ]
