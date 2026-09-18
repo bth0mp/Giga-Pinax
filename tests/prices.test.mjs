@@ -1099,6 +1099,19 @@ test('gradeOf counts AU in the top bucket', () => {
   assert.equal(GRADE_BUCKETS.at(-1), 'AU/Mint State');
 });
 
+// Issue #6: a closing edge is what tells a grade from prose, and a dealer closes one with more than a full stop — the quotes he wraps it in, the
+// asterisk or star he hangs a footnote on, and the "though" his reservation opens with.
+test('gradeOf reads the quote, star and "though" a dealer closes a grade with', () => {
+  for (const [text, bucket] of [['"Good VF"', 'VF'], ['“EF”', 'EF'], ['Nero. As. RIC 306. "Very Fine"', 'VF'],
+    ['VF*', 'VF'], ['EF★', 'EF'], ['Schöne Patina. ss*', 'VF'],
+    ['Extremely Fine though weakly struck.', 'EF'], ['Good VF though off-centre.', 'VF'], ['ss, though schwach ausgeprägt.', 'VF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // A quote closes a grade; it does not open one, and it lends the prose inside it nothing.
+  assert.equal(gradeOf('A "fine" portrait.'), null);
+  assert.equal(gradeOf('Ex "MS" collection.'), null);
+});
+
 // "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of
 // two grades it took every one of those lots down to Fine.
 test('gradeOf reads the German "s." as see, never as a grade of its own', () => {

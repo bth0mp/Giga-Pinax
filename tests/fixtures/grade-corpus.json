@@ -931,23 +931,23 @@
  },
  {
   "text": "VF\"",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a quotation mark is no closing edge"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "“VF”",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a quotation mark is no closing edge"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF*",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a star is no closing edge (it is read only as a slab suffix)"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "EF★",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected ef; design B: a star is no closing edge (it is read only as a slab suffix)"
+  "grade": "ef",
+  "note": "r3_hunt2.mjs expected ef; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF details",
@@ -976,8 +976,8 @@
  },
  {
   "text": "VF though rough",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: “ though” is not one of the words a grade may run into"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF or better",
@@ -2658,5 +2658,60 @@
   "text": "AU - EF.",
   "grade": "ef",
   "note": "#6: AU counts in the top bucket; a range takes the lower grade"
+ },
+ {
+  "text": "\"Good VF\"",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "“EF”",
+  "grade": "ef",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Nero. As. RIC 306. \"Very Fine\"",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "VF★",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Schöne Patina. ss*",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Extremely Fine though weakly struck.",
+  "grade": "ef",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Good VF though off-centre.",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "ss, though schwach ausgeprägt.",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "A \"fine\" portrait.",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
+ },
+ {
+  "text": "Ex \"MS\" collection.",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
+ },
+ {
+  "text": "the BB collection*",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
  }
 ]

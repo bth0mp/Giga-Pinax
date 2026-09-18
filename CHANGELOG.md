@@ -11,6 +11,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
 - A lot graded `AU`, `About Uncirculated` or `NGC AU 58` is no longer left out of the per-grade medians: AU counts in the top bucket, which is now named **AU/Mint State** (FDC, Stempelglanz and Uncirculated still count there too). (#6)
+- A grade a dealer quotes (`"Good VF"`), footnotes (`VF*`, `EF★`) or follows with a reservation (`Extremely Fine though weakly struck`) is now read instead of left ungraded. (#6)
 
 ## [0.32.0] - 2026-09-17
 

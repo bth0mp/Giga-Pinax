@@ -439,8 +439,9 @@ const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${T
 // How far to either side an edge is looked for. Both are bounded, so one pass over a description costs the same per character however long it is.
 const EDGE = 24;
 // The closing edge, which is what tells a grade from prose: "a fine portrait." and "the BB collection." run into a word, "Good very fine." does not.
-const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:]|^\s[-–(+&/]|^\sà(?![\p{L}\d])`
-  + String.raw`|^\s(?:and|for|with|to|bis|but|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
+// A quote the dealer wrapped the grade in, the asterisk or star he footnotes it with, and the "though" his reservation opens with all close one too.
+const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])`
+  + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // The opening edge a mark needs, and the narrower one a praise adjective needs: it must start its clause, so a word of the same clause may not stand
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
