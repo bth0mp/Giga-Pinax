@@ -141,8 +141,8 @@
  },
  {
   "text": "NGC Ch AU 5/5 - 4/5, Fine Style.",
-  "grade": null,
-  "note": "r3_hunt.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC Choice XF 5/5 - 3/5, Fine Style.",
@@ -641,18 +641,18 @@
  },
  {
   "text": "Lightly toned, extremely fine",
-  "grade": null,
-  "note": "r3_hunt.mjs expected ef; design A2: an all-lower-case name counts only as the second half of a range"
+  "grade": "ef",
+  "note": "r3_hunt.mjs expected ef; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "NGC AU 5/5 - 4/5.",
-  "grade": null,
-  "note": "r3_hunt.mjs; AU sits between EF and Mint State, so it is read and left unplaced, probe_c.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC Choice AU★ 5/5 - 5/5, Fine Style.",
-  "grade": null,
-  "note": "r3_hunt.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "NGC MS★ 5/5 - 5/5",
@@ -661,13 +661,13 @@
  },
  {
   "text": "VF 3.41 g",
-  "grade": null,
-  "note": "r3_hunt.mjs expected vf; design B: a weight is no closing edge, and a slab score is read only behind NGC/PCGS"
+  "grade": "vf",
+  "note": "r3_hunt.mjs expected vf; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "Very Fine 17.23 g, 12h",
-  "grade": null,
-  "note": "r3_hunt.mjs expected vf; design B: a weight is no closing edge, and a slab score is read only behind NGC/PCGS"
+  "grade": "vf",
+  "note": "r3_hunt.mjs expected vf; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "AR Tetradrachm (17.23 g, 12h). VF",
@@ -676,8 +676,8 @@
  },
  {
   "text": "Tetradrachm, 17.2 g. Fine 12 h.",
-  "grade": null,
-  "note": "r3_hunt.mjs expected fine; design B: a die axis is no closing edge"
+  "grade": "fine",
+  "note": "r3_hunt.mjs expected fine; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "Graded XF 45 by PCGS.",
@@ -801,8 +801,8 @@
  },
  {
   "text": "Rare. Light iridescent tone, about extremely fine / extremely fine",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected ef; design A2: the first half is all lower case, so neither half is read"
+  "grade": "ef",
+  "note": "r3_hunt2.mjs expected ef; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "ss-s",
@@ -931,23 +931,23 @@
  },
  {
   "text": "VF\"",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a quotation mark is no closing edge"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "“VF”",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a quotation mark is no closing edge"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF*",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: a star is no closing edge (it is read only as a slab suffix)"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "EF★",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected ef; design B: a star is no closing edge (it is read only as a slab suffix)"
+  "grade": "ef",
+  "note": "r3_hunt2.mjs expected ef; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF details",
@@ -976,8 +976,8 @@
  },
  {
   "text": "VF though rough",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design B: “ though” is not one of the words a grade may run into"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a quote, a star and a following \" though\" close a grade"
  },
  {
   "text": "VF or better",
@@ -1241,18 +1241,18 @@
  },
  {
   "text": "Flan crack, otherwise good very fine",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design A2: an all-lower-case phrase counts only as the second half of a range"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "Flan crack, otherwise nearly extremely fine.",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected ef; design A2: an all-lower-case phrase counts only as the second half of a range"
+  "grade": "ef",
+  "note": "r3_hunt2.mjs expected ef; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "Flan crack, otherwise very fine.",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected vf; design A2: an all-lower-case phrase counts only as the second half of a range"
+  "grade": "vf",
+  "note": "r3_hunt2.mjs expected vf; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "Nearly extremely fine.",
@@ -1311,18 +1311,18 @@
  },
  {
   "text": "About Uncirculated",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "AU",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Choice AU",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Brilliant UNC",
@@ -1491,8 +1491,8 @@
  },
  {
   "text": "Nero. Denarius, otherwise very fine",
-  "grade": null,
-  "note": "r3_verify.mjs expected vf; design A2: an all-lower-case phrase counts only as the second half of a range"
+  "grade": "vf",
+  "note": "r3_verify.mjs expected vf; #6: a qualifier gives a lower-case name a grade's standing"
  },
  {
   "text": "Nero. Denarius. NGC EF.",
@@ -1996,8 +1996,8 @@
  },
  {
   "text": "Nero. AR Denarius. NGC AU 5/5.",
-  "grade": null,
-  "note": "probe_b.mjs"
+  "grade": "mint",
+  "note": "probe_b.mjs; #6: AU counts in the top bucket"
  },
  {
   "text": "Nero. AR Denarius. NGC Ch XF.",
@@ -2456,8 +2456,8 @@
  },
  {
   "text": "mBB.",
-  "grade": null,
-  "note": "probe_c.mjs (no expectation stated); no word boundary in front of BB"
+  "grade": "vf",
+  "note": "probe_c.mjs (no expectation stated); #6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
  },
  {
   "text": "SPL+.",
@@ -2643,5 +2643,190 @@
   "text": "Schoene Patina. ss-vz.",
   "grade": "vf",
   "note": "round 1 test"
+ },
+ {
+  "text": "NGC AU 58",
+  "grade": "mint",
+  "note": "#6: AU counts in the top bucket, and the slab prints its numeric grade behind it"
+ },
+ {
+  "text": "AU/EF",
+  "grade": "ef",
+  "note": "#6: AU counts in the top bucket; a range takes the lower grade, and before it the second grade had no statement to join"
+ },
+ {
+  "text": "AU - EF.",
+  "grade": "ef",
+  "note": "#6: AU counts in the top bucket; a range takes the lower grade"
+ },
+ {
+  "text": "\"Good VF\"",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "“EF”",
+  "grade": "ef",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Nero. As. RIC 306. \"Very Fine\"",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "VF★",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Schöne Patina. ss*",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Extremely Fine though weakly struck.",
+  "grade": "ef",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "Good VF though off-centre.",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "ss, though schwach ausgeprägt.",
+  "grade": "vf",
+  "note": "#6: a quote, a star and a following \" though\" close a grade"
+ },
+ {
+  "text": "A \"fine\" portrait.",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
+ },
+ {
+  "text": "Ex \"MS\" collection.",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
+ },
+ {
+  "text": "the BB collection*",
+  "grade": null,
+  "note": "#6: a quote, a star and a following \" though\" close a grade; a quote closes a grade and never opens one, and it lends prose no standing"
+ },
+ {
+  "text": "otherwise very fine",
+  "grade": "vf",
+  "note": "#6: a qualifier gives a lower-case name a grade's standing"
+ },
+ {
+  "text": "nearly extremely fine",
+  "grade": "ef",
+  "note": "#6: a qualifier gives a lower-case name a grade's standing"
+ },
+ {
+  "text": "about uncirculated with luster",
+  "grade": "mint",
+  "note": "#6: a qualifier gives a lower-case name a grade's standing"
+ },
+ {
+  "text": "Some corrosion, very fine portrait.",
+  "grade": null,
+  "note": "#6: a qualifier gives a lower-case name a grade's standing; a name still needs its closing edge, and a bare lower-case one is the adjective"
+ },
+ {
+  "text": "a nearly extremely fine example of the type",
+  "grade": null,
+  "note": "#6: a qualifier gives a lower-case name a grade's standing; a name still needs its closing edge, and a bare lower-case one is the adjective"
+ },
+ {
+  "text": "struck on a good very fine flan",
+  "grade": null,
+  "note": "#6: a qualifier gives a lower-case name a grade's standing; a name still needs its closing edge, and a bare lower-case one is the adjective"
+ },
+ {
+  "text": "mBB",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "mSPL",
+  "grade": "ef",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Bella patina. mBB.",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Moneta con patina, BB+.",
+  "grade": "vf",
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does"
+ },
+ {
+  "text": "Vgl. mss. Kommentar.",
+  "grade": null,
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does; read in lower case and only in front of a capital, and the mark still needs its closing edge"
+ },
+ {
+  "text": "Monogramma mBB nel campo.",
+  "grade": null,
+  "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does; read in lower case and only in front of a capital, and the mark still needs its closing edge"
+ },
+ {
+  "text": "VF 17.23 g, 18 mm, 6 h.",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "Nero. Denarius. RIC 306. VF 3.41 g",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "ss 3,41 g",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "EF 18mm",
+  "grade": "ef",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "Fine 12.",
+  "grade": null,
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not; the number alone is a lot number, and the unit must be the unit"
+ },
+ {
+  "text": "Ex Slg. MS 12 hours later.",
+  "grade": null,
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not; the number alone is a lot number, and the unit must be the unit"
+ },
+ {
+  "text": "Solidus. AU 4.45 g.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Aureus. AU, 7.25 g.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Gold (AU) solidus",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Tremissis. AU 1.48 g, 15 mm.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Byzantine. Solidus. AU.",
+  "grade": null,
+  "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
  }
 ]

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
+import { ricMintSection } from '../extension/catalogues.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
 import { lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
 
@@ -278,6 +279,8 @@ const peopleOn = (id) => {
 const opensOnly = (opened, ids, heading) => {
   for (const hit of opened) assert.ok(peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`);
 };
+// Where a coin was struck, as the record itself says: the mint concepts the type carries.
+const mintsOn = (id) => bundleJson(`ocre/${shardPartOf(id)?.file}`)?.records?.[id]?.m ?? [];
 
 test('over the bundled catalogue, a heading that is one man\'s own name opens his coins and nobody else\'s', { skip }, async () => {
   // Germanicus is a person Nomisma names, and also a word inside Nero Claudius Drusus Germanicus: widened, the heading answered thirteen numbers
@@ -333,6 +336,113 @@ test('over the bundled catalogue, guided fields naming a mint by its modern name
   assert.equal(guided.card.id, 'ric.7.tri.12');
   // Unmapped, the name is no section of any volume and the sixteen mints of RIC VII are all that is left to offer.
   assert.equal((await localProvider.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' })).candidates.length, 16);
+});
+
+// A mint's modern name is now taken from the mint's own country, from English and from the exonym several western languages share, so a reference
+// typed the way a dealer writes it reaches RIC's Latin section with no network at all.
+test('over the bundled catalogue, a mint typed by a modern name Nomisma publishes opens the coin offline', { skip }, async () => {
+  const localProvider = bundle;
+  for (const [written, id] of [['RIC VII Arles 12', 'ric.7.ar.12'], ['RIC VII Trier 12', 'ric.7.tri.12'], ['RIC VII Sisak 12', 'ric.7.sis.12'],
+    ['RIC VI Antakya 12', 'ric.6.anch.12'], ['RIC VII Istanbul 12', 'ric.7.cnp.12']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // The names Wikidata adds through Nomisma's own closeMatch links open the same coins. Sofia is the one that matters most: it is what Serdica is
+  // called today, and Nomisma writes it in Cyrillic alone.
+  for (const [written, id] of [['RIC VII Sofia 1', 'ric.7.serd.1'], ['RIC VI Carthago 1', 'ric.6.carth.1'], ['RIC VI Triers 12', 'ric.6.tri.12'],
+    ['RIC VIII Samarobriva 12', 'ric.8.amb.12'], ['RIC VI Nikomedya 12', 'ric.6.nic.12']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // RIC's own spelling still reaches the same coin, and Rome — the one mint section that is an ordinary English word — is untouched.
+  for (const [written, id] of [['RIC VII Arelate 12', 'ric.7.ar.12'], ['RIC VI Rome 12', 'ric.6.rom.12'], ['RIC VII Londinium 12', 'ric.7.lon.12'],
+    ['RIC VI Serdica 16', 'ric.6.serd.16']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // The names the mint volumes were asked for, reached through the one statement the linked Wikidata item publishes: London, Lyon, Milan, Pavia and
+  // Trier open their Latin sections with no network at all.
+  for (const [written, id] of [['RIC VII London 12', 'ric.7.lon.12'], ['RIC VII Lyon 12', 'ric.7.lug.12'], ['RIC VII Trier 12', 'ric.7.tri.12'],
+    ['RIC VII Pavia 12', 'ric.7.tic.12'], ['RIC VI Pavia 1', 'ric.6.tic.1'], ['RIC IX Milan 1', 'ric.9.med.1'],
+    ['RIC IX Mailand 1', 'ric.9.med.1'], ['RIC VI London 12', 'ric.6.lon.12'], ['RIC VII Londres 12', 'ric.7.lon.12']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // Two of the brief's own references name a number the bundle does not hold rather than a mint it cannot reach: OCRE heads no RIC VII section with
+  // Mediolanum (Milan is RIC VIII and IX), and RIC VI Ticinum runs 1-11 and then 13. The section is read in both, and the number is what is missing.
+  for (const written of ['RIC VII Milan 12', 'RIC VI Pavia 12']) {
+    const reference = parseReference(written);
+    assert.equal(ricMintSection(reference.section), written.includes('Milan') ? 'Mediolanum' : 'Ticinum', written);
+    assert.notEqual((await lookupType(reference, { localProvider, online: false })).status, 'ok', written);
+  }
+  // "Lyons" is the one name of the five still unreachable: Wikidata publishes it as a name of Lyon in no language kept, and none was invented.
+  const lyons = await lookupType(parseReference('RIC VII Lyons 12'), { localProvider, online: false });
+  assert.notEqual(lyons.status, 'ok');
+});
+
+// A mint alias may only ever say which section a number lives in. Over every RIC number from 1 to 400, each new spelling must open coins of its own
+// mint and nothing else: a place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
+test('over the bundled catalogue, a heading naming only a mint opens that mint\'s coins and no others', { skip }, async () => {
+  for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
+    ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
+    ['Londinium', 'londinium'],
+    // Every spelling Wikidata added, over the same sweep: a name that opened a stranger's coin would be worse than one that opened nothing.
+    ['Sofia', 'serdica'], ['Sredets', 'serdica'], ['Carthago', 'carthage'], ['Ostia Antica', 'ostia'], ['Roman London', 'londinium'],
+    ['Triers', 'treveri'], ['Augusta Treverorum', 'treveri'], ['Treviri', 'treveri'], ['Nikomedya', 'nicomedia'], ['Nikomedeia', 'nicomedia'],
+    ['Samarobriva', 'ambianum'], ['Amians', 'ambianum'], ['Lugudunum', 'lugdunum'], ['Cizico', 'cyzicus'], ['Kizikos', 'cyzicus'],
+    ['Antioch on the Orontes', 'antiocheia_syria'], ['Antiochia', 'antiocheia_syria'], ['Konstantiniyye', 'constantinople'],
+    ['Tsarigrad', 'constantinople'], ['Marmaraereğlisi', 'heraclea_thracica'],
+    // And every spelling the one statement hop added, over the same sweep. These are the names the mint volumes were asked for, so a wrong single
+    // answer here would be the worst kind: each has to open coins of its own mint and of no other.
+    ['London', 'londinium'], ['London, UK', 'londinium'], ['Londres', 'londinium'], ['Lunden', 'londinium'], ['Lyon', 'lugdunum'],
+    ['City of Lyon', 'lugdunum'], ['Milan', 'mediolanum'], ['Milano', 'mediolanum'], ['Mailand', 'mediolanum'], ['Milan, Italy', 'mediolanum'],
+    ['Pavia', 'ticinum'], ['İzmit', 'nicomedia'], ['Ismid', 'nicomedia'], ['Erdek', 'cyzicus'], ['Artake', 'cyzicus']]) {
+    const opened = await openedOver(heading);
+    assert.ok(opened.length > 0, heading);
+    for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
+  }
+  // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
+  assert.deepEqual(await openedOver('Roma'), []);
+  // The five names the mint volumes were asked for, written the way a lot heading writes them. Four of them now name their Latin section; "Lyons" is
+  // in no label Wikidata publishes for Lyon and names none, and nothing was invented to make it.
+  for (const [heading, section] of [['London', 'Londinium'], ['Lyon', 'Lugdunum'], ['Milan', 'Mediolanum'], ['Pavia', 'Ticinum'],
+    ['Trier', 'Treveri'], ['Lyons', '']]) {
+    const lot = findReferences(`${heading}. RIC 12`);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, heading);
+  }
+  // A heading neither source gives a modern name for names no section, and the row is looked up as it was before. A city's nickname names none
+  // either: kept, "the Eternal City" in a Trier lot's prose would have been the earliest mint spelling in it and filed the coin under Rome. The
+  // codes and the honorific London's item lists beside its names are refused for the same reason.
+  for (const heading of ['Eternal City', 'Caput Mundi', 'Urbe', 'Augusta', 'LDN', 'Big Smoke', 'Capitale des Gaules']) {
+    const lot = findReferences(`${heading}. RIC 12`);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', heading);
+  }
+});
+
+// "Rome mint" stands in most RIC I-V descriptions and a heading is ruler-less wherever the table does not hold its spelling, so a mint that discarded
+// the lot's own volume sent the number to four volumes it is not in. Over the bundle, each of these opened the wrong coin or the wrong choice.
+test('over the bundled catalogue, a mint beside a volume of another part of RIC leaves the volume standing', { skip }, async () => {
+  const lookup = async (text) => { const lot = findReferences(text); return bundle.lookupType(lotLookup(lot.references[0], lot.rulers)); };
+  // RIC IV has no Rome section: the number belongs to the two RIC IV coins that carry it, not to RIC VIII Rome 460.
+  const four = await lookup('Rome mint. RIC IV 460');
+  assert.equal(four.status, 'candidates');
+  assert.deepEqual(four.candidates.map((entry) => entry.id), ['ric.4.crl.460', 'ric.4.sa.460']);
+  // And the volume the lot states opens its own coin instead of a choice of mints that never held the number.
+  for (const [text, id] of [['Diva Faustina. AR Denarius, Rome mint. RIC III 360', 'ric.3.m_aur.360'],
+    ['Constantinople. RIC X 12', 'ric.10.arc_e.12']]) {
+    const found = await lookup(text);
+    assert.equal(found.status, 'ok', text);
+    assert.equal(found.card.id, id, text);
+  }
+  // A mint beside one of its own volumes is unchanged, and so is a citation with no volume at all.
+  assert.equal((await lookup('Trier mint. RIC VII 12')).card?.id, 'ric.7.tri.12');
+  assert.deepEqual((await lookup('Londinium. RIC 12')).candidates.map((entry) => entry.id), ['ric.6.lon.12', 'ric.7.lon.12']);
+  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own (see Known issues).
+  assert.equal((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).card?.id, 'ric.6.rom.12');
 });
 
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it

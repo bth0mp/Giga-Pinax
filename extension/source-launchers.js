@@ -20,7 +20,8 @@ export const SOURCE_CAPABILITIES = Object.freeze({
 function validateQuery(query) {
   if (typeof query !== 'string') return null;
   if (/[\u0000-\u001f\u007f]/.test(query)) return null;
-  const normalized = query.trim();
+  // The workspace's own query box is typed by hand: a run of spaces inside it would otherwise reach the site as typed.
+  const normalized = query.trim().replace(/\s+/g, ' ');
   if (!normalized || normalized.length > 400 || /^javascript:/i.test(normalized)) return null;
   return normalized;
 }

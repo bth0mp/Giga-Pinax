@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LIMITS, SCHEMA_VERSION, createEmptySnapshot } from '../extension/core/records.js';
-import { BACKUP_FORMAT, exportBackup } from '../extension/core/backup.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
+import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 
@@ -608,6 +608,253 @@ test('a root with one corrupt lot still loads, exports, and keeps the lot quaran
   assert.equal(storage.read().quarantine.length, 1);
 });
 
+// A record set aside by a repair is the collector's own, and until now the only way back was to edit
+// a backup by hand. One that validates again goes back where it came from, and the links its removal
+// had to clear go back with it - unless the collector has used that field since.
+const setAsideEvent = () => ({
+  id: uuid(), revision: 3, dataClass: 'collector', name: 'Set-aside sale', eventKind: 'auction-starts',
+  precision: 'timed', localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC',
+  startsAt: '2026-10-10T12:00:00.000Z', reminderScope: 'standalone',
+  reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }], createdAt: NOW, updatedAt: NOW,
+});
+const plainLot = (id, extra = {}) => ({
+  id, revision: 2, dataClass: 'collector', title: 'Nero denarius', sourceLinks: [], bidHistory: [],
+  outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW, ...extra,
+});
+const setAsideRoot = (entries, lots, events = []) => {
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push(...lots);
+  stored.auctionEvents.push(...events);
+  stored.quarantine = entries;
+  return stored;
+};
+
+test('a set-aside record goes back into its collection with the link its removal cleared', async () => {
+  const event = setAsideEvent();
+  const lotId = uuid();
+  const stored = setAsideRoot([{
+    collection: 'auctionEvents', record: event, reason: 'duplicate-id', quarantinedAt: NOW,
+    clearedReferences: [{ collection: 'lots', id: lotId, field: 'auctionEventId', value: event.id }],
+  }], [plainLot(lotId)]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value, {
+    collection: 'auctionEvents',
+    id: event.id,
+    restoredReferences: [{ collection: 'lots', id: lotId, field: 'auctionEventId' }],
+    keptReferences: [],
+  });
+  const after = storage.read();
+  assert.deepEqual(after.auctionEvents.map(({ id }) => id), [event.id]);
+  assert.equal(after.auctionEvents[0].revision, 0, 'counted again from a number every later write can hold');
+  assert.equal(after.lots[0].auctionEventId, event.id);
+  assert.equal(after.lots[0].revision, 3, 'the lot changed, so a holder of the row it had is asked again');
+  assert.equal(Object.hasOwn(after, 'quarantine'), false, 'and the entry has left the bin');
+  // The reminder the set-aside sale carries is scheduled again, as it would have been all along.
+  assert.equal((await writer.commitCommand(command('scheduler.reconcile'))).ok, true);
+  assert.equal(storage.read().alerts.length, 1);
+});
+
+test('a field used since it was cleared is left alone and named in the reply', async () => {
+  const event = setAsideEvent();
+  const kept = setAsideEvent();
+  const lotId = uuid();
+  const stored = setAsideRoot([{
+    collection: 'auctionEvents', record: event, reason: 'duplicate-id', quarantinedAt: NOW,
+    clearedReferences: [{ collection: 'lots', id: lotId, field: 'auctionEventId', value: event.id }],
+  }], [plainLot(lotId, { auctionEventId: kept.id })], [kept]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value.restoredReferences, []);
+  assert.deepEqual(restored.value.keptReferences, [{ collection: 'lots', id: lotId, field: 'auctionEventId' }]);
+  const after = storage.read();
+  assert.deepEqual(after.auctionEvents.map(({ id }) => id).sort(), [kept.id, event.id].sort());
+  assert.equal(after.lots[0].auctionEventId, kept.id, 'the sale the collector chose since stays');
+  assert.equal(after.lots[0].revision, 2, 'and that lot is not written at all');
+});
+
+// Undoing the links a restore had to give up walks them backwards. Each one wrote down the revision
+// its host carried before that link was applied, so replaying them forwards left a host that took
+// two of them one revision above where it started: an alteration the collector never made, and a
+// false conflict for an editor holding the row.
+test('a restore whose links are undone leaves a two-link host record untouched', async () => {
+  const group = {
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Alternatives', createdAt: NOW, updatedAt: NOW,
+  };
+  const lotId = uuid();
+  const stored = setAsideRoot([{
+    collection: 'alternativeGroups', record: group, reason: 'collection-limit', quarantinedAt: NOW,
+    clearedReferences: [
+      { collection: 'lots', id: lotId, field: 'alternativeGroupId', value: group.id },
+      { collection: 'lots', id: lotId, field: 'priority', value: 0 },
+    ],
+  }], [plainLot(lotId)]);
+  const before = structuredClone(stored.lots[0]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value.restoredReferences, [], 'a priority of zero is no ordering this root can hold');
+  assert.equal(restored.value.keptReferences.length, 2, 'so both links are reported as left out');
+  const after = storage.read();
+  assert.deepEqual(after.alternativeGroups.map(({ id }) => id), [group.id], 'the group itself is back');
+  assert.deepEqual(after.lots[0], before, 'and the lot is exactly the row it was, revision included');
+});
+
+test('a set-aside record that still does not validate is refused and stays in the bin', async () => {
+  const broken = { ...setAsideEvent(), eventKind: 'bring-your-own' };
+  const stored = setAsideRoot([{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+  }], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const refused = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'validation');
+  assert.equal(refused.outcome, 'not-committed');
+  assert.match(refused.message, /allowed set/i, 'the validator says what is wrong with it');
+  const after = storage.read();
+  assert.deepEqual(after.auctionEvents, []);
+  assert.equal(after.quarantine.length, 1, 'nothing is lost by a refusal');
+
+  const missing = await writer.commitCommand(command('quarantine.restore', { entryId: uuid() }));
+  assert.equal(missing.ok, false);
+  assert.equal(missing.code, 'validation');
+});
+
+// A lot and its collection entry refer to each other both ways, so a repair that sets the lot aside
+// as a duplicate ID sends its entry after it as a foreign key - and neither could ever come back,
+// because each was refused over the one still in the bin. They come back together now.
+const pairedRoot = () => {
+  const lotId = uuid();
+  const entryId = uuid();
+  const stored = createEmptySnapshot(NOW);
+  stored.quarantine = [
+    {
+      collection: 'lots', reason: 'duplicate-id', quarantinedAt: NOW,
+      record: plainLot(lotId, { collectionEntryId: entryId, outcome: { status: 'won' } }),
+    },
+    {
+      collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW,
+      record: {
+        id: entryId, revision: 0, dataClass: 'collector', lotId, title: 'Acquired',
+        acquisitionDate: '2026-09-12', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+      },
+    },
+  ];
+  return { stored, lotId, entryId };
+};
+
+test('a lot and the collection entry set aside with it are put back by one command', async () => {
+  const { stored, lotId, entryId } = pairedRoot();
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.collection, 'lots');
+  assert.equal(restored.value.id, lotId);
+  assert.deepEqual(restored.value.alsoRestored, [{ collection: 'collectionEntries', id: entryId }],
+    'the reply lists the partner that came back with it');
+  const after = storage.read();
+  assert.deepEqual(after.lots.map(({ id }) => id), [lotId]);
+  assert.deepEqual(after.collectionEntries.map(({ id }) => id), [entryId]);
+  assert.equal(Object.hasOwn(after, 'quarantine'), false, 'both entries have left the bin');
+  assert.match(quarantineRestoreText(restored.value), /linked to went back into collectionEntries/);
+});
+
+test('the collection entry of the pair puts its lot back the same way', async () => {
+  const { stored, lotId, entryId } = pairedRoot();
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[1]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.id, entryId);
+  assert.deepEqual(restored.value.alsoRestored, [{ collection: 'lots', id: lotId }]);
+  assert.equal(storage.read().lots.length, 1);
+});
+
+test('half a pair alone is refused by naming the partner that is not there', async () => {
+  const { stored, entryId } = pairedRoot();
+  stored.quarantine = [stored.quarantine[0]];
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const refused = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'validation');
+  assert.match(refused.message, /collection entry/, 'it says what kind of record is missing');
+  assert.ok(refused.message.includes(entryId), 'and names it');
+  assert.doesNotMatch(refused.message, /reminder/i, 'and blames no reminder');
+  assert.equal(storage.read().quarantine.length, 1, 'nothing is lost by the refusal');
+});
+
+// A restore the root refuses is refused in the validator's own words. The reminder preflight runs
+// over every schedule-changing command, so its sentence used to be put in front of a refusal that
+// was never about reminders at all.
+test('a restore the root refuses says what the validator said, without blaming reminders', async () => {
+  const lot = plainLot(uuid(), { auctionEventId: uuid() });
+  const stored = setAsideRoot([{
+    collection: 'lots', record: lot, reason: 'collection-limit', quarantinedAt: NOW,
+  }], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const refused = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'validation');
+  assert.equal(refused.message, 'Lot refers to an unknown auction event.');
+  assert.doesNotMatch(refused.message, /reminder/i);
+  assert.equal(storage.read().lots.length, 0, 'and nothing is written');
+});
+
+// Two bins unioned by an import hold the same record twice, and a repair that runs again over a bin
+// it already wrote must not open a second entry for a cause that is already in there.
+test('a bin holding one set-aside record twice folds it into a single entry on repair', async () => {
+  const event = setAsideEvent();
+  const lotId = uuid();
+  const reference = { collection: 'lots', id: lotId, field: 'auctionEventId', value: event.id };
+  const entry = { collection: 'auctionEvents', record: event, reason: 'duplicate-id', quarantinedAt: LATER };
+  const stored = setAsideRoot([
+    { ...structuredClone(entry), clearedReferences: [reference] },
+    { ...structuredClone(entry), quarantinedAt: NOW },
+  ], [plainLot(lotId), plainLot(uuid(), { outcome: { status: 'maybe' } })]);
+  const writer = createCommandWriter(memoryStorage(stored), context());
+
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(opened.ok, true, opened.message);
+  const events = opened.value.quarantine.filter(({ collection }) => collection === 'auctionEvents');
+  assert.equal(events.length, 1, 'one record set aside for one reason is one entry');
+  assert.equal(events[0].quarantinedAt, NOW, 'set aside when it first was');
+  assert.deepEqual(events[0].clearedReferences, [reference], 'and carrying every link either entry recorded');
+  assert.equal(opened.value.quarantine.length, 2, 'the lot the repair set aside is the other entry');
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
@@ -722,6 +969,40 @@ test('writer atomically rejects an event whose fully materialized reminders exce
   assert.equal(result.ok, false);
   assert.match(result.message, /reminders.*5 MiB/i);
   assert.equal(storage.read().auctionEvents.length, 499);
+});
+
+// A backup that will not fit is not a reminder problem. The bound is shared with the reminder
+// preflight, and its sentence told the collector to remove reminders or auction events, which is no
+// way out of a file with too many records in it.
+test('an import over the storage bound is refused as an import, not as a reminder', () => {
+  const notes = 'x'.repeat(LIMITS.notes);
+  const fat = (index) => ({
+    id: `00000000-0000-4000-8000-${String(index + 100000).padStart(12, '0')}`, revision: 0,
+    dataClass: 'collector', title: `Lot ${index}`, notes, sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const incoming = createEmptySnapshot(NOW);
+  const lotBytes = new TextEncoder().encode(JSON.stringify(fat(0))).length + 1;
+  for (let index = 0; index * lotBytes < MAX_ROOT_BYTES - 50000; index += 1) incoming.lots.push(fat(index));
+  const result = applyCommand(createEmptySnapshot(NOW), command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(incoming, NOW).value,
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'storage-bound');
+  assert.match(result.error.message, /backup/i);
+  assert.doesNotMatch(result.error.message, /reminder/i);
+
+  // Nor is a record coming back out of the bin: the way out of that is the records already saved.
+  const stored = createEmptySnapshot(NOW);
+  stored.lots.push(...incoming.lots);
+  stored.quarantine = [{ collection: 'lots', record: fat(999999), reason: 'collection-limit', quarantinedAt: NOW }];
+  const restore = applyCommand(stored, command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }), context());
+  assert.equal(restore.ok, false);
+  assert.equal(restore.error.code, 'storage-bound');
+  assert.match(restore.error.message, /put(ting)? (this record )?back/i);
+  assert.doesNotMatch(restore.error.message, /reminder/i);
 });
 
 test('writer preflights linked reminders when a lot activates their event', async () => {
@@ -1004,6 +1285,93 @@ test('a merge import folds a duplicated auction lot into the local one and leave
   assert.equal(saved.value.title, 'Nero denarius, retoned');
 });
 
+// A lot the merge skips as a duplicate brings the other install's auction event with it, and that
+// event merged by ID a moment earlier: one sale became two events, and its reminders fired twice.
+const sameSale = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+const saleEvent = (name) => ({
+  id: uuid(), revision: 0, dataClass: 'collector', name, eventKind: 'auction-starts', precision: 'timed',
+  localDate: '2026-10-10', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-10-10T12:00:00.000Z',
+  reminderScope: 'linked-lots', reminders: [{ id: uuid(), kind: 'offset', offsetMinutes: 60 }],
+  createdAt: NOW, updatedAt: NOW,
+});
+const saleLot = (title, extra = {}) => ({
+  id: uuid(), revision: 0, dataClass: 'collector', title, sourceLinks: [], bidHistory: [],
+  outcome: { status: 'open' }, outcomeHistory: [], auctionContext: sameSale,
+  createdAt: NOW, updatedAt: NOW, ...extra,
+});
+
+test('a merge that skips a duplicated lot keeps out the auction event it carried', () => {
+  const current = createEmptySnapshot(NOW);
+  const localEvent = saleEvent('Triton XXIX');
+  current.auctionEvents.push(localEvent);
+  current.lots.push(saleLot('Nero denarius', { auctionEventId: localEvent.id }));
+  const incoming = createEmptySnapshot(NOW);
+  const otherEvent = saleEvent('Triton XXIX (laptop)');
+  incoming.auctionEvents.push(otherEvent);
+  incoming.lots.push(saleLot('Nero denarius (laptop)', { auctionEventId: otherEvent.id }));
+
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.auctionEvents.map(({ id }) => id), [localEvent.id],
+    'one sale, one auction event');
+  assert.equal(imported.snapshot.lots.length, 1);
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1, 'and one reminder for it, not two');
+});
+
+// An import unioned the two bins by exact bytes, so the same record set aside on both installs -
+// each at the moment that install repaired it - came through as two entries with two Restore
+// buttons for one record. The import folds the way the repair does, in both modes.
+test('a backup whose bin holds a record already set aside here leaves one entry', async () => {
+  for (const mode of ['merge', 'replace']) {
+    const record = { ...setAsideEvent(), eventKind: 'bring-your-own' };
+    const stored = setAsideRoot([{
+      collection: 'auctionEvents', record, reason: 'invalid-enum', quarantinedAt: LATER,
+    }], []);
+    const incoming = createEmptySnapshot(NOW);
+    incoming.quarantine = [{
+      collection: 'auctionEvents', record: structuredClone(record), reason: 'invalid-enum', quarantinedAt: NOW,
+    }];
+    const storage = memoryStorage(stored);
+    const writer = createCommandWriter(storage, context());
+
+    const imported = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document: exportBackup(incoming, NOW).value,
+    }));
+    assert.equal(imported.ok, true, imported.message);
+    const bin = storage.read().quarantine;
+    assert.equal(bin.length, 1, `one record set aside twice is one entry after a ${mode}`);
+    assert.equal(bin[0].quarantinedAt, NOW, 'set aside when it first was');
+    assert.equal(quarantineRows(bin).length, 1, 'so Settings offers one Restore');
+  }
+});
+
+test('a merge links the lot it kept to the auction the backup knew about', () => {
+  const current = createEmptySnapshot(NOW);
+  const localLot = saleLot('Nero denarius');
+  current.lots.push(localLot);
+  const incoming = createEmptySnapshot(NOW);
+  const otherEvent = saleEvent('Triton XXIX');
+  incoming.auctionEvents.push(otherEvent);
+  incoming.lots.push(saleLot('Nero denarius (laptop)', { auctionEventId: otherEvent.id }));
+
+  const imported = reduce(current, command('backup.import', {
+    expectedRevision: 0, mode: 'merge', document: exportBackup(incoming, NOW).value,
+  }));
+  assert.deepEqual(imported.snapshot.auctionEvents.map(({ id }) => id), [otherEvent.id]);
+  assert.deepEqual(imported.snapshot.lots.map(({ id, auctionEventId }) => [id, auctionEventId]),
+    [[localLot.id, otherEvent.id]], 'the lot that stayed is the one the sale is attached to');
+  const reconciled = reduce(imported.snapshot, command('scheduler.reconcile'));
+  assert.equal(reconciled.snapshot.alerts.length, 1);
+  // The link is a change to a record the collector may have open, so it is stamped: a save holding
+  // the revision from before the import is told rather than allowed to drop the link again.
+  const stale = applyCommand(imported.snapshot, command('lot.save', {
+    expectedRevision: localLot.revision, lot: { id: localLot.id, title: 'Nero denarius', sourceLinks: [] },
+  }), context());
+  assert.equal(stale.error.code, 'conflict');
+});
+
 test('a merge import commits with the local rows a conflict kept', () => {
   const observation = {
     id: uuid(), queryId: uuid(), source: 'manual', dataClass: 'collector', retrievedAt: NOW,
@@ -1119,6 +1487,36 @@ test('a lot the merge replaced refuses a save holding the pre-merge revision', (
   }), context());
   assert.equal(stale.ok, false, 'a stale editor must be told, not allowed to save over the backup');
   assert.equal(stale.error.code, 'conflict');
+});
+
+// Every copy and every measurement made of a document is recursive, and a hand-made file can nest an
+// object thousands of levels deep: the stack ran out and a RangeError came out of the command queue
+// instead of a reply, so the page that asked was never answered at all.
+test('a backup nested thousands of levels deep is answered, not thrown out of the writer', async () => {
+  const nested = (depth) => `${'{"nested":'.repeat(depth)}null${'}'.repeat(depth)}`;
+  const entry = `{"collection":"lots","reason":"invalid-record","quarantinedAt":"${NOW}","record":${nested(3000)}}`;
+  const document = JSON.stringify({
+    format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW, data: createEmptySnapshot(NOW),
+  }).replace('"lots":[]', `"quarantine":[${entry}],"lots":[]`);
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+
+  for (const mode of ['merge', 'replace']) {
+    const refused = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document,
+    }));
+    assert.equal(refused.ok, false, mode);
+    assert.equal(refused.code, 'validation', mode);
+    assert.equal(refused.outcome, 'not-committed', mode);
+    assert.match(refused.message, /Export raw data/,
+      'and the collector is told the one thing that still works on data nobody here can read');
+    assert.equal(Object.hasOwn(storage.read(), 'quarantine'), false, 'nothing of the file reached storage');
+  }
+  // The queue is still the collector's to write to.
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Still writable', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
 });
 
 test('an imported root keeps only the keys the snapshot knows', () => {

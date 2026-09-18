@@ -15,6 +15,7 @@ const titles = [];
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
 const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
+const LOOKUP_FAILURE_TITLE = 'Giga Pinax: the lookup window could not be opened. Open Giga Pinax from the toolbar to look the reference up there.';
 const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
@@ -400,6 +401,28 @@ test('a capture failure under a standing reconcile failure leaves the reconcile 
     stored[STORAGE_KEY] = intact;
   }
   await wake();
+  assert.notEqual(badges.at(-1), '!');
+  assert.equal(titles.at(-1), '');
+});
+
+// A lookup window that will not open saves nothing and loses nothing, so the warning that said the
+// last page capture could not be saved sent the collector looking for records that were never there.
+test('a lookup window that cannot be opened is not reported as a lost capture', async () => {
+  const realCreate = globalThis.browser.windows.create;
+  globalThis.browser.windows.create = async () => { throw new Error('no window'); };
+  try {
+    listeners.clicked[0]({ menuItemId: 'giga-pinax-lookup', selectionText: 'RIC 306' });
+    for (let index = 0; index < 10; index += 1) await flush();
+  } finally {
+    globalThis.browser.windows.create = realCreate;
+  }
+  assert.equal(badges.at(-1), '!');
+  assert.equal(titles.at(-1), LOOKUP_FAILURE_TITLE);
+  assert.doesNotMatch(titles.at(-1), /saved/, 'nothing was being saved');
+
+  // It is a warning of the same kind as the capture one: the collector opening a page retires it.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  for (let index = 0; index < 8; index += 1) await flush();
   assert.notEqual(badges.at(-1), '!');
   assert.equal(titles.at(-1), '');
 });

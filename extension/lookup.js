@@ -79,8 +79,10 @@ const MAX_REFERENCE = 120;
 // The parts RIC's own volume division gives a numeral, as this repository evidences it and no further: RIC_VOLUMES (catalogues.js) lists II, Part 1
 // and II, Part 3 as volumes of their own, the bundled OCRE titles and ids carry a part for no other numeral, and nothing here says how the rest of
 // the set is bound. RIC V is the one addition, settled before this table existed: dealers cite V.1 and V.2, and OCRE merges the two into one V, so
-// both are read and the lookup asks for V entire. A part outside the table is not this book's, so the citation carrying it is left unread.
-const VOLUME_PARTS = new Map([['II', new Set(['1', '3'])], ['V', new Set(['1', '2'])]]);
+// both are read and the lookup asks for V entire. RIC IV is bound in three parts, cited IV.1, IV.2 and IV.3, and OCRE keeps that volume whole as it
+// keeps V, so all three are read and the lookup asks for IV entire. A part outside the table is not this book's, so the citation carrying it is
+// left unread.
+const VOLUME_PARTS = new Map([['II', new Set(['1', '3'])], ['IV', new Set(['1', '2', '3'])], ['V', new Set(['1', '2'])]]);
 export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String(numeral).toUpperCase())?.has(part));
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
 // is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").

@@ -24,14 +24,14 @@ const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import',
+  'backup.import', 'quarantine.restore',
 ]);
 // The address this extension's own pages are served from; a sender outside it commands nothing.
 const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
-  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import',
+  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import', 'quarantine.restore',
 ]);
 let reconcileQueue = Promise.resolve();
 let menuQueue = Promise.resolve();
@@ -40,6 +40,9 @@ let menuQueue = Promise.resolve();
 // the due count until the collector has had a chance to see it.
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
 const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
+// A lookup saves nothing, so a window that will not open has lost nothing: the capture wording sent
+// the collector looking through their records for work that was never being written.
+const LOOKUP_FAILURE_TITLE = 'Giga Pinax: the lookup window could not be opened. Open Giga Pinax from the toolbar to look the reference up there.';
 // Most reconciles are nobody's request - an alarm, an install, the one that follows a save - so their reply is read by
 // no page. One that fails stops every reminder, and until this it did so in silence.
 const RECONCILE_FAILURE_TITLE = 'Giga Pinax: auction reminders could not be rescheduled. Open the workspace to check your auctions.';
@@ -285,7 +288,12 @@ async function clearReconcileFailure() {
 async function runMenuAction(info) {
   if (info.menuItemId === MENU_LOOKUP) {
     const query = selectionQuery(info.selectionText);
-    if (query) await showInWindow(api, popupUrlFor(query));
+    if (!query) return;
+    try {
+      await showInWindow(api, popupUrlFor(query));
+    } catch {
+      await showCaptureFailure(LOOKUP_FAILURE_TITLE);
+    }
     return;
   }
   if (info.menuItemId !== MENU_RESEARCH && info.menuItemId !== MENU_TRACK) return;

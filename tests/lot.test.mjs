@@ -864,9 +864,12 @@ test('a comma between a RIC volume and its number keeps the reference whole', ()
   // A volume, its part and its number, each parted by a comma. Read as "RIC V 2" this opened Probus 2, a coin the dealer never cited.
   assert.deepEqual(only('Probus. RIC V, 2, 123').reference, { catalogue: 'RIC', volume: 'V, Part 2', section: '', number: '123' });
   assert.deepEqual(only('Trajan. RIC II, 1, 123').reference, { catalogue: 'RIC', volume: 'II, Part 1', section: '', number: '123' });
+  // RIC IV is bound in three parts, and a dealer punctuates them with commas as he does V's.
+  assert.deepEqual(only('Caracalla. RIC IV, 1, 123a').reference, ric('123a', 'IV, Part 1'));
+  assert.deepEqual(only('Gordian III. RIC IV, 3, 12').reference, ric('12', 'IV, Part 3'));
   // Only a part the volume really has, since a comma is also how a dealer lists numbers: "RIC III, 2, 3" is two of RIC III's numbers, and the
   // Reference box must read these the same way, which is to say not at all.
-  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 1, 123a']) {
+  for (const text of ['RIC II, 2, 123', 'RIC III, 2, 3', 'RIC X, 2, 123', 'RIC IV, 4, 12']) {
     assert.deepEqual(texts(`Trajan. ${text}`), [], text);
     assert.equal(parseReference(text), null, text);
   }
@@ -936,6 +939,76 @@ test('a mint written by the name on the map today is a section, and no ruler at 
   assert.deepEqual(lot.references[0].reference, { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' });
   assert.deepEqual(lot.rulers, ['Constantine I']);
   assert.equal(lotLookup(lot.references[0], lot.rulers).section, 'Trier');
+});
+
+// RIC VI-IX file their coins by mint, so a heading that names the mint and nobody else has said which section the number lives in. Read as text it
+// said nothing, and a numberless "RIC 12" left every mint of four volumes to choose between.
+test('a heading that names only a mint is read as that mint\'s RIC section, by RIC\'s spelling or the modern one', () => {
+  for (const [text, section] of [['Londinium. RIC 12', 'Londinium'], ['Arles. RIC 12', 'Arelate'], ['Arles mint, RIC 12', 'Arelate'],
+    ['Lugdunum mint. RIC 34', 'Lugdunum'], ['Trier. RIC 12', 'Treveri'], ['Sisak. RIC 12', 'Siscia'], ['Roma. RIC 12', 'Rome'],
+    ['Marmara Ereğlisi, AE follis. RIC 12', 'Heraclea'],
+    // The names Wikidata adds through Nomisma's closeMatch links read the same way in a heading as Nomisma's own.
+    ['Sofia. RIC 12', 'Serdica'], ['Roman London. RIC 12', 'Londinium'], ['Ostia Antica. RIC 12', 'Ostia'],
+    ['Carthago mint, AE follis. RIC 12', 'Carthage'],
+    // And the towns the one statement hop reaches, which are the names a dealer is likeliest of all to write: the Wikidata item Nomisma links each
+    // of these mints to is the Roman city, and its P1366, P276 or P131 statement is what names the town standing there now.
+    ['London. RIC 12', 'Londinium'], ['London mint, AE follis. RIC 12', 'Londinium'], ['Lyon mint. RIC 12', 'Lugdunum'],
+    ['Milan. RIC 12', 'Mediolanum'], ['Milano mint, AE follis. RIC 12', 'Mediolanum'], ['Pavia. RIC 12', 'Ticinum'],
+    ['Erdek. RIC 12', 'Cyzicus'], ['İzmit mint. RIC 12', 'Nicomedia']]) {
+    const lot = findReferences(text);
+    assert.deepEqual(lot.rulers, [], text);
+    // The mint rides on the row, never on the rulers: nothing may ask OCRE's portrait facet for a place.
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, text);
+    assert.ok(lotLabel(lot.references[0], lot.rulers).endsWith(` · ${section}`), text);
+  }
+  // "Lyons" is published as a name of Lyon in no language kept, so a heading written that way still names no section and the row is looked up as it
+  // always was. A nickname names none either: a coin described in prose about the Eternal City is not Rome's by that alone, and the codes and the
+  // honorific London's item carries beside its names are refused for exactly that reason.
+  for (const text of ['Lyons. RIC 12', 'Augusta. RIC 12', 'LDN. RIC 12', 'The Big Smoke. RIC 12', 'Capitale des Gaules. RIC 12',
+    'From the days of the Eternal City. RIC 12', 'Caput Mundi. RIC 12']) {
+    const lot = findReferences(text);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', text);
+  }
+  // The heading that most needs it: a mint named in prose about another city's epithet is still that mint's coin, not the epithet's.
+  const trier = findReferences('From the days of the Eternal City. Trier mint. RIC 12');
+  assert.equal(lotLookup(trier.references[0], trier.rulers).section, 'Treveri');
+  // A heading that names a ruler as well is the ruler's, exactly as it was before: a mint volume's coin is found by the man on it, and a ruler
+  // volume's number would otherwise be thrown away for a mint that only says where the coin was struck.
+  for (const text of ['Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.', 'Constantine I. Follis. Trier. RIC 12.']) {
+    const lot = findReferences(text);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section ?? '', '', text);
+    assert.deepEqual(lotLookup(lot.references[0], lot.rulers).rulers, lot.rulers, text);
+  }
+});
+
+// A mint section says which of RIC VI-IX a number lives in; it can never say that of a volume it is no section of. "Rome mint" stands in most RIC
+// I-V descriptions, and a heading is ruler-less whenever the table does not hold its spelling, so the mint used to throw away the volume the lot had
+// stated and search four mint volumes for a number that was never in them.
+test('a mint named beside a volume of its own is that section, and one beside any other volume is only where the coin was struck', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  // The volume the lot states stands, and no mint section is put on it: RIC IV, III and X have no Rome or Constantinople section at all.
+  for (const [text, volume] of [['Rome mint. RIC IV 460', 'IV'], ['Diva Faustina. AR Denarius, Rome mint. RIC III 360', 'III'],
+    ['Constantinople. RIC X 12', 'X'], ['Trier mint. RIC II 972', 'II']]) {
+    assert.deepEqual(lookup(text), { catalogue: 'RIC', number: text.match(/(\d+)$/)[1], volume, section: '' }, text);
+  }
+  // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
+  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri' });
+  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium' });
+  // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome' });
+});
+
+test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
+  for (const [text, rulers] of [['Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34.', ['Magnus Maximus']],
+    ['Constantine I. Follis. Trier. RIC VII 12.', ['Constantine I']], ['Antoninus Pius. Denarius, Rome mint. RIC III 360.', ['Antoninus Pius']],
+    ['Nero. Denarius, Rome mint. RIC 460.', ['Nero']]]) {
+    const lot = findReferences(text);
+    assert.deepEqual(lot.rulers, rulers, text);
+    const found = lotLookup(lot.references[0], lot.rulers);
+    assert.equal(found.section ?? '', '', text);
+    assert.deepEqual(found.rulers, rulers, text);
+    assert.equal(found.volume, lot.references[0].reference.volume, text);
+  }
 });
 
 test('the heading spellings the English and Latin labels really carry resolve, and no others are guessed at', () => {

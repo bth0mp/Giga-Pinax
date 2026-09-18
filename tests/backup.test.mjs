@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SCHEMA_VERSION, createEmptySnapshot, validateSnapshot } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
   importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
-  quarantineSummaryText, rawExportDocument, validateBackup,
+  quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -489,6 +489,127 @@ test('merge skips an incoming lot that is the same auction lot under a new ID', 
   ]);
 });
 
+// The skipped lot's auction event had merged by ID a moment before the lot was skipped, so one sale
+// ended up as two events here and its reminders fired twice.
+const SAME_SALE = { house: 'CNG', saleId: 'Triton XXIX', lotNumber: '42', pageUrl: 'https://house.test/lot/42' };
+
+test('an auction event arriving only with a skipped duplicate lot is kept out and said so', () => {
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(dateEvent(uuid(1), { name: 'Triton XXIX' }));
+  current.lots.push(lot(uuid(2), { title: 'Nero denarius', auctionContext: SAME_SALE, auctionEventId: uuid(1) }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(3), { name: 'Triton XXIX (laptop)' }));
+  incoming.lots.push(lot(uuid(4), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(3) }));
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(1)], 'one sale, one event');
+  assert.equal(preview.value.counts.added, 0, 'and nothing of the skipped lot is counted as added');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+    'auctionEvents: "Triton XXIX (laptop)" is the auction of a lot this merge skipped as a duplicate, kept out',
+  ]);
+  const again = previewImport(preview.value.snapshot, incoming, 'merge');
+  assert.equal(again.ok, true, again.error?.message);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+test('a merge keeps the auction of a skipped lot when a lot it did take is attached to it', () => {
+  const current = createEmptySnapshot(NOW);
+  current.auctionEvents.push(dateEvent(uuid(1), { name: 'Triton XXIX' }));
+  current.lots.push(lot(uuid(2), { title: 'Nero denarius', auctionContext: SAME_SALE, auctionEventId: uuid(1) }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(3), { name: 'Triton XXIX (laptop)' }));
+  incoming.lots.push(
+    lot(uuid(4), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(3) }),
+    lot(uuid(5), {
+      title: 'Attic tetradrachm', auctionEventId: uuid(3),
+      auctionContext: { ...SAME_SALE, lotNumber: '77', pageUrl: 'https://house.test/lot/77' },
+    }),
+  );
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(1), uuid(3)],
+    'a lot the merge did take is attached to it, so the sale comes with it');
+  assert.equal(preview.value.counts.added, 2);
+});
+
+test('a merge adopts the auction of a skipped duplicate when the local lot has none', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.auctionEvents.map(({ id }) => id), [uuid(2)]);
+  const [merged] = preview.value.snapshot.lots;
+  assert.deepEqual([merged.id, merged.auctionEventId], [uuid(1), uuid(2)],
+    'the lot that stayed is the one the sale is attached to');
+  assert.equal(merged.revision, 1, 'a holder of the unlinked lot is asked again');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+  ]);
+
+  const again = previewImport(preview.value.snapshot, incoming, 'merge');
+  assert.equal(again.ok, true, again.error?.message);
+  assert.equal(again.value.counts.added, 0);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+// Taking the backup's sale for the lot that stayed is a write to that lot, so it is reported and
+// stamped like any other: unlisted and unstamped, the preview said nothing, the settings page took
+// no safety copy before overwriting the lot, and the row still claimed the write time it had before
+// the link was put on it.
+test('a lot that takes the auction of a skipped duplicate is listed, counted and stamped', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.deepEqual([merged.id, merged.auctionEventId], [uuid(1), uuid(2)]);
+  assert.equal(merged.revision, 1, 'a holder of the unlinked lot is asked again');
+  assert.equal(merged.updatedAt, LATEST, 'and the row carries the time the link was written');
+  assert.equal(preview.value.counts.updated, 1, 'so the settings page takes its safety copy');
+  assert.deepEqual(importChangeLines(preview.value), [
+    `lots: "Nero denarius" takes the auction of a duplicate this merge skipped (backup ${NOW}, local ${NOW})`,
+  ]);
+
+  // The same file merged again changes nothing: the lot is already attached.
+  const again = previewImport(preview.value.snapshot, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(again.value.counts.updated, 0);
+  assert.deepEqual(importChangeLines(again.value), []);
+  assert.equal(JSON.stringify(again.value.snapshot), JSON.stringify(preview.value.snapshot));
+});
+
+// An old backup re-merged used to put the sale back on a lot the collector had deliberately
+// unlinked since: the link is content from before the export, and a local row written after the
+// export wins over it exactly as every other record does.
+test('a lot edited after the backup was exported is not attached to that backup\'s auction again', () => {
+  const current = createEmptySnapshot(NOW);
+  current.lots.push(lot(uuid(1), { title: 'Nero denarius', auctionContext: SAME_SALE, updatedAt: LATEST, revision: 3 }));
+  const incoming = createEmptySnapshot(NOW);
+  incoming.auctionEvents.push(dateEvent(uuid(2), { name: 'Triton XXIX' }));
+  incoming.lots.push(lot(uuid(3), { title: 'Nero denarius (laptop)', auctionContext: SAME_SALE, auctionEventId: uuid(2) }));
+
+  const preview = previewImport(current, incoming, 'merge', { exportedAt: LATER, now: LATEST });
+  assert.equal(preview.ok, true, preview.error?.message);
+  const [merged] = preview.value.snapshot.lots;
+  assert.equal(Object.hasOwn(merged, 'auctionEventId'), false, 'the lot the collector unlinked stays unlinked');
+  assert.deepEqual([merged.revision, merged.updatedAt], [3, LATEST], 'and is not touched at all');
+  assert.equal(preview.value.counts.updated, 0);
+  assert.deepEqual(preview.value.snapshot.auctionEvents, [], 'the sale nothing points at is kept out');
+  assert.deepEqual(importIssueLines(preview.value), [
+    'lots: "Nero denarius (laptop)" is a duplicate of "Nero denarius", skipped',
+    'auctionEvents: "Triton XXIX" is the auction of a lot this merge skipped as a duplicate, kept out',
+  ]);
+});
+
 test('merge is idempotent and adds unseen records once', () => {
   const current = createEmptySnapshot(NOW);
   current.lots.push(lot(uuid(1), { title: 'Local' }));
@@ -507,6 +628,22 @@ test('merge is idempotent and adds unseen records once', () => {
   assert.deepEqual(again.value.snapshot.lots, first.value.snapshot.lots);
 });
 
+// A merge that cannot produce a valid root answered with the validator's own sentence - "Expected an
+// array with at most 1000 entries." - which says nothing about the file the collector chose.
+test('a merge that would not validate says the backup cannot be merged before the detail', () => {
+  const current = createEmptySnapshot(NOW);
+  const incoming = createEmptySnapshot(NOW);
+  for (let index = 0; index < 600; index += 1) {
+    current.alternativeGroups.push(group(uuid(index)));
+    incoming.alternativeGroups.push(group(uuid(index + 1000)));
+  }
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, false);
+  assert.equal(preview.error.code, 'merge-invalid');
+  assert.match(preview.error.message, /^This backup cannot be merged with your local records\./);
+  assert.match(preview.error.message, /at most 1000 entries/, 'the detail is kept after it');
+});
+
 test('merge unions the quarantine bin and counts only the entries it gained', () => {
   const entry = { collection: 'lots', record: { id: 'broken' }, reason: 'invalid-enum', quarantinedAt: NOW };
   const other = { collection: 'alerts', record: null, reason: 'missing-record', quarantinedAt: LATER };
@@ -518,6 +655,32 @@ test('merge unions the quarantine bin and counts only the entries it gained', ()
   assert.equal(preview.ok, true, preview.error?.message);
   assert.deepEqual(preview.value.snapshot.quarantine, [entry, other]);
   assert.equal(preview.value.counts.quarantine, 1);
+});
+
+// The bins were unioned by exact bytes, so the same record set aside on both installs - at the
+// moment each of them repaired it - arrived as two entries with two Restore buttons, although the
+// folding the repair does would have made them one. The merge folds the way the repair does.
+test('merge folds one record set aside on both installs into a single entry', () => {
+  const record = { id: 'broken', title: 'Nero denarius' };
+  const reference = { collection: 'lots', id: 'host', field: 'auctionEventId', value: 'broken' };
+  const current = createEmptySnapshot(NOW);
+  current.quarantine = [{ collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: LATER }];
+  const incoming = createEmptySnapshot(NOW);
+  incoming.quarantine = [{
+    collection: 'lots', record: structuredClone(record), reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }];
+
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.quarantine, [{
+    collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: NOW, clearedReferences: [reference],
+  }], 'one entry, set aside when it first was, carrying every link either install recorded');
+  assert.equal(preview.value.counts.quarantine, 0, 'and nothing was gained by the merge');
+  assert.deepEqual(current.quarantine,
+    [{ collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: LATER }],
+    'the preview leaves local data exactly as it found it');
+  assert.equal(quarantineRows(preview.value.snapshot.quarantine).length, 1, 'so Settings offers one Restore');
 });
 
 test('merge renumbers alternative priorities two installs assigned independently', () => {
@@ -767,6 +930,43 @@ test('set-aside records are summarized, listed and downloadable on their own', (
   const document = JSON.parse(quarantineDocument(entries, NOW));
   assert.equal(document.exportedAt, NOW);
   assert.deepEqual(document.quarantine, entries);
+});
+
+// The page draws one row per entry and the button on it names the entry the store will look for, so
+// the identifier and the sentence the reply becomes are worked out here rather than in the page.
+test('each set-aside row carries the line, the entry it names, and whether there is a record to put back', () => {
+  const entries = [
+    { collection: 'lots', record: { id: uuid(1) }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: LATER },
+  ];
+  const rows = quarantineRows(entries);
+  assert.deepEqual(rows.map(({ line }) => line), quarantineLines(entries));
+  assert.deepEqual(rows.map(({ restorable }) => restorable), [true, false],
+    'an entry that carries only cleared links has no record to put back');
+  assert.deepEqual(rows.map(({ id }) => id), entries.map((entry) => quarantineEntryId(entry)));
+  assert.equal(new Set(rows.map(({ id }) => id)).size, 2);
+  assert.deepEqual(quarantineRows(null), []);
+});
+
+test('a restore reply reads as a sentence naming what went back and what was left alone', () => {
+  const put = { collection: 'auctionEvents', id: uuid(1), restoredReferences: [], keptReferences: [] };
+  assert.equal(quarantineRestoreText(put), 'The record was put back into auctionEvents.');
+  assert.equal(
+    quarantineRestoreText({ ...put, restoredReferences: [{ collection: 'lots', id: uuid(2), field: 'auctionEventId' }] }),
+    'The record was put back into auctionEvents. 1 link was restored with it.',
+  );
+  assert.equal(
+    quarantineRestoreText({
+      ...put,
+      restoredReferences: [{ collection: 'lots', id: uuid(2), field: 'auctionEventId' }],
+      keptReferences: [
+        { collection: 'lots', id: uuid(3), field: 'alternativeGroupId' },
+        { collection: 'lots', id: uuid(4), field: 'priority' },
+      ],
+    }),
+    'The record was put back into auctionEvents. 1 link was restored with it. 2 links could not be ' +
+    'put back, because what they point from has changed since: lots.alternativeGroupId, lots.priority.',
+  );
 });
 
 test('the raw export copies stored data verbatim, unsaved drafts and all', () => {

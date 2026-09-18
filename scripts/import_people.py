@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch one Nomisma concept snapshot and generate the static RIC people index."""
+"""Fetch the Nomisma and Wikidata concept snapshots and generate the static RIC people and mint index."""
 
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ XML = "{http://www.w3.org/XML/1998/namespace}"
 LICENSE = "CC-BY-3.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/3.0/"
 SLUG = re.compile(r"^[A-Za-z0-9._~-]+$")
+# Every request this script makes names the script, so nomisma.org and wikidata.org can see who asked and where to complain.
+USER_AGENT = "Giga-Pinax-import_people.py/1 (+https://github.com/bth0mp/Giga-Pinax)"
 # scripts/import_rdf.py refuses the same two declarations before it parses anything. Its check is not importable: it lives inside inspect_source(),
 # which takes a Path and digests the whole file as it goes, and this script is loaded by its file path (the tests load it that way too), so "scripts"
 # is on no import path. The pattern and the raise are copied here instead, once, in front of every parse this script makes.
@@ -81,10 +83,133 @@ def read_memberships(data_dir: Path) -> dict[str, set[str]]:
 
 
 MINT_VOLUMES = {"6", "7", "8", "9"}
+# The language the mint's own modern country writes its name in. A country spells the place it holds as the place, so that label is the modern name
+# a dealer means when he writes it, while every other language only offers its own exonym. The choice is made per mint, by hand, from where the mint
+# stands today, and a mint concept missing from this table stops the run rather than quietly losing its name. Several of these languages write in a
+# script the extension can never match (Arabic, Bulgarian, Greek, Serbian Cyrillic); normalise_alias drops those, and nothing is transliterated.
+MINT_COUNTRY_LANGUAGE = {
+    "alexandreia_egypt": "ar",     # Alexandria, Egypt
+    "ambianum": "fr",              # Amiens, France
+    "antiocheia_syria": "tr",      # Antakya, Turkey
+    "aquileia": "it",              # Aquileia, Italy
+    "arelate": "fr",               # Arles, France
+    "carthage": "ar",              # Carthage, Tunisia
+    "constantinople": "tr",        # Istanbul, Turkey
+    "cyzicus": "tr",               # Erdek, Turkey
+    "heraclea_thracica": "tr",     # Marmara Ereglisi, Turkey
+    "londinium": "en",             # London, United Kingdom
+    "lugdunum": "fr",              # Lyon, France
+    "mediolanum": "it",            # Milan, Italy
+    "nicomedia": "tr",             # Izmit, Turkey
+    "ostia": "it",                 # Ostia, Italy
+    "rome": "it",                  # Rome, Italy
+    "serdica": "bg",               # Sofia, Bulgaria
+    "sirmium": "sr",               # Sremska Mitrovica, Serbia
+    "siscia": "hr",                # Sisak, Croatia
+    "thessalonica": "el",          # Thessaloniki, Greece
+    "ticinum": "it",               # Pavia, Italy
+    "treveri": "de",               # Trier, Germany
+}
+# The languages whose spelling of a foreign city is the Latin-script exonym a dealer writing in English still puts on a ticket. One of them alone is
+# that language's own word and no more ("Lione" is Italian for Lyon, "Cizico" Italian for Cyzicus); a spelling two of them share, once folded and
+# stripped of its diacritics, is the exonym they have in common ("Arles" in French, German and Italian, "Sisak" in all four beside English).
+EXONYM_LANGUAGES = frozenset({"en", "fr", "de", "it", "es"})
+EXONYM_AGREEMENT = 2
+# Spellings that are not a name of the mint, listed with the concept they belong to so this can never quietly take a real name from another mint.
+# Four kinds, and nothing is guessed at beyond what is written here:
+#   an encyclopaedia article's title — Nomisma's Italian label for Ticinum is "Storia di Pavia", and the Wikidata item Nomisma links beside the
+#   Roman city is Q396445, the article "history of Pavia". Neither is the city's name in any language, so Ticinum keeps RIC's own spelling;
+#   a nickname — prose about the city rather than a name a ticket carries, and the reason it must go is that a lot heading naming no ruler is read
+#   for the earliest mint spelling in it, so "From the days of the Eternal City. Trier mint. RIC 12" would be filed under Rome;
+#   a whole different place — Longpre-les-Amiens is a commune of its own, and the "espace urbain" is the statistical built-up area around Amiens
+#   rather than the town the mint stood in;
+#   an abbreviation or a title — "LDN" and "Lon." are codes for London rather than spellings of it, and "Augusta" is an honorific several cities and
+#   several empresses carry.
+# Italian "Urbe" is here as a nickname: it is what Italian calls Rome, and also the ordinary Italian and Spanish word for a city, which is exactly
+# what ORDINARY_ENGLISH keeps out of the table in English.
+NOT_A_NAME = frozenset((concept_id, alias) for concept_id, aliases in {
+    "alexandreia_egypt": ["mediterranean's bride", "pearl of the mediterranean"],
+    "ambianum": ["espace urbain d'amiens", "la petite venise du nord", "longpre-les-amiens"],
+    "constantinople": ["the city of the world's desire"],
+    # Wikidata publishes all of these as names of London, the town Londinium's item points at, and not one of them may be read as a mint: "Augusta"
+    # is the late-Roman honorific London shared with Trier, Autun and a dozen other places and is a title a woman on a coin carries besides; "Lon",
+    # "Lond" and "LDN" are abbreviations short enough to fall out of a heading's ordinary words; and the Smoke is what Londoners call the place, not
+    # what a ticket says. The legendary and Latin spellings beside them (Kaerlud, Lundenwic, Londinio) are names the sources really publish and are
+    # kept, harmless because nothing else claims them.
+    "londinium": ["augusta", "big smoke", "ldn", "lon", "lond", "london u.k", "the big smoke"],
+    # "Capitale des Gaules" is prose about Lyon in the language of its own country, which is exactly the kind of label the nickname rule exists for.
+    "lugdunum": ["capitale des gaules"],
+    "rome": ["capital of the world", "caput mundi", "citta dei sette colli", "citta eterna", "city of marble", "city of seven hills",
+             "eternal city", "the capital of the world", "the city of marble", "the eternal city", "urbe"],
+    "ticinum": ["history of pavia", "pavia history", "storia di pavia"],
+}.items() for alias in aliases)
+# An alias that is an ordinary English word would read a mint out of a sentence that named no mint at all. These two are what Croatian calls Rome
+# ("Rim") and what German and Danish call it ("Rom"), and both are ordinary English words. "Rome" itself is kept: RIC heads a section with it.
+ORDINARY_ENGLISH = frozenset({"rim", "rom"})
 # RIC VI-IX are filed by mint, so a record's own title names the mint section it belongs to. A subtype title ("Treveri 17A: Subtype") is not a
 # section, and a record naming no mint or several cannot say which section is whose.
 MINT_TITLE = re.compile(r"^RIC (?:VI|VII|VIII|IX) ([^:]+) \S+$")
 MINT_ENDPOINT = "https://nomisma.org/id/{concept_id}.rdf"
+# A Nomisma mint concept links the same place in other vocabularies with skos:closeMatch and skos:exactMatch: Pleiades, GeoNames, DBpedia, the
+# British Museum, Getty and Wikidata. Every one of those URIs is kept in the snapshot, because the link is the thing the snapshot has to record;
+# only the Wikidata ones are followed, and only to the entity data endpoint below.
+MINT_MATCHES = (SKOS + "closeMatch", SKOS + "exactMatch")
+WIKIDATA_ENTITY = re.compile(r"^https?://www\.wikidata\.org/entity/(Q[1-9][0-9]*)$")
+WIKIDATA_ENDPOINT = "https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"
+# Wikidata releases its structured data — labels and aliases included — into the public domain under CC0 1.0. It travels with the snapshot and with
+# the generated file, because an attribution has to be readable wherever the data ends up.
+WIKIDATA_LICENSE = "CC0-1.0"
+WIKIDATA_LICENSE_URL = "https://creativecommons.org/publicdomain/zero/1.0/"
+WIKIDATA_LICENSE_STATEMENT = ("Wikidata's structured data, including the labels and aliases kept here, is dedicated to the public domain under the "
+                              "Creative Commons CC0 1.0 Universal Public Domain Dedication.")
+# The tracked Wikidata snapshot, beside the Nomisma one: where fetch-wikidata writes and the only file a regeneration should read.
+DEFAULT_WIKIDATA = Path(__file__).resolve().parent / "data" / "wikidata-mints.json"
+# An alias of one or two characters is a code rather than a name — Wikidata lists "RM", Rome's Italian province code, among Roma's aliases — and a
+# heading has runs of two letters in it that name no place at all.
+MINIMUM_NAME_LENGTH = 3
+# The one statement hop, and the only one. Nomisma links four of the mints to the *Roman* city rather than to the town standing there now, and every
+# language titles those items by the Latin name, so "London", "Lyon", "Milan" and "Pavia" are in no label of them. Each of those items does publish a
+# statement naming the modern place, and these three properties are the ones that carry it:
+#   P1366 "replaced by"  — the settlement that took the Roman city's place (Lugdunum -> Lyon, Mediolanum -> Milan);
+#   P276  "location"     — where the Roman city is (Londinium -> London);
+#   P131  "located in the administrative territorial entity" — the entity holding the site (Ticinum -> Pavia).
+# The order is a precedence, not a choice made per mint: the first of the three a linked item carries is the only one read, and nothing falls through
+# to the next. P1366 comes first because it names a successor settlement and nothing else; P131 comes last because it is an administrative chain as
+# often as it is a town, which is why the two rules below hedge it.
+SECOND_HOP_PROPERTIES = ("P1366", "P276", "P131")
+INSTANCE_OF = "P31"
+# A property naming several places names no one place: Rome's item lists nine administrative parents, Arles four. Taking one of them would be a
+# choice this script is not entitled to make, so a statement with more than one value is passed over whole.
+SECOND_HOP_VALUES = 1
+# The classes that make an item a populated place today, each read from the item Wikidata files it under. A second-hop target is used only when its
+# own P31 names one of these, so a county or a province can never be read as a town. The same list hedges P131 at the other end: a linked item that
+# is already the modern settlement has nothing to gain from its administrative parent, and following P131 from Sisak, Sofia or Marmaraereglisi would
+# only fetch their county, province and province back.
+SETTLEMENT_CLASSES = frozenset({
+    "Q515",        # city
+    "Q3957",       # town
+    "Q532",        # village
+    "Q486972",     # human settlement
+    "Q484170",     # commune of France
+    "Q747074",     # comune of Italy
+    "Q15284",      # municipality
+    "Q15105893",   # town in Croatia
+    "Q89487741",   # city in Bulgaria
+    "Q200250",     # metropolis
+    "Q1549591",    # big city
+    "Q5119",       # capital city
+})
+# And the classes that make it a country, a region or an administrative division rather than a place with a name a dealer writes. The settlement list
+# above is what a target has to carry; this one is what it may not carry beside it, so an item filed as both a town and a province is refused rather
+# than read as the town.
+REGION_CLASSES = frozenset({
+    "Q6256",       # country
+    "Q3624078",    # sovereign state
+    "Q82794",      # region
+    "Q10864048",   # first-level administrative division
+    "Q56061",      # administrative territorial entity
+    "Q34876",      # province
+})
 
 
 def read_mints(data_dir: Path) -> dict[str, str]:
@@ -114,16 +239,20 @@ def fetch_mint_snapshot(mint_ids, output: Path, retrieved_on: str) -> int:
     concepts = {}
     for concept_id in sorted(set(mint_ids)):
         url = MINT_ENDPOINT.format(concept_id=concept_id)
-        request = Request(url, headers={"Accept": "application/rdf+xml", "User-Agent": "Giga-Pinax-data-import/1"})
+        request = Request(url, headers={"Accept": "application/rdf+xml", "User-Agent": USER_AGENT})
         with urlopen(request, timeout=60) as response:
             if response.status != 200:
                 raise OSError(f"Nomisma returned HTTP {response.status} for {url}")
             payload = response.read()
         root = parsed_xml(payload)
+        own = [node for node in root if (node.get(RDF + "about") or "") == NOMISMA_ID + concept_id]
         labels = sorted({(child.tag.replace(SKOS, ""), (child.get(XML + "lang") or "").lower(), " ".join(child.text.split()))
-                         for node in root if (node.get(RDF + "about") or "") == NOMISMA_ID + concept_id
+                         for node in own
                          for child in node if child.tag in (SKOS + "prefLabel", SKOS + "altLabel") and child.text})
-        concepts[concept_id] = {"url": url, "labels": [list(label) for label in labels]}
+        # The concept's links to the same place in other vocabularies, kept whole and sorted so the snapshot is the same file every time.
+        matches = sorted({child.get(RDF + "resource") for node in own
+                          for child in node if child.tag in MINT_MATCHES and child.get(RDF + "resource")})
+        concepts[concept_id] = {"url": url, "labels": [list(label) for label in labels], "matches": matches}
     snapshot = {
         "requestUrl": MINT_ENDPOINT,
         "retrievedOn": retrieved_on,
@@ -136,31 +265,272 @@ def fetch_mint_snapshot(mint_ids, output: Path, retrieved_on: str) -> int:
     return len(concepts)
 
 
-def mint_rows(snapshot_bytes: bytes, sections: dict[str, str]) -> list[tuple[str, str, list[str]]]:
-    """Each RIC mint section with the modern English name Nomisma gives its concept.
+def mint_entity_ids(concept) -> list[str]:
+    """The Wikidata items one mint concept links to, in the order the snapshot holds its matches. Every other vocabulary's URI is left alone."""
+    found = (WIKIDATA_ENTITY.match(uri) for uri in concept.get("matches", ()))
+    return list(dict.fromkeys(match.group(1) for match in found if match))
 
-    Nomisma titles a mint concept by its modern name and keeps the ancient one beside it ("Trier", altLabel "Treveri"), so the alias is every
-    English label that is not the section RIC files the coins under. A concept with no English label of its own is left out rather than invented.
+
+def item_targets(item, entity_property: str) -> list[str]:
+    """The items one statement of a Wikidata item names, in the order it lists them: no deprecated rank, no "unknown value", no literal."""
+    targets = []
+    for statement in item.get("claims", {}).get(entity_property, []):
+        if statement.get("rank") == "deprecated":
+            continue
+        snak = statement.get("mainsnak", {})
+        if snak.get("snaktype") != "value":
+            continue
+        value = snak.get("datavalue", {}).get("value")
+        if isinstance(value, dict) and value.get("entity-type") == "item" and value.get("id"):
+            targets.append(value["id"])
+    return list(dict.fromkeys(targets))
+
+
+def item_links(item) -> list[list[str]]:
+    """The three second-hop statements of a Wikidata item, whole: every value of each, kept as [property, item] pairs in precedence order."""
+    return [[entity_property, target] for entity_property in SECOND_HOP_PROPERTIES
+            for target in item_targets(item, entity_property)]
+
+
+def second_hop(entity) -> tuple[str, str] | None:
+    """The one item a mint's Wikidata item leads to, and the property that led there, or None when nothing may be followed.
+
+    The first of P1366, P276, P131 the item carries is the only one read and nothing falls through to the next, so no mint gets a property picked for
+    it. Two things stop the hop: a statement with more than one value, which names an administrative chain rather than a place; and P131 on an item
+    that is already a present-day settlement, whose administrative parent is its county or its province and never its own name.
+    """
+    by_property: dict[str, list[str]] = {}
+    for entity_property, target in entity.get("links", ()):
+        by_property.setdefault(entity_property, []).append(target)
+    for entity_property in SECOND_HOP_PROPERTIES:
+        targets = by_property.get(entity_property)
+        if not targets:
+            continue
+        if len(targets) != SECOND_HOP_VALUES:
+            return None
+        if entity_property == "P131" and set(entity.get("classes", ())) & SETTLEMENT_CLASSES:
+            return None
+        return entity_property, targets[0]
+    return None
+
+
+def populated_place(entity) -> bool:
+    """Whether a second-hop target is a town rather than a county, a province or a country: what its own P31 statement says it is."""
+    classes = set(entity.get("classes", ()))
+    return bool(classes & SETTLEMENT_CLASSES) and not classes & REGION_CLASSES
+
+
+def fetch_item(entity_id: str, languages: set[str]) -> tuple[dict, dict]:
+    """One GET for one Wikidata item: the names it publishes in the languages asked for, the classes it is an instance of, and its second-hop links."""
+    url = WIKIDATA_ENDPOINT.format(entity_id=entity_id)
+    request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+    with urlopen(request, timeout=60) as response:
+        if response.status != 200:
+            raise OSError(f"Wikidata returned HTTP {response.status} for {url}")
+        payload = json.loads(response.read())
+    item = payload.get("entities", {}).get(entity_id)
+    if not item:
+        raise ValueError(f"Wikidata returned no entity for {entity_id}")
+    labels = {("prefLabel", lang, " ".join(value["value"].split()))
+              for lang, value in item.get("labels", {}).items() if lang in languages}
+    labels |= {("altLabel", lang, " ".join(value["value"].split()))
+               for lang, values in item.get("aliases", {}).items() if lang in languages for value in values}
+    return {"url": url, "labels": [list(label) for label in sorted(labels)],
+            "classes": item_targets(item, INSTANCE_OF)}, item
+
+
+def fetch_wikidata_snapshot(mints_bytes: bytes, output: Path, retrieved_on: str) -> tuple[int, int, list[str], dict[str, tuple[str, str]]]:
+    """One GET per Wikidata item a mint concept links to, then one more per item those lead to, saved as the tracked snapshot the build reads.
+
+    Only the names are kept, and only in the languages a name is taken from: English, the four other exonym languages, and the language of the country
+    each linking mint stands in today. Beside them the snapshot records two things and nothing else of the item: the classes its P31 says it is an
+    instance of, and the targets of P1366, P276 and P131 — the three statements that name the town standing where a Roman city stood. Those are what
+    the one hop is decided by, and the decision is made here and again at generation time from the same recorded statements, never from the network.
+    """
+    date.fromisoformat(retrieved_on)
+    concepts = json.loads(mints_bytes).get("concepts", {})
+    wanted: dict[str, set[str]] = {}
+    unlinked = []
+    for concept_id, concept in sorted(concepts.items()):
+        entity_ids = mint_entity_ids(concept)
+        if not entity_ids:
+            unlinked.append(concept_id)
+            continue
+        if concept_id not in MINT_COUNTRY_LANGUAGE:
+            raise ValueError(f"no modern country language chosen for mint concept: {concept_id}")
+        for entity_id in entity_ids:
+            wanted.setdefault(entity_id, set(EXONYM_LANGUAGES)).add(MINT_COUNTRY_LANGUAGE[concept_id])
+    entities = {}
+    for entity_id, languages in sorted(wanted.items()):
+        entity, item = fetch_item(entity_id, languages)
+        entities[entity_id] = {**entity, "links": item_links(item)}
+    # The second hop, decided from what the first one recorded: at most one target per linked item, each fetched once however many items lead to it,
+    # and asked for the languages of every mint that reaches it.
+    followed: dict[str, tuple[str, str]] = {}
+    target_languages: dict[str, set[str]] = {}
+    for entity_id, entity in sorted(entities.items()):
+        chosen = second_hop(entity)
+        if not chosen:
+            continue
+        followed[entity_id] = chosen
+        target_languages.setdefault(chosen[1], set()).update(wanted[entity_id])
+    targets = {}
+    for target_id, languages in sorted(target_languages.items()):
+        target, _ = fetch_item(target_id, languages)
+        targets[target_id] = {**target, "from": sorted([entity_id, entity_property]
+                                                       for entity_id, (entity_property, reached) in followed.items() if reached == target_id)}
+    snapshot = {
+        "requestUrl": WIKIDATA_ENDPOINT,
+        "retrievedOn": retrieved_on,
+        "license": WIKIDATA_LICENSE,
+        "licenseUrl": WIKIDATA_LICENSE_URL,
+        "licenseStatement": WIKIDATA_LICENSE_STATEMENT,
+        "entities": entities,
+        "targets": targets,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes((json.dumps(snapshot, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+    return len(entities), len(targets), unlinked, followed
+
+
+def concept_spellings(concept) -> dict[str, set[str]]:
+    """Every normalised spelling in a mint concept's labels, with the base languages that write it."""
+    spellings: dict[str, set[str]] = {}
+    for _, lang, value in concept["labels"]:
+        alias = normalise_alias(value)
+        if alias:
+            spellings.setdefault(alias, set()).add(lang.split("-")[0])
+    return spellings
+
+
+def mint_spellings(concept, entities) -> dict[str, set[str]]:
+    """One mint's spellings from both snapshots at once: Nomisma's own labels and those of the Wikidata items it links to.
+
+    The two sources are merged before any name is chosen, not after, so a spelling only one of them writes is weighed by the same rule as the rest:
+    Wikidata's English label "Sofia" and Nomisma's Bulgarian one are the one place, and either may be the language that earns the name.
+    """
+    spellings = concept_spellings(concept)
+    for entity in entities:
+        for alias, languages in concept_spellings(entity).items():
+            spellings.setdefault(alias, set()).update(languages)
+    return spellings
+
+
+def mint_second_hop(concept, entities, targets) -> list[tuple[str, str, dict]]:
+    """The towns one mint's linked Wikidata items lead to: the property that led there, the item reached, and that item's own names.
+
+    A target that is not a populated place is passed over here rather than filtered later, so a county, a province or a country never reaches the
+    naming rules at all. Which item belongs to which mint is still decided by Nomisma's own links and by nothing else, and a target the snapshot no
+    longer holds stops the run exactly as a missing linked item does.
+    """
+    reached = []
+    for entity_id in mint_entity_ids(concept):
+        chosen = second_hop(entities[entity_id])
+        if not chosen:
+            continue
+        entity_property, target_id = chosen
+        if target_id not in targets:
+            raise ValueError(f"Wikidata snapshot is missing {target_id}, the {entity_property} of {entity_id}")
+        if populated_place(targets[target_id]):
+            reached.append((entity_property, target_id, targets[target_id]))
+    return reached
+
+
+def mint_names(spellings: dict[str, set[str]], section: str, language: str) -> set[str]:
+    """The modern names Nomisma really writes for one mint, from three sources and no fourth.
+
+    Nomisma titles some mint concepts by the modern name and keeps the ancient one beside it ("Trier", altLabel "Treveri"), and others by the ancient
+    name alone; Wikidata, reached through the concept's own closeMatch link, writes the same place again. Three kinds of label are a modern name a
+    dealer would write, so three kinds are taken from either source: every label in the language of the country the mint stands in today, which names
+    the place as the place; every English label, which is the spelling this extension is read in; and a Latin-script exonym that several of
+    EXONYM_LANGUAGES spell the same way. Nothing else is taken, and nothing is transliterated, shortened or title-cased into a name neither source
+    publishes: the section RIC files the coins under is always reachable, so a missing alias costs a spelling, never a coin.
+    """
+    own = normalise_alias(section)
+    taken = set()
+    for alias, languages in spellings.items():
+        exonyms = languages & EXONYM_LANGUAGES
+        if language in languages or "en" in languages or len(exonyms) >= EXONYM_AGREEMENT:
+            taken.add(alias)
+    return {alias for alias in taken if alias != own and len(alias) >= MINIMUM_NAME_LENGTH}
+
+
+def word_runs(alias: str) -> set[str]:
+    """Every run of whole words in an alias, so "contains" is read by words and never inside one ("Arles" is no part of "Charles")."""
+    words = alias.split(" ")
+    return {" ".join(words[first:last]) for first in range(len(words)) for last in range(first + 1, len(words) + 1)}
+
+
+def mint_rows(snapshot_bytes: bytes, sections: dict[str, str], rulers=(), wikidata_bytes: bytes | None = None) -> list[tuple[str, str, list[str]]]:
+    """Each RIC mint section with the modern names Nomisma and Wikidata give its concept, less every name that could open somebody else's coin.
+
+    A mint alias resolves a section and never a ruler, so a spelling that is also a ruler's — or that carries one inside it — is dropped rather than
+    left to choose between a place and a man. So is a spelling two mints share, which could only name one of them wrongly, one that is another mint's
+    own RIC section, one that is an ordinary English word, and one listed in NOT_A_NAME as an article's title or a whole different place. A mint left
+    with nothing keeps RIC's own spelling and no alias is invented for it.
     """
     snapshot = json.loads(snapshot_bytes)
-    rows = []
-    for concept_id, section in sorted(sections.items(), key=lambda item: item[1]):
+    linked_snapshot = json.loads(wikidata_bytes) if wikidata_bytes else {}
+    entities = linked_snapshot.get("entities", {})
+    targets = linked_snapshot.get("targets", {})
+    ruler_names = {spelling for spelling in rulers if spelling}
+    section_names = {alias for alias in map(normalise_alias, sections.values()) if alias}
+    taken = {}
+    modern = {}
+    for concept_id, section in sections.items():
         concept = snapshot.get("concepts", {}).get(concept_id)
         if not concept:
             continue
-        own = normalise_alias(section)
-        aliases = sorted({alias for _, lang, value in concept["labels"] if lang.split("-")[0] == "en"
-                          for alias in [normalise_alias(value)] if alias and alias != own})
+        if concept_id not in MINT_COUNTRY_LANGUAGE:
+            raise ValueError(f"no modern country language chosen for mint concept: {concept_id}")
+        # The Nomisma snapshot's own closeMatch links say which Wikidata items belong to this mint, so the two files cannot disagree about that; a
+        # linked item the Wikidata snapshot does not hold means the pair is out of step, and the run stops rather than quietly losing its names.
+        linked = []
+        for entity_id in mint_entity_ids(concept) if wikidata_bytes else []:
+            if entity_id not in entities:
+                raise ValueError(f"Wikidata snapshot is missing {entity_id}, linked from mint concept {concept_id}")
+            linked.append(entities[entity_id])
+        spellings = mint_spellings(concept, linked)
+        taken[concept_id] = {alias for alias in mint_names(spellings, section, MINT_COUNTRY_LANGUAGE[concept_id])
+                             if (concept_id, alias) not in NOT_A_NAME}
+        # The one statement hop, weighed apart from the labels the mint's own items publish: a town reached through P1366, P276 or P131 is named by
+        # the same three rules, from that town's labels alone, so nothing is taken from it that is not published as its name.
+        hopped: dict[str, set[str]] = {}
+        for _, _, target in mint_second_hop(concept, entities, targets) if wikidata_bytes else []:
+            for alias, languages in concept_spellings(target).items():
+                hopped.setdefault(alias, set()).update(languages)
+        modern[concept_id] = {alias for alias in mint_names(hopped, section, MINT_COUNTRY_LANGUAGE[concept_id])
+                              if (concept_id, alias) not in NOT_A_NAME}
+    # A second-hop name that another mint already publishes as its own is the other mint's: dropped here, before the shared-spelling rule below, so
+    # that Ostia's administrative parent cannot cost Rome the name "Roma" that Rome's own item publishes.
+    published = {concept_id: set(aliases) for concept_id, aliases in taken.items()}
+    for concept_id, aliases in modern.items():
+        taken[concept_id] |= {alias for alias in aliases
+                              if not any(alias in other for other_id, other in published.items() if other_id != concept_id)}
+    shared = {alias for alias in set().union(*taken.values(), set())
+              if sum(alias in aliases for aliases in taken.values()) > 1}
+    rows = []
+    for concept_id, section in sorted(sections.items(), key=lambda item: item[1]):
+        aliases = sorted(alias for alias in taken.get(concept_id, set())
+                         if alias not in shared and alias not in section_names and alias not in ORDINARY_ENGLISH
+                         and not word_runs(alias) & ruler_names)
         if aliases:
             rows.append((concept_id, section, aliases))
     return rows
+
+
+def ruler_spellings(snapshot_bytes: bytes, memberships) -> set[str]:
+    """Every spelling the generated people table answers to, normalised as it holds them: what a mint alias may not be, and may not carry."""
+    concepts = read_concepts(snapshot_bytes, memberships)
+    return {alias for concept in concepts.values() if FOAF_PERSON in concept["types"]
+            for label in concept["labels"] | concept["aliases"] for alias in [normalise_alias(label)] if alias}
 
 
 def fetch_snapshot(concept_ids, output: Path) -> None:
     identifiers = "|".join(sorted(set(concept_ids)))
     request = Request(
         f"{ENDPOINT}?{urlencode({'identifiers': identifiers, 'format': 'xml'})}",
-        headers={"Accept": "application/rdf+xml", "User-Agent": "Giga-Pinax-data-import/1"},
+        headers={"Accept": "application/rdf+xml", "User-Agent": USER_AGENT},
     )
     with urlopen(request, timeout=60) as response:
         if response.status != 200:
@@ -292,12 +662,17 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
         "generatedOn": generated_on,
         "license": LICENSE,
         "licenseUrl": LICENSE_URL,
+        # The mint aliases below come from Nomisma's labels and, through Nomisma's own closeMatch links, from Wikidata's. Wikidata puts its
+        # structured data in the public domain, and the statement has to travel with the file whatever else is in it.
+        "mintAliasSources": [ENDPOINT, WIKIDATA_ENDPOINT],
+        "wikidataLicense": WIKIDATA_LICENSE,
+        "wikidataLicenseUrl": WIKIDATA_LICENSE_URL,
         **report,
     }
     # The provenance is a header comment, not an export: nothing in the extension read it, and the
     # licence, snapshot digest and counts have to travel with the file whether or not code uses them.
     lines = [
-        "// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma mint snapshot.",
+        "// Generated from the bundled OCRE records, one official Nomisma aggregate RDF snapshot and the tracked Nomisma and Wikidata mint snapshots.",
         "// Source:",
         *(f"//   {key}: {json.dumps(value, ensure_ascii=False)}" for key, value in source.items()),
         "",
@@ -314,8 +689,11 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
     lines.append("]);")
     lines += [
         "",
-        "// The modern name Nomisma gives each RIC VI-IX mint section, in English only. A mint whose concept carries no English name but the one RIC",
-        "// files it under has no alias here, and none was invented for it.",
+        "// The modern names Nomisma and Wikidata give each RIC VI-IX mint section: their labels in the language of the country the mint stands in today,",
+        "// their English labels, and the Latin-script exonym several of English, French, German, Italian and Spanish spell alike. The Wikidata items are",
+        "// the ones Nomisma's own skos:closeMatch links name, and their labels and aliases are CC0. A name that is also a ruler's, that two mints share,",
+        "// that is an ordinary English word or that names a whole different place is dropped, and a mint neither source gives a modern name has no alias",
+        "// here: none was invented for it, and RIC's own spelling always reaches it.",
         "export const RIC_MINTS = Object.freeze([",
     ]
     for concept_id, section, aliases in mints:
@@ -341,17 +719,34 @@ def main() -> int:
     mints.add_argument("data_dir", type=Path)
     mints.add_argument("snapshot", type=Path)
     mints.add_argument("--retrieved-on", required=True)
+    linked = subparsers.add_parser("fetch-wikidata", help="fetch one Wikidata item per closeMatch link in the Nomisma mint snapshot")
+    linked.add_argument("mints", type=Path)
+    linked.add_argument("snapshot", type=Path)
+    linked.add_argument("--retrieved-on", required=True)
     build = subparsers.add_parser("generate", help="generate the offline JavaScript people index")
     build.add_argument("data_dir", type=Path)
     build.add_argument("snapshot", type=Path)
     build.add_argument("output", type=Path)
     build.add_argument("--mints", type=Path, default=DEFAULT_MINTS)
+    build.add_argument("--wikidata", type=Path, default=DEFAULT_WIKIDATA)
     build.add_argument("--generated-on", required=True)
     args = parser.parse_args()
     try:
         if args.command == "fetch-mints":
             sections = read_mints(args.data_dir)
             print(f"Fetched {fetch_mint_snapshot(sections, args.snapshot, args.retrieved_on)} Nomisma mint concepts, one request each.")
+            return 0
+        if args.command == "fetch-wikidata":
+            count, hops, unlinked, followed = fetch_wikidata_snapshot(args.mints.read_bytes(), args.snapshot, args.retrieved_on)
+            print(f"Fetched {count} linked Wikidata items and the {hops} items they lead to, one request each.")
+            # Printed by name for the same reason the unlinked mints are: the one statement hop is the thing a reader of this run has to be able to
+            # check, and which property led where is the whole of it.
+            for entity_id, (entity_property, target_id) in sorted(followed.items()):
+                print(f"  {entity_id} {entity_property} -> {target_id}")
+            # Named rather than passed over: a mint Nomisma links to nothing keeps only the names Nomisma itself publishes, and a
+            # reader of this run has to be told which mints those are instead of finding the gap later in the generated table.
+            if unlinked:
+                print(f"No Wikidata closeMatch link for: {', '.join(unlinked)}")
             return 0
         memberships = read_memberships(args.data_dir)
         if args.command == "fetch":
@@ -362,8 +757,13 @@ def main() -> int:
             # file claiming one, with none of the eight mint sections in it.
             if not args.mints.is_file():
                 raise ValueError(f"mint snapshot not found: {args.mints}")
+            if not args.wikidata.is_file():
+                raise ValueError(f"Wikidata mint snapshot not found: {args.wikidata}")
+            # The people the same run generates are what a mint alias is checked against, so a name that opens a man's coin can never also open a
+            # mint's section: the two tables are read from the one snapshot, and neither can drift out of step with the other.
+            rulers = ruler_spellings(args.snapshot.read_bytes(), memberships)
             report = generate(args.snapshot, memberships, args.output, args.generated_on,
-                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir)))
+                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir), rulers, args.wikidata.read_bytes()))
             print(json.dumps(report, sort_keys=True))
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"People import failed: {error}", file=sys.stderr)

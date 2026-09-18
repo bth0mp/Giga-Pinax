@@ -1,0 +1,2790 @@
+{
+ "entities": {
+  "Q1012797": {
+   "classes": [
+    "Q839954",
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Ancient Ostia"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Ostia Antica"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Ostia Antica"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Ostia Antica"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Ostia Antica"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Ostia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Ostia"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Ostie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Ostia"
+    ]
+   ],
+   "links": [
+    [
+     "P276",
+     "Q11171297"
+    ],
+    [
+     "P131",
+     "Q3940419"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q1012797.json"
+  },
+  "Q16869": {
+   "classes": [
+    "Q515",
+    "Q56061",
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Carigrad"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Constantinopel"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Dersaadet"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Konstantinoupolis"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Kostantiniyye"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Theodosius"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Zarigrad"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Constantinopolis"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Czargrad"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Mint of Constantinople"
+    ],
+    [
+     "altLabel",
+     "en",
+     "The City of the World's Desire"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Tsargorod"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Tsarigrad"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Tzargrad"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Bizancio"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Nueva Roma"
+    ],
+    [
+     "altLabel",
+     "es",
+     "la Reina de las Ciudades"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Constantinopolis"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Città d'Oro"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Nuova Roma"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Konstantiniyye"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Tarihî Yarımada"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Konstantinopel"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Constantinople"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Constantinopla"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Constantinople"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Costantinopoli"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Konstantinopolis"
+    ]
+   ],
+   "links": [
+    [
+     "P1366",
+     "Q406"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q16869.json"
+  },
+  "Q192119": {
+   "classes": [
+    "Q15105893"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Siscia"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Sisek"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Sissek"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Sziszek"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Segesta"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Siscia"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Siscia"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Sisak"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Sisak"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Sisak"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Sisak"
+    ],
+    [
+     "prefLabel",
+     "hr",
+     "Sisak"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Sisak"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q57060"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q192119.json"
+  },
+  "Q200441": {
+   "classes": [
+    "Q839954",
+    "Q15661340",
+    "Q1291195",
+    "Q3257686"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Antigoneia am Orontes"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Antiocheia"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Antiochia"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Antiochien"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antioch near Daphne"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antioch of Syria"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antioch on the Orontes"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antioch, Syria"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antiochia"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Antiokheia"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Mint of Antioch, Syria"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Syrian Antioch"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquia del Orontes"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquía"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquía de Siria"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Antioche près de Daphnè"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Antioche sur l'Oronte"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Antioche-lez-Daphné"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Antiochia Epidafne"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Antiochia sull'Oronte"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Antakya antik kenti"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Antioch"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Antiochia ad Orontem"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Antiochia am Orontes"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Antioch"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Antioquía del Orontes"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Antioche"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Antiochia di Siria"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Antakya"
+    ]
+   ],
+   "links": [
+    [
+     "P1366",
+     "Q80561"
+    ],
+    [
+     "P276",
+     "Q129348330"
+    ],
+    [
+     "P131",
+     "Q80561"
+    ],
+    [
+     "P131",
+     "Q207118"
+    ],
+    [
+     "P131",
+     "Q27150039"
+    ],
+    [
+     "P131",
+     "Q1228622"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q200441.json"
+  },
+  "Q209349": {
+   "classes": [
+    "Q15661340",
+    "Q839954"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Nicomedia"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Nikomedeia"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Nikomedia"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Nicomedie"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Nikomedeia"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Nikomedia"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Nikomedya"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Nikomedien"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Nicomedia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Nicomedia"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Nicomédie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Nicomedia"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Nicomedia"
+    ]
+   ],
+   "links": [
+    [
+     "P1366",
+     "Q129649"
+    ],
+    [
+     "P276",
+     "Q373189"
+    ],
+    [
+     "P131",
+     "Q913382"
+    ],
+    [
+     "P131",
+     "Q373189"
+    ],
+    [
+     "P131",
+     "Q483083"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q209349.json"
+  },
+  "Q220": {
+   "classes": [
+    "Q902814",
+    "Q3685476",
+    "Q1200957",
+    "Q200250",
+    "Q51929311",
+    "Q1187811",
+    "Q1549591",
+    "Q747074",
+    "Q108178728"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Die Ewige Stadt"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Capital of the World"
+    ],
+    [
+     "altLabel",
+     "en",
+     "City of Marble"
+    ],
+    [
+     "altLabel",
+     "en",
+     "City of Seven Hills"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Eternal City"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Rome, Italy"
+    ],
+    [
+     "altLabel",
+     "en",
+     "The Capital of the World"
+    ],
+    [
+     "altLabel",
+     "en",
+     "The City of Marble"
+    ],
+    [
+     "altLabel",
+     "en",
+     "The Eternal City"
+    ],
+    [
+     "altLabel",
+     "es",
+     "La Ciudad Eterna"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "La ville aux sept collines"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "La ville éternelle"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "l'Urbs"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Caput Mundi"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Città dei sette colli"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Città di Roma"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Città eterna"
+    ],
+    [
+     "altLabel",
+     "it",
+     "RM"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Urbe"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Rom"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Rome"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Roma"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Rome"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Roma"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q15119"
+    ],
+    [
+     "P131",
+     "Q170174"
+    ],
+    [
+     "P131",
+     "Q1558632"
+    ],
+    [
+     "P131",
+     "Q1747689"
+    ],
+    [
+     "P131",
+     "Q17167"
+    ],
+    [
+     "P131",
+     "Q2277"
+    ],
+    [
+     "P131",
+     "Q42834"
+    ],
+    [
+     "P131",
+     "Q18288160"
+    ],
+    [
+     "P131",
+     "Q3677829"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q220.json"
+  },
+  "Q28215083": {
+   "classes": [
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "prefLabel",
+     "de",
+     "Ticinum"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Ticinum"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Ticinum"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Ticinum"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q6259"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q28215083.json"
+  },
+  "Q3138": {
+   "classes": [
+    "Q515",
+    "Q1549591",
+    "Q42744322",
+    "Q85632032",
+    "Q134626",
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Augusta Treverorum"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Augusta Treverorum"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Triers"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Treveris"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Trier"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Trier"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Trier"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Tréveris"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Trèves"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Treviri"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q1200"
+    ],
+    [
+     "P131",
+     "Q573203"
+    ],
+    [
+     "P131",
+     "Q2864070"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q3138.json"
+  },
+  "Q322168": {
+   "classes": [
+    "Q4204501"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Treveri"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Trevirer"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Treviri"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Treveros"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Trevires"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Trevériens"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Tréveriens"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Treviri"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Treverer"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Treveri"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Tréveros"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Trévires"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Treveri"
+    ]
+   ],
+   "links": [],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q322168.json"
+  },
+  "Q396445": {
+   "classes": [
+    "Q28747937"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Pavia history"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "history of Pavia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "historia de Pavia"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "histoire de Pavie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "storia di Pavia"
+    ]
+   ],
+   "links": [],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q396445.json"
+  },
+  "Q41604": {
+   "classes": [
+    "Q484170"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Amians"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Samarobriva"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Amians"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Amians"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Samarobriva"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Amians"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Espace urbain d'Amiens"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Longpré-lès-Amiens"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "la petite Venise du Nord"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Amians"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Samarobriva"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Amiens"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Amiens"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Amiens"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Amiens"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Amiens"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q700410"
+    ],
+    [
+     "P131",
+     "Q12770"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q41604.json"
+  },
+  "Q472": {
+   "classes": [
+    "Q200250",
+    "Q15303838",
+    "Q15344922",
+    "Q89487741",
+    "Q1901835",
+    "Q51929311"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "bg",
+     "Сердика"
+    ],
+    [
+     "altLabel",
+     "bg",
+     "Средец"
+    ],
+    [
+     "altLabel",
+     "bg",
+     "Срѣдецъ"
+    ],
+    [
+     "altLabel",
+     "bg",
+     "Столицата на България"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Serdica"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Sredez"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Serdica"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Sofija"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Sredets"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Sredez"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Sofia"
+    ],
+    [
+     "prefLabel",
+     "bg",
+     "София"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Sofia"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Sofia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Sofía"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Sofia"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Sofia"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q4442915"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q472.json"
+  },
+  "Q48292": {
+   "classes": [
+    "Q484170"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "es",
+     "Arle"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Arles"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Arelate"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Arles"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Arles"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Arlés"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Arles"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Arles"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q3240"
+    ],
+    [
+     "P131",
+     "Q700484"
+    ],
+    [
+     "P131",
+     "Q16912418"
+    ],
+    [
+     "P131",
+     "Q1119844"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q48292.json"
+  },
+  "Q53216": {
+   "classes": [
+    "Q747074"
+   ],
+   "labels": [
+    [
+     "prefLabel",
+     "de",
+     "Aquileia"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Aquileia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Aquilea"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Aquilée"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Aquileia"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q649505"
+    ],
+    [
+     "P131",
+     "Q104182212"
+    ],
+    [
+     "P131",
+     "Q16294"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q53216.json"
+  },
+  "Q615449": {
+   "classes": [
+    "Q839954",
+    "Q15661340",
+    "Q148837"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Cyzicus"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Kyzikos"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Cicico"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Cizico"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Cízico"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Kyzikos"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Cyzicus"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Belkıs"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Cyzicus"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Kizikos"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Kyzikos"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Cyzicus"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Cícico"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Cyzique"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Cizico"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Kyzikos"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q177298"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q615449.json"
+  },
+  "Q6343": {
+   "classes": [
+    "Q133442",
+    "Q655593",
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "ar",
+     "قرطاجة"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Carthago"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Colonia Julia Carthago"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Carthago"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Colonia Julia Carthago"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Mint of Carthage"
+    ],
+    [
+     "prefLabel",
+     "ar",
+     "قرطاج"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Karthago"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Carthage"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Cartago"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Carthage"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Cartagine"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q246737"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q6343.json"
+  },
+  "Q665": {
+   "classes": [
+    "Q2202509",
+    "Q756780"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Colonia Copia Augusta Lugdunum"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Colonia Copia Claudia Augusta Lugdunum"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Colonia Copia Felix Munatia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Colonia Copia Claudia Augusta Lugdunum"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Lugudunum"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Colonia Copia Claudia Augusta Lugdunum"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Lugudunum"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Lugdunum"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Lugdunum"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Lugdunum"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Lugdunum"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Lugdunum"
+    ]
+   ],
+   "links": [
+    [
+     "P1366",
+     "Q456"
+    ],
+    [
+     "P276",
+     "Q456"
+    ],
+    [
+     "P131",
+     "Q10971"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q665.json"
+  },
+  "Q729978": {
+   "classes": [
+    "Q515",
+    "Q839954",
+    "Q2202509",
+    "Q15661340",
+    "Q213468"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "es",
+     "Mediolanum"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Mediolanum"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Mediolanum"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Mediolano"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Mediolanum"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Mediolanum"
+    ]
+   ],
+   "links": [
+    [
+     "P1366",
+     "Q490"
+    ],
+    [
+     "P131",
+     "Q490"
+    ],
+    [
+     "P131",
+     "Q199728"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q729978.json"
+  },
+  "Q833060": {
+   "classes": [
+    "Q839954",
+    "Q15661340"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "es",
+     "Sirmium"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Sirmium"
+    ],
+    [
+     "altLabel",
+     "sr",
+     "Sirmium"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Sirmium"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Sirmium"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Sirmio"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Sirmium"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Sirmio"
+    ],
+    [
+     "prefLabel",
+     "sr",
+     "Сирмијум"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q170062"
+    ],
+    [
+     "P131",
+     "Q1247297"
+    ],
+    [
+     "P131",
+     "Q242733"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q833060.json"
+  },
+  "Q87": {
+   "classes": [
+    "Q2264924",
+    "Q15284",
+    "Q1549591",
+    "Q148837",
+    "Q515"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "ar",
+     "إسكندرية"
+    ],
+    [
+     "altLabel",
+     "ar",
+     "الأسكندرية"
+    ],
+    [
+     "altLabel",
+     "ar",
+     "الاسكندرية"
+    ],
+    [
+     "altLabel",
+     "ar",
+     "عروس البحر الأبيض المتوسط"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Al Iskandariya"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Alexandria, Egypt"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Iskandariyya"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Mediterranean's Bride"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Pearl of the Mediterranean"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Alejandria"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Alessandria"
+    ],
+    [
+     "prefLabel",
+     "ar",
+     "الإسكندرية"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Alexandria"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Alexandria"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Alejandría"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Alexandrie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Alessandria d'Egitto"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q29943"
+    ],
+    [
+     "P131",
+     "Q202311"
+    ],
+    [
+     "P131",
+     "Q1018761"
+    ],
+    [
+     "P131",
+     "Q1228622"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q87.json"
+  },
+  "Q927198": {
+   "classes": [
+    "Q2202509"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Römisches London"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Roman London"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Londres romain"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Londinium"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Londinium"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Londinium"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Londinium"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Londinium"
+    ]
+   ],
+   "links": [
+    [
+     "P276",
+     "Q84"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q927198.json"
+  },
+  "Q985638": {
+   "classes": [
+    "Q3957"
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Marmara Ereglisi"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Perinthos"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Erekli"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Ereğli"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Marmara Eregli"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Marmara Ereğlisi"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Perinthe"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Périnthe"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Marmara Ereğli"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Marmara Ereğlisi"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Marmara Ereğlisi"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Marmaraereğlisi"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Marmara Ereğli"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Marmara Ereğlisi"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Marmaraereğlisi"
+    ]
+   ],
+   "links": [
+    [
+     "P131",
+     "Q129387"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q985638.json"
+  }
+ },
+ "license": "CC0-1.0",
+ "licenseStatement": "Wikidata's structured data, including the labels and aliases kept here, is dedicated to the public domain under the Creative Commons CC0 1.0 Universal Public Domain Dedication.",
+ "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+ "requestUrl": "https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json",
+ "retrievedOn": "2026-09-18",
+ "targets": {
+  "Q11171297": {
+   "classes": [
+    "Q1134686",
+    "Q1021711",
+    "Q123705"
+   ],
+   "from": [
+    [
+     "Q1012797",
+     "P276"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Ostia"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Ostia Beach"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Ostia Lido"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Ostia"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Ostia"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Ostia Lido"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Lido di Ostia"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Lido di Ostia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Ostia"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Ostie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Lido di Ostia"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q11171297.json"
+  },
+  "Q129649": {
+   "classes": [
+    "Q515",
+    "Q149621",
+    "Q3957"
+   ],
+   "from": [
+    [
+     "Q209349",
+     "P1366"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Ismit"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Ismid"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Ismit"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Izmit"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Nicomedia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Izmit"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Ismit"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Isnikmid"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Izmitk"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Olbia"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "İzmit"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "İzmit"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "İzmit"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Izmit"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "İzmit"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "İzmit"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q129649.json"
+  },
+  "Q177298": {
+   "classes": [
+    "Q3957",
+    "Q10499251",
+    "Q1147395"
+   ],
+   "from": [
+    [
+     "Q615449",
+     "P131"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Artake"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Erdek, Balıkesir"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Erdek"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Erdek"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Erdek"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Distretto di Erdek"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Erdek"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q177298.json"
+  },
+  "Q246737": {
+   "classes": [
+    "Q946136"
+   ],
+   "from": [
+    [
+     "Q6343",
+     "P131"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "es",
+     "Enarcado de Cartago"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Exarcado de Africa"
+    ],
+    [
+     "altLabel",
+     "it",
+     "esarcato di Cartagine"
+    ],
+    [
+     "prefLabel",
+     "ar",
+     "إكسرخسية قرطاج"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Exarchat von Karthago"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Exarchate of Africa"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "exarcado de África"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "exarchat de Carthage"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "esarcato d'Africa"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q246737.json"
+  },
+  "Q406": {
+   "classes": [
+    "Q2716259",
+    "Q27554677",
+    "Q174844",
+    "Q51929311",
+    "Q2264924",
+    "Q1549591"
+   ],
+   "from": [
+    [
+     "Q16869",
+     "P1366"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "fr",
+     "Istamboul"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Istambul"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Stamboul"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Costantinopoli"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Istanbul"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Istanbul"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Estambul"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Istanbul"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Istanbul"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "İstanbul"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q406.json"
+  },
+  "Q456": {
+   "classes": [
+    "Q484170",
+    "Q22927616",
+    "Q1549591",
+    "Q1187811"
+   ],
+   "from": [
+    [
+     "Q665",
+     "P1366"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "de",
+     "Leyden"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Lion"
+    ],
+    [
+     "altLabel",
+     "de",
+     "Welsch-Leyden"
+    ],
+    [
+     "altLabel",
+     "en",
+     "City of Lyon"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Commune-Affranchie"
+    ],
+    [
+     "altLabel",
+     "es",
+     "León de Francia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "León del Ródano"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Commune-Affranchie"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "capitale des Gaules"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Lyon"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Lyon"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Lyon"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Lyon"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Lione"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q456.json"
+  },
+  "Q490": {
+   "classes": [
+    "Q515",
+    "Q956214",
+    "Q4115680",
+    "Q1549591",
+    "Q200250",
+    "Q747074"
+   ],
+   "from": [
+    [
+     "Q729978",
+     "P1366"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Mailand"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Milan, Italy"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Milan, Lombardy"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Milano, Italy"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Milan"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Mailand"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Milan"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Milán"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Milan"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Milano"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q490.json"
+  },
+  "Q6259": {
+   "classes": [
+    "Q747074"
+   ],
+   "from": [
+    [
+     "Q28215083",
+     "P131"
+    ]
+   ],
+   "labels": [
+    [
+     "prefLabel",
+     "de",
+     "Pavia"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Pavia"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Pavía"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Pavie"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Pavia"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q6259.json"
+  },
+  "Q80561": {
+   "classes": [
+    "Q1549591",
+    "Q3957"
+   ],
+   "from": [
+    [
+     "Q200441",
+     "P1366"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "es",
+     "Antakia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antakya"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquia"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquia de Siria"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquia del Orontes"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquía de Siria"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Antioquía del Orontes"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Antioche"
+    ],
+    [
+     "altLabel",
+     "it",
+     "Antakya"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Antioch"
+    ],
+    [
+     "altLabel",
+     "tr",
+     "Antiokheia"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "Antakya"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "Antakya"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Antioquía"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Antakya"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Antiochia"
+    ],
+    [
+     "prefLabel",
+     "tr",
+     "Antakya"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q80561.json"
+  },
+  "Q84": {
+   "classes": [
+    "Q200250",
+    "Q1066984",
+    "Q515",
+    "Q208511",
+    "Q174844",
+    "Q51929311",
+    "Q108178728",
+    "Q1048835"
+   ],
+   "from": [
+    [
+     "Q927198",
+     "P276"
+    ]
+   ],
+   "labels": [
+    [
+     "altLabel",
+     "en",
+     "Augusta"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Big Smoke"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Kaerlud"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Karelundein"
+    ],
+    [
+     "altLabel",
+     "en",
+     "LDN"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Llan Dian"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Llyn Dain"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lon."
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lond."
+    ],
+    [
+     "altLabel",
+     "en",
+     "Londini"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Londiniensium"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Londinio"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Londinion"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Londinium"
+    ],
+    [
+     "altLabel",
+     "en",
+     "London U.K."
+    ],
+    [
+     "altLabel",
+     "en",
+     "London UK"
+    ],
+    [
+     "altLabel",
+     "en",
+     "London, England"
+    ],
+    [
+     "altLabel",
+     "en",
+     "London, UK"
+    ],
+    [
+     "altLabel",
+     "en",
+     "London, United Kingdom"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Loniniensi"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Loñ"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Loñ."
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lunden"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lundenburgh"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lundenburh"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Lundenwic"
+    ],
+    [
+     "altLabel",
+     "en",
+     "Trinovantum"
+    ],
+    [
+     "altLabel",
+     "en",
+     "the Big Smoke"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Greater London"
+    ],
+    [
+     "altLabel",
+     "es",
+     "London, UK"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Londres (Inglaterra)"
+    ],
+    [
+     "altLabel",
+     "es",
+     "Londres (Reino Unido)"
+    ],
+    [
+     "altLabel",
+     "fr",
+     "Londres, Angleterre"
+    ],
+    [
+     "prefLabel",
+     "de",
+     "London"
+    ],
+    [
+     "prefLabel",
+     "en",
+     "London"
+    ],
+    [
+     "prefLabel",
+     "es",
+     "Londres"
+    ],
+    [
+     "prefLabel",
+     "fr",
+     "Londres"
+    ],
+    [
+     "prefLabel",
+     "it",
+     "Londra"
+    ]
+   ],
+   "url": "https://www.wikidata.org/wiki/Special:EntityData/Q84.json"
+  }
+ }
+}

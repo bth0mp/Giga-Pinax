@@ -199,15 +199,63 @@ test('an English -ian name is also reached by its regular Latin -ianus form, wit
 });
 
 // Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.
-test('a RIC mint section is found by the other English name Nomisma gives it, and never as a ruler', () => {
-  assert.equal(ricMintSection('Trier'), 'Treveri');
-  assert.equal(ricMintSection('  ISTANBUL '), 'Constantinople');
-  assert.deepEqual(volumesOf('Trier'), volumesOf('Treveri'));
-  assert.deepEqual(ricPeople('Trier'), []);
-  // Nomisma gives these no English name but the one RIC files them under, and none is invented: their modern names live only in its French and
-  // German labels.
-  for (const mint of ['London', 'Lyon', 'Lyons', 'Arles', 'Milan', 'Pavia']) {
-    assert.equal(ricMintSection(mint), '', mint);
-    assert.deepEqual(volumesOf(mint), [], mint);
+// The name is taken from three kinds of label — the mint's own country, English, and the exonym several of English, French, German, Italian and
+// Spanish share — so a section is reached by the name the mint goes by today wherever Nomisma publishes one.
+test('a RIC mint section is found by the modern names Nomisma gives it, and never as a ruler', () => {
+  for (const [written, section] of [['Trier', 'Treveri'], ['  ISTANBUL ', 'Constantinople'], ['Arles', 'Arelate'], ['Sisak', 'Siscia'],
+    ['Roma', 'Rome'], ['Antakya', 'Antioch'], ['Konstantinopolis', 'Constantinople'], ['Sirmio', 'Sirmium'], ['Marmara Ereğlisi', 'Heraclea']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    // A mint is a place: it answers for a section and never for a ruler, whatever the one-word widening does with a ruler's own spellings.
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+});
+
+// Nomisma's mint concepts carry skos:closeMatch links to the same place in Wikidata, and Wikidata's labels and aliases go through the same three
+// rules. Bulgaria's capital is the clearest gain: Nomisma writes "Sofia" in Cyrillic alone, which is no script a ticket is typed in, and Wikidata
+// writes it in English and in every exonym language.
+test('a RIC mint section is found by the names Wikidata adds through Nomisma\'s own closeMatch links', () => {
+  for (const [written, section] of [['Sofia', 'Serdica'], ['Sredets', 'Serdica'], ['Carthago', 'Carthage'], ['Ostia Antica', 'Ostia'],
+    ['Roman London', 'Londinium'], ['Triers', 'Treveri'], ['Augusta Treverorum', 'Treveri'], ['Nikomedya', 'Nicomedia'],
+    ['Antioch on the Orontes', 'Antioch'], ['Lugudunum', 'Lugdunum'], ['Samarobriva', 'Amiens']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+  // Wikidata lists a city's nicknames beside its names, and a heading naming no ruler is read for the earliest mint spelling in it — so a Trier
+  // coin described in prose about the Eternal City would have been filed under Rome. A nickname is not a name and none of them is in the table.
+  for (const nickname of ['Eternal City', 'The Eternal City', 'Caput Mundi', 'Città Eterna', 'Urbe', 'RM', 'City of Seven Hills',
+    'Pearl of the Mediterranean', 'The City of the World\'s Desire', 'Longpré-lès-Amiens', 'History of Pavia']) {
+    assert.equal(ricMintSection(nickname), '', nickname);
+  }
+});
+
+// The Wikidata items Nomisma links Londinium, Lugdunum, Mediolanum and Ticinum to are the Roman city — Q927198, Q665, Q729978, Q28215083 — and every
+// language kept titles those by the Latin name, so the town standing there now is in no label of them. Each of those items does publish a statement
+// naming that town, and the importer follows one: the first of P1366 (replaced by), P276 (location) and P131 (located in the administrative
+// territorial entity) the item carries, and only when what it reaches is a populated place. That is where these names come from and nowhere else.
+test('a RIC mint section is found by the modern town the linked Wikidata item points at', () => {
+  for (const [written, section] of [['London', 'Londinium'], ['LONDON, UK', 'Londinium'], ['Londres', 'Londinium'], ['Lyon', 'Lugdunum'],
+    [' lyon ', 'Lugdunum'], ['Milan', 'Mediolanum'], ['Milano', 'Mediolanum'], ['Mailand', 'Mediolanum'], ['Pavia', 'Ticinum'],
+    ['İzmit', 'Nicomedia'], ['Erdek', 'Cyzicus'], ['Trier', 'Treveri']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    // A mint is a place here too: a town reached by a statement answers for a section and never for a ruler.
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+  // "Lyons" is the one name of the five the mint volumes were asked for that is still unreachable: Wikidata publishes it as a name of Lyon in no
+  // language kept, and nothing is invented to answer for it.
+  assert.equal(ricMintSection('Lyons'), '');
+  assert.deepEqual(volumesOf('Lyons'), []);
+  // London's item lists these beside its names, and not one of them may read a mint out of a heading: "Augusta" is an honorific several cities and
+  // several empresses carry, "Lon", "Lond" and "LDN" are codes short enough to fall out of ordinary words, and the Smoke is a nickname. Lyon's
+  // "capitale des Gaules" is the same kind of thing in the language of its own country.
+  for (const refused of ['Augusta', 'Lon', 'Lond.', 'LDN', 'Big Smoke', 'The Big Smoke', 'Capitale des Gaules', 'Greater London']) {
+    assert.equal(ricMintSection(refused), '', refused);
+  }
+  // What the hop reaches is not always a town, and what is not a town names no mint: Carthage's item leads to the Exarchate of Africa, a Byzantine
+  // province, and Ostia's to the Lido di Ostia, a frazione and a seaside resort. Both were fetched, and both were refused by their own P31.
+  for (const refused of ['Exarchate of Africa', 'Esarcato di Cartagine', 'Lido di Ostia', 'Ostia Lido', 'Ostia Beach']) {
+    assert.equal(ricMintSection(refused), '', refused);
   }
 });

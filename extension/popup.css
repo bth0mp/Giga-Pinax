@@ -108,7 +108,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .price-filters {margin-bottom:4px;}
 .denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px;}
 .denomination-row + .denomination-row {margin-top:6px;}
-.denomination-row input {margin:0; flex-shrink:0;}
+/* The field rule above sizes every input at 36px and full width; a checkbox in this row keeps its own size or it fills the row and pushes its label
+   off the edge. */
+.denomination-row input {margin:0; flex-shrink:0; width:auto; height:auto; padding:0;}
 /* A median per dealer grade, under the range it splits up. */
 .grade-medians {list-style:none; padding:0; margin:6px 0 0;}
 .grade-medians li {font-size:11px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}

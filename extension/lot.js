@@ -1,5 +1,5 @@
 import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
-import { isRicPerson, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
+import { isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -211,6 +211,26 @@ const RULERS = Object.freeze([...labelGroups.entries()]
   .sort((a, b) => b[1].length - a[1].length));
 const LABELS = new Set(labelGroups.keys());
 
+// The mints a heading may name, longest spelling first, each with the RIC section it stands for. A spelling the people table already answers to is
+// left out: a man's name is his, and the ruler path has always had it. The mints are kept out of LABELS above as well, so what counts as a legend is
+// exactly what counted before — a heading that opens "ROMA AETERNA" is read as the coin's words, not as the mint's name.
+const MINTS = Object.freeze(MINT_SPELLINGS.filter(([label]) => !LABELS.has(label))
+  .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'u'), label.split(' ')[0]]))
+  .sort((a, b) => b[1].source.length - a[1].source.length));
+// The mint a heading names, or none: the earliest one in the text, since a heading names the mint once. Read exactly as the rulers are, with the
+// same cheap substring test in front of each pattern and the same fold, so a heading written "Trèves" is compared as the table holds it.
+function headingMint(text) {
+  const rest = fold(text);
+  const lower = rest.toLowerCase();
+  let best = null;
+  for (const [section, pattern, probe] of MINTS) {
+    if (!lower.includes(probe)) continue;
+    const found = pattern.exec(rest);
+    if (found && (!best || found.index < best.index)) best = { index: found.index, section };
+  }
+  return best?.section ?? '';
+}
+
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
@@ -392,7 +412,12 @@ export function findReferences(input) {
     const id = `${catalogue}|${volume}|${section}|${number}`.toLowerCase();
     return !seen.has(id) && seen.add(id);
   });
-  return { references, rulers: rulersIn(heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length))) };
+  const headline = heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length));
+  const rulers = rulersIn(headline);
+  // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
+  // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
+  const mint = rulers.length === 0 ? headingMint(headline) : '';
+  return { references: mint ? references.map((found) => ({ ...found, mint })) : references, rulers };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
@@ -416,13 +441,23 @@ const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' &
 // portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
 // nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.
 const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && volumesOf(name).length > 0) ?? '';
+// A heading that named a mint and nobody else ("Londinium. RIC 12", "Arles mint") is that mint's section: RIC VI-IX file their coins by mint, so the
+// name is where the number lives, and without it a numberless RIC row left every mint of every volume to choose between. The section brings the
+// volumes it implies with it, exactly as a ruler section does — but only where the lot has stated no volume of its own, or one the mint really is a
+// section of. "Rome mint" stands in most RIC I-V descriptions, and a heading is ruler-less wherever the table does not hold its spelling, so a mint
+// that overrode the volume sent "Rome mint. RIC IV 460" to RIC VIII. A mint says where the coin was struck; it never says the lot cited another book.
+const mintSection = (found) => (found.reference.catalogue === 'RIC' && !found.reference.section && found.mint
+  && (!found.reference.volume || volumesOf(found.mint).includes(found.reference.volume)) ? found.mint : '');
 export function lotLookup(found, rulers) {
+  const mint = mintSection(found);
+  // The volume the lot stated is one of the mint's own by then, so volumeFor only ever fills a blank one in.
+  if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, '') };
   if (!borrowsRulers(found, rulers)) return found.reference;
   const section = found.reference.section ? '' : headingSection(rulers);
   return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
 }
-export const lotLabel = (found, rulers) => [found.text, borrowsRulers(found, rulers) && rulers[0], !found.typed && 'prices only', found.cf && 'cf.',
-  found.variant && 'var.'].filter(Boolean).join(' · ');
+export const lotLabel = (found, rulers) => [found.text, (borrowsRulers(found, rulers) && rulers[0]) || mintSection(found),
+  !found.typed && 'prices only', found.cf && 'cf.', found.variant && 'var.'].filter(Boolean).join(' · ');
 
 // Lot text copied in lines (a paste, a right-click) for a one-line box: a break separates as ". " does, so a weight or an "Ex …" line never joins the
 // reference above it ("…RIC 1073⏎18 mm"), and a line ending in its own mark keeps it ("HGC 4,⏎1598"). One reference split over lines ("RIC I²⏎Nero

@@ -1,7 +1,10 @@
-import { LIMITS, SCHEMA_VERSION, migrateSnapshot, unusableRevisions, validateSnapshot } from './records.js';
+import {
+  LIMITS, SCHEMA_VERSION, foldQuarantine, migrateSnapshot, quarantineEntryId, unusableRevisions,
+  validateSnapshot,
+} from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
-import { clone, failure, own } from './validate.js';
+import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 
 export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // Exports are compact, but backups written by earlier builds were indented: the import bound has to
@@ -37,6 +40,7 @@ const CONFLICT_SENTENCES = {
   'same-sale-collision': 'is the same sale with different numbers, kept local',
   'lot-not-merged': 'is attached to a lot this merge did not take, skipped',
   'entry-kept-local': 'arrived for a lot that already has a collection entry here, kept local',
+  'event-for-skipped-lot': 'is the auction of a lot this merge skipped as a duplicate, kept out',
 };
 function bytes(value) {
   return new TextEncoder().encode(value).length;
@@ -71,7 +75,18 @@ export function exportBackup(snapshot, now) {
   return { ok: true, value: document };
 }
 
+// Reading a file is the other boundary: parsing it, copying it and migrating it all recurse, so a
+// document whose records are nested past what the stack holds is refused as an invalid file.
 export function validateBackup(document) {
+  try {
+    return readBackup(document);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('data');
+  }
+}
+
+function readBackup(document) {
   let value = document;
   if (typeof document === 'string') {
     if (bytes(document) > MAX_BACKUP_BYTES) return failure('file-too-large', 'Backup exceeds the 16 MiB limit.');
@@ -252,6 +267,45 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
   });
 }
 
+// Auction events merge before the lots that point at them, so the event of a lot the merge then
+// skipped as a duplicate had already been taken: the same sale stood here twice and its reminders
+// fired twice. The event belongs to the skipped lot, so it follows that lot out - unless the local
+// lot it duplicates tracks no sale at all, in which case the sale the backup knows about is worth
+// keeping and the lot that stayed is linked to it, or unless a lot the merge did take is attached to
+// it too. Only an event this merge itself brought in is ever taken back out: a local one stays.
+function settleSkippedLotEvents(snapshot, skipped, localEventIds, conflicts, { attach, change, updates, counted, now }) {
+  for (const { record, local } of skipped) {
+    if (!own(record, 'auctionEventId') || own(local, 'auctionEventId')) continue;
+    if (!snapshot.auctionEvents.some(({ id }) => id === record.auctionEventId)) continue;
+    // The link is a body from before the export, so a lot written since wins over it exactly as
+    // every other record does: an old backup merged again no longer puts the sale back on a lot the
+    // collector had unlinked. The event then points at nothing here and goes out below.
+    if (!attach(local)) continue;
+    updates.push({ ...change('lots', record, local), reason: 'auction-attached', fields: ['auctionEventId'] });
+    local.auctionEventId = record.auctionEventId;
+    // The link is content this install never had, so the row is stamped: an editor holding the row
+    // from before the import is answered with a conflict instead of saving the link away again, and
+    // the write time says when the link was put on. A stamp never moves a write time backwards.
+    local.revision += 1;
+    if (now > local.updatedAt) local.updatedAt = now;
+    counted();
+  }
+  const referenced = new Set(snapshot.lots.flatMap((row) =>
+    (own(row, 'auctionEventId') ? [row.auctionEventId] : [])));
+  const orphaned = new Set(skipped
+    .map(({ record }) => (own(record, 'auctionEventId') ? record.auctionEventId : null))
+    .filter((id) => id !== null && !referenced.has(id) && !localEventIds.has(id)));
+  if (!orphaned.size) return 0;
+  snapshot.auctionEvents = snapshot.auctionEvents.filter((event) => {
+    if (!orphaned.has(event.id)) return true;
+    conflicts.push({
+      collection: 'auctionEvents', id: event.id, title: recordLabel(event), reason: 'event-for-skipped-lot',
+    });
+    return false;
+  });
+  return orphaned.size;
+}
+
 // The identity of a trigger, rebuilt from the three things it is derived from, exactly as the reconcile rebuilds it.
 const triggerKey = (alert) => `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
 
@@ -290,24 +344,27 @@ function dropStaleAlerts(snapshot) {
     remindersByEvent.get(alert.eventId)?.has(alert.reminderId) === true);
 }
 
-// Quarantine is a recovery bin rather than live data, so a merge unions both bins and drops only
-// entries that are identical to one already there.
+// Quarantine is a recovery bin rather than live data, so a merge unions both bins. Comparing whole
+// entries let one record through twice, because two installs set the same record aside at the moment
+// each of them repaired it and the dates differ; the union folds the way a repair does, by the
+// record and the reason, so one record set aside for one reason stays one entry with one Restore.
 function mergeQuarantine(snapshot, current, incoming) {
-  const entries = clone(current.quarantine ?? []);
-  const seen = new Set(entries.map((entry) => JSON.stringify(entry)));
-  let gained = 0;
-  for (const entry of incoming.quarantine ?? []) {
-    const key = JSON.stringify(entry);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    entries.push(clone(entry));
-    gained += 1;
-  }
+  const held = foldQuarantine(clone(current.quarantine ?? []));
+  const entries = foldQuarantine([...held, ...clone(incoming.quarantine ?? [])]);
   if (entries.length) snapshot.quarantine = entries;
-  return gained;
+  return entries.length - held.length;
 }
 
-export function previewImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
+export function previewImport(current, incoming, mode, options = {}) {
+  try {
+    return planImport(current, incoming, mode, options);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('data');
+  }
+}
+
+function planImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
   const currentValid = validateSnapshot(current);
   if (!currentValid.ok) return failure('invalid-current', currentValid.error.message, currentValid.error.path);
   const incomingValid = validateSnapshot(incoming);
@@ -330,6 +387,10 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   const duplicates = [];
   const updates = [];
   const keptLocal = [];
+  // Each incoming lot passed over as a duplicate, with the local lot it duplicates: what becomes of
+  // the auction event it carried is settled once the lots are merged and that map is final.
+  const skippedLots = [];
+  const localEventIds = new Set(current.auctionEvents.map(({ id }) => id));
   const tally = { added: 0, updated: 0, keptLocal: 0, skippedDuplicate: 0, quarantine: 0 };
   // Entries only count once it is known which of them survived the pairing repair, or a re-merge
   // would report adding the same entry again every time.
@@ -429,6 +490,7 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
         const duplicate = findDuplicateLot(rows, record);
         if (duplicate) {
           duplicates.push({ id: record.id, title: recordLabel(record), duplicateOf: recordLabel(duplicate) });
+          skippedLots.push({ record, local: duplicate });
           tally.skippedDuplicate += 1;
           continue;
         }
@@ -455,6 +517,14 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   // with different revisions, which is bookkeeping rather than a disagreement worth reporting.
   if (current.preferences === null) snapshot.preferences = clone(incoming.preferences);
 
+  // An event kept out was counted as added when the collections loop took it.
+  tally.added -= settleSkippedLotEvents(snapshot, skippedLots, localEventIds, conflicts, {
+    attach: (local) => !beyondCeiling(local),
+    change,
+    updates,
+    counted: () => { tally.updated += 1; },
+    now,
+  });
   repairCollectionPairs(snapshot, conflicts, entryReviews);
   const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
   for (const [id, outcome] of entryOutcomes) {
@@ -467,7 +537,11 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);
 
   const valid = validateSnapshot(snapshot);
-  if (!valid.ok) return failure('merge-invalid', valid.error.message, valid.error.path);
+  // The validator's own sentence is about a record or a limit, not about the file the collector
+  // chose, so what happened is said first and the detail is kept after it.
+  if (!valid.ok) {
+    return failure('merge-invalid', `This backup cannot be merged with your local records. ${valid.error.message}`, valid.error.path);
+  }
   return {
     ok: true,
     value: {
@@ -513,6 +587,12 @@ export function importChangeLines(preview) {
     ...(preview.updates ?? []).map((row) => {
       const alias = row.incomingTitle ? ` (in the backup: "${row.incomingTitle}")` : '';
       const fields = row.fields?.length ? `, differing in ${fieldsText(row.fields)}` : '';
+      // Nothing of the record is replaced when it only takes the sale of a duplicate the merge
+      // skipped, so that line says what really happens to it.
+      if (row.reason === 'auction-attached') {
+        return `${row.collection}: "${row.title}" takes the auction of a duplicate this merge skipped ` +
+          `(backup ${row.incomingUpdatedAt}, local ${row.localUpdatedAt})${compared(row)}`;
+      }
       return `${row.collection}: "${row.title}"${alias} is replaced by the backup's copy ` +
         `(backup ${row.incomingUpdatedAt}, local ${row.localUpdatedAt})${fields}${compared(row)}`;
     }),
@@ -563,12 +643,45 @@ export function quarantineSummaryText(entries) {
     : `${records} records could not be read and were set aside.`;
 }
 
+function quarantineLine(entry) {
+  const cleared = entry.clearedReferences?.length ?? 0;
+  const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
+  return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
+}
+
 export function quarantineLines(entries) {
-  return (Array.isArray(entries) ? entries : []).map((entry) => {
-    const cleared = entry.clearedReferences?.length ?? 0;
-    const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
-    return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
-  });
+  return (Array.isArray(entries) ? entries : []).map(quarantineLine);
+}
+
+// One row per set-aside entry as the page draws it: the line to read, the identifier a restore names,
+// and whether the entry holds a record to put back at all. An entry with no record of its own exists
+// only to carry links the repair cleared, and there is nothing in it to restore.
+export function quarantineRows(entries) {
+  return (Array.isArray(entries) ? entries : []).map((entry) => ({
+    id: quarantineEntryId(entry),
+    line: quarantineLine(entry),
+    restorable: entry?.record !== null && entry?.record !== undefined,
+  }));
+}
+
+// What the store answered a restore with, as a sentence: what went back, and what was left alone.
+export function quarantineRestoreText(value) {
+  if (!value || typeof value !== 'object') return 'The record was put back.';
+  const restored = value.restoredReferences?.length ?? 0;
+  const kept = value.keptReferences ?? [];
+  const parts = [`The record was put back into ${value.collection}.`];
+  // A lot and its collection entry are only valid together, so one of them going back takes the
+  // other with it, and the reply says so rather than leaving a second entry seemingly untouched.
+  for (const also of value.alsoRestored ?? []) {
+    parts.push(`The record it is linked to went back into ${also.collection} with it.`);
+  }
+  if (restored) parts.push(`${restored} link${restored === 1 ? ' was' : 's were'} restored with it.`);
+  if (kept.length) {
+    parts.push(`${kept.length} link${kept.length === 1 ? '' : 's'} could not be put back, because what ` +
+      `${kept.length === 1 ? 'it points' : 'they point'} from has changed since: ` +
+      `${kept.map(({ collection, field }) => `${collection}.${field}`).join(', ')}.`);
+  }
+  return parts.join(' ');
 }
 
 export function quarantineDocument(entries, now) {

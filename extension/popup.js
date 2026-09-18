@@ -654,6 +654,11 @@ function renderPriceFilters() {
   $('price-filters').hidden = !citing && !denomination;
 }
 
+// A search term as the line says it: in the panel's curly quotes, unless the term already carries punctuation of its own. A default term is written
+// in acsearch's own syntax — exact phrases in straight quotes, alternatives in brackets — and a second pair round it read as “"RIC 237"” and
+// “Nero ("RIC 306" …)”. What the collector typed is quoted as any other phrase is.
+const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`);
+
 // The filter lines as a screen reader hears them, each its own sentence.
 const spokenFilters = (filters) => filters.map((line) => (line.endsWith('.') ? line : `${line}.`)).join(' ');
 
@@ -733,7 +738,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const { total, unpriced } = drawnFrom;
   const skipped = total - drawnFrom.count - unpriced;
   // "+" only when every lot on the page falls in the period, so acsearch may hold more of them.
-  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for “${term}”`;
+  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${quotedTerm(term)}`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;

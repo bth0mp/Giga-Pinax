@@ -72,3 +72,8 @@ test('all constructed launch URLs stay on the reviewed HTTPS origins', () => {
     assert.equal(url.password, '');
   }
 });
+
+// The workspace query box is typed by hand; a doubled space inside it must not reach the site as two.
+test('collapses runs of spaces inside a hand-typed query', () => {
+  assert.equal(buildUserInitiatedSearch('coinarchives', 'RIC  237').value.url, 'https://www.coinarchives.com/a/results.php?search=RIC+237&s=0');
+});
