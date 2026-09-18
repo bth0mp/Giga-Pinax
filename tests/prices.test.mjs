@@ -1139,6 +1139,18 @@ test('gradeOf reads the Italian qualified marks', () => {
   assert.equal(gradeOf('Monogramma mBB nel campo.'), null);
 });
 
+// Issue #6: a house that prints the coin's weight, diameter or die axis behind the grade ("VF 3.41 g", "Fine 12 h.") closes the grade with it. The
+// number alone closes nothing: "Slg. vz 12." is a collection and its lot number, and that is the shape this rule must not read.
+test('gradeOf reads a grade the weight or die axis follows, and not a lot number', () => {
+  for (const [text, bucket] of [['VF 3.41 g', 'VF'], ['Fine 12 h.', 'Fine and below'], ['VF 17.23 g, 18 mm, 6 h.', 'VF'],
+    ['Nero. Denarius. RIC 306. VF 3.41 g', 'VF'], ['ss 3,41 g', 'VF'], ['EF 18mm', 'EF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  assert.equal(gradeOf('Slg. vz 12.'), null);
+  assert.equal(gradeOf('Ex Slg. MS 63.'), null);
+  assert.equal(gradeOf('Fine 12.'), null);
+});
+
 // "s." is German for "siehe", see: a lot references a comment, a catalogue or a plate with it in nearly every German description, and as the lower of
 // two grades it took every one of those lots down to Fine.
 test('gradeOf reads the German "s." as see, never as a grade of its own', () => {

@@ -661,13 +661,13 @@
  },
  {
   "text": "VF 3.41 g",
-  "grade": null,
-  "note": "r3_hunt.mjs expected vf; design B: a weight is no closing edge, and a slab score is read only behind NGC/PCGS"
+  "grade": "vf",
+  "note": "r3_hunt.mjs expected vf; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "Very Fine 17.23 g, 12h",
-  "grade": null,
-  "note": "r3_hunt.mjs expected vf; design B: a weight is no closing edge, and a slab score is read only behind NGC/PCGS"
+  "grade": "vf",
+  "note": "r3_hunt.mjs expected vf; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "AR Tetradrachm (17.23 g, 12h). VF",
@@ -676,8 +676,8 @@
  },
  {
   "text": "Tetradrachm, 17.2 g. Fine 12 h.",
-  "grade": null,
-  "note": "r3_hunt.mjs expected fine; design B: a die axis is no closing edge"
+  "grade": "fine",
+  "note": "r3_hunt.mjs expected fine; #6: a weight, diameter or die axis closes a grade; a bare number does not"
  },
  {
   "text": "Graded XF 45 by PCGS.",
@@ -2773,5 +2773,35 @@
   "text": "Monogramma mBB nel campo.",
   "grade": null,
   "note": "#6: the Italian \"m\" (migliore di) qualifies a mark as \"q\" does; read in lower case and only in front of a capital, and the mark still needs its closing edge"
+ },
+ {
+  "text": "VF 17.23 g, 18 mm, 6 h.",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "Nero. Denarius. RIC 306. VF 3.41 g",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "ss 3,41 g",
+  "grade": "vf",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "EF 18mm",
+  "grade": "ef",
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not"
+ },
+ {
+  "text": "Fine 12.",
+  "grade": null,
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not; the number alone is a lot number, and the unit must be the unit"
+ },
+ {
+  "text": "Ex Slg. MS 12 hours later.",
+  "grade": null,
+  "note": "#6: a weight, diameter or die axis closes a grade; a bare number does not; the number alone is a lot number, and the unit must be the unit"
  }
 ]
