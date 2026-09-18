@@ -256,7 +256,7 @@ export function mountBidCalculator(
     type: 'text', maxLength: 120, placeholder: 'Auction house name',
   });
   const save = el('button', {
-    type: 'button', className: 'secondary', textContent: 'Save house premium',
+    type: 'button', className: 'secondary', textContent: 'Save house preset',
   });
   editor.append(editorSummary, presetName, save);
   actions.append(use);
@@ -274,7 +274,7 @@ export function mountBidCalculator(
   };
   const renderPresets = () => {
     const selected = preset.value;
-    preset.replaceChildren(el('option', { value: '', textContent: 'Choose house premium' }));
+    preset.replaceChildren(el('option', { value: '', textContent: 'Choose house preset' }));
     (preferences?.housePremiumPresets ?? []).forEach((item) => {
       const count = item.incrementLadder?.tiers?.length ?? 0;
       const tiers = count ? ` · ${count}-tier ${item.incrementLadder.currency} ladder` : '';
@@ -371,7 +371,7 @@ export function mountBidCalculator(
     try {
       const snapshotReply = await getSnapshot();
       if (!snapshotReply?.ok || !snapshotReply.value?.preferences) {
-        throw new Error(snapshotReply?.message || 'Open Settings once before saving house premiums.');
+        throw new Error(snapshotReply?.message || 'Open Settings once before saving house presets.');
       }
       takePreferences(snapshotReply.value);
       const reply = await sendCommand({
@@ -388,7 +388,7 @@ export function mountBidCalculator(
       takePreferences({ preferences: reply.value });
       presetName.value = '';
       editor.open = false;
-      status.textContent = 'House premium saved.';
+      status.textContent = 'House preset saved.';
       status.dataset.error = 'false';
     } catch (error) {
       showError(error.message || 'Could not save the preset.');
@@ -401,9 +401,9 @@ export function mountBidCalculator(
     if (reply?.ok) {
       takePreferences(reply.value);
     } else {
-      showError(reply?.message || 'Could not load house premiums.');
+      showError(reply?.message || 'Could not load house presets.');
     }
-  }).catch((error) => showError(error.message || 'Could not load house premiums.'));
+  }).catch((error) => showError(error.message || 'Could not load house presets.'));
   let unsubscribe = () => {};
   try { unsubscribe = subscribeToSnapshots(takePreferences); } catch { /* standalone calculator has no extension storage */ }
   return {

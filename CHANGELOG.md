@@ -15,6 +15,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Fixed
 
+- The calculator's house-preset controls all say **preset** now (a preset carries a premium and an increment ladder), and a doubled space typed into the workspace's own search box no longer reaches the site as two (#8).
 - A lot heading that named only a mint — `Londinium. RIC 12` — used to leave the number searched across every mint of four volumes; it is now read as that mint's section. (#9)
 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
