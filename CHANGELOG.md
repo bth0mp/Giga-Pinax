@@ -13,6 +13,11 @@ Each date is the date of that version's release tag. Every release also carries 
 - A part of RIC IV written after a comma, as dealers write it — `RIC IV, 1, 123a`, `RIC IV, part 1, 123` — is now read as RIC IV number 123a, the way `RIC IV.1 123a` always was. RIC IV is bound in three parts; a comma followed by a part the volume does not have, such as `RIC IV, 4, 12`, is still left unread. (#2)
 - Removing a coin from a group, or settling a collection review, no longer claims the group name or the coin details you were half way through typing "changed in another view": the forms follow your own edit instead of asking you to reload it away. (#5)
 - A removal the extension could not confirm — the background worker went quiet, or the write could not be read back — is no longer reported to you as the coin being "removed in another view" once it turns out to have gone through. (#5)
+- A lot graded `AU`, `About Uncirculated` or `NGC AU 58` is no longer left out of the per-grade medians: AU counts in the top bucket, which is now named **AU/Mint State** (FDC, Stempelglanz and Uncirculated still count there too). (#6)
+- A grade a dealer quotes (`"Good VF"`), footnotes (`VF*`, `EF★`) or follows with a reservation (`Extremely Fine though weakly struck`) is now read instead of left ungraded. (#6)
+- The Italian `mBB` (*migliore di* BB) is read like `qBB`, in the same bucket as the mark it qualifies. (#6)
+- A grade the coin's weight, diameter or die axis follows (`VF 3.41 g`, `Fine 12 h.`) is now read; a bare number behind a grade is still a lot number (`Slg. vz 12.`) and still leaves the row ungraded. (#6)
+- A qualified grade written in lower case — `Flan crack, otherwise very fine`, `nearly extremely fine` — now counts. A bare `very fine` is still the ordinary adjective and is still left ungraded. (#6)
 
 ## [0.32.0] - 2026-09-17
 

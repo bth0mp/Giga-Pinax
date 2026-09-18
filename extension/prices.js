@@ -382,20 +382,18 @@ export function filterableDenomination(label) {
 }
 
 const FINE = 'Fine and below';
-const MINT = 'FDC/Mint State';
+// "AU" ("About Uncirculated") sits between EF and Mint State, which is a bucket the four do not have; the top bucket is where it counts, and the
+// label says so. FDC, Stempelglanz and Uncirculated count there too — the label names the bucket, it does not list the grades in it.
+const MINT = 'AU/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
-// A grade the reader knows and cannot place in one of the four buckets: "AU" ("About Uncirculated") sits between EF and Mint State. Reading it is
-// still worth it — it keeps a qualifier from turning it into "Uncirculated" — and the row simply comes out ungraded. A wrong bucket is the failure
-// here; an empty one is not.
-const UNPLACED = 'unplaced';
 
 // Class 1. The English abbreviations, exactly as the trade writes them: nothing else in a lot description is spelled this way, so a closing edge is
 // all they need.
-const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: UNPLACED };
+const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT };
 // Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
 // ordinary adjective, and only a range whose first half was read lends it a grade's standing.
 const NAMES = {
-  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'About Uncirculated': UNPLACED,
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT,
   Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
@@ -430,19 +428,25 @@ const anyCase = (text) => [...String(text)].map((char) => {
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it, and "About Uncirculated" is not "Uncirculated".
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
 const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(SPELLED).map(anyCase)]);
-// "q" and "q." bind straight onto the mark they qualify (qBB, qSPL, q.FDC); every other qualifier is a word of its own.
-const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?)`;
+// The Italian "q" ("quasi") and "m" ("migliore di") bind straight onto the mark they qualify (qBB, qSPL, q.FDC, mBB); every other qualifier is a word
+// of its own. Both keep the bucket, as a qualifier does. The "m" is read in lower case only and only in front of a capital, so the "mss" of a
+// manuscript and a monogram's own capitals are never a qualified mark.
+const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?|m(?=\\p{Lu}))`;
 // A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
 // eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
 const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;
-// The qualifiers are lazy so that "About Uncirculated" is read as the grade AU and not as "Uncirculated" behind a qualifier.
+// The qualifiers are lazy, so a name a qualifier stands in front of is read as that name qualified ("About Uncirculated" is Uncirculated with the
+// qualifier every qualifier keeps: the same bucket), whatever the dealer's capitals.
 const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${TOKENS})(\\+*)(${SLAB})(?![\\p{L}\\d])`, 'gu');
 
 // How far to either side an edge is looked for. Both are bounded, so one pass over a description costs the same per character however long it is.
 const EDGE = 24;
 // The closing edge, which is what tells a grade from prose: "a fine portrait." and "the BB collection." run into a word, "Good very fine." does not.
-const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:]|^\s[-–(+&/]|^\sà(?![\p{L}\d])`
-  + String.raw`|^\s(?:and|for|with|to|bis|but|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
+// A quote the dealer wrapped the grade in, the asterisk or star he footnotes it with, and the "though" his reservation opens with all close one too.
+// The weight, diameter or die axis a dealer prints behind the grade closes one too ("VF 3.41 g", "Fine 12 h."); the bare number that follows a grade
+// in "Slg. vz 12." is a lot number, and without one of those units nothing closes there.
+const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
+  + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // The opening edge a mark needs, and the narrower one a praise adjective needs: it must start its clause, so a word of the same clause may not stand
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
@@ -508,7 +512,9 @@ export function gradeOf(description) {
     const rest = text.slice(start + quals.length + token.length);
     let read = false;
     if (kind === 'abbreviation') read = true;
-    else if (kind === 'name') read = capital;
+    // A qualifier stands in for the capitals: a dealer who writes "otherwise very fine" or "nearly extremely fine" all in lower case is grading the
+    // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
+    else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before);
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
@@ -518,7 +524,7 @@ export function gradeOf(description) {
     if (!read) continue;
     const bucket = bucketOf(token);
     previous = { end };
-    if (bucket === UNPLACED || bucket === null) continue;
+    // Every token the reader knows has a bucket, so a range or a named side always has the statement of its first half to join.
     if (ranged || sided) statements.at(-1).buckets.push(bucket);
     else statements.push({ buckets: [bucket], labelled: LABEL.test(before) });
   }
