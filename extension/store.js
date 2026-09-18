@@ -240,8 +240,12 @@ function restoreClearedReferences(snapshot, references, now) {
       restored.push(at);
     }
   }
+  // Backwards, because each link wrote down the revision its host carried before that one link was
+  // applied: replayed forwards, a host that took two of them would end one revision above where it
+  // started, which is an alteration nobody asked for and a false conflict for an open editor.
   const undo = () => {
-    for (const { host, field, revision, updatedAt } of applied) {
+    for (let index = applied.length - 1; index >= 0; index -= 1) {
+      const { host, field, revision, updatedAt } = applied[index];
       delete host[field];
       host.revision = revision;
       host.updatedAt = updatedAt;

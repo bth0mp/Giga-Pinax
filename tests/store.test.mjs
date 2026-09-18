@@ -683,6 +683,37 @@ test('a field used since it was cleared is left alone and named in the reply', a
   assert.equal(after.lots[0].revision, 2, 'and that lot is not written at all');
 });
 
+// Undoing the links a restore had to give up walks them backwards. Each one wrote down the revision
+// its host carried before that link was applied, so replaying them forwards left a host that took
+// two of them one revision above where it started: an alteration the collector never made, and a
+// false conflict for an editor holding the row.
+test('a restore whose links are undone leaves a two-link host record untouched', async () => {
+  const group = {
+    id: uuid(), revision: 0, dataClass: 'collector', name: 'Alternatives', createdAt: NOW, updatedAt: NOW,
+  };
+  const lotId = uuid();
+  const stored = setAsideRoot([{
+    collection: 'alternativeGroups', record: group, reason: 'collection-limit', quarantinedAt: NOW,
+    clearedReferences: [
+      { collection: 'lots', id: lotId, field: 'alternativeGroupId', value: group.id },
+      { collection: 'lots', id: lotId, field: 'priority', value: 0 },
+    ],
+  }], [plainLot(lotId)]);
+  const before = structuredClone(stored.lots[0]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(stored.quarantine[0]),
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value.restoredReferences, [], 'a priority of zero is no ordering this root can hold');
+  assert.equal(restored.value.keptReferences.length, 2, 'so both links are reported as left out');
+  const after = storage.read();
+  assert.deepEqual(after.alternativeGroups.map(({ id }) => id), [group.id], 'the group itself is back');
+  assert.deepEqual(after.lots[0], before, 'and the lot is exactly the row it was, revision included');
+});
+
 test('a set-aside record that still does not validate is refused and stays in the bin', async () => {
   const broken = { ...setAsideEvent(), eventKind: 'bring-your-own' };
   const stored = setAsideRoot([{

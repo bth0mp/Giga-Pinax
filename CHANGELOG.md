@@ -20,6 +20,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A right-click lookup whose window cannot be opened now says that, instead of warning that the last page capture could not be saved. A lookup saves nothing, so nothing was lost. (#4)
 - A backup that cannot be merged now says so in a plain sentence, with the technical detail after it rather than on its own. (#4)
 - A backup holding a record nested thousands of levels deep is now refused as a file that cannot be read, instead of leaving the page that asked for the import waiting for an answer that never came. (#8)
+- Putting a set-aside record back no longer counts a record forward that it left alone: where two of the links had to be given up, the lot or auction they pointed from used to be saved one step on from where it started, which told an open editor it had changed when nothing about it had. (#7)
 
 ## [0.32.0] - 2026-09-17
 
