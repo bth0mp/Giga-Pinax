@@ -801,3 +801,66 @@ test('workspace rejects malformed nonempty measurements instead of omitting them
   assert.throws(() => buildWorkspaceLotDraft({ id: 'lot-a' }, { title: 'Coin', weightGrams: 'heavy', diameterMm: '' }), /valid weight/);
   assert.throws(() => buildWorkspaceLotDraft({ id: 'lot-a' }, { title: 'Coin', weightGrams: '', diameterMm: 'wide' }), /valid diameter/);
 });
+
+// One coin read into the details form and saved straight back out again. The populate path and the
+// save path are two readings of the same record, so a field added to one of them alone drops out of
+// this round trip. Weights span the whole 0.001–1000 g range the form accepts, and every optional
+// field appears both present and absent.
+const COIN_WEIGHTS_MG = [1, 1000, 3405, 8123, 12345, 999999, 1000000];
+const COIN_DIAMETERS_HUNDREDTHS_MM = [1, 100, 1850, 2033, 9999, 100000];
+const COIN_DETAIL_VARIANTS = [
+  {},
+  ...COIN_WEIGHTS_MG.map((weightMg) => ({ coinDetails: { photoUrls: [], weightMg } })),
+  ...COIN_DIAMETERS_HUNDREDTHS_MM.map((diameterHundredthsMm) => ({ coinDetails: { photoUrls: [], diameterHundredthsMm } })),
+  { coinDetails: { photoUrls: [], condition: 'Good very fine, lightly toned' } },
+  { coinDetails: { photoUrls: ['https://photo.test/obverse.jpg'] } },
+  { coinDetails: { photoUrls: ['https://photo.test/obverse.jpg', 'https://photo.test/reverse.jpg'] } },
+  { coinDetails: { photoUrls: ['https://photo.test/obverse.jpg', 'https://photo.test/reverse.jpg'], weightMg: 3405, diameterHundredthsMm: 1850, condition: 'Good very fine' } },
+];
+const GENERATED_LOTS = [
+  [{}, { reference: 'RIC I 306' }],
+  [{}, { lotNumber: '142' }],
+  [{ notes: '' }, { notes: 'Toned; struck a little off centre' }],
+  [{}, { auctionEventId: 'event-a' }],
+  [
+    { sourceLinks: [] },
+    { sourceLinks: [{ source: 'manual', url: 'https://collector.test/lot/142' }] },
+    { sourceLinks: [{ source: 'coinarchives', url: 'https://www.coinarchives.com/a/lotviewer.php?LotID=1' }] },
+    { sourceLinks: [
+      { source: 'coinarchives', url: 'https://www.coinarchives.com/a/lotviewer.php?LotID=1' },
+      { source: 'manual', url: 'https://collector.test/lot/142', sourceRecordId: 'ticket-9' },
+    ] },
+  ],
+  [
+    {},
+    { auctionContext: { pageUrl: 'https://house.test/sale/31/lot/142' } },
+    { auctionContext: { pageUrl: 'https://house.test/sale/31/lot/142', canonicalUrl: 'https://house.test/lot/142', house: 'Roma Numismatics', saleId: '31', lotNumber: '142' } },
+  ],
+  COIN_DETAIL_VARIANTS,
+].reduce((rows, axis) => rows.flatMap((row) => axis.map((fields) => ({ ...row, ...fields }))), [{}])
+  .map((fields, index) => ({
+    id: `lot-${index}`, revision: 4, dataClass: 'collector',
+    createdAt: '2026-01-02T03:04:05.000Z', updatedAt: '2026-02-03T04:05:06.000Z',
+    title: 'Nero, denarius', bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [],
+    ...fields,
+  }));
+// What the details form never shows, so the draft never carries it back. Provenance rows are a
+// repeating subtree the form reads on its own rather than through `lotFormValues`, and a saved cost
+// estimate rides along untouched, so neither belongs to this round trip.
+const STORE_OWNED_LOT_FIELDS = ['revision', 'dataClass', 'createdAt', 'updatedAt', 'bidHistory', 'outcome', 'outcomeHistory'];
+const formBackedLot = (lot) => {
+  const expected = { ...lot, notes: lot.notes ?? '', sourceLinks: lot.sourceLinks ?? [] };
+  for (const field of STORE_OWNED_LOT_FIELDS) delete expected[field];
+  return expected;
+};
+
+test('every field the details form reads from a coin is written back by the draft it saves', () => {
+  const filled = new Set();
+  for (const lot of GENERATED_LOTS) {
+    const values = lotFormValues(lot);
+    for (const [field, value] of Object.entries(values)) if (value !== '') filled.add(field);
+    assert.deepStrictEqual(buildWorkspaceLotDraft(lot, values), formBackedLot(lot), `the round trip changed ${lot.id}`);
+  }
+  // A form field no generated coin fills would let a one-sided addition slip through the round trip.
+  assert.deepStrictEqual(Object.keys(lotFormValues({})).filter((field) => !filled.has(field)), []);
+});
