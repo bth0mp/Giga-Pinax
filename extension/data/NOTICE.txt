@@ -30,12 +30,15 @@ above. Each of them links the same place in Wikidata with skos:closeMatch or
 skos:exactMatch, and the labels and aliases of those Wikidata items are used
 too: Wikidata dedicates its structured data to the public domain under the
 Creative Commons CC0 1.0 Universal Public Domain Dedication,
-https://creativecommons.org/publicdomain/zero/1.0/. Both were retrieved on
-18 September 2026. The source URLs, retrieval dates and licence statements
-are recorded in scripts/data/nomisma-mints.json and
-scripts/data/wikidata-mints.json, and the generated file's own header names
-both licences. The names are taken verbatim; no mint was given a name
-neither source publishes.
+https://creativecommons.org/publicdomain/zero/1.0/. Where such an item is the
+Roman city rather than the town standing there now, one statement of it is
+followed - the first of P1366, P276 and P131 it carries - and the names of
+the town it leads to are used on the same terms, under the same CC0 1.0
+dedication. Both sources were retrieved on 18 September 2026. The source
+URLs, retrieval dates and licence statements are recorded in
+scripts/data/nomisma-mints.json and scripts/data/wikidata-mints.json, and the
+generated file's own header names both licences. The names are taken
+verbatim; no mint was given a name neither source publishes.
 
 Each corpus directory beside this file carries its own NOTICE.txt for the
 American Numismatic Society type data it holds, which is under ODbL 1.0.
