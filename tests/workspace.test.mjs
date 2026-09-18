@@ -30,6 +30,7 @@ import {
   eventAttachDecision,
   selectionAfterSnapshot,
   removedCoinNotice,
+  removedHereAfterDeleteReply,
   routeFromHash,
   applyActiveRoute,
   editorCompletion,
@@ -392,7 +393,8 @@ test('deleting a group moves the dirty editors of its member coins instead of co
   };
   const command = { type: 'group.delete', requestId: 'req', groupId: 'group-a', expectedRevision: 2 };
   assert.deepEqual(commandReplacedRevisions(command, sent), { 'group-a': 2, 'lot-a': 7 });
-  assert.deepEqual(commandReplacedRevisions({ type: 'lot.delete', lotId: 'lot-a', expectedRevision: 7 }, sent), { 'lot-a': 7 });
+  // Deleting a coin that is in no group claims nothing but the coin itself.
+  assert.deepEqual(commandReplacedRevisions({ type: 'lot.delete', lotId: 'lot-b', expectedRevision: 2 }, sent), { 'lot-b': 2 });
   const cleared = { id: 'lot-a', revision: 8, title: 'Nero', sourceLinks: [] };
   const plan = planCommit(commitInput({
     editor: null, submittedRevisions: commandReplacedRevisions(command, sent),
@@ -403,6 +405,71 @@ test('deleting a group moves the dirty editors of its member coins instead of co
   assert.deepEqual(plan.conflicts, [], 'the collector never has to discard input over this page’s own delete');
   assert.equal(plan.bases.get('lot').revision, 8);
   assert.deepEqual(plan.merge, ['lot']);
+});
+
+test('deleting a coin carries the group it leaves and the coins renumbered behind it', () => {
+  // The store stamps the group the coin leaves and renumbers the members ordered after it, but the
+  // command names only the coin: a half-typed group name is this page's own doing, not a conflict.
+  const sent = {
+    lots: [
+      { id: 'lot-a', revision: 7, alternativeGroupId: 'group-a', priority: 1 },
+      { id: 'lot-b', revision: 2, alternativeGroupId: 'group-a', priority: 2 },
+      { id: 'lot-c', revision: 4, alternativeGroupId: 'group-a', priority: 3 },
+      { id: 'lot-d', revision: 9 },
+    ],
+    alternativeGroups: [{ id: 'group-a', revision: 5 }],
+  };
+  const command = { type: 'lot.delete', requestId: 'req', lotId: 'lot-b', expectedRevision: 2 };
+  // `lot-a` keeps priority 1, so the store never writes it and nothing here claims it.
+  assert.deepEqual(commandReplacedRevisions(command, sent), { 'lot-b': 2, 'group-a': 5, 'lot-c': 4 });
+  const group = { id: 'group-a', revision: 5, name: 'Nero shortlist' };
+  const plan = planCommit(commitInput({
+    editor: 'lot', submittedBasis: { id: 'lot-b', revision: 2 }, submittedVersion: 1,
+    submittedRevisions: commandReplacedRevisions(command, sent), value: { id: 'lot-b', revision: 2 },
+    lots: [sent.lots[0], { id: 'lot-c', revision: 5, alternativeGroupId: 'group-a', priority: 2 }, sent.lots[3]],
+    alternativeGroups: [{ ...group, revision: 6 }],
+    bases: [
+      ['lot', { id: 'lot-b', revision: 2 }],
+      ['group', { id: 'group-a', revision: 5, record: group }],
+      ['bid', { id: 'lot-c', revision: 4 }],
+    ],
+    dirty: ['group', 'bid'], versions: [['lot', 1], ['group', 3], ['bid', 2]],
+  }));
+  assert.deepEqual(plan.conflicts, [], 'the unsaved group name and the renumbered coin’s bid form follow the commit');
+  assert.equal(plan.bases.get('group').revision, 6);
+  assert.equal(plan.bases.get('bid').revision, 5);
+  assert.deepEqual(plan.reset, ['lot'], 'only the deleted coin’s own form is blanked');
+});
+
+test('resolving a collection review carries the linked coin the command never names', () => {
+  const sent = {
+    lots: [{ id: 'lot-a', revision: 6, collectionEntryId: 'entry-a', collectionReviewReason: 'outcome-reopened' }],
+    collectionEntries: [{ id: 'entry-a', revision: 1, lotId: 'lot-a', reviewReason: 'outcome-reopened' }],
+  };
+  const command = { type: 'collection.review.resolve', requestId: 'req', collectionEntryId: 'entry-a', expectedRevision: 1, decision: 'keep' };
+  assert.deepEqual(commandReplacedRevisions(command, sent), { 'lot-a': 6 });
+  assert.deepEqual(commandReplacedRevisions({ ...command, collectionEntryId: 'entry-gone' }, sent), {});
+  const resolved = { id: 'lot-a', revision: 7, collectionEntryId: 'entry-a' };
+  const plan = planCommit(commitInput({
+    editor: null, submittedRevisions: commandReplacedRevisions(command, sent),
+    value: resolved, lots: [resolved],
+    bases: [['lot', { id: 'lot-a', revision: 6, record: sent.lots[0] }]], dirty: ['lot'],
+  }));
+  assert.deepEqual(plan.conflicts, [], 'the review decision is this page’s own write, not another view’s');
+  assert.equal(plan.bases.get('lot').revision, 7);
+});
+
+test('a delete keeps its own removal until a reply proves nothing was written', () => {
+  assert.equal(removedHereAfterDeleteReply('lot-a', 'lot-a', { ok: true }), 'lot-a');
+  // The worker was unreachable, or the accepted write could not be verified: the delete may well
+  // have committed, so the coin leaving a later snapshot is still this page's own doing.
+  assert.equal(removedHereAfterDeleteReply('lot-a', 'lot-a', { ok: false, code: 'unreachable', outcome: 'unknown' }), 'lot-a');
+  assert.equal(removedHereAfterDeleteReply('lot-a', 'lot-a', { ok: false, code: 'conflict', outcome: 'not-committed' }), null);
+  assert.equal(removedHereAfterDeleteReply('lot-a', 'lot-a', undefined), null, 'a delete that was never sent removed nothing');
+  assert.equal(removedHereAfterDeleteReply('lot-b', 'lot-a', { ok: false, outcome: 'not-committed' }), 'lot-b', 'another coin’s removal is left alone');
+  // What the collector is spared: being told their own uncertain delete happened in another view.
+  const uncertain = removedHereAfterDeleteReply('lot-a', 'lot-a', { ok: false, outcome: 'unknown' });
+  assert.equal(removedCoinNotice({ selectedLotId: 'lot-a', mode: 'detail' }, { selectedLotId: null, mode: 'list' }, new Set(['lot']), uncertain), false);
 });
 
 test('a removed record blanks its editor, and a failed refresh never blanks a new one', () => {
