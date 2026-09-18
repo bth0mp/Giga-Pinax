@@ -724,6 +724,28 @@ test('writer atomically rejects an event whose fully materialized reminders exce
   assert.equal(storage.read().auctionEvents.length, 499);
 });
 
+// A backup that will not fit is not a reminder problem. The bound is shared with the reminder
+// preflight, and its sentence told the collector to remove reminders or auction events, which is no
+// way out of a file with too many records in it.
+test('an import over the storage bound is refused as an import, not as a reminder', () => {
+  const notes = 'x'.repeat(LIMITS.notes);
+  const fat = (index) => ({
+    id: `00000000-0000-4000-8000-${String(index + 100000).padStart(12, '0')}`, revision: 0,
+    dataClass: 'collector', title: `Lot ${index}`, notes, sourceLinks: [], bidHistory: [],
+    outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const incoming = createEmptySnapshot(NOW);
+  const lotBytes = new TextEncoder().encode(JSON.stringify(fat(0))).length + 1;
+  for (let index = 0; index * lotBytes < MAX_ROOT_BYTES - 50000; index += 1) incoming.lots.push(fat(index));
+  const result = applyCommand(createEmptySnapshot(NOW), command('backup.import', {
+    expectedRevision: 0, mode: 'replace', document: exportBackup(incoming, NOW).value,
+  }), context());
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'storage-bound');
+  assert.match(result.error.message, /backup/i);
+  assert.doesNotMatch(result.error.message, /reminder/i);
+});
+
 test('writer preflights linked reminders when a lot activates their event', async () => {
   const current = createEmptySnapshot(NOW);
   for (let eventIndex = 0; eventIndex < 500; eventIndex += 1) {

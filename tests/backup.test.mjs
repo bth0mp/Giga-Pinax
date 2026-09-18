@@ -507,6 +507,22 @@ test('merge is idempotent and adds unseen records once', () => {
   assert.deepEqual(again.value.snapshot.lots, first.value.snapshot.lots);
 });
 
+// A merge that cannot produce a valid root answered with the validator's own sentence - "Expected an
+// array with at most 1000 entries." - which says nothing about the file the collector chose.
+test('a merge that would not validate says the backup cannot be merged before the detail', () => {
+  const current = createEmptySnapshot(NOW);
+  const incoming = createEmptySnapshot(NOW);
+  for (let index = 0; index < 600; index += 1) {
+    current.alternativeGroups.push(group(uuid(index)));
+    incoming.alternativeGroups.push(group(uuid(index + 1000)));
+  }
+  const preview = previewImport(current, incoming, 'merge');
+  assert.equal(preview.ok, false);
+  assert.equal(preview.error.code, 'merge-invalid');
+  assert.match(preview.error.message, /^This backup cannot be merged with your local records\./);
+  assert.match(preview.error.message, /at most 1000 entries/, 'the detail is kept after it');
+});
+
 test('merge unions the quarantine bin and counts only the entries it gained', () => {
   const entry = { collection: 'lots', record: { id: 'broken' }, reason: 'invalid-enum', quarantinedAt: NOW };
   const other = { collection: 'alerts', record: null, reason: 'missing-record', quarantinedAt: LATER };

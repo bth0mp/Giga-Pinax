@@ -753,7 +753,11 @@ function mutation(snapshot, command, context) {
       return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
     }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      return fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
+      // The bound is shared, but the way out of it is not: a backup that does not fit is not
+      // answered by removing reminders, and the file is what the collector would change.
+      return command.type === 'backup.import'
+        ? fail('storage-bound', 'This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document')
+        : fail('storage-bound', 'These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders');
     }
   }
 

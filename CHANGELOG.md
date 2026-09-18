@@ -10,6 +10,9 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - The **Only results citing …** and **Only results naming …** switches drew as a full-width, 36-pixel box with their label squeezed off the edge of the popup: the checkbox now keeps its own size beside its label.
 - The matches line under the median no longer wraps an exact-phrase search term in a second pair of quotes (“"RIC 237"”).
+- A backup too big for the 5 MiB local store is now turned away as a backup that does not fit, instead of as reminders that would exceed the bound — removing reminders was never the way out of it. (#4)
+- A right-click lookup whose window cannot be opened now says that, instead of warning that the last page capture could not be saved. A lookup saves nothing, so nothing was lost. (#4)
+- A backup that cannot be merged now says so in a plain sentence, with the technical detail after it rather than on its own. (#4)
 
 ## [0.32.0] - 2026-09-17
 

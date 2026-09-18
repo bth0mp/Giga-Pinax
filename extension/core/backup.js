@@ -467,7 +467,11 @@ export function previewImport(current, incoming, mode, { exportedAt, now = new D
   tally.quarantine = mergeQuarantine(snapshot, current, incoming);
 
   const valid = validateSnapshot(snapshot);
-  if (!valid.ok) return failure('merge-invalid', valid.error.message, valid.error.path);
+  // The validator's own sentence is about a record or a limit, not about the file the collector
+  // chose, so what happened is said first and the detail is kept after it.
+  if (!valid.ok) {
+    return failure('merge-invalid', `This backup cannot be merged with your local records. ${valid.error.message}`, valid.error.path);
+  }
   return {
     ok: true,
     value: {
