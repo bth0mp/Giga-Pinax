@@ -81,6 +81,45 @@ def read_memberships(data_dir: Path) -> dict[str, set[str]]:
 
 
 MINT_VOLUMES = {"6", "7", "8", "9"}
+# The language the mint's own modern country writes its name in. A country spells the place it holds as the place, so that label is the modern name
+# a dealer means when he writes it, while every other language only offers its own exonym. The choice is made per mint, by hand, from where the mint
+# stands today, and a mint concept missing from this table stops the run rather than quietly losing its name. Several of these languages write in a
+# script the extension can never match (Arabic, Bulgarian, Greek, Serbian Cyrillic); normalise_alias drops those, and nothing is transliterated.
+MINT_COUNTRY_LANGUAGE = {
+    "alexandreia_egypt": "ar",     # Alexandria, Egypt
+    "ambianum": "fr",              # Amiens, France
+    "antiocheia_syria": "tr",      # Antakya, Turkey
+    "aquileia": "it",              # Aquileia, Italy
+    "arelate": "fr",               # Arles, France
+    "carthage": "ar",              # Carthage, Tunisia
+    "constantinople": "tr",        # Istanbul, Turkey
+    "cyzicus": "tr",               # Erdek, Turkey
+    "heraclea_thracica": "tr",     # Marmara Ereglisi, Turkey
+    "londinium": "en",             # London, United Kingdom
+    "lugdunum": "fr",              # Lyon, France
+    "mediolanum": "it",            # Milan, Italy
+    "nicomedia": "tr",             # Izmit, Turkey
+    "ostia": "it",                 # Ostia, Italy
+    "rome": "it",                  # Rome, Italy
+    "serdica": "bg",               # Sofia, Bulgaria
+    "sirmium": "sr",               # Sremska Mitrovica, Serbia
+    "siscia": "hr",                # Sisak, Croatia
+    "thessalonica": "el",          # Thessaloniki, Greece
+    "ticinum": "it",               # Pavia, Italy
+    "treveri": "de",               # Trier, Germany
+}
+# The languages whose spelling of a foreign city is the Latin-script exonym a dealer writing in English still puts on a ticket. One of them alone is
+# that language's own word and no more ("Lione" is Italian for Lyon, "Cizico" Italian for Cyzicus); a spelling two of them share, once folded and
+# stripped of its diacritics, is the exonym they have in common ("Arles" in French, German and Italian, "Sisak" in all four beside English).
+EXONYM_LANGUAGES = frozenset({"en", "fr", "de", "it", "es"})
+EXONYM_AGREEMENT = 2
+# Labels that are an encyclopaedia article's title rather than a name of the mint, listed with the concept they belong to so this can never quietly
+# take a real name from another mint. Nomisma's Italian label for Ticinum is the title of the article "Storia di Pavia" — the history of Pavia — and
+# nobody writes that on a ticket; the city's name alone appears in no label of any language, so Ticinum keeps RIC's own spelling.
+NOT_A_NAME = frozenset({("ticinum", "storia di pavia")})
+# An alias that is an ordinary English word would read a mint out of a sentence that named no mint at all. These two are what Croatian calls Rome
+# ("Rim") and what German and Danish call it ("Rom"), and both are ordinary English words. "Rome" itself is kept: RIC heads a section with it.
+ORDINARY_ENGLISH = frozenset({"rim", "rom"})
 # RIC VI-IX are filed by mint, so a record's own title names the mint section it belongs to. A subtype title ("Treveri 17A: Subtype") is not a
 # section, and a record naming no mint or several cannot say which section is whose.
 MINT_TITLE = re.compile(r"^RIC (?:VI|VII|VIII|IX) ([^:]+) \S+$")
@@ -136,24 +175,76 @@ def fetch_mint_snapshot(mint_ids, output: Path, retrieved_on: str) -> int:
     return len(concepts)
 
 
-def mint_rows(snapshot_bytes: bytes, sections: dict[str, str]) -> list[tuple[str, str, list[str]]]:
-    """Each RIC mint section with the modern English name Nomisma gives its concept.
+def concept_spellings(concept) -> dict[str, set[str]]:
+    """Every normalised spelling in a mint concept's labels, with the base languages that write it."""
+    spellings: dict[str, set[str]] = {}
+    for _, lang, value in concept["labels"]:
+        alias = normalise_alias(value)
+        if alias:
+            spellings.setdefault(alias, set()).add(lang.split("-")[0])
+    return spellings
 
-    Nomisma titles a mint concept by its modern name and keeps the ancient one beside it ("Trier", altLabel "Treveri"), so the alias is every
-    English label that is not the section RIC files the coins under. A concept with no English label of its own is left out rather than invented.
+
+def mint_names(concept, section: str, language: str) -> set[str]:
+    """The modern names Nomisma really writes for one mint, from three sources and no fourth.
+
+    Nomisma titles some mint concepts by the modern name and keeps the ancient one beside it ("Trier", altLabel "Treveri"), and others by the ancient
+    name alone. Three kinds of label are a modern name a dealer would write, so three kinds are taken: every label in the language of the country the
+    mint stands in today, which names the place as the place; every English label, which is the spelling this extension is read in; and a Latin-script
+    exonym that several of EXONYM_LANGUAGES spell the same way. Nothing else is taken, and nothing is transliterated, shortened or title-cased into a
+    name Nomisma does not publish: the section RIC files the coins under is always reachable, so a missing alias costs a spelling, never a coin.
+    """
+    own = normalise_alias(section)
+    taken = set()
+    for alias, languages in concept_spellings(concept).items():
+        exonyms = languages & EXONYM_LANGUAGES
+        if language in languages or "en" in languages or len(exonyms) >= EXONYM_AGREEMENT:
+            taken.add(alias)
+    return {alias for alias in taken if alias != own}
+
+
+def word_runs(alias: str) -> set[str]:
+    """Every run of whole words in an alias, so "contains" is read by words and never inside one ("Arles" is no part of "Charles")."""
+    words = alias.split(" ")
+    return {" ".join(words[first:last]) for first in range(len(words)) for last in range(first + 1, len(words) + 1)}
+
+
+def mint_rows(snapshot_bytes: bytes, sections: dict[str, str], rulers=()) -> list[tuple[str, str, list[str]]]:
+    """Each RIC mint section with the modern names Nomisma gives its concept, less every name that could open somebody else's coin.
+
+    A mint alias resolves a section and never a ruler, so a spelling that is also a ruler's — or that carries one inside it — is dropped rather than
+    left to choose between a place and a man. So is a spelling two mints share, which could only name one of them wrongly, one that is another mint's
+    own RIC section, and one that is an ordinary English word. A mint left with nothing keeps RIC's own spelling and no alias is invented for it.
     """
     snapshot = json.loads(snapshot_bytes)
-    rows = []
-    for concept_id, section in sorted(sections.items(), key=lambda item: item[1]):
+    ruler_names = {spelling for spelling in rulers if spelling}
+    section_names = {alias for alias in map(normalise_alias, sections.values()) if alias}
+    taken = {}
+    for concept_id, section in sections.items():
         concept = snapshot.get("concepts", {}).get(concept_id)
         if not concept:
             continue
-        own = normalise_alias(section)
-        aliases = sorted({alias for _, lang, value in concept["labels"] if lang.split("-")[0] == "en"
-                          for alias in [normalise_alias(value)] if alias and alias != own})
+        if concept_id not in MINT_COUNTRY_LANGUAGE:
+            raise ValueError(f"no modern country language chosen for mint concept: {concept_id}")
+        taken[concept_id] = {alias for alias in mint_names(concept, section, MINT_COUNTRY_LANGUAGE[concept_id])
+                             if (concept_id, alias) not in NOT_A_NAME}
+    shared = {alias for alias in set().union(*taken.values(), set())
+              if sum(alias in aliases for aliases in taken.values()) > 1}
+    rows = []
+    for concept_id, section in sorted(sections.items(), key=lambda item: item[1]):
+        aliases = sorted(alias for alias in taken.get(concept_id, set())
+                         if alias not in shared and alias not in section_names and alias not in ORDINARY_ENGLISH
+                         and not word_runs(alias) & ruler_names)
         if aliases:
             rows.append((concept_id, section, aliases))
     return rows
+
+
+def ruler_spellings(snapshot_bytes: bytes, memberships) -> set[str]:
+    """Every spelling the generated people table answers to, normalised as it holds them: what a mint alias may not be, and may not carry."""
+    concepts = read_concepts(snapshot_bytes, memberships)
+    return {alias for concept in concepts.values() if FOAF_PERSON in concept["types"]
+            for label in concept["labels"] | concept["aliases"] for alias in [normalise_alias(label)] if alias}
 
 
 def fetch_snapshot(concept_ids, output: Path) -> None:
@@ -314,8 +405,10 @@ def generate(snapshot: Path, memberships: dict[str, set[str]], output: Path, gen
     lines.append("]);")
     lines += [
         "",
-        "// The modern name Nomisma gives each RIC VI-IX mint section, in English only. A mint whose concept carries no English name but the one RIC",
-        "// files it under has no alias here, and none was invented for it.",
+        "// The modern names Nomisma gives each RIC VI-IX mint section: its labels in the language of the country the mint stands in today, its English",
+        "// labels, and the Latin-script exonym several of English, French, German, Italian and Spanish spell alike. A name that is also a ruler's, that",
+        "// two mints share or that is an ordinary English word is dropped, and a mint Nomisma gives no modern name has no alias here: none was invented",
+        "// for it, and RIC's own spelling always reaches it.",
         "export const RIC_MINTS = Object.freeze([",
     ]
     for concept_id, section, aliases in mints:
@@ -362,8 +455,11 @@ def main() -> int:
             # file claiming one, with none of the eight mint sections in it.
             if not args.mints.is_file():
                 raise ValueError(f"mint snapshot not found: {args.mints}")
+            # The people the same run generates are what a mint alias is checked against, so a name that opens a man's coin can never also open a
+            # mint's section: the two tables are read from the one snapshot, and neither can drift out of step with the other.
+            rulers = ruler_spellings(args.snapshot.read_bytes(), memberships)
             report = generate(args.snapshot, memberships, args.output, args.generated_on,
-                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir)))
+                              mint_rows(args.mints.read_bytes(), read_mints(args.data_dir), rulers))
             print(json.dumps(report, sort_keys=True))
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"People import failed: {error}", file=sys.stderr)

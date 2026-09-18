@@ -278,6 +278,8 @@ const peopleOn = (id) => {
 const opensOnly = (opened, ids, heading) => {
   for (const hit of opened) assert.ok(peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`);
 };
+// Where a coin was struck, as the record itself says: the mint concepts the type carries.
+const mintsOn = (id) => bundleJson(`ocre/${shardPartOf(id)?.file}`)?.records?.[id]?.m ?? [];
 
 test('over the bundled catalogue, a heading that is one man\'s own name opens his coins and nobody else\'s', { skip }, async () => {
   // Germanicus is a person Nomisma names, and also a word inside Nero Claudius Drusus Germanicus: widened, the heading answered thirteen numbers
@@ -333,6 +335,43 @@ test('over the bundled catalogue, guided fields naming a mint by its modern name
   assert.equal(guided.card.id, 'ric.7.tri.12');
   // Unmapped, the name is no section of any volume and the sixteen mints of RIC VII are all that is left to offer.
   assert.equal((await localProvider.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' })).candidates.length, 16);
+});
+
+// A mint's modern name is now taken from the mint's own country, from English and from the exonym several western languages share, so a reference
+// typed the way a dealer writes it reaches RIC's Latin section with no network at all.
+test('over the bundled catalogue, a mint typed by a modern name Nomisma publishes opens the coin offline', { skip }, async () => {
+  const localProvider = bundle;
+  for (const [written, id] of [['RIC VII Arles 12', 'ric.7.ar.12'], ['RIC VII Trier 12', 'ric.7.tri.12'], ['RIC VII Sisak 12', 'ric.7.sis.12'],
+    ['RIC VI Antakya 12', 'ric.6.anch.12'], ['RIC VII Istanbul 12', 'ric.7.cnp.12']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+  // RIC's own spelling still reaches the same coin, and Rome — the one mint section that is an ordinary English word — is untouched.
+  for (const [written, id] of [['RIC VII Arelate 12', 'ric.7.ar.12'], ['RIC VI Rome 12', 'ric.6.rom.12'], ['RIC VII Londinium 12', 'ric.7.lon.12']]) {
+    const found = await lookupType(parseReference(written), { localProvider, online: false });
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
+  }
+});
+
+// A mint alias may only ever say which section a number lives in. Over every RIC number from 1 to 400, each new spelling must open coins of its own
+// mint and nothing else: a place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
+test('over the bundled catalogue, a heading naming only a mint opens that mint\'s coins and no others', { skip }, async () => {
+  for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
+    ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
+    ['Londinium', 'londinium']]) {
+    const opened = await openedOver(heading);
+    assert.ok(opened.length > 0, heading);
+    for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
+  }
+  // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
+  assert.deepEqual(await openedOver('Roma'), []);
+  // A heading Nomisma gives no modern name for names no section, and the row is looked up as it was before.
+  for (const heading of ['London', 'Lyon', 'Milan', 'Pavia']) {
+    const lot = findReferences(`${heading}. RIC 12`);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', heading);
+  }
 });
 
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it

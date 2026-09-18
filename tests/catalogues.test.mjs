@@ -199,14 +199,20 @@ test('an English -ian name is also reached by its regular Latin -ianus form, wit
 });
 
 // Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.
-test('a RIC mint section is found by the other English name Nomisma gives it, and never as a ruler', () => {
-  assert.equal(ricMintSection('Trier'), 'Treveri');
-  assert.equal(ricMintSection('  ISTANBUL '), 'Constantinople');
-  assert.deepEqual(volumesOf('Trier'), volumesOf('Treveri'));
-  assert.deepEqual(ricPeople('Trier'), []);
-  // Nomisma gives these no English name but the one RIC files them under, and none is invented: their modern names live only in its French and
-  // German labels.
-  for (const mint of ['London', 'Lyon', 'Lyons', 'Arles', 'Milan', 'Pavia']) {
+// The name is taken from three kinds of label — the mint's own country, English, and the exonym several of English, French, German, Italian and
+// Spanish share — so a section is reached by the name the mint goes by today wherever Nomisma publishes one.
+test('a RIC mint section is found by the modern names Nomisma gives it, and never as a ruler', () => {
+  for (const [written, section] of [['Trier', 'Treveri'], ['  ISTANBUL ', 'Constantinople'], ['Arles', 'Arelate'], ['Sisak', 'Siscia'],
+    ['Roma', 'Rome'], ['Antakya', 'Antioch'], ['Konstantinopolis', 'Constantinople'], ['Sirmio', 'Sirmium'], ['Marmara Ereğlisi', 'Heraclea']]) {
+    assert.equal(ricMintSection(written), section, written);
+    assert.deepEqual(volumesOf(written), volumesOf(section), written);
+    // A mint is a place: it answers for a section and never for a ruler, whatever the one-word widening does with a ruler's own spellings.
+    assert.deepEqual(ricPeople(written), [], written);
+  }
+  // Nomisma publishes no modern name for these four in any language it labels them in, so none is invented and RIC's own spelling is what reaches
+  // them: "London" and "Lyons" appear in no label at all, "Milan" only as the Italian "Milano" in Danish, Romanian and Turkish, and "Pavia" only
+  // inside the Italian article title "Storia di Pavia".
+  for (const mint of ['London', 'Lyon', 'Lyons', 'Milan', 'Pavia']) {
     assert.equal(ricMintSection(mint), '', mint);
     assert.deepEqual(volumesOf(mint), [], mint);
   }

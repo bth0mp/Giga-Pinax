@@ -130,8 +130,49 @@ class PeopleImportTests(unittest.TestCase):
         }}).encode("utf-8")
         rows = module.mint_rows(snapshot, {"treveri": "Treveri", "londinium": "Londinium", "missing": "Ostia"})
         # Nomisma titles Treveri by its modern name, so "Trier" is the alias; it gives Londinium no English name but the ancient one, and a French
-        # "Londres" is not an English modern name, so nothing is invented for it.
+        # "Londres" is neither English, nor Britain's own language, nor a spelling two of the exonym languages share, so nothing is invented for it.
         self.assertEqual([("treveri", "Treveri", ["trier"])], rows)
+
+    def test_mint_rows_take_the_three_sourced_kinds_of_modern_name(self):
+        """A mint's own country names the place as the place; English is the language this extension is read in; an exonym counts where several agree."""
+        module = load_module()
+        snapshot = json.dumps({"concepts": {
+            # Siscia is in Croatia, so the Croatian label is its modern name, and French, German, Italian and Spanish spell the exonym the same way.
+            "siscia": {"url": "x", "labels": [["prefLabel", "en", "Siscia"], ["prefLabel", "hr", "Sisak"], ["prefLabel", "fr", "Sisak"],
+                                              ["prefLabel", "de", "Sisak"], ["prefLabel", "nl", "Sisak (Kroatie)"]]},
+            # Lugdunum is in France, and the French label is RIC's own spelling: one Italian exonym alone is Italian's word and no more.
+            "lugdunum": {"url": "x", "labels": [["prefLabel", "en", "Lugdunum"], ["prefLabel", "fr", "Lugdunum"], ["prefLabel", "it", "Lione"],
+                                                ["prefLabel", "da", "Lyon"]]},
+            # Ticinum's Italian label is an encyclopaedia article's title rather than a name, and the city's own name is in no label at all.
+            "ticinum": {"url": "x", "labels": [["prefLabel", "en", "Ticinum"], ["prefLabel", "it", "Storia di Pavia"]]},
+            "unknown_mint": {"url": "x", "labels": [["prefLabel", "en", "Somewhere"]]},
+        }}).encode("utf-8")
+        sections = {"siscia": "Siscia", "lugdunum": "Lugdunum", "ticinum": "Ticinum"}
+        self.assertEqual([("siscia", "Siscia", ["sisak"])], module.mint_rows(snapshot, sections))
+        # Every mint the bundle names has to have a modern language chosen for it by hand; one nobody has chosen stops the run.
+        with self.assertRaises(ValueError) as refused:
+            module.mint_rows(snapshot, {**sections, "unknown_mint": "Unknown"})
+        self.assertIn("unknown_mint", str(refused.exception))
+
+    def test_a_mint_alias_that_could_open_the_wrong_coin_is_dropped(self):
+        """A mint alias resolves a section, so a spelling that names a man, two mints or an ordinary English word may not be one."""
+        module = load_module()
+        snapshot = json.dumps({"concepts": {
+            # "Rim" is what Croatian calls Rome and an ordinary English word besides, so an English label carrying it is dropped; the Italian
+            # "Roma" is the name the mint's own country writes and is kept, as "Rome" itself would be.
+            "rome": {"url": "x", "labels": [["prefLabel", "en", "Rome"], ["altLabel", "en", "Rim"], ["prefLabel", "it", "Roma"]]},
+            # Two mints spelling a name the same way could only ever name one of them wrongly, so neither keeps it.
+            "siscia": {"url": "x", "labels": [["prefLabel", "en", "Siscia"], ["prefLabel", "hr", "Sisak"], ["prefLabel", "fr", "Sisak"]]},
+            "sirmium": {"url": "x", "labels": [["prefLabel", "en", "Sirmium"], ["prefLabel", "sr", "Sisak"], ["prefLabel", "fr", "Sisak"]]},
+            # A name a ruler answers to, and one carrying a ruler's name inside it, belong to the man: a place may never take his coin.
+            "treveri": {"url": "x", "labels": [["prefLabel", "en", "Trier"], ["altLabel", "en", "Constantine I"],
+                                               ["altLabel", "en", "Nero mint"], ["prefLabel", "de", "Trier"]]},
+            # A spelling that is another mint's own RIC section would file the coins under the wrong shelf.
+            "ostia": {"url": "x", "labels": [["prefLabel", "en", "Ostia"], ["altLabel", "en", "Rome"], ["prefLabel", "it", "Ostia"]]},
+        }}).encode("utf-8")
+        sections = {"rome": "Rome", "siscia": "Siscia", "sirmium": "Sirmium", "treveri": "Treveri", "ostia": "Ostia"}
+        rows = module.mint_rows(snapshot, sections, {"constantine i", "nero"})
+        self.assertEqual([("rome", "Rome", ["roma"]), ("treveri", "Treveri", ["trier"])], rows)
 
     def test_mints_are_read_from_the_bundled_titles_of_the_mint_volumes(self):
         module = load_module()
@@ -245,15 +286,43 @@ class BundledDataTests(unittest.TestCase):
         self.assertEqual("Treveri", module.read_mints(DATA)["treveri"])
         self.assertEqual(21, len(module.read_mints(DATA)))
 
+    def test_every_bundled_mint_has_a_modern_language_chosen_for_it(self):
+        """A mint with no language chosen stops a regeneration, so the table has to cover every mint the bundle files coins under."""
+        module = load_module()
+        self.assertEqual(sorted(module.read_mints(DATA)), sorted(module.MINT_COUNTRY_LANGUAGE))
+
+    def test_the_real_snapshot_names_the_mints_it_can_and_invents_nothing_for_the_rest(self):
+        """Eight of the 21 mints carry no modern name Nomisma publishes; four of those really are called something else today."""
+        module = load_module()
+        sections = module.read_mints(DATA)
+        rulers = module.ruler_spellings(CONCEPTS.read_bytes(), module.read_memberships(DATA))
+        rows = module.mint_rows(MINTS.read_bytes(), sections, rulers)
+        named = {section: aliases for _, section, aliases in rows}
+        self.assertEqual(["arles"], named["Arelate"])
+        self.assertEqual(["roma"], named["Rome"])
+        self.assertEqual(["sisak"], named["Siscia"])
+        self.assertEqual(["antakya", "antioch, syria", "antiokheia pros oronten"], named["Antioch"])
+        # These eight keep RIC's own spelling. Alexandria, Aquileia, Carthage and Ostia already are the name on the map; Londinium, Lugdunum,
+        # Mediolanum and Ticinum are not, but "London", "Lyons" and "Pavia" are in no Nomisma label of any language and "Milan" only as "Milano",
+        # so none of the four is given a name the source does not carry.
+        self.assertEqual(["Alexandria", "Aquileia", "Carthage", "Londinium", "Lugdunum", "Mediolanum", "Ostia", "Ticinum"],
+                         sorted(set(sections.values()) - set(named)))
+        snapshot = json.loads(MINTS.read_bytes())
+        for absent in ("london", "lyons", "pavia", "milan"):
+            written = {module.normalise_alias(value) for concept in snapshot["concepts"].values() for _, _, value in concept["labels"]}
+            self.assertNotIn(absent, written)
+
     def test_generate_reproduces_the_committed_people_index_byte_for_byte(self):
         module = load_module()
         committed = PEOPLE.read_bytes()
         generated_on = re.search(r'generatedOn: "(\d{4}-\d{2}-\d{2})"', committed.decode("utf-8")).group(1)
+        memberships = module.read_memberships(DATA)
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "ric-people.js"
-            # Exactly what docs/LOCAL-CATALOGUE.md tells a contributor to run.
-            module.generate(CONCEPTS, module.read_memberships(DATA), output, generated_on,
-                            module.mint_rows(MINTS.read_bytes(), module.read_mints(DATA)))
+            # Exactly what docs/LOCAL-CATALOGUE.md tells a contributor to run: the mint aliases are checked against the people of the same snapshot.
+            module.generate(CONCEPTS, memberships, output, generated_on,
+                            module.mint_rows(MINTS.read_bytes(), module.read_mints(DATA),
+                                             module.ruler_spellings(CONCEPTS.read_bytes(), memberships)))
             self.assertEqual(committed, output.read_bytes())
 
 

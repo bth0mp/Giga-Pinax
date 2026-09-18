@@ -227,6 +227,11 @@ export const ricMintSection = (name) => MINT_BY_ALIAS.get(rulerKey(name)) ?? '';
 for (const [alias, section] of MINT_BY_ALIAS) {
   if (!VOLUMES_BY_SECTION.has(alias)) VOLUMES_BY_SECTION.set(alias, [...(VOLUMES_BY_SECTION.get(rulerKey(section)) ?? [])]);
 }
+// Every spelling that names a mint: the sections RIC VI–IX are filed by, and the modern names Nomisma gives them, each with the section it stands
+// for. A lot heading is read against these as it is read against the ruler spellings, and a mint stays out of that table: the one-word widening
+// above shares a nomen between the people who carry it, which is right for a man and wrong for a place, and a place is never offered as a ruler.
+const MINT_SECTIONS = new Map(['VI', 'VII', 'VIII', 'IX'].flatMap((volume) => RIC_SECTIONS[volume]).map((section) => [rulerKey(section), section]));
+export const MINT_SPELLINGS = Object.freeze([...MINT_SECTIONS, ...MINT_BY_ALIAS].map((entry) => Object.freeze(entry)));
 export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
