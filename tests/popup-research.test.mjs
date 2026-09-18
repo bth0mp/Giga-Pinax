@@ -1308,3 +1308,15 @@ test('a quoted search term is not quoted a second time in the matches line', asy
   assert.match(popup.element('sale-period').textContent, /matches for "Price 23"$/);
   assert.doesNotMatch(popup.element('sale-period').textContent, /[“”]/);
 });
+
+// A RIC term with a ruler in front of it opens on the ruler's name, so it was wrapped after all and the line read
+// “Nero ("RIC 306" …)” — a pair of quotes around a term that carries its own. A term with quotes or brackets in it is left as it stands.
+test('a term that carries its own quotes or brackets is not wrapped in a second pair', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  popup.element('quick-reference').value = 'RIC I Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const line = popup.element('sale-period').textContent;
+  assert.match(line, /matches for Nero \("RIC 306" "RIC I 306" "RIC I, 306"\)$/);
+  assert.doesNotMatch(line, /[“”]/);
+});
