@@ -1,7 +1,9 @@
 import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
-import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
+import {
+  ISO_DATE, UUID, dateParts, failure, isIsoInstant, isRecursionError, shiftDate, stableUuid, tooDeeplyNested,
+} from './validate.js';
 
 export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
@@ -834,6 +836,86 @@ export function migrateSnapshot(stored) {
 
 const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 
+// The bin keeps no identifier of its own, and entries written by older builds or by another install
+// carry none either, so an entry is named by what it holds: the same bytes name the same entry on
+// every device, and no bin holds two entries with identical bytes - the repair folds them and an
+// import unions the two bins by exactly that comparison.
+export function quarantineEntryId(entry) {
+  let encoded;
+  try { encoded = JSON.stringify(entry ?? null); } catch { encoded = null; }
+  return stableUuid(typeof encoded === 'string' ? encoded : 'unreadable-entry');
+}
+
+// One record set aside for one reason is one entry, however often it has been through a repair or
+// arrived in a merged backup. Entries fold only when they carry the very same record, so two
+// different duplicates of one ID keep both bodies. An entry that holds no record is the note of a
+// cause that was never in storage, and has no ID to be named by: it is the same note as another
+// naming the same cause with the same cleared links, and folds with nothing else.
+export function quarantineFoldKey(entry) {
+  const id = entry?.record?.id ?? entry?.record?.requestId;
+  if (typeof id === 'string') return `${entry.collection}:${id}:${entry.reason}`;
+  if (entry?.record === null || entry?.record === undefined) {
+    return `${entry?.collection}::${entry?.reason}:${JSON.stringify(entry?.clearedReferences ?? [])}`;
+  }
+  return null;
+}
+
+// The entry already held, having gained the earlier date and whatever links the other one recorded,
+// or null where the two are not the same entry after all.
+export function foldQuarantineInto(held, entry) {
+  if (JSON.stringify(held.record) !== JSON.stringify(entry.record)) return null;
+  if (entry.quarantinedAt < held.quarantinedAt) held.quarantinedAt = entry.quarantinedAt;
+  for (const reference of entry.clearedReferences ?? []) {
+    const text = JSON.stringify(reference);
+    held.clearedReferences ??= [];
+    if (!held.clearedReferences.some((kept) => JSON.stringify(kept) === text)) {
+      held.clearedReferences.push(reference);
+    }
+  }
+  return held;
+}
+
+// One bin, folded. Every entry already held for a key is tried, not only the first: three copies of
+// one ID, two of them the same body, are two entries - and never two entries of identical bytes,
+// which would answer to one entry ID and give Settings two Restore buttons that do the same thing.
+export function foldQuarantine(entries) {
+  const kept = [];
+  const held = new Map();
+  for (const entry of entries) {
+    const key = quarantineFoldKey(entry);
+    const candidates = key === null ? [] : (held.get(key) ?? []);
+    if (candidates.some((candidate) => foldQuarantineInto(candidate, entry))) continue;
+    kept.push(entry);
+    if (key !== null) held.set(key, [...candidates, entry]);
+  }
+  return kept;
+}
+
+const COLLECTION_VALIDATORS = new Map(COLLECTIONS.map(({ key, validator }) => [key, validator]));
+// Where a record can go back to: the live collections. The bookkeeping the repair discards outright
+// is never in the bin to be put back, and the bin itself is not a collection.
+const RESTORABLE_COLLECTIONS = COLLECTIONS
+  .map(({ key }) => key).filter((key) => !DISCARDED_ON_REPAIR.has(key));
+
+// The bin keeps a record verbatim, so one set aside by an older build can predate today's shapes.
+// Today's validator judges it first, and only a record that fails is offered the migration a stored
+// root gets, from the first version there was: a record already in today's shape is never walked
+// through a migration step a second time.
+export function validateQuarantinedRecord(collection, record) {
+  const validator = RESTORABLE_COLLECTIONS.includes(collection) ? COLLECTION_VALIDATORS.get(collection) : null;
+  if (!validator) {
+    return failure('invalid-record', 'This entry is not a record that can be put back.', 'entry.collection');
+  }
+  const asStored = validator(record, collection);
+  if (asStored.ok) return { ok: true, value: record };
+  let migrated;
+  try { migrated = migrateSnapshot({ schemaVersion: 1, [collection]: [record] })?.[collection]?.[0]; }
+  catch { migrated = undefined; }
+  if (migrated === undefined) return asStored;
+  const asMigrated = validator(migrated, collection);
+  return asMigrated.ok ? { ok: true, value: migrated } : asStored;
+}
+
 // Every place a root keeps a revision, named as the collection and record that carries it so a warning can say which.
 function* revisionSites(root) {
   if (isObject(root?.preferences)) yield { host: root.preferences, key: 'revision', collection: 'preferences', id: null };
@@ -892,19 +974,31 @@ export function quarantineInvalidRecords(stored, now) {
 
   const quarantine = [];
   const hosts = new Map();
-  const setAside = (collection, record, reason) => {
-    const entry = { collection, record, reason, quarantinedAt: now };
+  const folded = new Map();
+  // A repair running again over a bin it already wrote must not open a second entry beside the one
+  // that is already there: the entry already held keeps the earlier date and gains whatever links
+  // the other one recorded. An entry holding no record is folded at the end instead, because the
+  // links that identify it are only pushed onto it once this repair has found them.
+  const keep = (entry) => {
+    const id = entry.record?.id ?? entry.record?.requestId;
+    const key = typeof id === 'string' ? `${entry.collection}:${id}:${entry.reason}` : null;
+    const candidates = key === null ? [] : (folded.get(key) ?? []);
+    for (const candidate of candidates) {
+      const merged = foldQuarantineInto(candidate, entry);
+      if (merged) return merged;
+    }
     quarantine.push(entry);
-    const id = record?.id ?? record?.requestId;
-    if (typeof id === 'string') hosts.set(`${collection}:${id}`, entry);
+    if (key !== null) folded.set(key, [...candidates, entry]);
+    // A record in the bin is the cause of every reference to it the repair has to clear, whether it
+    // was set aside just now or by an earlier one.
+    if (typeof id === 'string') hosts.set(`${entry.collection}:${id}`, entry);
     return entry;
   };
+  const setAside = (collection, record, reason) => keep({ collection, record, reason, quarantinedAt: now });
   // Clearing a reference alters a record the collector still holds, so the value goes on the
   // quarantine entry of whatever caused the clearing and the link can be put back. A cause that
   // was never in storage, or one that is itself kept, has no entry of its own, so an entry with a
   // null record is opened to carry the note.
-  // ponytail: entries carried in from an earlier repair are not reused as causes, so a root
-  // repaired, written, then broken the same way again opens a second entry for the same cause.
   const noteCleared = (cause, causeId, reason, record, collection, field) => {
     const key = `${cause}:${causeId}`;
     const host = hosts.get(key) ?? setAside(cause, null, reason);
@@ -915,7 +1009,7 @@ export function quarantineInvalidRecords(stored, now) {
   if (OWN(root, 'quarantine')) {
     const entries = Array.isArray(root.quarantine) ? root.quarantine : [root.quarantine];
     for (const entry of entries) {
-      if (quarantineEntryResult(entry, 'quarantine').ok) quarantine.push(entry);
+      if (quarantineEntryResult(entry, 'quarantine').ok) keep(entry);
       else setAside('quarantine', entry, 'invalid-entry');
     }
   }
@@ -1011,12 +1105,25 @@ export function quarantineInvalidRecords(stored, now) {
     });
   }
 
-  if (quarantine.length) root.quarantine = quarantine;
+  // Last, because a note of a cause is identified by the links it carries and those are only pushed
+  // onto it as this repair finds them: two notes of one cause are one note by the time it is over.
+  if (quarantine.length) root.quarantine = foldQuarantine(quarantine);
   const valid = validateSnapshot(root);
   return valid.ok ? { ok: true, value: root } : valid;
 }
 
+// Validation is the boundary a root has to cross, so a root too deeply nested to be walked is turned
+// away here with an ordinary failure rather than throwing out of whatever command was being served.
 export function validateSnapshot(value) {
+  try {
+    return validateRoot(value);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('snapshot');
+  }
+}
+
+function validateRoot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;
   if (value.schemaVersion !== SCHEMA_VERSION) {

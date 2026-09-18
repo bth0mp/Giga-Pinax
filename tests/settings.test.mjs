@@ -32,6 +32,20 @@ test('a refused preset row is announced once, beside the field, not again in the
   assert.doesNotMatch(settingsSource, /throw new Error\(`House /);
 });
 
+// The set-aside list is drawn from the rows the data layer builds, and the button on a row sends the
+// command for that row's own entry. Nothing about which entries can be put back is decided here.
+test('every set-aside record with a record to put back gets a Restore button of its own', () => {
+  assert.match(settingsSource, /quarantineRows\(quarantined\)/);
+  assert.match(settingsSource, /restore\.textContent = 'Restore';/);
+  assert.match(settingsSource, /if \(!row\.restorable\) return item;/);
+  assert.match(settingsSource, /type: 'quarantine\.restore'[\s\S]{0,80}entryId/);
+  // The reply is text, like every other line on this page, and the list is read again afterwards.
+  assert.match(settingsSource, /status\(quarantineRestoreText\(reply\.value\)\)/);
+  assert.match(settingsSource, /line\.textContent = row\.line;/);
+  // One button name on every row, so the line beside it is what tells them apart.
+  assert.match(settingsSource, /restore\.setAttribute\('aria-describedby', line\.id\);/);
+});
+
 const COPY = { text: '{"copy":true}', name: 'giga-pinax-before-import-2026-09-12T12-00-00.000Z.json' };
 const RAW = { text: '{"raw":true}', name: 'giga-pinax-raw-2026-09-12T12-00-00.000Z.json' };
 

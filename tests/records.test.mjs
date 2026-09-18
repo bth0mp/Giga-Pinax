@@ -7,6 +7,7 @@ import {
   createEmptySnapshot,
   migrateSnapshot,
   projectExposure,
+  quarantineEntryId,
   quarantineInvalidRecords,
   restartUnusableRevisions,
   setOutcome,
@@ -258,6 +259,97 @@ test('quarantine writes down every reference it clears so a recovery can restore
     JSON.stringify(rescued.value),
     'the repair applied to its own output must change nothing',
   );
+});
+
+// An entry carried in from an earlier repair used not to count as a cause, so a root repaired,
+// written, and then broken the same way again opened a second entry for a record already in the bin.
+test('a reference cleared to a record already set aside lands on the entry it is already in', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const broken = { ...makeEvent(IDS.eventEur, 'EUR auction'), eventKind: 'bring-your-own' };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventEur }));
+  snapshot.auctionEvents = snapshot.auctionEvents.filter(({ id }) => id !== IDS.eventEur);
+  snapshot.quarantine = [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+  }];
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'auctionEvents', record: broken, reason: 'invalid-enum', quarantinedAt: NOW,
+    clearedReferences: [
+      { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventEur },
+    ],
+  }]);
+});
+
+// Only entries carrying the very same record fold, so two duplicates of one ID keep both bodies.
+test('two set-aside copies of one record fold, while two different bodies do not', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const broken = { ...makeLot(IDS.lotEur), outcome: { status: 'maybe' } };
+  const reference = { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventUsd };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventUsd }));
+  snapshot.quarantine = [
+    { collection: 'lots', record: broken, reason: 'invalid-enum', quarantinedAt: LATER, clearedReferences: [reference] },
+    { collection: 'lots', record: structuredClone(broken), reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'lots', record: { ...structuredClone(broken), title: 'Another body' }, reason: 'invalid-enum', quarantinedAt: NOW },
+  ];
+  // Something has to take the root through a repair: the bin is only folded while one runs.
+  snapshot.lots.push(makeLot(IDS.lotChf, { outcome: { status: 'maybe' } }));
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.deepEqual(rescued.value.quarantine, [
+    { collection: 'lots', record: broken, reason: 'invalid-enum', quarantinedAt: NOW, clearedReferences: [reference] },
+    { collection: 'lots', record: { ...broken, title: 'Another body' }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'lots', record: snapshot.lots[1], reason: 'invalid-enum', quarantinedAt: LATER },
+  ]);
+});
+
+// Only the first entry held for an ID used to be tried, so A, B and a byte-identical B' left three
+// entries in the bin, two of them the same bytes - and therefore the same entry ID, which Settings
+// names its Restore buttons by. Every body held for the ID is tried now.
+test('a third copy folds into whichever body it matches, not only the first', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const broken = { ...makeLot(IDS.lotEur), outcome: { status: 'maybe' } };
+  const other = { ...structuredClone(broken), title: 'Another body' };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventUsd }));
+  snapshot.quarantine = [
+    { collection: 'lots', record: broken, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'lots', record: other, reason: 'invalid-enum', quarantinedAt: LATER },
+    { collection: 'lots', record: structuredClone(other), reason: 'invalid-enum', quarantinedAt: NOW },
+  ];
+  snapshot.lots.push(makeLot(IDS.lotChf, { outcome: { status: 'maybe' } }));
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  const bodies = rescued.value.quarantine.filter(({ record }) => record?.id === IDS.lotEur);
+  assert.equal(bodies.length, 2, 'two bodies, two entries');
+  assert.equal(bodies[1].quarantinedAt, NOW, 'and the later copy folded into the earlier date');
+  const ids = rescued.value.quarantine.map(quarantineEntryId);
+  assert.equal(new Set(ids).size, ids.length, 'so no two entries answer to one entry ID');
+});
+
+// An entry that holds no record is the note of a cause that was never in storage. Only entries with
+// a record ID registered as causes, so a root repaired, written and broken the same way again opened
+// a second note beside the identical one already in the bin.
+test('a second repair of a cause that has no record of its own folds into the note already there', () => {
+  const LATER = '2026-09-13T12:00:00.000Z';
+  const reference = { collection: 'lots', id: IDS.lotUsdKnown, field: 'auctionEventId', value: IDS.eventEur };
+  const snapshot = snapshotWith(makeLot(IDS.lotUsdKnown, { auctionEventId: IDS.eventEur }));
+  snapshot.auctionEvents = snapshot.auctionEvents.filter(({ id }) => id !== IDS.eventEur);
+  snapshot.quarantine = [{
+    collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }];
+
+  const rescued = quarantineInvalidRecords(snapshot, LATER);
+  assert.equal(rescued.ok, true);
+  assert.equal(validateSnapshot(rescued.value).ok, true);
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: NOW,
+    clearedReferences: [reference],
+  }], 'one cause, one note, however often the repair runs');
 });
 
 test('a collection entry claimed by a second lot unlinks the impostor and keeps both lots', () => {
