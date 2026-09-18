@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
+import { ricMintSection } from '../extension/catalogues.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
 import { lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
 
@@ -362,12 +363,25 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
     assert.equal(found.status, 'ok', written);
     assert.equal(found.card.id, id, written);
   }
-  // The four the mint volumes were asked for still open nothing: the Wikidata items Nomisma links them to are the Roman city, titled by the Latin
-  // name in every language kept, so no modern spelling was found for them and none was invented.
-  for (const written of ['RIC VII London 12', 'RIC VII Lyon 12', 'RIC VII Lyons 12', 'RIC VII Milan 12', 'RIC VI Pavia 12']) {
+  // The names the mint volumes were asked for, reached through the one statement the linked Wikidata item publishes: London, Lyon, Milan, Pavia and
+  // Trier open their Latin sections with no network at all.
+  for (const [written, id] of [['RIC VII London 12', 'ric.7.lon.12'], ['RIC VII Lyon 12', 'ric.7.lug.12'], ['RIC VII Trier 12', 'ric.7.tri.12'],
+    ['RIC VII Pavia 12', 'ric.7.tic.12'], ['RIC VI Pavia 1', 'ric.6.tic.1'], ['RIC IX Milan 1', 'ric.9.med.1'],
+    ['RIC IX Mailand 1', 'ric.9.med.1'], ['RIC VI London 12', 'ric.6.lon.12'], ['RIC VII Londres 12', 'ric.7.lon.12']]) {
     const found = await lookupType(parseReference(written), { localProvider, online: false });
-    assert.notEqual(found.status, 'ok', written);
+    assert.equal(found.status, 'ok', written);
+    assert.equal(found.card.id, id, written);
   }
+  // Two of the brief's own references name a number the bundle does not hold rather than a mint it cannot reach: OCRE heads no RIC VII section with
+  // Mediolanum (Milan is RIC VIII and IX), and RIC VI Ticinum runs 1-11 and then 13. The section is read in both, and the number is what is missing.
+  for (const written of ['RIC VII Milan 12', 'RIC VI Pavia 12']) {
+    const reference = parseReference(written);
+    assert.equal(ricMintSection(reference.section), written.includes('Milan') ? 'Mediolanum' : 'Ticinum', written);
+    assert.notEqual((await lookupType(reference, { localProvider, online: false })).status, 'ok', written);
+  }
+  // "Lyons" is the one name of the five still unreachable: Wikidata publishes it as a name of Lyon in no language kept, and none was invented.
+  const lyons = await lookupType(parseReference('RIC VII Lyons 12'), { localProvider, online: false });
+  assert.notEqual(lyons.status, 'ok');
 });
 
 // A mint alias may only ever say which section a number lives in. Over every RIC number from 1 to 400, each new spelling must open coins of its own
@@ -381,16 +395,29 @@ test('over the bundled catalogue, a heading naming only a mint opens that mint\'
     ['Triers', 'treveri'], ['Augusta Treverorum', 'treveri'], ['Treviri', 'treveri'], ['Nikomedya', 'nicomedia'], ['Nikomedeia', 'nicomedia'],
     ['Samarobriva', 'ambianum'], ['Amians', 'ambianum'], ['Lugudunum', 'lugdunum'], ['Cizico', 'cyzicus'], ['Kizikos', 'cyzicus'],
     ['Antioch on the Orontes', 'antiocheia_syria'], ['Antiochia', 'antiocheia_syria'], ['Konstantiniyye', 'constantinople'],
-    ['Tsarigrad', 'constantinople'], ['Marmaraereğlisi', 'heraclea_thracica']]) {
+    ['Tsarigrad', 'constantinople'], ['Marmaraereğlisi', 'heraclea_thracica'],
+    // And every spelling the one statement hop added, over the same sweep. These are the names the mint volumes were asked for, so a wrong single
+    // answer here would be the worst kind: each has to open coins of its own mint and of no other.
+    ['London', 'londinium'], ['London, UK', 'londinium'], ['Londres', 'londinium'], ['Lunden', 'londinium'], ['Lyon', 'lugdunum'],
+    ['City of Lyon', 'lugdunum'], ['Milan', 'mediolanum'], ['Milano', 'mediolanum'], ['Mailand', 'mediolanum'], ['Milan, Italy', 'mediolanum'],
+    ['Pavia', 'ticinum'], ['İzmit', 'nicomedia'], ['Ismid', 'nicomedia'], ['Erdek', 'cyzicus'], ['Artake', 'cyzicus']]) {
     const opened = await openedOver(heading);
     assert.ok(opened.length > 0, heading);
     for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
   }
   // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
   assert.deepEqual(await openedOver('Roma'), []);
+  // The five names the mint volumes were asked for, written the way a lot heading writes them. Four of them now name their Latin section; "Lyons" is
+  // in no label Wikidata publishes for Lyon and names none, and nothing was invented to make it.
+  for (const [heading, section] of [['London', 'Londinium'], ['Lyon', 'Lugdunum'], ['Milan', 'Mediolanum'], ['Pavia', 'Ticinum'],
+    ['Trier', 'Treveri'], ['Lyons', '']]) {
+    const lot = findReferences(`${heading}. RIC 12`);
+    assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, heading);
+  }
   // A heading neither source gives a modern name for names no section, and the row is looked up as it was before. A city's nickname names none
-  // either: kept, "the Eternal City" in a Trier lot's prose would have been the earliest mint spelling in it and filed the coin under Rome.
-  for (const heading of ['London', 'Lyon', 'Lyons', 'Milan', 'Pavia', 'Eternal City', 'Caput Mundi', 'Urbe']) {
+  // either: kept, "the Eternal City" in a Trier lot's prose would have been the earliest mint spelling in it and filed the coin under Rome. The
+  // codes and the honorific London's item lists beside its names are refused for the same reason.
+  for (const heading of ['Eternal City', 'Caput Mundi', 'Urbe', 'Augusta', 'LDN', 'Big Smoke', 'Capitale des Gaules']) {
     const lot = findReferences(`${heading}. RIC 12`);
     assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', heading);
   }

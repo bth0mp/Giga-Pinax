@@ -232,7 +232,7 @@ class PeopleImportTests(unittest.TestCase):
         self.assertEqual([], module.mint_entity_ids({"matches": ["https://sws.geonames.org/2821164/", "http://dbpedia.org/resource/Trier"]}))
 
     def test_the_wikidata_snapshot_keeps_the_languages_a_name_is_taken_from_and_names_the_mints_with_no_link(self):
-        """One GET per linked item, under a User-Agent naming the script; the rest of the item — every statement it carries — is never read."""
+        """One GET per linked item, under a User-Agent naming the script; of the rest of the item only P31 and the three hop statements are read."""
         module = load_module()
         mints = json.dumps({"concepts": {
             "treveri": {"url": "x", "labels": [], "matches": ["http://www.wikidata.org/entity/Q3138"]},
@@ -244,31 +244,111 @@ class PeopleImportTests(unittest.TestCase):
                        "fr": {"language": "fr", "value": "Trèves"}, "pl": {"language": "pl", "value": "Trewir"}},
             "aliases": {"en": [{"language": "en", "value": "Augusta  Treverorum"}], "pl": [{"language": "pl", "value": "Treviri"}]},
             "descriptions": {"en": {"language": "en", "value": "city in Rhineland-Palatinate, Germany"}},
-            "claims": {"P1366": [{"mainsnak": {"datavalue": {"type": "wikibase-entityid", "value": {"id": "Q42"}}}}]},
+            "sitelinks": {"enwiki": {"site": "enwiki", "title": "Trier"}},
+            "claims": {"P31": [{"mainsnak": {"snaktype": "value", "datavalue": {"value": {"entity-type": "item", "id": "Q515"}}}}],
+                       "P1366": [{"mainsnak": {"snaktype": "value", "datavalue": {"value": {"entity-type": "item", "id": "Q42"}}}}]},
+        }}}).encode("utf-8")
+        target = json.dumps({"entities": {"Q42": {
+            "labels": {"en": {"language": "en", "value": "Nowhere"}},
+            "claims": {"P31": [{"mainsnak": {"snaktype": "value", "datavalue": {"value": {"entity-type": "item", "id": "Q3957"}}}}]},
         }}}).encode("utf-8")
         asked = []
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "wikidata-mints.json"
-            pages = {"https://www.wikidata.org/wiki/Special:EntityData/Q3138.json": item}
+            pages = {"https://www.wikidata.org/wiki/Special:EntityData/Q3138.json": item,
+                     "https://www.wikidata.org/wiki/Special:EntityData/Q42.json": target}
             with unittest.mock.patch.object(module, "urlopen", canned(pages, asked)):
-                count, unlinked = module.fetch_wikidata_snapshot(mints, output, "2026-09-18")
+                count, hops, unlinked, followed = module.fetch_wikidata_snapshot(mints, output, "2026-09-18")
             written = output.read_bytes()
             snapshot = json.loads(written.decode("utf-8"))
-        self.assertEqual((1, ["thessalonica"]), (count, unlinked))
-        self.assertEqual([("https://www.wikidata.org/wiki/Special:EntityData/Q3138.json", module.USER_AGENT)], asked)
+        self.assertEqual((1, 1, ["thessalonica"], {"Q3138": ("P1366", "Q42")}), (count, hops, unlinked, followed))
+        # The linked item first, then the one item it leads to: two requests, each naming the script.
+        self.assertEqual([("https://www.wikidata.org/wiki/Special:EntityData/Q3138.json", module.USER_AGENT),
+                          ("https://www.wikidata.org/wiki/Special:EntityData/Q42.json", module.USER_AGENT)], asked)
         # German is Trier's own country's language and the five exonym languages are always asked for; Polish is neither, so no Polish spelling is
         # kept. A label and an alias are told apart as Nomisma tells them apart, and the spacing is squashed as it is squashed there.
         self.assertEqual([["altLabel", "en", "Augusta Treverorum"], ["prefLabel", "de", "Trier"],
                           ["prefLabel", "en", "Trier"], ["prefLabel", "fr", "Trèves"]], snapshot["entities"]["Q3138"]["labels"])
         self.assertEqual("https://www.wikidata.org/wiki/Special:EntityData/Q3138.json", snapshot["entities"]["Q3138"]["url"])
+        # The classes the item says it is an instance of, and the three statements that can name a modern town, are recorded whole: they are what the
+        # one hop is decided by, and a reader has to be able to check the decision against the file rather than against the network.
+        self.assertEqual(["Q515"], snapshot["entities"]["Q3138"]["classes"])
+        self.assertEqual([["P1366", "Q42"]], snapshot["entities"]["Q3138"]["links"])
+        # The item reached carries its own names, its own classes, and the item and property that led to it.
+        self.assertEqual([["prefLabel", "en", "Nowhere"]], snapshot["targets"]["Q42"]["labels"])
+        self.assertEqual(["Q3957"], snapshot["targets"]["Q42"]["classes"])
+        self.assertEqual([["Q3138", "P1366"]], snapshot["targets"]["Q42"]["from"])
         # Wikidata dedicates its structured data to the public domain, and the statement travels with the file that holds it.
         self.assertEqual("CC0-1.0", snapshot["license"])
         self.assertEqual("https://creativecommons.org/publicdomain/zero/1.0/", snapshot["licenseUrl"])
         self.assertIn("CC0 1.0", snapshot["licenseStatement"])
-        # Nothing of the item beyond its names is written down: a statement naming another item could otherwise put a name on a mint by itself.
-        self.assertNotIn(b"P1366", written)
-        self.assertNotIn(b"Q42", written)
+        # Nothing else of the item is written down: no description, no sitelink, and no statement but the four that are read.
         self.assertNotIn(b"Rhineland", written)
+        self.assertNotIn(b"enwiki", written)
+        self.assertNotIn(b"P17", written)
+
+    def test_only_the_first_of_the_three_hop_properties_is_read_and_two_things_stop_it(self):
+        """One hop, one property, chosen by a precedence rather than per mint: P1366, then P276, then P131, and nothing falls through."""
+        module = load_module()
+        self.assertEqual(("P1366", "P276", "P131"), module.SECOND_HOP_PROPERTIES)
+        ancient = ["Q15661340"]
+        self.assertEqual(("P1366", "Q456"), module.second_hop({"classes": ancient, "links": [["P1366", "Q456"], ["P276", "Q9"], ["P131", "Q8"]]}))
+        self.assertEqual(("P276", "Q84"), module.second_hop({"classes": ancient, "links": [["P276", "Q84"], ["P131", "Q8"]]}))
+        self.assertEqual(("P131", "Q6259"), module.second_hop({"classes": ancient, "links": [["P131", "Q6259"]]}))
+        self.assertIsNone(module.second_hop({"classes": ancient, "links": []}))
+        # A statement naming several places names no one place: Rome's item lists nine administrative parents, and choosing among them is not this
+        # script's to do. The first property present is still the only one read, so nothing falls through to the next.
+        self.assertIsNone(module.second_hop({"classes": ancient, "links": [["P131", "Q15119"], ["P131", "Q170174"]]}))
+        self.assertIsNone(module.second_hop({"classes": ancient, "links": [["P1366", "Q1"], ["P1366", "Q2"], ["P276", "Q84"]]}))
+        # P131 from an item that is already the town is its county or its province, never its own name: Sisak, Sofia and Marmaraereglisi would each
+        # have fetched an administrative division back. The same item reached by P1366 or P276 is followed as usual.
+        self.assertIsNone(module.second_hop({"classes": ["Q15105893"], "links": [["P131", "Q57060"]]}))
+        self.assertEqual(("P1366", "Q406"), module.second_hop({"classes": ["Q515"], "links": [["P1366", "Q406"], ["P131", "Q8"]]}))
+
+    def test_a_second_hop_target_is_used_only_when_it_is_a_town(self):
+        """The hop may reach a province as easily as a place: Carthage's item leads to the Exarchate of Africa, and Ostia's to a seaside district."""
+        module = load_module()
+        self.assertTrue(module.populated_place({"classes": ["Q747074"]}))
+        self.assertTrue(module.populated_place({"classes": ["Q515", "Q200250", "Q1048835"]}))
+        # The exarchate is an administrative unit and the Lido is a frazione and a seaside resort: neither is a class that makes an item a town.
+        self.assertFalse(module.populated_place({"classes": ["Q946136"]}))
+        self.assertFalse(module.populated_place({"classes": ["Q1134686", "Q1021711", "Q123705"]}))
+        self.assertFalse(module.populated_place({"classes": []}))
+        # An item filed as a town and as a country or a region both is refused rather than read as the town.
+        self.assertFalse(module.populated_place({"classes": ["Q515", "Q6256"]}))
+        self.assertFalse(module.populated_place({"classes": ["Q3957", "Q82794"]}))
+        self.assertEqual(set(), module.SETTLEMENT_CLASSES & module.REGION_CLASSES)
+
+    def test_a_modern_name_reached_by_the_hop_is_kept_under_the_same_rules_and_never_taken_from_another_mint(self):
+        """The four names the mint volumes were asked for come from here, and the first mint to publish a spelling keeps it."""
+        module = load_module()
+        mints = json.dumps({"concepts": {
+            "lugdunum": {"url": "x", "labels": [["prefLabel", "en", "Lugdunum"]], "matches": ["http://www.wikidata.org/entity/Q665"]},
+            "ostia": {"url": "x", "labels": [["prefLabel", "it", "Ostia"]], "matches": ["http://www.wikidata.org/entity/Q1012797"]},
+            "rome": {"url": "x", "labels": [["prefLabel", "it", "Roma"]], "matches": ["http://www.wikidata.org/entity/Q220"]},
+        }}).encode("utf-8")
+        wikidata = json.dumps({"entities": {
+            "Q665": {"url": "x", "labels": [["prefLabel", "en", "Lugdunum"]], "classes": ["Q2202509"], "links": [["P1366", "Q456"]]},
+            # Ostia's own item is an archaeological site whose one administrative parent is the city of Rome itself.
+            "Q1012797": {"url": "x", "labels": [["prefLabel", "it", "Ostia antica"]], "classes": ["Q839954"], "links": [["P131", "Q220"]]},
+            "Q220": {"url": "x", "labels": [["prefLabel", "it", "Roma"]], "classes": ["Q747074"], "links": []},
+        }, "targets": {
+            "Q456": {"url": "x", "labels": [["prefLabel", "en", "Lyon"], ["altLabel", "fr", "capitale des Gaules"], ["prefLabel", "it", "Lione"]],
+                     "classes": ["Q484170"], "from": [["Q665", "P1366"]]},
+            "Q220": {"url": "x", "labels": [["prefLabel", "it", "Roma"], ["prefLabel", "en", "Rome"]], "classes": ["Q747074"],
+                     "from": [["Q1012797", "P131"]]},
+        }}).encode("utf-8")
+        sections = {"lugdunum": "Lugdunum", "ostia": "Ostia", "rome": "Rome"}
+        rows = module.mint_rows(mints, sections, (), wikidata)
+        # Lugdunum reaches Lyon through P1366 and keeps the English label; the French nickname is refused by name, and one Italian exonym alone is
+        # Italian's own word. Ostia reaches Rome, and Rome keeps "Roma" because a name a mint publishes itself outranks one another mint hopped to.
+        self.assertEqual([("lugdunum", "Lugdunum", ["lyon"]), ("ostia", "Ostia", ["ostia antica"]), ("rome", "Rome", ["roma"])], rows)
+        # A target the snapshot no longer holds stops the run, exactly as a missing linked item does.
+        short = json.loads(wikidata)
+        del short["targets"]["Q456"]
+        with self.assertRaises(ValueError) as refused:
+            module.mint_rows(mints, sections, (), json.dumps(short).encode("utf-8"))
+        self.assertIn("Q456", str(refused.exception))
 
     def test_a_wikidata_label_joins_the_nomisma_ones_under_the_same_three_rules(self):
         """The two sources are merged before a name is chosen, so either may be the language that earns it and neither outranks the other."""
@@ -462,8 +542,33 @@ class BundledDataTests(unittest.TestCase):
         for entity in entities.values():
             self.assertTrue(entity["url"].startswith("https://www.wikidata.org/wiki/Special:EntityData/"))
 
+    def test_the_one_statement_hop_is_the_snapshots_own_and_reaches_ten_towns(self):
+        """Which item leads where, and by which property, is in the tracked file: the run that wrote it can be checked without the network."""
+        module = load_module()
+        snapshot = json.loads(WIKIDATA.read_bytes())
+        entities, targets = snapshot["entities"], snapshot["targets"]
+        followed = {entity_id: module.second_hop(entity) for entity_id, entity in entities.items()}
+        followed = {entity_id: chosen for entity_id, chosen in followed.items() if chosen}
+        # Ten of the twenty-two linked items name a place to go to; the twelve others carry no such statement, carry one naming several places at
+        # once, or are the modern town already. One request each, and the snapshot holds exactly those ten items.
+        self.assertEqual(10, len(followed))
+        self.assertEqual(sorted({target_id for _, target_id in followed.values()}), sorted(targets))
+        # The four the mint volumes were asked for, each with the property that led there. No mint had a property picked for it: each is the first of
+        # P1366, P276, P131 that its own item carries.
+        self.assertEqual(("P276", "Q84"), followed["Q927198"])       # Londinium -> London
+        self.assertEqual(("P1366", "Q456"), followed["Q665"])        # Lugdunum  -> Lyon
+        self.assertEqual(("P1366", "Q490"), followed["Q729978"])     # Mediolanum -> Milan
+        self.assertEqual(("P131", "Q6259"), followed["Q28215083"])   # Ticinum   -> Pavia
+        # Two of the ten reach something that is not a town and are refused by their own P31: Carthage's item leads to the Exarchate of Africa and
+        # Ostia's to the Lido di Ostia, a frazione and a seaside resort. The eight others are towns.
+        refused = sorted(target_id for target_id, target in targets.items() if not module.populated_place(target))
+        self.assertEqual(["Q11171297", "Q246737"], refused)
+        for target_id, target in targets.items():
+            self.assertTrue(target["url"].endswith(f"{target_id}.json"))
+            self.assertTrue(target["from"], target_id)
+
     def test_the_real_snapshots_name_the_mints_they_can_and_invent_nothing_for_the_rest(self):
-        """Three of the 21 mints carry no modern name either source publishes, and two of those really are called something else today."""
+        """One of the 21 mints carries no modern name either source publishes, and that one is already the name on the map."""
         module = load_module()
         sections = module.read_mints(DATA)
         rulers = module.ruler_spellings(CONCEPTS.read_bytes(), module.read_memberships(DATA))
@@ -477,24 +582,37 @@ class BundledDataTests(unittest.TestCase):
         self.assertEqual(["serdika", "sofia", "sofija", "sredets", "sredez"], named["Serdica"])
         self.assertEqual(["carthago", "colonia julia carthago", "mint of carthage"], named["Carthage"])
         self.assertEqual(["augusta treverorum", "treverer", "trevirer", "treviri", "trier", "triers"], named["Treveri"])
-        # These three keep RIC's own spelling. Aquileia already is the name on the map; Mediolanum and Ticinum are not, but the Wikidata items
-        # Nomisma links them to are the Roman city and an article about it, and both are titled by the Latin name in every language kept.
-        self.assertEqual(["Aquileia", "Mediolanum", "Ticinum"], sorted(set(sections.values()) - set(named)))
-        # The point of the exercise, asserted rather than assumed. The Wikidata items Nomisma links Londinium, Lugdunum, Mediolanum and Ticinum to
-        # are the Roman city, not the town standing there now, so none of these five names is reachable and none of them is invented: a lot written
-        # "London" or "Milan" is still looked up by RIC's own spelling.
-        for absent in ("london", "lyon", "lyons", "pavia", "milan"):
-            self.assertEqual([], [section for section, aliases in named.items() if absent in aliases], absent)
-        # Four of the five are written nowhere in either file, in any of the ~80 languages the Nomisma snapshot carries or the six the Wikidata one
-        # keeps. "Lyon" is the exception and is no more reachable for it: the one label spelling it is Danish, which is neither France's language,
-        # nor English, nor one of the five whose shared exonyms count.
+        # Aquileia alone keeps RIC's own spelling and nothing beside it, which costs nothing: Aquileia already is the name on the map.
+        self.assertEqual(["Aquileia"], sorted(set(sections.values()) - set(named)))
+        # The point of the exercise, asserted rather than assumed. The Wikidata items Nomisma links these four mints to are the Roman city, titled by
+        # the Latin name in every language kept; the town standing there now is reached through one statement of that item and no other route.
+        self.assertIn("london", named["Londinium"])
+        self.assertIn("lyon", named["Lugdunum"])
+        self.assertIn("milan", named["Mediolanum"])
+        self.assertEqual(["pavia"], named["Ticinum"])
+        self.assertIn("trier", named["Treveri"])
+        # "Lyons" is the one name of the five that is still unreachable, and the reason is the same one that keeps every other spelling out: Wikidata
+        # publishes it as a name of Lyon in no language kept — not as an English alias, not anywhere in either file — so nothing invents it.
+        self.assertEqual([], [section for section, aliases in named.items() if "lyons" in aliases])
         written = {module.normalise_alias(value)
-                   for holder in (json.loads(MINTS.read_bytes())["concepts"], json.loads(WIKIDATA.read_bytes())["entities"])
+                   for holder in (json.loads(MINTS.read_bytes())["concepts"], json.loads(WIKIDATA.read_bytes())["entities"],
+                                  json.loads(WIKIDATA.read_bytes())["targets"])
                    for entry in holder.values() for _, _, value in entry["labels"]}
-        for absent in ("london", "lyons", "pavia", "milan"):
-            self.assertNotIn(absent, written)
-        self.assertEqual({"da"}, {lang for _, lang, value in json.loads(MINTS.read_bytes())["concepts"]["lugdunum"]["labels"]
-                                  if module.normalise_alias(value) == "lyon"})
+        self.assertNotIn("lyons", written)
+        self.assertIn("lyon", written)
+        # What the hop brought each mint, beside the four above: the towns at Cyzicus and Nicomedia. Carthage and Ostia hopped too and gained
+        # nothing, because what they reached is a Byzantine province and a seaside district rather than a town.
+        self.assertEqual(["artake", "cizico", "erdek", "kizikos", "kyzikos"], named["Cyzicus"])
+        self.assertEqual(["ismid", "ismit", "izmit", "nikomedeia", "nikomedia", "nikomedya"], named["Nicomedia"])
+        self.assertEqual(["ancient ostia", "ostia antica"], named["Ostia"])
+        # Nothing was lost to the hop: the name a mint's own item publishes outranks one another mint was led to, so Ostia's administrative parent
+        # did not cost Rome "Roma", and Nomisma's and Wikidata's own labels stand exactly as WP-F and WP-G left them.
+        self.assertEqual(["citta di roma", "roma", "rome, italy"], named["Rome"])
+        # London's item lists codes, an honorific and what Londoners call the place beside its names, and none of those may read a mint out of a
+        # heading: "Augusta" is a title a woman on a coin carries, and "Lon" and "LDN" are short enough to fall out of ordinary words.
+        for absent in ("augusta", "ldn", "lon", "lond", "big smoke", "the big smoke", "london u.k"):
+            self.assertNotIn(absent, named["Londinium"], absent)
+        self.assertNotIn("capitale des gaules", named["Lugdunum"])
 
     def test_generate_reproduces_the_committed_people_index_byte_for_byte(self):
         module = load_module()

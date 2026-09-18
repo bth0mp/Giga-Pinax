@@ -43,8 +43,9 @@ structured data to the public domain under
 ## wikidata-mints.json
 
 - **Source endpoint:** `https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json`, one
-  request per Wikidata item a mint concept links to; the template is in the file's `requestUrl`
-  field and each item's own URL beside its labels.
+  request per Wikidata item a mint concept links to and one more per town those items lead to — 22
+  items and 10 towns, 32 requests; the template is in the file's `requestUrl` field and each item's
+  own URL beside its labels.
 - **Retrieved:** 2026-09-18 (the file's `retrievedOn` field).
 - **SHA-256:** not recorded; the file carries `requestUrl`, `retrievedOn`, `license`, `licenseUrl`
   and `licenseStatement`.
@@ -56,10 +57,16 @@ structured data to the public domain under
   scripts/data/wikidata-mints.json --retrieved-on YYYY-MM-DD`. Which items are fetched is decided
   by the `matches` links in `nomisma-mints.json` and by nothing else, so the two files travel
   together and a regeneration stops if one of them no longer holds what the other names.
-- **Holds:** each item's labels and aliases, and nothing else of it. Only the languages a name can
-  be taken from are kept — English, French, German, Italian, Spanish and the language of the
-  country each linking mint stands in today — and no statement, description or sitelink of the
-  item is written down, so nothing but a published name can put a name on a mint.
+- **Holds:** under `entities`, each linked item's labels and aliases, the classes its `P31` says it
+  is an instance of, and the targets of `P1366` (replaced by), `P276` (location) and `P131`
+  (located in the administrative territorial entity); under `targets`, the same for each town one
+  of those three statements leads to, with the item and property that led there under `from`. Only
+  the languages a name can be taken from are kept — English, French, German, Italian, Spanish and
+  the language of the country each linking mint stands in today — and no description, sitelink or
+  other statement is written down. The three statements are recorded because Nomisma links four of
+  the mints to the *Roman* city, which every language titles by the Latin name: the town standing
+  there now is reached by one hop from that item and by nothing else, and the hop is decided from
+  what is written here rather than from the network.
 - **Generates:** the `RIC_MINTS` table in `extension/ric-people.js`, together with
   `nomisma-mints.json`.
 
