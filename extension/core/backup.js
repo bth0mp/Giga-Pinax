@@ -1,7 +1,7 @@
 import { LIMITS, SCHEMA_VERSION, migrateSnapshot, unusableRevisions, validateSnapshot } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
-import { clone, failure, own } from './validate.js';
+import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 
 export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // Exports are compact, but backups written by earlier builds were indented: the import bound has to
@@ -71,7 +71,18 @@ export function exportBackup(snapshot, now) {
   return { ok: true, value: document };
 }
 
+// Reading a file is the other boundary: parsing it, copying it and migrating it all recurse, so a
+// document whose records are nested past what the stack holds is refused as an invalid file.
 export function validateBackup(document) {
+  try {
+    return readBackup(document);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('data');
+  }
+}
+
+function readBackup(document) {
   let value = document;
   if (typeof document === 'string') {
     if (bytes(document) > MAX_BACKUP_BYTES) return failure('file-too-large', 'Backup exceeds the 16 MiB limit.');
@@ -307,7 +318,16 @@ function mergeQuarantine(snapshot, current, incoming) {
   return gained;
 }
 
-export function previewImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
+export function previewImport(current, incoming, mode, options = {}) {
+  try {
+    return planImport(current, incoming, mode, options);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('data');
+  }
+}
+
+function planImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
   const currentValid = validateSnapshot(current);
   if (!currentValid.ok) return failure('invalid-current', currentValid.error.message, currentValid.error.path);
   const incomingValid = validateSnapshot(incoming);

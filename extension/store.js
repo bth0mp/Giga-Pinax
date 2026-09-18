@@ -6,7 +6,7 @@ import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
 import { findDuplicateLot } from './core/lot-context.js';
-import { clone, failure, own } from './core/validate.js';
+import { TOO_DEEPLY_NESTED, clone, failure, isRecursionError, own } from './core/validate.js';
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
@@ -901,7 +901,13 @@ export function createCommandWriter(storageArea, context) {
 
   return {
     commitCommand(command) {
-      const result = queue.then(() => commit(command));
+      // A stored root can be nested as deeply as a hand-made document, and every copy and every
+      // measurement this writer makes of one recurses. Such a command is refused like any other
+      // invalid shape: a page that asked for it is answered rather than left waiting on a throw.
+      const result = queue.then(() => commit(command)).catch((error) => {
+        if (!isRecursionError(error)) throw error;
+        return errorReply(command, 'validation', 'not-committed', TOO_DEEPLY_NESTED);
+      });
       queue = result.catch(() => undefined);
       return result;
     },

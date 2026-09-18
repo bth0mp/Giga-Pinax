@@ -11,6 +11,17 @@ export const failure = (code, message, path, extra) =>
 
 export const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
 
+// Copying, measuring and walking a record are all recursive, so an object nested thousands of levels
+// deep - which nothing here writes, and only a hand-made or damaged file carries - runs the stack out
+// wherever it is first touched. The engines spell that differently: V8 throws a RangeError naming the
+// call stack, SpiderMonkey an InternalError saying there was too much recursion, so both are read.
+export const isRecursionError = (error) =>
+  error instanceof RangeError || /call stack|too much recursion/i.test(String(error?.message ?? ''));
+
+// Depth is a shape the data should not have, so it is reported where any other bad shape is.
+export const TOO_DEEPLY_NESTED = 'This data is nested too deeply to be read. Records this deep are not written by Giga Pinax.';
+export const tooDeeplyNested = (path) => failure('too-deeply-nested', TOO_DEEPLY_NESTED, path);
+
 export const clone = (value) => structuredClone(value);
 
 // Versions 1 through 8: a record this store did not mint is still a record, and the variant nibble is what says the

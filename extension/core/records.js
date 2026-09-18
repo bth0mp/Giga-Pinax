@@ -1,7 +1,7 @@
 import { CURRENCIES, calculatePremium, validateIncrementLadder, validateMoney } from './money.js';
 import { validateSaleEvidence } from './evidence.js';
 import { resolveZonedDateTime } from './reminders.js';
-import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
+import { ISO_DATE, UUID, dateParts, failure, isIsoInstant, isRecursionError, shiftDate, tooDeeplyNested } from './validate.js';
 
 export const SCHEMA_VERSION = 2;
 export const LIMITS = Object.freeze({
@@ -1016,7 +1016,18 @@ export function quarantineInvalidRecords(stored, now) {
   return valid.ok ? { ok: true, value: root } : valid;
 }
 
+// Validation is the boundary a root has to cross, so a root too deeply nested to be walked is turned
+// away here with an ordinary failure rather than throwing out of whatever command was being served.
 export function validateSnapshot(value) {
+  try {
+    return validateRoot(value);
+  } catch (error) {
+    if (!isRecursionError(error)) throw error;
+    return tooDeeplyNested('snapshot');
+  }
+}
+
+function validateRoot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;
   if (value.schemaVersion !== SCHEMA_VERSION) {

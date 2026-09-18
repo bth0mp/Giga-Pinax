@@ -13,6 +13,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A backup too big for the 5 MiB local store is now turned away as a backup that does not fit, instead of as reminders that would exceed the bound — removing reminders was never the way out of it. (#4)
 - A right-click lookup whose window cannot be opened now says that, instead of warning that the last page capture could not be saved. A lookup saves nothing, so nothing was lost. (#4)
 - A backup that cannot be merged now says so in a plain sentence, with the technical detail after it rather than on its own. (#4)
+- A backup holding a record nested thousands of levels deep is now refused as a file that cannot be read, instead of leaving the page that asked for the import waiting for an answer that never came. (#8)
 
 ## [0.32.0] - 2026-09-17
 

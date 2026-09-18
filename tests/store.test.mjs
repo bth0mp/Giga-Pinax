@@ -1143,6 +1143,34 @@ test('a lot the merge replaced refuses a save holding the pre-merge revision', (
   assert.equal(stale.error.code, 'conflict');
 });
 
+// Every copy and every measurement made of a document is recursive, and a hand-made file can nest an
+// object thousands of levels deep: the stack ran out and a RangeError came out of the command queue
+// instead of a reply, so the page that asked was never answered at all.
+test('a backup nested thousands of levels deep is answered, not thrown out of the writer', async () => {
+  const nested = (depth) => `${'{"nested":'.repeat(depth)}null${'}'.repeat(depth)}`;
+  const entry = `{"collection":"lots","reason":"invalid-record","quarantinedAt":"${NOW}","record":${nested(3000)}}`;
+  const document = JSON.stringify({
+    format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW, data: createEmptySnapshot(NOW),
+  }).replace('"lots":[]', `"quarantine":[${entry}],"lots":[]`);
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+
+  for (const mode of ['merge', 'replace']) {
+    const refused = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document,
+    }));
+    assert.equal(refused.ok, false, mode);
+    assert.equal(refused.code, 'validation', mode);
+    assert.equal(refused.outcome, 'not-committed', mode);
+    assert.equal(Object.hasOwn(storage.read(), 'quarantine'), false, 'nothing of the file reached storage');
+  }
+  // The queue is still the collector's to write to.
+  const saved = await writer.commitCommand(command('lot.save', {
+    expectedRevision: null, lot: { title: 'Still writable', sourceLinks: [] },
+  }));
+  assert.equal(saved.ok, true, saved.message);
+});
+
 test('an imported root keeps only the keys the snapshot knows', () => {
   const data = createEmptySnapshot(NOW);
   // A hand-edited or hostile backup whose root carries an own "__proto__" key and an unknown one.
