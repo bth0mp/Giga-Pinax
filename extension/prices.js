@@ -488,6 +488,9 @@ const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
 // A mark in brackets is a control mark or a catalogue's own aside ("Cohen 302 (MB)."), and one behind a colon that follows an all-lower-case word is a
 // label's value ("control: TB."); neither is a grade. A capitalised label is the collector's own ("Erhaltung: ss", "Rev: MS").
 const LOWER_COLON = /(?<![\p{L}\d])\p{Ll}+:\s*$/u;
+// A mark a comma sets behind a place on the coin is the control letters struck there, not a grade: "in left field, MB.", "in exergue, TB.",
+// "monogram below, TTB.". A comma behind anything else still opens a mark ("Patina verde, BB.", "Leicht korrodiert, ss.").
+const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|beneath|monogram|control|controls)\.?\s*,\s*$/iu;
 // What bare "Fine" may not stand in front of: the compliment a dealer pays the dies ("Fine Style", "Fine-style"), the "and" that joins it to one, and
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
@@ -545,7 +548,8 @@ export function gradeOf(description) {
     // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
     else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
-    else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before);
+    else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
+      && !PLACE_COMMA.test(before);
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
     else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || ranged;

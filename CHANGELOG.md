@@ -10,6 +10,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - A RIC number typed without a volume, a ruler or a mint — `RIC 237` — no longer shows a median beside **Choose a type** or "matches too many types": the number names a type in every volume, so its prices mixed Caracalla's denarii with Vespasian's aurei and Constantine's folles. Prices now wait until one type is found or chosen, and prices already fetched for a RIC reference go, with a line saying why, when the lookup offers a choice of types.
 - Changing the currency no longer throws away the sales you included or excluded by hand. The same search is fetched again in the new currency and every lot keeps its id, so your decisions stay on the same lots, and the announcement says they were kept. A new lookup still starts from the filters' own choice.
+- Control letters a dealer places after a comma — `in left field, MB.`, `in exergue, TB.`, `monogram below, TTB.` — are no longer read as a grade: such a lot counted as **Fine and below** or **VF** in the per-grade medians. A grade mark after a comma anywhere else (`Patina verde, BB.`, `Leicht korrodiert, ss.`) still counts.
 
 ### Security
 
