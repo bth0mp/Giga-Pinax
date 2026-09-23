@@ -1,7 +1,7 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
+import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
@@ -979,7 +979,9 @@ function showPricesError(message) {
 // Constantine's follis), so a median of it would mix them all. Its prices wait for one type: run() prices a card that arrives with no research of its
 // own, and a chosen candidate begins research with its own volume and ruler.
 const blank = (value) => !String(value ?? '').trim();
-const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume) || !blank(reference.section) || reference.rulers?.length === 1;
+// A mint with no volume ("RIC 40 (Ticinum)") is filed in several volumes, so it names no single type either and waits like a bare number.
+const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume)
+  || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1;
 
 // A choice of types, or too many to list: prices already fetched for the reference mix those types, so they go, and the panel says why.
 function setPricesAside() {

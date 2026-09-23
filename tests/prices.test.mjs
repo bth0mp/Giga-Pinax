@@ -1443,3 +1443,10 @@ test('gradeOf reads a slab grade glued to its score, and only behind a slabber',
   assert.equal(gradeOf('Slg. MS63.'), null);
   assert.equal(gradeOf('Ex Slg. vz12.'), null);
 });
+
+// A stop after an abbreviated key is the dealer's own spelling of the same citation, not a search for another coin.
+test('a hand-typed "Bop. 24A" still searches the Bopearachchi card', () => {
+  const bop = { catalogue: 'Bop', number: '24A', section: 'Euthydemus I', volume: '' };
+  assert.equal(searchesReference('Bop. 24A', bop), true);
+  assert.equal(searchesReference('Bop. 24B', bop), false);
+});

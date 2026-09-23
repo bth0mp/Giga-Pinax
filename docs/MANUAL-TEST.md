@@ -189,10 +189,11 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     label beside it on the same line, the label whole and readable; never a full-width box with the label pushed off
     the edge of the popup. Check this in the side panel as well as the toolbar popup.
 
-22. **A bare RIC number shows no median.** Look up `RIC 237` and select **Get prices** if it is offered.
-    *Expected:* a list of types to choose from, and no median or price line beside it: the popup says "This reference
-    names more than one type, so no prices are shown. Choose one type to see its prices." Choose one of the types.
-    *Expected:* its prices can now be fetched, and the median is for that type's own search.
+22. **A bare RIC number shows no median.** Look up `RIC 237`.
+    *Expected:* a list of types to choose from, and no auction research section, median or **Get prices** until a type
+    is chosen. Choose one of the types. *Expected:* its prices can now be fetched, and the median is for that type's own
+    search. Then look up `RIC IV 237`. *Expected:* if it offers a choice, the popup says "This reference names more than
+    one type, so no prices are shown. Choose one type to see its prices." and shows no median.
 
 23. **A currency change keeps the sales you decided by hand.** Look up `Price 23`, select **Get prices**, and under
     **Inspect sales** exclude one counted row and include one row the filters left out. Change **Currency**.

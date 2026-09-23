@@ -1601,3 +1601,17 @@ test('focus stays in the popup when refine closes over it or Reset disables itse
   assert.equal(popup.element('reset-curation').disabled, true);
   assert.equal(popup.element('sale-summary').focused, 1);
 });
+
+// A mint with no volume is filed in several volumes, so "RIC 40 (Ticinum)" names no single type: nothing is fetched with the collector's session
+// before a type is chosen, as for a bare number.
+test('a RIC mint written with no volume fetches no prices until a type is chosen', async () => {
+  const fetched = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.term); return acrossVolumes; },
+    lookupTypeImpl: async () => ({ ...ricChoices, candidates: [{ id: 'ric.7.tic.40', title: 'RIC VII Ticinum 40' }] }) });
+  popup.element('quick-reference').value = 'RIC 40 (Ticinum)';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, []);
+  assert.equal(popup.element('median-amount').textContent, '');
+});

@@ -197,7 +197,8 @@ export function defaultTerm(reference) {
 export const citationPhrases = (reference) => (defaultTerm(reference).match(/"[^"]*"/g) ?? []).map((quoted) => quoted.slice(1, -1));
 export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
 // An edition mark the collector kept on the key or the volume ("RIC I² 306") still searches the card's own citation; the default term leaves it out.
-const TERM_MARK = String.raw`(?:[²³]|\(\d\)|\d)?`;
+// A stop the dealer wrote after an abbreviated key ("Bop. 24A") is the same citation.
+const TERM_MARK = String.raw`(?:[²³.]|\(\d\)|\d)?`;
 // A phrase as the term must still hold it: every word of it, the number last and whole. "Price 230" and "RIC 3061" are searches for another type,
 // and so is a number a decimal part continues ("Price 23.5").
 // The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
