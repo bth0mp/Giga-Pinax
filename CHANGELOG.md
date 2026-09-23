@@ -20,6 +20,10 @@ Each date is the date of that version's release tag. Every release also carries 
 - A search you type with the ruler inside the citation, as dealers write it — `RIC I Nero 306`, `RIC X Leo I 605` — still counts only the results citing your coin; it used to switch the citation filter off without a word. When a search you have edited really does look for something else, the panel, the announcement and **Copy summary** now say so: `This search does not look for Price 23, so all 12 results are counted.`
 - The **N of M results cite …** line no longer counts a sale you included by hand as one that cites the reference. It says how many really cite it and, when your own decisions change how many the median rests on, that number too — `1 of 3 results cite Price 23; 2 of 3 counted` — in the panel, the announcement and **Copy summary** alike. The **names …** line reads the same way.
 - With **Last 5 years** or **Last 2 years** chosen, the matches line no longer adds a `+` when the results page already reaches back past the start of that period: every sale of the period is on the page, so there are no more to find.
+- **Copy summary** no longer wraps a search term that carries its own quotes or brackets in a second pair (`matching “"Price 23"”`), as the panel already stopped doing in 0.32.1.
+- Bopearachchi citations written `Bop. 24A` or, by French dealers, `Bopearachchi Série 24A` are now searched on acsearch and counted as citing the coin; the search asks for all three spellings either-or. A 0.32 search term you saved for a Bop type unchanged gives way to the new one.
+- A RIC I citation written `RIC I (2nd ed.) 306`, `RIC vol. I 306` or `RIC 1 306` now counts as citing the coin. The volume as a digit is read for volume I only: `RIC 2 306` could as well be the second edition of volume I.
+- A slab grade printed with its score glued on — `PCGS MS63`, `NGC AU58`, `NGC XF45` — is read into its bucket, as `NGC AU 58` already was. A glued number anywhere but behind NGC or PCGS still leaves the row ungraded.
 
 ### Security
 

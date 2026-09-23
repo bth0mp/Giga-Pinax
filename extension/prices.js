@@ -90,14 +90,18 @@ export const greekName = (latin) => String(latin ?? '').replace(/us$/, 'os').rep
 const firstName = (section) => squash(section).split(' ')[0];
 
 // acsearch ANDs every word anywhere in a lot ("20" matched "20 mm") and offers (a b) for either-or and "…" for an exact phrase, so the term is
-// the king in both spellings, "(Hermaeus Hermaios)" (one word when they agree: Menander), and the series as the exact phrase "Bopearachchi 20".
-// No series (an uncited BIGR type) leaves the bare word Bopearachchi; no king leaves the phrase alone.
-function bopTerm(section, number) {
+// the king in both spellings, "(Hermaeus Hermaios)" (one word when they agree: Menander), and the series as the exact phrases dealers cite it with,
+// either-or: "Bopearachchi 20", the short "Bop. 20" (acsearch ignores the stop inside a phrase) and the French "Bopearachchi Série 20".
+// No series (an uncited BIGR type) leaves the bare word Bopearachchi; no king leaves the phrases alone.
+const bopKing = (section) => {
   const latin = firstName(section);
   const greek = greekName(latin);
-  const king = latin && greek !== latin ? `(${latin} ${greek})` : latin;
+  return latin && greek !== latin ? `(${latin} ${greek})` : latin;
+};
+function bopTerm(section, number) {
   const series = bopSeries(number);
-  return squash(`${king} ${series ? `"Bopearachchi ${series}"` : 'Bopearachchi'}`);
+  const cited = series ? group([phrase('Bopearachchi', series), phrase('Bop', series), phrase('Bopearachchi Série', series)]) : 'Bopearachchi';
+  return squash(`${bopKing(section)} ${cited}`);
 }
 
 // A reference without type data is searched as dealers cite it: each ";" reference an exact phrase ("HGC 4, 1218" also finds "HGC 4 1218", since
@@ -216,26 +220,28 @@ export function searchesReference(term, reference) {
 }
 
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
-// a remembered term that is exactly that old default counts as unsaved. Anything else the collector saved still wins.
-const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
+// a remembered term that is exactly that old default counts as unsaved, and so does 0.32's single phrase ("(Hermaeus Hermaios) "Bopearachchi 20"")
+// now that the series is searched in every spelling. Anything else the collector saved still wins.
+const oldBopTerms = ({ section, number }) => [squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`),
+  squash(`${bopKing(section)} "Bopearachchi ${bopSeries(number)}"`)];
 // The same for the unquoted defaults of 0.31 and before, which 0.32's exact phrases replace: the bare ruler and number, "Price 23", "Crawford 44/5",
 // "SC 1266.2". An Other reference has searched as phrases since 0.19, so it has no old default to retire.
-function oldDefaultTerm(reference) {
+function oldDefaultTerms(reference) {
   const { catalogue, number, section, rulers } = reference;
-  if (catalogue === 'Bop') return oldBopTerm(reference);
+  if (catalogue === 'Bop') return oldBopTerms(reference);
   if (catalogue === 'RIC') {
     const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
-    return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
+    return [squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`)];
   }
   // The key each of the rest was written under, which is the first of the phrases the default term now offers.
   const [key] = catalogueOf(catalogue)?.termKeys ?? [];
-  return key ? squash(`${key} ${referenceNumber(catalogue, number)}`) : '';
+  return key ? [squash(`${key} ${referenceNumber(catalogue, number)}`)] : [];
 }
 export function chooseTerm(reference, saved) {
   const term = squash(saved);
   // A term saved before 0.22 for text now read as prose is that whole sentence: it would search acsearch for it again, so it goes with the default.
   const none = reference.catalogue === 'Other' && !defaultTerm(reference);
-  if (!term || none || term === oldDefaultTerm(reference)) return defaultTerm(reference);
+  if (!term || none || oldDefaultTerms(reference).includes(term)) return defaultTerm(reference);
   return term;
 }
 
@@ -302,7 +308,11 @@ const eitherCase = (text) => [...String(text)].map((char) => {
 // The spellings dealers write each key in are the table's citationKeys. A key ending in a full stop needs no entry of its own — the separator below
 // already eats the stop, so "Cr" covers "Cr." and "Craw" covers "Craw." — and an Other reference is already searched as the exact citation, so every
 // row it finds cites it and the table gives it no keys.
-const citationKeys = (reference) => catalogueOf(reference?.catalogue)?.citationKeys ?? null;
+// Bopearachchi is cited "Bop." as often as spelled out; the short key is read here beside the table's.
+const citationKeys = (reference) => {
+  const keys = catalogueOf(reference?.catalogue)?.citationKeys ?? null;
+  return keys && reference.catalogue === 'Bop' ? [...keys, 'Bop'] : keys;
+};
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
@@ -313,7 +323,8 @@ const citationNumber = ({ catalogue, number }) => {
 // is, which is what made 'RIC ' followed by 100,000 full stops cost seconds. The bracket of "RIC (306)" belongs to the number and is taken there.
 const SEP = String.raw`[\s.,]*`;
 // An edition mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC I (2) 306".
-const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\d)?`;
+// "(2nd ed.)" is the bracket abbreviated ("RIC I (2nd ed.) 306"); "(second edition)" spelled out reads as a bracketed word below.
+const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\s?\(\d(?:st|nd|rd|th)\.?\s?ed(?:ition|n?\.)?\)|\d)?`;
 // The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
 // really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
 const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
@@ -352,11 +363,16 @@ function volumeParts(volume) {
 // A ".1", "-1" or "/1" glued to the numeral is that volume's part and nothing else — the guard behind the part makes it impossible to leave one
 // unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1.
 function between({ catalogue, volume }) {
+  // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
+  if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
   if (catalogue !== 'RIC') return SEP;
   const text = squash(volume);
   const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
   const part = partPattern(volumeParts(text));
-  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
+  // The volume may be introduced as one ("RIC vol. I 306"), and volume I written as a digit ("RIC 1 306"). Only I: "RIC 2 306" is as likely to be the
+  // second edition of volume I spaced out as volume II.
+  const written = numeral === 'I' ? '(?:I|1)' : numeral ? escaped(numeral) : NUMERAL;
+  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -457,8 +473,9 @@ const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(S
 // manuscript and a monogram's own capitals are never a qualified mark.
 const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?|m(?=\\p{Lu}))`;
 // A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
-// eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
-const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;
+// eye appeal. The number may be glued to the grade as often as spaced ("PCGS MS63", "NGC AU58"). Whether the tail may be read at all is decided
+// below — behind a slabber, or at the very start of the text, and nowhere else; anywhere else a glued number leaves no closing edge.
+const SLAB = String.raw`★?(?:\s?\d{1,2}(?:/\d{1,2})?)?`;
 // The qualifiers are lazy, so a name a qualifier stands in front of is read as that name qualified ("About Uncirculated" is Uncirculated with the
 // qualifier every qualifier keeps: the same bucket), whatever the dealer's capitals.
 const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${TOKENS})(\\+*)(${SLAB})(?![\\p{L}\\d])`, 'gu');
@@ -810,6 +827,10 @@ const quote = (text) => {
   return `“${chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}…` : chars.join('')}”`;
 };
 export const quoteList = (texts) => texts.map(quote).join(', ');
+// A search term as the panel and the copy say it: in curly quotes, unless the term already carries punctuation of its own. A default term is written
+// in acsearch's own syntax — exact phrases in straight quotes, alternatives in brackets — and a second pair round it read as “"RIC 237"” and
+// “Nero ("RIC 306" …)”. What the collector typed is quoted as any other phrase is.
+export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`);
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
@@ -818,7 +839,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
-  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching ${quotedTerm(term)}`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   // What the filters left out, then the sales themselves, then the median of each grade the panel shows.
   const lines = [card.label, stats, ...filters];

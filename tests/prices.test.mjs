@@ -374,7 +374,7 @@ test('summaryText has no type link for a reference without type data', () => {
   const summary = summarise([lot('100', '01.01.2025'), lot('300', '01.01.2026'), lot('')], 'USD');
   assert.equal(summaryText({ label: 'HGC 4, 1218', corpus: 'other', id: 'HGC 4, 1218' }, summary, 'USD', '"HGC 4, 1218"'), [
     'HGC 4, 1218',
-    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 recorded sales matching “"HGC 4, 1218"” · 2025–2026',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 recorded sales matching "HGC 4, 1218" · 2025–2026',
   ].join('\n'));
 });
 
@@ -507,15 +507,15 @@ test('the quoting cap never splits an astral character', () => {
   assert.ok(text.includes(`“${'1'.repeat(39)}😀…”`), text);
 });
 
-test('defaultTerm groups both spellings of the king and quotes the Bopearachchi series as an exact phrase', () => {
+test('defaultTerm groups both spellings of the king and the Bopearachchi series as the exact phrases dealers cite it with', () => {
   const bop = (section, number) => ({ catalogue: 'Bop', section, number });
-  assert.equal(defaultTerm(bop(' Hermaeus ', 'Bop 20')), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(defaultTerm(bop(' Euthydemus I ', 'Bop 24a')), '(Euthydemus Euthydemos) "Bopearachchi 24A"');
-  assert.equal(defaultTerm(bop('Diodotus I or Diodotus II', '8A')), '(Diodotus Diodotos) "Bopearachchi 8A"');
-  assert.equal(defaultTerm(bop('Strato I', '12')), '(Strato Straton) "Bopearachchi 12"');
-  assert.equal(defaultTerm(bop('Menander I', '9C')), 'Menander "Bopearachchi 9C"');
-  assert.equal(defaultTerm(bop('Hermaios', '20')), 'Hermaios "Bopearachchi 20"');
-  assert.equal(defaultTerm(bop('', 'Bop-9C')), '"Bopearachchi 9C"');
+  assert.equal(defaultTerm(bop(' Hermaeus ', 'Bop 20')), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(defaultTerm(bop(' Euthydemus I ', 'Bop 24a')), '(Euthydemus Euthydemos) ("Bopearachchi 24A" "Bop 24A" "Bopearachchi Série 24A")');
+  assert.equal(defaultTerm(bop('Diodotus I or Diodotus II', '8A')), '(Diodotus Diodotos) ("Bopearachchi 8A" "Bop 8A" "Bopearachchi Série 8A")');
+  assert.equal(defaultTerm(bop('Strato I', '12')), '(Strato Straton) ("Bopearachchi 12" "Bop 12" "Bopearachchi Série 12")');
+  assert.equal(defaultTerm(bop('Menander I', '9C')), 'Menander ("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
+  assert.equal(defaultTerm(bop('Hermaios', '20')), 'Hermaios ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(defaultTerm(bop('', 'Bop-9C')), '("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
   assert.equal(defaultTerm(bop('Hermaeus', '')), '(Hermaeus Hermaios) Bopearachchi');
   assert.equal(defaultTerm(bop('', '')), 'Bopearachchi');
 });
@@ -665,12 +665,12 @@ test('summaryText names a period other than All, then adds the last sale and the
 
 test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop default', () => {
   const hermaeus = { catalogue: 'Bop', section: 'Hermaeus', number: '20' };
-  assert.equal(chooseTerm(hermaeus, 'Hermaeus Bopearachchi 20'), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(chooseTerm(hermaeus, ' Hermaeus  Bopearachchi 20 '), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(chooseTerm(hermaeus, 'Hermaeus Bopearachchi 20'), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(chooseTerm(hermaeus, ' Hermaeus  Bopearachchi 20 '), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
   assert.equal(chooseTerm(hermaeus, 'Hermaios Bopearachchi 20 tetradrachm'), 'Hermaios Bopearachchi 20 tetradrachm');
-  assert.equal(chooseTerm(hermaeus, '(Hermaeus Hermaios) "Bopearachchi 20"'), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  for (const blank of ['', '   ', undefined, null]) assert.equal(chooseTerm(hermaeus, blank), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '"Bopearachchi 9C"');
+  assert.equal(chooseTerm(hermaeus, '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")'), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  for (const blank of ['', '   ', undefined, null]) assert.equal(chooseTerm(hermaeus, blank), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
   assert.equal(chooseTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '' }, 'Hermaeus Bopearachchi'), '(Hermaeus Hermaios) Bopearachchi');
   const nero = { catalogue: 'RIC', section: 'Nero', number: '306' };
   assert.equal(chooseTerm(nero, 'Nero 306 denarius'), 'Nero 306 denarius');
@@ -1351,4 +1351,48 @@ test('SC reads as a grade only where no number follows it, and cites Seleucid Co
   // The senate's mark on a Roman bronze is neither.
   assert.equal(gradeOf('Rev. SC, legend around.'), null);
   assert.equal(gradeOf('Rev. Minerva standing right; SC.'), null);
+});
+
+// 0.33 review (R11): the copied summary wrapped a term that carries its own quotes in a second pair, as the panel had stopped doing.
+test('summaryText quotes the search term as the panel does', () => {
+  const summary = summarise([lot('100', '01.01.2024', 'a')], 'USD');
+  assert.match(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"').split('\n')[1], /matching "Price 23" · 2024$/);
+  assert.match(summaryText({ label: 'RIC 306' }, summary, 'USD', 'Nero ("RIC 306" "RIC I 306")').split('\n')[1], /matching Nero \("RIC 306" "RIC I 306"\) · 2024$/);
+  assert.match(summaryText({ label: 'Nero 306' }, summary, 'USD', 'Nero 306').split('\n')[1], /matching “Nero 306” · 2024$/);
+});
+
+// 0.33 review (R11): Bopearachchi is cited "Bop. 24A" and, by French dealers, "Bopearachchi Série 24A"; neither was searched nor counted.
+test('a Bop reference searches and counts the short key and the French series word', () => {
+  const euthydemus = { catalogue: 'Bop', section: 'Euthydemus I', number: 'Bop 24a' };
+  assert.equal(defaultTerm(euthydemus), '(Euthydemus Euthydemos) ("Bopearachchi 24A" "Bop 24A" "Bopearachchi Série 24A")');
+  assert.equal(referenceName(euthydemus), 'Bopearachchi 24A');
+  assert.equal(coinArchivesTerm(euthydemus), 'Euthydemus "Bopearachchi 24A"');
+  // The 0.32 default a collector may have saved counts as unsaved, so it gives way to the new one.
+  assert.equal(chooseTerm(euthydemus, '(Euthydemus Euthydemos) "Bopearachchi 24A"'), defaultTerm(euthydemus));
+  for (const cited of ['Euthydemus I. Tetradrachm. Bop. 24A.', 'Bop 24a.', 'BOP 24A', 'Bopearachchi Série 24A.', 'Bopearachchi, série 24A.']) {
+    assert.equal(citesReference(cited, euthydemus), true, cited);
+  }
+  for (const other of ['Bop. 24B.', 'Bop. 124A.', 'Bopearachchi Série 24.']) assert.equal(citesReference(other, euthydemus), false, other);
+  assert.equal(searchesReference('Euthydemus "Bop 24A"', euthydemus), true);
+});
+
+// 0.33 review (R11): three more ways a RIC I citation is written.
+test('citesReference reads "(2nd ed.)", "vol. I" and the volume as a digit on a volume I card', () => {
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
+  for (const cited of ['Nero. As. RIC I (2nd ed.) 306.', 'RIC I (2nd edition) 306', 'RIC vol. I 306.', 'RIC Vol I, 306', 'Nero. As. RIC 1 306.']) {
+    assert.equal(citesReference(cited, nero), true, cited);
+  }
+  assert.equal(citesReference('RIC vol. II 306.', nero), false);
+  assert.equal(citesReference('RIC 1 3061.', nero), false);
+  // A digit stands for the volume only on a volume I card: "RIC 2 306" could as well be the second edition of volume I.
+  assert.equal(citesReference('RIC 2 306.', { catalogue: 'RIC', number: '306', volume: 'II' }), false);
+});
+
+// 0.33 review (R11): a slab prints its score straight behind the grade as often as with a space.
+test('gradeOf reads a slab grade glued to its score, and only behind a slabber', () => {
+  assert.equal(gradeOf('PCGS MS63'), 'AU/Mint State');
+  assert.equal(gradeOf('NGC AU58'), 'AU/Mint State');
+  assert.equal(gradeOf('NGC XF45. Strike 5/5.'), 'EF');
+  assert.equal(gradeOf('Slg. MS63.'), null);
+  assert.equal(gradeOf('Ex Slg. vz12.'), null);
 });
