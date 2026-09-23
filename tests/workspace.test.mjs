@@ -970,6 +970,25 @@ test('Add coin discards every editor of the coin it leaves, the details form inc
   assert.equal(page.prompts.length, 1, 'the empty form is not asked about again');
 });
 
+// A lot draft opened from the research popup is consumed by the save that adds its coin. Once the
+// collector discards it, it belongs to no form, so a later save of another coin leaves it where it is.
+test('a lot draft discarded by Add coin or by opening another coin is not consumed by a later save', async () => {
+  const kept = workspaceLot('lot-1', 'Kept coin');
+  for (const discard of [
+    (page) => page.$('new-lot').click(),
+    (page) => page.$('lot-list').children[0].click(),
+  ]) {
+    const page = await mountWorkspace({ snapshot: workspaceSnapshot([kept]), hash: '#lot-draft=draft-1', reply: draftReply(kept) });
+    assert.equal(page.$('lot-form').elements.title.value, 'Captured coin', 'the draft is in the form');
+    await discard(page);
+    assert.deepEqual(page.prompts, ['Discard unsaved changes and open another coin?']);
+    await page.typeDetails('title', 'Another title');
+    await page.saveDetails();
+    assert.ok(page.commands.some(({ type }) => type === 'lot.save'), 'the details were saved');
+    assert.deepEqual(page.commands.filter(({ type }) => type === 'draft.consume'), []);
+  }
+});
+
 test('the save that adds the drafted coin consumes its draft', async () => {
   const page = await mountWorkspace({ snapshot: workspaceSnapshot(), hash: '#lot-draft=draft-1', reply: draftReply(workspaceLot('lot-2', 'Captured coin')) });
   await page.saveDetails();
