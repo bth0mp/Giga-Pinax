@@ -522,8 +522,10 @@ const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
 // label's value ("control: TB."); neither is a grade. A capitalised label is the collector's own ("Erhaltung: ss", "Rev: MS").
 const LOWER_COLON = /(?<![\p{L}\d])\p{Ll}+:\s*$/u;
 // A mark a comma sets behind a place on the coin is the control letters struck there, not a grade: "in left field, MB.", "in exergue, TB.",
-// "monogram below, TTB.". A comma behind anything else still opens a mark ("Patina verde, BB.", "Leicht korrodiert, ss.").
-const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|beneath|monogram|control|controls)\.?\s*,\s*$/iu;
+// "monogram below, TTB.", "below throne, MB.", "im Abschnitt, TB.", "in esergo, TB.". A comma behind anything else still opens a mark ("Patina
+// verde, BB.", "Leicht korrodiert, ss."). "links" and "rechts" are not in the list, since a German dealer grades straight behind the bust's
+// direction ("Kopf links, ss."), so "Im Feld links, MB." still reads as a grade.
+const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|beneath|under|monogram|control|controls|throne|wreath|Feld|Abschnitt|campo|esergo|champ)\.?\s*,\s*$/iu;
 // What bare "Fine" may not stand in front of: the compliment a dealer pays the dies ("Fine Style", "Fine-style"), the "and" that joins it to one, and
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
