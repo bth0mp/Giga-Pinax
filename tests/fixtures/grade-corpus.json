@@ -3363,5 +3363,20 @@
   "text": "Fraai - ZF",
   "grade": "fine",
   "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "Vz. ZF, Kz. PR",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
+ },
+ {
+  "text": "Vz. ZF, kz. PR.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
+ },
+ {
+  "text": "Kz. Adler. ZF",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
  }
 ]

@@ -512,8 +512,9 @@ const metalAu = (before, tail) => METAL_TAIL.test(tail) || (GOLD_BRACKET.test(be
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
 const PRAISE_OPENS = /[.;,:/]\s*$/;
-// The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s").
-const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|dritto|rovescio)`;
+// The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s", "Vz. ZF, Kz. PR"). The
+// Dutch voorzijde, "Vz.", is not one: it is spelled as the German grade vz.
+const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|dritto|rovescio)`;
 const SIDE_OPENS = new RegExp(String.raw`(?<![\p{L}\d])${SIDE}\.?\s+$`, 'iu');
 const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
