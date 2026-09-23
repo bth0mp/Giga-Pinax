@@ -754,14 +754,25 @@ const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? r
 // section, so pickRic runs without a section and one kept hit is the type, as pickRic decides it (a volume typed another way, "RIC I", is still only
 // offered). A miss retries the plain number search once, and those hits are only offered, even a single one, since nothing tied them to the rulers.
 // A mint written with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume may file him by name: the
-// retry then asks for the rulers' coins with the number without the mint, and those too are only offered.
+// retry then asks for the rulers' coins with the number without the mint, and those too are only offered. A hit with the mint is weighed against
+// that same search: a coin in one of the rulers' own sections ("Diocletian. RIC 15 (Lugdunum)" is his RIC V 15 as readily as RIC VI Lugdunum 15) is
+// offered beside it, never passed over; their coins at other mints are not, since the lot says where it was struck.
 async function pickRulers(reference, rulers, feed) {
   const picked = pickRic(await feed(ricSearch(reference, rulers)), reference);
-  if (picked.status !== 'none') return picked;
   const struck = !unquote(reference.volume) && isMintOnly(unquote(reference.section));
   const loose = struck ? { ...reference, section: '' } : reference;
-  const retry = pickRic(await feed(ricSearch(loose, struck ? rulers : [])), loose);
-  return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+  if (picked.status === 'none') {
+    const retry = pickRic(await feed(ricSearch(loose, struck ? rulers : [])), loose);
+    return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+  }
+  if (!struck || (picked.status !== 'ok' && picked.status !== 'candidates')) return picked;
+  const found = picked.status === 'ok' ? [picked.entry] : picked.candidates;
+  const own = pickRic(await feed(ricSearch(loose, rulers)), loose);
+  const theirs = own.status === 'ok' ? [own.entry] : (own.candidates ?? []);
+  const more = theirs.filter((entry) => !found.some(({ id }) => id === entry.id) && !isMintOnly(parseReference(entry.title, false)?.section ?? ''));
+  // Too many of their coins to list is no evidence the mint's coin is the one: it is offered, not opened.
+  if (more.length === 0 && own.status !== 'too-many') return picked;
+  return { status: 'candidates', candidates: [...found, ...more], partial: true };
 }
 
 // The same search lot text makes, for a ruler typed into the guided field instead: the number with that name on OCRE's portrait and authority facets,

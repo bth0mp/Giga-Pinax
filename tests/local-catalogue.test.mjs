@@ -847,3 +847,24 @@ test('over the bundled catalogue, a joint heading never opens one of its rulers\
   assert.equal(result.status, 'candidates');
   assert.ok(result.candidates.some(({ id }) => id === 'ric.5.aur_seva.2'), JSON.stringify(result.candidates));
 });
+
+// RIC V files Diocletian by name and RIC VI by mint, so "Diocletian. RIC 15 (Lugdunum)" is his own RIC V 15 as readily as the RIC VI Lugdunum 15 the
+// mint alone reaches: the mint's coin is never opened while the ruler's own section holds a coin with the number. Another mint's coin of his is no
+// choice here, since the lot says where it was struck.
+test('over the bundled catalogue, a mint bracketed after a number offers the ruler\'s own-section coin beside the mint\'s', { skip }, async () => {
+  const lookup = async (text) => {
+    const lot = findReferences(text);
+    return lookupType(lotLookup(lot.references[0], lot.rulers), { localProvider: bundle, online: false });
+  };
+  const diocletian = await lookup('Diocletian. Antoninianus. RIC 15 (Lugdunum).');
+  assert.equal(diocletian.status, 'candidates');
+  assert.equal(diocletian.partial, true);
+  assert.deepEqual(diocletian.candidates.map(({ id }) => id), ['ric.6.lug.15', 'ric.5.dio.15']);
+  const carausius = await lookup('Carausius, with Diocletian and Maximian. Antoninianus. RIC 12 (London).');
+  assert.equal(carausius.status, 'candidates');
+  assert.ok(carausius.candidates.some(({ id }) => id === 'ric.6.lon.12'), JSON.stringify(carausius.candidates));
+  assert.ok(carausius.candidates.some(({ id }) => id === 'ric.5.cara.12'), JSON.stringify(carausius.candidates));
+  assert.ok(carausius.candidates.every(({ title }) => !/ (?:Antioch|Alexandria|Aquileia|Nicomedia) /.test(title)), JSON.stringify(carausius.candidates));
+  // A ruler whose own sections hold no coin with the number still opens the mint's.
+  assert.equal((await lookup('Constantine I. Follis. RIC 40 (Ticinum).')).card?.id, 'ric.7.tic.40');
+});

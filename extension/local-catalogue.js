@@ -1,4 +1,4 @@
-import { buildQuery, formatDates, inGroup, otherVolumePart, pickMatch, pickRicEntries } from './lookup.js';
+import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries } from './lookup.js';
 import { isMintOnly, isRicPerson, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -242,10 +242,14 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       const matched = await withPerson(entries);
       // A mint a lot wrote beside a number with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume
       // may file him by name rather than by mint: his coins with the number are offered without the mint, never opened, since nothing ties them to it.
-      if (matched.length === 0 && !reference.volume && isMintOnly(reference.section)) {
+      // Where the mint's section does hold his coin, a coin in one of his own sections is as good an answer ("Diocletian. RIC 15 (Lugdunum)" is his
+      // RIC V 15 as readily as RIC VI Lugdunum 15), so both are offered; his coins at other mints are not, since the lot says where it was struck.
+      if (!reference.volume && isMintOnly(reference.section)) {
         const wider = pickRicEntries(await candidateEntries(), { ...citationRef, section: '' });
         const theirs = await withPerson(wider.status === 'ok' ? [wider.entry] : (wider.candidates ?? []));
-        if (theirs.length > 0) return local({ status: 'candidates', candidates: theirs, partial: true }, 'ocre', query);
+        const more = matched.length === 0 ? theirs
+          : theirs.filter((entry) => !matched.some(({ id }) => id === entry.id) && !isMintOnly(parseReference(entry.title, false)?.section ?? ''));
+        if (more.length > 0) return local({ status: 'candidates', candidates: [...matched, ...more], partial: true }, 'ocre', query);
       }
       if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       if (matched.length > 0) {

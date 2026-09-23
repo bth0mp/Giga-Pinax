@@ -1504,3 +1504,22 @@ test('a catalogue response larger than 4 MiB is refused, by its declared length 
   const small = async () => new Response(feed, { status: 200, headers: { 'content-length': String(feed.length) } });
   assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: small }), { status: 'none', corpus: 'ocre', query: 'RIC 972' });
 });
+
+// Online, a hit with the mint is weighed against the rulers' own coins with the number: RIC V files Diocletian by name, so his RIC V 15 is as good an
+// answer to "Diocletian. RIC 15 (Lugdunum)" as RIC VI Lugdunum 15, and both are offered. Another mint's coin of his is no choice, and a ruler with
+// nothing else numbered so still gets the mint's coin.
+test('a mint hit with no volume is offered beside the rulers\' own-section coins with the number, never opened over them', async () => {
+  const entry = (id, title) => `<entry><title>${title}</title><id>${id}</id></entry>`;
+  const fetchImpl = fakeFetch({
+    [encodeURIComponent('AND "Lugdunum"')]: `<feed>${entry('ric.6.lug.15', 'RIC VI Lugdunum 15')}</feed>`,
+    'ocre/apis/search': `<feed>${entry('ric.5.dio.15', 'RIC V Diocletian 15')}${entry('ric.6.ant.15', 'RIC VI Antioch 15')}${entry('ric.6.lug.15', 'RIC VI Lugdunum 15')}</feed>`,
+  });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: 'Lugdunum', number: '15', rulers: ['Diocletian'] }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.6.lug.15', title: 'RIC VI Lugdunum 15' }, { id: 'ric.5.dio.15', title: 'RIC V Diocletian 15' }],
+    partial: true, corpus: 'ocre', query: 'RIC Lugdunum 15 (Diocletian)' });
+  assert.equal(fetchImpl.calls.length, 2);
+  assert.ok(fetchImpl.calls[1].includes(encodeURIComponent('portrait_facet:"Diocletian"')) && !fetchImpl.calls[1].includes('Lugdunum'), fetchImpl.calls[1]);
+  const alone = fakeFetch({ 'ocre/apis/search': `<feed>${entry('ric.7.tic.40', 'RIC VII Ticinum 40')}</feed>` });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Ticinum', number: '40', rulers: ['Constantine I'] }, { fetchImpl: alone });
+  assert.ok(alone.calls[2]?.includes('ric.7.tic.40'), String(alone.calls));
+});
