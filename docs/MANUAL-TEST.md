@@ -1,11 +1,12 @@
-# Manual test script for 0.32.0
+# Manual test script for 0.33.0
 
-Several 0.32 changes are in page behaviour that the automated suites cannot reach: the workspace editors, the popup's own
-storage, capture permissions, the import downloads and a signed-in acsearch session. Work through this list once on the
-built package before publishing the release. Every step says what should happen; anything else is a finding.
+Much of what a release changes is page behaviour the automated suites cannot reach: the workspace editors, the popup's
+own storage, capture permissions, the import downloads, a browser's own language and a signed-in acsearch session. Work
+through this list once on the built package before publishing the release, and add a step for every change of the new
+release that only a browser can show. Every step says what should happen; anything else is a finding.
 
 Use a browser profile whose Giga Pinax records you can afford to lose, or select **Settings → Export backup** first:
-steps 12 and 13 replace the stored records.
+steps 12, 13 and 18 replace or edit the stored records.
 
 ## Load the unpacked build
 
@@ -84,6 +85,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     automated fixtures for this page are synthetic, so this is the only check that the signed-in page is read correctly.
     Open the same search on acsearch itself and compare two of the listed prices, date and hammer, with the rows under
     **Inspect sales**: the figures the median rests on must be the ones acsearch shows, in the same currency.
+    Under **Inspect sales**, include by hand one row that does not cite Price 23.
+    *Expected:* the line now reads "N of M results cite Price 23; K of M counted", with K one more than N: the row you
+    included is counted, and never counted as a citation. **Copy summary** says the same.
 
 11. **The signed-out note.** Repeat the same lookup in a private window where acsearch is not signed in.
     *Expected:* the sign-in note appears and points at acsearch. It must not appear in step 10, and it must not appear
@@ -123,7 +127,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     results cite Price 23" line. Open **Inspect sales** under it: every row carries the lot's own description text from
     the CoinArchives results page, not an empty line. An empty description on every row means the page has renamed the
     element the description is read from, and the citation count above is then counting nothing — that is a finding.
-    Compare one listed price and date with the CoinArchives results page itself.
+    Compare one listed price and date with the CoinArchives results page itself. Then change **Currency**.
+    *Expected:* the CoinArchives median goes, and a line says it was in the old currency, is not converted, and that
+    **Get CoinArchives prices** fetches it in the new one. The acsearch median is fetched again in the new currency.
 
 17. **Catalogue lookups with the network disabled.** Turn the network off, then look each of these up in the popup:
 
@@ -137,3 +143,71 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
     *Expected:* every one of them answers with the network off, and each card names its authority, denomination, mint,
     material and portrait in English rather than showing identifiers. Prices, which need the network, stay unavailable.
+
+18. **Restore a record set aside when your data was opened.** In the workspace, give a coin the outcome **Won**, tick
+    **Add a won coin to collection history** and save the outcome. Open **Settings**, open the browser's developer
+    tools on that page (right-click → **Inspect**) and run, in its console (`browser` in place of `chrome` in Firefox):
+
+    ```js
+    const key = 'auctionCompanion:v1';
+    const root = (await chrome.storage.local.get(key))[key];
+    delete root.lots.find((lot) => lot.collectionEntryId).collectionEntryId;
+    await chrome.storage.local.set({ [key]: root });
+    ```
+
+    The coin now no longer names its collection entry, which the next read of your data sets aside. Reload Settings.
+    *Expected:* **Backup and import** shows "1 record could not be read and was set aside." and a line
+    "collectionEntries: foreign-key (<today's date>)" with a **Restore** button. Reload the page twice more: the same
+    line is there each time. Select **Restore**.
+    *Expected:* "The record was put back into collectionEntries. 1 link was restored with it." The line and the
+    set-aside summary go, and the coin shows its collection entry in the workspace again. At no point does Restore
+    answer that the record is no longer in the list and the page should be reloaded.
+
+19. **Restore and import keep settings you have not saved.** Set a record aside as in step 18. In **Settings**, add a
+    house preset row with a name and a premium, change **Default currency** and the theme, and do not save. Select
+    **Restore** on the set-aside line.
+    *Expected:* the record goes back and the row you typed, the currency and the theme are all still on the page.
+    Now, still without saving, preview and confirm an import of a backup whose settings differ from the page's.
+    *Expected:* the typed row, currency and theme stay on the page, and the status says "Backup imported. The settings
+    above are the ones you had not saved, not the imported ones. Note what you typed, then reload this page to see the
+    imported settings." **Save settings** is refused with the same advice until you reload; after the reload the page
+    shows the imported settings.
+
+20. **Amounts in a browser set to Arabic.** Set the browser's display language to Arabic (Brave or Chrome:
+    **Settings → Languages**, "Display in this language", then relaunch; Firefox: install the Arabic language pack and
+    choose it under **Settings → Language**). In the workspace, save a coin's bid with a maximum hammer of `1250.50`,
+    and its outcome with a hammer of `1200` and an actual invoice of `1450.50`. Reopen the coin.
+    *Expected:* every amount field reads back in Western digits with a full stop (`1250.50`, `1200.00`, `1450.50`),
+    never in Arabic-Indic digits or with the Arabic decimal mark (`١٢٥٠٫٥٠`), and saving the bid and the outcome again
+    unchanged succeeds. In **Settings**, a house preset with a premium of `22.5` reads `22.50`, and **Save settings**
+    with nothing touched succeeds. In the workspace's calculator, choosing that house fills **Premium %** with `22.50`,
+    and **Use in bid** fills the bid's amount the same way. Set the language back afterwards.
+
+21. **The filter switches.** Look up `Price 23` and select **Get prices**, then look up a reference whose results name
+    a denomination.
+    *Expected:* **Only results citing …** and **Only results naming …** each draw as a normal-sized checkbox with its
+    label beside it on the same line, the label whole and readable; never a full-width box with the label pushed off
+    the edge of the popup. Check this in the side panel as well as the toolbar popup.
+
+22. **A bare RIC number shows no median.** Look up `RIC 237` and select **Get prices** if it is offered.
+    *Expected:* a list of types to choose from, and no median or price line beside it: the popup says "This reference
+    names more than one type, so no prices are shown. Choose one type to see its prices." Choose one of the types.
+    *Expected:* its prices can now be fetched, and the median is for that type's own search.
+
+23. **A currency change keeps the sales you decided by hand.** Look up `Price 23`, select **Get prices**, and under
+    **Inspect sales** exclude one counted row and include one row the filters left out. Change **Currency**.
+    *Expected:* the prices are fetched again in the new currency, the announcement ends "Sales you included or excluded
+    by hand are kept.", and the same two rows are still excluded and included. A new lookup starts from the filters'
+    own choice again.
+
+24. **Capture a page that reads "RIC I² 306".** Open a lot page whose visible text cites the coin with no label in front,
+    written `RIC I² 306`. If you have none to hand, open an ordinary web page and, in its developer tools, replace a
+    paragraph's text with `Nero. AR Denarius. RIC I² 306.` Select **Capture current page**.
+    *Expected:* the captured reference is `RIC I² 306`, not `RIC I`, and **Research coin** looks it up and offers the
+    RIC I (second edition) 306 types. A page reading "SC in exergue" captures no SC reference.
+
+25. **A lot with a mint after its RIC number.** Paste `Diocletian. Antoninianus. RIC 15 (Lugdunum).` into the
+    **Reference** box and look it up.
+    *Expected:* two choices, **RIC VI Lugdunum 15** and **RIC V Diocletian 15**, and neither opened on its own. Then
+    `Probus. Antoninianus. RIC 40 (Ticinum).`
+    *Expected:* **RIC V Probus 40** is offered, and Constantine's RIC VII Ticinum 40 appears nowhere.
