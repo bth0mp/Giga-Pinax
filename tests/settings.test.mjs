@@ -710,6 +710,32 @@ test('an import confirmed over unsaved settings keeps them and says the imported
   assert.equal(JSON.parse(stored.get(GIGA_PREFERENCES_KEY)).currency, 'GBP', 'the popup prices in the imported default');
 });
 
+// A backup's preferences can carry the very revision the page holds, so the store alone cannot
+// tell a Save from this page apart from one made after seeing the imported settings.
+test('after an import kept unsaved settings over imported ones, Save refuses rather than overwrite them', async () => {
+  const imported = [{ name: 'Imported', buyerPremiumBps: 1500 }];
+  const page = await openSettings({
+    snapshot: snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }),
+    reply: (command, state) => {
+      if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 4 }) };
+      state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 3, currency: 'GBP', housePremiumPresets: imported }) }) };
+      return { ok: true };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })), 'replace');
+  await page.element('confirm-import').click();
+  await settle();
+  await page.element('save-settings').click();
+  await settle();
+
+  assert.equal(page.commands.some(({ type }) => type === 'preferences.save'), false, 'the imported presets are not overwritten');
+  assert.match(page.status(), /not saved.*note what you typed, then reload this page to see the imported settings/i);
+  assert.equal(page.statusIsError(), 'true');
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'what was typed stays on the page');
+  assert.equal(page.element('save-settings').disabled, false);
+});
+
 test('an import confirmed with nothing unsaved redraws the page from the imported settings', async () => {
   const page = await openSettings({
     snapshot: snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }),

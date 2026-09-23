@@ -18,6 +18,11 @@ let quarantined = [];
 // The page's settings fields as they were last drawn or saved, so a later redraw can tell whether it
 // would throw away something the collector typed and has not saved.
 let renderedForm = '';
+// Set while the page keeps settings typed before an import over imported ones it does not show. The
+// backup's preferences can carry the revision this page holds, so the store cannot refuse that Save
+// as a conflict; the page refuses it itself until a reload draws the imported settings.
+let behindStore = false;
+const BEHIND_STORE_NOTE = 'Note what you typed, then reload this page to see the imported settings.';
 
 const THEME_KEY = 'giga-pinax-theme-v1';
 
@@ -286,6 +291,7 @@ async function load() {
     throw new Error(reply?.message || 'Could not load settings.');
   }
   preferencesSnapshot = reply.value;
+  behindStore = false;
   // Settings and the research popup share this origin's local storage, and the popup prices from the cache before the
   // background can answer it. Written on every load, so the reload after an import carries the imported default too.
   cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
@@ -347,6 +353,7 @@ $('save-settings').addEventListener('click', async () => {
   const button = $('save-settings');
   button.disabled = true;
   try {
+    if (behindStore) throw new Error(`Settings not saved: this page does not show the imported settings, and saving would overwrite them unseen. ${BEHIND_STORE_NOTE}`);
     const presets = collectPresets();
     if (!presets.ok) {
       status('');
@@ -508,7 +515,8 @@ $('confirm-import').addEventListener('click', async () => {
     await refreshDataHealth().then((latest) => {
       cacheDefaultCurrency(siteStorage(), latest.preferences?.currency);
       if (!sameSettings(latest.preferences, preferencesSnapshot.preferences)) {
-        status(`${copied}Backup imported. The settings above are the ones you had not saved, not the imported ones: note what you typed, then reload this page to see the imported settings.`);
+        behindStore = true;
+        status(`${copied}Backup imported. The settings above are the ones you had not saved, not the imported ones. ${BEHIND_STORE_NOTE}`);
       }
     }).catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
   } catch (error) {
