@@ -1523,3 +1523,17 @@ test('a mint hit with no volume is offered beside the rulers\' own-section coins
   await lookupType({ catalogue: 'RIC', volume: '', section: 'Ticinum', number: '40', rulers: ['Constantine I'] }, { fetchImpl: alone });
   assert.ok(alone.calls[2]?.includes('ric.7.tic.40'), String(alone.calls));
 });
+
+test('a mint section typed with no volume is offered online, never opened, and opens with a volume', async () => {
+  const feed = '<feed><entry><title>RIC VII Treveri 12</title><id>ric.7.tri.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed });
+  for (const reference of [{ catalogue: 'RIC', volume: '', section: 'Treveri', number: '12' }, { catalogue: 'RIC', volume: '', section: 'Trier', number: '12' }]) {
+    assert.deepEqual(await lookupType(reference, { fetchImpl }), { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }],
+      partial: true, corpus: 'ocre', query: 'RIC Treveri 12' });
+  }
+  assert.equal(fetchImpl.calls.length, 2);
+  // With the volume stated the one type is the answer, and its record is fetched.
+  const volume = fakeFetch({ 'ocre/apis/search': feed });
+  await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, { fetchImpl: volume });
+  assert.ok(volume.calls[1]?.includes('ric.7.tri.12'), String(volume.calls));
+});

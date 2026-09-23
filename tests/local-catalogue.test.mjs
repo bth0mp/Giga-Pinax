@@ -868,3 +868,16 @@ test('over the bundled catalogue, a mint bracketed after a number offers the rul
   // A ruler whose own sections hold no coin with the number still opens the mint's.
   assert.equal((await lookup('Constantine I. Follis. RIC 40 (Ticinum).')).card?.id, 'ric.7.tic.40');
 });
+
+// A typed or guided reference whose section is a mint and which states no volume ("RIC 411 (Rome)", "RIC Rome 411", Any volume) says where a coin
+// was struck and nothing about whose it is, as a heading's mint does: its one coin is offered, never opened. With a volume it opens as it always did.
+test('a mint section typed with no volume is offered, never opened, and opens with a volume', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  for (const reference of [parseReference('RIC 287 (Londinium)'), parseReference('RIC Londinium 287'), { catalogue: 'RIC', volume: '', section: 'Londinium', number: '287' }]) {
+    const offered = await local.lookupType(reference);
+    assert.equal(offered.status, 'candidates', JSON.stringify(reference));
+    assert.equal(offered.partial, true);
+    assert.deepEqual(offered.candidates.map(({ id }) => id), ['ric.7.lon.287']);
+  }
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287' })).card?.id, 'ric.7.lon.287');
+});

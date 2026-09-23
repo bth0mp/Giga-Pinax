@@ -266,10 +266,12 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     let broadened = false;
     // The section the collector asked for is what he is looking at: a volume is broadened before it, so the same mint or ruler in another volume
     // comes before another section of the volume he typed. A section dropped altogether leaves other rulers' coins, which are choices, never the answer,
-    // and so is a section read from a lot heading's mint alone: the heading may name a ruler the people table cannot place.
+    // and so is a section read from a lot heading's mint alone: the heading may name a ruler the people table cannot place. A mint typed or chosen with
+    // no volume ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case with no heading at all: it says where the coin was struck, never whose.
     if (picked.status === 'none' && reference.section && reference.volume) { picked = pickRicEntries(await candidateEntries(), { ...reference, volume: '' }); broadened = picked.status !== 'none'; }
     if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await candidateEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
-    if (picked.status === 'ok' && (broadened || reference.rulers?.length || reference.headingMint)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
+    const struck = !reference.volume && isMintOnly(reference.section);
+    if (picked.status === 'ok' && (broadened || reference.rulers?.length || reference.headingMint || struck)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
     if (picked.status !== 'ok') return local(picked, 'ocre', squash(`RIC ${reference.volume} ${reference.section} ${reference.number}`));
     return await listedById('ocre', picked.entry.id);
   }

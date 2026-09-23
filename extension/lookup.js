@@ -850,8 +850,9 @@ export async function lookupType(given, options = {}) {
     }
     if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
     // A section read from a lot heading's mint alone says where the coin was struck, not whose it is: the heading may name a ruler the people table
-    // cannot place ("Constantius I. Follis. Trier."), so the one type in that section is offered, never opened.
-    if (reference.headingMint) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+    // cannot place ("Constantius I. Follis. Trier."), so the one type in that section is offered, never opened. A mint typed or chosen with no volume
+    // and no rulers beside it ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case, with nothing at all to say whose coin it is.
+    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0)) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);
