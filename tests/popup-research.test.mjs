@@ -1395,3 +1395,29 @@ test('an acsearch reply too large to read says so, not that acsearch was unreach
   assert.equal(popup.element('prices-error').hidden, false);
   assert.match(popup.element('prices-error').textContent, /too large to read/);
 });
+
+// 0.33 review (R3): a currency change fetches the same search again, and acsearch gives a lot the same id in every currency, so the rows the collector
+// counted or left out by hand are still his decisions. They were silently dropped; they are kept now, and the announcement says so.
+test('a currency re-fetch keeps the rows included and excluded by hand', async () => {
+  const fetched = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.currency); return mixedSales; } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  assert.match(popup.element('median-amount').textContent, /200/);
+  popup.element('currency').value = 'EUR';
+  await popup.element('currency').emit('change');
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, ['USD', 'EUR']);
+  assert.match(popup.element('median-amount').textContent, /200/);
+  assert.equal(popup.element('curation-count').textContent, '2 included · 0 excluded');
+  assert.equal(popup.element('reset-curation').disabled, false);
+  assert.match(popup.element('announcement').textContent, /Sales you included or excluded by hand are kept\./);
+  // A new lookup is another question, and starts from the filters' own choice again.
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
+});

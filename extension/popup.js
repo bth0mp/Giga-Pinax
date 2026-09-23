@@ -271,9 +271,10 @@ function resetCopyLabel() {
   $('copy-summary').textContent = 'Copy summary';
 }
 
-function clearAcsearchPrices() {
+// A currency re-fetch keeps the collector's own decisions (keepCuration): acsearch and CoinArchives give a lot the same id in every currency.
+function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
-  priceCuration.reset();
+  if (!keepCuration) priceCuration.reset();
   shownPrices = null;
   renderPriceFilters();
   resetCopyLabel();
@@ -289,9 +290,9 @@ function clearAcsearchPrices() {
   setPricesBusy(false);
 }
 
-function clearCoinArchivesPrices() {
+function clearCoinArchivesPrices({ keepCuration = false } = {}) {
   coinArchivesRequestId += 1;
-  coinArchivesCuration.reset();
+  if (!keepCuration) coinArchivesCuration.reset();
   shownCoinArchivesPrices = null;
   renderPriceFilters();
   $('coinarchives-prices-panel').hidden = true;
@@ -302,9 +303,9 @@ function clearCoinArchivesPrices() {
   $('coinarchives-prices-label').textContent = 'Get CoinArchives prices';
 }
 
-function clearPrices() {
-  clearAcsearchPrices();
-  clearCoinArchivesPrices();
+function clearPrices(options) {
+  clearAcsearchPrices(options);
+  clearCoinArchivesPrices(options);
 }
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
@@ -1072,7 +1073,7 @@ async function run(perform, note = '', failedReference = null) {
   }
 }
 
-async function runPrices(term, currency, { remember = true, context = researchContext } = {}) {
+async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
   if (!context || context !== researchContext) return;
   const card = verifiedPriceCards.get(context) ?? context.identity;
   if (remember && card && cardMatchesContext(card, context)) {
@@ -1081,7 +1082,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   }
   requestedPriceContexts.add(context);
   updateAcsearchLink();
-  clearAcsearchPrices();
+  clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
@@ -1244,7 +1245,7 @@ $('currency').addEventListener('change', () => {
   savePreferences();
   const repriced = shownPrices?.context === researchContext ? researchContext : null;
   const term = $('price-term').value;
-  clearPrices();
+  clearPrices({ keepCuration: true });
   updateAcsearchLink();
   $('announcement').textContent = `Currency set to ${$('currency').value}.`;
   if (repriced) void repriceShownLots(repriced, term, $('currency').value);
@@ -1252,7 +1253,9 @@ $('currency').addEventListener('change', () => {
 async function repriceShownLots(context, term, currency) {
   if (!(await hasAcsearchAccess())) return;
   if (context !== researchContext || currency !== $('currency').value) return;
-  runPrices(term || context.term, currency, { remember: false, context });
+  await runPrices(term || context.term, currency, { remember: false, context, keepCuration: true });
+  // The redraw announced the new median; nothing the collector decided by hand was reset, and he is told so.
+  if (shownPrices?.context === context && priceCuration.changed()) $('announcement').textContent += ' Sales you included or excluded by hand are kept.';
 }
 // A listed volume clears a known ruler it lacks (Titus under I²), since blank means any ruler, and says so; Any volume, a volume OCRE does not list
 // (a parsed "IV, Part 1") and text that names no known ruler keep it. The form's input handler has already cleared the one-box and the output, and a
