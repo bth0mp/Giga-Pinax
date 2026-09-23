@@ -13,6 +13,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - With site data blocked for the extension, Settings opened on a raw “localStorage” error and **Save settings** stayed disabled. The page now loads and saves as usual; only a chosen theme cannot be remembered in that profile, and the page says so when you save one.
 - Saving a house preset from the bid calculator over a preferences record it could not read showed a raw “Cannot read properties of null” error; it now says the presets are not ready and that nothing was saved.
 - Capturing a lot whose page names the reference without a label read `RIC I² 306` as just `RIC I` and `RIC II.1² 12` as `RIC II.1`, which left **Research coin** with nothing to look up, and missed `SC 1266.2` altogether. All three are now captured whole; `SC` in a Roman coin's field (`SC in exergue`) is still not taken for a reference.
+- **Add coin** after choosing to discard unsaved coin details left the new, empty form marked as edited, so the workspace went on asking to discard changes that were already gone and warned before leaving the page.
 
 ## [0.32.1] - 2026-09-18
 

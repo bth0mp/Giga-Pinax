@@ -892,3 +892,15 @@ test('every field the details form reads from a coin is written back by the draf
   // A form field no generated coin fills would let a one-sided addition slip through the round trip.
   assert.deepStrictEqual(Object.keys(lotFormValues({})).filter((field) => !filled.has(field)), []);
 });
+
+// Add coin after "Discard unsaved changes" discards the details form too: left marked dirty, it went
+// on asking to discard input that was already gone and held the leave-page prompt up. The handler is
+// wired inside the page, so it is read from source, as the calculator's pending guard is.
+test('Add coin discards every editor of the coin it leaves, the details form included', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../extension/workspace.js', import.meta.url), 'utf8');
+  const handler = /\$\('new-lot'\)\.addEventListener\('click', \(\) => \{([^\n]*)\}\);\n/.exec(source)?.[1];
+  assert.ok(handler, 'the Add coin handler is found');
+  assert.match(handler, /^ if \(!canLeaveSelectedEditors\(\)\) return; lotInteractionGeneration \+= 1; clearSelectedEditors\(\);/);
+  assert.doesNotMatch(handler, /dirtyEditors\.delete/, 'no hand-picked subset of the editors');
+});
