@@ -521,6 +521,12 @@ const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 const LABEL = /(?:Erhaltung|Grade|Condition)\s*:?\s*$/i;
 // Two grades a range separator joins are one statement, read as the lower of the two.
 const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
+// So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
+// lower one is what the lot is worth. The word lends the second grade neither a capital nor a range-only mark's standing, so "Good VF and fine for
+// the type" and "vz und s. Anm." are not ranges; and only English "and" closes a grade by itself: "und", "e", "et" and "y" close one only where the
+// next grade token follows them, since "AU y AR" is gold and silver.
+const RANGE_WORD = /^\s+(?:and|und|e|et|y)\s+$/i;
+const joins = (gap) => RANGE_GAP.test(gap) || RANGE_WORD.test(gap);
 // A mark in brackets is a control mark or a catalogue's own aside ("Cohen 302 (MB)."), and one behind a colon that follows an all-lower-case word is a
 // label's value ("control: TB."); neither is a grade. A capitalised label is the collector's own ("Erhaltung: ss", "Rev: MS").
 const LOWER_COLON = /(?<![\p{L}\d])\p{Ll}+:\s*$/u;
@@ -585,19 +591,20 @@ export function gradeOf(description) {
     const tail = text.slice(end, end + EDGE);
     // The metal, not the grade: the lot says what the coin is made of and grades nothing.
     if (token === 'AU' && !slabbed && metalAu(before, tail)) continue;
-    if (PROVENANCE_GRADE.test(before) || (quoted !== null && start - quoted <= EDGE && RANGE_GAP.test(text.slice(quoted, start)))) {
+    if (PROVENANCE_GRADE.test(before) || (quoted !== null && start - quoted <= EDGE && joins(text.slice(quoted, start)))) {
       quoted = end;
       continue;
     }
     // On a slab "PR" is Proof, not the Dutch prachtig: no bucket here is a proof's.
     if (token === 'PR' && slabbed) continue;
-    if (!CLOSES.test(tail)) continue;
+    if (!CLOSES.test(tail) && !joinsNext(candidates, index, end, text)) continue;
     const gap = previous === null ? '' : text.slice(previous.end, start);
     const joinable = previous !== null && gap.length <= EDGE;
-    const ranged = joinable && RANGE_GAP.test(gap);
+    const signed = joinable && RANGE_GAP.test(gap);
+    const ranged = signed || (joinable && RANGE_WORD.test(gap));
     const sided = joinable && SIDE_GAP.test(gap);
     const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before);
-    const capital = CAPITAL.test(quals + token) || ranged;
+    const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
     let read = false;
@@ -610,8 +617,8 @@ export function gradeOf(description) {
       && !PLACE_COMMA.test(before) && (token !== 'SC' || senateFree(start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
-    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || ranged;
-    else read = ranged || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
+    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;
+    else read = signed || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
     if (!read) continue;
     const bucket = bucketOf(token);
     previous = { end };
@@ -631,6 +638,12 @@ function opensRange(candidates, ends, index, text) {
   if (!next || Object.hasOwn(RANGE_ONLY, next[2]) || Object.hasOwn(RANGE_ONLY, next[2].toLowerCase())) return false;
   const gap = text.slice(ends[index], next.index);
   return gap.length <= EDGE && (RANGE_GAP.test(gap) || SIDE_GAP.test(gap));
+}
+
+// Whether a joining word stands between this token and the next ("ss und vz"). Only the token beside it is looked at, as in opensRange.
+function joinsNext(candidates, index, end, text) {
+  const next = candidates[index + 1];
+  return Boolean(next) && next.index - end <= EDGE && RANGE_WORD.test(text.slice(end, next.index));
 }
 
 // The grade the page read when it arrived; a row from elsewhere is read here, once, rather than once per bucket.
