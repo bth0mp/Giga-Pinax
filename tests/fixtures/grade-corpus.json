@@ -3213,5 +3213,30 @@
   "text": "EBC. SC -.",
   "grade": "ef",
   "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Good VF. Ex NAC 50, lot 10 (there described as VF/EF).",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Ex NAC 50 (described as VF/EF). Good VF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "EF. Ex Triton XX (where described as \"Good VF - EF\").",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Good VF. Ex Gorny 200 (catalogued as ss-vz).",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Ex CNG 100 (there graded VF/EF).",
+  "grade": null,
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
  }
 ]

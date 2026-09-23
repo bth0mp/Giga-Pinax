@@ -537,7 +537,8 @@ const CITATION_ASIDE = /^\s[-–(]/;
 const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
   || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before));
 // A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
-// It is no statement at all, so it can neither be the last one nor join a range. "NGC graded AU" is the slab's own grade and stays.
+// It is no statement at all, so it can neither be the last one nor join a range, and the grade a range separator joins to it is the provenance's
+// too ("there described as VF/EF"). "NGC graded AU" is the slab's own grade and stays.
 const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
 
 const kindOf = (token) => {
@@ -565,6 +566,8 @@ export function gradeOf(description) {
   const ends = [];
   const statements = [];
   let previous = null;
+  // The end of the last provenance grade passed over, so its range partner is passed over with it.
+  let quoted = null;
   for (const [index, match] of candidates.entries()) {
     const start = match.index;
     const [, quals, token, plus, slab] = match;
@@ -577,7 +580,10 @@ export function gradeOf(description) {
     const tail = text.slice(end, end + EDGE);
     // The metal, not the grade: the lot says what the coin is made of and grades nothing.
     if (token === 'AU' && !slabbed && metalAu(before, tail)) continue;
-    if (PROVENANCE_GRADE.test(before)) continue;
+    if (PROVENANCE_GRADE.test(before) || (quoted !== null && start - quoted <= EDGE && RANGE_GAP.test(text.slice(quoted, start)))) {
+      quoted = end;
+      continue;
+    }
     // On a slab "PR" is Proof, not the Dutch prachtig: no bucket here is a proof's.
     if (token === 'PR' && slabbed) continue;
     if (!CLOSES.test(tail)) continue;
