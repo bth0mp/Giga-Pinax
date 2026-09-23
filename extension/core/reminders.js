@@ -4,6 +4,10 @@ const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const FORMATTERS = new Map();
 const RESOLVED = new Map();
 const CLAIM_RETRY_MS = 5 * 60 * 1000;
+// The last instant a record can hold. A relevance end or a wake time computed past it would be written "+010000-…",
+// which is no instant a record may hold and which sorts before every ordinary one, so each is held to it instead.
+const LAST_INSTANT = Date.parse('9999-12-31T23:59:59.999Z');
+const instantAt = (milliseconds) => new Date(Math.min(milliseconds, LAST_INSTANT)).toISOString();
 
 function formatter(timeZone) {
   if (FORMATTERS.has(timeZone)) return FORMATTERS.get(timeZone);
@@ -128,14 +132,14 @@ function startOfLocalDay(localDate, timeZone) {
 
 function relevanceEnd(trigger) {
   if (trigger.precision === 'timed') {
-    return new Date(Date.parse(trigger.eventStartsAt) + 15 * 60000).toISOString();
+    return instantAt(Date.parse(trigger.eventStartsAt) + 15 * 60000);
   }
   const nextMidnight = startOfLocalDay(shiftDate(trigger.localDate, 1), trigger.timeZone);
   return nextMidnight ?? `${trigger.localDate}T23:59:59.999Z`;
 }
 
 function nextMillisecond(instant) {
-  return new Date(Date.parse(instant) + 1).toISOString();
+  return instantAt(Date.parse(instant) + 1);
 }
 
 function earliest(current, candidate) {
@@ -157,7 +161,7 @@ export function reconcileScheduler(events, schedulerState, now) {
       continue;
     }
     if (occurrence?.status === 'claimed') {
-      const retryAt = new Date(Date.parse(occurrence.claimedAt) + CLAIM_RETRY_MS).toISOString();
+      const retryAt = instantAt(Date.parse(occurrence.claimedAt) + CLAIM_RETRY_MS);
       if (retryAt > now) {
         nextWakeAt = earliest(nextWakeAt, retryAt);
         continue;
