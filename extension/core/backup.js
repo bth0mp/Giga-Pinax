@@ -133,7 +133,9 @@ function readBackup(document) {
   // carry: it cannot say that no run of writes produced it. A revision above the usable ceiling is turned away here
   // rather than restarted as a stored one is - a record taken in above it would be refused by its own next save - and
   // it is told what the file is, instead of being reported as an integer out of range.
-  const unusable = unusableRevisions(data);
+  // The root's own revision is left out: an import never adopts it (the store counts on from its own), and v0.32.1
+  // still exported from a root locked at 2^53-1, so that file is the collector's real backup, not a crafted one.
+  const unusable = unusableRevisions(data).filter(({ collection }) => collection !== 'root');
   if (unusable.length) {
     return failure(
       'invalid-record',

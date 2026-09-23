@@ -1054,3 +1054,21 @@ test('a raw rescue file is refused as a backup and says which file to use instea
 test('backup file names carry an instant a file system accepts', () => {
   assert.equal(backupFileName('giga-pinax-before-import', NOW), 'giga-pinax-before-import-2026-09-12T12-00-00.000Z.json');
 });
+
+// v0.32.1 still exported from a root locked at 2^53-1. The root's revision is discarded on import, so it is no
+// evidence of a crafted file; a record's revision above the usable ceiling still is.
+test('a backup whose root revision is 2^53-1 validates, while a record revision above the usable ceiling does not', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.revision = Number.MAX_SAFE_INTEGER;
+  snapshot.lots.push(lot(uuid(1), { title: 'Nero' }));
+  const document = exportBackup(snapshot, NOW);
+  assert.equal(document.ok, true);
+  const valid = validateBackup(document.value);
+  assert.equal(valid.ok, true, valid.error?.message);
+  assert.equal(valid.value.lots.length, 1);
+  snapshot.lots[0].revision = LIMITS.usableRevision + 1;
+  const refused = validateBackup(exportBackup(snapshot, NOW).value);
+  assert.equal(refused.ok, false);
+  assert.match(refused.error.message, /crafted or corrupt/);
+  assert.equal(refused.error.path, 'data.lots');
+});

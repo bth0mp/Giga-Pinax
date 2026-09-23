@@ -1315,6 +1315,23 @@ test('a backup carrying a revision no write could have produced is refused whole
   }
 });
 
+// A store whose root had reached 2^53-1 under v0.32.1 refused every save but still exported. The root revision a
+// document carries is never adopted - the import counts on from this store's own - so that file must still import.
+test('a backup exported from a root at 2^53-1 imports, and its root revision is not adopted', async () => {
+  for (const mode of ['replace', 'merge']) {
+    const storage = memoryStorage(createEmptySnapshot(NOW));
+    const writer = createCommandWriter(storage, context());
+    const { snapshot, lotId } = rootWithRevisions(0);
+    snapshot.revision = Number.MAX_SAFE_INTEGER;
+    const imported = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document: exportBackup(snapshot, NOW).value,
+    }));
+    assert.equal(imported.ok, true, `${mode}: ${imported.message}`);
+    assert.equal(storage.read().revision, 1, `${mode}: the store counts on from its own revision`);
+    assert.deepEqual(storage.read().lots.map(({ id }) => id), [lotId]);
+  }
+});
+
 test('a backup at the usable ceiling imports, and what it carries can still be saved', async () => {
   const storage = memoryStorage(createEmptySnapshot(NOW));
   const writer = createCommandWriter(storage, context());
