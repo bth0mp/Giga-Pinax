@@ -805,7 +805,28 @@ test('a term that searches something else is never filtered, and offers no filte
   await settle();
   assert.equal(popup.element('citing-row').hidden, true);
   assert.match(popup.element('median-amount').textContent, /200/);
-  assert.equal(popup.element('cited-count').hidden, true);
+  // 0.33 review (R8): the filter going off is said, in the panel, the announcement and the copied summary alike.
+  const line = 'This search does not look for Price 23, so all 2 results are counted.';
+  assert.equal(popup.element('cited-count').hidden, false);
+  assert.equal(popup.element('cited-count').textContent, line);
+  assert.ok(popup.element('announcement').textContent.includes(line));
+  await popup.element('copy-summary').emit('click');
+  assert.ok(popup.clipboard[0].split('\n').includes(line));
+});
+
+// The ruler a collector types between the volume and the number is how dealers cite the coin, so his search still looks for it and is filtered.
+test('a typed term that names the ruler inside the citation keeps the filter on', async () => {
+  const lots = [citingSale('n1', '100', 'Nero. As. RIC I 306. VF'), citingSale('n2', '300', 'Nero. As. RIC I 3061. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'RIC I Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  popup.element('price-term').value = 'RIC I Nero 306';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('citing-row').hidden, false);
+  assert.match(popup.element('median-amount').textContent, /100/);
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite RIC 306');
 });
 
 // A page of descriptions the filter cannot read (a provider that returns none, a layout it no longer knows) would otherwise empty the median.

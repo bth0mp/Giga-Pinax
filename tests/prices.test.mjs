@@ -924,6 +924,14 @@ test('searchesReference reads the number as a whole token, edition mark and all'
   // The collector may keep the edition mark the default term leaves out; it is still his card's own citation.
   assert.equal(searchesReference('Nero "RIC I² 306"', nero), true);
   assert.equal(searchesReference('Nero "RIC² 306"', nero), true);
+  // 0.33 review (R8): a collector names the ruler between the volume and the number, as dealers do, and is still searching his card's citation.
+  assert.equal(searchesReference('RIC I Nero 306', nero), true);
+  assert.equal(searchesReference('RIC I, Nero Claudius 306', nero), true);
+  assert.equal(searchesReference('RIC I Nero 3061', nero), false);
+  assert.equal(searchesReference('RIC I Nero Claudius Caesar Augustus 306', nero), false, 'a few words, not a sentence');
+  assert.equal(searchesReference('RIC X Leo I 605', { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' }), true);
+  // A ruler never stands between a key and a number with no volume: "Price Alexander 23" is not how Price 23 is cited.
+  assert.equal(searchesReference('Price Alexander 23', { catalogue: 'Price', number: '23' }), false);
 });
 
 // 0.32 review, round 2: the intervening words were counted, not read. A ruler's own regnal numeral ended the match, a volume's part mark ended it,

@@ -195,10 +195,18 @@ export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
 const TERM_MARK = String.raw`(?:[²³]|\(\d\)|\d)?`;
 // A phrase as the term must still hold it: every word of it, the number last and whole. "Price 230" and "RIC 3061" are searches for another type,
 // and so is a number a decimal part continues ("Price 23.5").
+// Between a volume numeral and the number the collector may name the ruler, as dealers write it ("RIC I Nero 306", "RIC X Leo I 605"): a few words
+// of letters, each with its own regnal numeral, and nothing a number or a sentence could hide in.
+const RULER_WORDS = String.raw`(?:\s+\p{L}+(?:\s+[IVX]+(?![\p{L}\d]))?){0,3}`;
 const searchPattern = (phrase) => {
   const words = squash(phrase).split(' ');
-  const body = words.map((word, index) => (index === words.length - 1 ? escaped(word)
-    : escaped(word.replace(/,$/, '')) + TERM_MARK + (word.endsWith(',') ? ',' : ''))).join('\\s*');
+  const last = words.length - 1;
+  const body = words.map((word, index) => {
+    if (index === last) return escaped(word);
+    const bare = word.replace(/,$/, '');
+    const written = escaped(bare) + TERM_MARK + (word.endsWith(',') ? ',' : '');
+    return index === last - 1 && /^[IVXLC]+$/.test(bare) ? written + RULER_WORDS : written;
+  }).join('\\s*');
   return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'iu');
 };
 export function searchesReference(term, reference) {

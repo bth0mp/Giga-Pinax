@@ -626,9 +626,12 @@ function lotLink(sale, text) {
 // ones the median itself rests on — the period on show — and a row counts in N when the statistics count it and it either passes that filter or the
 // collector counted it by hand. A row he put back and took out again is out of the median, so it is out of the count: it never cited the reference.
 // The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole instead, and says so.
-function filterLines(periodLots, curation, { name, denomination, citing, uncited, passes }) {
+// A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
+function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
   const total = periodLots.length;
-  if (uncited) return [`No result text names ${name}, so all ${total} ${total === 1 ? 'result is' : 'results are'} counted.`];
+  const all = `all ${total} ${total === 1 ? 'result is' : 'results are'} counted`;
+  if (uncited) return [`No result text names ${name}, so ${all}.`];
+  if (unsearched) return [`This search does not look for ${name}, so ${all}.`, ...filterLines(periodLots, curation, { name, denomination, passes })];
   const counted = (test) => periodLots.filter((sale) => curation.reasonFor(sale) === null && (test(sale) || curation.includedByHand(sale))).length;
   const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
   const lines = [];
@@ -691,6 +694,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // at all is a fact about the page acsearch returned, not about the period on show: a period of that page holding no citation is simply a period
   // without a sale of this type, and the count beside the empty median says so.
   const searched = filtersCitations(reference) && searchesReference(term, reference);
+  const unsearched = filtersCitations(reference) && !searched;
   const uncited = searched && lots.length > 0 && !lots.some((sale) => citesReference(sale.description, reference));
   const citing = searched && onlyCiting && !uncited;
   const passes = { citing: (sale) => citesReference(sale.description, reference), denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
@@ -721,7 +725,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
   $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
-  const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, passes });
+  const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('cited-count').textContent = filters.join(' · ');
   $('cited-count').hidden = filters.length === 0;
   const trend = trendOf(includedLots, currency, now);
@@ -837,6 +841,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   // the same rules as the acsearch panel, under the same toggle, and a row left out stays in the list below, one click from being counted.
   const periodLots = lotsInPeriod(outcome.selectedLots, period.value, localDay(new Date()));
   const searched = filtersCitations(reference) && searchesReference(outcome.term, reference);
+  const unsearched = filtersCitations(reference) && !searched;
   // Readable or not is a fact about the page CoinArchives returned, as on the acsearch panel, so a period of it may still hold no citation at all.
   const uncited = searched && outcome.selectedLots.length > 0 && !outcome.selectedLots.some((sale) => citesReference(sale.description, reference));
   const citing = searched && onlyCiting && !uncited;
@@ -865,7 +870,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
-  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, passes });
+  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
   const counts = coinArchivesCuration.counts(periodLots);
