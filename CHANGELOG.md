@@ -12,6 +12,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Changing the currency no longer throws away the sales you included or excluded by hand. The same search is fetched again in the new currency and every lot keeps its id, so your decisions stay on the same lots, and the announcement says they were kept. A new lookup still starts from the filters' own choice.
 - Control letters a dealer places after a comma — `in left field, MB.`, `in exergue, TB.`, `monogram below, TTB.` — are no longer read as a grade: such a lot counted as **Fine and below** or **VF** in the per-grade medians. A grade mark after a comma anywhere else (`Patina verde, BB.`, `Leicht korrodiert, ss.`) still counts.
 - `AU` followed by the coin's weight after a full stop or inside a bracket — `Justinian I. AU. 4.45g.`, `Constantinople. AU (4.45 g).` — is read as the metal, as `AU 4.45 g` already was, and no longer counts a gold coin as **AU/Mint State**.
+- A grade the description quotes from an earlier sale — `Good EF. Ex Triton XX (where described as "Good VF").`, `there graded VF`, `catalogued as VF` — no longer takes the place of the lot's own grade, which put the coin in a lower or higher bucket than its dealer gave it.
 
 ### Security
 

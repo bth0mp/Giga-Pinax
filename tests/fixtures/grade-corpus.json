@@ -2923,5 +2923,40 @@
   "text": "NGC AU. 4.45 g.",
   "grade": "mint",
   "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Good EF. Ex Triton XX, lot 500 (where described as \"Good VF\").",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "EF. Ex NAC 100 (2017), lot 5, there graded VF.",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "VF. Ex Gorny 200, lot 10 (described as EF).",
+  "grade": "vf",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Toned EF. From the ABC Collection, where catalogued as \"VF\".",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Ex CNG 100, lot 5, described as Choice VF.",
+  "grade": null,
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Previously graded VF; now Near EF.",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "NGC graded AU, Strike 5/5, Surface 4/5",
+  "grade": "mint",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
  }
 ]

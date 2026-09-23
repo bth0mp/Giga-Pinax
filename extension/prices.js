@@ -496,6 +496,9 @@ const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|be
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
 const CAPITAL = /\p{Lu}/u;
+// A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
+// It is no statement at all, so it can neither be the last one nor join a range. "NGC graded AU" is the slab's own grade and stays.
+const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
 
 const kindOf = (token) => {
   if (Object.hasOwn(RANGE_ONLY, token)) return 'range-only';
@@ -534,6 +537,7 @@ export function gradeOf(description) {
     const tail = text.slice(end, end + EDGE);
     // The metal, not the grade: the lot says what the coin is made of and grades nothing.
     if (token === 'AU' && !slabbed && metalAu(before, tail)) continue;
+    if (PROVENANCE_GRADE.test(before)) continue;
     if (!CLOSES.test(tail)) continue;
     const gap = previous === null ? '' : text.slice(previous.end, start);
     const joinable = previous !== null && gap.length <= EDGE;
