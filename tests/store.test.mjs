@@ -970,9 +970,43 @@ test('a repair clearing thousands of links to one missing record stays linear', 
   assert.ok(elapsed < 2000, `opened in ${Math.round(elapsed)} ms`);
 });
 
+// Damage to what every record shares locked the collector out of all of them, down to a plain read.
+test('damaged settings, schedule, scratch or root counter no longer lock the store', async () => {
+  const settings = (extra) => ({
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'USD', housePremiumPresets: [], desktopAlertsEnabled: false,
+    createdAt: NOW, updatedAt: NOW, ...extra,
+  });
+  for (const [label, damage] of [
+    ['a currency no build writes', (root) => { root.preferences = settings({ currency: 'JPY' }); }],
+    ['a preset with a broken ladder', (root) => {
+      root.preferences = settings({ housePremiumPresets: [{ name: 'X', buyerPremiumBps: 2000, incrementLadder: { currency: 'USD', tiers: 'oops' } }] });
+    }],
+    ['settings from a later version', (root) => { root.preferences = settings({ schemaVersion: SCHEMA_VERSION + 1 }); }],
+    ['a wake time that is no instant', (root) => { root.scheduler.nextWakeAt = 'soon'; }],
+    ['no list of drafts', (root) => { root.drafts = null; }],
+    ['no request ledger', (root) => { root.recentCommands = {}; }],
+    ['a root revision at the last safe integer', (root) => { root.revision = Number.MAX_SAFE_INTEGER; }],
+  ]) {
+    const stored = createEmptySnapshot(NOW);
+    const kept = plainLot(uuid());
+    stored.lots.push(kept);
+    damage(stored);
+    const storage = memoryStorage(stored);
+    const writer = createCommandWriter(storage, context());
+    const opened = await writer.commitCommand(command('snapshot.get'));
+    assert.equal(opened.ok, true, `${label}: ${opened.message}`);
+    assert.deepEqual(opened.value.lots, [kept], label);
+    const saved = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'New', sourceLinks: [] } }));
+    assert.equal(saved.ok, true, `${label}: ${saved.message}`);
+    assert.equal(storage.read().lots.length, 2, label);
+    const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+    assert.equal(reconciled.ok, true, `${label}: ${reconciled.message}`);
+  }
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
-  stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
+  stored.lots = { id: 'not-a-uuid', title: 'Rescue me' };
   stored.scheduler = 'corrupt';
   const storage = memoryStorage(stored);
   const writer = createCommandWriter(storage, context());

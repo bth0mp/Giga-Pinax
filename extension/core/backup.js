@@ -1,6 +1,6 @@
 import {
-  LIMITS, SCHEMA_VERSION, foldQuarantine, migrateSnapshot, quarantineEntryId, unusableRevisions,
-  validateSnapshot,
+  LIMITS, SCHEMA_VERSION, foldQuarantine, isRestorableCollection, migrateSnapshot, quarantineEntryId,
+  unusableRevisions, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
@@ -664,12 +664,13 @@ export function quarantineLines(entries) {
 
 // One row per set-aside entry as the page draws it: the line to read, the identifier a restore names,
 // and whether the entry holds a record to put back at all. An entry with no record of its own exists
-// only to carry links the repair cleared, and there is nothing in it to restore.
+// only to carry links the repair cleared, and there is nothing in it to restore; nor is there in one
+// set aside from somewhere no record goes back to, such as the settings.
 export function quarantineRows(entries) {
   return (Array.isArray(entries) ? entries : []).map((entry) => ({
     id: quarantineEntryId(entry),
     line: quarantineLine(entry),
-    restorable: entry?.record !== null && entry?.record !== undefined,
+    restorable: entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection),
   }));
 }
 

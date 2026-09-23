@@ -987,6 +987,14 @@ test('each set-aside row carries the line, the entry it names, and whether there
   assert.deepEqual(quarantineRows(null), []);
 });
 
+test('settings set aside whole, or an unreadable entry of the list itself, offer no Restore', () => {
+  const rows = quarantineRows([
+    { collection: 'preferences', record: { currency: 'JPY' }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'quarantine', record: { broken: true }, reason: 'invalid-entry', quarantinedAt: NOW },
+  ]);
+  assert.deepEqual(rows.map(({ restorable }) => restorable), [false, false]);
+});
+
 test('a restore reply reads as a sentence naming what went back and what was left alone', () => {
   const put = { collection: 'auctionEvents', id: uuid(1), restoredReferences: [], keptReferences: [] };
   assert.equal(quarantineRestoreText(put), 'The record was put back into auctionEvents.');

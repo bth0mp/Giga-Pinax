@@ -921,6 +921,9 @@ const COLLECTION_VALIDATORS = new Map(COLLECTIONS.map(({ key, validator }) => [k
 // is never in the bin to be put back, and the bin itself is not a collection.
 const RESTORABLE_COLLECTIONS = COLLECTIONS
   .map(({ key }) => key).filter((key) => !DISCARDED_ON_REPAIR.has(key));
+// Whether an entry set aside from this collection has anywhere to go back to: settings set aside whole are made again
+// in Settings rather than put back, and an unreadable entry of the bin itself was never a record.
+export const isRestorableCollection = (collection) => RESTORABLE_COLLECTIONS.includes(collection);
 
 // The bin keeps a record verbatim, so one set aside by an older build can predate today's shapes.
 // Today's validator judges it first, and only a record that fails is offered the migration a stored
@@ -943,6 +946,7 @@ export function validateQuarantinedRecord(collection, record) {
 
 // Every place a root keeps a revision, named as the collection and record that carries it so a warning can say which.
 function* revisionSites(root) {
+  if (isObject(root)) yield { host: root, key: 'revision', collection: 'root', id: null };
   if (isObject(root?.preferences)) yield { host: root.preferences, key: 'revision', collection: 'preferences', id: null };
   if (isObject(root?.scheduler)) yield { host: root.scheduler, key: 'revision', collection: 'scheduler', id: null };
   for (const { key } of COLLECTIONS) {
@@ -1034,6 +1038,18 @@ export function quarantineInvalidRecords(stored, now) {
       else setAside('quarantine', entry, 'invalid-entry');
     }
   }
+
+  // What every record shares is never a reason to refuse them all. The root's own counter and write time, the
+  // schedule, the half-hour scratch and the request ledger are bookkeeping the next write and the next reconcile build
+  // again, so a damaged one starts again. The settings are the collector's own, so they are set aside whole rather than
+  // dropped: the store runs as it did before any were made, and Settings makes them again.
+  if (!integerResult(root.revision, 'revision').ok) root.revision = 0;
+  if (!instantResult(root.updatedAt, 'updatedAt').ok) root.updatedAt = now;
+  if (!schedulerResult(root.scheduler, 'scheduler').ok) root.scheduler = { revision: 0, nextWakeAt: null, lastReconciledAt: null };
+  for (const key of DISCARDED_ON_REPAIR) if (!Array.isArray(root[key])) root[key] = [];
+  const settings = preferencesResult(root.preferences ?? null, 'preferences');
+  if (!settings.ok) setAside('preferences', root.preferences, settings.error.code);
+  if (!settings.ok || root.preferences === undefined) root.preferences = null;
 
   for (const { key, maximum, validator, keepNewest } of COLLECTIONS) {
     if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);

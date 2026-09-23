@@ -477,13 +477,52 @@ test('quarantine compacts the priorities left behind by a rescued group member',
 });
 
 test('quarantine reports an unusable root instead of guessing at its shape', () => {
-  const snapshot = snapshotWith(makeLot());
-  snapshot.scheduler = 'gone';
-  assert.equal(quarantineInvalidRecords(snapshot, NOW).ok, false);
   const missing = snapshotWith(makeLot());
   delete missing.lots;
   assert.equal(quarantineInvalidRecords(missing, NOW).ok, false);
   assert.equal(quarantineInvalidRecords(createEmptySnapshot(NOW), 'noon').ok, false);
+});
+
+// Damage to what the whole store shares - the settings, the schedule, the scratch and the ledger, the root's own
+// counters - refused every command, a plain read included, although not one coin was at fault. Each is something the
+// store can run without or build again, so the repair sets the settings aside whole and starts the rest again.
+test('damage to the parts of the root every record shares is repaired without touching a record', () => {
+  const settings = {
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'JPY', housePremiumPresets: [],
+    desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+  };
+  const snapshot = snapshotWith(makeLot());
+  snapshot.preferences = structuredClone(settings);
+  snapshot.scheduler = { revision: 0, nextWakeAt: 'soon', lastReconciledAt: null };
+  snapshot.drafts = null;
+  snapshot.recentCommands = 'gone';
+  snapshot.revision = Number.MAX_SAFE_INTEGER;
+  assert.equal(validateSnapshot(snapshot).ok, false);
+
+  const rescued = quarantineInvalidRecords(snapshot, NOW);
+  assert.equal(rescued.ok, true, rescued.error?.message);
+  assert.equal(rescued.value.lots.length, 1, 'the coin is still there');
+  assert.equal(rescued.value.preferences, null, 'the store runs as if the settings were never made');
+  assert.deepEqual(rescued.value.quarantine, [{
+    collection: 'preferences', record: settings, reason: 'invalid-enum', quarantinedAt: NOW,
+  }], 'and the settings themselves wait in the bin, whole');
+  assert.deepEqual(rescued.value.scheduler, { revision: 0, nextWakeAt: null, lastReconciledAt: null });
+  assert.deepEqual(rescued.value.drafts, []);
+  assert.deepEqual(rescued.value.recentCommands, []);
+  assert.equal(rescued.value.revision, 0, 'the root counts again from a number the next write can add one to');
+
+  // Settings from a later version are set aside the same way: the root around them is this version's.
+  const later = snapshotWith(makeLot());
+  later.preferences = { ...structuredClone(settings), currency: 'GBP', schemaVersion: SCHEMA_VERSION + 1 };
+  later.revision = -1;
+  later.updatedAt = 'yesterday';
+  const repaired = quarantineInvalidRecords(later, NOW);
+  assert.equal(repaired.ok, true, repaired.error?.message);
+  assert.equal(repaired.value.preferences, null);
+  assert.equal(repaired.value.quarantine[0].collection, 'preferences');
+  assert.equal(repaired.value.revision, 0);
+  assert.equal(repaired.value.updatedAt, NOW);
+  assert.deepEqual(unusableRevisions({ revision: Number.MAX_SAFE_INTEGER }), [{ collection: 'root', id: null, field: 'revision' }]);
 });
 
 test('a validated root carries its quarantine and rejects a malformed entry', () => {
