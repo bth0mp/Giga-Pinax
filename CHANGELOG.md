@@ -59,6 +59,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - 0.32.0 said hostile acsearch pages were "refused in milliseconds". That was not true of every shape: a result page whose one description filled the two megabytes read, with its `];` terminators at the end, still held the popup for about three seconds, because each terminator was tried by parsing the whole page again. The end of the results is now found in a single pass that reads the page's strings as JSON writes them, and the results are parsed once, so any page within the two megabytes read takes milliseconds.
 - An acsearch reply is no longer read whole before any of it is looked at: past 4 MiB the download is cut off, and the panel says the reply was too large to read instead of that acsearch could not be reached.
 - A response from numismatics.org or nomisma.org larger than 4 MiB is no longer read into memory whole: one that declares its size is refused before it is read, one that does not is dropped as soon as it passes the limit, and the lookup reports a connection failure.
+- The release ZIPs are now uploaded by a workflow job that runs no npm tool and no repository code, and only after it has checked each ZIP against the checksums the build job recorded. The Firefox lint, which fetches `web-ext` from npm, ran in the same job as the upload and could have changed a package before it was attached; it now runs in a job that can only read.
 
 ## [0.32.1] - 2026-09-18
 
