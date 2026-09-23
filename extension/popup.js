@@ -298,6 +298,7 @@ function clearCoinArchivesPrices({ keepCuration = false } = {}) {
   $('coinarchives-prices-panel').hidden = true;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-error').textContent = '';
+  $('coinarchives-prices-note').hidden = true;
   $('coinarchives-details').open = false;
   $('coinarchives-prices-button').disabled = false;
   $('coinarchives-prices-label').textContent = 'Get CoinArchives prices';
@@ -1244,13 +1245,21 @@ $('catalogue').addEventListener('change', () => {
 // empty panel with a Get prices button on it. This is what a default currency arriving from the durable root, after a
 // Settings change or a replace import, does to a window that has already priced its lookup. Without access nothing is
 // fetched and nothing is asked: a permission prompt closes the popup in Firefox, and nobody pressed anything here.
+// CoinArchives is fetched only on a click and never converted, so its median goes with the old currency; the panel's place says so and how to get it
+// back, and so does the announcement, rather than the median simply vanishing.
 $('currency').addEventListener('change', () => {
   savePreferences();
   const repriced = shownPrices?.context === researchContext ? researchContext : null;
+  const publicCurrency = shownCoinArchivesPrices && shownCoinArchivesPrices.context === researchContext ? shownCoinArchivesPrices.currency : '';
   const term = $('price-term').value;
+  const currency = $('currency').value;
   clearPrices({ keepCuration: true });
   updateAcsearchLink();
-  $('announcement').textContent = `Currency set to ${$('currency').value}.`;
+  const note = publicCurrency && publicCurrency !== currency
+    ? `The CoinArchives median was in ${publicCurrency} and is not converted. Select “Get CoinArchives prices” to fetch it in ${currency}.` : '';
+  $('coinarchives-prices-note').textContent = note;
+  $('coinarchives-prices-note').hidden = !note;
+  $('announcement').textContent = [`Currency set to ${currency}.`, note].filter(Boolean).join(' ');
   if (repriced) void repriceShownLots(repriced, term, $('currency').value);
 });
 async function repriceShownLots(context, term, currency) {
@@ -1409,6 +1418,7 @@ $('coinarchives-prices-button').addEventListener('click', async () => {
   const section = coinArchivesSection(context.reference);
   const currency = $('currency').value;
   $('coinarchives-prices-error').hidden = true;
+  $('coinarchives-prices-note').hidden = true;
   setCoinArchivesBusy(true);
   const allowed = await access;
   if (ticket !== coinArchivesRequestId || context !== researchContext) return;

@@ -25,6 +25,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A RIC I citation written `RIC I (2nd ed.) 306`, `RIC vol. I 306` or `RIC 1 306` now counts as citing the coin. The volume as a digit is read for volume I only: `RIC 2 306` could as well be the second edition of volume I.
 - A slab grade printed with its score glued on — `PCGS MS63`, `NGC AU58`, `NGC XF45` — is read into its bucket, as `NGC AU 58` already was. A glued number anywhere but behind NGC or PCGS still leaves the row ungraded.
 - The **Check online** button under a local-catalogue miss is drawn as the popup's other secondary buttons are; it carried a style the popup never defined and showed as the browser's bare default button.
+- Changing the currency no longer makes the CoinArchives median vanish without a word. Its public prices are never converted, so it still goes, but the popup now says it was in the old currency and that **Get CoinArchives prices** fetches it in the new one.
 
 ### Security
 

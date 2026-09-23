@@ -1492,3 +1492,37 @@ test('every class a popup button carries is styled by a stylesheet the popup loa
   const unstyled = [...classes].filter((name) => !new RegExp(`\.${name.replace(/-/g, '\-')}(?![\w-])`).test(sheets));
   assert.deepEqual(unstyled, []);
 });
+
+// 0.33 review (P8): a currency change takes the CoinArchives median down, since its public prices are never converted and it is fetched only on a
+// click. It no longer goes without a word: the panel's place says why and how to get it back, and so does the announcement.
+test('a currency change says why the CoinArchives median went and how to fetch it again', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, false);
+  popup.element('currency').value = 'EUR';
+  await popup.element('currency').emit('change');
+  assert.equal(popup.element('coinarchives-prices-panel').hidden, true);
+  assert.equal(popup.element('coinarchives-prices-note').hidden, false);
+  assert.match(popup.element('coinarchives-prices-note').textContent, /in USD.*Get CoinArchives prices.*EUR/);
+  assert.match(popup.element('announcement').textContent, /^Currency set to EUR\. .*CoinArchives/);
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('coinarchives-prices-note').hidden, true);
+  // The median fetched again in euros goes the same way at the next change.
+  popup.element('currency').value = 'GBP';
+  await popup.element('currency').emit('change');
+  assert.match(popup.element('coinarchives-prices-note').textContent, /in EUR.*GBP/);
+  // Nothing to explain when no CoinArchives median was on show.
+  const quiet = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale });
+  quiet.element('quick-reference').value = 'Price 23';
+  await quiet.element('reference-form').emit('submit');
+  await settle();
+  quiet.element('currency').value = 'EUR';
+  await quiet.element('currency').emit('change');
+  assert.equal(quiet.element('coinarchives-prices-note').hidden, true);
+  assert.equal(quiet.element('announcement').textContent, 'Currency set to EUR.');
+});
