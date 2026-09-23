@@ -1329,3 +1329,18 @@ test('summaryText carries what the filters left out and the median of each grade
     '27 of 39 results carry no grade',
   ]);
 });
+
+// 0.33 review (R7): the Spanish "SC" (sin circular) is the key Seleucid Coins is cited under, too. A grade mark is never a citation, and a citation is
+// never a grade: each is read only where it stands as itself.
+test('SC reads as a grade only where no number follows it, and cites Seleucid Coins only with its number', () => {
+  const seleucid = { catalogue: 'SC', number: '379.1' };
+  const graded = 'Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1. SC.';
+  assert.equal(citesReference(graded, seleucid), true);
+  assert.equal(gradeOf(graded), 'AU/Mint State');
+  assert.equal(gradeOf('Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1.'), null);
+  assert.equal(gradeOf('SC 379.1; ESM 123. EBC.'), 'EF');
+  assert.equal(citesReference('Seleucid Kings. Antiochos I. Tetradrachm. EBC/SC.', seleucid), false);
+  // The senate's mark on a Roman bronze is neither.
+  assert.equal(gradeOf('Rev. SC, legend around.'), null);
+  assert.equal(gradeOf('Rev. Minerva standing right; SC.'), null);
+});
