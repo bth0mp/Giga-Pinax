@@ -30,7 +30,7 @@ export function queryFromSearch(search) {
 }
 
 // The pop-out names the card it shows by corpus and id, and the window reopens it as a Recent chip does, never reading its title again: a title the
-// Reference box can't read ("Price P1", Other text chosen by hand) or a Bop series several subtypes share would not bring the same card back.
+// Reference box can't read (an SC "Ad." title, Other text chosen by hand) or a Bop series several subtypes share would not bring the same card back.
 export const cardUrlFor = (card) => (card ? `popup.html?${new URLSearchParams({ window: '1', corpus: card.corpus, id: card.id })}` : popupUrlFor(''));
 
 export function cardFromSearch(search) {
