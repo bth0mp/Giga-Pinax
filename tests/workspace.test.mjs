@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHtmlFile } from './helpers/dom.mjs';
+import vm from 'node:vm';
+import { browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildExposureSections,
   buildGroupReorderCommand,
@@ -53,6 +54,14 @@ import {
   premiumInputText,
 } from '../extension/workspace.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
+import * as money from '../extension/core/money.js';
+import * as evidence from '../extension/core/evidence.js';
+import * as sourceLaunchers from '../extension/source-launchers.js';
+import { projectExposure } from '../extension/core/records.js';
+
+const settle = async (turns = 10) => {
+  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
+};
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -896,13 +905,75 @@ test('every field the details form reads from a coin is written back by the draf
 // Add coin after "Discard unsaved changes" discards the details form too: left marked dirty, it went
 // on asking to discard input that was already gone and held the leave-page prompt up. The handler is
 // wired inside the page, so it is read from source, as the calculator's pending guard is.
+// The workspace page itself, loaded the way tests/settings.test.mjs loads Settings: its markup in the
+// fake DOM, its imports handed in as sandbox globals. With `snapshot` it runs against a bridge that
+// answers from the test; without one it runs as the standalone preview.
+async function mountWorkspace({ snapshot = null, hash = '', reply = () => ({ ok: true, value: {} }), confirmAnswers = [] } = {}) {
+  const document = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  const commands = [];
+  const prompts = [];
+  const bridge = {
+    getSnapshot: async () => ({ ok: true, value: structuredClone(snapshot) }),
+    sendCommand: async (command) => { commands.push(structuredClone(command)); return reply(command); },
+    subscribeToSnapshots() {},
+  };
+  const sandbox = {
+    ...money, ...evidence, projectExposure, ...sourceLaunchers,
+    mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
+    ...browserGlobals(document, { confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; } }),
+    ...(snapshot ? { browser: { runtime: { sendMessage() {} } } } : {}),
+    importModule: async (specifier) => {
+      if (snapshot && specifier === './browser-api.js') return bridge;
+      throw new Error(`No module ${specifier} in this sandbox.`);
+    },
+    requestAnimationFrame: (callback) => callback(), location: { hash }, addEventListener() {},
+    Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
+    Error, TypeError, RangeError, structuredClone,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  const url = new URL('../extension/workspace.js', import.meta.url);
+  vm.runInContext(pageSource(url), vm.createContext(sandbox), { filename: url.pathname });
+  await settle();
+  const $ = (id) => document.getElementById(id);
+  return {
+    $, commands, prompts,
+    async typeDetails(field, value) { $('lot-form').elements[field].value = value; await $('lot-form').emit('input'); },
+    async saveDetails() { await $('lot-form').emit('submit'); await settle(); },
+  };
+}
+
+const workspaceLot = (id, title) => ({
+  id, revision: 1, dataClass: 'collector', title, sourceLinks: [], bidHistory: [], outcome: { status: 'open' },
+  outcomeHistory: [], createdAt: '2026-09-12T12:00:00.000Z', updatedAt: '2026-09-12T12:00:00.000Z',
+});
+const workspaceSnapshot = (lots = []) => ({
+  revision: 7, lots, auctionEvents: [], alternativeGroups: [], evidence: [], collectionEntries: [], alerts: [],
+  recentCommands: [], preferences: { revision: 1, currency: 'USD' },
+});
+const LOT_DRAFT = { id: 'draft-1', kind: 'current-lot', payload: { target: 'watchlist', title: 'Captured coin', pageUrl: 'https://example.test/lot/1' } };
+const draftReply = (lot) => (command) => {
+  if (command.type === 'draft.get') return { ok: true, value: structuredClone(LOT_DRAFT) };
+  if (command.type === 'lot.save') return { ok: true, value: { ...lot, revision: 2 } };
+  return { ok: true, value: {} };
+};
+
 test('Add coin discards every editor of the coin it leaves, the details form included', async () => {
-  const { readFileSync } = await import('node:fs');
-  const source = readFileSync(new URL('../extension/workspace.js', import.meta.url), 'utf8');
-  const handler = /\$\('new-lot'\)\.addEventListener\('click', \(\) => \{([^\n]*)\}\);\n/.exec(source)?.[1];
-  assert.ok(handler, 'the Add coin handler is found');
-  assert.match(handler, /^ if \(!canLeaveSelectedEditors\(\)\) return; lotInteractionGeneration \+= 1; clearSelectedEditors\(\);/);
-  assert.doesNotMatch(handler, /dirtyEditors\.delete/, 'no hand-picked subset of the editors');
+  const page = await mountWorkspace();
+  assert.equal(page.$('workspace-status').textContent, 'Standalone preview: durable features are unavailable.');
+  await page.$('new-lot').click();
+  await page.typeDetails('title', 'Half-typed coin');
+  await page.$('new-lot').click();
+  assert.deepEqual(page.prompts, ['Discard unsaved changes and open another coin?']);
+  assert.equal(page.$('lot-form').elements.title.value, '', 'the discarded input is gone from the form');
+  await page.$('new-lot').click();
+  assert.equal(page.prompts.length, 1, 'the empty form is not asked about again');
+});
+
+test('the save that adds the drafted coin consumes its draft', async () => {
+  const page = await mountWorkspace({ snapshot: workspaceSnapshot(), hash: '#lot-draft=draft-1', reply: draftReply(workspaceLot('lot-2', 'Captured coin')) });
+  await page.saveDetails();
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'draft.consume').map(({ draftId }) => draftId), ['draft-1']);
 });
 
 // A live region around the whole coin pane read out every field the page filled in whenever a coin
