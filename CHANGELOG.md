@@ -17,6 +17,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Security
 
 - A crafted backup can no longer hold the extension up for minutes: its list of set-aside records used to be compared entry by entry against itself, so a 2 MiB file took a minute to preview and more than two to import, with every other save waiting behind it. The list is now folded in a single pass, and a backup listing more than 30,000 set-aside records is refused before it is read any further.
+- Text captured from an auction page is kept for its half hour and then really cleared: an expired capture draft used to stay in local storage until you captured something else, and is now removed with the next change you save of any kind.
 
 ## [0.32.1] - 2026-09-18
 

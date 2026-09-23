@@ -305,6 +305,9 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
+  // A capture draft is half-hour scratch holding the text of a page, and only saving another draft used to clear the
+  // expired ones, so one capture kept its text for good. Every change clears them now; a read still leaves the root alone.
+  next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
 
   switch (command.type) {
     case 'preferences.migrateIfAbsent': {
@@ -691,7 +694,6 @@ function mutation(snapshot, command, context) {
     case 'draft.save': {
       const payload = validateDraftPayload(command.kind, command.payload);
       if (!payload.ok) return fail('validation', payload.error.message, payload.error.path);
-      next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
       value = {
         id: getId(context),
         revision: 0,

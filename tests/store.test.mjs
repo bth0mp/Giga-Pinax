@@ -353,6 +353,22 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
   assert.equal(read.value.id, state.drafts[0].id);
 });
 
+// A capture draft is half-hour scratch holding page text, but only saving another draft ever cleared the expired ones:
+// a store that captured once kept that text for good.
+test('an expired draft is cleared by the next change of any kind', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('draft.save', {
+    kind: 'auction-capture', payload: { rawText: 'Lot 12, Nero denarius' },
+  })).snapshot;
+  const fresh = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Soon after', sourceLinks: [] } }));
+  assert.equal(fresh.snapshot.drafts.length, 1, 'a draft still inside its half hour stays');
+  const expired = state.drafts[0].expiresAt;
+  const later = { now: () => expired, newId: uuid };
+  const consumed = applyCommand(state, command('draft.consume', { draftId: state.drafts[0].id }), later);
+  assert.equal(consumed.ok, false, 'an expired draft is not handed out');
+  state = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Much later', sourceLinks: [] } }), later);
+  assert.deepEqual(state.snapshot.drafts, [], 'and it is gone with the next write');
+});
+
 test('saves bounded unique house premiums and preserves them for older callers', () => {
   const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
     preferences: { currency: 'GBP' },
