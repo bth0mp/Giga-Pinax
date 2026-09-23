@@ -8,7 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Added
 
-- The per-grade medians read Spanish and Dutch grades: `BC`, `MBC`, `EBC` and `SC` (with `casi`), and `ZF`, `PR`, `zeer fraai` and `prachtig`. Each is read only where it stands as a grade, as the other marks are, so a Seleucid Coins citation (`SC 379.1`), the senate's `SC` on a Roman bronze and a date such as `44 BC` are never taken for one, and `PR` on a slab (a proof) is left ungraded.
+- The per-grade medians read Spanish and Dutch grades: `BC`, `MBC`, `EBC` and `SC` (with `casi`), and `ZF`, `PR`, `zeer fraai` and `prachtig`. Each is read only where it stands as a grade, as the other marks are, so a Seleucid Coins citation (`SC 379.1`) and a date such as `44 BC` are not taken for one, and `PR` on a slab (a proof) is left ungraded. The senate's `SC` on a Roman bronze is not read as a grade where it stands inside the description (`Rev. SC, legend around.`, `Minerva standing right; SC.`) or opens the sentence after one that ends in a lower-case word (`Rev. Spes advancing left. SC.`); for the same reason a Spanish `SC` in that place (`Pátina verde. SC.`) is left ungraded rather than guessed.
 
 ### Fixed
 

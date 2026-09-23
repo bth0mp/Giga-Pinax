@@ -529,9 +529,11 @@ const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|be
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
 const CAPITAL = /\p{Lu}/u;
 // "SC" is also the senate's mark on a Roman bronze ("Rev. SC, legend around.", "Minerva standing right; SC."), so as the Spanish sin circular it must
-// open the text or a sentence (never one a side label opens), or stand behind a qualifier, a grade label or another grade it joins.
-const senateFree = (start, before, quals, joined) => start === 0 || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before)) || quals !== '' || joined
-  || LABEL.test(before);
+// open the text or a sentence (never one a side label opens, nor one behind a sentence ending in a lower-case word, which is the type described:
+// "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins.
+const DESCRIBED = /(?<![\p{L}\d])\p{Ll}\p{L}*\.\s*$/u;
+const senateFree = (start, before, quals, joined) => start === 0
+  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before);
 // A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
 // It is no statement at all, so it can neither be the last one nor join a range. "NGC graded AU" is the slab's own grade and stays.
 const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
