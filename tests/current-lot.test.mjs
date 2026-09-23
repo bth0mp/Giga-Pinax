@@ -266,3 +266,26 @@ test('fallback reference extraction preserves a Roman volume and number without 
   const result = collectCurrentLotCandidates(root, { href: 'https://auction.test/147' });
   assert.equal(result.candidates.reference.value, 'RIC II 147');
 });
+
+// The page text is the last place a reference is found, and dealers write the second edition of RIC
+// with a superscript (RIC I² 306) and Seleucid Coins as SC. The function is injected into the auction
+// tab on its own, so it is run here from its own source, without this module around it.
+test('an unlabelled reference is read with its edition mark, and SC is read as Seleucid Coins', () => {
+  const injected = new Function(`return (${collectCurrentLotCandidates.toString()})`)();
+  for (const [line, reference] of [
+    ['Nero. AR Denarius. Rome. RIC I² 306.', 'RIC I² 306'],
+    ['Titus. Denarius. RIC II.1² 12', 'RIC II.1² 12'],
+    ['Antiochos III. Tetradrachm. SC 1266.2', 'SC 1266.2'],
+    ['Nero AR Denarius, RIC I 306 var.', 'RIC I 306'],
+    ['Septimius Severus. RIC IV.1 123a', 'RIC IV.1 123a'],
+  ]) {
+    const result = injected(page({ nodes: [node(line)] }), { href: 'https://auction.test/lot/1' });
+    assert.equal(result.candidates.reference?.value, reference, line);
+    assert.equal(buildResearchQuery(buildResearchDraft(result)), reference, line);
+  }
+  // "SC" in a Roman coin's field is the senate's mark, not a catalogue: only a number makes it one.
+  for (const line of ['Nero. Sestertius. SC in exergue.', 'Trajan. As. S C across field.']) {
+    const result = injected(page({ nodes: [node(line)] }), { href: 'https://auction.test/lot/1' });
+    assert.equal(result.candidates.reference, undefined, line);
+  }
+});
