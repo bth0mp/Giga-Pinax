@@ -932,6 +932,20 @@ test('searchesReference reads the number as a whole token, edition mark and all'
   assert.equal(searchesReference('RIC X Leo I 605', { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' }), true);
   // A ruler never stands between a key and a number with no volume: "Price Alexander 23" is not how Price 23 is cited.
   assert.equal(searchesReference('Price Alexander 23', { catalogue: 'Price', number: '23' }), false);
+  // 0.33 review, fix round 1: another ruler's name, or another catalogue's key, between the volume and the number is a search for another coin.
+  assert.equal(searchesReference('RIC I Galba 306', nero), false);
+  assert.equal(searchesReference('RIC I Cohen 306', nero), false);
+  assert.equal(searchesReference('RIC I Otho, 306', nero), false);
+  // The card's own ruler may stand beside another word of his name, and a word that names nobody (a mint) is no other ruler.
+  assert.equal(searchesReference('RIC I Nero Augustus 306', nero), true);
+  assert.equal(searchesReference('RIC I Nero Rome 306', nero), true);
+  assert.equal(searchesReference('RIC I Rome 306', nero), true);
+  assert.equal(searchesReference('RIC I Galba 306 RIC I Nero 306', nero), true);
+  const leo = { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' };
+  assert.equal(searchesReference('RIC X Zeno 605', leo), false);
+  assert.equal(searchesReference('RIC X Leo I 605', leo), true);
+  // A card without a section has no ruler to hold a name against.
+  assert.equal(searchesReference('RIC I Galba 306', { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: '' }), true);
 });
 
 // 0.32 review, round 2: the intervening words were counted, not read. A ruler's own regnal numeral ended the match, a volume's part mark ended it,

@@ -1,5 +1,5 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
-import { canonicalRicPerson, CATALOGUES, catalogueOf } from './catalogues.js';
+import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
@@ -199,9 +199,13 @@ export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
 const TERM_MARK = String.raw`(?:[²³]|\(\d\)|\d)?`;
 // A phrase as the term must still hold it: every word of it, the number last and whole. "Price 230" and "RIC 3061" are searches for another type,
 // and so is a number a decimal part continues ("Price 23.5").
+// The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
+// really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
+const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
 // Between a volume numeral and the number the collector may name the ruler, as dealers write it ("RIC I Nero 306", "RIC X Leo I 605"): a few words
-// of letters, each with its own regnal numeral, and nothing a number or a sentence could hide in.
-const RULER_WORDS = String.raw`(?:\s+\p{L}+(?:\s+[IVX]+(?![\p{L}\d]))?){0,3}`;
+// of letters, each with its own regnal numeral, and nothing a number or a sentence could hide in. Another catalogue's key is no ruler ("RIC I Cohen
+// 306" searches Cohen 306), and the words are captured so the ruler they name can be held against the card's.
+const RULER_WORDS = String.raw`((?:\s+(?!(?:${OTHER_KEYS.join('|')})(?![\p{L}\d]))\p{L}+(?:\s+[IVX]+(?![\p{L}\d]))?){0,3})`;
 const searchPattern = (phrase) => {
   const words = squash(phrase).split(' ');
   const last = words.length - 1;
@@ -211,12 +215,31 @@ const searchPattern = (phrase) => {
     const written = escaped(bare) + TERM_MARK + (word.endsWith(',') ? ',' : '');
     return index === last - 1 && /^[IVXLC]+$/.test(bare) ? written + RULER_WORDS : written;
   }).join('\\s*');
-  return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'iu');
+  return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'giu');
 };
+// Whether the words between the volume and the number name another ruler than the card's: "RIC I Galba 306" searches Galba's coin, not Nero's. A
+// run of them that names the card's own ruler settles it ("Nero Augustus", "Leo I"); otherwise a run naming anybody RIC knows is somebody else. A
+// card without a section, and words that name nobody (a mint), have nothing to hold against each other.
+function namesOtherRuler(words, section) {
+  const card = squash(section);
+  const tokens = squash(words).split(' ').filter(Boolean);
+  if (!card || tokens.length === 0) return false;
+  const own = new Set([...ricPeople(card), ...ricPeople(card.replace(/\s*\([^)]*\)$/, ''))].map(({ id }) => id));
+  let other = false;
+  for (let from = 0; from < tokens.length; from += 1) {
+    for (let to = from + 1; to <= tokens.length; to += 1) {
+      const people = ricPeople(tokens.slice(from, to).join(' '));
+      if (people.some(({ id }) => own.has(id))) return false;
+      if (people.length) other = true;
+    }
+  }
+  return other;
+}
 export function searchesReference(term, reference) {
   const phrases = citationPhrases(reference);
   const text = squash(term);
-  return phrases.length === 0 || phrases.some((phrase) => searchPattern(phrase).test(text));
+  return phrases.length === 0 || phrases.some((phrase) => [...text.matchAll(searchPattern(phrase))]
+    .some((match) => match[1] === undefined || !namesOtherRuler(match[1], reference.section)));
 }
 
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
@@ -325,9 +348,6 @@ const SEP = String.raw`[\s.,]*`;
 // An edition mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC I (2) 306".
 // "(2nd ed.)" is the bracket abbreviated ("RIC I (2nd ed.) 306"); "(second edition)" spelled out reads as a bracketed word below.
 const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\s?\(\d(?:st|nd|rd|th)\.?\s?ed(?:ition|n?\.)?\)|\d)?`;
-// The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
-// really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
-const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
 // A ruler or an edition spelled out, between the volume and the number: plain words, or a bracketed phrase of them, each with an optional comma, and
 // a ruler may carry his own regnal numeral ("RIC X Leo I 605"). A word holding a digit or ending in a full stop is another citation's, so
 // "RIC -; C. 306" and "RIC 12; Cohen 306" stop here. A bare Roman numeral is never a word of its own: it is a volume, and which volumes count is
