@@ -855,6 +855,36 @@ test('a bin holding one set-aside record twice folds it into a single entry on r
   assert.equal(opened.value.quarantine.length, 2, 'the lot the repair set aside is the other entry');
 });
 
+// The load-time repair stamps what it sets aside with the moment of that load, and a stored root is only
+// rewritten by the next write. Every read in between repaired again at a later moment, so an entry's
+// identity - taken from its bytes - changed with each read, and a Restore could never find the entry
+// its page had drawn: "no longer in the list. Reload" on every attempt, however often the page reloaded.
+test('an entry the load-time repair set aside keeps its identity from one read to the next', async () => {
+  let tick = Date.parse(NOW);
+  const moving = { now: () => new Date((tick += 1500)).toISOString(), newId: uuid };
+  const stored = createEmptySnapshot(NOW);
+  const lotId = uuid();
+  const entryId = uuid();
+  stored.lots.push(plainLot(lotId, { outcome: { status: 'maybe' }, collectionEntryId: entryId }));
+  stored.collectionEntries.push({
+    id: entryId, revision: 0, dataClass: 'collector', lotId, title: 'Nero denarius',
+    acquisitionDate: '2026-08-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const writer = createCommandWriter(memoryStorage(stored), moving);
+
+  const first = await writer.commitCommand(command('snapshot.get'));
+  const second = await writer.commitCommand(command('snapshot.get'));
+  const ids = (reply) => quarantineRows(reply.value.quarantine).map(({ id }) => id);
+  assert.equal(ids(first).length, 2);
+  assert.deepEqual(ids(second), ids(first), 'the same entry is named the same way on every read');
+
+  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('collectionEntries'));
+  const reply = await writer.commitCommand(command('quarantine.restore', { entryId: entryRow.id }));
+  assert.equal(reply.ok, false);
+  assert.doesNotMatch(reply.message, /no longer in the list/, 'the entry the page drew is found');
+  assert.match(reply.message, /allowed set/, 'and the restore is answered on its merits: its lot is still broken');
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });

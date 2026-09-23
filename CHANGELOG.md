@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Restore** under **Data health** in Settings works for a record the extension set aside when it opened your data: it used to answer "no longer in the list. Reload the page and try again" however often the page was reloaded, until some unrelated change had been saved.
+
 ## [0.32.1] - 2026-09-18
 
 ### Added

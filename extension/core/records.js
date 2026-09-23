@@ -838,11 +838,18 @@ const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 
 // The bin keeps no identifier of its own, and entries written by older builds or by another install
 // carry none either, so an entry is named by what it holds: the same bytes name the same entry on
-// every device, and no bin holds two entries with identical bytes - the repair folds them and an
-// import unions the two bins by exactly that comparison.
+// every device. The date it was set aside is left out of the name. A load repairs a root without
+// writing it, and stamps what it sets aside with the moment of that load, so the date of an entry the
+// repair made is a new one on every read until a write keeps it: named by it, the entry the page drew
+// was never the one the store found, and Restore could only answer "reload". Two entries differing in
+// nothing but the date are one entry anyway: the fold keeps the earlier date.
 export function quarantineEntryId(entry) {
   let encoded;
-  try { encoded = JSON.stringify(entry ?? null); } catch { encoded = null; }
+  try {
+    const named = isObject(entry) ? { ...entry } : entry ?? null;
+    if (isObject(named)) delete named.quarantinedAt;
+    encoded = JSON.stringify(named);
+  } catch { encoded = null; }
   return stableUuid(typeof encoded === 'string' ? encoded : 'unreadable-entry');
 }
 
