@@ -11,6 +11,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - In a browser set to Arabic, Persian, Bengali, Marathi, Nepali, Burmese, Pashto or Kashmiri, a saved premium, bid, hammer or invoice was drawn back into its field in that language's own digits or decimal mark (`22٫50`, `২২.৫`), which the field then refused, so the bid, outcome or house preset could not be saved again — **Save settings** even refused a preset row nobody had touched. Every saved amount is now written back as `22.50`, which saves in every language; amounts shown as text are unchanged.
 - **Restore** under **Data health** in Settings, and a confirmed backup import, redrew the whole page and silently threw away house presets, a default currency or a theme you had typed but not saved. Restore now reads only the set-aside list again; an import over unsaved settings keeps them on the page and tells you the imported settings are shown after a reload.
 - With site data blocked for the extension, Settings opened on a raw “localStorage” error and **Save settings** stayed disabled. The page now loads and saves as usual; only a chosen theme cannot be remembered in that profile, and the page says so when you save one.
+- Saving a house preset from the bid calculator over a preferences record it could not read showed a raw “Cannot read properties of null” error; it now says the presets are not ready and that nothing was saved.
 
 ## [0.32.1] - 2026-09-18
 

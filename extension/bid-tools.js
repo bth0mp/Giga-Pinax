@@ -376,6 +376,11 @@ export function mountBidCalculator(
         throw new Error(snapshotReply?.message || 'Open Settings once before saving house presets.');
       }
       takePreferences(snapshotReply.value);
+      // A record without a whole-number revision is one the gate refused: there is nothing to save
+      // against, and saying so beats the TypeError reading its revision would throw.
+      if (!Number.isInteger(preferences?.revision)) {
+        throw new Error('House presets are not ready, so the preset was not saved. Reload the page and try again.');
+      }
       const reply = await sendCommand({
         type: 'preferences.save',
         requestId: newRequestId(),
