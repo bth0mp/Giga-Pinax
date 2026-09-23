@@ -35,7 +35,7 @@ When you open saved-coin comparison, Giga Pinax may load the external photo URL 
 
 Saved records and preferences remain in the browser's extension storage on your device. They are not uploaded or synced to the developer. Fetched acsearch and CoinArchives rows, and acsearch inclusion choices, remain in the current research session and are not automatically added to durable collection evidence or backups. Optional CoinArchives host access can be revoked through the browser's extension permissions controls.
 
-A record that cannot be read is set aside in the same local storage rather than discarded, and can be downloaded on its own from Settings.
+A record that cannot be read is set aside in the same local storage rather than discarded. Settings lists it under **Backup and import**, where it can be downloaded on its own and, where it is valid again, put back with **Restore**. Settings that cannot be read are set aside whole in the same way, house presets included, and can be downloaded from the same place.
 
 You can edit or delete records in Giga Pinax and export or import a JSON backup. An exported backup leaves the browser only when you choose where to save or send it. **Export raw data** writes a rescue file that is a verbatim copy of that storage, including unsaved drafts, their captured page text and recent request ids; treat it as you would the records themselves. Replacing your records with an import, or merging one that would overwrite a record, first downloads a safety copy of your current records to your own device. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
 
