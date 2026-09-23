@@ -1,5 +1,5 @@
 import { squash } from './core/validate.js';
-import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -680,7 +680,8 @@ function ricSearch({ number, volume, section, range }, rulers = []) {
       : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
   });
   const group = (list) => (list.length > 1 ? `(${list.join(' OR ')})` : list[0]);
-  const facets = rulers.flatMap((name) => [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]);
+  // A section name no person answers to ("Philip I" beside "Otacilia Severa") is in no facet, so it is asked for by its title words instead.
+  const facets = rulers.flatMap((name) => (rulers.length > 1 && isSectionOnly(name) ? [`"${name}"`] : [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]));
   const narrow = [volumePhrase(unquote(volume)), phrase(section)].filter(Boolean).map((text) => ` AND "${text}"`).join('');
   return `${group(clauses)}${facets.length ? ` AND ${group(facets)}` : ''}${narrow}`;
 }
@@ -852,7 +853,9 @@ export async function lookupType(given, options = {}) {
     // A section read from a lot heading's mint alone says where the coin was struck, not whose it is: the heading may name a ruler the people table
     // cannot place ("Constantius I. Follis. Trier."), so the one type in that section is offered, never opened. A mint typed or chosen with no volume
     // and no rulers beside it ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case, with nothing at all to say whose coin it is.
-    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0)) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+    // Nor is a coin found for a joint heading one half of which is a section ("Philip I and Otacilia Severa"): that section is half of what it says.
+    const halfHeading = rulers.length > 1 && rulers.some(isSectionOnly);
+    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);

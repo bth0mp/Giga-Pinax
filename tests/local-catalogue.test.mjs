@@ -893,3 +893,27 @@ test('a stale shard is unavailable only where the answer needs the record it lac
   assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Domitian'] })).status, 'unavailable');
   assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Nero'] })).status, 'unavailable');
 });
+
+// A joint heading naming a RIC section and a person ("Philip I and Otacilia Severa") looks in the section and for the person, and offers what it
+// finds: the section alone opened Philip's own coin before, and the person alone left every coin with the number to choose from.
+test('a joint heading naming a section and a person offers the section\'s coins and the person\'s, never every coin with the number', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lot = findReferences('Philip I and Otacilia Severa. Antoninianus. RIC 27a.');
+  assert.deepEqual(lot.rulers, ['Philip I', 'Otacilia Severa']);
+  const result = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(result.status, 'candidates');
+  assert.equal(result.partial, true);
+  assert.equal(result.personMismatch, undefined);
+  assert.deepEqual(result.candidates.map(({ id }) => id), ['ric.4.ph_i.27A']);
+});
+
+test('over the bundled catalogue, a joint heading naming a section and a person offers a few of their coins', { skip }, async () => {
+  for (const [text, id] of [['Philip I and Otacilia Severa. RIC 1.', 'ric.4.ph_i.1'], ['Philip I and Otacilia Severa. Antoninianus. RIC 30.', 'ric.4.ph_i.30']]) {
+    const lot = findReferences(text);
+    const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+    assert.equal(result.status, 'candidates', text);
+    assert.equal(result.personMismatch, undefined, text);
+    assert.ok(result.candidates.some((entry) => entry.id === id), JSON.stringify(result.candidates));
+    assert.ok(result.candidates.length <= 5, JSON.stringify(result.candidates));
+  }
+});

@@ -240,6 +240,9 @@ export const isMintOnly = (name) => {
   const volumes = volumesOf(name);
   return volumes.length > 0 && volumes.every((volume) => ['VI', 'VII', 'VIII', 'IX'].includes(volume)) && !isRicPerson(name);
 };
+// A name RIC heads a ruler's section with and no person answers to ("Philip I", "Gaius/Caligula"): OCRE has no facet value under it, so a heading
+// naming it is looked for by the section, not by a portrait.
+export const isSectionOnly = (name) => volumesOf(name).length > 0 && !isRicPerson(name) && !isMintOnly(name);
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).

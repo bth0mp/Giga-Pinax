@@ -1537,3 +1537,15 @@ test('a mint section typed with no volume is offered online, never opened, and o
   await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, { fetchImpl: volume });
   assert.ok(volume.calls[1]?.includes('ric.7.tri.12'), String(volume.calls));
 });
+
+// Online the same heading asks OCRE for the section by its title words beside the person's facets, since no facet holds a section's name, and offers
+// what comes back: half of a joint heading is never the answer on its own.
+test('a joint heading naming a section and a person asks for the section by title and offers its hit', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed><entry><title>RIC IV Philip I 1</title><id>ric.4.ph_i.1</id></entry></feed>' });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1', rulers: ['Philip I', 'Otacilia Severa'] }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.4.ph_i.1', title: 'RIC IV Philip I 1' }], partial: true, corpus: 'ocre',
+    query: 'RIC 1 (Philip I, Otacilia Severa)' });
+  assert.equal(fetchImpl.calls.length, 1);
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('portrait_facet:"Otacilia Severa"')), fetchImpl.calls[0]);
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('AND ("Philip I" OR ')) && !fetchImpl.calls[0].includes(encodeURIComponent('facet:"Philip I"')), fetchImpl.calls[0]);
+});
