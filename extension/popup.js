@@ -622,25 +622,26 @@ function lotLink(sale, text) {
   return link;
 }
 
-// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. The rows counted are the
-// ones the median itself rests on — the period on show — and a row counts in N when the statistics count it and it either passes that filter or the
-// collector counted it by hand. A row he put back and took out again is out of the median, so it is out of the count: it never cited the reference.
-// The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole instead, and says so.
+// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. Every figure is over the
+// rows the median itself rests on — the period on show. N is how many of them pass the filter, and nothing else: a row the collector counted by hand
+// still does not cite the reference. Where his own decisions make the median rest on another number of rows, that number follows ("1 of 3 results
+// cite Price 23; 2 of 3 counted"). The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole
+// instead, and says so.
 // A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
 function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
   const total = periodLots.length;
   const all = `all ${total} ${total === 1 ? 'result is' : 'results are'} counted`;
   if (uncited) return [`No result text names ${name}, so ${all}.`];
   if (unsearched) return [`This search does not look for ${name}, so ${all}.`, ...filterLines(periodLots, curation, { name, denomination, passes })];
-  const counted = (test) => periodLots.filter((sale) => curation.reasonFor(sale) === null && (test(sale) || curation.includedByHand(sale))).length;
+  const counted = periodLots.filter((sale) => curation.reasonFor(sale) === null).length;
   const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
+  const line = (test, verb) => {
+    const passing = periodLots.filter(test).length;
+    return `${passing} of ${total} ${verb}${passing === counted ? '' : `; ${counted} of ${total} counted`}`;
+  };
   const lines = [];
-  if (citing && dropped(passes.citing)) {
-    lines.push(`${counted(passes.citing)} of ${total} ${total === 1 ? 'result cites' : 'results cite'} ${name}`);
-  }
-  if (denomination && dropped(passes.denomination)) {
-    lines.push(`${counted(passes.denomination)} of ${total} ${total === 1 ? 'result names' : 'results name'} “${denomination}”`);
-  }
+  if (citing && dropped(passes.citing)) lines.push(line(passes.citing, `${total === 1 ? 'result cites' : 'results cite'} ${name}`));
+  if (denomination && dropped(passes.denomination)) lines.push(line(passes.denomination, `${total === 1 ? 'result names' : 'results name'} “${denomination}”`));
   return lines;
 }
 

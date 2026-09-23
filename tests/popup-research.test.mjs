@@ -1442,3 +1442,21 @@ test('a currency re-fetch keeps the rows included and excluded by hand', async (
   await settle();
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
 });
+
+// 0.33 review (R9): a row counted by hand still does not cite the reference, so the line no longer counts it among those that do. It says both
+// figures, over the same results, alike in the panel, the announcement and the copied summary.
+test('a row included by hand is counted, not said to cite the reference', async () => {
+  const lots = [citingSale('c1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('c2', '300', 'Alexander III. Tetradrachm. Price 3014. VF'),
+    citingSale('c3', '500', 'Alexander III. Tetradrachm. Price 3015. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite Price 23');
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  const line = '1 of 3 results cite Price 23; 2 of 3 counted';
+  assert.equal(popup.element('cited-count').textContent, line);
+  assert.ok(popup.element('announcement').textContent.includes(`${line}.`));
+  await popup.element('copy-summary').emit('click');
+  assert.ok(popup.clipboard[0].split('\n').includes(line));
+});

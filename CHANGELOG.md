@@ -18,6 +18,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - `AU` followed by the coin's weight after a full stop or inside a bracket — `Justinian I. AU. 4.45g.`, `Constantinople. AU (4.45 g).` — is read as the metal, as `AU 4.45 g` already was, and no longer counts a gold coin as **AU/Mint State**.
 - A grade the description quotes from an earlier sale — `Good EF. Ex Triton XX (where described as "Good VF").`, `there graded VF`, `catalogued as VF` — no longer takes the place of the lot's own grade, which put the coin in a lower or higher bucket than its dealer gave it.
 - A search you type with the ruler inside the citation, as dealers write it — `RIC I Nero 306`, `RIC X Leo I 605` — still counts only the results citing your coin; it used to switch the citation filter off without a word. When a search you have edited really does look for something else, the panel, the announcement and **Copy summary** now say so: `This search does not look for Price 23, so all 12 results are counted.`
+- The **N of M results cite …** line no longer counts a sale you included by hand as one that cites the reference. It says how many really cite it and, when your own decisions change how many the median rests on, that number too — `1 of 3 results cite Price 23; 2 of 3 counted` — in the panel, the announcement and **Copy summary** alike. The **names …** line reads the same way.
 
 ### Security
 
