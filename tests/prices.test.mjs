@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -70,22 +70,41 @@ test('the fixture page reads as two citations of another type, and the grades th
   assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'AU/Mint State']);
 });
 
-// A page is untrusted text off the network, and every retry parses the whole slice from the marker again: half a
-// megabyte of nothing but terminators took seconds with the popup's own thread. Bounded by the size read and the number
-// of retries, so a hostile page costs a miss rather than a frozen popup.
-test('a page made of nothing but array terminators is given up on, not chewed through', () => {
-  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2)}"}];`;
+// A page is untrusted text off the network. 0.32 tried each "];" in turn and parsed the whole slice again at every one, so a description of two
+// megabytes with its terminators at the end took seconds on the popup's own thread. The array's end is found in one pass that reads strings as
+// JSON writes them, and the slice is parsed once: a page of nothing but terminators inside a string is simply a lot whose text is terminators.
+const countingParses = (read) => {
+  const parse = JSON.parse;
+  let parses = 0;
+  JSON.parse = (...args) => { parses += 1; return parse(...args); };
+  try { return { result: read(), parses }; } finally { JSON.parse = parse; }
+};
+test('a page made of nothing but array terminators is read in one pass and parsed once', () => {
+  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2 - 20)}"}];`;
   for (const bytes of [64 * 1024, 512 * 1024, 2 * 1024 * 1024]) {
     const started = performance.now();
-    assert.equal(extractLots(terminators(bytes)), null);
+    const { result, parses } = countingParses(() => extractLots(terminators(bytes)));
     const spent = performance.now() - started;
-    // Measured at about 17 ms for each of these; the margin is for a loaded machine, not for a slower bound.
-    assert.ok(spent < 250, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
+    assert.equal(result?.length, 1, `${bytes} bytes`);
+    assert.equal(parses, 1);
+    assert.ok(spent < 2000, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
   }
-  // A page with more results text than any reply carries is read up to the bound and no further.
+  // The worst shape for the old reader: one description nearly the whole slice, its terminators at the very end.
+  const late = `acsearch.initSearchResults = [{"id":"1","description":"${'x'.repeat(2 * 1024 * 1024 - 4200)}${'];'.repeat(1999)}"}];`;
   const started = performance.now();
+  const { result, parses } = countingParses(() => extractLots(late));
+  assert.equal(result?.length, 1);
+  assert.equal(parses, 1);
+  assert.ok(performance.now() - started < 1000, 'the worst shape is read promptly');
+  // Escapes are honoured: an escaped quote does not end the string, and an escaped backslash does not escape the quote after it.
+  assert.deepEqual(extractLots('acsearch.initSearchResults = [{"id":"a\\"]","title":"b\\\\"}, {"id":"c"}];').map((entry) => entry.id), ['a"]', 'c']);
+  // An array that never closes inside the bytes read is no page at all, and costs one pass to find out.
+  assert.equal(extractLots(`acsearch.initSearchResults = [{"id":"${'];'.repeat(1024 * 1024)}`), null);
+  assert.equal(extractLots('acsearch.initSearchResults = {"id":1};'), null);
+  // A page with more results text than any reply carries is read up to the bound and no further.
+  const beyond = performance.now();
   assert.equal(extractLots(`${' '.repeat(4 * 1024 * 1024)}acsearch.initSearchResults = [];`), null);
-  assert.ok(performance.now() - started < 1000);
+  assert.ok(performance.now() - beyond < 1000);
   // The handful a real page's descriptions carry is still read through.
   const inside = `acsearch.initSearchResults = [{"id":"1","title":"${'see [RIC 306]; '.repeat(20)}"}];`;
   assert.equal(extractLots(inside)?.length, 1);
@@ -226,10 +245,26 @@ test('summarise reads the year from either date style', () => {
 
 function fakeFetch(body, { ok = true, status = 200 } = {}) {
   const calls = [];
-  const impl = async (url, init) => { calls.push({ url, init }); return { ok, status, text: async () => body }; };
+  // A real Response, whose body is a stream: fetchPrices reads it through a byte bound, never whole.
+  const impl = async (url, init) => { calls.push({ url, init }); return new Response(body, { status: ok ? 200 : status }); };
   impl.calls = calls;
   return impl;
 }
+
+// 0.33 review (S3): the reply is untrusted and was read whole before a byte of it was looked at. It is read through a bound now, and a reply past it
+// is cut off as soon as the bound is passed and said to be too large, not reported as a connection that failed.
+test('fetchPrices stops reading a reply past its byte bound', async () => {
+  let cancelled = false;
+  const endless = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(64 * 1024).fill(32)); }, cancel() { cancelled = true; } });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => new Response(endless) }), { status: 'network', reason: 'too-large' });
+  assert.equal(cancelled, true);
+  const declared = new Response('x', { headers: { 'content-length': String(ACSEARCH_MAX_BYTES + 1) } });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => declared }), { status: 'network', reason: 'too-large' });
+  assert.ok(ACSEARCH_MAX_BYTES >= 2 * 1024 * 1024 && ACSEARCH_MAX_BYTES <= 4 * 1024 * 1024);
+  // A page that is not valid UTF-8 is read as the browser reads it, as it always was.
+  const bytes = new Uint8Array([...new TextEncoder().encode('<script>acsearch.initSearchResults = [];</script>'), 0xff]);
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => new Response(bytes) }), { status: 'empty', term: 'q' });
+});
 
 test('fetchPrices sends credentials to acsearch and classifies outcomes', { timeout: 5000 }, async () => {
   const signedOut = fakeFetch(fixture('acsearch-search-nero-306.html'));
@@ -339,7 +374,7 @@ test('summaryText has no type link for a reference without type data', () => {
   const summary = summarise([lot('100', '01.01.2025'), lot('300', '01.01.2026'), lot('')], 'USD');
   assert.equal(summaryText({ label: 'HGC 4, 1218', corpus: 'other', id: 'HGC 4, 1218' }, summary, 'USD', '"HGC 4, 1218"'), [
     'HGC 4, 1218',
-    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 recorded sales matching “"HGC 4, 1218"” · 2025–2026',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 recorded sales matching "HGC 4, 1218" · 2025–2026',
   ].join('\n'));
 });
 
@@ -472,15 +507,15 @@ test('the quoting cap never splits an astral character', () => {
   assert.ok(text.includes(`“${'1'.repeat(39)}😀…”`), text);
 });
 
-test('defaultTerm groups both spellings of the king and quotes the Bopearachchi series as an exact phrase', () => {
+test('defaultTerm groups both spellings of the king and the Bopearachchi series as the exact phrases dealers cite it with', () => {
   const bop = (section, number) => ({ catalogue: 'Bop', section, number });
-  assert.equal(defaultTerm(bop(' Hermaeus ', 'Bop 20')), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(defaultTerm(bop(' Euthydemus I ', 'Bop 24a')), '(Euthydemus Euthydemos) "Bopearachchi 24A"');
-  assert.equal(defaultTerm(bop('Diodotus I or Diodotus II', '8A')), '(Diodotus Diodotos) "Bopearachchi 8A"');
-  assert.equal(defaultTerm(bop('Strato I', '12')), '(Strato Straton) "Bopearachchi 12"');
-  assert.equal(defaultTerm(bop('Menander I', '9C')), 'Menander "Bopearachchi 9C"');
-  assert.equal(defaultTerm(bop('Hermaios', '20')), 'Hermaios "Bopearachchi 20"');
-  assert.equal(defaultTerm(bop('', 'Bop-9C')), '"Bopearachchi 9C"');
+  assert.equal(defaultTerm(bop(' Hermaeus ', 'Bop 20')), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(defaultTerm(bop(' Euthydemus I ', 'Bop 24a')), '(Euthydemus Euthydemos) ("Bopearachchi 24A" "Bop 24A" "Bopearachchi Série 24A")');
+  assert.equal(defaultTerm(bop('Diodotus I or Diodotus II', '8A')), '(Diodotus Diodotos) ("Bopearachchi 8A" "Bop 8A" "Bopearachchi Série 8A")');
+  assert.equal(defaultTerm(bop('Strato I', '12')), '(Strato Straton) ("Bopearachchi 12" "Bop 12" "Bopearachchi Série 12")');
+  assert.equal(defaultTerm(bop('Menander I', '9C')), 'Menander ("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
+  assert.equal(defaultTerm(bop('Hermaios', '20')), 'Hermaios ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(defaultTerm(bop('', 'Bop-9C')), '("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
   assert.equal(defaultTerm(bop('Hermaeus', '')), '(Hermaeus Hermaios) Bopearachchi');
   assert.equal(defaultTerm(bop('', '')), 'Bopearachchi');
 });
@@ -630,12 +665,12 @@ test('summaryText names a period other than All, then adds the last sale and the
 
 test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop default', () => {
   const hermaeus = { catalogue: 'Bop', section: 'Hermaeus', number: '20' };
-  assert.equal(chooseTerm(hermaeus, 'Hermaeus Bopearachchi 20'), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(chooseTerm(hermaeus, ' Hermaeus  Bopearachchi 20 '), '(Hermaeus Hermaios) "Bopearachchi 20"');
+  assert.equal(chooseTerm(hermaeus, 'Hermaeus Bopearachchi 20'), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(chooseTerm(hermaeus, ' Hermaeus  Bopearachchi 20 '), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
   assert.equal(chooseTerm(hermaeus, 'Hermaios Bopearachchi 20 tetradrachm'), 'Hermaios Bopearachchi 20 tetradrachm');
-  assert.equal(chooseTerm(hermaeus, '(Hermaeus Hermaios) "Bopearachchi 20"'), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  for (const blank of ['', '   ', undefined, null]) assert.equal(chooseTerm(hermaeus, blank), '(Hermaeus Hermaios) "Bopearachchi 20"');
-  assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '"Bopearachchi 9C"');
+  assert.equal(chooseTerm(hermaeus, '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")'), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  for (const blank of ['', '   ', undefined, null]) assert.equal(chooseTerm(hermaeus, blank), '(Hermaeus Hermaios) ("Bopearachchi 20" "Bop 20" "Bopearachchi Série 20")');
+  assert.equal(chooseTerm({ catalogue: 'Bop', section: '', number: '9C' }, 'Bopearachchi 9C'), '("Bopearachchi 9C" "Bop 9C" "Bopearachchi Série 9C")');
   assert.equal(chooseTerm({ catalogue: 'Bop', section: 'Hermaeus', number: '' }, 'Hermaeus Bopearachchi'), '(Hermaeus Hermaios) Bopearachchi');
   const nero = { catalogue: 'RIC', section: 'Nero', number: '306' };
   assert.equal(chooseTerm(nero, 'Nero 306 denarius'), 'Nero 306 denarius');
@@ -889,6 +924,28 @@ test('searchesReference reads the number as a whole token, edition mark and all'
   // The collector may keep the edition mark the default term leaves out; it is still his card's own citation.
   assert.equal(searchesReference('Nero "RIC I² 306"', nero), true);
   assert.equal(searchesReference('Nero "RIC² 306"', nero), true);
+  // 0.33 review (R8): a collector names the ruler between the volume and the number, as dealers do, and is still searching his card's citation.
+  assert.equal(searchesReference('RIC I Nero 306', nero), true);
+  assert.equal(searchesReference('RIC I, Nero Claudius 306', nero), true);
+  assert.equal(searchesReference('RIC I Nero 3061', nero), false);
+  assert.equal(searchesReference('RIC I Nero Claudius Caesar Augustus 306', nero), false, 'a few words, not a sentence');
+  assert.equal(searchesReference('RIC X Leo I 605', { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' }), true);
+  // A ruler never stands between a key and a number with no volume: "Price Alexander 23" is not how Price 23 is cited.
+  assert.equal(searchesReference('Price Alexander 23', { catalogue: 'Price', number: '23' }), false);
+  // 0.33 review, fix round 1: another ruler's name, or another catalogue's key, between the volume and the number is a search for another coin.
+  assert.equal(searchesReference('RIC I Galba 306', nero), false);
+  assert.equal(searchesReference('RIC I Cohen 306', nero), false);
+  assert.equal(searchesReference('RIC I Otho, 306', nero), false);
+  // The card's own ruler may stand beside another word of his name, and a word that names nobody (a mint) is no other ruler.
+  assert.equal(searchesReference('RIC I Nero Augustus 306', nero), true);
+  assert.equal(searchesReference('RIC I Nero Rome 306', nero), true);
+  assert.equal(searchesReference('RIC I Rome 306', nero), true);
+  assert.equal(searchesReference('RIC I Galba 306 RIC I Nero 306', nero), true);
+  const leo = { catalogue: 'RIC', number: '605', volume: 'X', section: 'Leo I (East)' };
+  assert.equal(searchesReference('RIC X Zeno 605', leo), false);
+  assert.equal(searchesReference('RIC X Leo I 605', leo), true);
+  // A card without a section has no ruler to hold a name against.
+  assert.equal(searchesReference('RIC I Galba 306', { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: '' }), true);
 });
 
 // 0.32 review, round 2: the intervening words were counted, not read. A ruler's own regnal numeral ended the match, a volume's part mark ended it,
@@ -964,14 +1021,37 @@ test('citesReference reads a list of type numbers behind one key', () => {
   assert.equal(citesReference('Price 23.00', price23), false);
 });
 
+// The timed reads below are timed in this process's CPU time, not on the wall clock. Each costs a few milliseconds; a 250 ms wall-clock budget failed
+// now and then when the suites ran in parallel on a busy machine, which stretches the wall clock of a read without adding to what the read costs. The
+// shapes these guard against cost seconds, and 250 ms of CPU still tells them from a loaded runner (0.33 review, H7).
+const CPU_BUDGET_MS = 250;
+const cpuMs = (read) => {
+  const started = process.cpuUsage();
+  read();
+  const { user, system } = process.cpuUsage(started);
+  return (user + system) / 1000;
+};
+// What one read costs on average, over enough reads to fill a few ticks of the CPU clock (Windows counts it in 15.6 ms steps).
+const cpuPerRead = (read) => {
+  const started = process.cpuUsage();
+  let reads = 0;
+  let spent = 0;
+  while (spent < 50) {
+    read();
+    reads += 1;
+    const { user, system } = process.cpuUsage(started);
+    spent = (user + system) / 1000;
+  }
+  return spent / reads;
+};
+
 // 0.32 review, round 3: two adjacent separator groups behind the key split a run of them between themselves, so 'RIC ' followed by 100,000 full stops
 // took 4-7 seconds. They are one group now, and a description is cut to CITATION_LIMIT characters before the pattern reads it at all.
 test('a run of separators behind the key costs no more than the text it stands in', () => {
   const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
   for (const text of [`RIC ${'.'.repeat(100000)}`, `RIC ${'.'.repeat(3000)}`, `RIC ${'. '.repeat(50000)}`, `RIC ${', '.repeat(50000)}306`, `RIC ${'(('.repeat(50000)}306`]) {
-    const began = Date.now();
-    citesReference(text, ric);
-    assert.ok(Date.now() - began < 250, `citesReference took ${Date.now() - began} ms on ${text.length} characters`);
+    const spent = cpuMs(() => citesReference(text, ric));
+    assert.ok(spent < CPU_BUDGET_MS, `citesReference took ${spent} ms of CPU on ${text.length} characters`);
   }
   // Only the opening of a description is read, as the grade reader already did: what stands 10,000 characters in is a group lot's literature.
   assert.equal(citesReference(`${'x '.repeat(100)}RIC 306`, ric), true);
@@ -983,9 +1063,8 @@ test('the grade reader reads an adversarial description in one bounded pass', ()
   for (const length of [3000, 100000]) {
     for (const shape of ['. Good Very ', '. ss-', '. Extremely Fin', 'NGC Ch VF 5/5 - ', 'Av. ss, Rs. s / vz. ', '. , : ( / ', '. sehr schön-']) {
       const text = shape.repeat(Math.ceil(length / shape.length)).slice(0, length);
-      const began = Date.now();
-      gradeOf(text);
-      assert.ok(Date.now() - began < 250, `gradeOf took ${Date.now() - began} ms on ${length} characters of “${shape}”`);
+      const spent = cpuMs(() => gradeOf(text));
+      assert.ok(spent < CPU_BUDGET_MS, `gradeOf took ${spent} ms of CPU on ${length} characters of “${shape}”`);
     }
   }
 });
@@ -993,18 +1072,29 @@ test('the grade reader reads an adversarial description in one bounded pass', ()
 // 75,000 characters of repeated lowercase marks took the reviewer's machine 948 ms, because every match sliced the description again.
 test('a long description is read once and quickly', () => {
   const long = `Fine. ${'ss ss ss '.repeat(8000)}`;
-  const started = Date.now();
-  assert.equal(gradeOf(long), 'Fine and below');
-  assert.ok(Date.now() - started < 250, `gradeOf took ${Date.now() - started} ms`);
+  const spent = cpuMs(() => assert.equal(gradeOf(long), 'Fine and below'));
+  assert.ok(spent < CPU_BUDGET_MS, `gradeOf took ${spent} ms of CPU`);
   // Only the opening of a description is read: a dealer's grade is never 3,000 characters in.
   assert.equal(gradeOf(`${'x'.repeat(4000)}. EF`), null);
   // The citation pattern is bounded in the same way: a group lot's page of literature costs no more per character than a one-line description.
   const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
   for (const text of [`RIC ${'a '.repeat(30000)}306`, 'RIC I Nero '.repeat(7000), `RIC ${'3'.repeat(60000)}`, 'RIC ('.repeat(15000)]) {
-    const began = Date.now();
-    assert.equal(citesReference(text, ric), false);
-    assert.ok(Date.now() - began < 250, `citesReference took ${Date.now() - began} ms`);
+    const spent = cpuMs(() => assert.equal(citesReference(text, ric), false));
+    assert.ok(spent < CPU_BUDGET_MS, `citesReference took ${spent} ms of CPU`);
   }
+});
+
+// A budget alone lets a quadratic read through on a fast machine. Ten times the description may cost at most thirty times as much: a read that grows
+// with the text passes with room to spare, and one that reads the description again at every match, as the 948 ms shape did, costs a hundred times.
+test('the grade reader costs no more per character on a long description than on a short one', () => {
+  const read = (repeats) => {
+    const text = `Fine. ${'ss ss ss '.repeat(repeats)}`;
+    gradeOf(text);
+    return Math.min(...[1, 2, 3].map(() => cpuPerRead(() => gradeOf(text))));
+  };
+  const short = read(800);
+  const long = read(8000);
+  assert.ok(long < 30 * short, `gradeOf took ${long.toFixed(2)} ms of CPU at 8000 repeats, ${short.toFixed(2)} ms at 800`);
 });
 
 test('namesDenomination matches the card word as a whole word, plural tolerated', () => {
@@ -1293,4 +1383,75 @@ test('summaryText carries what the filters left out and the median of each grade
     'EF: median $400 (3)',
     '27 of 39 results carry no grade',
   ]);
+});
+
+// 0.33 review (R7): the Spanish "SC" (sin circular) is the key Seleucid Coins is cited under, too. A grade mark is never a citation, and a citation is
+// never a grade: each is read only where it stands as itself.
+test('SC reads as a grade only where no number follows it, and cites Seleucid Coins only with its number', () => {
+  const seleucid = { catalogue: 'SC', number: '379.1' };
+  const graded = 'Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1. SC.';
+  assert.equal(citesReference(graded, seleucid), true);
+  assert.equal(gradeOf(graded), 'AU/Mint State');
+  assert.equal(gradeOf('Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1.'), null);
+  assert.equal(gradeOf('SC 379.1; ESM 123. EBC.'), 'EF');
+  assert.equal(citesReference('Seleucid Kings. Antiochos I. Tetradrachm. EBC/SC.', seleucid), false);
+  // The senate's mark on a Roman bronze is neither.
+  assert.equal(gradeOf('Rev. SC, legend around.'), null);
+  assert.equal(gradeOf('Rev. Minerva standing right; SC.'), null);
+});
+
+// 0.33 review (R11): the copied summary wrapped a term that carries its own quotes in a second pair, as the panel had stopped doing.
+test('summaryText quotes the search term as the panel does', () => {
+  const summary = summarise([lot('100', '01.01.2024', 'a')], 'USD');
+  assert.match(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"').split('\n')[1], /matching "Price 23" · 2024$/);
+  assert.match(summaryText({ label: 'RIC 306' }, summary, 'USD', 'Nero ("RIC 306" "RIC I 306")').split('\n')[1], /matching Nero \("RIC 306" "RIC I 306"\) · 2024$/);
+  assert.match(summaryText({ label: 'Nero 306' }, summary, 'USD', 'Nero 306').split('\n')[1], /matching “Nero 306” · 2024$/);
+});
+
+// 0.33 review (R11): Bopearachchi is cited "Bop. 24A" and, by French dealers, "Bopearachchi Série 24A"; neither was searched nor counted.
+test('a Bop reference searches and counts the short key and the French series word', () => {
+  const euthydemus = { catalogue: 'Bop', section: 'Euthydemus I', number: 'Bop 24a' };
+  assert.equal(defaultTerm(euthydemus), '(Euthydemus Euthydemos) ("Bopearachchi 24A" "Bop 24A" "Bopearachchi Série 24A")');
+  assert.equal(referenceName(euthydemus), 'Bopearachchi 24A');
+  assert.equal(coinArchivesTerm(euthydemus), 'Euthydemus "Bopearachchi 24A"');
+  // The 0.32 default a collector may have saved counts as unsaved, so it gives way to the new one.
+  assert.equal(chooseTerm(euthydemus, '(Euthydemus Euthydemos) "Bopearachchi 24A"'), defaultTerm(euthydemus));
+  for (const cited of ['Euthydemus I. Tetradrachm. Bop. 24A.', 'Bop 24a.', 'BOP 24A', 'Bopearachchi Série 24A.', 'Bopearachchi, série 24A.']) {
+    assert.equal(citesReference(cited, euthydemus), true, cited);
+  }
+  for (const other of ['Bop. 24B.', 'Bop. 124A.', 'Bopearachchi Série 24.']) assert.equal(citesReference(other, euthydemus), false, other);
+  assert.equal(searchesReference('Euthydemus "Bop 24A"', euthydemus), true);
+});
+
+// 0.33 review (R11): three more ways a RIC I citation is written.
+test('citesReference reads "(2nd ed.)", "vol. I" and the volume as a digit on a volume I card', () => {
+  const nero = { catalogue: 'RIC', section: 'Nero', number: '306', volume: 'I (2nd edition)' };
+  for (const cited of ['Nero. As. RIC I (2nd ed.) 306.', 'RIC I (2nd edition) 306', 'RIC vol. I 306.', 'RIC Vol I, 306', 'Nero. As. RIC 1 306.']) {
+    assert.equal(citesReference(cited, nero), true, cited);
+  }
+  assert.equal(citesReference('RIC vol. II 306.', nero), false);
+  assert.equal(citesReference('RIC 1 3061.', nero), false);
+  // A digit stands for the volume only on a volume I card: "RIC 2 306" could as well be the second edition of volume I.
+  assert.equal(citesReference('RIC 2 306.', { catalogue: 'RIC', number: '306', volume: 'II' }), false);
+});
+
+// 0.33 review (R11): a slab prints its score straight behind the grade as often as with a space.
+test('gradeOf reads a slab grade glued to its score, and only behind a slabber', () => {
+  assert.equal(gradeOf('PCGS MS63'), 'AU/Mint State');
+  assert.equal(gradeOf('NGC AU58'), 'AU/Mint State');
+  assert.equal(gradeOf('NGC XF45. Strike 5/5.'), 'EF');
+  assert.equal(gradeOf('Slg. MS63.'), null);
+  assert.equal(gradeOf('Ex Slg. vz12.'), null);
+});
+
+// 0.33 review (H6): the grade reader and the lot reader each carried an anyCase, and they disagreed (a "ß" became the class [ßSS], which takes a
+// bare "S"). lot.js keeps its guarded copy unexported, so prices.js carries the same text, and this keeps the two from drifting apart again.
+test('prices.js reads a word in any case exactly as lot.js does', () => {
+  const definition = (file) => {
+    const source = readSource(new URL(`../extension/${file}`, import.meta.url), 'utf8');
+    const start = source.indexOf('const anyCase = ');
+    return source.slice(start, source.indexOf("}).join('');", start));
+  };
+  assert.ok(definition('lot.js').length > 50);
+  assert.equal(definition('prices.js'), definition('lot.js'));
 });

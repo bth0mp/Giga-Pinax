@@ -2828,5 +2828,735 @@
   "text": "Byzantine. Solidus. AU.",
   "grade": null,
   "note": "closing round: AU is the metal, not a grade, where a weight, diameter, a bracket behind Gold or a denomination says so"
+ },
+ {
+  "text": "Rev. Zeus seated left; in left field, MB. Price 23.",
+  "grade": null,
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Eagle standing; in exergue, TB.",
+  "grade": null,
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Athena; in field, BB. Price 3014.",
+  "grade": null,
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Zeus seated l.; in l. field, MB. Price 23. EF",
+  "grade": "ef",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Eagle standing; in ex., TB. VF",
+  "grade": "vf",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Athena standing; control in right field, SPL. Price 3014. Good VF",
+  "grade": "vf",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Nike; monogram below, TTB. Price 23.",
+  "grade": null,
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Rev. Zeus seated left; in field right, MS. Fine.",
+  "grade": "fine",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Patina verde, BB.",
+  "grade": "vf",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Kleiner Randfehler, vz.",
+  "grade": "ef",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Leichte Tönung, ss-vz",
+  "grade": "vf",
+  "note": "0.33 review R4: control letters behind a place on the coin and a comma"
+ },
+ {
+  "text": "Justinian I. AU. 4.45g. 20mm.",
+  "grade": null,
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Theodosius II. Constantinople. AU. 4.45 g. RIC X 202.",
+  "grade": null,
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Constantinople, 6th officina. AU (4.45 g). RIC X 202.",
+  "grade": null,
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Constantinople. AU (4.45 g). Very Fine.",
+  "grade": "vf",
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Solidus. AU (4.45 g, 20 mm).",
+  "grade": null,
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Leo I. AU (20 mm, 4.45 g). Good VF.",
+  "grade": "vf",
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Valentinian III. AU. 4.45 g. Near EF.",
+  "grade": "ef",
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "NGC AU. 4.45 g.",
+  "grade": "mint",
+  "note": "0.33 review R5: the weight behind a full stop or in a bracket still names the metal"
+ },
+ {
+  "text": "Good EF. Ex Triton XX, lot 500 (where described as \"Good VF\").",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "EF. Ex NAC 100 (2017), lot 5, there graded VF.",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "VF. Ex Gorny 200, lot 10 (described as EF).",
+  "grade": "vf",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Toned EF. From the ABC Collection, where catalogued as \"VF\".",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Ex CNG 100, lot 5, described as Choice VF.",
+  "grade": null,
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "Previously graded VF; now Near EF.",
+  "grade": "ef",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "NGC graded AU, Strike 5/5, Surface 4/5",
+  "grade": "mint",
+  "note": "0.33 review R6: a grade quoted from an earlier sale is the provenance, not the lot's grade"
+ },
+ {
+  "text": "EBC.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "MBC+.",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "MBC/EBC",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "BC+",
+  "grade": "fine",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "EBC-. Bonita pátina.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "SC.",
+  "grade": "mint",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Casi EBC.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "casi SC",
+  "grade": "mint",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Denario. 3,85 g. RIC 45. MBC.",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Pátina verde. EBC. Escasa.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "EBC/SC",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Zeer fraai.",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "ZF/PR",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Prachtig.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Mooi patina. Zeer fraai.",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "ZF+",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Prachtig exemplaar met mooie patina.",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1.",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1. EBC.",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Seleucid Kings. Antiochos I. Tetradrachm. SC 379.1; ESM 123. MBC.",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Antiochos III. AR Tetradrachm. SC 1041. VF",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Rev. SC, legend around.",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Rev. Minerva standing right; SC.",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Rev. Large SC in laurel wreath. VF",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Julius Caesar. Denarius, 44 BC.",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Sicily, Syracuse. Tetradrachm, c. 310-305 BC. EF",
+  "grade": "ef",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "Julius Caesar. Denarius (44 BC). VF",
+  "grade": "vf",
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "NGC PR 69",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "PCGS PR65",
+  "grade": null,
+  "note": "0.33 review R7: Spanish and Dutch grades, both edges as every mark"
+ },
+ {
+  "text": "PCGS MS63",
+  "grade": "mint",
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "NGC AU58",
+  "grade": "mint",
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "NGC XF45. Strike 5/5.",
+  "grade": "ef",
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "NGC Ch VF25",
+  "grade": "vf",
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "Slg. MS63.",
+  "grade": null,
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "Ex Slg. vz12.",
+  "grade": null,
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "Rev. monogram; MS63 in exergue.",
+  "grade": null,
+  "note": "0.33 review R11: a slab's score glued to its grade"
+ },
+ {
+  "text": "Rev. Spes advancing left. SC. RIC 150. 25.3 g.",
+  "grade": null,
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Nerón. Sestercio. Roma. Rev.: Roma sentada. SC.",
+  "grade": null,
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Roma. SC. MBC.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Nerón. Sestercio. Roma. SC. MBC.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "RIC 207. SC.",
+  "grade": "mint",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Casi SC.",
+  "grade": "mint",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Erhaltung: SC",
+  "grade": "mint",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Pátina verde. SC.",
+  "grade": null,
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "SC. Brillo original.",
+  "grade": "mint",
+  "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Antiochos I. Tetradrachm. VF. SC –; cf. ESM 123.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC –.",
+  "grade": null,
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC - ; ESM 12. MBC.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Antiochos I. Tetradrachm. SC (unlisted). EF",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC (inédita).",
+  "grade": null,
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "EBC. SC -.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Good VF. Ex NAC 50, lot 10 (there described as VF/EF).",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Ex NAC 50 (described as VF/EF). Good VF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "EF. Ex Triton XX (where described as \"Good VF - EF\").",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Good VF. Ex Gorny 200 (catalogued as ss-vz).",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Ex CNG 100 (there graded VF/EF).",
+  "grade": null,
+  "note": "0.33 review fix round 1: a range partner of a provenance grade is the provenance's too, and never the lot's last statement"
+ },
+ {
+  "text": "Zeus seated left; in left field, monogram; below throne, MB. Price 3014.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Zeus seated left; beneath throne, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Adler; im Abschnitt, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Aquila; in esergo, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "SC in wreath, MB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Zeus assis; dans le champ, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Zeus seated; under throne, MB. EF",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Im Abschnitt, TB. ss",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "beneath throne, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Im Abschnitt, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "in esergo, TB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Im Feld, MB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "Nel campo, BB.",
+  "grade": null,
+  "note": "0.33 review fix round 1: control letters behind more place words and a comma (throne, wreath, under; Feld, Abschnitt; campo, esergo; champ)"
+ },
+ {
+  "text": "AU. (4.45 g, 20 mm).",
+  "grade": null,
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "AU. 4.45 grams. 20 mm.",
+  "grade": null,
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "Solidus. AU. (4.45 g). EF.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "Justinian I. AU, 4.45 gm.",
+  "grade": null,
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "AU (4.45 grams).",
+  "grade": null,
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "Tremissis. AU. 1.49 gram. VF",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the weight behind a full stop and a bracket, or spelled grams or gm, still names the metal"
+ },
+ {
+  "text": "Fraai / zeer fraai.",
+  "grade": "fine",
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "Fraai.",
+  "grade": null,
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "fraai",
+  "grade": null,
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "Een fraai portret. ZF",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "ZF / fraai",
+  "grade": "fine",
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "Fraai - ZF",
+  "grade": "fine",
+  "note": "0.33 review fix round 1: Dutch fraai is a grade only as a half of a range, as schön is"
+ },
+ {
+  "text": "Vz. ZF, Kz. PR",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
+ },
+ {
+  "text": "Vz. ZF, kz. PR.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
+ },
+ {
+  "text": "Kz. Adler. ZF",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: the Dutch keerzijde (Kz.) names a side as Rs. does; Vz. is left alone, since vz is the German grade"
+ },
+ {
+  "text": "Lot of 2 coins. VF and EF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Two denarii, VF and EF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Lot of 2. MBC y EBC.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Lotto di 2. BB e SPL.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Lot de 2. TTB et SUP.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "2 Stück. ss und vz.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Lot of 2. VF and Fine.",
+  "grade": "fine",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Nearly EF and well centred.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Good VF and attractively toned.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "EF and rare thus.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Very Fine and scarce. Ex CNG 100.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Choice EF and well struck on a broad flan.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Toned VF and with a fine portrait.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "About EF and nicely toned. Rare.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "VF and a pleasing portrait of Hadrian.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Good VF and fine for the type.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "EF and fine.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Good VF and very fine for the issue.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "EF and SC in exergue.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "EF and MB monogram in field.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "vz und s. Anm.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Vorzüglich und s. RIC 12.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Gutes ss und selten.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "VF et rare.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "BB e raro.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "MBC y escasa.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Sehr schön und selten.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "ss und vorzüglich erhalten.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Ex Leu 20 (sold as EF and VF). Good VF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Obverse EF and reverse VF.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "EF and s/ss.",
+  "grade": "fine",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Good VF and F for the type.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Lote: AU y AR.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Moneta in AU e AR.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "MS e documenti.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Kopf n. r., ss und Graffito.",
+  "grade": null,
+  "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
  }
 ]

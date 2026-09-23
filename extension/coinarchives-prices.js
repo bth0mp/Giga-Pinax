@@ -1,4 +1,4 @@
-import { coinArchivesUrl, localDay, summarise } from './prices.js';
+import { boundedText, coinArchivesUrl, localDay, summarise } from './prices.js';
 
 export const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
 export const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
@@ -127,34 +127,6 @@ export function parseCoinArchivesPublic(html, { term, section = 'a', currency, n
   result.summary = nativeSummary(result.selectedLots, currency);
   if (result.lots.length) result.dateSpan = { earliest: result.lots.at(-1).date, latest: result.lots[0].date };
   return { ...result, status: result.selectedLots.length ? 'ok' : result.lots.length ? 'no-currency' : 'unpriced' };
-}
-
-async function boundedText(response, maxBytes) {
-  const length = Number(response.headers?.get?.('content-length'));
-  if (Number.isFinite(length) && length > maxBytes) { await response.body?.cancel?.(); throw new Error('too-large'); }
-  if (!response.body?.getReader) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > maxBytes) throw new Error('too-large');
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  }
-  const reader = response.body.getReader();
-  const chunks = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) { await reader.cancel(); throw new Error('too-large'); }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
 export async function fetchCoinArchivesPrices({ term, section = 'a', currency }, { fetchImpl = fetch, now = new Date(), timeoutMs = 15000, maxBytes = COINARCHIVES_PUBLIC_MAX_BYTES } = {}) {
