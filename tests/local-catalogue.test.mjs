@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
-import { catalogueMetadataText, createLocalCatalogue, numberKey, packedRecordToCard } from '../extension/local-catalogue.js';
+import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
 import { ricMintSection } from '../extension/catalogues.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
 import { lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
+import { bundle, bundleJson, bundledLabels, bundlePath, peopleOn, skip } from './helpers/bundle.mjs';
 
 const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
 const metadata = {
@@ -228,95 +228,9 @@ test('a failed bundle load is retried, never remembered', async () => {
   assert.equal(failures.size, 0);
 });
 
-// The bundled catalogue itself, not the fixture above: what a heading's ruler costs only shows against OCRE's own numbering, where one man's name
-// stands inside another's. Every file is served as the package serves it, parsed once here, and numbers.json is what keeps the sweep to a few
-// seconds. Skipped where the bundle is not checked out.
-const BUNDLE = fileURLToPath(new URL('../extension/data/', import.meta.url));
-const skip = existsSync(`${BUNDLE}ocre/index.json`) ? false : 'extension/data is not bundled here';
-const files = new Map();
-// A bundled file by the path the package serves it under, "<corpus>/<name>".
-const bundleJson = (path) => {
-  if (!files.has(path)) files.set(path, JSON.parse(readFileSync(`${BUNDLE}${path}`, 'utf8')));
-  return files.get(path);
-};
-// A bundled file by its path under extension/data: "<corpus>/<name>", or a bare name for one the corpora share.
-const bundlePath = (url) => decodeURIComponent(String(url)).replace('moz-extension://test/data/', '');
-const bundledLabels = () => bundleJson('nomisma-labels.json').labels;
-// Every file served as the package serves it, and every request recorded, so a test can say what a lookup cost.
-const asked = [];
-const bundle = createLocalCatalogue({
-  baseUrl: 'moz-extension://test/data/',
-  fetchImpl: async (url) => {
-    asked.push(bundlePath(url));
-    return { ok: true, status: 200, json: async () => bundleJson(bundlePath(url)) };
-  },
-});
-// What the last lookup read, and the slate wiped for the next one. The catalogue keeps every file it has parsed, so
-// only the first lookup of a corpus records anything; a test that counts requests asks for its own catalogue.
-const readFiles = () => asked.splice(0);
-// Every coin a heading opens on its own over RIC numbers 1 to 400, read exactly as a pasted lot is read.
-async function openedOver(heading) {
-  const opened = [];
-  for (let number = 1; number <= 400; number += 1) {
-    const lot = findReferences(`${heading}. RIC ${number}`);
-    const found = lot.references[0];
-    if (!found) continue;
-    const result = await bundle.lookupType(lotLookup(found, lot.rulers));
-    if (result?.status === 'ok') opened.push({ number, card: result.card });
-  }
-  return opened;
-}
-// Who is on a coin, as the record itself says: its authorities and its obverse portraits. The card names neither where a type has two authorities
-// (RIC V's joint reigns), and it is the record the person filter reads anyway.
-const shardPartOf = (id) => {
-  const parts = bundleJson('ocre/metadata.json').shards[String(id).split('.')[1]] ?? [];
-  return parts.reduce((chosen, part) => (part.from <= id ? part : chosen), parts[0]);
-};
-const peopleOn = (id) => {
-  const record = bundleJson(`ocre/${shardPartOf(id)?.file}`)?.records?.[id];
-  return [...(record?.a ?? []), ...(record?.o?.p ?? [])];
-};
-const opensOnly = (opened, ids, heading) => {
-  for (const hit of opened) assert.ok(peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`);
-};
-// Where a coin was struck, as the record itself says: the mint concepts the type carries.
-const mintsOn = (id) => bundleJson(`ocre/${shardPartOf(id)?.file}`)?.records?.[id]?.m ?? [];
-
-test('over the bundled catalogue, a heading that is one man\'s own name opens his coins and nobody else\'s', { skip }, async () => {
-  // Germanicus is a person Nomisma names, and also a word inside Nero Claudius Drusus Germanicus: widened, the heading answered thirteen numbers
-  // with one of Drusus's coins. These ten are the coins the heading opened before any of the alias work, all of them Germanicus's own.
-  const germanicus = await openedOver('Germanicus');
-  assert.deepEqual(germanicus.map(({ number }) => number), [35, 43, 50, 57, 59, 60, 61, 62, 105, 106]);
-  opensOnly(germanicus, ['germanicus'], 'Germanicus');
-  // Licinius is Gallienus's own nomen, so widening cost the heading every one of its answers. It opens what it always opened, and each coin is his.
-  const licinius = await openedOver('Licinius');
-  assert.equal(licinius.length, 88);
-  opensOnly(licinius, ['licinius'], 'Licinius');
-  // A dealer usually writes the father with his numeral; it must reach the same coins, not fall back into the widened set.
-  assert.deepEqual((await openedOver('Licinius I')).map(({ card }) => card.id), licinius.map(({ card }) => card.id));
-});
-
-test('over the bundled catalogue, a spelling nobody is named outright still opens nothing it should not', { skip }, async () => {
-  // A name no person carries alone names nobody: none of these headings may pick one man out of the several it could mean.
-  for (const heading of ['Sept. Severus', 'Maximinus', 'Drusus']) assert.deepEqual(await openedOver(heading), [], heading);
-  // A shared spelling keeps every owner, and a coin only opens where one of them is on it.
-  // "Domitianus" is Domitian's own Latin name too, so his 290 numbers open and the six that were a stranger's become a choice.
-  for (const [heading, count, owners] of [['Valerianus', 83, ['valerian', 'valerian_ii']],
-    ['Domitianus', 290, ['domitian_ii', 'domitian', 'domitius_domitianus']],
-    ['Valens', 12, ['valens']], ['Romulus', 12, ['romulus']], ['Maximus', 18, ['gaius_julius_verus_maximus']]]) {
-    const opened = await openedOver(heading);
-    assert.equal(opened.length, count, heading);
-    opensOnly(opened, owners, heading);
-  }
-  // The six a stranger's coin used to answer are the ones the emperor himself has no type for, so they are offered and never opened.
-  const domitianus = await openedOver('Domitianus');
-  assert.ok(domitianus.every(({ card }) => card.id.startsWith('ric.2_1(2).dom.')), 'Domitianus opens only Domitian\'s own volume');
-  for (const number of [1, 5, 6, 19, 20, 45]) assert.ok(!domitianus.some((hit) => hit.number === number), `RIC ${number}`);
-  // A heading RIC heads a section with is that section, and its number opens the one coin.
-  const philip = await openedOver('Philip I');
-  assert.equal(philip.find(({ number }) => number === 16)?.card.id, 'ric.4.ph_i.16');
-  opensOnly(philip, ['philip_the_arab'], 'Philip I');
-});
+// The bundled catalogue itself, not the fixture above, served as the package serves it (tests/helpers/bundle.mjs). The long sweeps over it are in
+// local-catalogue-headings, local-catalogue-mints and local-catalogue-index, which node runs beside this file. Skipped where the bundle is not
+// checked out.
 
 test('over the bundled catalogue, a cited range reaches the record OCRE titles over it', { skip }, async () => {
   const typed = await bundle.lookupType(parseReference('RIC II.3 Hadrian 10-11'));
@@ -384,50 +298,6 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
   assert.notEqual(lyons.status, 'ok');
 });
 
-// A mint alias may only ever say which section a number lives in. A heading is ruler-less wherever the people table lacks its spelling, so a section
-// read from its mint alone is offered and never opened: over every RIC number from 1 to 400 no spelling opens a coin, and what each offers is coins
-// of its own mint and nothing else. A place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
-test('over the bundled catalogue, a heading naming only a mint offers that mint\'s coins, no others, and opens none', { skip }, async () => {
-  for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
-    ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
-    ['Londinium', 'londinium'],
-    // Every spelling Wikidata added, over the same sweep: a name that opened a stranger's coin would be worse than one that opened nothing.
-    ['Sofia', 'serdica'], ['Sredets', 'serdica'], ['Carthago', 'carthage'], ['Ostia Antica', 'ostia'], ['Roman London', 'londinium'],
-    ['Triers', 'treveri'], ['Augusta Treverorum', 'treveri'], ['Treviri', 'treveri'], ['Nikomedya', 'nicomedia'], ['Nikomedeia', 'nicomedia'],
-    ['Samarobriva', 'ambianum'], ['Amians', 'ambianum'], ['Lugudunum', 'lugdunum'], ['Cizico', 'cyzicus'], ['Kizikos', 'cyzicus'],
-    ['Antioch on the Orontes', 'antiocheia_syria'], ['Antiochia', 'antiocheia_syria'], ['Konstantiniyye', 'constantinople'],
-    ['Tsarigrad', 'constantinople'], ['Marmaraereğlisi', 'heraclea_thracica'],
-    // And every spelling the one statement hop added, over the same sweep. These are the names the mint volumes were asked for, so a wrong single
-    // answer here would be the worst kind: each has to open coins of its own mint and of no other.
-    ['London', 'londinium'], ['London, UK', 'londinium'], ['Londres', 'londinium'], ['Lunden', 'londinium'], ['Lyon', 'lugdunum'],
-    ['City of Lyon', 'lugdunum'], ['Milan', 'mediolanum'], ['Milano', 'mediolanum'], ['Mailand', 'mediolanum'], ['Milan, Italy', 'mediolanum'],
-    ['Pavia', 'ticinum'], ['İzmit', 'nicomedia'], ['Ismid', 'nicomedia'], ['Erdek', 'cyzicus'], ['Artake', 'cyzicus']]) {
-    assert.deepEqual((await openedOver(heading)).map(({ card }) => card.id), [], heading);
-    // The section the spelling names is the mint's own: every bundled coin RIC files under it was struck there.
-    const lot = findReferences(`${heading}. RIC 12`);
-    const { section } = lotLookup(lot.references[0], lot.rulers);
-    const filed = bundleJson('ocre/index.json').entries.filter(([, title]) => title.startsWith('RIC V') && title.includes(` ${section} `)
-      && parseReference(title, false)?.section === section).slice(0, 25);
-    assert.ok(filed.length > 0, heading);
-    for (const [id] of filed) assert.ok(mintsOn(id).includes(concept), `${heading}: ${id}`);
-  }
-  // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
-  assert.deepEqual(await openedOver('Roma'), []);
-  // The five names the mint volumes were asked for, written the way a lot heading writes them. Four of them now name their Latin section; "Lyons" is
-  // in no label Wikidata publishes for Lyon and names none, and nothing was invented to make it.
-  for (const [heading, section] of [['London', 'Londinium'], ['Lyon', 'Lugdunum'], ['Milan', 'Mediolanum'], ['Pavia', 'Ticinum'],
-    ['Trier', 'Treveri'], ['Lyons', '']]) {
-    const lot = findReferences(`${heading}. RIC 12`);
-    assert.equal(lotLookup(lot.references[0], lot.rulers).section, section, heading);
-  }
-  // A heading neither source gives a modern name for names no section, and the row is looked up as it was before. A city's nickname names none
-  // either: kept, "the Eternal City" in a Trier lot's prose would have been the earliest mint spelling in it and filed the coin under Rome. The
-  // codes and the honorific London's item lists beside its names are refused for the same reason.
-  for (const heading of ['Eternal City', 'Caput Mundi', 'Urbe', 'Augusta', 'LDN', 'Big Smoke', 'Capitale des Gaules']) {
-    const lot = findReferences(`${heading}. RIC 12`);
-    assert.equal(lotLookup(lot.references[0], lot.rulers).section, '', heading);
-  }
-});
 
 // "Rome mint" stands in most RIC I-V descriptions and a heading is ruler-less wherever the table does not hold its spelling, so a mint that discarded
 // the lot's own volume sent the number to four volumes it is not in. Over the bundle, each of these opened the wrong coin or the wrong choice.
@@ -452,82 +322,6 @@ test('over the bundled catalogue, a mint beside a volume of another part of RIC 
   assert.deepEqual((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).candidates.map((entry) => entry.id), ['ric.6.rom.12']);
 });
 
-// numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
-// keys every title exactly where parseReference reads its number, so the two are compared over all 52,254 bundled titles: a title whose entry sat in
-// the wrong list, or in none, would hide a coin from every lookup for that number.
-// The key is the runtime's own, not a copy of it, so that a change to the way a lookup keys a number is caught here rather than in the field.
-test('every bundled title is listed under the number parseReference reads in it', { skip }, () => {
-  const { entries } = bundleJson('ocre/index.json');
-  const listed = new Map();
-  for (const [key, positions] of Object.entries(bundleJson('ocre/numbers.json').numbers)) {
-    for (const position of positions) {
-      assert.equal(listed.has(position), false, `position ${position} is listed twice`);
-      listed.set(position, key);
-    }
-  }
-  let ric = 0;
-  entries.forEach(([id, title], position) => {
-    const hit = parseReference(title, false);
-    const key = hit?.catalogue === 'RIC' ? numberKey(hit.number) : null;
-    if (key === null) return;
-    ric += 1;
-    assert.equal(listed.get(position), key, `${id}: ${title}`);
-  });
-  assert.equal(ric, 51248);
-});
-
-// The same bundle, served a number index that lists every entry under every number: numbered() then hands pickRicEntries the whole index in index
-// order, which is the scan the lookup made before numbers.json existed. Whole answers are compared, cards and candidates and all, so a reference
-// whose entries the pre-filter narrowed differently cannot come out looking the same.
-const scanned = createLocalCatalogue({
-  baseUrl: 'moz-extension://test/data/',
-  fetchImpl: async (url) => {
-    const path = bundlePath(url);
-    if (path !== 'ocre/numbers.json') return { ok: true, status: 200, json: async () => bundleJson(path) };
-    const everyPosition = bundleJson('ocre/index.json').entries.map((entry, position) => position);
-    return { ok: true, status: 200, json: async () => ({ ...bundleJson(path), numbers: new Proxy({}, { get: () => everyPosition }) }) };
-  },
-});
-const lotReference = (text) => {
-  const found = findReferences(text);
-  return lotLookup(found.references[0], found.rulers);
-};
-
-test('the number index answers every shape of reference exactly as a scan of the whole index does', { skip }, async () => {
-  const references = [
-    // A plain number, the number the most volumes carry, and a number written with the zeros a dealer sometimes pads it to.
-    parseReference('RIC 972'), parseReference('RIC 1'), parseReference('RIC 007'),
-    // A heading that is a man's name, and a heading RIC heads a section with.
-    lotReference('Vespasian. AR Denarius. RIC 972.'), lotReference('Philip I. AR Antoninianus. Rome. RIC 27b; RSC 9.'),
-    // A volume with a ruler section, a volume with a mint section, and a mint under the modern name RIC does not file it under.
-    parseReference('RIC II Vespasian 972'), parseReference('RIC VII Londinium 12'),
-    { catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' },
-    // A letter in either case, alone and under the volume that heads it.
-    parseReference('RIC 27b'), parseReference('RIC IV Philip I 27B'),
-    // A range OCRE titles a type over, its first number alone, and a range OCRE has no record of.
-    parseReference('RIC II.3 Hadrian 1009-1012'), parseReference('RIC II.3 Hadrian 1009'), parseReference('RIC II.3 Hadrian 10-12'),
-    // A plain volume numeral over a family whose parts number the same ruler differently.
-    parseReference('RIC II Hadrian 720'), parseReference('RIC II Domitian 720'),
-    // The one split volume: 264 stands on both sides of the cut, and each side is asked for again by its own id.
-    parseReference('RIC V Gallienus 264'),
-    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264' },
-    { catalogue: 'RIC', volume: 'V', section: 'Gallienus', number: '264', id: 'ric.5.gall(2).264.1' },
-    // A second-edition volume by id, and an id nothing carries.
-    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).ner.306' },
-    { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Nero', number: '306', id: 'ric.1(2).nobody.306' },
-    // A number past the end of every volume, and one the volume asked for does not reach.
-    parseReference('RIC 1000000'), parseReference('RIC VII Londinium 99999'),
-    // Answers only the broadened passes find: the same mint in another volume, and a section no volume has.
-    parseReference('RIC VIII Londinium 287'), { catalogue: 'RIC', volume: 'I (2nd edition)', section: 'Ostia', number: '306' },
-    // A heading naming a ruler who is on no coin of that number.
-    lotReference('Otho. AR Denarius. RIC II 720.'),
-  ];
-  assert.equal(references.length, 25);
-  for (const reference of references) {
-    assert.ok(reference, JSON.stringify(reference));
-    assert.deepEqual(await bundle.lookupType(reference), await scanned.lookupType(reference), JSON.stringify(reference));
-  }
-});
 
 test('a split volume is read from the part its id falls in, and no index is touched for it', { skip }, async () => {
   const read = [];

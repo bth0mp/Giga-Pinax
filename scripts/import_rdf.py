@@ -88,7 +88,7 @@ SHARD_OVERHEAD = len(b'{"schemaVersion":1,"records":{}}\n')
 # The leading integer of the RIC number an OCRE title ends with ("RIC II.3 Hadrian 1009-1012" -> 1009), which is the
 # first thing a lookup filters on. It reads the number exactly where lookup.js reads it, as the last whitespace- or
 # comma-separated token, before the word OCRE brackets after some numbers ("266 (aureus)");
-# tests/local-catalogue.test.mjs proves the two agree over every bundled title. The digits are ASCII only, as JavaScript's
+# tests/local-catalogue-index.test.mjs proves the two agree over every bundled title. The digits are ASCII only, as JavaScript's
 # \d is: Python's would also match ٣ and ３, and a title keyed off one of those would sit under a number no reference can
 # ever be read as.
 TITLE_NUMBER = re.compile(r"(?:^|[\s,])([0-9]+)\S*?(?:\s\([^()]*\))?$")
