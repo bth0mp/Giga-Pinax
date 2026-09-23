@@ -1320,3 +1320,68 @@ test('a term that carries its own quotes or brackets is not wrapped in a second 
   assert.match(line, /matches for Nero \("RIC 306" "RIC I 306" "RIC I, 306"\)$/);
   assert.doesNotMatch(line, /[“”]/);
 });
+
+// 0.33 review (R1): a bare RIC number names a type in every volume, and "RIC 237" priced all of them — a median across Caracalla's denarii,
+// Vespasian's aurei and Constantine's folles beside "Choose a type". Nothing is fetched until one type is chosen, and choosing one prices it.
+const acrossVolumes = { status: 'ok', lots: [citingSale('v1', '1,000', 'Caracalla. Denarius. RIC IV 237. VF'),
+  citingSale('v2', '3,000', 'Vespasian. Aureus. RIC II.1 237. EF'), citingSale('v3', '200', 'Constantine I. Follis. RIC VII Treveri 237. EF')] };
+const ricChoices = { status: 'candidates', corpus: 'ocre', partial: true, candidates: [{ id: 'ric.4.crl.237', title: 'RIC IV Caracalla 237' },
+  { id: 'ric.2_1(2).ves.237', title: 'RIC II, Part 1 (second edition) Vespasian 237' }] };
+
+test('a bare RIC number fetches no prices until a type is chosen', async () => {
+  const fetched = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.term); return acrossVolumes; },
+    lookupTypeImpl: async () => ricChoices });
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await settle();
+  assert.equal(popup.element('candidates').hidden, false);
+  assert.deepEqual(fetched, []);
+  assert.equal(popup.element('prices-panel').hidden, true);
+  assert.equal(popup.element('median-amount').textContent, '');
+});
+
+test('a bare RIC number answered with too many types shows no median', async () => {
+  const fetched = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.term); return acrossVolumes; },
+    lookupTypeImpl: async () => ({ status: 'too-many', corpus: 'ocre', query: 'RIC 12' }) });
+  popup.element('quick-reference').value = 'RIC 12';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await settle();
+  assert.match(popup.element('form-error').textContent, /too many types/);
+  assert.deepEqual(fetched, []);
+  assert.equal(popup.element('prices-panel').hidden, true);
+});
+
+test('a bare RIC number with a single type prices the type that was found', async () => {
+  const fetched = [];
+  const card = { id: 'ric.4.crl.237', corpus: 'ocre', label: 'RIC IV Caracalla 237', denomination: 'Denarius', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.term); return acrossVolumes; },
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await settle();
+  assert.deepEqual(fetched, ['Caracalla ("RIC 237" "RIC IV 237" "RIC IV, 237")']);
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite RIC 237');
+});
+
+// A volume narrows the number to one book, but a book still holds several types of it: prices already fetched go when the lookup offers a choice.
+test('prices fetched for a RIC reference go when the lookup offers a choice of types', async () => {
+  const price = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => price.promise,
+    lookupTypeImpl: async () => { await settle(); return ricChoices; } });
+  popup.element('quick-reference').value = 'RIC IV 237';
+  await popup.element('reference-form').emit('submit');
+  price.resolve(acrossVolumes);
+  await settle();
+  await settle();
+  await settle();
+  assert.equal(popup.element('candidates').hidden, false);
+  assert.equal(popup.element('prices-panel').hidden, true);
+  assert.equal(popup.element('prices-note').hidden, false);
+  assert.match(popup.element('prices-note-text').textContent, /Choose one type/);
+});

@@ -29,6 +29,7 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
+const PRICES_WAIT_MESSAGE = 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
 const onlineMessage = (corpus) => `This type was not available in the local ${catalogueForCorpus(corpus)?.corpusName ? `${catalogueForCorpus(corpus).corpusName} ` : ''}catalogue. `
@@ -960,9 +961,24 @@ function showPricesError(message) {
   $('prices-error').hidden = false;
 }
 
+// A RIC number with no volume, no section and no single ruler names a type in every volume ("RIC 237" is Caracalla's denarius, Vespasian's aureus and
+// Constantine's follis), so a median of it would mix them all. Its prices wait for one type: run() prices a card that arrives with no research of its
+// own, and a chosen candidate begins research with its own volume and ruler.
+const blank = (value) => !String(value ?? '').trim();
+const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume) || !blank(reference.section) || reference.rulers?.length === 1;
+
+// A choice of types, or too many to list: prices already fetched for the reference mix those types, so they go, and the panel says why.
+function setPricesAside() {
+  if (!researchContext) return;
+  clearAcsearchPrices();
+  clearCoinArchivesPrices();
+  $('prices-note-text').textContent = PRICES_WAIT_MESSAGE;
+  $('prices-note').hidden = false;
+}
+
 function beginResearch(reference, perform, note = '', identity = null) {
   clearOutput();
-  const hasPrices = reference && initialisePriceResearch(reference, identity);
+  const hasPrices = reference && namesOneType(reference) && initialisePriceResearch(reference, identity);
   run(perform, note, reference);
   if (hasPrices) fetchAutomaticPrices();
 }
@@ -1012,7 +1028,10 @@ async function run(perform, note = '', failedReference = null) {
     savePreferences();
     renderRecent();
   }
-  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
+  else if (outcome.status === 'candidates') {
+    if (outcome.partial && researchContext?.reference.catalogue === 'RIC') setPricesAside();
+    renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
+  }
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
   else if (outcome.status === 'online-required') {
     showError(onlineMessage(outcome.corpus));
@@ -1039,7 +1058,11 @@ async function run(perform, note = '', failedReference = null) {
     };
   }
   else if (outcome.status === 'cancelled') return;
-  else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
+  else if (outcome.status === 'too-many') {
+    setPricesAside();
+    if (shouldRevealRefine(outcome)) $('refine-reference').open = true;
+    showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
+  }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus)?.corpusName}. ${catalogueForCorpus(outcome.corpus)?.notFoundHint}`, 'reference-number');
   else {
     if (revision !== referenceRevision) return;
