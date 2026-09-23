@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- In a browser set to Arabic, Persian, Bengali, Marathi, Nepali, Burmese, Pashto or Kashmiri, a saved premium, bid, hammer or invoice was drawn back into its field in that language's own digits or decimal mark (`22٫50`, `২২.৫`), which the field then refused, so the bid, outcome or house preset could not be saved again — **Save settings** even refused a preset row nobody had touched. Every saved amount is now written back as `22.50`, which saves in every language; amounts shown as text are unchanged.
+
 ## [0.32.1] - 2026-09-18
 
 ### Added

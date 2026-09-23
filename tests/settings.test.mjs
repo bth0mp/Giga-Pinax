@@ -63,6 +63,7 @@ function loadSettings({
   stored = new Map(),
   confirmAnswers = [],
   catalogueMetadata = async () => null,
+  language = 'en-US',
 } = {}) {
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
@@ -102,7 +103,7 @@ function loadSettings({
     ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue,
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
-    ...browserGlobals(document, { localStorage, confirm, downloads: blobs }),
+    ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
     browser: { runtime: { getManifest: () => manifest } },
     globalThis: null,
     Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
@@ -240,6 +241,25 @@ test('removing a row takes it out of the next save', async () => {
   assert.equal(page.document.querySelectorAll('.premium-row').length, 0);
   await page.element('save-settings').click();
   assert.deepEqual(page.commands[0].preferences.housePremiumPresets, []);
+});
+
+// A saved row is drawn back into fields the next Save reads, so a row nobody touched has to save
+// as it was in every locale: ar-EG and fa-IR write ٫ as their decimal mark, which the parser refuses.
+test('a preset row nobody touched saves unchanged whatever the browser locale is', async () => {
+  const saved = { name: 'Roma', buyerPremiumBps: 2250, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 2500 }] } };
+  for (const language of ['ar-EG', 'fa-IR', 'bn-BD', 'de-DE', 'en-US']) {
+    const page = await openSettings({
+      language,
+      snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [saved] }) }),
+      reply: () => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: [saved] }) }),
+    });
+    const row = page.document.querySelector('.premium-row');
+    assert.equal(row.querySelector('.premium-value').value, '22.50', language);
+    await page.element('save-settings').click();
+    assert.equal(row.querySelector('.premium-value').getAttribute('aria-invalid'), null, language);
+    assert.equal(page.commands.length, 1, `${language}: the untouched row is saved`);
+    assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [saved], language);
+  }
 });
 
 // --- the default currency -----------------------------------------------------------------------

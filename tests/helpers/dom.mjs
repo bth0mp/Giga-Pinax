@@ -460,12 +460,12 @@ export function pageSource(url) {
 }
 
 // A browser's own globals, as far as a page loaded here uses them.
-export function browserGlobals(document, { localStorage, confirm = () => true, downloads = [] } = {}) {
+export function browserGlobals(document, { localStorage, confirm = () => true, downloads = [], language = 'en-US' } = {}) {
   return {
     document,
     localStorage,
     confirm,
-    navigator: { language: 'en-US' },
+    navigator: { language },
     FormData: FakeFormData,
     Event: FakeEvent,
     CustomEvent: FakeCustomEvent,

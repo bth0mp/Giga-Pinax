@@ -123,7 +123,36 @@ test('ladder text is written with a point and no grouping, whatever the locale i
   assert.equal(text, '0.00: 5.00\n1000.00: 25.00');
   assert.deepEqual(parseIncrementLadder(text, 'EUR').value, { currency: 'EUR', tiers });
   assert.equal(formatIncrementLadder(null), '');
-  assert.equal(formatMinorInput(500, 'ar-EG').includes('.'), false, 'the localized field format is not this one');
+});
+
+// Every field the calculator fills from a saved lot is read back by the same parser, so it is
+// written the one way that parser reads in every locale: ASCII digits, a point, no grouping. ar-EG
+// and fa-IR write ٫ as their decimal mark, and bn-BD its own digits; neither could be read back.
+const FIELD_LOCALES = ['ar-EG', 'fa-IR', 'bn-BD', 'de-DE', 'en-US'];
+
+test('the calculator fields a lot fills are written so the parser reads them back in every locale', () => {
+  const values = {
+    lotId: 'lot-a', currency: 'EUR', hammerMinor: 123456, buyerPremiumBps: 2250,
+    costEstimate: { shippingMinor: 1550, paymentFeeBps: 275, paymentFeeMinor: 35, incrementMinor: 1000, minimumBidMinor: 2000 },
+  };
+  for (const locale of FIELD_LOCALES) {
+    const inputs = calculatorInputsForLot(values, { loadedLotId: null, mode: 'total', locale });
+    assert.deepEqual(
+      [inputs.amount, inputs.premium, inputs.shipping, inputs.paymentPercent, inputs.paymentFixed, inputs.increment, inputs.minimum],
+      ['1234.56', '22.50', '15.50', '2.75', '0.35', '10.00', '20.00'],
+      locale,
+    );
+    assert.equal(formatMinorInput(2250, locale), '22.50', locale);
+    const calculated = buildBidCalculation({
+      mode: 'total', amountText: inputs.amount, premiumText: inputs.premium, shippingText: inputs.shipping,
+      paymentPercentText: inputs.paymentPercent, paymentFixedText: inputs.paymentFixed, incrementText: inputs.increment,
+      minimumText: inputs.minimum, currency: 'EUR', locale,
+    });
+    assert.equal(calculated.ok, true, `${locale}: ${calculated.error?.message}`);
+    assert.equal(calculated.value.hammer.minor, 123456, locale);
+    assert.equal(calculated.buyerPremiumBps, 2250, locale);
+    assert.deepEqual(calculated.costEstimate, { currency: 'EUR', ...values.costEstimate }, locale);
+  }
 });
 
 test('a preset row reports which field its error belongs to', () => {

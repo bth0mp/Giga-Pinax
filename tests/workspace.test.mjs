@@ -50,7 +50,9 @@ import {
   comparisonPickerLabel,
   comparisonProvenanceRows,
   lotSaveFollowup,
+  premiumInputText,
 } from '../extension/workspace.js';
+import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -115,9 +117,33 @@ test('unknown writes are resolved from the request ledger and outcome editors pr
   assert.equal(commandWasCommitted({ recentCommands: [{ requestId: 'req-1' }] }, 'req-1'), true);
   assert.equal(commandWasCommitted({ recentCommands: [] }, 'req-1'), false);
   assert.deepEqual(outcomeDraftForLot({ outcome: { status: 'won', hammer: { currency: 'GBP', minor: 1234 }, actualInvoice: { currency: 'EUR', minor: 1600 } } }, 'de-DE'), {
-    status: 'won', hammer: '12,34', hammerCurrency: 'GBP', invoice: '16,00', invoiceCurrency: 'EUR', bindingActive: '',
+    status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '',
   });
   assert.equal(moneyInputText({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 'en-US'), '90071992547409.91');
+});
+
+// A saved amount goes back into a field the collector saves again, and the parser reads ASCII digits
+// with a point or a comma. ar-EG and fa-IR write ٫ and their own digits, bn-BD its own digits: a
+// field written in any of them could never be saved again, so every field is written the one way.
+test('saved bid and outcome amounts are written back so they save again in every locale', () => {
+  const lot = {
+    plannedBid: { amount: { currency: 'EUR', minor: 123456 }, buyerPremiumBps: 2250 },
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 150000 }, actualInvoice: { currency: 'EUR', minor: 184512 } },
+  };
+  for (const locale of ['ar-EG', 'fa-IR', 'bn-BD', 'de-DE', 'en-US']) {
+    const bid = bidFormValues(lot, locale, 'USD');
+    assert.deepEqual(bid, { amount: '1234.56', currency: 'EUR', premium: '22.5' }, locale);
+    assert.deepEqual(parseMoney(bid.amount, 'EUR', locale), { ok: true, value: { currency: 'EUR', minor: 123456 } }, locale);
+    assert.deepEqual(parsePremiumPercent(bid.premium, locale), { ok: true, value: 2250 }, locale);
+    const outcome = outcomeDraftForLot(lot, locale);
+    assert.equal(parseMoney(outcome.hammer, 'EUR', locale).value?.minor, 150000, locale);
+    assert.equal(parseMoney(outcome.invoice, 'EUR', locale).value?.minor, 184512, locale);
+    // "Use in bid" writes the calculator's premium the same way the bid form is populated.
+    for (const bps of [0, 1, 2050, 2250, 10000]) {
+      assert.deepEqual(parsePremiumPercent(premiumInputText(bps), locale), { ok: true, value: bps }, `${locale} ${bps}`);
+    }
+  }
+  assert.equal(premiumInputText(null), '');
 });
 
 test('event reminder edits retain actual slot IDs and unrepresented valid reminders', () => {

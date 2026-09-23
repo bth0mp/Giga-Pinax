@@ -264,9 +264,10 @@ test('rejects fee overflow and reports when no positive grid bid is affordable',
 });
 import { formatMinorInput } from '../extension/bid-tools.js';
 
-test('formats calculator inputs with the active locale decimal boundary', () => {
+test('formats calculator inputs with a point whatever the locale, so the parser reads them back', () => {
   assert.equal(formatMinorInput(12345, 'en-US'), '123.45');
-  assert.equal(formatMinorInput(12345, 'de-DE'), '123,45');
+  assert.equal(formatMinorInput(12345, 'de-DE'), '123.45');
+  assert.equal(formatMinorInput(12345, 'ar-EG'), '123.45');
   assert.equal(formatMinorInput(null, 'de-DE'), '');
 });
 

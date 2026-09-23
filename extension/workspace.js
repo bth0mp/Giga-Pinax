@@ -173,14 +173,18 @@ export function lotFormValues(lot) {
   };
 }
 
+// A premium written back into the bid form: a number's own text is ASCII with a point in every
+// locale, which is what the parser reads, and basis points over 100 never need more than two places.
+export function premiumInputText(buyerPremiumBps) {
+  return Number.isInteger(buyerPremiumBps) ? String(buyerPremiumBps / 100) : '';
+}
+
 export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
   const terms = lot?.plannedBid ?? lot?.activeBid;
   return {
     amount: moneyInputText(terms?.amount, locale),
     currency: terms?.amount?.currency ?? fallbackCurrency,
-    premium: Number.isInteger(terms?.buyerPremiumBps)
-      ? new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 2 }).format(terms.buyerPremiumBps / 100)
-      : '',
+    premium: premiumInputText(terms?.buyerPremiumBps),
   };
 }
 
@@ -532,11 +536,12 @@ export function commandWasCommitted(snapshot, commandRequestId) {
   return (snapshot?.recentCommands ?? []).some((item) => item.requestId === commandRequestId);
 }
 
+// Written into a field the collector saves again, so in the one form the money parser reads in every
+// locale: ASCII digits and a point. The locale is accepted for call-site symmetry only.
 export function moneyInputText(money, locale = 'en-US') {
   if (!money) return '';
   const absolute = BigInt(Math.abs(money.minor));
-  const decimal = new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === 'decimal')?.value ?? '.';
-  return `${money.minor < 0 ? '-' : ''}${absolute / 100n}${decimal}${String(absolute % 100n).padStart(2, '0')}`;
+  return `${money.minor < 0 ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
 }
 
 export function outcomeDraftForLot(lot, locale = 'en-US') {
@@ -1207,7 +1212,7 @@ async function initWorkspace() {
   };
   bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps, costEstimate }) => {
     calculatorCostEstimate = costEstimate ?? null;
-    const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = Number.isInteger(buyerPremiumBps) ? new Intl.NumberFormat(navigator.language, { useGrouping: false, maximumFractionDigits: 2 }).format(buyerPremiumBps / 100) : '';
+    const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = premiumInputText(buyerPremiumBps);
     for (const control of [f.amount, f.currency, f.premium]) control.dispatchEvent(new Event('input', { bubbles: true }));
   } });
   $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send(buildBidSaveCommand(action, basis, parsed.value, calculatorCostEstimate), 'bid'); });
