@@ -233,11 +233,17 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       const picked = pickRicEntries(await candidateEntries(), citationRef);
       const entries = picked.status === 'ok' ? [picked.entry] : (picked.candidates ?? []);
       const query = squash(`RIC ${reference.volume} ${reference.number}`);
-      // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another.
+      // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another. A record
+      // the index lists and its shard lacks is left out, and the bundle is only stale for this lookup where the answer rests on that record: it is
+      // filed under one of the heading's own people, or nothing that is there matched and the miss could be it. Another ruler's coin gone missing
+      // costs "Trajan. RIC 306" nothing.
+      const namedHere = (entry) => ricPeople((parseReference(entry.title, false)?.section ?? '').split(' (')[0]).some(({ id }) => people.has(id));
       const withPerson = async (list) => {
         const records = await Promise.all(list.map((entry) => recordById(entry.id)));
-        if (records.some((record) => !record)) throw stale('ocre');
-        return list.filter((entry, index) => hasPerson(records[index], people));
+        const kept = list.filter((entry, index) => records[index] && hasPerson(records[index], people));
+        const missing = list.filter((entry, index) => !records[index]);
+        if (missing.length > 0 && (kept.length === 0 || missing.some(namedHere))) throw stale('ocre');
+        return kept;
       };
       const matched = await withPerson(entries);
       // A mint a lot wrote beside a number with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume

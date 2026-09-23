@@ -881,3 +881,15 @@ test('a mint section typed with no volume is offered, never opened, and opens wi
   }
   assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287' })).card?.id, 'ric.7.lon.287');
 });
+
+// Only a record the answer rests on makes a stale shard unavailable: one missing record among the other rulers' coins with the number must not cost
+// a ruler the coin that is plainly his ("Trajan. RIC 720" with Domitian's RIC II.1² 720 gone), while a lookup whose own ruler's record is the one
+// missing still goes online.
+test('a stale shard is unavailable only where the answer needs the record it lacks', async () => {
+  const { 'ric.2_1(2).dom.720': dropped, ...rest } = records;
+  assert.ok(dropped);
+  const stale = () => createLocalCatalogue({ fetchImpl: fixtureFetch({ 'records-2_1(2).json': { schemaVersion: 1, records: rest } }), baseUrl: 'moz-extension://test/data/' });
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Trajan'] })).card?.id, 'ric.2.tr.720');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Domitian'] })).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Nero'] })).status, 'unavailable');
+});
