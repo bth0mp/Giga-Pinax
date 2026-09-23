@@ -812,6 +812,59 @@ test('half a pair alone is refused by naming the partner that is not there', asy
   assert.equal(storage.read().quarantine.length, 1, 'nothing is lost by the refusal');
 });
 
+// Two restores that could never succeed, whatever the collector did: a group member whose place was
+// taken when the group closed up behind it, and a collection entry whose lot is saved but lost its
+// link to it. Each was refused by the validator over something the restore itself can settle.
+test('a group member whose place has been taken is put back last in its group', async () => {
+  const group = { id: uuid(), revision: 0, dataClass: 'collector', name: 'Alternatives', createdAt: NOW, updatedAt: NOW };
+  const first = plainLot(uuid(), { alternativeGroupId: group.id, priority: 1 });
+  const second = plainLot(uuid(), { alternativeGroupId: group.id, priority: 2 });
+  const setAside = plainLot(uuid(), { alternativeGroupId: group.id, priority: 2 });
+  const stored = setAsideRoot([{ collection: 'lots', reason: 'collection-limit', quarantinedAt: NOW, record: setAside }], [first, second]);
+  stored.alternativeGroups.push(group);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.placedLastInGroup, true, 'the reply says where it went');
+  const after = storage.read();
+  const priorities = Object.fromEntries(after.lots.map(({ id, priority }) => [id, priority]));
+  assert.deepEqual(priorities, { [first.id]: 1, [second.id]: 2, [setAside.id]: 3 }, 'the order already there is kept');
+  assert.equal(after.lots.find(({ id }) => id === second.id).revision, second.revision, 'and no other lot is written');
+  assert.match(quarantineRestoreText(restored.value), /last in its alternative group/);
+});
+
+test('a collection entry whose lot is saved without its link is put back and linked again', async () => {
+  const won = plainLot(uuid(), { outcome: { status: 'won' } });
+  const entry = {
+    id: uuid(), revision: 0, dataClass: 'collector', lotId: won.id, title: 'Won', acquisitionDate: '2026-08-01',
+    sourceLinks: [], notes: 'bought at the sale', createdAt: NOW, updatedAt: NOW,
+  };
+  const stored = setAsideRoot([{ collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW, record: entry }], [won]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value.restoredReferences, [{ collection: 'lots', id: won.id, field: 'collectionEntryId' }]);
+  const after = storage.read();
+  assert.equal(after.collectionEntries[0].notes, 'bought at the sale');
+  assert.equal(after.lots[0].collectionEntryId, entry.id);
+  assert.equal(after.lots[0].revision, won.revision + 1, 'the lot changed, so a holder of the old row is asked again');
+
+  // A lot that already names another entry keeps it: the restore is refused and nothing moves.
+  const other = uuid();
+  const claimed = setAsideRoot([{ collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW, record: entry }],
+    [plainLot(won.id, { outcome: { status: 'won' }, collectionEntryId: other })]);
+  claimed.collectionEntries.push({ ...structuredClone(entry), id: other, notes: 'the one kept' });
+  const claimedStorage = memoryStorage(claimed);
+  const refused = await createCommandWriter(claimedStorage, context())
+    .commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(claimed.quarantine[0]) }));
+  assert.equal(refused.ok, false);
+  assert.deepEqual(claimedStorage.read(), claimed);
+});
+
 // A restore the root refuses is refused in the validator's own words. The reminder preflight runs
 // over every schedule-changing command, so its sentence used to be put in front of a refusal that
 // was never about reminders at all.

@@ -802,12 +802,32 @@ function mutation(snapshot, command, context) {
         restoring.push({ entry: held, ...second.value });
       }
       const references = [];
+      let placedLastInGroup = false;
       for (const { entry, home, record } of restoring) {
         // The bin is not the collection: a record coming back out of it is counted again from zero
         // rather than from wherever its last write left it. Nothing can be holding the old number -
         // the record was not there to be read - and a save composed before it was set aside is told.
         record.revision = 0;
         record.updatedAt = now;
+        // A group closes up behind a member that leaves it, so the place this one held can be taken
+        // by now. The order the collector has there since is theirs: this one goes in after it.
+        if (entry.collection === 'lots' && own(record, 'alternativeGroupId') &&
+            next.alternativeGroups.some(({ id }) => id === record.alternativeGroupId)) {
+          const last = next.lots.filter(({ alternativeGroupId }) => alternativeGroupId === record.alternativeGroupId).length + 1;
+          if (record.priority !== last) {
+            record.priority = last;
+            placedLastInGroup = true;
+          }
+        }
+        // An entry follows its lot into the bin when the lot does not name it. Where that lot is still
+        // saved and names no entry at all, the link goes back as a cleared one would: only into an
+        // empty field, and named in the reply.
+        if (entry.collection === 'collectionEntries') {
+          const lot = next.lots.find(({ id }) => id === record.lotId);
+          if (lot && !own(lot, 'collectionEntryId')) {
+            references.push({ collection: 'lots', id: lot.id, field: 'collectionEntryId', value: record.id });
+          }
+        }
         home.push(record);
         references.push(...(entry.clearedReferences ?? []));
       }
@@ -835,6 +855,7 @@ function mutation(snapshot, command, context) {
         id: first.value.record.id,
         restoredReferences,
         keptReferences,
+        ...(placedLastInGroup ? { placedLastInGroup } : {}),
         ...(restoring.length > 1
           ? { alsoRestored: restoring.slice(1).map(({ entry, record }) => ({ collection: entry.collection, id: record.id })) }
           : {}),

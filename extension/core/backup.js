@@ -684,6 +684,9 @@ export function quarantineRestoreText(value) {
   for (const also of value.alsoRestored ?? []) {
     parts.push(`The record it is linked to went back into ${also.collection} with it.`);
   }
+  if (value.placedLastInGroup) {
+    parts.push('It now comes last in its alternative group, because its old place there has been taken since.');
+  }
   if (restored) parts.push(`${restored} link${restored === 1 ? ' was' : 's were'} restored with it.`);
   if (kept.length) {
     parts.push(`${kept.length} link${kept.length === 1 ? '' : 's'} could not be put back, because what ` +
