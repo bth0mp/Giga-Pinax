@@ -15,6 +15,9 @@ let preferencesSnapshot;
 let pendingImport = null;
 let previewGeneration = 0;
 let quarantined = [];
+// The page's settings fields as they were last drawn or saved, so a later redraw can tell whether it
+// would throw away something the collector typed and has not saved.
+let renderedForm = '';
 
 function download(text, name) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
@@ -139,8 +142,11 @@ async function restoreSetAside(entryId, button) {
     if (!reply?.ok) {
       throw new Error(reply?.message || reply?.error?.message || 'That record could not be put back.');
     }
-    status(quarantineRestoreText(reply.value));
-    await load();
+    const restored = quarantineRestoreText(reply.value);
+    status(restored);
+    // Only the list is read again: a redraw of the whole page would throw away presets, a currency
+    // or a theme typed above and not yet saved.
+    await refreshDataHealth().catch((error) => status(`${restored} The list could not be read again: ${error.message}`, true));
   } catch (error) {
     button.disabled = false;
     status(error.message || 'That record could not be put back.', true);
@@ -183,6 +189,34 @@ function render() {
   $('premium-list').replaceChildren(
     ...(preferencesSnapshot.preferences.housePremiumPresets ?? []).map(premiumRow),
   );
+  renderedForm = formState();
+}
+
+function formState() {
+  return JSON.stringify({
+    currency: $('currency').value,
+    theme: $('theme').value,
+    rows: [...document.querySelectorAll('.premium-row')]
+      .map((row) => [...row.querySelectorAll('input, select, textarea')].map((control) => control.value)),
+  });
+}
+
+// The two settings this page writes. Anything else in the record - desktop alerts - is kept by the
+// store's own merge, so a revision that moved only for it overwrites nothing this page shows.
+const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency &&
+  JSON.stringify(a.housePremiumPresets ?? []) === JSON.stringify(b.housePremiumPresets ?? []);
+
+// Data health read again on its own. The revision the page saves against follows the store only
+// while the store still holds the settings this page drew: presets another view saved since are not
+// overwritten by a page that never showed them, and that save is refused as a conflict instead.
+async function refreshDataHealth() {
+  const latest = await bridge.getSnapshot();
+  if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+  renderDataHealth(latest.value.quarantine);
+  if (sameSettings(latest.value.preferences, preferencesSnapshot?.preferences)) {
+    preferencesSnapshot.preferences = latest.value.preferences;
+  }
+  return latest.value;
 }
 
 function collectPresets() {
@@ -302,6 +336,7 @@ $('save-settings').addEventListener('click', async () => {
     else localStorage.removeItem('giga-pinax-theme-v1');
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
+    renderedForm = formState();
     status('Settings saved.');
   } catch (error) {
     status(error.message || 'Could not save settings.', true);
@@ -426,8 +461,18 @@ $('confirm-import').addEventListener('click', async () => {
     clearPreview();
     status(`${copied}Backup imported.`);
     // The imported records are this page's own state too, and an open workspace picks the same
-    // write up through its storage subscription.
-    await load().catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
+    // write up through its storage subscription. A redraw would throw away settings typed and not
+    // yet saved, so over those the page keeps them, reads only the set-aside list again and says so.
+    if (formState() === renderedForm) {
+      await load().catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
+      return;
+    }
+    await refreshDataHealth().then((latest) => {
+      cacheDefaultCurrency(localStorage, latest.preferences?.currency);
+      if (!sameSettings(latest.preferences, preferencesSnapshot.preferences)) {
+        status(`${copied}Backup imported. The settings above are the ones you had not saved, not the imported ones: note what you typed, then reload this page to see the imported settings.`);
+      }
+    }).catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
   } catch (error) {
     clearPreview();
     status(`${copied}${error.message || 'Could not import the backup. Preview it again.'}`, true);

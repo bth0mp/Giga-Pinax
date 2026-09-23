@@ -546,6 +546,122 @@ test('a Restore the store refuses says so and offers the button again', async ()
   assert.equal(button.disabled, false);
 });
 
+// Typing a preset and putting a set-aside record back are two separate jobs on one page: the second
+// reads the list again and leaves every field the collector has not saved exactly as it was typed.
+async function typeUnsavedSettings(page) {
+  await page.element('add-premium').click();
+  const rows = page.document.querySelectorAll('.premium-row');
+  rows[1].querySelector('.premium-name').value = 'Leu Numismatik';
+  rows[1].querySelector('.premium-value').value = '18.5';
+  rows[0].querySelector('.premium-value').value = '22';
+  page.element('currency').value = 'CHF';
+  page.element('theme').value = 'dark';
+}
+
+const unsavedSettingsOf = (page) => ({
+  currency: page.element('currency').value,
+  theme: page.element('theme').value,
+  rows: page.document.querySelectorAll('.premium-row').map((row) => [
+    row.querySelector('.premium-name').value, row.querySelector('.premium-value').value,
+  ]),
+});
+
+const TYPED = { currency: 'CHF', theme: 'dark', rows: [['Roma', '22'], ['Leu Numismatik', '18.5']] };
+
+test('Restore reads the set-aside list again and keeps every setting not yet saved', async () => {
+  const roma = [{ name: 'Roma', buyerPremiumBps: 2000 }];
+  const restored = { collection: 'lots', id: uuid(5), restoredReferences: [], keptReferences: [] };
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: SET_ASIDE, preferences: preferences({ housePremiumPresets: roma }) }),
+    reply: (command, state) => {
+      if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 4 }) };
+      state.snapshot = { ok: true, value: snapshotWith({ quarantine: [SET_ASIDE[1]], preferences: preferences({ housePremiumPresets: roma }) }) };
+      return { ok: true, value: restored };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await page.element('quarantine-list').children[0].querySelector('button').click();
+  await settle();
+
+  assert.equal(page.status(), backup.quarantineRestoreText(restored));
+  assert.equal(page.element('quarantine-list').children.length, 1, 'the list is read again');
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'nothing typed is redrawn away');
+  await page.element('save-settings').click();
+  await settle();
+  const saved = page.commands.at(-1);
+  assert.equal(saved.type, 'preferences.save');
+  assert.equal(saved.expectedRevision, 3);
+  assert.equal(saved.preferences.currency, 'CHF');
+  assert.deepEqual(saved.preferences.housePremiumPresets,
+    [{ name: 'Roma', buyerPremiumBps: 2200 }, { name: 'Leu Numismatik', buyerPremiumBps: 1850 }]);
+});
+
+// The revision the page saves against moves only when the settings it drew are still the settings
+// stored: another view's new presets are not overwritten by a page that never showed them.
+test('after Restore the page saves against a newer revision only when the stored settings are unchanged', async () => {
+  const roma = [{ name: 'Roma', buyerPremiumBps: 2000 }];
+  for (const [elsewhere, expectedRevision] of [
+    [{ desktopAlertsEnabled: true }, 4],
+    [{ housePremiumPresets: [{ name: 'Nomos', buyerPremiumBps: 1800 }] }, 3],
+  ]) {
+    const page = await openSettings({
+      snapshot: snapshotWith({ quarantine: SET_ASIDE, preferences: preferences({ housePremiumPresets: roma }) }),
+      reply: (command, state) => {
+        if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 5 }) };
+        state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 4, housePremiumPresets: roma, ...elsewhere }) }) };
+        return { ok: true, value: { collection: 'lots', id: uuid(5), restoredReferences: [], keptReferences: [] } };
+      },
+    });
+    await page.element('quarantine-list').children[0].querySelector('button').click();
+    await settle();
+    await page.element('save-settings').click();
+    await settle();
+    assert.equal(page.commands.at(-1).expectedRevision, expectedRevision, JSON.stringify(elsewhere));
+  }
+});
+
+test('an import confirmed over unsaved settings keeps them and says the imported ones are not shown', async () => {
+  const stored = new Map();
+  const current = snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) });
+  const page = await openSettings({
+    stored,
+    snapshot: current,
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({
+        lots: [lot(uuid(1)), lot(uuid(2))], quarantine: [SET_ASIDE[1]],
+        preferences: preferences({ revision: 1, currency: 'GBP', housePremiumPresets: [{ name: 'Imported', buyerPremiumBps: 1500 }] }),
+      }) };
+      return { ok: true };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'the typed settings are still on the page');
+  assert.match(page.status(), /^Backup imported\. .*not saved.*reload this page/i);
+  assert.equal(page.element('quarantine-list').children.length, 1, 'the set-aside list follows the import');
+  assert.equal(JSON.parse(stored.get(GIGA_PREFERENCES_KEY)).currency, 'GBP', 'the popup prices in the imported default');
+});
+
+test('an import confirmed with nothing unsaved redraws the page from the imported settings', async () => {
+  const page = await openSettings({
+    snapshot: snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }),
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({
+        preferences: preferences({ revision: 1, currency: 'GBP', housePremiumPresets: [{ name: 'Imported', buyerPremiumBps: 1500 }] }),
+      }) };
+      return { ok: true };
+    },
+  });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.status(), 'Backup imported.');
+  assert.deepEqual(unsavedSettingsOf(page), { currency: 'GBP', theme: '', rows: [['Imported', '15.00']] });
+});
+
 test('the set-aside records can be taken out as a file of their own', async () => {
   const page = await openSettings({ snapshot: snapshotWith({ quarantine: SET_ASIDE }) });
   await page.element('download-quarantine').click();
