@@ -3183,5 +3183,35 @@
   "text": "SC. Brillo original.",
   "grade": "mint",
   "note": "0.33 review fix round 1: the senate's SC closing a reverse description is no grade; a sentence-start SC after a lower-case word is refused, which also leaves a Spanish SC behind a described coin ungraded"
+ },
+ {
+  "text": "Antiochos I. Tetradrachm. VF. SC –; cf. ESM 123.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC –.",
+  "grade": null,
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC - ; ESM 12. MBC.",
+  "grade": "vf",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Antiochos I. Tetradrachm. SC (unlisted). EF",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "Seleuco I. Tetradracma. SC (inédita).",
+  "grade": null,
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
+ },
+ {
+  "text": "EBC. SC -.",
+  "grade": "ef",
+  "note": "0.33 review fix round 1: SC before a spaced dash or bracket is an unlisted Seleucid Coins citation, not a grade"
  }
 ]
