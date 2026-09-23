@@ -1482,3 +1482,13 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   await again.element('period').emit('change', { target: { value: '5y' } });
   assert.match(again.element('sale-period').textContent, /^Out of 100\+ matches from the last 5 years for/);
 });
+
+// 0.33 review (P10): "Check online" carried a class no stylesheet the popup loads defines, so it drew as the browser's bare default button.
+test('every class a popup button carries is styled by a stylesheet the popup loads', () => {
+  const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
+  const html = read('popup.html');
+  const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((match) => read(match[1])).join('\n');
+  const classes = new Set([...html.matchAll(/<button\b[^>]*\bclass="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/)));
+  const unstyled = [...classes].filter((name) => !new RegExp(`\.${name.replace(/-/g, '\-')}(?![\w-])`).test(sheets));
+  assert.deepEqual(unstyled, []);
+});

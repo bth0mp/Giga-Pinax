@@ -24,6 +24,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Bopearachchi citations written `Bop. 24A` or, by French dealers, `Bopearachchi Série 24A` are now searched on acsearch and counted as citing the coin; the search asks for all three spellings either-or. A 0.32 search term you saved for a Bop type unchanged gives way to the new one.
 - A RIC I citation written `RIC I (2nd ed.) 306`, `RIC vol. I 306` or `RIC 1 306` now counts as citing the coin. The volume as a digit is read for volume I only: `RIC 2 306` could as well be the second edition of volume I.
 - A slab grade printed with its score glued on — `PCGS MS63`, `NGC AU58`, `NGC XF45` — is read into its bucket, as `NGC AU 58` already was. A glued number anywhere but behind NGC or PCGS still leaves the row ungraded.
+- The **Check online** button under a local-catalogue miss is drawn as the popup's other secondary buttons are; it carried a style the popup never defined and showed as the browser's bare default button.
 
 ### Security
 
