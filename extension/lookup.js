@@ -154,7 +154,9 @@ export function parseReference(text, clean = true) {
   const value = unwrap(unquote(visible));
   const parts = value.split(';').map(unwrap);
   for (const part of parts) {
-    const type = readType(part, clean);
+    // An en or em dash is the hyphen prose writes a range with ("RIC II Hadrian 1009–1012"), and lot text has always read it so. Only the type rules
+    // read it that way: an Other reference is its own card and keeps the dash it was written with.
+    const type = readType(part.replace(/[–—]/g, '-'), clean);
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));

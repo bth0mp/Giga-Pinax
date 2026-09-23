@@ -1453,3 +1453,16 @@ test('a section taken only from the heading\'s mint is offered online too, never
     query: 'RIC VII Treveri 12' });
   assert.equal(fetchImpl.calls.length, 1);
 });
+
+// Prose and word processors write a range with an en or em dash ("RIC II Hadrian 1009–1012"), and lot text has always read it as the hyphen it
+// stands for. The Reference box and a right-click now read it the same way, so the range reaches the type OCRE titles over it.
+test('an en or em dash in a typed range reads as the hyphen it stands for', () => {
+  for (const [dashed, hyphen] of [['RIC II Hadrian 1009–1012', 'RIC II Hadrian 1009-1012'], ['RIC 100–102', 'RIC 100-102'],
+    ['RIC 1009—1012', 'RIC 1009-1012'], ['RIC I 60a–b', 'RIC I 60a-b'], ['Price 3949–3950', 'Price 3949-3950'], ['Cr. 44/5–7', 'Cr. 44/5-7']]) {
+    assert.ok(parseReference(hyphen), hyphen);
+    assert.deepEqual(parseReference(dashed), parseReference(hyphen), dashed);
+  }
+  // An Other reference is its own card, and keeps the dash it was written with.
+  assert.equal(parseReference('HGC 4, 1218–1220').number, 'HGC 4, 1218–1220');
+  assert.equal(parseReference('SG–6829').number, 'SG 6829');
+});
