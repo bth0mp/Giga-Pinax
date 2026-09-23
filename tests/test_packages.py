@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -371,15 +372,23 @@ class LocalCataloguePackageTests(unittest.TestCase):
         build = load_build_script()
         # The real bundle first: what is checked in is what --write-labels writes today.
         build.check_label_data()
-        labels = EXTENSION / "data" / "nomisma-labels.json"
+        # The damage is done to a copy of extension/data, never to the tracked file: a run stopped between the write and the
+        # clean-up would otherwise leave the checkout's own labels damaged, and the next build would package them.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name) / "extension"
+        shutil.copytree(EXTENSION / "data", root / "data")
+        labels = root / "data" / "nomisma-labels.json"
         original = labels.read_bytes()
-        self.addCleanup(labels.write_bytes, original)
-        for damaged in (b'{"schemaVersion":1,"labels":{}}\n',
-                        json.dumps({"schemaVersion": 1, "labels": {**json.loads(original)["labels"], "ar": "Gold"}},
-                                   ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"):
-            labels.write_bytes(damaged)
-            with self.assertRaises(ValueError):
-                build.check_label_data()
+        with mock.patch.object(build, "EXTENSION_ROOT", root):
+            # The copy is the real bundle, so it passes as it stands and only the damage can be what is caught.
+            build.check_label_data()
+            for damaged in (b'{"schemaVersion":1,"labels":{}}\n',
+                            json.dumps({"schemaVersion": 1, "labels": {**json.loads(original)["labels"], "ar": "Gold"}},
+                                       ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"):
+                labels.write_bytes(damaged)
+                with self.assertRaises(ValueError):
+                    build.check_label_data()
 
     def test_catalogue_manifest_rejects_unsafe_or_unsupported_shards(self):
         build = load_build_script()
