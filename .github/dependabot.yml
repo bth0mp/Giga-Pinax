@@ -1,4 +1,4 @@
-# The workflows reference each action by its major tag. Dependabot proposes each new release as a pull request, so an
+# The workflows pin each action to a full commit SHA. Dependabot proposes each new release as a pull request, so an
 # action moves only when a person has reviewed the change and merged it.
 version: 2
 updates:

@@ -8,7 +8,7 @@ on:
 # Nothing is granted by default: each job names the one scope it needs, and only the job that uploads can write.
 permissions: {}
 
-# Actions are referenced by major tag, and .github/dependabot.yml keeps them current; see docs/RELEASING.md.
+# Actions are pinned to full commit SHAs (the release in the trailing comment); .github/dependabot.yml proposes updates.
 jobs:
   # Tests and builds the five ZIPs once, and records their checksums. Read-only: it runs the test suites and the build,
   # and nothing it runs could reach the release.
@@ -19,15 +19,15 @@ jobs:
     outputs:
       sums: ${{ steps.sums.outputs.sums }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Nothing here pushes, and the job runs on a tag anybody with write access can move: the checkout leaves no
           # credential in .git/config for a later step, or a compromised one, to push with.
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       # The packages are named from the manifests, so a tag that disagrees would upload
@@ -62,7 +62,7 @@ jobs:
             cat SHA256SUMS
             echo 'SHA256SUMS_END'
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: packages
           path: |
@@ -78,10 +78,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: packages
           path: dist
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: packages
           path: dist
