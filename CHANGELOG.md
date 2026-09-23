@@ -14,6 +14,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A range typed or right-clicked with an en or em dash — `RIC II Hadrian 1009–1012`, `RIC 100–102`, `Price 3949–3950` — is read as the hyphenated range it stands for, as lot text always read it, instead of finding nothing.
 - A bundled catalogue file that has lost a record its index still lists — a damaged or half-updated install — now makes the lookup go online (or say it needs to), instead of reporting the type as not found or offering other coins with the same number in its place.
 - A lot headed with two rulers, one of them a name RIC files a section under — `Aurelian and Severina. Antoninianus. RIC 2.` — no longer opens that one ruler's coin (RIC V Severina 2): both rulers are looked for, and the joint types are offered with the rest.
+- Lot text citing `R.I.C. 128`, `Seleucid Coins 1266.2`, `RIC. 60` or `Pr. 3949` now looks those types up, as `RIC 128`, `SC 1266.2`, `RIC 60` and `Price 3949` always were; they were skipped before. `Price.` followed by a number is still left alone, since it is how a sale amount is written.
 
 ## [0.32.1] - 2026-09-18
 

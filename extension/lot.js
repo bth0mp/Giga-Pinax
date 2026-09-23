@@ -44,7 +44,7 @@ const notHouse = (first, key) => String.raw`(?<!${first}\s)${key}`;
 const KEYS = [
   // Roman: the British Museum's three, the Republic's Crawford line, Sear's Imperators, the Hunter cabinet, the late bronze and the Gallic hoards.
   'BMC/RE', 'BMCRE', 'BMCRR', 'BMC', 'Bopearachchi', String.raw`Bop\.?`, 'Calicó', 'Calico', 'Cohen', String.raw`Coh\.?`, 'Crawford',
-  String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
+  String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', String.raw`R\.I\.C\.?`, 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
   surname('Cunetio'), surname('Elmer'), surname('Normanby'), surname('Mairat'), surname('Bastien'), surname('Giard'), surname('Depeyrot'),
   surname('Estiot'), surname('Szaivert'), surname('Gnecchi'), surname('Babelon'), surname('Bahrfeldt'), surname('Banti'), 'CNR',
   'AGK', surname('Kampmann'), surname('Van Meter'), surname('Vagi'), surname('Foss'), surname('Mazzini'), surname('Biaggi'), surname('Seaby'), 'DCA',
@@ -79,7 +79,7 @@ const KEYS = [
   surname('Friedberg'), surname('Davenport'), String.raw`Dav\.?`, surname('Bitkin'), 'Y#',
   // The rest of the older keys, the single letters last of all.
   // A sale's "Price realized 1,200" is plain English, never the Alexander corpus.
-  'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'SC', String.raw`Price(?!\s+reali[sz]ed)`, 'Pr', 'Mitchiner', 'MIG',
+  'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'Seleucid Coins', 'SC', String.raw`Price(?!\s+reali[sz]ed)`, 'Pr', 'Mitchiner', 'MIG',
   'DOC', 'MIR', 'Sydenham',
   String.raw`Syd\.?`, 'Müller', 'Muller', 'KM', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
 // Only "Y#" ends in a separator, and Krause glues its number to it ("Y#31a"), so the boundary after a "#" is the "#" itself.
@@ -302,7 +302,12 @@ function chunks(span) {
 }
 
 // The keys of the catalogues with type data. Their reference is its first chunk: "Price 3949, 3950" cites two types, so 3950 ends Price 3949.
-const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearachchi|Bop\.?)$/i;
+const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?)$/i;
+// A full stop a dealer puts after a typed key ("RIC. 60", "Pr. 3949") is the key's own, as "RSC. 119" has always been read. Only the keys that are no
+// English word take it: "Price." is left alone for the reason readable leaves "Price:" alone, and "SC." ends many a legend ("large SC. 12 h").
+const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;
+// RIC spelled with stops is RIC.
+const RIC_STOPS = /^R\.I\.C\.?\s*/;
 
 // The reference after one key: its first chunk (read up to its last number), then, for a catalogue without type data, every chunk that starts with a
 // number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
@@ -342,7 +347,9 @@ function pieceAfter(raw, typed = false) {
   return { body, broken };
 }
 
-function normalise(written, key, cf) {
+function normalise(stopped, spelled, cf) {
+  const written = stopped.replace(RIC_STOPS, 'RIC ');
+  const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
@@ -388,7 +395,8 @@ export function findReferences(input) {
     const end = keys[index + 1]?.index ?? text.length;
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
-    const span = text.slice(match.index + match[0].length, opens ? end - 1 : end);
+    const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
+    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '') : after;
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);

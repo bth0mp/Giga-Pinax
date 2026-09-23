@@ -1097,3 +1097,21 @@ test('a joint heading keeps every ruler it names instead of one ruler\'s section
   // One ruler whose name is RIC's section is still that section.
   assert.deepEqual(lookup('Severina. Antoninianus. RIC 2.'), { catalogue: 'RIC', number: '2', volume: 'V', section: 'Severina' });
 });
+
+// Keys dealers really write that no row was read for: RIC spelled with stops ("R.I.C. 128"), Seleucid Coins in full, and a typed key with a full
+// stop after it ("RIC. 60", "Pr. 3949"), which RSC's "RSC. 119" beside it has always kept.
+test('R.I.C., Seleucid Coins and a typed key followed by a full stop are read as their catalogues', () => {
+  const rows = (text) => findReferences(text).references.map(({ text: written, reference, typed }) => ({ written, reference, typed }));
+  assert.deepEqual(rows('Trajan. R.I.C. 128; C. 74.')[0], { written: 'RIC 128', reference: ric('128'), typed: true });
+  assert.deepEqual(rows('Nero. R.I.C. I² 60; BMC 74.')[0].reference, ric('60', 'I (2nd edition)'));
+  assert.deepEqual(rows('Antiochos III. Tetradrachm. Seleucid Coins 1266.2; HGC 9, 12.')[0],
+    { written: 'Seleucid Coins 1266.2', reference: { catalogue: 'SC', number: '1266.2', volume: '', section: '' }, typed: true });
+  assert.deepEqual(rows('Nero. Denarius. RIC. 60; RSC. 119.').map(({ reference }) => reference), [ric('60'), other('RSC. 119')]);
+  assert.deepEqual(texts('Nero. Denarius. RIC. 60; RSC. 119.'), ['RIC 60', 'RSC. 119']);
+  assert.deepEqual(rows('Alexander III. Drachm. Pr. 3949; Müller 12.')[0].reference, { catalogue: 'Price', number: '3949', volume: '', section: '' });
+  // "Price." stays unread as "Price:" does: it is the English word a dealer puts before a sale amount ("Price. 1200 EUR"), and read as the key it
+  // would open the PELLA type with that number.
+  assert.deepEqual(texts('Alexander III. Drachm. Price. 1200 EUR.'), []);
+  // A pasted lot citing R.I.C. is lot text, not one Other reference.
+  assert.equal(isLot('Trajan. R.I.C. 128; C. 74.'), true);
+});

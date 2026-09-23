@@ -90,7 +90,7 @@ export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String
 export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
-const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
+const NAMED = /(?:^|[^\p{L}])(?:RIC|R\.I\.C|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // A reference as read: without that punctuation, nor the brackets or single quotes a dealer wraps it in ("(RIC 972)", "‘Price 23’."); brackets that
