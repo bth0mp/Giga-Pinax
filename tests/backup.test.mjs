@@ -1072,3 +1072,26 @@ test('a backup whose root revision is 2^53-1 validates, while a record revision 
   assert.match(refused.error.message, /crafted or corrupt/);
   assert.equal(refused.error.path, 'data.lots');
 });
+
+// Settings set aside whole cannot be restored, and what the collector stands to lose there is their house presets:
+// Data health names them, counts them and says how to keep them, rather than calling them one unreadable record.
+test('settings set aside whole are named with their house presets and how to keep them', () => {
+  const presets = [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: 'NAC', buyerPremiumBps: 2250 }, { name: 'Roma', buyerPremiumBps: 2000 }];
+  const settings = {
+    collection: 'preferences', reason: 'invalid-ladder', quarantinedAt: NOW,
+    record: { currency: 'USD', housePremiumPresets: presets },
+  };
+  assert.equal(quarantineSummaryText([settings]),
+    'Your settings could not be read and were set aside, with 3 house presets. ' +
+    'Download set-aside records to keep them, then enter them again under House premiums.');
+  assert.deepEqual(quarantineLines([settings]), ['settings with 3 house presets: invalid-ladder (2026-09-12)']);
+  const one = { ...settings, record: { housePremiumPresets: presets.slice(0, 1) } };
+  assert.deepEqual(quarantineLines([one]), ['settings with 1 house preset: invalid-ladder (2026-09-12)']);
+  const lot = { collection: 'lots', record: { id: 'broken' }, reason: 'invalid-enum', quarantinedAt: NOW };
+  assert.equal(quarantineSummaryText([lot, one]),
+    '1 record could not be read and was set aside. Your settings could not be read and were set aside, with 1 house preset. ' +
+    'Download set-aside records to keep it, then enter it again under House premiums.');
+  const none = { ...settings, record: 'not an object' };
+  assert.equal(quarantineSummaryText([none]), 'Your settings could not be read and were set aside. They held no house presets.');
+  assert.deepEqual(quarantineLines([none]), ['settings with no house presets: invalid-ladder (2026-09-12)']);
+});

@@ -643,21 +643,45 @@ export async function importWithSafetyCopy({ exportCopy, exportRaw, download, co
   }
 }
 
+// Settings set aside whole are never put back, so what the collector stands to lose there - their house presets - is
+// counted and named, with the way to keep them, instead of being one more record that could not be read.
+const isSetAsideSettings = (entry) => entry?.collection === 'preferences' && entry.record !== null;
+const presetCount = (entry) =>
+  (Array.isArray(entry.record?.housePremiumPresets) ? entry.record.housePremiumPresets.length : 0);
+const presetsText = (count) => `${count} house preset${count === 1 ? '' : 's'}`;
+
+function settingsSummaryText(settings) {
+  const presets = settings.reduce((sum, entry) => sum + presetCount(entry), 0);
+  if (!presets) return 'Your settings could not be read and were set aside. They held no house presets.';
+  const them = presets === 1 ? 'it' : 'them';
+  return `Your settings could not be read and were set aside, with ${presetsText(presets)}. ` +
+    `Download set-aside records to keep ${them}, then enter ${them} again under House premiums.`;
+}
+
 export function quarantineSummaryText(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return '';
+  const settings = list.filter(isSetAsideSettings);
   // An entry with no record of its own exists only to carry links the repair had to clear.
-  const records = list.filter((entry) => entry.record !== null).length;
-  if (!records) return 'Some links were cleared while repairing local data.';
-  return records === 1
-    ? '1 record could not be read and was set aside.'
-    : `${records} records could not be read and were set aside.`;
+  const records = list.filter((entry) => entry.record !== null && !isSetAsideSettings(entry)).length;
+  const parts = [];
+  if (records) {
+    parts.push(records === 1
+      ? '1 record could not be read and was set aside.'
+      : `${records} records could not be read and were set aside.`);
+  }
+  if (settings.length) parts.push(settingsSummaryText(settings));
+  return parts.length ? parts.join(' ') : 'Some links were cleared while repairing local data.';
 }
 
 function quarantineLine(entry) {
   const cleared = entry.clearedReferences?.length ?? 0;
   const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
-  return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
+  const presets = presetCount(entry);
+  const name = isSetAsideSettings(entry)
+    ? `settings with ${presets ? presetsText(presets) : 'no house presets'}`
+    : entry.collection;
+  return `${name}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
 }
 
 export function quarantineLines(entries) {
