@@ -1391,6 +1391,23 @@ test('a bare RIC number with a single type prices the type that was found', asyn
   assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite RIC 237');
 });
 
+// 0.33 review, fix round 1: a bare RIC number starts no price research, so a failed Check online had no auction search below to offer and said
+// nothing more than that the catalogue was unreachable. It says what would let the collector search auction results.
+test('a bare RIC number whose online lookup fails says how to search auction results', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => acrossVolumes,
+    lookupTypeImpl: async () => ({ status: 'online-required', corpus: 'ocre', query: 'RIC 237', retry: async () => ({ status: 'network' }) }) });
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('online-fallback').hidden, false);
+  await popup.element('online-fallback').onclick();
+  await settle();
+  await settle();
+  assert.equal(popup.element('form-error').textContent,
+    'Couldn’t connect to numismatics.org. Try the catalogue lookup again later. Type a ruler or volume to search auction results.');
+  assert.equal(popup.element('prices-panel').hidden, true);
+});
+
 // A volume narrows the number to one book, but a book still holds several types of it: prices already fetched go when the lookup offers a choice.
 test('prices fetched for a RIC reference go when the lookup offers a choice of types', async () => {
   const price = deferred();

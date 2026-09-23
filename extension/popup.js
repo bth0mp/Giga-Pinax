@@ -13,6 +13,7 @@ const api = globalThis.browser ?? globalThis.chrome;
 const LABELS_KEY = 'giga-pinax-labels-v1';
 const CONNECTION_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later. You can still search auction results below.';
 const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later.';
+const BARE_RIC_HINT = 'Type a ruler or volume to search auction results.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
 const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
@@ -336,11 +337,12 @@ function clearOutput() {
   clearPrices();
 }
 
-function catalogueFailureMessage(outcome, hasFallback) {
-  const searches = hasFallback ? ' You can still search auction results below.' : '';
+// A bare RIC number starts no auction search of its own (namesOneType), so where there is none below, the message says what would start one.
+function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
+  const searches = hasFallback ? ' You can still search auction results below.' : bareRic ? ` ${BARE_RIC_HINT}` : '';
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
-  return hasFallback ? CONNECTION_MESSAGE : CONNECTION_ONLY_MESSAGE;
+  return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
 }
 
 // Only a reference that wasn't found or read marks its field invalid; network and permission messages name no field.
@@ -1079,7 +1081,7 @@ async function run(perform, note = '', failedReference = null) {
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
-    showError(catalogueFailureMessage(outcome, hasFallback));
+    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
   }
 }
 
