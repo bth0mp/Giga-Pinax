@@ -64,6 +64,7 @@ function loadSettings({
   confirmAnswers = [],
   catalogueMetadata = async () => null,
   language = 'en-US',
+  siteDataBlocked = false,
 } = {}) {
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
@@ -109,6 +110,12 @@ function loadSettings({
     Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
     Error, TypeError, TextEncoder, structuredClone,
   };
+  // A browser that blocks site data for the extension throws on reading localStorage at all.
+  if (siteDataBlocked) {
+    Object.defineProperty(sandbox, 'localStorage', {
+      get() { throw new Error("Failed to read the 'localStorage' property from 'Window': Access is denied for this document."); },
+    });
+  }
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
   for (const name of ['updates.js', 'settings.js']) {
@@ -311,6 +318,31 @@ test('the chosen theme is remembered locally and applied to the open page', asyn
   await settle();
   assert.equal(stored.has('giga-pinax-theme-v1'), false);
   assert.equal(page.document.documentElement.dataset.theme, undefined);
+});
+
+// Blocked site data costs the theme and the popup's currency cache, both kept in localStorage. The
+// settings themselves live in extension storage, so the page loads and saves them all the same.
+test('with site data blocked the page still loads and saves, and says the theme cannot be remembered', async () => {
+  const page = await openSettings({
+    siteDataBlocked: true,
+    reply: (command) => ({ ok: true, value: preferences({ revision: 4, currency: command.preferences.currency }) }),
+  });
+  assert.equal(page.status(), '', 'loading is not reported as a failure');
+  assert.equal(page.element('save-settings').disabled, false);
+  assert.equal(page.element('currency').value, 'USD');
+
+  page.element('currency').value = 'EUR';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands.at(-1).preferences.currency, 'EUR');
+  assert.equal(page.status(), 'Settings saved.');
+
+  page.element('theme').value = 'dark';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.document.documentElement.dataset.theme, 'dark', 'the open page still takes the theme');
+  assert.equal(page.status(), 'Settings saved. This browser profile blocks site data, so the theme applies to this page only and can’t be remembered.');
+  assert.equal(page.statusIsError(), 'false');
 });
 
 // --- import: preview, then confirm ---------------------------------------------------------------

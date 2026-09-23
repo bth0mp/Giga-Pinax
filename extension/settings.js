@@ -19,6 +19,31 @@ let quarantined = [];
 // would throw away something the collector typed and has not saved.
 let renderedForm = '';
 
+const THEME_KEY = 'giga-pinax-theme-v1';
+
+// A browser profile that blocks site data makes reading localStorage itself throw. What it holds -
+// the theme and the popup's currency cache - is a convenience: the settings live in extension
+// storage, so the page loads and saves without it and says what it could not keep.
+function siteStorage() {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+function storedTheme() {
+  try { return siteStorage()?.getItem(THEME_KEY) ?? ''; } catch { return ''; }
+}
+
+function rememberTheme(theme) {
+  try {
+    const storage = siteStorage();
+    if (!storage) return false;
+    if (theme) storage.setItem(THEME_KEY, theme);
+    else storage.removeItem(THEME_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function download(text, name) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const link = document.createElement('a');
@@ -185,7 +210,7 @@ function renderDataHealth(entries) {
 
 function render() {
   $('currency').value = preferencesSnapshot.preferences.currency;
-  $('theme').value = localStorage.getItem('giga-pinax-theme-v1') ?? '';
+  $('theme').value = storedTheme();
   $('premium-list').replaceChildren(
     ...(preferencesSnapshot.preferences.housePremiumPresets ?? []).map(premiumRow),
   );
@@ -249,14 +274,14 @@ function collectPresets() {
 }
 
 async function load() {
-  const reply = await initializeCompanionPreferences(bridge, localStorage);
+  const reply = await initializeCompanionPreferences(bridge, siteStorage());
   if (!reply?.ok || !reply.value?.preferences) {
     throw new Error(reply?.message || 'Could not load settings.');
   }
   preferencesSnapshot = reply.value;
   // Settings and the research popup share this origin's local storage, and the popup prices from the cache before the
   // background can answer it. Written on every load, so the reload after an import carries the imported default too.
-  cacheDefaultCurrency(localStorage, preferencesSnapshot.preferences.currency);
+  cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
   render();
   renderDataHealth(preferencesSnapshot.quarantine);
   $('save-settings').disabled = false;
@@ -331,13 +356,15 @@ $('save-settings').addEventListener('click', async () => {
       throw new Error(reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.');
     }
     preferencesSnapshot.preferences = reply.value;
-    cacheDefaultCurrency(localStorage, preferencesSnapshot.preferences.currency);
-    if (theme) localStorage.setItem('giga-pinax-theme-v1', theme);
-    else localStorage.removeItem('giga-pinax-theme-v1');
+    cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
+    // Nothing is lost by failing to clear a theme that could never have been stored.
+    const themeKept = rememberTheme(theme) || !theme;
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
     renderedForm = formState();
-    status('Settings saved.');
+    status(themeKept
+      ? 'Settings saved.'
+      : 'Settings saved. This browser profile blocks site data, so the theme applies to this page only and can’t be remembered.');
   } catch (error) {
     status(error.message || 'Could not save settings.', true);
   } finally {
@@ -468,7 +495,7 @@ $('confirm-import').addEventListener('click', async () => {
       return;
     }
     await refreshDataHealth().then((latest) => {
-      cacheDefaultCurrency(localStorage, latest.preferences?.currency);
+      cacheDefaultCurrency(siteStorage(), latest.preferences?.currency);
       if (!sameSettings(latest.preferences, preferencesSnapshot.preferences)) {
         status(`${copied}Backup imported. The settings above are the ones you had not saved, not the imported ones: note what you typed, then reload this page to see the imported settings.`);
       }
