@@ -1466,3 +1466,17 @@ test('an en or em dash in a typed range reads as the hyphen it stands for', () =
   assert.equal(parseReference('HGC 4, 1218–1220').number, 'HGC 4, 1218–1220');
   assert.equal(parseReference('SG–6829').number, 'SG 6829');
 });
+
+// A part is written in Roman numerals as often as in Arabic after the word "part" ("RIC IV, part I, 460"), which read "part I" as the section.
+test('a volume part written in Roman numerals after "part" is read as that part', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [['RIC IV, part I, 460', ric('IV, Part 1', '', '460')], ['RIC IV part II 12', ric('IV, Part 2', '', '12')],
+    ['RIC II, Part III, 1009', ric('II, Part 3', '', '1009')], ['RIC V, part II, 123', ric('V, Part 2', '', '123')],
+    ['RIC IV, part I, Caracalla 460', ric('IV, Part 1', 'Caracalla', '460')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // A part the volume does not have is still refused after a comma, as its Arabic spelling is, and a Roman numeral without "part" is no part.
+  assert.equal(parseReference('RIC IV, part IV, 12'), null);
+  assert.equal(parseReference('RIC III, part II, 12'), null);
+  assert.equal(parseReference('RIC II I 60')?.volume, 'II');
+});

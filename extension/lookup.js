@@ -65,12 +65,12 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
 const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\s+)?|([^\d\s][^\d]*?)\s*,?\s*${BOP}[\s-]*)(\d\S*)$`, 'i');
-// RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
-// optional second-edition marker, then the ruler or mint section if any (starting with a non-digit, so "RIC I 2 Nero 306" fails)
-// and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
+// RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3",
+// or in Roman numerals after the word, ", part I"), optional second-edition marker, then the ruler or mint section if any (starting with a non-digit,
+// so "RIC I 2 Nero 306" fails) and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
 // comma: dealers punctuate a volume the way they punctuate HGC's ("RIC III, 394a" beside "HGC 4, 1218"). Both separators are a fixed run at one place,
 // so neither alternative can be entered twice and the pattern stays linear.
-const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d(?!\d)|(?<=part\s*)(?:IX|VIII|VII|VI|V|IV|III|II|I)(?![a-z\d])))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
 // No volume: "RIC 972", "RIC Titus 123" or a bare "Titus 123", the number as above. The ruler must be one OCRE has, or the name of one it splits
 // into sections ("Theodosius II" for its East and West), checked by volumesOf, so "RIC hello 5", "RIC XI Nero 1" and "Euthydemus I 24A" stay unread,
 // and a number alone needs the RIC prefix.
@@ -236,7 +236,8 @@ function readClean(value) {
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
-    const [, numeral, mark, part, edition, section = '', number] = ric;
+    const [, numeral, mark, written, edition, section = '', number] = ric;
+    const part = written && (/^\d/.test(written) ? written : String(ROMAN.indexOf(written.toUpperCase()) + 1));
     // A volume written in Arabic numerals takes no comma after it. The Roman spelling is the one RIC is bound and cited under, and it alone is
     // punctuated the way HGC's volume is; "RIC 5, 6" and "RIC 1,2" are two numbers a dealer listed under one key, not volume V number 6.
     if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;

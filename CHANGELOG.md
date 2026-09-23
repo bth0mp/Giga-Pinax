@@ -15,6 +15,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A bundled catalogue file that has lost a record its index still lists — a damaged or half-updated install — now makes the lookup go online (or say it needs to), instead of reporting the type as not found or offering other coins with the same number in its place.
 - A lot headed with two rulers, one of them a name RIC files a section under — `Aurelian and Severina. Antoninianus. RIC 2.` — no longer opens that one ruler's coin (RIC V Severina 2): both rulers are looked for, and the joint types are offered with the rest.
 - Lot text citing `R.I.C. 128`, `Seleucid Coins 1266.2`, `RIC. 60` or `Pr. 3949` now looks those types up, as `RIC 128`, `SC 1266.2`, `RIC 60` and `Price 3949` always were; they were skipped before. `Price.` followed by a number is still left alone, since it is how a sale amount is written.
+- A volume part written in Roman numerals after the word — `RIC IV, part I, 460`, `RIC II, Part III, 1009` — is read as that part, as `RIC IV, part 1, 460` is, instead of taking "part I" for the ruler.
 
 ## [0.32.1] - 2026-09-18
 
