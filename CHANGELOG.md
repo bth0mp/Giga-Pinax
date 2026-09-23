@@ -12,6 +12,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - **Restore** under **Data health** in Settings, and a confirmed backup import, redrew the whole page and silently threw away house presets, a default currency or a theme you had typed but not saved. Restore now reads only the set-aside list again; an import over unsaved settings keeps them on the page and tells you the imported settings are shown after a reload.
 - With site data blocked for the extension, Settings opened on a raw “localStorage” error and **Save settings** stayed disabled. The page now loads and saves as usual; only a chosen theme cannot be remembered in that profile, and the page says so when you save one.
 - Saving a house preset from the bid calculator over a preferences record it could not read showed a raw “Cannot read properties of null” error; it now says the presets are not ready and that nothing was saved.
+- Capturing a lot whose page names the reference without a label read `RIC I² 306` as just `RIC I` and `RIC II.1² 12` as `RIC II.1`, which left **Research coin** with nothing to look up, and missed `SC 1266.2` altogether. All three are now captured whole; `SC` in a Roman coin's field (`SC in exergue`) is still not taken for a reference.
 
 ## [0.32.1] - 2026-09-18
 
