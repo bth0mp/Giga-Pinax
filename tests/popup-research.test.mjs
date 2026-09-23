@@ -1513,7 +1513,15 @@ test('every class a popup button carries is styled by a stylesheet the popup loa
   const html = read('popup.html');
   const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((match) => read(match[1])).join('\n');
   const classes = new Set([...html.matchAll(/<button\b[^>]*\bclass="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/)));
-  const unstyled = [...classes].filter((name) => !new RegExp(`\.${name.replace(/-/g, '\-')}(?![\w-])`).test(sheets));
+  // String.raw keeps the pattern's backslashes, which a plain template literal drops ("\." would be any character). A class name is letters, digits
+  // and hyphens, none of which means anything to a pattern outside a bracket.
+  const styled = (name, css) => new RegExp(String.raw`\.${name}(?![\w-])`).test(css);
+  // The check itself: a class is styled only by its own selector, not by one it is the tail or the head of.
+  assert.equal(styled('quiet', 'p.xquiet { color: red; }'), false);
+  assert.equal(styled('quiet', '.quietly { color: red; }'), false);
+  assert.equal(styled('online-fallback', '.online-fallback-x { color: red; }'), false);
+  assert.equal(styled('online-fallback', 'button.online-fallback { color: red; }'), true);
+  const unstyled = [...classes].filter((name) => !styled(name, sheets));
   assert.deepEqual(unstyled, []);
 });
 
