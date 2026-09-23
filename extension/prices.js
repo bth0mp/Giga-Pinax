@@ -17,33 +17,46 @@ export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
   return `${SEARCH_URL}?${params}`;
 }
 
-// The most of a reply this ever reads, and the most "];" it ever tries: every retry parses the whole slice again, so a
-// page made of nothing but terminators would keep the popup busy for as long as that page cared to make it. An acsearch
-// result page is a few hundred kilobytes; a full one is a hundred lots, and a dealer may write several "];" into each
-// description, so the retry limit sits where no real page reaches it - two thousand, about 17 ms on the worst shape.
+// The most of a reply this ever reads. An acsearch result page is a few hundred kilobytes; the bound is a backstop, since the array's end is found in
+// one pass whatever the page holds.
 const MAX_RESULT_BYTES = 2 * 1024 * 1024;
-const MAX_TERMINATORS = 2000;
-// ponytail: the page inlines its lots as JSON; try each "];" until one parses, so a "];" inside a description can't truncate it.
+const [QUOTE, BACKSLASH, OPEN_ARRAY, CLOSE_ARRAY, OPEN_OBJECT, CLOSE_OBJECT] = ['"', '\\', '[', ']', '{', '}'].map((char) => char.charCodeAt(0));
+
+// Where the JSON array opening at `from` closes, read the way JSON writes it: a bracket inside a string is text, and a backslash escapes the character
+// behind it, so a "];" in a dealer's description never ends the array. One pass, each character looked at once; -1 when the text ends first.
+function arrayEnd(text, from) {
+  let depth = 0;
+  let quoted = false;
+  for (let index = from; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (quoted) {
+      if (code === BACKSLASH) index += 1;
+      else if (code === QUOTE) quoted = false;
+    } else if (code === QUOTE) quoted = true;
+    else if (code === OPEN_ARRAY || code === OPEN_OBJECT) depth += 1;
+    else if ((code === CLOSE_ARRAY || code === CLOSE_OBJECT) && --depth === 0) return index;
+  }
+  return -1;
+}
+
+// The page inlines its lots as a JSON array behind the marker; its real end is found by arrayEnd and the slice is parsed once.
 export function extractLots(html) {
   const text = String(html ?? '').slice(0, MAX_RESULT_BYTES);
   const start = text.indexOf(MARKER);
   if (start < 0) return null;
-  const from = start + MARKER.length;
-  let end = text.indexOf('];', from);
-  for (let tried = 0; end >= 0 && tried < MAX_TERMINATORS; tried += 1) {
-    try {
-      const lots = JSON.parse(text.slice(from, end + 1));
-      if (Array.isArray(lots)) {
-        // The description comes along: it is what says whether a lot cites the reference at all, what it was graded and what it is called.
-        return lots.filter((lot) => lot && typeof lot === 'object').map((lot) => ({
-          id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''), description: String(lot.description ?? ''),
-        }));
-      }
-      return null;
-    } catch { /* a "];" inside a string; keep scanning */ }
-    end = text.indexOf('];', end + 1);
-  }
-  return null;
+  const opening = /\s*\[/y;
+  opening.lastIndex = start + MARKER.length;
+  if (!opening.test(text)) return null;
+  const from = opening.lastIndex - 1;
+  const end = arrayEnd(text, from);
+  if (end < 0) return null;
+  let lots;
+  try { lots = JSON.parse(text.slice(from, end + 1)); } catch { return null; }
+  if (!Array.isArray(lots)) return null;
+  // The description comes along: it is what says whether a lot cites the reference at all, what it was graded and what it is called.
+  return lots.filter((lot) => lot && typeof lot === 'object').map((lot) => ({
+    id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''), description: String(lot.description ?? ''),
+  }));
 }
 
 const CURRENCY_MARKS = [['USD', /US\$|\$|\bUSD\b/i], ['EUR', /€|\bEUR\b/i], ['GBP', /£|\bGBP\b/i], ['CHF', /\bCHF\b|\bFr\./i]];

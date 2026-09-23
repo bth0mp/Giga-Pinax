@@ -70,22 +70,41 @@ test('the fixture page reads as two citations of another type, and the grades th
   assert.deepEqual(lots.map((entry) => gradeOf(entry.description)), ['VF', 'VF', 'VF', 'EF', 'AU/Mint State']);
 });
 
-// A page is untrusted text off the network, and every retry parses the whole slice from the marker again: half a
-// megabyte of nothing but terminators took seconds with the popup's own thread. Bounded by the size read and the number
-// of retries, so a hostile page costs a miss rather than a frozen popup.
-test('a page made of nothing but array terminators is given up on, not chewed through', () => {
-  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2)}"}];`;
+// A page is untrusted text off the network. 0.32 tried each "];" in turn and parsed the whole slice again at every one, so a description of two
+// megabytes with its terminators at the end took seconds on the popup's own thread. The array's end is found in one pass that reads strings as
+// JSON writes them, and the slice is parsed once: a page of nothing but terminators inside a string is simply a lot whose text is terminators.
+const countingParses = (read) => {
+  const parse = JSON.parse;
+  let parses = 0;
+  JSON.parse = (...args) => { parses += 1; return parse(...args); };
+  try { return { result: read(), parses }; } finally { JSON.parse = parse; }
+};
+test('a page made of nothing but array terminators is read in one pass and parsed once', () => {
+  const terminators = (bytes) => `acsearch.initSearchResults = [{"id":"${'];'.repeat(bytes / 2 - 20)}"}];`;
   for (const bytes of [64 * 1024, 512 * 1024, 2 * 1024 * 1024]) {
     const started = performance.now();
-    assert.equal(extractLots(terminators(bytes)), null);
+    const { result, parses } = countingParses(() => extractLots(terminators(bytes)));
     const spent = performance.now() - started;
-    // Measured at about 17 ms for each of these; the margin is for a loaded machine, not for a slower bound.
-    assert.ok(spent < 250, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
+    assert.equal(result?.length, 1, `${bytes} bytes`);
+    assert.equal(parses, 1);
+    assert.ok(spent < 2000, `${bytes} bytes of terminators took ${spent.toFixed(0)} ms`);
   }
-  // A page with more results text than any reply carries is read up to the bound and no further.
+  // The worst shape for the old reader: one description nearly the whole slice, its terminators at the very end.
+  const late = `acsearch.initSearchResults = [{"id":"1","description":"${'x'.repeat(2 * 1024 * 1024 - 4200)}${'];'.repeat(1999)}"}];`;
   const started = performance.now();
+  const { result, parses } = countingParses(() => extractLots(late));
+  assert.equal(result?.length, 1);
+  assert.equal(parses, 1);
+  assert.ok(performance.now() - started < 1000, 'the worst shape is read promptly');
+  // Escapes are honoured: an escaped quote does not end the string, and an escaped backslash does not escape the quote after it.
+  assert.deepEqual(extractLots('acsearch.initSearchResults = [{"id":"a\\"]","title":"b\\\\"}, {"id":"c"}];').map((entry) => entry.id), ['a"]', 'c']);
+  // An array that never closes inside the bytes read is no page at all, and costs one pass to find out.
+  assert.equal(extractLots(`acsearch.initSearchResults = [{"id":"${'];'.repeat(1024 * 1024)}`), null);
+  assert.equal(extractLots('acsearch.initSearchResults = {"id":1};'), null);
+  // A page with more results text than any reply carries is read up to the bound and no further.
+  const beyond = performance.now();
   assert.equal(extractLots(`${' '.repeat(4 * 1024 * 1024)}acsearch.initSearchResults = [];`), null);
-  assert.ok(performance.now() - started < 1000);
+  assert.ok(performance.now() - beyond < 1000);
   // The handful a real page's descriptions carry is still read through.
   const inside = `acsearch.initSearchResults = [{"id":"1","title":"${'see [RIC 306]; '.repeat(20)}"}];`;
   assert.equal(extractLots(inside)?.length, 1);

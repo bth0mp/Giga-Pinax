@@ -10,6 +10,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - A RIC number typed without a volume, a ruler or a mint — `RIC 237` — no longer shows a median beside **Choose a type** or "matches too many types": the number names a type in every volume, so its prices mixed Caracalla's denarii with Vespasian's aurei and Constantine's folles. Prices now wait until one type is found or chosen, and prices already fetched for a RIC reference go, with a line saying why, when the lookup offers a choice of types.
 
+### Security
+
+- 0.32.0 said hostile acsearch pages were "refused in milliseconds". That was not true of every shape: a result page whose one description filled the two megabytes read, with its `];` terminators at the end, still held the popup for about three seconds, because each terminator was tried by parsing the whole page again. The end of the results is now found in a single pass that reads the page's strings as JSON writes them, and the results are parsed once, so any page within the two megabytes read takes milliseconds.
+
 ## [0.32.1] - 2026-09-18
 
 ### Added
