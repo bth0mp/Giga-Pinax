@@ -1021,18 +1021,37 @@ test('citesReference reads a list of type numbers behind one key', () => {
   assert.equal(citesReference('Price 23.00', price23), false);
 });
 
-// The wall-clock budget of the timed reads below. Each takes a few milliseconds; 250 ms failed now and then when the suites ran in parallel on a busy
-// machine, and the shapes these guard against took seconds, so 2 s still tells a regression from a loaded runner (0.33 review, H7).
-const BUDGET_MS = 2000;
+// The timed reads below are timed in this process's CPU time, not on the wall clock. Each costs a few milliseconds; a 250 ms wall-clock budget failed
+// now and then when the suites ran in parallel on a busy machine, which stretches the wall clock of a read without adding to what the read costs. The
+// shapes these guard against cost seconds, and 250 ms of CPU still tells them from a loaded runner (0.33 review, H7).
+const CPU_BUDGET_MS = 250;
+const cpuMs = (read) => {
+  const started = process.cpuUsage();
+  read();
+  const { user, system } = process.cpuUsage(started);
+  return (user + system) / 1000;
+};
+// What one read costs on average, over enough reads to fill a few ticks of the CPU clock (Windows counts it in 15.6 ms steps).
+const cpuPerRead = (read) => {
+  const started = process.cpuUsage();
+  let reads = 0;
+  let spent = 0;
+  while (spent < 50) {
+    read();
+    reads += 1;
+    const { user, system } = process.cpuUsage(started);
+    spent = (user + system) / 1000;
+  }
+  return spent / reads;
+};
 
 // 0.32 review, round 3: two adjacent separator groups behind the key split a run of them between themselves, so 'RIC ' followed by 100,000 full stops
 // took 4-7 seconds. They are one group now, and a description is cut to CITATION_LIMIT characters before the pattern reads it at all.
 test('a run of separators behind the key costs no more than the text it stands in', () => {
   const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
   for (const text of [`RIC ${'.'.repeat(100000)}`, `RIC ${'.'.repeat(3000)}`, `RIC ${'. '.repeat(50000)}`, `RIC ${', '.repeat(50000)}306`, `RIC ${'(('.repeat(50000)}306`]) {
-    const began = Date.now();
-    citesReference(text, ric);
-    assert.ok(Date.now() - began < BUDGET_MS, `citesReference took ${Date.now() - began} ms on ${text.length} characters`);
+    const spent = cpuMs(() => citesReference(text, ric));
+    assert.ok(spent < CPU_BUDGET_MS, `citesReference took ${spent} ms of CPU on ${text.length} characters`);
   }
   // Only the opening of a description is read, as the grade reader already did: what stands 10,000 characters in is a group lot's literature.
   assert.equal(citesReference(`${'x '.repeat(100)}RIC 306`, ric), true);
@@ -1044,9 +1063,8 @@ test('the grade reader reads an adversarial description in one bounded pass', ()
   for (const length of [3000, 100000]) {
     for (const shape of ['. Good Very ', '. ss-', '. Extremely Fin', 'NGC Ch VF 5/5 - ', 'Av. ss, Rs. s / vz. ', '. , : ( / ', '. sehr schön-']) {
       const text = shape.repeat(Math.ceil(length / shape.length)).slice(0, length);
-      const began = Date.now();
-      gradeOf(text);
-      assert.ok(Date.now() - began < BUDGET_MS, `gradeOf took ${Date.now() - began} ms on ${length} characters of “${shape}”`);
+      const spent = cpuMs(() => gradeOf(text));
+      assert.ok(spent < CPU_BUDGET_MS, `gradeOf took ${spent} ms of CPU on ${length} characters of “${shape}”`);
     }
   }
 });
@@ -1054,18 +1072,29 @@ test('the grade reader reads an adversarial description in one bounded pass', ()
 // 75,000 characters of repeated lowercase marks took the reviewer's machine 948 ms, because every match sliced the description again.
 test('a long description is read once and quickly', () => {
   const long = `Fine. ${'ss ss ss '.repeat(8000)}`;
-  const started = Date.now();
-  assert.equal(gradeOf(long), 'Fine and below');
-  assert.ok(Date.now() - started < BUDGET_MS, `gradeOf took ${Date.now() - started} ms`);
+  const spent = cpuMs(() => assert.equal(gradeOf(long), 'Fine and below'));
+  assert.ok(spent < CPU_BUDGET_MS, `gradeOf took ${spent} ms of CPU`);
   // Only the opening of a description is read: a dealer's grade is never 3,000 characters in.
   assert.equal(gradeOf(`${'x'.repeat(4000)}. EF`), null);
   // The citation pattern is bounded in the same way: a group lot's page of literature costs no more per character than a one-line description.
   const ric = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)' };
   for (const text of [`RIC ${'a '.repeat(30000)}306`, 'RIC I Nero '.repeat(7000), `RIC ${'3'.repeat(60000)}`, 'RIC ('.repeat(15000)]) {
-    const began = Date.now();
-    assert.equal(citesReference(text, ric), false);
-    assert.ok(Date.now() - began < BUDGET_MS, `citesReference took ${Date.now() - began} ms`);
+    const spent = cpuMs(() => assert.equal(citesReference(text, ric), false));
+    assert.ok(spent < CPU_BUDGET_MS, `citesReference took ${spent} ms of CPU`);
   }
+});
+
+// A budget alone lets a quadratic read through on a fast machine. Ten times the description may cost at most thirty times as much: a read that grows
+// with the text passes with room to spare, and one that reads the description again at every match, as the 948 ms shape did, costs a hundred times.
+test('the grade reader costs no more per character on a long description than on a short one', () => {
+  const read = (repeats) => {
+    const text = `Fine. ${'ss ss ss '.repeat(repeats)}`;
+    gradeOf(text);
+    return Math.min(...[1, 2, 3].map(() => cpuPerRead(() => gradeOf(text))));
+  };
+  const short = read(800);
+  const long = read(8000);
+  assert.ok(long < 30 * short, `gradeOf took ${long.toFixed(2)} ms of CPU at 8000 repeats, ${short.toFixed(2)} ms at 800`);
 });
 
 test('namesDenomination matches the card word as a whole word, plural tolerated', () => {
