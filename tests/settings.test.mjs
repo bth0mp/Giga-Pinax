@@ -289,6 +289,19 @@ test('each Remove button is named by the house its row holds', async () => {
   assert.equal(removeOf(added).getAttribute('aria-label'), 'Remove Nomos AG');
 });
 
+// A conflict is not something a second click can fix, so the refusal says what will.
+test('a Save refused because presets changed elsewhere says how to see them without losing input', async () => {
+  const page = await openSettings({
+    reply: () => ({ ok: false, code: 'conflict', outcome: 'not-committed', message: 'Preferences changed in another view.' }),
+  });
+  page.element('currency').value = 'CHF';
+  await page.element('save-settings').click();
+  await settle();
+  assert.match(page.status(), /^Preferences changed in another view\. Note what you typed, then reload this page to see the settings saved elsewhere\.$/);
+  assert.equal(page.statusIsError(), 'true');
+  assert.equal(page.element('currency').value, 'CHF', 'what was typed stays on the page');
+});
+
 // --- the default currency -----------------------------------------------------------------------
 
 test('saving a new default currency sends it and writes the cache the research popup prices from', async () => {

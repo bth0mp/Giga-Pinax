@@ -360,7 +360,11 @@ $('save-settings').addEventListener('click', async () => {
       preferences: { currency: $('currency').value, housePremiumPresets: presets.value },
     });
     if (!reply.ok) {
-      throw new Error(reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.');
+      const message = reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.';
+      // Saving again is refused the same way, so the collector is told the one way out.
+      throw new Error(reply.code === 'conflict'
+        ? `${message} Note what you typed, then reload this page to see the settings saved elsewhere.`
+        : message);
     }
     preferencesSnapshot.preferences = reply.value;
     cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
