@@ -1460,3 +1460,25 @@ test('a row included by hand is counted, not said to cite the reference', async 
   await popup.element('copy-summary').emit('click');
   assert.ok(popup.clipboard[0].split('\n').includes(line));
 });
+
+// 0.33 review (R10): acsearch lists the most recent lots first, so a full page that reaches back past the period's start holds every sale of the
+// period there is. The "+" says acsearch may hold more; it is kept for a period the page does not reach the start of, and for All.
+test('the matches line adds "+" only where the page may not hold the whole period', async () => {
+  const lots = Array.from({ length: 100 }, (_, index) => ({ ...citingSale(`p${index}`, '100', 'Macedon. Tetradrachm. Price 23. VF'),
+    date: daysAgo(index < 50 ? 30 + index : 4000 + index) }));
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('sale-period').textContent, /^Out of 100\+ matches for/);
+  await popup.element('period').emit('change', { target: { value: '5y' } });
+  assert.match(popup.element('sale-period').textContent, /^Out of 50 matches from the last 5 years for/);
+  // A full page every lot of which falls inside the period may be followed by more of them.
+  const recent = lots.map((entry, index) => ({ ...entry, date: daysAgo(30 + index) }));
+  const again = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: recent }) });
+  again.element('quick-reference').value = 'Price 23';
+  await again.element('reference-form').emit('submit');
+  await settle();
+  await again.element('period').emit('change', { target: { value: '5y' } });
+  assert.match(again.element('sale-period').textContent, /^Out of 100\+ matches from the last 5 years for/);
+});

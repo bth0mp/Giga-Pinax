@@ -19,6 +19,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A grade the description quotes from an earlier sale — `Good EF. Ex Triton XX (where described as "Good VF").`, `there graded VF`, `catalogued as VF` — no longer takes the place of the lot's own grade, which put the coin in a lower or higher bucket than its dealer gave it.
 - A search you type with the ruler inside the citation, as dealers write it — `RIC I Nero 306`, `RIC X Leo I 605` — still counts only the results citing your coin; it used to switch the citation filter off without a word. When a search you have edited really does look for something else, the panel, the announcement and **Copy summary** now say so: `This search does not look for Price 23, so all 12 results are counted.`
 - The **N of M results cite …** line no longer counts a sale you included by hand as one that cites the reference. It says how many really cite it and, when your own decisions change how many the median rests on, that number too — `1 of 3 results cite Price 23; 2 of 3 counted` — in the panel, the announcement and **Copy summary** alike. The **names …** line reads the same way.
+- With **Last 5 years** or **Last 2 years** chosen, the matches line no longer adds a `+` when the results page already reaches back past the start of that period: every sale of the period is on the page, so there are no more to find.
 
 ### Security
 
