@@ -904,3 +904,12 @@ test('Add coin discards every editor of the coin it leaves, the details form inc
   assert.match(handler, /^ if \(!canLeaveSelectedEditors\(\)\) return; lotInteractionGeneration \+= 1; clearSelectedEditors\(\);/);
   assert.doesNotMatch(handler, /dirtyEditors\.delete/, 'no hand-picked subset of the editors');
 });
+
+// A live region around the whole coin pane read out every field the page filled in whenever a coin
+// was opened or followed a save. What the page has to say goes through its two status lines.
+test('only the status line and the announcement are live, not the coin pane', () => {
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  assert.ok(markup.querySelector('.coin-detail'), 'the coin pane is present');
+  assert.deepEqual(markup.querySelectorAll('[aria-live]').map((element) => element.id), ['announcement']);
+  assert.equal(markup.getElementById('workspace-status').getAttribute('role'), 'status');
+});

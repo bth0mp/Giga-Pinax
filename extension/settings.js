@@ -119,6 +119,13 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   remove.type = 'button';
   remove.className = 'quiet';
   remove.textContent = 'Remove';
+  // Every row has one, so its name says which house it takes away, and follows the name as typed.
+  const nameRemove = () => {
+    const house = name.value.trim().replace(/\s+/g, ' ');
+    remove.setAttribute('aria-label', `Remove ${house || 'unnamed house'}`);
+  };
+  nameRemove();
+  name.addEventListener('input', nameRemove);
   remove.addEventListener('click', () => row.remove());
   // The button sits in the same grid as the fields, under a blank caption line of its own, so that
   // it stays level with the inputs however tall a field's error grows.

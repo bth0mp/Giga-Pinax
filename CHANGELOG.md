@@ -14,6 +14,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Saving a house preset from the bid calculator over a preferences record it could not read showed a raw “Cannot read properties of null” error; it now says the presets are not ready and that nothing was saved.
 - Capturing a lot whose page names the reference without a label read `RIC I² 306` as just `RIC I` and `RIC II.1² 12` as `RIC II.1`, which left **Research coin** with nothing to look up, and missed `SC 1266.2` altogether. All three are now captured whole; `SC` in a Roman coin's field (`SC in exergue`) is still not taken for a reference.
 - **Add coin** after choosing to discard unsaved coin details left the new, empty form marked as edited, so the workspace went on asking to discard changes that were already gone and warned before leaving the page.
+- Screen readers no longer read out the whole coin pane in the workspace every time a coin opens or follows a save; the status line and announcements still speak. Each house's **Remove** button in Settings is now named for its house (“Remove Roma”) instead of every one being just “Remove”.
 
 ## [0.32.1] - 2026-09-18
 

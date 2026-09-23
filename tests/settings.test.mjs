@@ -269,6 +269,26 @@ test('a preset row nobody touched saves unchanged whatever the browser locale is
   }
 });
 
+// Every row has a Remove button, so the house it removes is what tells one from another by name.
+test('each Remove button is named by the house its row holds', async () => {
+  const page = await openSettings({
+    snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [
+      { name: 'Roma', buyerPremiumBps: 2000 }, { name: 'Leu Numismatik', buyerPremiumBps: 1800 },
+    ] }) }),
+  });
+  const removeOf = (row) => row.querySelector('.premium-remove').querySelector('button');
+  const rows = () => page.document.querySelectorAll('.premium-row');
+  assert.deepEqual(rows().map((row) => removeOf(row).getAttribute('aria-label')), ['Remove Roma', 'Remove Leu Numismatik']);
+  assert.deepEqual(rows().map((row) => removeOf(row).textContent), ['Remove', 'Remove'], 'the visible text starts the name');
+
+  await page.element('add-premium').click();
+  const added = rows()[2];
+  assert.equal(removeOf(added).getAttribute('aria-label'), 'Remove unnamed house');
+  added.querySelector('.premium-name').value = '  Nomos  AG ';
+  await added.querySelector('.premium-name').emit('input');
+  assert.equal(removeOf(added).getAttribute('aria-label'), 'Remove Nomos AG');
+});
+
 // --- the default currency -----------------------------------------------------------------------
 
 test('saving a new default currency sends it and writes the cache the research popup prices from', async () => {
