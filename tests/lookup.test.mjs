@@ -1422,3 +1422,21 @@ test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, 
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
   assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
 });
+
+// A mint bracketed after a number with no volume ("Nero. RIC 411 (Rome)") is no ruler's section: the lot's rulers are still asked for, so the one RIC
+// VIII Rome 411 is never opened for a Nero lot.
+test('a mint section without a volume keeps the lot rulers on the facet search', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Rome', number: '411', rulers: ['Nero'] }, { fetchImpl });
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('portrait_facet:"Nero"')), fetchImpl.calls[0]);
+  // Missed with the mint, the rulers' own coins with the number are asked for without it, and a single hit is offered, never opened.
+  assert.ok(fetchImpl.calls[1].includes(encodeURIComponent('portrait_facet:"Nero"')) && !fetchImpl.calls[1].includes('Rome'), fetchImpl.calls[1]);
+  const titus = fakeFetch({ [encodeURIComponent('AND "Rome"')]: '<feed></feed>', 'ocre/apis/search': fixture('ocre-search-titus-972.xml') });
+  const offered = await lookupType({ catalogue: 'RIC', volume: '', section: 'Rome', number: '972', rulers: ['Titus'] }, { fetchImpl: titus });
+  assert.deepEqual(offered, { status: 'candidates', candidates: [{ id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' }], partial: true,
+    corpus: 'ocre', query: 'RIC Rome 972 (Titus)' });
+  // A ruler's own section still wins over the lot's rulers, as it always has.
+  const own = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Elagabalus', number: '268', rulers: ['Julia Maesa'] }, { fetchImpl: own });
+  assert.ok(!own.calls[0].includes('facet'), own.calls[0]);
+});

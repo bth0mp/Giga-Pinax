@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- A mint a lot writes after its RIC number with no volume — `Probus. Antoninianus. RIC 40 (Ticinum).`, `Nero. AR Denarius. RIC 411 (Rome).` — no longer opens another emperor's coin from the mint volumes (Constantine's RIC VII Ticinum 40, Magnentius's RIC VIII Rome 411). The ruler the heading names is still asked for beside the mint: a coin of his with that mint and number opens as before, and otherwise his own coins with the number are offered to choose from, never opened.
+
 ## [0.32.1] - 2026-09-18
 
 ### Added

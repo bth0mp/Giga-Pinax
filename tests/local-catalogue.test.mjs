@@ -767,3 +767,31 @@ test('a damaged corpus fails closed, and a dropped request is retried', { skip }
   }
   assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).card.id, 'rrc-44.5');
 });
+
+// A mint bracketed after the number of a lot citing no volume opened whichever mint volume's coin carried that mint and number, whoever the heading
+// named. The heading's ruler now rides with the mint, so the coin opens only when he is on it.
+test('a mint bracketed beside a RIC number with no volume opens only a coin of the heading\'s ruler', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lookup = async (text) => { const lot = findReferences(text); return local.lookupType(lotLookup(lot.references[0], lot.rulers)); };
+  const nero = await lookup('Nero. AR Denarius. RIC 287 (Rome).');
+  assert.equal(nero.status, 'candidates');
+  assert.equal(nero.personMismatch, true);
+  assert.deepEqual(nero.candidates.map(({ id }) => id), ['ric.7.rom.287']);
+  assert.equal((await lookup('Licinius. Follis. RIC 287 (Rome).')).card?.id, 'ric.7.rom.287');
+  // A mint with no coin of that number for the ruler leaves his own coins with the number to choose from, never one of them opened: nothing ties
+  // them to the mint the lot wrote.
+  const ticinum = await lookup('Constantine I. Follis. RIC 287 (Ticinum).');
+  assert.equal(ticinum.status, 'candidates');
+  assert.equal(ticinum.partial, true);
+  assert.deepEqual(ticinum.candidates.map(({ id }) => id), ['ric.7.ar.287', 'ric.7.lon.287', 'ric.7.lug.287']);
+});
+
+test('over the bundled catalogue, a mint bracketed after a number opens no coin of another ruler', { skip }, async () => {
+  for (const [ruler, mint, from, to] of [['Probus', 'Ticinum', 1, 40], ['Nero', 'Rome', 400, 420], ['Gallienus', 'Siscia', 1, 20], ['Diocletian', 'Antioch', 1, 20]]) {
+    for (let number = from; number <= to; number += 1) {
+      const lot = findReferences(`${ruler}. Antoninianus. RIC ${number} (${mint}).`);
+      const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+      if (result.status === 'ok') assert.ok(peopleOn(result.card.id).includes(ruler.toLowerCase()), `${ruler} ${number}: ${result.card.label}`);
+    }
+  }
+});

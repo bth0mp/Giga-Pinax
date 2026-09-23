@@ -1,5 +1,5 @@
 import { buildQuery, formatDates, inGroup, otherVolumePart, pickMatch, pickRicEntries } from './lookup.js';
-import { isRicPerson, ricPeople } from './catalogues.js';
+import { isMintOnly, isRicPerson, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
 
@@ -225,10 +225,20 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       const picked = pickRicEntries(await candidateEntries(), citationRef);
       const entries = picked.status === 'ok' ? [picked.entry] : (picked.candidates ?? []);
       const query = squash(`RIC ${reference.volume} ${reference.number}`);
-      if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another.
-      const records = await Promise.all(entries.map((entry) => recordById(entry.id)));
-      const matched = entries.filter((entry, index) => hasPerson(records[index], people));
+      const withPerson = async (list) => {
+        const records = await Promise.all(list.map((entry) => recordById(entry.id)));
+        return list.filter((entry, index) => hasPerson(records[index], people));
+      };
+      const matched = await withPerson(entries);
+      // A mint a lot wrote beside a number with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume
+      // may file him by name rather than by mint: his coins with the number are offered without the mint, never opened, since nothing ties them to it.
+      if (matched.length === 0 && !reference.volume && isMintOnly(reference.section)) {
+        const wider = pickRicEntries(await candidateEntries(), { ...citationRef, section: '' });
+        const theirs = await withPerson(wider.status === 'ok' ? [wider.entry] : (wider.candidates ?? []));
+        if (theirs.length > 0) return local({ status: 'candidates', candidates: theirs, partial: true }, 'ocre', query);
+      }
+      if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       if (matched.length > 0) {
         let final = pickRicEntries(matched, citationRef);
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer

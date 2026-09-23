@@ -1,5 +1,5 @@
 import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
-import { isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
+import { isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -434,9 +434,10 @@ export const isLot = (text) => looksLikeLot(text)
   || (!parseReference(text) && !TYPED_KEY.test(String(text ?? '').replace(INVISIBLE, '').trim()) && findReferences(text).references.length > 0);
 
 // A lot row looks up its parsed reference, never the row itself. Only a RIC reference without a ruler of its own borrows the text's rulers (the facet
-// search); "(Elagabalus)" in the reference keeps today's path.
+// search); "(Elagabalus)" in the reference keeps today's path. A mint section is no ruler of its own: beside a mint volume, or with no volume at all
+// ("Probus. RIC 40 (Ticinum)"), the heading's ruler still says whose coin it is, where the mint alone opened Constantine's RIC VII Ticinum 40.
 const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && rulers.length > 0
-  && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume));
+  && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume) || (!reference.volume && isMintOnly(reference.section)));
 // A heading name RIC itself heads a section with, and that no person answers to ("Philip I", "Gaius/Caligula"), is that section rather than a
 // portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
 // nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.

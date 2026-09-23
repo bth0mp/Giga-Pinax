@@ -1044,3 +1044,22 @@ test('a heading of three thousand characters, and a long run of capitals in it, 
     assert.ok(Date.now() - start < 2000, `a 2,900-character heading must not freeze the reader: ${text.slice(0, 20)}`);
   }
 });
+
+// A mint bracketed after a RIC number with no volume ("RIC 40 (Ticinum)") is where the coin was struck, and says nothing about whose coin it is. Read
+// as the section, it took the heading's ruler away, and every RIC VI-IX coin with that mint and number opened as the single answer: Probus's RIC 40
+// opened Constantine's RIC VII Ticinum 40. The ruler is kept, exactly as it is kept beside a mint volume's section.
+test('a mint written beside a RIC number with no volume keeps the heading ruler', () => {
+  for (const [text, ruler, section] of [['Probus. Antoninianus. RIC 40 (Ticinum).', 'Probus', 'Ticinum'], ['Nero. AR Denarius. RIC 411 (Rome).', 'Nero', 'Rome'],
+    ['Probus. Antoninianus. RIC Ticinum 40.', 'Probus', 'Ticinum'], ['Gallienus. Antoninianus. RIC 12 (Trier).', 'Gallienus', 'Trier']]) {
+    const lot = findReferences(text);
+    assert.deepEqual(lot.rulers, [ruler], text);
+    const found = lotLookup(lot.references[0], lot.rulers);
+    assert.deepEqual(found.rulers, [ruler], text);
+    assert.equal(found.section, section, text);
+    assert.equal(found.volume, '', text);
+    assert.ok(lotLabel(lot.references[0], lot.rulers).includes(ruler), text);
+  }
+  // A bracket naming a ruler's own section is still that section, and the heading's ruler is not asked for on top of it.
+  const maesa = findReferences('Julia Maesa, 218-222 AD. Denarius. RIC 268 (Elagabalus).');
+  assert.deepEqual(lotLookup(maesa.references[0], maesa.rulers), { catalogue: 'RIC', number: '268', volume: '', section: 'Elagabalus' });
+});

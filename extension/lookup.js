@@ -1,5 +1,5 @@
 import { squash } from './core/validate.js';
-import { CATALOGUES, canonicalRicPerson, catalogueOf, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -709,10 +709,14 @@ const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? r
 // A RIC number with rulers read from a lot text: the facets already tie each hit to a ruler, and a Titus-as-Caesar coin sits in the Vespasian
 // section, so pickRic runs without a section and one kept hit is the type, as pickRic decides it (a volume typed another way, "RIC I", is still only
 // offered). A miss retries the plain number search once, and those hits are only offered, even a single one, since nothing tied them to the rulers.
+// A mint written with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume may file him by name: the
+// retry then asks for the rulers' coins with the number without the mint, and those too are only offered.
 async function pickRulers(reference, rulers, feed) {
   const picked = pickRic(await feed(ricSearch(reference, rulers)), reference);
   if (picked.status !== 'none') return picked;
-  const retry = pickRic(await feed(ricSearch(reference)), reference);
+  const struck = !unquote(reference.volume) && isMintOnly(unquote(reference.section));
+  const loose = struck ? { ...reference, section: '' } : reference;
+  const retry = pickRic(await feed(ricSearch(loose, struck ? rulers : [])), loose);
   return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
 }
 
@@ -744,8 +748,10 @@ export async function lookupType(given, options = {}) {
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
-  // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text.
-  const rulers = corpus === 'ocre' && (!phrase(reference.section) || MINT_VOLUMES.has(unquote(reference.volume))) ? rulersOf(reference) : [];
+  // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text. A mint is no ruler's
+  // section, beside a mint volume or with no volume at all ("RIC 411 (Rome)" in a Nero lot), so there the rulers are still asked for.
+  const byMint = MINT_VOLUMES.has(unquote(reference.volume)) || (!unquote(reference.volume) && isMintOnly(unquote(reference.section)));
+  const rulers = corpus === 'ocre' && (!phrase(reference.section) || byMint) ? rulersOf(reference) : [];
   const shown = rulers.length ? `${query} (${rulers.join(', ')})` : query;
   try {
     let picked;

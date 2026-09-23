@@ -233,6 +233,12 @@ for (const [alias, section] of MINT_BY_ALIAS) {
 const MINT_SECTIONS = new Map(['VI', 'VII', 'VIII', 'IX'].flatMap((volume) => RIC_SECTIONS[volume]).map((section) => [rulerKey(section), section]));
 export const MINT_SPELLINGS = Object.freeze([...MINT_SECTIONS, ...MINT_BY_ALIAS].map((entry) => Object.freeze(entry)));
 export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
+// A section that is a mint and nothing else: filed in RIC VI–IX only, and no person's name. It says where a coin was struck, never whose coin it is,
+// so a lot citing no volume keeps the ruler its heading names beside it ("Probus. RIC 40 (Ticinum)").
+export const isMintOnly = (name) => {
+  const volumes = volumesOf(name);
+  return volumes.length > 0 && volumes.every((volume) => ['VI', 'VII', 'VIII', 'IX'].includes(volume)) && !isRicPerson(name);
+};
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).
