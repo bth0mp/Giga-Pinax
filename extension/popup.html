@@ -38,7 +38,7 @@
         <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p></div>
         <p id="form-error" class="form-error" role="alert" hidden></p><button id="online-fallback" class="secondary-button online-fallback" type="button" hidden>Check online</button>
         <details id="refine-reference" class="refine-reference">
-          <summary>Refine reference</summary>
+          <summary id="refine-summary">Refine reference</summary>
           <div class="catalogue-row">
           <div><label for="catalogue">Catalogue</label><select id="catalogue" name="catalogue"><option value="Price">Price</option><option value="RIC">RIC</option><option value="RRC">RRC (Crawford)</option><option value="SC">SC (Seleucid Coins)</option><option value="Bop">Bop (Bopearachchi)</option><option value="Other">Other (prices only)</option></select></div>
           <div><label for="currency">Currency</label><select id="currency" name="currency"><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CHF">CHF</option></select></div>
@@ -71,7 +71,7 @@
           <p id="ungraded-count" class="sale-filtered" hidden></p>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
           <p id="check-result" class="field-hint" aria-live="polite"></p>
-          <details id="sale-details" class="sale-details"><summary><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="curation-controls"><span id="curation-count"></span><button id="reset-curation" class="text-button" type="button">Reset</button></div><ol id="sale-list" class="sale-list"></ol></details>
+          <details id="sale-details" class="sale-details"><summary id="sale-summary"><span>Inspect sales</span><span class="sale-count"><span id="sale-count"></span><span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="curation-controls"><span id="curation-count"></span><button id="reset-curation" class="text-button" type="button">Reset</button></div><ol id="sale-list" class="sale-list"></ol></details>
           <p id="price-note" class="price-note"></p><p class="price-basis">Basis: recorded acsearch hammer prices; buyer’s premium, tax and shipping excluded.</p>
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>
         </section>

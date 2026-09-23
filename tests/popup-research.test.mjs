@@ -1526,3 +1526,24 @@ test('a currency change says why the CoinArchives median went and how to fetch i
   assert.equal(quiet.element('coinarchives-prices-note').hidden, true);
   assert.equal(quiet.element('announcement').textContent, 'Currency set to EUR.');
 });
+
+// 0.33 review (P7): two controls took the keyboard with them when they went. A refined Search closes the Refine reference section it was pressed in,
+// and Reset disables itself once there is nothing left to reset; either dropped focus to the top of the document. Focus now lands on what is left.
+test('focus stays in the popup when refine closes over it or Reset disables itself', async () => {
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales, lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('refine-reference').open = true;
+  popup.element('refine-reference').contains = (node) => node === popup.element('refine-lookup-button');
+  popup.document.activeElement = popup.element('refine-lookup-button');
+  await popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  await settle();
+  assert.equal(popup.element('refine-reference').open, false);
+  assert.equal(popup.element('refine-summary').focused, 1);
+  // Reset, pressed from the keyboard, leaves it on the Inspect sales summary it sits under.
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  assert.equal(popup.element('reset-curation').disabled, false);
+  popup.document.activeElement = popup.element('reset-curation');
+  await popup.element('reset-curation').emit('click');
+  assert.equal(popup.element('reset-curation').disabled, true);
+  assert.equal(popup.element('sale-summary').focused, 1);
+});

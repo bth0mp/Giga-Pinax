@@ -472,7 +472,12 @@ function renderCard(card) {
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
   $('result').hidden = false;
+  // Closing the section hides whatever inside it had the keyboard (a refined Search, Enter in a field), and a busy Search may already have lost it to
+  // the document; either way it goes to the section's own summary, which stays on screen, rather than back to the top of the popup.
+  const focused = document.activeElement;
+  const refocus = $('refine-reference').open && (!focused || focused === document.body || $('refine-reference').contains(focused));
   $('refine-reference').open = false;
+  if (refocus) $('refine-summary').focus({ preventScroll: true });
   announce(announcement(card));
   revealAgain('result');
 }
@@ -1468,11 +1473,14 @@ $('denomination-filter').addEventListener('change', () => {
   onlyDenomination = $('denomination-filter').checked === true;
   redrawPrices();
 });
+// Reset disables itself once nothing is left to reset, which would drop the keyboard to the document: it goes to the Inspect sales summary instead.
 $('reset-curation').addEventListener('click', () => {
   if (!shownPrices) return;
   const { lots, currency, term } = shownPrices;
+  const focused = document.activeElement === $('reset-curation');
   priceCuration.reset();
   renderPrices(lots, currency, term, true);
+  if (focused && $('reset-curation').disabled) $('sale-summary').focus();
 });
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);

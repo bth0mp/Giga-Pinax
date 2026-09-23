@@ -26,6 +26,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A slab grade printed with its score glued on — `PCGS MS63`, `NGC AU58`, `NGC XF45` — is read into its bucket, as `NGC AU 58` already was. A glued number anywhere but behind NGC or PCGS still leaves the row ungraded.
 - The **Check online** button under a local-catalogue miss is drawn as the popup's other secondary buttons are; it carried a style the popup never defined and showed as the browser's bare default button.
 - Changing the currency no longer makes the CoinArchives median vanish without a word. Its public prices are never converted, so it still goes, but the popup now says it was in the old currency and that **Get CoinArchives prices** fetches it in the new one.
+- Keyboard focus no longer drops to the top of the popup when a refined **Search** closes the **Refine reference** section it was pressed in, or when **Reset** under **Inspect sales** disables itself: it moves to the section's heading, and to **Inspect sales**, instead.
 
 ### Security
 
