@@ -1385,3 +1385,13 @@ test('prices fetched for a RIC reference go when the lookup offers a choice of t
   assert.equal(popup.element('prices-note').hidden, false);
   assert.match(popup.element('prices-note-text').textContent, /Choose one type/);
 });
+
+// 0.33 review (S3): a reply past the byte bound is not a connection that failed, and the collector is told which it was.
+test('an acsearch reply too large to read says so, not that acsearch was unreachable', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'network', reason: 'too-large' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-error').hidden, false);
+  assert.match(popup.element('prices-error').textContent, /too large to read/);
+});

@@ -15,6 +15,7 @@ const CONNECTION_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catal
 const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
+const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
@@ -1095,7 +1096,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
-  else showPricesError(ACSEARCH_NETWORK_MESSAGE);
+  else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
 }
 
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.

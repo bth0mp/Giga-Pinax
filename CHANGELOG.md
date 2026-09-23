@@ -13,6 +13,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Security
 
 - 0.32.0 said hostile acsearch pages were "refused in milliseconds". That was not true of every shape: a result page whose one description filled the two megabytes read, with its `];` terminators at the end, still held the popup for about three seconds, because each terminator was tried by parsing the whole page again. The end of the results is now found in a single pass that reads the page's strings as JSON writes them, and the results are parsed once, so any page within the two megabytes read takes milliseconds.
+- An acsearch reply is no longer read whole before any of it is looked at: past 4 MiB the download is cut off, and the panel says the reply was too large to read instead of that acsearch could not be reached.
 
 ## [0.32.1] - 2026-09-18
 

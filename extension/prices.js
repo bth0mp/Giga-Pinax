@@ -717,12 +717,48 @@ export function signedOutPage(html, lots, now = new Date()) {
   });
 }
 
+// A provider's reply is untrusted, so it is read through a byte bound rather than whole: a declared length past it is refused unread, and a stream is
+// cut off the moment it passes it. Either throws 'too-large'. CoinArchives decodes strictly; acsearch is read as the browser reads a page (fatal: false).
+export async function boundedText(response, maxBytes, { fatal = true } = {}) {
+  const decode = (bytes) => new TextDecoder('utf-8', { fatal }).decode(bytes);
+  const length = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(length) && length > maxBytes) { await response.body?.cancel?.(); throw new Error('too-large'); }
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new Error('too-large');
+    return decode(bytes);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) { await reader.cancel(); throw new Error('too-large'); }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return decode(bytes);
+}
+
+// The most of an acsearch reply read at all: twice the results text extractLots reads, and several times a real result page.
+export const ACSEARCH_MAX_BYTES = 4 * 1024 * 1024;
+
 export async function fetchPrices({ term, currency, category }, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date() } = options;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES } = options;
   try {
     const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
-    const html = await response.text();
+    let html;
+    try { html = await boundedText(response, maxBytes, { fatal: false }); }
+    catch (error) { if (error?.message === 'too-large') return { status: 'network', reason: 'too-large' }; throw error; }
     const lots = extractLots(html);
     // A search without hits comes back as acsearch's "No results found" page, which has no results array at all.
     if (!lots) return /No results found/i.test(html) ? { status: 'empty', term } : { status: 'network' };

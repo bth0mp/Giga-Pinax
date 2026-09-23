@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -245,10 +245,26 @@ test('summarise reads the year from either date style', () => {
 
 function fakeFetch(body, { ok = true, status = 200 } = {}) {
   const calls = [];
-  const impl = async (url, init) => { calls.push({ url, init }); return { ok, status, text: async () => body }; };
+  // A real Response, whose body is a stream: fetchPrices reads it through a byte bound, never whole.
+  const impl = async (url, init) => { calls.push({ url, init }); return new Response(body, { status: ok ? 200 : status }); };
   impl.calls = calls;
   return impl;
 }
+
+// 0.33 review (S3): the reply is untrusted and was read whole before a byte of it was looked at. It is read through a bound now, and a reply past it
+// is cut off as soon as the bound is passed and said to be too large, not reported as a connection that failed.
+test('fetchPrices stops reading a reply past its byte bound', async () => {
+  let cancelled = false;
+  const endless = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(64 * 1024).fill(32)); }, cancel() { cancelled = true; } });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => new Response(endless) }), { status: 'network', reason: 'too-large' });
+  assert.equal(cancelled, true);
+  const declared = new Response('x', { headers: { 'content-length': String(ACSEARCH_MAX_BYTES + 1) } });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => declared }), { status: 'network', reason: 'too-large' });
+  assert.ok(ACSEARCH_MAX_BYTES >= 2 * 1024 * 1024 && ACSEARCH_MAX_BYTES <= 4 * 1024 * 1024);
+  // A page that is not valid UTF-8 is read as the browser reads it, as it always was.
+  const bytes = new Uint8Array([...new TextEncoder().encode('<script>acsearch.initSearchResults = [];</script>'), 0xff]);
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: async () => new Response(bytes) }), { status: 'empty', term: 'q' });
+});
 
 test('fetchPrices sends credentials to acsearch and classifies outcomes', { timeout: 5000 }, async () => {
   const signedOut = fakeFetch(fixture('acsearch-search-nero-306.html'));
