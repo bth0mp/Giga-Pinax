@@ -811,6 +811,10 @@ export function createEmptySnapshot(now) {
 // to the current one. Each step is keyed by the version it migrates from and never by
 // SCHEMA_VERSION itself, which is what ends the walk.
 // ponytail: a single linear chain of steps, each one hand-written; there is no down-migration.
+// The settings carry no version of their own apart from the root's: validation requires `preferences.schemaVersion` to
+// equal SCHEMA_VERSION, and a load repairs settings that fail by setting them aside whole. So a change to the settings'
+// shape alone must still move the root's SCHEMA_VERSION, with a step here that rewrites `preferences.schemaVersion` as
+// step 1 does; bumping only the settings' version would send every collector's settings and house presets to the bin.
 const MIGRATIONS = new Map([
   // Version 2 took the research form out of the durable root. The catalogue, number, volume and
   // section belong to the popup's own form, which already keeps them in its local storage, and
