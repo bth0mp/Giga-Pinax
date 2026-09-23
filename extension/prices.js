@@ -445,10 +445,11 @@ const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: 
 const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE,
   'zeer fraai': 'VF', prachtig: 'EF' };
 // Class 7. The marks that are a word of their own far more often than a grade: German "s." is "siehe", see; a lone "F" is an initial; and "schön" is
-// what a dealer calls any pretty coin. Each is read only as a half of a range with another grade, or directly behind a grade label.
-const RANGE_ONLY = { s: FINE, F: FINE, 'schön': FINE };
+// what a dealer calls any pretty coin, as Dutch "fraai" is. Each is read only as a half of a range with another grade, or directly behind a grade
+// label.
+const RANGE_ONLY = { s: FINE, F: FINE, 'schön': FINE, fraai: FINE };
 const EXACT = { ...ABBREVIATIONS, ...MARKS, s: RANGE_ONLY.s, F: RANGE_ONLY.F };
-const SPELLED = { ...NAMES, ...BARE_FINE, ...PRAISE, 'schön': RANGE_ONLY['schön'] };
+const SPELLED = { ...NAMES, ...BARE_FINE, ...PRAISE, 'schön': RANGE_ONLY['schön'], fraai: RANGE_ONLY.fraai };
 const SPELLED_BUCKETS = new Map(Object.entries(SPELLED).map(([name, bucket]) => [name.toLowerCase(), bucket]));
 
 // A qualifier in front of a grade keeps its bucket, exactly as the gVF and aEF it abbreviates, and gives a mark the opening edge it needs. Read in
