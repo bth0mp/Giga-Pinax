@@ -885,6 +885,38 @@ test('an entry the load-time repair set aside keeps its identity from one read t
   assert.match(reply.message, /allowed set/, 'and the restore is answered on its merits: its lot is still broken');
 });
 
+// The fold behind an import and behind every load-time repair compared each entry and each cleared link
+// with all the others. The single command queue waits on it, so it has to stay linear.
+test('a crafted set-aside list is imported by the worker without holding the queue', async () => {
+  const quarantine = Array.from({ length: 20000 }, (_, index) => ({
+    collection: 'lots', reason: 'invalid-record', quarantinedAt: NOW, record: { id: 'x', n: index },
+  }));
+  const document = JSON.stringify({
+    format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW,
+    data: { ...createEmptySnapshot(NOW), quarantine },
+  });
+  const writer = createCommandWriter(memoryStorage(createEmptySnapshot(NOW)), context());
+  const started = performance.now();
+  const reply = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'merge', document }));
+  const elapsed = performance.now() - started;
+  assert.equal(reply.ok, true, reply.message);
+  assert.ok(elapsed < 2000, `imported in ${Math.round(elapsed)} ms`);
+});
+
+test('a repair clearing thousands of links to one missing record stays linear', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const missing = uuid();
+  for (let index = 0; index < LIMITS.lots; index += 1) stored.lots.push(plainLot(uuid(), { auctionEventId: missing }));
+  const writer = createCommandWriter(memoryStorage(stored), context());
+  const started = performance.now();
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  const elapsed = performance.now() - started;
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.quarantine.length, 1, 'one note for the one missing sale');
+  assert.equal(opened.value.quarantine[0].clearedReferences.length, LIMITS.lots, 'carrying every link it cleared');
+  assert.ok(elapsed < 2000, `opened in ${Math.round(elapsed)} ms`);
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });

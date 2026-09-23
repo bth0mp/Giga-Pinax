@@ -120,6 +120,15 @@ function readBackup(document) {
   }
   data.recentCommands = [];
   data.drafts = [];
+  // The set-aside list is folded into this install's own on import, so a crafted one is turned away by its length
+  // before anything walks it. Only a document is held to this: a store that set more aside must still open.
+  if (Array.isArray(data.quarantine) && data.quarantine.length > LIMITS.quarantine) {
+    return failure(
+      'collection-limit',
+      `This backup lists more than ${LIMITS.quarantine.toLocaleString('en-US')} set-aside records, more than an import takes in, so nothing in it was imported.`,
+      'data.quarantine',
+    );
+  }
   // Before validation, because validation says only that a revision is an integer within the ceiling a stored root may
   // carry: it cannot say that no run of writes produced it. A revision above the usable ceiling is turned away here
   // rather than restarted as a stored one is - a record taken in above it would be refused by its own next save - and

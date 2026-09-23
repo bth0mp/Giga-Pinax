@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
@@ -681,6 +681,45 @@ test('merge folds one record set aside on both installs into a single entry', ()
     [{ collection: 'lots', record, reason: 'invalid-enum', quarantinedAt: LATER }],
     'the preview leaves local data exactly as it found it');
   assert.equal(quarantineRows(preview.value.snapshot.quarantine).length, 1, 'so Settings offers one Restore');
+});
+
+// Folding compared every entry under one key with every other, and every link with every link already
+// held: a crafted bin of 20,000 bodies under one ID took a minute to preview and over two in the
+// worker, holding the one command queue all that time. The reviewer's shapes, at their largest.
+const binDocument = (quarantine) => JSON.stringify({
+  format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW,
+  data: { ...createEmptySnapshot(NOW), quarantine },
+});
+const manyBodies = (count) => Array.from({ length: count }, (_, index) => ({
+  collection: 'lots', reason: 'invalid-record', quarantinedAt: NOW, record: { id: 'x', n: index },
+}));
+
+test('a crafted set-aside list is folded in linear time', () => {
+  const links = Array.from({ length: LIMITS.clearedReferences }, (_, index) => ({
+    collection: 'lots', id: 'l', field: 'auctionEventId', value: `v-${index}`,
+  }));
+  const linked = [0, 1].map(() => ({
+    collection: 'auctionEvents', reason: 'missing-record', quarantinedAt: NOW, record: { id: 'e' },
+    clearedReferences: structuredClone(links),
+  }));
+  for (const [label, quarantine, kept] of [['bodies', manyBodies(20000), 20000], ['links', linked, 1]]) {
+    const started = performance.now();
+    const validated = validateBackup(binDocument(quarantine));
+    assert.equal(validated.ok, true, validated.error?.message);
+    const preview = previewImport(createEmptySnapshot(NOW), validated.value, 'merge');
+    const elapsed = performance.now() - started;
+    assert.equal(preview.ok, true, preview.error?.message);
+    assert.equal(preview.value.snapshot.quarantine.length, kept, label);
+    assert.ok(elapsed < 2000, `${label}: read and previewed in ${Math.round(elapsed)} ms`);
+  }
+});
+
+test('a backup listing more set-aside records than any store holds is refused before anything is folded', () => {
+  const refused = validateBackup(binDocument(manyBodies(LIMITS.quarantine + 1)));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'data.quarantine');
+  assert.match(refused.error.message, /more than 30,000 set-aside records/);
+  assert.equal(validateBackup(binDocument(manyBodies(LIMITS.quarantine))).ok, true, 'the cap itself imports');
 });
 
 test('merge renumbers alternative priorities two installs assigned independently', () => {

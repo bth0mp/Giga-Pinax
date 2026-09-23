@@ -9,6 +9,11 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - **Restore** under **Data health** in Settings works for a record the extension set aside when it opened your data: it used to answer "no longer in the list. Reload the page and try again" however often the page was reloaded, until some unrelated change had been saved.
+- Opening data that has many links to one missing record no longer takes seconds on every read: 5,000 lots pointing at one lost auction took over six seconds each time the extension opened your data, and now take a fraction of one.
+
+### Security
+
+- A crafted backup can no longer hold the extension up for minutes: its list of set-aside records used to be compared entry by entry against itself, so a 2 MiB file took a minute to preview and more than two to import, with every other save waiting behind it. The list is now folded in a single pass, and a backup listing more than 30,000 set-aside records is refused before it is read any further.
 
 ## [0.32.1] - 2026-09-18
 
