@@ -461,10 +461,11 @@ const EDGE = 24;
 const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
   + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // "AU" is the chemical symbol for gold as often as it is "About Uncirculated", so a gold lot that never graded anything was counted in the top
-// bucket. Three shapes say the metal is meant: the weight or diameter printed straight behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g."), the
+// bucket. Three shapes say the metal is meant: the weight or diameter printed behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g.", "AU. 4.45g."), the
 // bracket it stands in behind "Gold" ("Gold (AU) solidus"), and the denomination it follows ("Byzantine. Solidus. AU."). A die axis is no such tail —
 // "AU 12 h." is the grade with the axis behind it — and a slab's own line is never read this way, since "Solidus. NGC AU 58" is what NGC graded.
-const METAL_TAIL = new RegExp(String.raw`^,?\s?\d{1,3}(?:[.,]\d{1,3})?\s?(?:mm|cm|gr|g)(?![\p{L}\d])`, 'u');
+// The weight may stand behind a comma, a full stop or an opening bracket as well ("AU. 4.45g.", "AU (4.45 g)"): the metal, then its measurements.
+const METAL_TAIL = new RegExp(String.raw`^(?:[,.]?\s?|\s?\(\s?)\d{1,3}(?:[.,]\d{1,3})?\s?(?:mm|cm|gr|g)(?![\p{L}\d])`, 'u');
 const GOLD_BRACKET = /(?<![\p{L}\d])gold\s*\(\s*$/iu;
 // The denominations a dealer writes the metal behind. A closed list, as every other word list here is: any word at all would take the grade off a
 // row that really was graded.
