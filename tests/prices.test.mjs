@@ -1396,3 +1396,15 @@ test('gradeOf reads a slab grade glued to its score, and only behind a slabber',
   assert.equal(gradeOf('Slg. MS63.'), null);
   assert.equal(gradeOf('Ex Slg. vz12.'), null);
 });
+
+// 0.33 review (H6): the grade reader and the lot reader each carried an anyCase, and they disagreed (a "ß" became the class [ßSS], which takes a
+// bare "S"). lot.js keeps its guarded copy unexported, so prices.js carries the same text, and this keeps the two from drifting apart again.
+test('prices.js reads a word in any case exactly as lot.js does', () => {
+  const definition = (file) => {
+    const source = readSource(new URL(`../extension/${file}`, import.meta.url), 'utf8');
+    const start = source.indexOf('const anyCase = ');
+    return source.slice(start, source.indexOf("}).join('');", start));
+  };
+  assert.ok(definition('lot.js').length > 50);
+  assert.equal(definition('prices.js'), definition('lot.js'));
+});
