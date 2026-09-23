@@ -1440,3 +1440,12 @@ test('a mint section without a volume keeps the lot rulers on the facet search',
   await lookupType({ catalogue: 'RIC', volume: '', section: 'Elagabalus', number: '268', rulers: ['Julia Maesa'] }, { fetchImpl: own });
   assert.ok(!own.calls[0].includes('facet'), own.calls[0]);
 });
+
+test('a section taken only from the heading\'s mint is offered online too, never opened', async () => {
+  const feed = '<feed><entry><title>RIC VII Treveri 12</title><id>ric.7.tri.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed });
+  const result = await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Treveri', number: '12', headingMint: true }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }], partial: true, corpus: 'ocre',
+    query: 'RIC VII Treveri 12' });
+  assert.equal(fetchImpl.calls.length, 1);
+});

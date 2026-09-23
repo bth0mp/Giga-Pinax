@@ -447,12 +447,14 @@ const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && v
 // volumes it implies with it, exactly as a ruler section does — but only where the lot has stated no volume of its own, or one the mint really is a
 // section of. "Rome mint" stands in most RIC I-V descriptions, and a heading is ruler-less wherever the table does not hold its spelling, so a mint
 // that overrode the volume sent "Rome mint. RIC IV 460" to RIC VIII. A mint says where the coin was struck; it never says the lot cited another book.
+// Nor does it say whose coin it is: a heading is ruler-less wherever the table lacks its spelling ("Constantius I. Follis. Trier. RIC VI 1"), so the
+// row is marked headingMint and the lookup offers what the mint's section holds, never opening it.
 const mintSection = (found) => (found.reference.catalogue === 'RIC' && !found.reference.section && found.mint
   && (!found.reference.volume || volumesOf(found.mint).includes(found.reference.volume)) ? found.mint : '');
 export function lotLookup(found, rulers) {
   const mint = mintSection(found);
   // The volume the lot stated is one of the mint's own by then, so volumeFor only ever fills a blank one in.
-  if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, '') };
+  if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, ''), headingMint: true };
   if (!borrowsRulers(found, rulers)) return found.reference;
   const section = found.reference.section ? '' : headingSection(rulers);
   return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };

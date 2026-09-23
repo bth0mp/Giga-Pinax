@@ -992,10 +992,10 @@ test('a mint named beside a volume of its own is that section, and one beside an
     assert.deepEqual(lookup(text), { catalogue: 'RIC', number: text.match(/(\d+)$/)[1], volume, section: '' }, text);
   }
   // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
-  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri' });
-  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium' });
+  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri', headingMint: true });
+  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium', headingMint: true });
   // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
-  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome' });
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome', headingMint: true });
 });
 
 test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
@@ -1062,4 +1062,17 @@ test('a mint written beside a RIC number with no volume keeps the heading ruler'
   // A bracket naming a ruler's own section is still that section, and the heading's ruler is not asked for on top of it.
   const maesa = findReferences('Julia Maesa, 218-222 AD. Denarius. RIC 268 (Elagabalus).');
   assert.deepEqual(lotLookup(maesa.references[0], maesa.rulers), { catalogue: 'RIC', number: '268', volume: '', section: 'Elagabalus' });
+});
+
+// A heading is ruler-less wherever the people table lacks its spelling ("Constantius I", "Julian II", "Sept. Severus"), so a mint named in it is no
+// evidence that nobody else is on the coin: "Constantius I. Follis. Trier. RIC VI 1" opened Maximian's RIC VI Treveri 1. The row says the section
+// came from the heading's mint, and the lookup offers what it finds there rather than opening it.
+test('a section taken from the heading\'s mint is marked as such, and a section the lot cites is not', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  for (const text of ['Constantius I. Follis. Trier. RIC VI 1.', 'Julian II. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
+    assert.equal(lookup(text).headingMint, true, text);
+  }
+  for (const text of ['Constantine I. Follis. RIC VII Trier 12.', 'Constantine I. Follis. Trier. RIC VII 12.', 'Rome mint. RIC IV 460', 'RIC VII Treveri 12']) {
+    assert.equal(lookup(text).headingMint, undefined, text);
+  }
 });

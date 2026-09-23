@@ -700,8 +700,8 @@ function pickRic(xml, reference) {
 
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
 // hold OCRE's names, which are the names the aliases resolve a heading's spelling to ("Claudius II" and "Claudius Gothicus" are both Claudius II
-// Gothicus, "Maximinus II" is Maximinus Daia, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot
-// place, or one two people share, is asked for as it was written rather than guessed at.
+// Gothicus, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot place ("Maximinus II", which no
+// English or Latin label carries), or one two people share, is asked for as it was written rather than guessed at.
 const facetName = (name) => phrase(canonicalRicPerson(name) || String(name ?? ''));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
   .map(facetName).filter(Boolean))];
@@ -794,6 +794,9 @@ export async function lookupType(given, options = {}) {
       } catch { /* the miss already in hand stands */ }
     }
     if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
+    // A section read from a lot heading's mint alone says where the coin was struck, not whose it is: the heading may name a ruler the people table
+    // cannot place ("Constantius I. Follis. Trier."), so the one type in that section is offered, never opened.
+    if (reference.headingMint) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);

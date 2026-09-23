@@ -384,9 +384,10 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
   assert.notEqual(lyons.status, 'ok');
 });
 
-// A mint alias may only ever say which section a number lives in. Over every RIC number from 1 to 400, each new spelling must open coins of its own
-// mint and nothing else: a place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
-test('over the bundled catalogue, a heading naming only a mint opens that mint\'s coins and no others', { skip }, async () => {
+// A mint alias may only ever say which section a number lives in. A heading is ruler-less wherever the people table lacks its spelling, so a section
+// read from its mint alone is offered and never opened: over every RIC number from 1 to 400 no spelling opens a coin, and what each offers is coins
+// of its own mint and nothing else. A place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
+test('over the bundled catalogue, a heading naming only a mint offers that mint\'s coins, no others, and opens none', { skip }, async () => {
   for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
     ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
     ['Londinium', 'londinium'],
@@ -401,9 +402,14 @@ test('over the bundled catalogue, a heading naming only a mint opens that mint\'
     ['London', 'londinium'], ['London, UK', 'londinium'], ['Londres', 'londinium'], ['Lunden', 'londinium'], ['Lyon', 'lugdunum'],
     ['City of Lyon', 'lugdunum'], ['Milan', 'mediolanum'], ['Milano', 'mediolanum'], ['Mailand', 'mediolanum'], ['Milan, Italy', 'mediolanum'],
     ['Pavia', 'ticinum'], ['İzmit', 'nicomedia'], ['Ismid', 'nicomedia'], ['Erdek', 'cyzicus'], ['Artake', 'cyzicus']]) {
-    const opened = await openedOver(heading);
-    assert.ok(opened.length > 0, heading);
-    for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
+    assert.deepEqual((await openedOver(heading)).map(({ card }) => card.id), [], heading);
+    // The section the spelling names is the mint's own: every bundled coin RIC files under it was struck there.
+    const lot = findReferences(`${heading}. RIC 12`);
+    const { section } = lotLookup(lot.references[0], lot.rulers);
+    const filed = bundleJson('ocre/index.json').entries.filter(([, title]) => title.startsWith('RIC V') && title.includes(` ${section} `)
+      && parseReference(title, false)?.section === section).slice(0, 25);
+    assert.ok(filed.length > 0, heading);
+    for (const [id] of filed) assert.ok(mintsOn(id).includes(concept), `${heading}: ${id}`);
   }
   // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
   assert.deepEqual(await openedOver('Roma'), []);
@@ -438,11 +444,12 @@ test('over the bundled catalogue, a mint beside a volume of another part of RIC 
     assert.equal(found.status, 'ok', text);
     assert.equal(found.card.id, id, text);
   }
-  // A mint beside one of its own volumes is unchanged, and so is a citation with no volume at all.
-  assert.equal((await lookup('Trier mint. RIC VII 12')).card?.id, 'ric.7.tri.12');
+  // A mint beside one of its own volumes still names the section, and so does a citation with no volume at all; the section came from the heading
+  // alone, so its coin is offered rather than opened.
+  assert.deepEqual((await lookup('Trier mint. RIC VII 12')).candidates.map((entry) => entry.id), ['ric.7.tri.12']);
   assert.deepEqual((await lookup('Londinium. RIC 12')).candidates.map((entry) => entry.id), ['ric.6.lon.12', 'ric.7.lon.12']);
-  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own (see Known issues).
-  assert.equal((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).card?.id, 'ric.6.rom.12');
+  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own, and it too is only offered.
+  assert.deepEqual((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).candidates.map((entry) => entry.id), ['ric.6.rom.12']);
 });
 
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
@@ -794,4 +801,16 @@ test('over the bundled catalogue, a mint bracketed after a number opens no coin 
       if (result.status === 'ok') assert.ok(peopleOn(result.card.id).includes(ruler.toLowerCase()), `${ruler} ${number}: ${result.card.label}`);
     }
   }
+});
+
+// A section read from the heading's mint and nothing else never opens a coin: the heading may name a ruler the people table cannot place.
+test('a section taken only from the heading\'s mint is offered, never opened', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lot = findReferences('Constantius I. Follis. Londinium. RIC VII 287.');
+  const offered = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(offered.status, 'candidates');
+  assert.equal(offered.partial, true);
+  assert.deepEqual(offered.candidates.map(({ id }) => id), ['ric.7.lon.287']);
+  // The same section cited in the reference itself still opens its coin.
+  assert.equal((await local.lookupType(parseReference('RIC VII Londinium 287'))).card?.id, 'ric.7.lon.287');
 });
