@@ -508,7 +508,8 @@ $('confirm-import').addEventListener('click', async () => {
     // The imported records are this page's own state too, and an open workspace picks the same
     // write up through its storage subscription. A redraw would throw away settings typed and not
     // yet saved, so over those the page keeps them, reads only the set-aside list again and says so.
-    if (formState() === renderedForm) {
+    // A page whose first load failed drew no settings, so it has nothing to keep and loads now.
+    if (!preferencesSnapshot || formState() === renderedForm) {
       await load().catch((error) => status(`${copied}Backup imported, but this page could not reload: ${error.message}`, true));
       return;
     }

@@ -65,6 +65,7 @@ function loadSettings({
   catalogueMetadata = async () => null,
   language = 'en-US',
   siteDataBlocked = false,
+  snapshotReply = { ok: true, value: snapshot },
 } = {}) {
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
@@ -78,7 +79,7 @@ function loadSettings({
   const commands = [];
   const prompts = [];
   const blobs = [];
-  const state = { snapshot: { ok: true, value: snapshot } };
+  const state = { snapshot: snapshotReply };
   let requestIds = 0;
   const bridge = {
     newRequestId: () => `request-${(requestIds += 1)}`,
@@ -751,6 +752,29 @@ test('an import confirmed with nothing unsaved redraws the page from the importe
   await settle();
   assert.equal(page.status(), 'Backup imported.');
   assert.deepEqual(unsavedSettingsOf(page), { currency: 'GBP', theme: '', rows: [['Imported', '15.00']] });
+});
+
+// A page whose first read failed drew no settings, so there is nothing typed to keep and the import
+// is the chance to load it.
+test('an import on a page that could not load its settings loads the page', async () => {
+  const page = await openSettings({
+    snapshotReply: { ok: false, message: 'Worker asleep.' },
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 1, currency: 'GBP' }) }) };
+      return { ok: true };
+    },
+  });
+  assert.equal(page.status(), 'Worker asleep.');
+  assert.equal(page.element('save-settings').disabled, true);
+
+  page.state.snapshot = { ok: true, value: snapshotWith({ lots: [lot(uuid(1))] }) };
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.status(), 'Backup imported.');
+  assert.equal(page.statusIsError(), 'false');
+  assert.equal(page.element('currency').value, 'GBP');
+  assert.equal(page.element('save-settings').disabled, false);
 });
 
 test('the set-aside records can be taken out as a file of their own', async () => {
