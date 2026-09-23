@@ -17,6 +17,17 @@ Each date is the date of that version's release tag. Every release also carries 
 - **Save settings** refused because presets were changed in another view repeated “Preferences changed in another view.” on every try with no way forward; it now adds that you should note what you typed and reload the page to see the settings saved elsewhere.
 - A lot sent from the research popup to the workspace and then discarded there (with **Add coin** or by opening another coin) was used up by the next save of any other coin, so reloading that workspace tab to get it back said “Draft was not found or expired.” A discarded draft is now left alone until it expires.
 - Screen readers no longer read out the whole coin pane in the workspace every time a coin opens or follows a save; the status line and announcements still speak. Each house's **Remove** button in Settings is now named for its house (“Remove Roma”) instead of every one being just “Remove”.
+- **Restore** under **Data health** in Settings works for a record the extension set aside when it opened your data: it used to answer "no longer in the list. Reload the page and try again" however often the page was reloaded, until some unrelated change had been saved.
+- Opening data that has many links to one missing record no longer takes seconds on every read: 5,000 lots pointing at one lost auction took over six seconds each time the extension opened your data, and now take a fraction of one.
+- Saving a lot, an auction or an outcome that is refused for its own sake — one lot past the 5,000 limit, or a store already at its 5 MiB bound — now says so, instead of reporting that "these reminders could not be scheduled" and telling you to remove reminders.
+- Two kinds of set-aside record that **Restore** could never put back now go back: a coin whose place in its alternative group has been taken since comes back last in that group, leaving the order you have there as it is, and a collection entry whose lot is still saved but had lost its link to it comes back linked to that lot again.
+- Damaged settings, a damaged reminder schedule, damaged unsaved drafts or a damaged count of saved changes no longer lock you out of every record, down to opening the workspace: the schedule, the drafts and the count start again, and settings that cannot be read are set aside whole under **Data health** in Settings, which says how many house presets they held and that you can download them there and enter them again, while Settings starts afresh from your last default currency. No coin, auction or collection record is touched. Set-aside settings, and an unreadable entry of the list itself, no longer show a **Restore** button that could never work.
+- A reminder for a timed auction on 31 December 9999 after 23:45 is no longer marked missed the moment it is saved.
+
+### Security
+
+- A crafted backup can no longer hold the extension up for minutes: its list of set-aside records used to be compared entry by entry against itself, so a 2 MiB file took a minute to preview and more than two to import, with every other save waiting behind it. The list is now folded in a single pass, and a backup listing more than 30,000 set-aside records is refused before it is read any further.
+- Text captured from an auction page is kept for its half hour and then really cleared: an expired capture draft used to stay in local storage until you captured something else, and is now removed with the next change you save of any kind.
 
 ## [0.32.1] - 2026-09-18
 
