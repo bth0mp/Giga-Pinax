@@ -384,9 +384,10 @@ test('over the bundled catalogue, a mint typed by a modern name Nomisma publishe
   assert.notEqual(lyons.status, 'ok');
 });
 
-// A mint alias may only ever say which section a number lives in. Over every RIC number from 1 to 400, each new spelling must open coins of its own
-// mint and nothing else: a place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
-test('over the bundled catalogue, a heading naming only a mint opens that mint\'s coins and no others', { skip }, async () => {
+// A mint alias may only ever say which section a number lives in. A heading is ruler-less wherever the people table lacks its spelling, so a section
+// read from its mint alone is offered and never opened: over every RIC number from 1 to 400 no spelling opens a coin, and what each offers is coins
+// of its own mint and nothing else. A place that opened a stranger's coin as the single answer would be worse than one that opened nothing.
+test('over the bundled catalogue, a heading naming only a mint offers that mint\'s coins, no others, and opens none', { skip }, async () => {
   for (const [heading, concept] of [['Arles', 'arelate'], ['Sisak', 'siscia'], ['Antakya', 'antiocheia_syria'], ['Sirmio', 'sirmium'],
     ['Konstantinopolis', 'constantinople'], ['Marmara Ereğlisi', 'heraclea_thracica'], ['Trier', 'treveri'], ['Istanbul', 'constantinople'],
     ['Londinium', 'londinium'],
@@ -401,9 +402,14 @@ test('over the bundled catalogue, a heading naming only a mint opens that mint\'
     ['London', 'londinium'], ['London, UK', 'londinium'], ['Londres', 'londinium'], ['Lunden', 'londinium'], ['Lyon', 'lugdunum'],
     ['City of Lyon', 'lugdunum'], ['Milan', 'mediolanum'], ['Milano', 'mediolanum'], ['Mailand', 'mediolanum'], ['Milan, Italy', 'mediolanum'],
     ['Pavia', 'ticinum'], ['İzmit', 'nicomedia'], ['Ismid', 'nicomedia'], ['Erdek', 'cyzicus'], ['Artake', 'cyzicus']]) {
-    const opened = await openedOver(heading);
-    assert.ok(opened.length > 0, heading);
-    for (const hit of opened) assert.ok(mintsOn(hit.card.id).includes(concept), `${heading}: ${hit.card.id}`);
+    assert.deepEqual((await openedOver(heading)).map(({ card }) => card.id), [], heading);
+    // The section the spelling names is the mint's own: every bundled coin RIC files under it was struck there.
+    const lot = findReferences(`${heading}. RIC 12`);
+    const { section } = lotLookup(lot.references[0], lot.rulers);
+    const filed = bundleJson('ocre/index.json').entries.filter(([, title]) => title.startsWith('RIC V') && title.includes(` ${section} `)
+      && parseReference(title, false)?.section === section).slice(0, 25);
+    assert.ok(filed.length > 0, heading);
+    for (const [id] of filed) assert.ok(mintsOn(id).includes(concept), `${heading}: ${id}`);
   }
   // Rome is a section of all four mint volumes and of no other, so a number alone never settles which of them is meant: it is offered, never opened.
   assert.deepEqual(await openedOver('Roma'), []);
@@ -438,11 +444,12 @@ test('over the bundled catalogue, a mint beside a volume of another part of RIC 
     assert.equal(found.status, 'ok', text);
     assert.equal(found.card.id, id, text);
   }
-  // A mint beside one of its own volumes is unchanged, and so is a citation with no volume at all.
-  assert.equal((await lookup('Trier mint. RIC VII 12')).card?.id, 'ric.7.tri.12');
+  // A mint beside one of its own volumes still names the section, and so does a citation with no volume at all; the section came from the heading
+  // alone, so its coin is offered rather than opened.
+  assert.deepEqual((await lookup('Trier mint. RIC VII 12')).candidates.map((entry) => entry.id), ['ric.7.tri.12']);
   assert.deepEqual((await lookup('Londinium. RIC 12')).candidates.map((entry) => entry.id), ['ric.6.lon.12', 'ric.7.lon.12']);
-  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own (see Known issues).
-  assert.equal((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).card?.id, 'ric.6.rom.12');
+  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own, and it too is only offered.
+  assert.deepEqual((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).candidates.map((entry) => entry.id), ['ric.6.rom.12']);
 });
 
 // numbers.json is written by scripts/import_rdf.py, which reads the number off a title with a regex of its own. That regex is only safe while it
@@ -766,4 +773,147 @@ test('a damaged corpus fails closed, and a dropped request is retried', { skip }
     assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).status, 'unavailable', String(attempt));
   }
   assert.equal((await retried.lookupType(parseReference('RRC 44/5'))).card.id, 'rrc-44.5');
+});
+
+// A mint bracketed after the number of a lot citing no volume opened whichever mint volume's coin carried that mint and number, whoever the heading
+// named. The heading's ruler now rides with the mint, so the coin opens only when he is on it.
+test('a mint bracketed beside a RIC number with no volume opens only a coin of the heading\'s ruler', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lookup = async (text) => { const lot = findReferences(text); return local.lookupType(lotLookup(lot.references[0], lot.rulers)); };
+  const nero = await lookup('Nero. AR Denarius. RIC 287 (Rome).');
+  assert.equal(nero.status, 'candidates');
+  assert.equal(nero.personMismatch, true);
+  assert.deepEqual(nero.candidates.map(({ id }) => id), ['ric.7.rom.287']);
+  assert.equal((await lookup('Licinius. Follis. RIC 287 (Rome).')).card?.id, 'ric.7.rom.287');
+  // A mint with no coin of that number for the ruler leaves his own coins with the number to choose from, never one of them opened: nothing ties
+  // them to the mint the lot wrote.
+  const ticinum = await lookup('Constantine I. Follis. RIC 287 (Ticinum).');
+  assert.equal(ticinum.status, 'candidates');
+  assert.equal(ticinum.partial, true);
+  assert.deepEqual(ticinum.candidates.map(({ id }) => id), ['ric.7.ar.287', 'ric.7.lon.287', 'ric.7.lug.287']);
+});
+
+test('over the bundled catalogue, a mint bracketed after a number opens no coin of another ruler', { skip }, async () => {
+  for (const [ruler, mint, from, to] of [['Probus', 'Ticinum', 1, 40], ['Nero', 'Rome', 400, 420], ['Gallienus', 'Siscia', 1, 20], ['Diocletian', 'Antioch', 1, 20]]) {
+    for (let number = from; number <= to; number += 1) {
+      const lot = findReferences(`${ruler}. Antoninianus. RIC ${number} (${mint}).`);
+      const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+      if (result.status === 'ok') assert.ok(peopleOn(result.card.id).includes(ruler.toLowerCase()), `${ruler} ${number}: ${result.card.label}`);
+    }
+  }
+});
+
+// A section read from the heading's mint and nothing else never opens a coin: the heading may name a ruler the people table cannot place.
+test('a section taken only from the heading\'s mint is offered, never opened', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lot = findReferences('Constantius I. Follis. Londinium. RIC VII 287.');
+  const offered = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(offered.status, 'candidates');
+  assert.equal(offered.partial, true);
+  assert.deepEqual(offered.candidates.map(({ id }) => id), ['ric.7.lon.287']);
+  // The same section cited in the reference itself still opens its coin.
+  assert.equal((await local.lookupType(parseReference('RIC VII Londinium 287'))).card?.id, 'ric.7.lon.287');
+});
+
+// The index is what a lookup is matched against, so a record it lists and its shard lacks is a stale or damaged bundle, never a coin missing from
+// RIC: the lookup is unavailable, and the caller goes online for it, rather than offering the wrong numbers or saying it is not there.
+test('a record the index lists and its shard lacks makes the lookup unavailable, never a miss or a list of other coins', async () => {
+  const { 'ric.1(2).ner.306': dropped, ...rest } = records;
+  assert.ok(dropped);
+  const stale = () => createLocalCatalogue({ fetchImpl: fixtureFetch({ 'records-1(2).json': { schemaVersion: 1, records: rest } }), baseUrl: 'moz-extension://test/data/' });
+  assert.equal((await stale().lookupType(parseReference('RIC I (2nd ed.) Nero 306'))).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '306', rulers: ['Nero'] })).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '306' })).status, 'unavailable');
+  // A lookup by an identifier the index was never asked about still answers that the record is not here.
+  assert.equal((await stale().lookupById('ocre', 'ric.1(2).ner.306')).status, 'none');
+});
+
+test('over the bundled catalogue, a title lookup whose shard lacks the record it matched is unavailable', { skip }, async () => {
+  for (const [corpus, file, id, reference] of [['crro', 'crro/records-rrc.json', 'rrc-44.5', 'RRC 44/5'], ['pella', 'pella/records-price.json', 'price.23', 'Price 23'],
+    ['sco', 'sco/records-sc.json', 'sc.1.1266.2', 'SC 1266.2']]) {
+    const local = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', fetchImpl: async (url) => {
+      const path = bundlePath(url);
+      const value = bundleJson(path);
+      const served = path === file ? { schemaVersion: 1, records: Object.fromEntries(Object.entries(value.records).filter(([key]) => key !== id)) } : value;
+      return { ok: true, status: 200, json: async () => served };
+    } });
+    assert.equal((await local.lookupType(parseReference(reference))).status, 'unavailable', corpus);
+  }
+});
+
+test('over the bundled catalogue, a joint heading never opens one of its rulers\' own coins', { skip }, async () => {
+  const lot = findReferences('Aurelian and Severina. Antoninianus. RIC 2.');
+  const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(result.status, 'candidates');
+  assert.ok(result.candidates.some(({ id }) => id === 'ric.5.aur_seva.2'), JSON.stringify(result.candidates));
+});
+
+// RIC V files Diocletian by name and RIC VI by mint, so "Diocletian. RIC 15 (Lugdunum)" is his own RIC V 15 as readily as the RIC VI Lugdunum 15 the
+// mint alone reaches: the mint's coin is never opened while the ruler's own section holds a coin with the number. Another mint's coin of his is no
+// choice here, since the lot says where it was struck.
+test('over the bundled catalogue, a mint bracketed after a number offers the ruler\'s own-section coin beside the mint\'s', { skip }, async () => {
+  const lookup = async (text) => {
+    const lot = findReferences(text);
+    return lookupType(lotLookup(lot.references[0], lot.rulers), { localProvider: bundle, online: false });
+  };
+  const diocletian = await lookup('Diocletian. Antoninianus. RIC 15 (Lugdunum).');
+  assert.equal(diocletian.status, 'candidates');
+  assert.equal(diocletian.partial, true);
+  assert.deepEqual(diocletian.candidates.map(({ id }) => id), ['ric.6.lug.15', 'ric.5.dio.15']);
+  const carausius = await lookup('Carausius, with Diocletian and Maximian. Antoninianus. RIC 12 (London).');
+  assert.equal(carausius.status, 'candidates');
+  assert.ok(carausius.candidates.some(({ id }) => id === 'ric.6.lon.12'), JSON.stringify(carausius.candidates));
+  assert.ok(carausius.candidates.some(({ id }) => id === 'ric.5.cara.12'), JSON.stringify(carausius.candidates));
+  assert.ok(carausius.candidates.every(({ title }) => !/ (?:Antioch|Alexandria|Aquileia|Nicomedia) /.test(title)), JSON.stringify(carausius.candidates));
+  // A ruler whose own sections hold no coin with the number still opens the mint's.
+  assert.equal((await lookup('Constantine I. Follis. RIC 40 (Ticinum).')).card?.id, 'ric.7.tic.40');
+});
+
+// A typed or guided reference whose section is a mint and which states no volume ("RIC 411 (Rome)", "RIC Rome 411", Any volume) says where a coin
+// was struck and nothing about whose it is, as a heading's mint does: its one coin is offered, never opened. With a volume it opens as it always did.
+test('a mint section typed with no volume is offered, never opened, and opens with a volume', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  for (const reference of [parseReference('RIC 287 (Londinium)'), parseReference('RIC Londinium 287'), { catalogue: 'RIC', volume: '', section: 'Londinium', number: '287' }]) {
+    const offered = await local.lookupType(reference);
+    assert.equal(offered.status, 'candidates', JSON.stringify(reference));
+    assert.equal(offered.partial, true);
+    assert.deepEqual(offered.candidates.map(({ id }) => id), ['ric.7.lon.287']);
+  }
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287' })).card?.id, 'ric.7.lon.287');
+});
+
+// Only a record the answer rests on makes a stale shard unavailable: one missing record among the other rulers' coins with the number must not cost
+// a ruler the coin that is plainly his ("Trajan. RIC 720" with Domitian's RIC II.1² 720 gone), while a lookup whose own ruler's record is the one
+// missing still goes online.
+test('a stale shard is unavailable only where the answer needs the record it lacks', async () => {
+  const { 'ric.2_1(2).dom.720': dropped, ...rest } = records;
+  assert.ok(dropped);
+  const stale = () => createLocalCatalogue({ fetchImpl: fixtureFetch({ 'records-2_1(2).json': { schemaVersion: 1, records: rest } }), baseUrl: 'moz-extension://test/data/' });
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Trajan'] })).card?.id, 'ric.2.tr.720');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Domitian'] })).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '720', rulers: ['Nero'] })).status, 'unavailable');
+});
+
+// A joint heading naming a RIC section and a person ("Philip I and Otacilia Severa") looks in the section and for the person, and offers what it
+// finds: the section alone opened Philip's own coin before, and the person alone left every coin with the number to choose from.
+test('a joint heading naming a section and a person offers the section\'s coins and the person\'s, never every coin with the number', async () => {
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
+  const lot = findReferences('Philip I and Otacilia Severa. Antoninianus. RIC 27a.');
+  assert.deepEqual(lot.rulers, ['Philip I', 'Otacilia Severa']);
+  const result = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(result.status, 'candidates');
+  assert.equal(result.partial, true);
+  assert.equal(result.personMismatch, undefined);
+  assert.deepEqual(result.candidates.map(({ id }) => id), ['ric.4.ph_i.27A']);
+});
+
+test('over the bundled catalogue, a joint heading naming a section and a person offers a few of their coins', { skip }, async () => {
+  for (const [text, id] of [['Philip I and Otacilia Severa. RIC 1.', 'ric.4.ph_i.1'], ['Philip I and Otacilia Severa. Antoninianus. RIC 30.', 'ric.4.ph_i.30']]) {
+    const lot = findReferences(text);
+    const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+    assert.equal(result.status, 'candidates', text);
+    assert.equal(result.personMismatch, undefined, text);
+    assert.ok(result.candidates.some((entry) => entry.id === id), JSON.stringify(result.candidates));
+    assert.ok(result.candidates.length <= 5, JSON.stringify(result.candidates));
+  }
 });

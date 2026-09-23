@@ -1,5 +1,5 @@
 import { squash } from './core/validate.js';
-import { CATALOGUES, canonicalRicPerson, catalogueOf, isRicPerson, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -65,12 +65,12 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
 const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\s+)?|([^\d\s][^\d]*?)\s*,?\s*${BOP}[\s-]*)(\d\S*)$`, 'i');
-// RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3"),
-// optional second-edition marker, then the ruler or mint section if any (starting with a non-digit, so "RIC I 2 Nero 306" fails)
-// and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
+// RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3",
+// or in Roman numerals after the word, ", part I"), optional second-edition marker, then the ruler or mint section if any (starting with a non-digit,
+// so "RIC I 2 Nero 306" fails) and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
 // comma: dealers punctuate a volume the way they punctuate HGC's ("RIC III, 394a" beside "HGC 4, 1218"). Both separators are a fixed run at one place,
 // so neither alternative can be entered twice and the pattern stays linear.
-const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d)(?!\d))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
+const RIC_REFERENCE = /^RIC\s*(?:vol\.?\s*)?(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:([./,])\s*(?:part\s*)?|part\s*)(\d(?!\d)|(?<=part\s*)(?:IX|VIII|VII|VI|V|IV|III|II|I)(?![a-z\d])))?(\s*(?:²|\(2\)|\(2nd ed(?:ition|\.)?\)|2nd ed(?:ition|\.)?|\(second edition\)))?(?:(?:\s*,\s*|\s+)([^\d\s].*?))?(?:\s*,\s*|\s+)(\d\S*(?: \([^)]*\))?)$/i;
 // No volume: "RIC 972", "RIC Titus 123" or a bare "Titus 123", the number as above. The ruler must be one OCRE has, or the name of one it splits
 // into sections ("Theodosius II" for its East and West), checked by volumesOf, so "RIC hello 5", "RIC XI Nero 1" and "Euthydemus I 24A" stay unread,
 // and a number alone needs the RIC prefix.
@@ -90,7 +90,7 @@ export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String
 export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
-const NAMED = /(?:^|[^\p{L}])(?:RIC|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
+const NAMED = /(?:^|[^\p{L}])(?:RIC|R\.I\.C|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // A reference as read: without that punctuation, nor the brackets or single quotes a dealer wraps it in ("(RIC 972)", "‘Price 23’."); brackets that
@@ -154,7 +154,9 @@ export function parseReference(text, clean = true) {
   const value = unwrap(unquote(visible));
   const parts = value.split(';').map(unwrap);
   for (const part of parts) {
-    const type = readType(part, clean);
+    // An en or em dash is the hyphen prose writes a range with ("RIC II Hadrian 1009–1012"), and lot text has always read it so. Only the type rules
+    // read it that way: an Other reference is its own card and keeps the dash it was written with.
+    const type = readType(part.replace(/[–—]/g, '-'), clean);
     if (type) return type;
   }
   const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
@@ -234,7 +236,8 @@ function readClean(value) {
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
-    const [, numeral, mark, part, edition, section = '', number] = ric;
+    const [, numeral, mark, written, edition, section = '', number] = ric;
+    const part = written && (/^\d/.test(written) ? written : String(ROMAN.indexOf(written.toUpperCase()) + 1));
     // A volume written in Arabic numerals takes no comma after it. The Roman spelling is the one RIC is bound and cited under, and it alone is
     // punctuated the way HGC's volume is; "RIC 5, 6" and "RIC 1,2" are two numbers a dealer listed under one key, not volume V number 6.
     if (/^\d/.test(numeral) && /^RIC\s*(?:vol\.?\s*)?\d+\s*,/i.test(value)) return null;
@@ -461,17 +464,58 @@ const nudsUrl = (corpus, id) => `${ORIGIN}/${corpus}/id/${encodeURIComponent(id)
 // Many NUDS records in one <nudsGroup>. The "|" between ids is encoded too: the server refuses a bare one with HTTP 400.
 const groupUrl = (corpus, ids) => `${ORIGIN}/${corpus}/apis/getNuds?identifiers=${encodeURIComponent(ids.join('|'))}`;
 
+// A response is read whole, so its size is the sender's to choose. Nothing numismatics.org or nomisma.org publishes for one lookup comes near this cap
+// (a full search page or a 24-record NUDS group is a few hundred kilobytes): a declared length over it is refused before any of the body is read, and
+// a body is counted as it arrives and dropped once past it. The same approach as boundedText in coinarchives-prices.js, copied rather than imported:
+// that module imports prices.js, which imports this one. A refused body is a network failure, as a dropped connection is.
+export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+async function boundedText(response, maxBytes = MAX_RESPONSE_BYTES) {
+  const tooLarge = () => new Error('too-large');
+  const length = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(length) && length > maxBytes) { await response.body?.cancel?.(); throw tooLarge(); }
+  const decode = (bytes) => new TextDecoder('utf-8').decode(bytes);
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) { await reader.cancel(); throw tooLarge(); }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return decode(bytes);
+  }
+  if (typeof response.arrayBuffer === 'function') {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw tooLarge();
+    return decode(bytes);
+  }
+  // A stand-in response carrying text alone (a test's fake) is measured the same way once read.
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw tooLarge();
+  return text;
+}
+
 async function getText(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal });
   if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
-  return response.text();
+  return boundedText(response);
 }
 
 // The error carries the HTTP status so a caller can tell a missing record (404) from an outage.
 async function getJson(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal, headers: { Accept: 'application/ld+json' } });
   if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
-  return response.json();
+  return JSON.parse(await boundedText(response));
 }
 
 function withTimeout(ms) {
@@ -636,7 +680,8 @@ function ricSearch({ number, volume, section, range }, rulers = []) {
       : [`typeNumber:"${form}"`, ...(/^\d+[a-z]*$/i.test(form) ? [`typeNumber:${form}_*`] : [])]));
   });
   const group = (list) => (list.length > 1 ? `(${list.join(' OR ')})` : list[0]);
-  const facets = rulers.flatMap((name) => [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]);
+  // A section name no person answers to ("Philip I" beside "Otacilia Severa") is in no facet, so it is asked for by its title words instead.
+  const facets = rulers.flatMap((name) => (rulers.length > 1 && isSectionOnly(name) ? [`"${name}"`] : [`portrait_facet:"${name}"`, `authority_facet:"${name}"`]));
   const narrow = [volumePhrase(unquote(volume)), phrase(section)].filter(Boolean).map((text) => ` AND "${text}"`).join('');
   return `${group(clauses)}${facets.length ? ` AND ${group(facets)}` : ''}${narrow}`;
 }
@@ -700,8 +745,8 @@ function pickRic(xml, reference) {
 
 // The rulers a lot text names before its first reference, phrase-safe and deduplicated; only a RIC reference without a section uses them. The facets
 // hold OCRE's names, which are the names the aliases resolve a heading's spelling to ("Claudius II" and "Claudius Gothicus" are both Claudius II
-// Gothicus, "Maximinus II" is Maximinus Daia, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot
-// place, or one two people share, is asked for as it was written rather than guessed at.
+// Gothicus, "Gaius/Caligula" stays whole because either half alone finds nothing). A spelling the aliases cannot place ("Maximinus II", which no
+// English or Latin label carries), or one two people share, is asked for as it was written rather than guessed at.
 const facetName = (name) => phrase(canonicalRicPerson(name) || String(name ?? ''));
 const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? reference.rulers : [])
   .map(facetName).filter(Boolean))];
@@ -709,11 +754,26 @@ const rulersOf = (reference) => [...new Set((Array.isArray(reference.rulers) ? r
 // A RIC number with rulers read from a lot text: the facets already tie each hit to a ruler, and a Titus-as-Caesar coin sits in the Vespasian
 // section, so pickRic runs without a section and one kept hit is the type, as pickRic decides it (a volume typed another way, "RIC I", is still only
 // offered). A miss retries the plain number search once, and those hits are only offered, even a single one, since nothing tied them to the rulers.
+// A mint written with no volume ("Probus. RIC 490 (Ticinum)") is where the coin was struck, and the ruler's own volume may file him by name: the
+// retry then asks for the rulers' coins with the number without the mint, and those too are only offered. A hit with the mint is weighed against
+// that same search: a coin in one of the rulers' own sections ("Diocletian. RIC 15 (Lugdunum)" is his RIC V 15 as readily as RIC VI Lugdunum 15) is
+// offered beside it, never passed over; their coins at other mints are not, since the lot says where it was struck.
 async function pickRulers(reference, rulers, feed) {
   const picked = pickRic(await feed(ricSearch(reference, rulers)), reference);
-  if (picked.status !== 'none') return picked;
-  const retry = pickRic(await feed(ricSearch(reference)), reference);
-  return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+  const struck = !unquote(reference.volume) && isMintOnly(unquote(reference.section));
+  const loose = struck ? { ...reference, section: '' } : reference;
+  if (picked.status === 'none') {
+    const retry = pickRic(await feed(ricSearch(loose, struck ? rulers : [])), loose);
+    return retry.status === 'ok' ? { status: 'candidates', candidates: [retry.entry], partial: true } : retry;
+  }
+  if (!struck || (picked.status !== 'ok' && picked.status !== 'candidates')) return picked;
+  const found = picked.status === 'ok' ? [picked.entry] : picked.candidates;
+  const own = pickRic(await feed(ricSearch(loose, rulers)), loose);
+  const theirs = own.status === 'ok' ? [own.entry] : (own.candidates ?? []);
+  const more = theirs.filter((entry) => !found.some(({ id }) => id === entry.id) && !isMintOnly(parseReference(entry.title, false)?.section ?? ''));
+  // Too many of their coins to list is no evidence the mint's coin is the one: it is offered, not opened.
+  if (more.length === 0 && own.status !== 'too-many') return picked;
+  return { status: 'candidates', candidates: [...found, ...more], partial: true };
 }
 
 // The same search lot text makes, for a ruler typed into the guided field instead: the number with that name on OCRE's portrait and authority facets,
@@ -744,8 +804,10 @@ export async function lookupType(given, options = {}) {
   const timer = withTimeout(timeoutMs);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
-  // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text.
-  const rulers = corpus === 'ocre' && (!phrase(reference.section) || MINT_VOLUMES.has(unquote(reference.volume))) ? rulersOf(reference) : [];
+  // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text. A mint is no ruler's
+  // section, beside a mint volume or with no volume at all ("RIC 411 (Rome)" in a Nero lot), so there the rulers are still asked for.
+  const byMint = MINT_VOLUMES.has(unquote(reference.volume)) || (!unquote(reference.volume) && isMintOnly(unquote(reference.section)));
+  const rulers = corpus === 'ocre' && (!phrase(reference.section) || byMint) ? rulersOf(reference) : [];
   const shown = rulers.length ? `${query} (${rulers.join(', ')})` : query;
   try {
     let picked;
@@ -788,6 +850,12 @@ export async function lookupType(given, options = {}) {
       } catch { /* the miss already in hand stands */ }
     }
     if (picked.status !== 'ok') return { ...picked, corpus, query: shown };
+    // A section read from a lot heading's mint alone says where the coin was struck, not whose it is: the heading may name a ruler the people table
+    // cannot place ("Constantius I. Follis. Trier."), so the one type in that section is offered, never opened. A mint typed or chosen with no volume
+    // and no rulers beside it ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case, with nothing at all to say whose coin it is.
+    // Nor is a coin found for a joint heading one half of which is a section ("Philip I and Otacilia Severa"): that section is half of what it says.
+    const halfHeading = rulers.length > 1 && rulers.some(isSectionOnly);
+    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);

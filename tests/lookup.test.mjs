@@ -395,9 +395,13 @@ test('parseReference reads whole RIC, RRC and Price references', () => {
     ['cr. 197-198B/1a', { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' }],
     ['  Price   23 ', { catalogue: 'Price', number: '23', volume: '', section: '' }],
     ['"Price 3a"', { catalogue: 'Price', number: '3a', volume: '', section: '' }],
+    // PELLA titles 302 of Price's types with a letter in front of the number, P for Philip III and L for Lysimachus.
+    ['Price P23', { catalogue: 'Price', number: 'P23', volume: '', section: '' }],
+    ['Price L1', { catalogue: 'Price', number: 'L1', volume: '', section: '' }],
+    ['Price P23a', { catalogue: 'Price', number: 'P23a', volume: '', section: '' }],
   ];
   for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
-  for (const text of ['', 'hello', 'RIC I Nero', 'Price', 'Crawford', 'RIC XI Nero 1']) {
+  for (const text of ['', 'hello', 'RIC I Nero', 'Price', 'Crawford', 'RIC XI Nero 1', 'Price Q23', 'Price P']) {
     assert.equal(parseReference(text), null, text);
   }
 });
@@ -1421,4 +1425,127 @@ test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, 
   const daia = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
   assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
+});
+
+// A mint bracketed after a number with no volume ("Nero. RIC 411 (Rome)") is no ruler's section: the lot's rulers are still asked for, so the one RIC
+// VIII Rome 411 is never opened for a Nero lot.
+test('a mint section without a volume keeps the lot rulers on the facet search', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Rome', number: '411', rulers: ['Nero'] }, { fetchImpl });
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('portrait_facet:"Nero"')), fetchImpl.calls[0]);
+  // Missed with the mint, the rulers' own coins with the number are asked for without it, and a single hit is offered, never opened.
+  assert.ok(fetchImpl.calls[1].includes(encodeURIComponent('portrait_facet:"Nero"')) && !fetchImpl.calls[1].includes('Rome'), fetchImpl.calls[1]);
+  const titus = fakeFetch({ [encodeURIComponent('AND "Rome"')]: '<feed></feed>', 'ocre/apis/search': fixture('ocre-search-titus-972.xml') });
+  const offered = await lookupType({ catalogue: 'RIC', volume: '', section: 'Rome', number: '972', rulers: ['Titus'] }, { fetchImpl: titus });
+  assert.deepEqual(offered, { status: 'candidates', candidates: [{ id: 'ric.2_1(2).ves.972', title: 'RIC II, Part 1 (second edition) Vespasian 972' }], partial: true,
+    corpus: 'ocre', query: 'RIC Rome 972 (Titus)' });
+  // A ruler's own section still wins over the lot's rulers, as it always has.
+  const own = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Elagabalus', number: '268', rulers: ['Julia Maesa'] }, { fetchImpl: own });
+  assert.ok(!own.calls[0].includes('facet'), own.calls[0]);
+});
+
+test('a section taken only from the heading\'s mint is offered online too, never opened', async () => {
+  const feed = '<feed><entry><title>RIC VII Treveri 12</title><id>ric.7.tri.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed });
+  const result = await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Treveri', number: '12', headingMint: true }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }], partial: true, corpus: 'ocre',
+    query: 'RIC VII Treveri 12' });
+  assert.equal(fetchImpl.calls.length, 1);
+});
+
+// Prose and word processors write a range with an en or em dash ("RIC II Hadrian 1009–1012"), and lot text has always read it as the hyphen it
+// stands for. The Reference box and a right-click now read it the same way, so the range reaches the type OCRE titles over it.
+test('an en or em dash in a typed range reads as the hyphen it stands for', () => {
+  for (const [dashed, hyphen] of [['RIC II Hadrian 1009–1012', 'RIC II Hadrian 1009-1012'], ['RIC 100–102', 'RIC 100-102'],
+    ['RIC 1009—1012', 'RIC 1009-1012'], ['RIC I 60a–b', 'RIC I 60a-b'], ['Price 3949–3950', 'Price 3949-3950'], ['Cr. 44/5–7', 'Cr. 44/5-7']]) {
+    assert.ok(parseReference(hyphen), hyphen);
+    assert.deepEqual(parseReference(dashed), parseReference(hyphen), dashed);
+  }
+  // An Other reference is its own card, and keeps the dash it was written with.
+  assert.equal(parseReference('HGC 4, 1218–1220').number, 'HGC 4, 1218–1220');
+  assert.equal(parseReference('SG–6829').number, 'SG 6829');
+});
+
+// A part is written in Roman numerals as often as in Arabic after the word "part" ("RIC IV, part I, 460"), which read "part I" as the section.
+test('a volume part written in Roman numerals after "part" is read as that part', () => {
+  const ric = (volume, section, number) => ({ catalogue: 'RIC', volume, section, number });
+  for (const [text, expected] of [['RIC IV, part I, 460', ric('IV, Part 1', '', '460')], ['RIC IV part II 12', ric('IV, Part 2', '', '12')],
+    ['RIC II, Part III, 1009', ric('II, Part 3', '', '1009')], ['RIC V, part II, 123', ric('V, Part 2', '', '123')],
+    ['RIC IV, part I, Caracalla 460', ric('IV, Part 1', 'Caracalla', '460')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // A part the volume does not have is still refused after a comma, as its Arabic spelling is, and a Roman numeral without "part" is no part.
+  assert.equal(parseReference('RIC IV, part IV, 12'), null);
+  assert.equal(parseReference('RIC III, part II, 12'), null);
+  assert.equal(parseReference('RIC II I 60')?.volume, 'II');
+});
+
+// A numismatics.org or nomisma.org response is read whole, so its size is the server's to choose: one that declares more than 4 MiB is refused before
+// a byte of it is read, and one that declares nothing is counted as it arrives and cut off at the cap. Either way the lookup is a network failure.
+test('a catalogue response larger than 4 MiB is refused, by its declared length or as it streams', async () => {
+  const MiB = 1024 * 1024;
+  let cancelled = 0;
+  let read = 0;
+  const declared = async () => ({ ok: true, status: 200, headers: new Headers({ 'content-length': String(4 * MiB + 1) }),
+    body: { cancel: async () => { cancelled += 1; } }, text: async () => { read += 1; return ''; }, json: async () => { read += 1; return {}; } });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: declared }), { status: 'network' });
+  assert.deepEqual(await lookupById('ocre', 'ric.2_1(2).ves.972', { fetchImpl: declared }), { status: 'network' });
+  assert.equal(read, 0);
+  assert.equal(cancelled, 2);
+  // No length declared: the body is counted chunk by chunk and dropped past the cap, never read to its end.
+  let pulled = 0;
+  const streaming = async () => new Response(new ReadableStream({
+    pull(controller) { pulled += 1; if (pulled > 64) controller.close(); else controller.enqueue(new Uint8Array(MiB)); } }), { status: 200 });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: streaming }), { status: 'network' });
+  assert.ok(pulled <= 7, String(pulled));
+  // A real response under the cap reads as it always did.
+  const feed = '<feed><opensearch:totalResults>0</opensearch:totalResults></feed>';
+  const small = async () => new Response(feed, { status: 200, headers: { 'content-length': String(feed.length) } });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: small }), { status: 'none', corpus: 'ocre', query: 'RIC 972' });
+});
+
+// Online, a hit with the mint is weighed against the rulers' own coins with the number: RIC V files Diocletian by name, so his RIC V 15 is as good an
+// answer to "Diocletian. RIC 15 (Lugdunum)" as RIC VI Lugdunum 15, and both are offered. Another mint's coin of his is no choice, and a ruler with
+// nothing else numbered so still gets the mint's coin.
+test('a mint hit with no volume is offered beside the rulers\' own-section coins with the number, never opened over them', async () => {
+  const entry = (id, title) => `<entry><title>${title}</title><id>${id}</id></entry>`;
+  const fetchImpl = fakeFetch({
+    [encodeURIComponent('AND "Lugdunum"')]: `<feed>${entry('ric.6.lug.15', 'RIC VI Lugdunum 15')}</feed>`,
+    'ocre/apis/search': `<feed>${entry('ric.5.dio.15', 'RIC V Diocletian 15')}${entry('ric.6.ant.15', 'RIC VI Antioch 15')}${entry('ric.6.lug.15', 'RIC VI Lugdunum 15')}</feed>`,
+  });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: 'Lugdunum', number: '15', rulers: ['Diocletian'] }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.6.lug.15', title: 'RIC VI Lugdunum 15' }, { id: 'ric.5.dio.15', title: 'RIC V Diocletian 15' }],
+    partial: true, corpus: 'ocre', query: 'RIC Lugdunum 15 (Diocletian)' });
+  assert.equal(fetchImpl.calls.length, 2);
+  assert.ok(fetchImpl.calls[1].includes(encodeURIComponent('portrait_facet:"Diocletian"')) && !fetchImpl.calls[1].includes('Lugdunum'), fetchImpl.calls[1]);
+  const alone = fakeFetch({ 'ocre/apis/search': `<feed>${entry('ric.7.tic.40', 'RIC VII Ticinum 40')}</feed>` });
+  await lookupType({ catalogue: 'RIC', volume: '', section: 'Ticinum', number: '40', rulers: ['Constantine I'] }, { fetchImpl: alone });
+  assert.ok(alone.calls[2]?.includes('ric.7.tic.40'), String(alone.calls));
+});
+
+test('a mint section typed with no volume is offered online, never opened, and opens with a volume', async () => {
+  const feed = '<feed><entry><title>RIC VII Treveri 12</title><id>ric.7.tri.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': feed });
+  for (const reference of [{ catalogue: 'RIC', volume: '', section: 'Treveri', number: '12' }, { catalogue: 'RIC', volume: '', section: 'Trier', number: '12' }]) {
+    assert.deepEqual(await lookupType(reference, { fetchImpl }), { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }],
+      partial: true, corpus: 'ocre', query: 'RIC Treveri 12' });
+  }
+  assert.equal(fetchImpl.calls.length, 2);
+  // With the volume stated the one type is the answer, and its record is fetched.
+  const volume = fakeFetch({ 'ocre/apis/search': feed });
+  await lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Trier', number: '12' }, { fetchImpl: volume });
+  assert.ok(volume.calls[1]?.includes('ric.7.tri.12'), String(volume.calls));
+});
+
+// Online the same heading asks OCRE for the section by its title words beside the person's facets, since no facet holds a section's name, and offers
+// what comes back: half of a joint heading is never the answer on its own.
+test('a joint heading naming a section and a person asks for the section by title and offers its hit', async () => {
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': '<feed><entry><title>RIC IV Philip I 1</title><id>ric.4.ph_i.1</id></entry></feed>' });
+  const result = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '1', rulers: ['Philip I', 'Otacilia Severa'] }, { fetchImpl });
+  assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.4.ph_i.1', title: 'RIC IV Philip I 1' }], partial: true, corpus: 'ocre',
+    query: 'RIC 1 (Philip I, Otacilia Severa)' });
+  assert.equal(fetchImpl.calls.length, 1);
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('portrait_facet:"Otacilia Severa"')), fetchImpl.calls[0]);
+  assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('AND ("Philip I" OR ')) && !fetchImpl.calls[0].includes(encodeURIComponent('facet:"Philip I"')), fetchImpl.calls[0]);
 });
