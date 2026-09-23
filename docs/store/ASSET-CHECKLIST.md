@@ -12,7 +12,7 @@ The mandatory Chrome image set is present:
 
 - `assets/icon-128.png` — 128×128 packaged icon.
 - `assets/small-promo-440x280.png` — 440×280 small promotional image.
-- `assets/01-workspace-1280x800.png` — verified 1280×800 release UI showing the workflow queue and selected auction record.
+- `assets/01-workspace-1280x800.png` — 1280×800 workspace showing the workflow queue and selected auction record. **It shows the 0.29 UI**, not the current release: capture it again from the package being submitted, with private auction data removed, before any store submission, and update this line with the version it shows.
 
 Additional screenshots are optional listing improvements, not missing mandatory assets. Suitable future additions are the calculator with fees and affordable-bid increment, Research with curated sale-price summary, or comparison with publishable fixture data.
 

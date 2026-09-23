@@ -1,7 +1,7 @@
 import { boundedText, coinArchivesUrl, localDay, summarise } from './prices.js';
 
-export const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
-export const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
+const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
+const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
 const ORIGIN = 'https://www.coinarchives.com';
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 // The header sits in the first screenful of markup; this is the most of the page the pattern for it ever reads.

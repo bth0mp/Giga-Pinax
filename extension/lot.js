@@ -181,8 +181,10 @@ const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').rep
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
 // A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
-// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler.
-const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
+// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler. A letter whose
+// other case is not one letter ("ß", whose capital is "SS") is matched as written rather than as a class that would take a bare "S", and a space is
+// any run of them. prices.js reads its grade words with this one too.
+export const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
   if (character === ' ') return String.raw`\s+`;
   const [upper, lower] = [character.toUpperCase(), character.toLowerCase()];
   return upper === lower || upper.length !== 1 || lower.length !== 1

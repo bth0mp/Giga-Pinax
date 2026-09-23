@@ -87,7 +87,7 @@ export const realVolumePart = (numeral, part) => Boolean(VOLUME_PARTS.get(String
 // Text that begins like a supported catalogue, or like a title of one (BIGR's, which Recent chips and suggestions carry), is never Other: unread there it
 // is a typo ("Bopearachi 9C", "Crawfrd 44/5", "RIC XI Nero 1") and stays an error, as does text without a letter or a digit ("hello", "Price", "972").
 // A short name must end its word, so catalogues that only share its letters ("Ricci", "Schulten", "SCBI", Sydenham's "CRR", "Craig") are Other.
-export const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
+const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Seleucid|Bop|${BIGR_TITLE.trim()})`, 'i');
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|R\.I\.C|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
@@ -173,7 +173,7 @@ const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
 // The whole of that clean-up, in one place, so a lot row and a typed reference are cleaned once each and in the same way: the remarks, the variety,
 // the edition and the correction a dealer hangs on a number, then the house's own separators, "RIC²", a hyphenated volume and a range's first number.
 // Every part of it needs one of CLEANABLE's marks to change anything, so text carrying none ("RIC VII Antioch 1") skips the chain whole.
-export function cleanReference(text, shortenRange = true) {
+function cleanReference(text, shortenRange = true) {
   const written = String(text).trim();
   if (!CLEANABLE.test(written)) return written;
   const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
@@ -468,7 +468,7 @@ const groupUrl = (corpus, ids) => `${ORIGIN}/${corpus}/apis/getNuds?identifiers=
 // (a full search page or a 24-record NUDS group is a few hundred kilobytes): a declared length over it is refused before any of the body is read, and
 // a body is counted as it arrives and dropped once past it. The same approach as boundedText in coinarchives-prices.js, copied rather than imported:
 // that module imports prices.js, which imports this one. A refused body is a network failure, as a dropped connection is.
-export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 async function boundedText(response, maxBytes = MAX_RESPONSE_BYTES) {
   const tooLarge = () => new Error('too-large');
   const length = Number(response.headers?.get?.('content-length'));

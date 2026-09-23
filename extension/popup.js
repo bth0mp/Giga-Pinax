@@ -520,7 +520,7 @@ function renderCandidates(candidates, corpus, partial, personMismatch = false) {
 }
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
-// from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or "Price P1" would not read back) and makes
+// from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or an SC "Ad." title would not read back) and makes
 // no permission request. It empties the lot list too, whose chosen row would name another type.
 function openRecent(entry) {
   clearLot();
@@ -1018,7 +1018,8 @@ async function run(perform, note = '', failedReference = null) {
     const title = outcome.card.corpus === 'ocre' ? parseReference(outcome.card.label) : null;
     if (outcome.card.bop) fillFields({ catalogue: 'Bop', number: outcome.card.bop.series ?? '', volume: '', section: outcome.card.bop.king });
     else if (outcome.card.corpus === 'other') fillFields({ catalogue: 'Other', number: outcome.card.label, volume: '', section: '' });
-    // A PELLA title that does not read back ("Price P1") would leave the last reference in the fields, and both searches with it.
+    // A PELLA title that does not read back would leave the last reference in the fields, and both searches with it. Every bundled title reads back
+    // now that Price P and L numbers are read ("Price P1"), so this is for a title only the online catalogue carries.
     else if (outcome.card.corpus === 'pella' && !parseReference(outcome.card.label)) fillFields({ catalogue: 'Price', number: outcome.card.id.replace(/^price\./, ''), volume: '', section: '' });
     else if (title) fillFields(title);
     renderCard(outcome.card);
@@ -1329,7 +1330,7 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
-    // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or "Price P1", would read as lot text.
+    // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or an SC "Ad." title, would read as lot text.
     const entry = preferences.recent[recalled];
     if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
     // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.

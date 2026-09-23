@@ -13,6 +13,11 @@ import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
 
+// No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
+// that was Node's: 33 lookups went to numismatics.org, kept the file waiting seconds for their sockets, and made what a test saw depend on the site.
+// Refused, each is the network failure a lookup already reports, as it would be on a machine with no connection.
+globalThis.fetch = async (url) => { throw new TypeError(`no network in tests: ${url}`); };
+
 // A lookup reaches this window from this extension's own background, or from another of its pages.
 const SENDER = { id: 'giga-pinax@test', url: 'moz-extension://test/background.js' };
 

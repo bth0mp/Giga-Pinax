@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { anyCase, looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
 import { parseReference } from '../extension/lookup.js';
 import { defaultTerm } from '../extension/prices.js';
 
@@ -1127,4 +1127,16 @@ test('Price or Pr followed by an amount in a currency is a sale price, never a P
   assert.deepEqual(texts('Alexander III. Drachm. Pr 3949; Müller 12.'), ['Pr 3949', 'Müller 12']);
   // A currency further on, in the next sentence, says nothing about the number.
   assert.deepEqual(texts('Alexander III. Drachm. Price 3949. EUR 1200.'), ['Price 3949']);
+});
+
+// The one anyCase the lot reader and the grade reader share (prices.js imports it): a letter is either case, a space any run of spaces, and a letter
+// whose other case is not one letter ("ß", whose capital is "SS") is matched as written, never as a class that would take a bare "S".
+test('anyCase reads a word whatever its capitals, and a letter with no one-letter other case as written', () => {
+  const reads = (word, text) => new RegExp(`^(?:${anyCase(word)})$`, 'u').test(text);
+  assert.ok(reads('Good VF', 'good  vf'));
+  assert.ok(reads('Straße', 'STRAßE'));
+  assert.ok(!reads('ß', 'S'));
+  assert.ok(!reads('ß', 'SS'));
+  assert.ok(reads('a.b', 'A.B'));
+  assert.ok(!reads('a.b', 'AxB'));
 });

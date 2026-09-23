@@ -1,5 +1,6 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
+import { anyCase } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
@@ -481,15 +482,8 @@ const FINE_QUALIFIERS = /^(?:About|Good|Near|Nearly|Almost|Choice)\b/i;
 // The slabbers: only their line prints a score behind the grade.
 const SLABBERS = /\b(?:NGC|PCGS)\b/;
 
-// A word read whatever its capitals. (eitherCase above reads a catalogue number, where a full stop is also the comma dealers write.) This is lot.js's
-// guarded anyCase, which lot.js keeps unexported, so the two read a word alike: a letter whose other case is not one letter ("ß", whose capital is
-// "SS") is matched as written rather than as a class that would take a bare "S", and a space is any run of them.
-const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
-  if (character === ' ') return String.raw`\s+`;
-  const [upper, lower] = [character.toUpperCase(), character.toLowerCase()];
-  return upper === lower || upper.length !== 1 || lower.length !== 1
-    ? character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : `[${upper}${lower}]`;
-}).join('');
+// A word is read whatever its capitals with lot.js's anyCase, as a heading's names are. (eitherCase above reads a catalogue number, where a full stop
+// is also the comma dealers write.)
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it, and "About Uncirculated" is not "Uncirculated".
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
 const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(SPELLED).map(anyCase)]);

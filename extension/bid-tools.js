@@ -75,7 +75,7 @@ export function presetFromFields({ name, premiumText, ladderText, ladderCurrency
 
 // A house's schedule is written in that house's own money. Applied under another currency the tiers
 // would be a schedule no house published, so the fixed increment stands in and the page says why.
-export function ladderForCurrency(ladder, currency) {
+function ladderForCurrency(ladder, currency) {
   if (!Array.isArray(ladder?.tiers) || ladder.tiers.length === 0) return { tiers: null, notice: '' };
   if (ladder.currency === currency) return { tiers: ladder.tiers, notice: '' };
   return {

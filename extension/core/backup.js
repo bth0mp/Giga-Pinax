@@ -13,7 +13,7 @@ export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 export const MAX_BACKUP_BYTES = 16 * 1024 * 1024;
 // The rescue file says on its face that it is one, so an import can turn it away by name rather
 // than by whatever its unvalidated contents happen to trip over first.
-export const RAW_EXPORT_KIND = 'raw-rescue';
+const RAW_EXPORT_KIND = 'raw-rescue';
 const RAW_EXPORT_REFUSAL =
   'This is a raw rescue file, not a backup. Use Export backup to make a file that can be imported.';
 // A write time beyond the export that carries it is a skewed clock or a hand-edited file, and a
