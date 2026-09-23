@@ -1115,3 +1115,16 @@ test('R.I.C., Seleucid Coins and a typed key followed by a full stop are read as
   // A pasted lot citing R.I.C. is lot text, not one Other reference.
   assert.equal(isLot('Trajan. R.I.C. 128; C. 74.'), true);
 });
+
+// "Pr." is Price's abbreviation and also a price's: a number with a currency straight after it ("Pr. 1200 EUR", "Pr 1,200 €") is a sale amount, as it
+// is after "Price", and reading it as the key would add a second Price row with that amount's number. "Pr. 3949" alone still reads.
+test('Price or Pr followed by an amount in a currency is a sale price, never a Price row', () => {
+  assert.deepEqual(texts('Alexander III. Price 3949. Pr. 1200 EUR.'), ['Price 3949']);
+  for (const written of ['Pr 1200 EUR', 'Pr. 1,200 €', 'Pr. 1.200 CHF', 'Price 1200 EUR', 'Price 1,200 USD', 'Pr. 450 GBP', 'Pr. 450$', 'Pr. 450 £']) {
+    assert.deepEqual(texts(`Alexander III. Drachm. Price 3949. ${written}.`), ['Price 3949'], written);
+  }
+  assert.deepEqual(texts('Alexander III. Drachm. Pr. 3949.'), ['Pr 3949']);
+  assert.deepEqual(texts('Alexander III. Drachm. Pr 3949; Müller 12.'), ['Pr 3949', 'Müller 12']);
+  // A currency further on, in the next sentence, says nothing about the number.
+  assert.deepEqual(texts('Alexander III. Drachm. Price 3949. EUR 1200.'), ['Price 3949']);
+});

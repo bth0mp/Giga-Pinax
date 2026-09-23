@@ -306,6 +306,10 @@ const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleuci
 // A full stop a dealer puts after a typed key ("RIC. 60", "Pr. 3949") is the key's own, as "RSC. 119" has always been read. Only the keys that are no
 // English word take it: "Price." is left alone for the reason readable leaves "Price:" alone, and "SC." ends many a legend ("large SC. 12 h").
 const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;
+// "Price" and "Pr." are also what a dealer writes before a sale amount, and a number with a currency straight after it ("Pr. 1200 EUR", "Price 1,200 €")
+// is that amount, never a type: the key keeps no number, as "Price:" and "Price." keep none. One fixed run, so the test is linear.
+const AMOUNT_KEY = /^(?:Price|Pr)$/i;
+const AMOUNT = /^[\s.:]*\d+(?:[.,']\d+)*\s*(?:[$€£]|(?:EUR|USD|CHF|GBP)(?!\p{L}))/u;
 // RIC spelled with stops is RIC.
 const RIC_STOPS = /^R\.I\.C\.?\s*/;
 
@@ -402,7 +406,7 @@ export function findReferences(input) {
     const before = text.slice(0, match.index);
     const number = unseparate(body);
     const own = (!SURNAMES.has(match[2].toLowerCase()) || (numberOnly(number) && !(broken && YEAR.test(number))))
-      && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before);
+      && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before) && !(AMOUNT_KEY.test(match[2]) && AMOUNT.test(after));
     const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run,
       written: `${text.slice(keyStart, match.index + match[0].length)}${own ? body : ''}` };
     if (broken || opens) run += 1;
