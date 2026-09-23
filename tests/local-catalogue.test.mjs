@@ -814,3 +814,29 @@ test('a section taken only from the heading\'s mint is offered, never opened', a
   // The same section cited in the reference itself still opens its coin.
   assert.equal((await local.lookupType(parseReference('RIC VII Londinium 287'))).card?.id, 'ric.7.lon.287');
 });
+
+// The index is what a lookup is matched against, so a record it lists and its shard lacks is a stale or damaged bundle, never a coin missing from
+// RIC: the lookup is unavailable, and the caller goes online for it, rather than offering the wrong numbers or saying it is not there.
+test('a record the index lists and its shard lacks makes the lookup unavailable, never a miss or a list of other coins', async () => {
+  const { 'ric.1(2).ner.306': dropped, ...rest } = records;
+  assert.ok(dropped);
+  const stale = () => createLocalCatalogue({ fetchImpl: fixtureFetch({ 'records-1(2).json': { schemaVersion: 1, records: rest } }), baseUrl: 'moz-extension://test/data/' });
+  assert.equal((await stale().lookupType(parseReference('RIC I (2nd ed.) Nero 306'))).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '306', rulers: ['Nero'] })).status, 'unavailable');
+  assert.equal((await stale().lookupType({ catalogue: 'RIC', volume: '', section: '', number: '306' })).status, 'unavailable');
+  // A lookup by an identifier the index was never asked about still answers that the record is not here.
+  assert.equal((await stale().lookupById('ocre', 'ric.1(2).ner.306')).status, 'none');
+});
+
+test('over the bundled catalogue, a title lookup whose shard lacks the record it matched is unavailable', { skip }, async () => {
+  for (const [corpus, file, id, reference] of [['crro', 'crro/records-rrc.json', 'rrc-44.5', 'RRC 44/5'], ['pella', 'pella/records-price.json', 'price.23', 'Price 23'],
+    ['sco', 'sco/records-sc.json', 'sc.1.1266.2', 'SC 1266.2']]) {
+    const local = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/', fetchImpl: async (url) => {
+      const path = bundlePath(url);
+      const value = bundleJson(path);
+      const served = path === file ? { schemaVersion: 1, records: Object.fromEntries(Object.entries(value.records).filter(([key]) => key !== id)) } : value;
+      return { ok: true, status: 200, json: async () => served };
+    } });
+    assert.equal((await local.lookupType(parseReference(reference))).status, 'unavailable', corpus);
+  }
+});

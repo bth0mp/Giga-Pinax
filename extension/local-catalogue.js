@@ -177,6 +177,14 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     const card = record && packedRecordToCard(record, cache, name, await labels());
     return card ? { status: 'ok', card } : { status: 'none', corpus: name };
   };
+  // A record the index lists is one the package ships, so a shard without it is a stale or damaged bundle, never a coin missing from the catalogue:
+  // the lookup is unavailable and the caller goes online, rather than answering "not found" or offering the other coins with the number.
+  const stale = (name) => new Error(`Local ${LOCAL_CORPORA[name].label} index lists a record its shard lacks`);
+  const listedById = async (name, id) => {
+    const found = await byId(name, id);
+    if (found.status !== 'ok') throw stale(name);
+    return found;
+  };
   // The entries a lookup compares titles against, as objects rather than the pairs the file stores.
   const entries = async (name) => (await store(name).indexEntries()).map(([id, title]) => ({ id, title }));
   // The entries carrying a RIC number: the positions numbers.json lists it under, in index order, so pickRicEntries parses a few dozen titles
@@ -228,6 +236,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another.
       const withPerson = async (list) => {
         const records = await Promise.all(list.map((entry) => recordById(entry.id)));
+        if (records.some((record) => !record)) throw stale('ocre');
         return list.filter((entry, index) => hasPerson(records[index], people));
       };
       const matched = await withPerson(entries);
@@ -243,7 +252,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         let final = pickRicEntries(matched, citationRef);
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out.
-        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title)) return await byId('ocre', final.entry.id);
+        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title)) return await listedById('ocre', final.entry.id);
         if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
         return local(final, 'ocre', query);
       }
@@ -258,7 +267,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await candidateEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
     if (picked.status === 'ok' && (broadened || reference.rulers?.length || reference.headingMint)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
     if (picked.status !== 'ok') return local(picked, 'ocre', squash(`RIC ${reference.volume} ${reference.section} ${reference.number}`));
-    return await byId('ocre', picked.entry.id);
+    return await listedById('ocre', picked.entry.id);
   }
 
   // CRRO, PELLA and SCO title a type with the reference itself ("RRC 44/5", "Price 23"), so the local answer is the one
@@ -278,13 +287,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     // wrote. Without it a stale bundle would answer "not in this catalogue" for a coin the package holds.
     const [meta, listed] = await Promise.all([store(name).loadMetadata(), entries(name)]);
     if (listed.length !== meta.activeRecordCount) throw new Error(`Invalid local ${LOCAL_CORPORA[name].label} index`);
+    // The record the reference names outright was not in its shard: if the index lists it, the bundle is stale.
+    if (typeof id === 'string' && listed.some((entry) => entry.id === id)) throw stale(name);
     let picked = pickMatch(listed, query);
     // inGroup's rule over the whole index rather than over what Solr returned, so the near misses are a superset of the
     // online ones: "SC 1266.9" offers sc.1.1266 and sc.1.1266.2 where ANS's own search for the base number returns
     // sc.1.1266 alone, though sc.1.1266.2 is a real record of that group. Deliberate — these are candidates the
     // collector chooses from, never a record opened for him, so the longer list can only ever offer him more.
     if (picked.status !== 'ok') picked = pickMatch(inGroup(listed, name, reference), query);
-    if (picked.status === 'ok') return await byId(name, picked.entry.id);
+    if (picked.status === 'ok') return await listedById(name, picked.entry.id);
     return local(picked, name, query);
   }
 
