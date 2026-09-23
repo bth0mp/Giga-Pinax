@@ -440,8 +440,9 @@ const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' &
   && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume) || (!reference.volume && isMintOnly(reference.section)));
 // A heading name RIC itself heads a section with, and that no person answers to ("Philip I", "Gaius/Caligula"), is that section rather than a
 // portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
-// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.
-const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && volumesOf(name).length > 0) ?? '';
+// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it. Only a heading naming one ruler is read so:
+// a section standing for one of several is half of what the heading says, and "Aurelian and Severina" opened Severina's own RIC V 2.
+const headingSection = (rulers) => (rulers.length === 1 && !isRicPerson(rulers[0]) && volumesOf(rulers[0]).length > 0 ? rulers[0] : '');
 // A heading that named a mint and nobody else ("Londinium. RIC 12", "Arles mint") is that mint's section: RIC VI-IX file their coins by mint, so the
 // name is where the number lives, and without it a numberless RIC row left every mint of every volume to choose between. The section brings the
 // volumes it implies with it, exactly as a ruler section does — but only where the lot has stated no volume of its own, or one the mint really is a

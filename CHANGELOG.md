@@ -13,6 +13,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Price numbers with a letter in front — `Price P23` for Philip III, `Price L1` for Lysimachus, 302 of the bundled types — are read in the Reference box and in lot text, and open their type like any other Price number. The box used to refuse them as a typo, and a lot citing one only searched prices.
 - A range typed or right-clicked with an en or em dash — `RIC II Hadrian 1009–1012`, `RIC 100–102`, `Price 3949–3950` — is read as the hyphenated range it stands for, as lot text always read it, instead of finding nothing.
 - A bundled catalogue file that has lost a record its index still lists — a damaged or half-updated install — now makes the lookup go online (or say it needs to), instead of reporting the type as not found or offering other coins with the same number in its place.
+- A lot headed with two rulers, one of them a name RIC files a section under — `Aurelian and Severina. Antoninianus. RIC 2.` — no longer opens that one ruler's coin (RIC V Severina 2): both rulers are looked for, and the joint types are offered with the rest.
 
 ## [0.32.1] - 2026-09-18
 

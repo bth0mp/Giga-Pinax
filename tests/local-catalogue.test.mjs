@@ -840,3 +840,10 @@ test('over the bundled catalogue, a title lookup whose shard lacks the record it
     assert.equal((await local.lookupType(parseReference(reference))).status, 'unavailable', corpus);
   }
 });
+
+test('over the bundled catalogue, a joint heading never opens one of its rulers\' own coins', { skip }, async () => {
+  const lot = findReferences('Aurelian and Severina. Antoninianus. RIC 2.');
+  const result = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
+  assert.equal(result.status, 'candidates');
+  assert.ok(result.candidates.some(({ id }) => id === 'ric.5.aur_seva.2'), JSON.stringify(result.candidates));
+});

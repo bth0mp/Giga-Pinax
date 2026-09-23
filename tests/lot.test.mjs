@@ -1086,3 +1086,14 @@ test('a Price number lettered P or L is a Price type, typed or in a lot', () => 
   assert.deepEqual(found.reference, { catalogue: 'Price', number: 'P181', volume: '', section: '' });
   assert.equal(found.typed, true);
 });
+
+// A section name standing for one of several rulers in a heading is only half of what the heading says: "Aurelian and Severina" named Severina's
+// section and opened RIC V Severina 2 for a joint coin. With more than one ruler the heading's people are asked for together.
+test('a joint heading keeps every ruler it names instead of one ruler\'s section', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  for (const text of ['Aurelian and Severina. Antoninianus. RIC 2.', 'Aurelian & Severina. RIC 2.', 'Aurelian, with Severina. RIC 2.']) {
+    assert.deepEqual(lookup(text), { catalogue: 'RIC', number: '2', volume: '', section: '', rulers: ['Aurelian', 'Severina'] }, text);
+  }
+  // One ruler whose name is RIC's section is still that section.
+  assert.deepEqual(lookup('Severina. Antoninianus. RIC 2.'), { catalogue: 'RIC', number: '2', volume: 'V', section: 'Severina' });
+});
