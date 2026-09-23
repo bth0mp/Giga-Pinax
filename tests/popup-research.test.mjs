@@ -1459,6 +1459,9 @@ test('a row included by hand is counted, not said to cite the reference', async 
   assert.ok(popup.element('announcement').textContent.includes(`${line}.`));
   await popup.element('copy-summary').emit('click');
   assert.ok(popup.clipboard[0].split('\n').includes(line));
+  // Even where the two numbers agree, other rows than the citing ones are counted, and the line says so.
+  await popup.element('sale-list').children[0].children[2].emit('click');
+  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite Price 23; 1 of 3 counted');
 });
 
 // 0.33 review (R10): acsearch lists the most recent lots first, so a full page that reaches back past the period's start holds every sale of the

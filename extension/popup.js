@@ -630,8 +630,8 @@ function lotLink(sale, text) {
 
 // What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. Every figure is over the
 // rows the median itself rests on — the period on show. N is how many of them pass the filter, and nothing else: a row the collector counted by hand
-// still does not cite the reference. Where his own decisions make the median rest on another number of rows, that number follows ("1 of 3 results
-// cite Price 23; 2 of 3 counted"). The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole
+// still does not cite the reference. Where the median rests on other rows than those — his own decisions, or the other filter — the number it rests
+// on follows ("1 of 3 results cite Price 23; 2 of 3 counted"). The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole
 // instead, and says so.
 // A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
 function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
@@ -643,7 +643,9 @@ function filterLines(periodLots, curation, { name, denomination, citing, uncited
   const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
   const line = (test, verb) => {
     const passing = periodLots.filter(test).length;
-    return `${passing} of ${total} ${verb}${passing === counted ? '' : `; ${counted} of ${total} counted`}`;
+    // Said whenever the rows counted are not the rows that pass, even where the two numbers happen to agree.
+    const same = periodLots.every((sale) => test(sale) === (curation.reasonFor(sale) === null));
+    return `${passing} of ${total} ${verb}${same ? '' : `; ${counted} of ${total} counted`}`;
   };
   const lines = [];
   if (citing && dropped(passes.citing)) lines.push(line(passes.citing, `${total === 1 ? 'result cites' : 'results cite'} ${name}`));
