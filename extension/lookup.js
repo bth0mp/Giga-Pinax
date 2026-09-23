@@ -464,17 +464,58 @@ const nudsUrl = (corpus, id) => `${ORIGIN}/${corpus}/id/${encodeURIComponent(id)
 // Many NUDS records in one <nudsGroup>. The "|" between ids is encoded too: the server refuses a bare one with HTTP 400.
 const groupUrl = (corpus, ids) => `${ORIGIN}/${corpus}/apis/getNuds?identifiers=${encodeURIComponent(ids.join('|'))}`;
 
+// A response is read whole, so its size is the sender's to choose. Nothing numismatics.org or nomisma.org publishes for one lookup comes near this cap
+// (a full search page or a 24-record NUDS group is a few hundred kilobytes): a declared length over it is refused before any of the body is read, and
+// a body is counted as it arrives and dropped once past it. The same approach as boundedText in coinarchives-prices.js, copied rather than imported:
+// that module imports prices.js, which imports this one. A refused body is a network failure, as a dropped connection is.
+export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+async function boundedText(response, maxBytes = MAX_RESPONSE_BYTES) {
+  const tooLarge = () => new Error('too-large');
+  const length = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(length) && length > maxBytes) { await response.body?.cancel?.(); throw tooLarge(); }
+  const decode = (bytes) => new TextDecoder('utf-8').decode(bytes);
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) { await reader.cancel(); throw tooLarge(); }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return decode(bytes);
+  }
+  if (typeof response.arrayBuffer === 'function') {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw tooLarge();
+    return decode(bytes);
+  }
+  // A stand-in response carrying text alone (a test's fake) is measured the same way once read.
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw tooLarge();
+  return text;
+}
+
 async function getText(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal });
   if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
-  return response.text();
+  return boundedText(response);
 }
 
 // The error carries the HTTP status so a caller can tell a missing record (404) from an outage.
 async function getJson(url, fetchImpl, signal) {
   const response = await fetchImpl(url, { signal, headers: { Accept: 'application/ld+json' } });
   if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
-  return response.json();
+  return JSON.parse(await boundedText(response));
 }
 
 function withTimeout(ms) {

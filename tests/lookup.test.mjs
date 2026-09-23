@@ -1480,3 +1480,27 @@ test('a volume part written in Roman numerals after "part" is read as that part'
   assert.equal(parseReference('RIC III, part II, 12'), null);
   assert.equal(parseReference('RIC II I 60')?.volume, 'II');
 });
+
+// A numismatics.org or nomisma.org response is read whole, so its size is the server's to choose: one that declares more than 4 MiB is refused before
+// a byte of it is read, and one that declares nothing is counted as it arrives and cut off at the cap. Either way the lookup is a network failure.
+test('a catalogue response larger than 4 MiB is refused, by its declared length or as it streams', async () => {
+  const MiB = 1024 * 1024;
+  let cancelled = 0;
+  let read = 0;
+  const declared = async () => ({ ok: true, status: 200, headers: new Headers({ 'content-length': String(4 * MiB + 1) }),
+    body: { cancel: async () => { cancelled += 1; } }, text: async () => { read += 1; return ''; }, json: async () => { read += 1; return {}; } });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: declared }), { status: 'network' });
+  assert.deepEqual(await lookupById('ocre', 'ric.2_1(2).ves.972', { fetchImpl: declared }), { status: 'network' });
+  assert.equal(read, 0);
+  assert.equal(cancelled, 2);
+  // No length declared: the body is counted chunk by chunk and dropped past the cap, never read to its end.
+  let pulled = 0;
+  const streaming = async () => new Response(new ReadableStream({
+    pull(controller) { pulled += 1; if (pulled > 64) controller.close(); else controller.enqueue(new Uint8Array(MiB)); } }), { status: 200 });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: streaming }), { status: 'network' });
+  assert.ok(pulled <= 7, String(pulled));
+  // A real response under the cap reads as it always did.
+  const feed = '<feed><opensearch:totalResults>0</opensearch:totalResults></feed>';
+  const small = async () => new Response(feed, { status: 200, headers: { 'content-length': String(feed.length) } });
+  assert.deepEqual(await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' }, { fetchImpl: small }), { status: 'none', corpus: 'ocre', query: 'RIC 972' });
+});

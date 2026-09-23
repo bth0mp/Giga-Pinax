@@ -17,6 +17,10 @@ Each date is the date of that version's release tag. Every release also carries 
 - Lot text citing `R.I.C. 128`, `Seleucid Coins 1266.2`, `RIC. 60` or `Pr. 3949` now looks those types up, as `RIC 128`, `SC 1266.2`, `RIC 60` and `Price 3949` always were; they were skipped before. `Price.` followed by a number is still left alone, since it is how a sale amount is written.
 - A volume part written in Roman numerals after the word — `RIC IV, part I, 460`, `RIC II, Part III, 1009` — is read as that part, as `RIC IV, part 1, 460` is, instead of taking "part I" for the ruler.
 
+### Security
+
+- A response from numismatics.org or nomisma.org larger than 4 MiB is no longer read into memory whole: one that declares its size is refused before it is read, one that does not is dropped as soon as it passes the limit, and the lookup reports a connection failure.
+
 ## [0.32.1] - 2026-09-18
 
 ### Added
