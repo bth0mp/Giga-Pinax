@@ -628,11 +628,11 @@ function lotLink(sale, text) {
   return link;
 }
 
-// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. Every figure is over the
+// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter every row passes. Every figure is over the
 // rows the median itself rests on — the period on show. N is how many of them pass the filter, and nothing else: a row the collector counted by hand
 // still does not cite the reference. Where the median rests on other rows than those — his own decisions, or the other filter — the number it rests
-// on follows ("1 of 3 results cite Price 23; 2 of 3 counted"). The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole
-// instead, and says so.
+// on follows ("1 of 3 results cite Price 23; 2 of 3 counted"). The line stays while any row fails the filter, counted by hand or not. A page that
+// names the reference nowhere is counted whole instead, and says so.
 // A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
 function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
   const total = periodLots.length;
@@ -640,16 +640,15 @@ function filterLines(periodLots, curation, { name, denomination, citing, uncited
   if (uncited) return [`No result text names ${name}, so ${all}.`];
   if (unsearched) return [`This search does not look for ${name}, so ${all}.`, ...filterLines(periodLots, curation, { name, denomination, passes })];
   const counted = periodLots.filter((sale) => curation.reasonFor(sale) === null).length;
-  const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
-  const line = (test, verb) => {
-    const passing = periodLots.filter(test).length;
-    // Said whenever the rows counted are not the rows that pass, even where the two numbers happen to agree.
-    const same = periodLots.every((sale) => test(sale) === (curation.reasonFor(sale) === null));
-    return `${passing} of ${total} ${verb}${same ? '' : `; ${counted} of ${total} counted`}`;
-  };
+  // Whether the rows counted are not the rows that pass, even where the two numbers happen to agree.
+  const differs = (test) => periodLots.some((sale) => test(sale) !== (curation.reasonFor(sale) === null));
+  const line = (test, verb) => `${periodLots.filter(test).length} of ${total} ${verb}${differs(test) ? `; ${counted} of ${total} counted` : ''}`;
+  // A filter's line stays while any row fails it, whether the filter leaves that row out or the collector counts it by hand: a row that does not cite
+  // the reference is no citation for being counted. A filter every row passes has nothing to say, whatever the other filter leaves out.
+  const shown = (test) => periodLots.some((sale) => !test(sale));
   const lines = [];
-  if (citing && dropped(passes.citing)) lines.push(line(passes.citing, `${total === 1 ? 'result cites' : 'results cite'} ${name}`));
-  if (denomination && dropped(passes.denomination)) lines.push(line(passes.denomination, `${total === 1 ? 'result names' : 'results name'} “${denomination}”`));
+  if (citing && shown(passes.citing)) lines.push(line(passes.citing, `${total === 1 ? 'result cites' : 'results cite'} ${name}`));
+  if (denomination && shown(passes.denomination)) lines.push(line(passes.denomination, `${total === 1 ? 'result names' : 'results name'} “${denomination}”`));
   return lines;
 }
 

@@ -768,8 +768,8 @@ test('a result that does not cite the reference is left out of the median and co
   assert.equal(toggle.textContent, 'Include');
   await toggle.emit('click');
   assert.match(popup.element('median-amount').textContent, /200/);
-  // Both sales are counted now, so nothing is left to explain.
-  assert.equal(popup.element('cited-count').hidden, true);
+  // Both sales are counted now, but only one of them cites the reference, and the line says so (fix round 1 of the 0.33 review).
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
   // The redrawn row keeps the keyboard where it was.
   assert.equal(popup.element('sale-list').children[1].children[2].focused, 1);
   await popup.element('reset-curation').emit('click');
@@ -1055,7 +1055,7 @@ test('a row excluded by hand is no longer counted as a citation', async () => {
   await settle();
   const toggle = () => popup.element('sale-list').children[1].children[2];
   await toggle().emit('click');
-  assert.equal(popup.element('cited-count').hidden, true);
+  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
   await toggle().emit('click');
   assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
@@ -1182,8 +1182,9 @@ test('the denomination toggle governs the public panel too, and never drops a ro
   assert.equal(toggle.textContent, 'Include');
   await toggle.emit('click');
   assert.match(popup.element('coinarchives-median').textContent, /200/);
-  // Nothing is left out any more, so the line goes — the rule the acsearch panel's own filter lines already follow.
-  assert.equal(popup.element('coinarchives-cited').hidden, true);
+  // Nothing is left out any more, but the drachm still names no tetradrachm, so the line stays and says what the median rests on — the rule the
+  // acsearch panel's own filter lines follow.
+  assert.equal(popup.element('coinarchives-cited').textContent, '2 of 3 results name “tetradrachm”; 3 of 3 counted');
   popup.element('denomination-filter').checked = false;
   await popup.element('denomination-filter').emit('change');
   assert.equal(popup.element('coinarchives-cited').hidden, true);
@@ -1462,6 +1463,26 @@ test('a row included by hand is counted, not said to cite the reference', async 
   // Even where the two numbers agree, other rows than the citing ones are counted, and the line says so.
   await popup.element('sale-list').children[0].children[2].emit('click');
   assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite Price 23; 1 of 3 counted');
+});
+
+// 0.33 review, fix round 1: with every uncited row counted by hand the filter drops nothing, but the median still rests on rows that do not cite
+// the reference, so the line stays and says both figures.
+test('the citation line stays when every uncited row is included by hand', async () => {
+  const lots = [citingSale('c1', '100', 'Alexander III. Tetradrachm. Price 23. VF'), citingSale('c2', '300', 'Alexander III. Tetradrachm. Price 3014. VF'),
+    citingSale('c3', '500', 'Alexander III. Tetradrachm. Price 3015. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  await popup.element('sale-list').children[2].children[2].emit('click');
+  assert.equal(popup.element('curation-count').textContent, '3 included · 0 excluded');
+  const line = '1 of 3 results cite Price 23; 3 of 3 counted';
+  assert.equal(popup.element('cited-count').textContent, line);
+  assert.equal(popup.element('cited-count').hidden, false);
+  assert.ok(popup.element('announcement').textContent.includes(`${line}.`));
+  await popup.element('copy-summary').emit('click');
+  assert.ok(popup.clipboard[0].split('\n').includes(line));
 });
 
 // 0.33 review (R10): acsearch lists the most recent lots first, so a full page that reaches back past the period's start holds every sale of the
