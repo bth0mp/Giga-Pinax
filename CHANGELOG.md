@@ -10,6 +10,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - **Restore** under **Data health** in Settings works for a record the extension set aside when it opened your data: it used to answer "no longer in the list. Reload the page and try again" however often the page was reloaded, until some unrelated change had been saved.
 - Opening data that has many links to one missing record no longer takes seconds on every read: 5,000 lots pointing at one lost auction took over six seconds each time the extension opened your data, and now take a fraction of one.
+- Saving a lot, an auction or an outcome that is refused for its own sake — one lot past the 5,000 limit, or a store already at its 5 MiB bound — now says so, instead of reporting that "these reminders could not be scheduled" and telling you to remove reminders.
 
 ### Security
 

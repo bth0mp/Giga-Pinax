@@ -1067,6 +1067,32 @@ test('an import over the storage bound is refused as an import, not as a reminde
   assert.doesNotMatch(restore.error.message, /reminder/i);
 });
 
+// The reminder preflight ran before the command's own result had been judged, so a lot too many, or a
+// store already at the bound, was reported as reminders that could not be scheduled - and the way out
+// it offered was removing reminders.
+test('a schedule-changing command refused for its own sake does not blame reminders', () => {
+  const full = createEmptySnapshot(NOW);
+  for (let index = 0; index < LIMITS.lots; index += 1) full.lots.push(plainLot(uuid()));
+  const counted = applyCommand(full, command('lot.save', {
+    expectedRevision: null, lot: { title: 'One lot too many', sourceLinks: [] },
+  }), context());
+  assert.equal(counted.ok, false);
+  assert.equal(counted.error.code, 'validation');
+  assert.equal(counted.error.message, `Expected an array with at most ${LIMITS.lots} entries.`);
+
+  const notes = 'x'.repeat(LIMITS.notes);
+  const heavy = createEmptySnapshot(NOW);
+  const lotBytes = new TextEncoder().encode(JSON.stringify(plainLot(uuid(), { notes }))).length + 1;
+  while (heavy.lots.length * lotBytes < MAX_ROOT_BYTES - LIMITS.commandReplyBytes) heavy.lots.push(plainLot(uuid(), { notes }));
+  const bounded = applyCommand(heavy, command('lot.save', {
+    expectedRevision: null, lot: { title: 'One more', notes, sourceLinks: [] },
+  }), context());
+  assert.equal(bounded.ok, false);
+  assert.equal(bounded.error.code, 'storage-bound');
+  assert.match(bounded.error.message, /5 MiB/);
+  assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
+});
+
 test('writer preflights linked reminders when a lot activates their event', async () => {
   const current = createEmptySnapshot(NOW);
   for (let eventIndex = 0; eventIndex < 500; eventIndex += 1) {

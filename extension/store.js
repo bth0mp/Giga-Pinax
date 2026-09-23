@@ -23,6 +23,8 @@ const OVER_THE_BOUND = new Map([
   ['backup.import', ['This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document']],
   ['quarantine.restore', ['Putting this record back would exceed the 5 MiB local storage bound. Remove records you no longer need, then put it back.', 'entryId']],
 ]);
+// What any other command says when its own result, before any reminder it schedules, does not fit.
+const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
@@ -878,16 +880,32 @@ function mutation(snapshot, command, context) {
       return fail('unsupported', `Unsupported command: ${String(command.type)}`, 'type');
   }
 
+  next.revision = snapshot.revision + 1;
+  next.updatedAt = now;
+  const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
+  next.recentCommands.push({
+    requestId: command.requestId,
+    commandType: command.type,
+    revision: next.revision,
+    committedAt: now,
+    reply: clone(reply),
+  });
+  next.recentCommands = next.recentCommands.slice(-200);
+  // The command's own result is judged, and measured, before the schedule it leads to: a lot too many or a store
+  // already at the bound is the command's own refusal, in its own words, and was reported as reminders that could not
+  // be scheduled - with removing reminders offered as the way out.
+  const validated = validateSnapshot(next);
+  if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
   if (SCHEDULE_CHANGING_COMMANDS.has(command.type)) {
+    // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back
+    // is answered by removing reminders, and each names what to change.
+    const overTheBound = OVER_THE_BOUND.get(command.type);
+    if (storageBytesWithReserve(next) > MAX_ROOT_BYTES) {
+      const bounded = overTheBound ?? [THIS_CHANGE_OVER_THE_BOUND, 'type'];
+      return fail('storage-bound', bounded[0], bounded[1]);
+    }
     let projectedId = 0;
     const projected = clone(next);
-    projected.revision = snapshot.revision + 1;
-    projected.updatedAt = now;
-    const projectedReply = { ok: true, requestId: command.requestId, revision: projected.revision, value: clone(value) };
-    projected.recentCommands.push({
-      requestId: command.requestId, commandType: command.type, revision: projected.revision, committedAt: now, reply: projectedReply,
-    });
-    projected.recentCommands = projected.recentCommands.slice(-200);
     reconcileIntoSnapshot(projected, {
       now: () => now,
       newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
@@ -901,33 +919,18 @@ function mutation(snapshot, command, context) {
     });
     projected.recentCommands = projected.recentCommands.slice(-200);
     // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
-    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is.
+    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
+    // command itself has already passed, so what failed is the schedule it leads to.
     const projectedValid = validateSnapshot(projected);
     if (!projectedValid.ok) {
       return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
     }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a
-      // record being put back is answered by removing reminders, and each names what to change.
-      const bounded = OVER_THE_BOUND.get(command.type) ??
+      const bounded = overTheBound ??
         ['These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders'];
       return fail('storage-bound', bounded[0], bounded[1]);
     }
   }
-
-  next.revision = snapshot.revision + 1;
-  next.updatedAt = now;
-  const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
-  next.recentCommands.push({
-    requestId: command.requestId,
-    commandType: command.type,
-    revision: next.revision,
-    committedAt: now,
-    reply: clone(reply),
-  });
-  next.recentCommands = next.recentCommands.slice(-200);
-  const validated = validateSnapshot(next);
-  if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
