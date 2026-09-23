@@ -428,7 +428,7 @@ export function looksLikeLot(input) {
 
 // Lot text is long or names two catalogues; a short heading with one reference in it ("Diva Faustina I … RIC III (Antoninus Pius) 394a", "SELEUCID
 // KINGDOM. … SC 2069") is one too, since parseReference can't read it whole. Text that starts with a type catalogue's key and still can't be read is a
-// typo ("RIC XI Nero 1", "RIC 2 Titus", "Price P1") and stays an error; a corpus title ("Seleucid", BIGR's) is no key.
+// typo ("RIC XI Nero 1", "RIC 2 Titus", "Price Q1") and stays an error; a corpus title ("Seleucid", BIGR's) is no key.
 const TYPED_KEY = /^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Bop)/i;
 export const isLot = (text) => looksLikeLot(text)
   || (!parseReference(text) && !TYPED_KEY.test(String(text ?? '').replace(INVISIBLE, '').trim()) && findReferences(text).references.length > 0);

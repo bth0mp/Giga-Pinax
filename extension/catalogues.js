@@ -10,7 +10,8 @@ import { squash } from './core/validate.js';
 export const CATALOGUES = Object.freeze({
   Price: Object.freeze({ corpus: 'pella', corpusName: 'PELLA', idPrefix: 'price.', label: 'Price number', help: 'Example: Price 23',
     defaultNumber: '23', notFoundHint: 'Check the number.', queryKey: 'Price', termKeys: ['Price'], citationKeys: ['Price'],
-    prefixPattern: /^Price\s*(?=\d|$)/i, referencePattern: /^Price\s*(\d\S*)$/i }),
+    // PELLA titles 302 types with a letter before the number, P for Philip III and L for Lysimachus ("Price P23", "Price L1").
+    prefixPattern: /^Price\s*(?=\d|$)/i, referencePattern: /^Price\s*([PL]?\d\S*)$/i }),
   RIC: Object.freeze({ corpus: 'ocre', corpusName: 'OCRE', idPrefix: 'ric.', label: 'RIC number (including any suffix)',
     help: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.',
     defaultNumber: '306', defaultSection: 'Nero', notFoundHint: 'Check the ruler, volume and number.', citationKeys: ['RIC', 'R.I.C'] }),

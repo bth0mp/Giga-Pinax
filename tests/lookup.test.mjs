@@ -395,9 +395,13 @@ test('parseReference reads whole RIC, RRC and Price references', () => {
     ['cr. 197-198B/1a', { catalogue: 'RRC', number: '197-198B/1a', volume: '', section: '' }],
     ['  Price   23 ', { catalogue: 'Price', number: '23', volume: '', section: '' }],
     ['"Price 3a"', { catalogue: 'Price', number: '3a', volume: '', section: '' }],
+    // PELLA titles 302 of Price's types with a letter in front of the number, P for Philip III and L for Lysimachus.
+    ['Price P23', { catalogue: 'Price', number: 'P23', volume: '', section: '' }],
+    ['Price L1', { catalogue: 'Price', number: 'L1', volume: '', section: '' }],
+    ['Price P23a', { catalogue: 'Price', number: 'P23a', volume: '', section: '' }],
   ];
   for (const [text, expected] of cases) assert.deepEqual(parseReference(text), expected, text);
-  for (const text of ['', 'hello', 'RIC I Nero', 'Price', 'Crawford', 'RIC XI Nero 1']) {
+  for (const text of ['', 'hello', 'RIC I Nero', 'Price', 'Crawford', 'RIC XI Nero 1', 'Price Q23', 'Price P']) {
     assert.equal(parseReference(text), null, text);
   }
 });

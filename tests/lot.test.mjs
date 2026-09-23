@@ -269,7 +269,7 @@ test('isLot: lot text, or a reference inside other words, but a mistyped type re
     'SELEUCID KINGDOM. Antiochus VII Euergetes, 138-129 BC. AE. SC 2069']) {
     assert.equal(isLot(text), true, text);
   }
-  for (const text of ['RIC XI Nero 1', 'Price P1', 'RIC 2 Titus', 'RIC Nerro 306', 'RIC I2 Nero 306', 'RIC 972', 'Titus 123', 'Craw. 44/5', 'SC 1266.2',
+  for (const text of ['RIC XI Nero 1', 'RIC 2 Titus', 'RIC Nerro 306', 'RIC I2 Nero 306', 'RIC 972', 'Titus 123', 'Craw. 44/5', 'SC 1266.2',
     'Bop Euthydemus I 24A', 'Price 23', 'RPC I 1234', 'BCD Boiotia 174b', 'Cohen 17', 'Seleucid Coins 1044.1x', '']) {
     assert.equal(isLot(text), false, text);
   }
@@ -1075,4 +1075,14 @@ test('a section taken from the heading\'s mint is marked as such, and a section 
   for (const text of ['Constantine I. Follis. RIC VII Trier 12.', 'Constantine I. Follis. Trier. RIC VII 12.', 'Rome mint. RIC IV 460', 'RIC VII Treveri 12']) {
     assert.equal(lookup(text).headingMint, undefined, text);
   }
+});
+
+// PELLA titles 302 of Price's types P or L before the number (Philip III, Lysimachus): "Price P1" is one of them, not a typo, and a lot citing one
+// looks it up rather than only pricing it.
+test('a Price number lettered P or L is a Price type, typed or in a lot', () => {
+  assert.equal(isLot('Price P1'), false);
+  assert.deepEqual(parseReference('Price P1'), { catalogue: 'Price', number: 'P1', volume: '', section: '' });
+  const found = only('Kings of Macedon. Philip III Arrhidaios. AR Tetradrachm. Babylon. Price P181.');
+  assert.deepEqual(found.reference, { catalogue: 'Price', number: 'P181', volume: '', section: '' });
+  assert.equal(found.typed, true);
 });
