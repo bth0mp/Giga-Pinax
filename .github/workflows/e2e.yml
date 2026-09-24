@@ -1,0 +1,37 @@
+name: Browser checks
+
+# Optional: loads the built extension into Playwright's Chromium and checks the offline steps of docs/MANUAL-TEST.md
+# that a browser can show (e2e/extension.e2e.mjs lists them). It runs only by hand from the Actions tab and is never a
+# required check. The pages it drives reach no network: every request is answered from a fixture or refused.
+on:
+  workflow_dispatch:
+
+# The job reads the checkout and publishes nothing.
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs (the release in the trailing comment); .github/dependabot.yml proposes updates.
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Build the unpacked Brave package
+        run: python scripts/build.py brave
+      # Playwright is pinned exactly in e2e/package.json and its lockfile; the browser is the one that release names.
+      - name: Install Playwright and its Chromium
+        working-directory: e2e
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Run the browser checks
+        working-directory: e2e
+        run: npm test
