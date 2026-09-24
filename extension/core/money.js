@@ -1,4 +1,35 @@
+// @ts-check
 import { failure } from './validate.js';
+/**
+ * @typedef {import('./types.js').Money} Money
+ * @typedef {import('./types.js').LadderTier} LadderTier
+ * @typedef {import('./types.js').IncrementLadder} IncrementLadder
+ * @typedef {import('./types.js').Failure} Failure
+ */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
+/**
+ * The fees a cost is worked out with; each defaults to zero.
+ * @typedef {object} BidCostOptions
+ * @property {number} [shippingMinor]
+ * @property {number} [paymentFeeBps]
+ * @property {number} [paymentFeeMinor]
+ */
+/**
+ * The fees, and the grid a bid must sit on: a fixed increment from the minimum bid, or a house ladder.
+ * @typedef {BidCostOptions & { incrementMinor?: number, minimumBidMinor?: number, ladder?: LadderTier[] }} AffordableBidOptions
+ */
+/**
+ * @typedef {object} BidCost
+ * @property {Money} hammer
+ * @property {Money} premium
+ * @property {Money} hammerPlusPremium
+ * @property {Money} shipping
+ * @property {Money} paymentFee
+ * @property {Money} total
+ */
 
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 
@@ -16,10 +47,15 @@ const ambiguousMessage = (input) =>
   `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
 
 // `1,200` or `1.200`: three digits after a separator, behind at most three, read as well as a thousands group as three decimal places.
+/** @type {(whole: string, fraction: string) => boolean} */
 export const ambiguousGrouping = (whole, fraction) => fraction.length === 3 && whole.length <= 3;
 
 // Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
 // `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
+/**
+ * @param {string} input
+ * @returns {{ whole: string, fraction: string, ambiguous?: false } | { ambiguous: true } | null}
+ */
 function splitAmount(input) {
   if (/^\d+$/.test(input)) return { whole: input, fraction: '' };
   const decimal = DECIMAL.exec(input);
@@ -35,6 +71,12 @@ function splitAmount(input) {
 }
 
 // The locale is accepted for call-site symmetry with formatting; parsing never depends on it.
+/**
+ * @param {*} text
+ * @param {bigint} maximumMinor
+ * @param {string} subject
+ * @returns {Result<number>}
+ */
 function parseFixed(text, maximumMinor, subject) {
   if (typeof text !== 'string') {
     return failure('invalid-format', `${subject} must be entered as text.`);
@@ -60,6 +102,10 @@ function parseFixed(text, maximumMinor, subject) {
   return { ok: true, value: Number(minor) };
 }
 
+/**
+ * @param {*} value
+ * @returns {Result<Money>}
+ */
 export function validateMoney(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return failure('invalid-money', 'Money must be an object.');
@@ -77,6 +123,12 @@ export function validateMoney(value) {
   return { ok: true, value };
 }
 
+/**
+ * @param {string} text
+ * @param {string} currency
+ * @param {string} [locale]
+ * @returns {Result<Money>}
+ */
 export function parseMoney(text, currency, locale = 'en-US') {
   if (!CURRENCY_SET.has(currency)) {
     return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
@@ -86,6 +138,11 @@ export function parseMoney(text, currency, locale = 'en-US') {
   return { ok: true, value: { currency, minor: parsed.value } };
 }
 
+/**
+ * @param {string} text
+ * @param {string} [locale]
+ * @returns {Result<number>} basis points
+ */
 export function parsePremiumPercent(text, locale = 'en-US') {
   const parsed = parseFixed(text, 10000n, 'Buyer premium');
   if (!parsed.ok) {
@@ -97,6 +154,11 @@ export function parsePremiumPercent(text, locale = 'en-US') {
   return { ok: true, value: parsed.value };
 }
 
+/**
+ * @param {Money} money
+ * @param {string} [locale]
+ * @returns {string}
+ */
 export function formatMoney(money, locale = 'en-US') {
   const checked = validateMoney(money);
   if (!checked.ok) throw new TypeError(checked.error.message);
@@ -114,6 +176,11 @@ export function formatMoney(money, locale = 'en-US') {
     .join('');
 }
 
+/**
+ * @param {Money} hammer
+ * @param {*} buyerPremiumBps checked here: an integer from 0 through 10,000
+ * @returns {Result<{ premium: Money, hammerPlusPremium: Money }>}
+ */
 export function calculatePremium(hammer, buyerPremiumBps) {
   const checked = validateMoney(hammer);
   if (!checked.ok) return checked;
@@ -145,6 +212,12 @@ export const MAX_INCREMENT_TIERS = 20;
 
 // A tier the collector typed on a numbered list is easier to point at by its number than by an
 // error path, so a tier's failure says which tier it was.
+/**
+ * @param {number} index
+ * @param {string} message
+ * @param {string} path
+ * @returns {Failure}
+ */
 function tierFailure(index, message, path) {
   const result = failure('invalid-ladder', message, path);
   result.error.tier = index;
@@ -153,6 +226,11 @@ function tierFailure(index, message, path) {
 
 // Every rule of a ladder except the anchor at zero. The fixed increment field is the one-tier case
 // of the same code, and its one tier is anchored at the collector's minimum bid instead.
+/**
+ * @param {*} tiers
+ * @param {string} path
+ * @returns {Result<LadderTier[]>}
+ */
 function ladderShape(tiers, path) {
   if (!Array.isArray(tiers) || tiers.length === 0 || tiers.length > MAX_INCREMENT_TIERS) {
     return failure('invalid-ladder', `An increment ladder needs 1 to ${MAX_INCREMENT_TIERS} tiers.`, path);
@@ -177,6 +255,11 @@ function ladderShape(tiers, path) {
 
 // The house's own schedule as the collector copied it: the first tier starts at zero so that every
 // bid falls in exactly one tier.
+/**
+ * @param {*} tiers
+ * @param {string} [path]
+ * @returns {Result<LadderTier[]>}
+ */
 export function validateLadderTiers(tiers, path = 'tiers') {
   const shape = ladderShape(tiers, path);
   if (!shape.ok) return shape;
@@ -187,6 +270,11 @@ export function validateLadderTiers(tiers, path = 'tiers') {
 
 // A stored ladder keeps the currency its tiers are written in: the schedule is in the house's own
 // money, which is not always the currency the calculator is set to.
+/**
+ * @param {*} ladder
+ * @param {string} [path]
+ * @returns {Result<IncrementLadder>}
+ */
 export function validateIncrementLadder(ladder, path = 'incrementLadder') {
   if (!ladder || typeof ladder !== 'object' || Array.isArray(ladder)) {
     return failure('invalid-ladder', 'An increment ladder needs a currency and its tiers.', path);
@@ -227,6 +315,11 @@ function previousOnLadder(tiers, minor) {
 
 // A minimum bid the house's schedule does not allow is rounded up, never down: a bid below the grid
 // is not a bid the house would take.
+/**
+ * @param {LadderTier[]} tiers
+ * @param {number} minor
+ * @returns {Result<number>}
+ */
 export function nextBidOnLadder(tiers, minor) {
   const shape = ladderShape(tiers, 'incrementLadder');
   if (!shape.ok) return shape;
@@ -238,6 +331,12 @@ export function nextBidOnLadder(tiers, minor) {
     : failure('unsafe-money', 'The next bid on this ladder is outside the supported integer range.');
 }
 
+/**
+ * @param {*} value
+ * @param {string} key
+ * @param {{ positive?: boolean, maximum?: number }} [bounds]
+ * @returns {Result<number>}
+ */
 function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE_INTEGER } = {}) {
   if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0) || value > maximum) {
     return failure('invalid-option', `${key} must be ${positive ? 'a positive' : 'a non-negative'} safe integer.`, key);
@@ -245,6 +344,12 @@ function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE
   return { ok: true, value };
 }
 
+/**
+ * @param {Money} hammer
+ * @param {*} buyerPremiumBps checked here: an integer from 0 through 10,000
+ * @param {BidCostOptions} [options]
+ * @returns {Result<BidCost>}
+ */
 export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
   const checked = validateMoney(hammer);
   if (!checked.ok) return checked;
@@ -271,13 +376,20 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
   }};
 }
 
+/**
+ * @param {Money} budget
+ * @param {*} buyerPremiumBps checked here: an integer from 0 through 10,000
+ * @param {AffordableBidOptions} [options]
+ * @returns {Result<BidCost>}
+ */
 export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
   const checked = validateMoney(budget); if (!checked.ok) return checked;
   const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, ...options };
   for (const key of ['shippingMinor', 'paymentFeeMinor', 'minimumBidMinor']) {
     const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
   }
-  for (const [key, config] of [['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]]) {
+  // Read as [key, bounds] pairs: a literal list of mixed pairs is otherwise typed as a list of either.
+  for (const [key, config] of /** @type {Array<[string, { positive?: boolean, maximum?: number }]>} */ ([['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]])) {
     const valid = optionInteger(values[key], key, config); if (!valid.ok) return valid;
   }
   // A house ladder replaces the fixed grid; without one the fixed increment is a single tier

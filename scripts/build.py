@@ -44,6 +44,7 @@ ASSET_PATHS = (
     "core/projections.js",
     "core/records.js",
     "core/reminders.js",
+    "core/types.js",
     "core/validate.js",
     "current-lot.js",
     "design-tokens.css",

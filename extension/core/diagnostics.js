@@ -1,3 +1,4 @@
+// @ts-check
 // A short local record of what failed, for the collector to copy into a bug report.
 //
 // It lives under its own key in extension storage, beside the records rather than inside them: never part of the
@@ -9,6 +10,25 @@
 //
 // ponytail: two pages failing in the same instant can each read the list before the other writes, and one entry is
 // then lost. Within one page the writes are queued; across pages a lost diagnostic is not worth a lock.
+/**
+ * One recorded failure, every field from a fixed set or shape.
+ * @typedef {object} DiagnosticEntry
+ * @property {string} at
+ * @property {string} page
+ * @property {string} area
+ * @property {string} code
+ * @property {number} [status]
+ * @property {number} [bytes]
+ * @property {string} version
+ */
+/**
+ * Where a diagnostic goes and what it is stamped with; each defaults to the extension's own.
+ * @typedef {object} DiagnosticOptions
+ * @property {{ get: (key: string) => Promise<any>, set: (items: object) => Promise<any> } | null} [storage]
+ * @property {() => string} [now]
+ * @property {string} [page]
+ * @property {string} [version]
+ */
 
 export const DIAGNOSTICS_KEY = 'gigaPinax:diagnostics:v1';
 export const MAX_DIAGNOSTICS = 50;
@@ -26,8 +46,13 @@ const inSet = (set, value, fallback) => (typeof value === 'string' && set.has(va
 
 // The page an extension page is served as: popup.html (the side panel too), workspace.html, settings.html, and the
 // background worker or the page Firefox generates for it.
+/**
+ * @param {*} pathname
+ * @returns {string}
+ */
 export function pageFromPath(pathname) {
-  const name = String(pathname ?? '').split('/').pop();
+  // split always gives at least one part, so pop has one to give.
+  const name = /** @type {string} */ (String(pathname ?? '').split('/').pop());
   if (name === 'popup.html') return 'popup';
   if (name === 'workspace.html') return 'workspace';
   if (name === 'settings.html') return 'settings';
@@ -35,9 +60,15 @@ export function pageFromPath(pathname) {
 }
 
 // Every field is rebuilt from nothing: what is not on the list, or not in its shape, is left behind.
+/**
+ * @param {*} input
+ * @param {{ at?: *, page?: *, version?: * }} [stamp]
+ * @returns {DiagnosticEntry | null}
+ */
 export function diagnosticEntry(input, { at, page, version } = {}) {
   if (!input || typeof input !== 'object' || !AREAS.has(input.area) || !INSTANT.test(String(at))) return null;
-  const entry = { at, page: inSet(PAGES, page, 'other'), area: input.area, code: inSet(CODES, input.code, 'other') };
+  // The version is stamped below, once the optional fields are in.
+  const entry = /** @type {DiagnosticEntry} */ ({ at, page: inSet(PAGES, page, 'other'), area: input.area, code: inSet(CODES, input.code, 'other') });
   if (Number.isInteger(input.status) && input.status >= 100 && input.status <= 599) entry.status = input.status;
   if (Number.isSafeInteger(input.bytes) && input.bytes >= 0) entry.bytes = input.bytes;
   entry.version = typeof version === 'string' && VERSION.test(version) ? version : 'unknown';
@@ -50,6 +81,10 @@ const storedEntry = (entry) => (entry && typeof entry === 'object' && !Array.isA
 
 // A failed request described by its status or its kind. The error's message is never read: a browser can put the
 // address, and with it the search term, into one.
+/**
+ * @param {*} error
+ * @returns {{ code: string, status?: number }}
+ */
 export function fetchFailureFields(error) {
   if (Number.isInteger(error?.status)) return { code: 'http', status: error.status };
   if (error?.message === 'too-large') return { code: 'too-large' };
@@ -90,9 +125,15 @@ async function storedList(storage) {
   return Array.isArray(value) ? value : [];
 }
 
+/** @type {Promise<unknown>} */
 let queue = Promise.resolve();
 
 // Resolves true once the entry is stored and false otherwise; it never rejects.
+/**
+ * @param {*} input
+ * @param {DiagnosticOptions} [options]
+ * @returns {Promise<boolean>}
+ */
 export function recordDiagnostic(input, options = {}) {
   const write = async () => {
     const { storage, at, page, version } = context(options ?? {});
@@ -107,6 +148,13 @@ export function recordDiagnostic(input, options = {}) {
   return result;
 }
 
+/**
+ * @param {string} area
+ * @param {*} error
+ * @param {object} [extra]
+ * @param {DiagnosticOptions} [options]
+ * @returns {Promise<boolean>}
+ */
 export function recordFetchFailure(area, error, extra = {}, options = {}) {
   try {
     return recordDiagnostic({ ...extra, ...fetchFailureFields(error), area }, options);
@@ -115,12 +163,20 @@ export function recordFetchFailure(area, error, extra = {}, options = {}) {
   }
 }
 
+/**
+ * @param {DiagnosticOptions} [options]
+ * @returns {Promise<DiagnosticEntry[]>}
+ */
 export async function readDiagnostics(options = {}) {
   const { storage } = context(options);
   if (!storage) return [];
-  return (await storedList(storage)).map(storedEntry).filter(Boolean).slice(-MAX_DIAGNOSTICS);
+  return /** @type {DiagnosticEntry[]} */ ((await storedList(storage)).map(storedEntry).filter(Boolean).slice(-MAX_DIAGNOSTICS));
 }
 
+/**
+ * @param {DiagnosticOptions} [options]
+ * @returns {Promise<void>}
+ */
 export async function clearDiagnostics(options = {}) {
   const { storage } = context(options);
   if (storage) await storage.set({ [DIAGNOSTICS_KEY]: [] });
@@ -133,6 +189,11 @@ function entryLine(entry) {
   return `${parts.join(' ')} (${entry.version})`;
 }
 
+/**
+ * @param {*} entries
+ * @param {{ version?: *, now?: * }} [stamp]
+ * @returns {string}
+ */
 export function diagnosticsText(entries, { version, now } = {}) {
   const lines = [
     'Giga Pinax diagnostics',

@@ -1,10 +1,52 @@
+// @ts-check
 // What the views draw from the records rather than store: the open bids' exposure per currency and
 // event, and the collection's totals with each entry's own saved comparables. Nothing here writes a
 // record, and nothing is converted or added across currencies.
 import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
+/**
+ * @typedef {import('./types.js').Lot} Lot
+ * @typedef {import('./types.js').Evidence} Evidence
+ * @typedef {import('./types.js').CollectionEntry} CollectionEntry
+ * @typedef {import('./types.js').Money} Money
+ */
+/**
+ * What the open bids in one currency add up to: hammers, hammers with the premium where it is known,
+ * how many bids, and how many carry no premium.
+ * @typedef {object} ExposureTotals
+ * @property {number} hammerMinor
+ * @property {number} knownHammerPlusBpMinor
+ * @property {number} bindingCount
+ * @property {number} unknownPremiumCount
+ */
+/** @typedef {ExposureTotals & { byEvent: Record<string, ExposureTotals> }} CurrencyExposure */
+/**
+ * @typedef {object} OwnComparables
+ * @property {'no-reference' | 'no-currency' | 'none' | 'too-few' | 'median'} status
+ * @property {string | null} currency
+ * @property {number} count
+ * @property {Money | null} median
+ */
+/**
+ * @typedef {object} CollectionTotals
+ * @property {number} entryCount
+ * @property {number} hammerCount
+ * @property {number | null} hammerMinor
+ * @property {number} invoiceCount
+ * @property {number | null} invoiceMinor
+ * @property {number | null} firstYear
+ * @property {number | null} lastYear
+ */
+/**
+ * @typedef {object} CollectionProjection
+ * @property {Record<string, CollectionTotals>} byCurrency
+ * @property {{ entryCount: number, firstYear: number | null, lastYear: number | null }} unpriced
+ * @property {Array<{ id: string, lotId: string, title: string, acquisitionDate: string, reference: string,
+ *   currency: string | null, comparables: OwnComparables }>} entries
+ */
 
+/** @type {(value: any, key: PropertyKey) => boolean} */
 const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
 function emptyExposure() {
@@ -23,6 +65,10 @@ function addSafe(left, right) {
   return Number(sum);
 }
 
+/**
+ * @param {{ lots?: Lot[] }} snapshot
+ * @returns {Record<string, CurrencyExposure>}
+ */
 export function projectExposure(snapshot) {
   const byCurrency = {};
   for (const lot of snapshot.lots ?? []) {
@@ -56,6 +102,7 @@ export function projectExposure(snapshot) {
       );
     }
   }
+  /** @type {Record<string, CurrencyExposure>} */
   const ordered = {};
   for (const currency of CURRENCIES) if (byCurrency[currency]) ordered[currency] = byCurrency[currency];
   return ordered;
@@ -83,6 +130,12 @@ function indexByReference(evidence) {
 // The median of the collector's own saved comparables for one reference, in one currency, through
 // the same statistics the Search route shows: excluded rows stay out, a row in another currency is
 // never converted in, and fewer than three rows give a count without a median.
+/**
+ * @param {Map<string, Evidence[]>} index
+ * @param {string} reference
+ * @param {string | null} currency
+ * @returns {OwnComparables}
+ */
 function ownComparables(index, reference, currency) {
   const none = (status) => ({ status, currency, count: 0, median: null });
   const key = normalReference(reference);
@@ -118,6 +171,10 @@ const addMinor = (total, minor) => {
 // in another currency than its hammer counts under both. Per entry: its own saved comparables for
 // the linked coin's reference, in the entry's currency (its hammer's, else its invoice's). These are
 // the collector's own records and evidence, never an appraisal or a valuation.
+/**
+ * @param {{ lots?: Lot[], evidence?: Evidence[], collectionEntries?: CollectionEntry[] } | null | undefined} snapshot
+ * @returns {CollectionProjection}
+ */
 export function projectCollection(snapshot) {
   const lots = new Map((snapshot?.lots ?? []).map((lot) => [lot.id, lot]));
   const evidence = indexByReference(snapshot?.evidence);
@@ -126,8 +183,9 @@ export function projectCollection(snapshot) {
   const entries = [];
   for (const entry of snapshot?.collectionEntries ?? []) {
     const year = acquisitionYear(entry);
-    const amounts = [['hammer', entry.hammer], ['invoice', entry.actualInvoice]]
-      .filter(([, money]) => validateMoney(money).ok);
+    // Only the amounts validateMoney accepts are left, so each is read as Money.
+    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['invoice', entry.actualInvoice]]
+      .filter(([, money]) => validateMoney(money).ok));
     const currencies = new Set(amounts.map(([, money]) => money.currency));
     if (!currencies.size) { unpriced.entryCount += 1; spreadYears(unpriced, year); }
     for (const currency of currencies) {
@@ -149,6 +207,7 @@ export function projectCollection(snapshot) {
       reference, currency, comparables: ownComparables(evidence, reference, currency),
     });
   }
+  /** @type {Record<string, CollectionTotals>} */
   const ordered = {};
   for (const currency of CURRENCIES) if (byCurrency[currency]) ordered[currency] = byCurrency[currency];
   return { byCurrency: ordered, unpriced, entries };

@@ -1,3 +1,4 @@
+// @ts-check
 import { CURRENCIES, validateIncrementLadder } from './money.js';
 import { validateDraftPayload } from './drafts.js';
 import { validateSaleEvidence } from './evidence.js';
@@ -8,6 +9,26 @@ import {
 import { projectExposure } from './projections.js';
 import { resolveZonedDateTime } from './reminders.js';
 import { failure, isRecursionError, shiftDate, stableUuid, tooDeeplyNested } from './validate.js';
+/**
+ * @typedef {import('./types.js').Lot} Lot
+ * @typedef {import('./types.js').AuctionEvent} AuctionEvent
+ * @typedef {import('./types.js').CollectionEntry} CollectionEntry
+ * @typedef {import('./types.js').Evidence} Evidence
+ * @typedef {import('./types.js').Draft} Draft
+ * @typedef {import('./types.js').Alert} Alert
+ * @typedef {import('./types.js').Preferences} Preferences
+ * @typedef {import('./types.js').Scheduler} Scheduler
+ * @typedef {import('./types.js').Snapshot} Snapshot
+ * @typedef {import('./types.js').QuarantineEntry} QuarantineEntry
+ * @typedef {import('./types.js').Outcome} Outcome
+ * @typedef {import('./types.js').Bid} Bid
+ * @typedef {import('./types.js').BidHistoryEntry} BidHistoryEntry
+ * @typedef {import('./types.js').SaleEvidence} SaleEvidence
+ */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
 
 // The record bounds live in fields.js, the draft payload's shape in drafts.js and the views' projections in
 // projections.js; each is offered here too, for the callers that import it from records.
@@ -36,6 +57,7 @@ const ALERT_STATES = new Set([
 ]);
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
+/** @returns {Result<any>} */
 function commonRecord(record, path, { dataClass = true } = {}) {
   const object = objectResult(record, path);
   if (!object.ok) return object;
@@ -55,6 +77,7 @@ function commonRecord(record, path, { dataClass = true } = {}) {
   return firstFailure(...checks);
 }
 
+/** @returns {Result<any>} */
 function sourceLinkResult(link, path) {
   const object = objectResult(link, path);
   if (!object.ok) return object;
@@ -65,6 +88,7 @@ function sourceLinkResult(link, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function sourceLinksResult(links, path) {
   const array = arrayResult(links, path, LIMITS.sourceLinks);
   if (!array.ok) return array;
@@ -75,6 +99,7 @@ function sourceLinksResult(links, path) {
   return { ok: true, value: links };
 }
 
+/** @returns {Result<any>} */
 function coinDetailsResult(value, path) {
   const object = objectResult(value, path); if (!object.ok) return object;
   if (OWN(value, 'photoUrls')) {
@@ -90,6 +115,7 @@ function coinDetailsResult(value, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function provenanceNotesResult(value, path) {
   const array = arrayResult(value, path, 20); if (!array.ok) return array;
   const ids = new Set();
@@ -106,6 +132,7 @@ function provenanceNotesResult(value, path) {
   return { ok: true, value };
 }
 
+/** @returns {Result<any>} */
 function costEstimateResult(value, path) {
   const object = objectResult(value, path); if (!object.ok) return object;
   if (!CURRENCIES.includes(value.currency)) return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', `${path}.currency`);
@@ -118,14 +145,17 @@ function costEstimateResult(value, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function bidResult(bid, path, active) {
   const object = objectResult(bid, path);
   if (!object.ok) return object;
+  /** @type {Array<Result<any>>} */
   const checks = [moneyResult(bid.amount, `${path}.amount`), bpsResult(bid, 'buyerPremiumBps', path)];
   if (active) checks.push(instantResult(bid.placedAt, `${path}.placedAt`));
   return firstFailure(...checks);
 }
 
+/** @returns {Result<any>} */
 function bidHistoryResult(history, path) {
   const array = arrayResult(history, path, LIMITS.bidHistory);
   if (!array.ok) return array;
@@ -153,6 +183,7 @@ function bidHistoryResult(history, path) {
   return { ok: true, value: history };
 }
 
+/** @returns {Result<any>} */
 function outcomeResult(outcome, path) {
   const object = objectResult(outcome, path);
   if (!object.ok) return object;
@@ -182,6 +213,7 @@ function outcomeResult(outcome, path) {
   return { ok: true, value: outcome };
 }
 
+/** @returns {Result<any>} */
 function outcomeHistoryResult(history, path) {
   const array = arrayResult(history, path, LIMITS.outcomeHistory);
   if (!array.ok) return array;
@@ -207,6 +239,7 @@ function outcomeHistoryResult(history, path) {
   return { ok: true, value: history };
 }
 
+/** @returns {Result<Lot>} */
 function lotResult(lot, path) {
   const common = commonRecord(lot, path);
   if (!common.ok) return common;
@@ -270,6 +303,7 @@ function lotResult(lot, path) {
   return { ok: true, value: lot };
 }
 
+/** @returns {Result<any>} */
 function timeZoneResult(value, path) {
   const text = stringResult(value, path, LIMITS.shortText);
   if (!text.ok) return text;
@@ -281,6 +315,7 @@ function timeZoneResult(value, path) {
   }
 }
 
+/** @returns {Result<any>} */
 function reminderResult(reminder, path) {
   const object = objectResult(reminder, path);
   if (!object.ok) return object;
@@ -300,6 +335,7 @@ function reminderResult(reminder, path) {
   return failure('invalid-enum', 'Unknown reminder kind.', `${path}.kind`);
 }
 
+/** @returns {Result<AuctionEvent>} */
 function eventResult(event, path) {
   const common = commonRecord(event, path);
   if (!common.ok) return common;
@@ -344,6 +380,13 @@ function eventResult(event, path) {
 // the browser. These checks therefore belong to the event being written, never to stored data:
 // a zone whose rules were revised must not lock the collector out of records saved under the
 // older rules. Stored and imported instants stay authoritative.
+/**
+ * Whether an event's local date and times still name exactly one instant each in its zone, by the
+ * browser's zone rules: checked on the event being written, never on stored data.
+ * @param {*} event
+ * @param {string} [path]
+ * @returns {Result<AuctionEvent>}
+ */
 export function validateEventLocalTimes(event, path = 'event') {
   const object = objectResult(event, path);
   if (!object.ok) return object;
@@ -381,12 +424,14 @@ export function validateEventLocalTimes(event, path = 'event') {
   return { ok: true, value: event };
 }
 
+/** @returns {Result<any>} */
 function groupResult(group, path) {
   const common = commonRecord(group, path);
   if (!common.ok) return common;
   return stringResult(group.name, `${path}.name`, LIMITS.title);
 }
 
+/** @returns {Result<CollectionEntry>} */
 function collectionEntryResult(entry, path) {
   const common = commonRecord(entry, path);
   if (!common.ok) return common;
@@ -409,6 +454,7 @@ function collectionEntryResult(entry, path) {
   return firstFailure(...checks);
 }
 
+/** @returns {Result<SaleEvidence>} */
 function evidenceResult(evidence, path) {
   const common = commonRecord(evidence, path);
   if (!common.ok) return common;
@@ -424,6 +470,7 @@ function evidenceResult(evidence, path) {
   return { ok: false, error: { ...validated.error, path: nestedPath } };
 }
 
+/** @returns {Result<Preferences | null>} */
 function preferencesResult(preferences, path) {
   if (preferences === null) return { ok: true, value: preferences };
   const object = objectResult(preferences, path);
@@ -467,6 +514,7 @@ function preferencesResult(preferences, path) {
   return { ok: true, value: preferences };
 }
 
+/** @returns {Result<Draft>} */
 function draftResult(draft, path) {
   const common = commonRecord(draft, path);
   if (!common.ok) return common;
@@ -485,6 +533,7 @@ function draftResult(draft, path) {
   return { ok: true, value: draft };
 }
 
+/** @returns {Result<Alert>} */
 function alertResult(alert, path) {
   const common = commonRecord(alert, path);
   if (!common.ok) return common;
@@ -514,6 +563,7 @@ function alertResult(alert, path) {
   return { ok: true, value: alert };
 }
 
+/** @returns {Result<Scheduler>} */
 function schedulerResult(scheduler, path) {
   const object = objectResult(scheduler, path);
   if (!object.ok) return object;
@@ -524,6 +574,7 @@ function schedulerResult(scheduler, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function recentCommandResult(command, path) {
   const object = objectResult(command, path);
   if (!object.ok) return object;
@@ -563,6 +614,7 @@ const COLLECTIONS = [
 
 // A reference the repair had to clear is a link the collector made, so the entry that caused it
 // keeps the value verbatim: which record lost which field, and what it pointed at.
+/** @returns {Result<any>} */
 function clearedReferenceResult(reference, path) {
   const object = objectResult(reference, path);
   if (!object.ok) return object;
@@ -574,6 +626,7 @@ function clearedReferenceResult(reference, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function clearedReferencesResult(references, path) {
   const array = arrayResult(references, path, LIMITS.clearedReferences);
   if (!array.ok) return array;
@@ -584,6 +637,7 @@ function clearedReferencesResult(references, path) {
   return { ok: true, value: references };
 }
 
+/** @returns {Result<any>} */
 function quarantineEntryResult(entry, path) {
   const object = objectResult(entry, path);
   if (!object.ok) return object;
@@ -598,6 +652,7 @@ function quarantineEntryResult(entry, path) {
   );
 }
 
+/** @returns {Result<any>} */
 function quarantineResult(entries, path) {
   // The bin has no count of its own: the 5 MiB root bound is what caps it.
   const array = arrayResult(entries, path, Number.MAX_SAFE_INTEGER);
@@ -609,6 +664,7 @@ function quarantineResult(entries, path) {
   return { ok: true, value: entries };
 }
 
+/** @returns {Result<any>} */
 function validateCollection(snapshot, key, maximum, validator) {
   const array = arrayResult(snapshot[key], key, maximum);
   if (!array.ok) return array;
@@ -624,6 +680,10 @@ function validateCollection(snapshot, key, maximum, validator) {
   return { ok: true, value: snapshot[key] };
 }
 
+/**
+ * @param {string} now
+ * @returns {Snapshot}
+ */
 export function createEmptySnapshot(now) {
   const instant = instantResult(now, 'now');
   if (!instant.ok) throw new TypeError(instant.error.message);
@@ -670,6 +730,11 @@ const MIGRATIONS = new Map([
   }],
 ]);
 
+/**
+ * A stored root brought up to the current schema; anything that is no object is handed back as it came.
+ * @param {*} stored
+ * @returns {*}
+ */
 export function migrateSnapshot(stored) {
   if (!isObject(stored)) return stored;
   let value = stored;
@@ -688,6 +753,10 @@ const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 // repair made is a new one on every read until a write keeps it: named by it, the entry the page drew
 // was never the one the store found, and Restore could only answer "reload". Two entries differing in
 // nothing but the date are one entry anyway: the fold keeps the earlier date.
+/**
+ * @param {*} entry
+ * @returns {string}
+ */
 export function quarantineEntryId(entry) {
   let encoded;
   try {
@@ -751,6 +820,10 @@ function quarantineFold() {
 
 // One bin, folded - so never two entries of identical bytes, which would answer to one entry ID and
 // give Settings two Restore buttons that do the same thing.
+/**
+ * @param {QuarantineEntry[]} entries
+ * @returns {QuarantineEntry[]}
+ */
 export function foldQuarantine(entries) {
   const fold = quarantineFold();
   for (const entry of entries) fold.keep(entry);
@@ -764,12 +837,18 @@ const RESTORABLE_COLLECTIONS = COLLECTIONS
   .map(({ key }) => key).filter((key) => !DISCARDED_ON_REPAIR.has(key));
 // Whether an entry set aside from this collection has anywhere to go back to: settings set aside whole are made again
 // in Settings rather than put back, and an unreadable entry of the bin itself was never a record.
+/** @type {(collection: *) => boolean} */
 export const isRestorableCollection = (collection) => RESTORABLE_COLLECTIONS.includes(collection);
 
 // The bin keeps a record verbatim, so one set aside by an older build can predate today's shapes.
 // Today's validator judges it first, and only a record that fails is offered the migration a stored
 // root gets, from the first version there was: a record already in today's shape is never walked
 // through a migration step a second time.
+/**
+ * @param {*} collection
+ * @param {*} record
+ * @returns {Result<any>}
+ */
 export function validateQuarantinedRecord(collection, record) {
   const validator = RESTORABLE_COLLECTIONS.includes(collection) ? COLLECTION_VALIDATORS.get(collection) : null;
   if (!validator) {
@@ -804,6 +883,10 @@ const unusableRevision = (value) => typeof value === 'number' && value > LIMITS.
 
 // A revision above the usable ceiling is one no run of writes produced, so the file that carries it was hand-made or
 // damaged. Nothing has to take such a file in: the caller refuses it whole and names what it found.
+/**
+ * @param {*} root
+ * @returns {Array<{ collection: string, id: string | null, field: string }>}
+ */
 export function unusableRevisions(root) {
   const found = [];
   for (const { host, key, collection, id } of revisionSites(root)) {
@@ -816,6 +899,10 @@ export function unusableRevisions(root) {
 // still open with all its records, and every later write has to count from somewhere the arithmetic can hold. So the
 // revision is restarted in place rather than condemned, which the next write persists. Nothing else is touched, and a
 // root with nothing to restart is left exactly as it came, so this can run on every load.
+/**
+ * @param {*} root changed in place
+ * @returns {Array<{ collection: string, id: string | null, field: string }>}
+ */
 export function restartUnusableRevisions(root) {
   const restarted = [];
   for (const { host, key, collection, id } of revisionSites(root)) {
@@ -832,6 +919,11 @@ export function restartUnusableRevisions(root) {
 // reference is cleared, while a record whose required reference is gone follows it into the bin.
 // Only the bookkeeping in DISCARDED_ON_REPAIR is dropped outright, and a root that is unusable
 // even then is reported as a failure so the caller can fall back to its existing storage error.
+/**
+ * @param {*} stored
+ * @param {string} now
+ * @returns {Result<Snapshot>}
+ */
 export function quarantineInvalidRecords(stored, now) {
   const instant = instantResult(now, 'now');
   if (!instant.ok) return instant;
@@ -992,6 +1084,10 @@ export function quarantineInvalidRecords(stored, now) {
 
 // Validation is the boundary a root has to cross, so a root too deeply nested to be walked is turned
 // away here with an ordinary failure rather than throwing out of whatever command was being served.
+/**
+ * @param {*} value
+ * @returns {Result<Snapshot>}
+ */
 export function validateSnapshot(value) {
   try {
     return validateRoot(value);
@@ -1001,6 +1097,7 @@ export function validateSnapshot(value) {
   }
 }
 
+/** @returns {Result<Snapshot>} */
 function validateRoot(value) {
   const object = objectResult(value, 'snapshot');
   if (!object.ok) return object;
@@ -1117,6 +1214,13 @@ function lastSettlement(history) {
   return [...history].reverse().find(({ action }) => action === 'settled-won' || action === 'settled-lost');
 }
 
+/**
+ * The lot with its outcome set, its bid history settled or reopened, and its outcome history extended.
+ * @param {Lot} lot
+ * @param {*} outcomeDraft
+ * @param {string} now
+ * @returns {Result<Lot>}
+ */
 export function setOutcome(lot, outcomeDraft, now) {
   const validLot = lotResult(lot, 'lot');
   if (!validLot.ok) return validLot;
@@ -1162,6 +1266,7 @@ export function setOutcome(lot, outcomeDraft, now) {
   const prices = {};
   if (OWN(outcomeDraft, 'hammer')) prices.hammer = { ...outcomeDraft.hammer };
   if (OWN(outcomeDraft, 'actualInvoice')) prices.actualInvoice = { ...outcomeDraft.actualInvoice };
+  /** @type {Outcome} */
   const nextOutcome = { status: outcomeDraft.status, ...prices };
   if (Object.keys(prices).length > 0) nextOutcome.verification = 'personal-unverified';
   if (lot.outcome.status !== 'open') nextOutcome.correctedAt = now;
@@ -1169,13 +1274,15 @@ export function setOutcome(lot, outcomeDraft, now) {
 
   if ((outcomeDraft.status === 'won' || outcomeDraft.status === 'lost') && OWN(next, 'activeBid')) {
     const action = outcomeDraft.status === 'won' ? 'settled-won' : 'settled-lost';
+    // The lot holds an active bid here (OWN above), so it is read as one.
+    /** @type {BidHistoryEntry} */
     const entry = {
       id: derivedUuid(`${lot.id}|${lot.revision}|${now}|${action}`),
       action,
-      amount: { ...next.activeBid.amount },
+      amount: { .../** @type {Bid} */ (next.activeBid).amount },
       recordedAt: now,
     };
-    if (OWN(next.activeBid, 'buyerPremiumBps')) entry.buyerPremiumBps = next.activeBid.buyerPremiumBps;
+    if (OWN(next.activeBid, 'buyerPremiumBps')) entry.buyerPremiumBps = /** @type {Bid} */ (next.activeBid).buyerPremiumBps;
     next.bidHistory.push(entry);
     delete next.activeBid;
   }
@@ -1186,6 +1293,7 @@ export function setOutcome(lot, outcomeDraft, now) {
       return failure('missing-binding-terms', 'No settled binding terms are available to restore.', 'bidHistory');
     }
     const action = outcomeDraft.bindingActive ? 'reopened-active' : 'reopened-inactive';
+    /** @type {BidHistoryEntry} */
     const declaration = {
       id: derivedUuid(`${lot.id}|${lot.revision}|${now}|${action}`),
       action,

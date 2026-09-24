@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "strict": false,
+    "strictNullChecks": true,
+    "types": []
+  },
+  "include": [
+    "extension/core/*.js",
+    "extension/store.js",
+    "extension/store-*.js",
+    "extension/popup-*.js",
+    "extension/workspace-*.js"
+  ]
+}

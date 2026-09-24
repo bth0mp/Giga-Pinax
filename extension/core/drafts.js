@@ -1,3 +1,4 @@
+// @ts-check
 // A draft's payload: what a page, a highlight or a captured lot hands the workspace to confirm, held
 // to the shape its kind allows before it is kept.
 import {
@@ -5,6 +6,11 @@ import {
   optionalString, optionalUrl, stringResult,
 } from './fields.js';
 import { failure } from './validate.js';
+/** @typedef {import('./types.js').DraftPayload} DraftPayload */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
 
 const DRAFT_KINDS = new Set(['research-highlight', 'current-lot', 'auction-capture']);
 
@@ -14,6 +20,11 @@ const DRAFT_KINDS = new Set(['research-highlight', 'current-lot', 'auction-captu
 // invented for it.
 const CLOSES_AT = /^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00)))?$/;
 
+/**
+ * @param {*} value
+ * @param {string} path
+ * @returns {Result<any>}
+ */
 function pageEstimateResult(value, path) {
   const object = objectResult(value, path); if (!object.ok) return object;
   const unexpected = Object.keys(value).find((key) => key !== 'minor' && key !== 'currency');
@@ -26,6 +37,11 @@ function pageEstimateResult(value, path) {
   );
 }
 
+/**
+ * @param {*} value
+ * @param {string} path
+ * @returns {Result<string>}
+ */
 function closesAtResult(value, path) {
   const match = typeof value === 'string' ? CLOSES_AT.exec(value) : null;
   return match && dateResult(match[1], path).ok
@@ -35,6 +51,11 @@ function closesAtResult(value, path) {
 
 // The provenance a lot page lists, read into entries (lot.js readProvenance) for the collector to tick in the workspace: each keeps the words it
 // was written in, with the source, year and lot the reader found in them.
+/**
+ * @param {*} value
+ * @param {string} path
+ * @returns {Result<any[]>}
+ */
 function draftProvenanceResult(value, path) {
   const array = arrayResult(value, path, 10); if (!array.ok) return array;
   for (let index = 0; index < value.length; index += 1) {
@@ -53,6 +74,12 @@ function draftProvenanceResult(value, path) {
   return { ok: true, value };
 }
 
+/**
+ * @param {*} kind
+ * @param {*} payload
+ * @param {string} [path]
+ * @returns {Result<DraftPayload>}
+ */
 export function validateDraftPayload(kind, payload, path = '') {
   const kindPath = path ? `${path}.kind` : 'kind';
   const payloadPath = path ? `${path}.payload` : 'payload';

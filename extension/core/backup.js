@@ -1,3 +1,4 @@
+// @ts-check
 import {
   LIMITS, SCHEMA_VERSION, foldQuarantine, isRestorableCollection, migrateSnapshot, quarantineEntryId,
   unusableRevisions, validateSnapshot,
@@ -5,6 +6,32 @@ import {
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
+/**
+ * @typedef {import('./types.js').Snapshot} Snapshot
+ * @typedef {import('./types.js').QuarantineEntry} QuarantineEntry
+ * @typedef {import('./types.js').Failure} Failure
+ */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
+/**
+ * One record an import would replace, keep or pass over, named by its local copy.
+ * @typedef {{ collection?: string, id?: string, title: string, incomingTitle?: string, comparedAs?: string, [field: string]: any }} ImportChange
+ */
+/**
+ * What an import would do, shown to the collector before anything is written.
+ * @typedef {object} ImportPreview
+ * @property {'merge' | 'replace'} mode
+ * @property {{ outgoing: Record<string, number>, incoming: Record<string, number>, added?: number, updated?: number,
+ *   keptLocal?: number, skippedDuplicate?: number, quarantine?: number }} counts
+ * @property {ImportChange[]} conflicts
+ * @property {ImportChange[]} duplicates
+ * @property {ImportChange[]} [updates]
+ * @property {ImportChange[]} [keptLocal]
+ * @property {Snapshot} snapshot
+ * @property {true} requiresConfirmation
+ */
 
 export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 // Exports are compact, but backups written by earlier builds were indented: the import bound has to
@@ -59,6 +86,11 @@ function exportableSnapshot(snapshot) {
   return data;
 }
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {string} now
+ * @returns {Result<string>} the backup file's text
+ */
 export function exportBackup(snapshot, now) {
   if (!canonicalInstant(now)) return failure('invalid-timestamp', 'Export time must be a canonical UTC timestamp.', 'exportedAt');
   const data = exportableSnapshot(snapshot);
@@ -77,6 +109,10 @@ export function exportBackup(snapshot, now) {
 
 // Reading a file is the other boundary: parsing it, copying it and migrating it all recurse, so a
 // document whose records are nested past what the stack holds is refused as an invalid file.
+/**
+ * @param {*} document the file's text, or its parsed value
+ * @returns {Result<Snapshot>}
+ */
 export function validateBackup(document) {
   try {
     return readBackup(document);
@@ -86,6 +122,10 @@ export function validateBackup(document) {
   }
 }
 
+/**
+ * @param {*} document
+ * @returns {Result<Snapshot>}
+ */
 function readBackup(document) {
   let value = document;
   if (typeof document === 'string') {
@@ -366,6 +406,13 @@ function mergeQuarantine(snapshot, current, incoming) {
   return entries.length - held.length;
 }
 
+/**
+ * @param {Snapshot} current
+ * @param {Snapshot} incoming
+ * @param {*} mode 'merge' or 'replace'
+ * @param {{ exportedAt?: string, now?: string }} [options]
+ * @returns {Result<ImportPreview>}
+ */
 export function previewImport(current, incoming, mode, options = {}) {
   try {
     return planImport(current, incoming, mode, options);
@@ -375,6 +422,13 @@ export function previewImport(current, incoming, mode, options = {}) {
   }
 }
 
+/**
+ * @param {Snapshot} current
+ * @param {Snapshot} incoming
+ * @param {*} mode
+ * @param {{ exportedAt?: string, now?: string }} [options]
+ * @returns {Result<ImportPreview>}
+ */
 function planImport(current, incoming, mode, { exportedAt, now = new Date().toISOString() } = {}) {
   const currentValid = validateSnapshot(current);
   if (!currentValid.ok) return failure('invalid-current', currentValid.error.message, currentValid.error.path);
@@ -568,6 +622,10 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
   };
 }
 
+/**
+ * @param {ImportPreview} preview
+ * @returns {string}
+ */
 export function importCountsText(preview) {
   const { counts: tally } = preview;
   const total = (group) => Object.values(group).reduce((sum, count) => sum + count, 0);
@@ -578,6 +636,10 @@ export function importCountsText(preview) {
     `skips ${tally.skippedDuplicate} duplicate${tally.skippedDuplicate === 1 ? '' : 's'}${setAside}.`;
 }
 
+/**
+ * @param {ImportPreview} preview
+ * @returns {string[]}
+ */
 export function importIssueLines(preview) {
   return [
     ...(preview.duplicates ?? []).map(({ title, duplicateOf }) =>
@@ -589,9 +651,14 @@ export function importIssueLines(preview) {
 
 // Nothing is replaced or passed over in silence: every record the import would take from the backup
 // and every one it would keep is named, with the write time each side claims.
+/**
+ * @param {ImportPreview} preview
+ * @returns {string[]}
+ */
 export function importChangeLines(preview) {
   // A write time the export could not have followed is called out where it is read, so a line the
   // collector reads never rests on a number the file made up.
+  /** @param {{ comparedAs?: string }} row */
   const compared = ({ comparedAs }) =>
     (comparedAs ? `; backup time is later than the export itself; compared as ${comparedAs}` : '');
   return [
@@ -619,6 +686,16 @@ export function importChangeLines(preview) {
 // nothing. A command that fails is handed back rather than thrown, so the file that did reach the
 // browser is still named beside the failure instead of being lost with it. Every step is injected
 // so the page's own sequence is the one under test.
+/**
+ * @param {{
+ *   exportCopy: () => Promise<{ text: string, name: string }>,
+ *   exportRaw: () => Promise<{ text: string, name: string }>,
+ *   download: (text: string, name: string) => void,
+ *   confirm: (message: string) => boolean,
+ *   send: () => Promise<*>,
+ * }} steps
+ * @returns {Promise<{ sent: boolean, copied: string | null, reply?: *, error?: * }>}
+ */
 export async function importWithSafetyCopy({ exportCopy, exportRaw, download, confirm, send }) {
   let copied = null;
   try {
@@ -658,6 +735,10 @@ function settingsSummaryText(settings) {
     `Download set-aside records to keep ${them}, then enter ${them} again under House premiums.`;
 }
 
+/**
+ * @param {*} entries
+ * @returns {string}
+ */
 export function quarantineSummaryText(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return '';
@@ -684,6 +765,10 @@ function quarantineLine(entry) {
   return `${name}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
 }
 
+/**
+ * @param {*} entries
+ * @returns {string[]}
+ */
 export function quarantineLines(entries) {
   return (Array.isArray(entries) ? entries : []).map(quarantineLine);
 }
@@ -692,6 +777,10 @@ export function quarantineLines(entries) {
 // and whether the entry holds a record to put back at all. An entry with no record of its own exists
 // only to carry links the repair cleared, and there is nothing in it to restore; nor is there in one
 // set aside from somewhere no record goes back to, such as the settings.
+/**
+ * @param {*} entries
+ * @returns {Array<{ id: string, line: string, restorable: boolean }>}
+ */
 export function quarantineRows(entries) {
   return (Array.isArray(entries) ? entries : []).map((entry) => ({
     id: quarantineEntryId(entry),
@@ -701,6 +790,10 @@ export function quarantineRows(entries) {
 }
 
 // What the store answered a restore with, as a sentence: what went back, and what was left alone.
+/**
+ * @param {*} value the store's reply to quarantine.restore
+ * @returns {string}
+ */
 export function quarantineRestoreText(value) {
   if (!value || typeof value !== 'object') return 'The record was put back.';
   const restored = value.restoredReferences?.length ?? 0;
@@ -723,6 +816,11 @@ export function quarantineRestoreText(value) {
   return parts.join(' ');
 }
 
+/**
+ * @param {QuarantineEntry[]} entries
+ * @param {string} now
+ * @returns {string}
+ */
 export function quarantineDocument(entries, now) {
   return JSON.stringify({
     format: BACKUP_FORMAT,
@@ -735,6 +833,11 @@ export function quarantineDocument(entries, now) {
 // The last resort: whatever storage holds, verbatim and unvalidated, down to unsaved drafts. This
 // is the collector's rescue copy when nothing else will load, so it strips nothing - a file that
 // still holds everything is worth more than a tidy one that quietly leaves data behind.
+/**
+ * @param {*} raw whatever storage holds, unvalidated
+ * @param {string} now
+ * @returns {string}
+ */
 export function rawExportDocument(raw, now) {
   return JSON.stringify({
     format: BACKUP_FORMAT,
@@ -746,6 +849,11 @@ export function rawExportDocument(raw, now) {
 }
 
 // Colons are not legal in a file name on every platform the extension runs on.
+/**
+ * @param {string} prefix
+ * @param {string} now
+ * @returns {string}
+ */
 export function backupFileName(prefix, now) {
   return `${prefix}-${now.replace(/:/g, '-')}.json`;
 }

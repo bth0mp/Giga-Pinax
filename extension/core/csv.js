@@ -1,3 +1,4 @@
+// @ts-check
 // The collector's records as spreadsheet tables: one CSV text per table, one row per record.
 //
 // Every field is quoted (RFC 4180) and every record ends in CRLF, so a comma, a quote or a line break in a note
@@ -9,12 +10,20 @@
 // byte order mark, which is what makes Excel read the file as UTF-8 rather than mangle an accented title.
 
 import { FRACTION_DIGITS as MINOR_DIGITS } from './money.js';
+/**
+ * @typedef {import('./types.js').Money} Money
+ * @typedef {import('./types.js').Snapshot} Snapshot
+ */
 
 const BOM = '\uFEFF';
 // A tab or carriage return first, or a sign after any leading whitespace (a space, a no-break space, a stray byte order
 // mark, a line break) - the ASCII signs and their full-width forms, which a spreadsheet may fold to the ASCII ones.
 const FORMULA_START = /^(?:[\t\r]|\s*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20])/;
 
+/**
+ * @param {*} value
+ * @returns {string}
+ */
 export function csvCell(value) {
   let text = value === undefined || value === null ? '' : String(value);
   if (FORMULA_START.test(text)) text = `'${text}`;
@@ -23,6 +32,10 @@ export function csvCell(value) {
 
 // Minor units as a decimal: 25050 GBP is "250.50". Anything that is not a whole non-negative amount writes nothing,
 // since a figure in a spreadsheet is worse than a gap if it is not the one saved.
+/**
+ * @param {*} money
+ * @returns {string}
+ */
 export function decimalAmount(money) {
   const minor = money?.minor;
   if (!Number.isSafeInteger(minor) || minor < 0) return '';
@@ -122,6 +135,10 @@ export const CSV_TABLES = Object.freeze([
   Object.freeze({ key: 'outcomes', label: 'Outcome history' }),
 ]);
 
+/**
+ * @param {Partial<Snapshot> | null | undefined} snapshot
+ * @returns {{ lots: string, collection: string, bids: string, outcomes: string }}
+ */
 export function csvFiles(snapshot) {
   const lots = list(snapshot?.lots);
   const events = new Map(list(snapshot?.auctionEvents).map((event) => [event.id, event]));
