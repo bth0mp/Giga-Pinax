@@ -798,3 +798,40 @@ test('the loaded notice clears itself, and a later message is left standing', as
   page.runTimers();
   assert.equal(page.status(), 'Saved.', 'only the loaded notice clears itself');
 });
+
+// N7: a coin whose auction ended with no outcome is flagged on its row and in its heading and has a queue of its own;
+// a reminder missed while the browser was closed is listed under Due reminders and acknowledged with the rest.
+async function backgroundWithEndedSale() {
+  const background = await createWorkspaceBackground();
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Nomos 30', eventKind: 'lot-closes', precision: 'timed',
+    localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC', reminderScope: 'linked-lots', reminders: [{ id: 'hour', kind: 'offset', offsetMinutes: 60 }] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Athens, owl', sourceLinks: [], auctionEventId: event.value.id } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Watched, no sale', sourceLinks: [] } });
+  await background.send({ type: 'scheduler.reconcile' });
+  return background;
+}
+
+test('a coin whose sale ended without an outcome is flagged and queued', async () => {
+  const page = await mountWorkspace({ background: await backgroundWithEndedSale(), hash: '#watchlist' });
+  assert.ok(page.$('lot-queue').options.some((option) => option.value === 'needs-outcome' && option.textContent === 'Needs outcome'));
+  const row = page.$('lot-list').children.find((item) => item.textContent.includes('Athens, owl'));
+  const pills = row.querySelectorAll('.status-pill').map((pill) => [pill.textContent, pill.dataset.tone]);
+  assert.deepEqual(pills, [['Watching', 'watching'], ['Ended · record outcome', 'ended']]);
+  const other = page.$('lot-list').children.find((item) => item.textContent.includes('Watched, no sale'));
+  assert.equal(other.querySelectorAll('.status-pill').length, 1);
+  page.$('lot-queue').value = 'needs-outcome';
+  await page.$('lot-queue').emit('change');
+  assert.deepEqual(page.$('lot-list').children.map((item) => item.querySelector('.coin-row-title').textContent), ['Athens, owl']);
+  await page.openCoin('Athens, owl');
+  assert.equal(page.$('selected-ended').hidden, false);
+});
+
+test('a missed reminder is listed under Due reminders and acknowledged with the rest', async () => {
+  const background = await backgroundWithEndedSale();
+  assert.equal(background.root().alerts[0].status, 'missed');
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  assert.deepEqual(page.$('alert-list').children.map((item) => item.textContent), ['Missed · Nomos 30']);
+  await page.click('ack-alerts');
+  assert.equal(background.root().alerts[0].status, 'acknowledged');
+  assert.deepEqual(page.$('alert-list').children.map((item) => item.textContent), []);
+});

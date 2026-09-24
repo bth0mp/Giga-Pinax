@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- A **Needs outcome** queue in the workspace lists the open coins whose auction has passed with no outcome recorded — a closing or a sale day that is over, or a live sale whose day is over — and their rows and heading carry a red **Ended · record outcome** pill. **Closing soon** now takes a date-only sale day from the day before through the day itself, where it took timed auctions only, and a date-only day sorts among the timed auctions by its own midnight instead of after all of them. A reminder that passed while the browser was closed is listed under **Due reminders** as **Missed** and cleared with **Acknowledge displayed** or **Mark all read**; it is never snoozed.
+
 ### Changed
 
 - **Local records loaded.** no longer stands above every workspace route: it clears itself three seconds after it is said, and the status line keeps its height so the page does not jump when a later message appears.

@@ -21,7 +21,7 @@ import {
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
-import { eventTiming, reminderInstants } from '../extension/core/projections.js';
+import { eventTiming, lotsNeedingOutcome, reminderInstants } from '../extension/core/projections.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -808,7 +808,7 @@ test('event drafts require explicit precision and supply editable reminder defau
   ]);
 });
 
-test('auction queue classifies closing, research, bid and completed lots and sorts timed before date-only', () => {
+test('auction queue classifies closing, research, bid and completed lots and sorts a date-only day by its day', () => {
   const now = '2026-09-14T12:00:00.000Z';
   const events = [
     { id: 'later', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' },
@@ -824,9 +824,11 @@ test('auction queue classifies closing, research, bid and completed lots and sor
     { id: 'active', title: 'Active', activeBid: { amount: { currency: 'GBP', minor: 100 } }, outcome: { status: 'open' } },
     { id: 'done', title: 'Done', outcome: { status: 'lost' } },
   ];
-  assert.deepEqual(auctionQueueForLots(lots, events, 'closing-soon', now).map(({ lot }) => lot.id), ['soon', 'later']);
+  // N7: a sale day is closing soon from the day before through the day itself, and sorts at its own midnight among
+  // the timed instants rather than after all of them.
+  assert.deepEqual(auctionQueueForLots(lots, events, 'closing-soon', now).map(({ lot }) => lot.id), ['day', 'soon', 'later']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'needs-research', now).map(({ lot }) => lot.id), ['soon', 'planned', 'active']);
-  assert.deepEqual(auctionQueueForLots(lots, events, 'all-open', now).map(({ lot }) => lot.id), ['soon', 'later', 'day', 'unknown', 'planned', 'active']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'all-open', now).map(({ lot }) => lot.id), ['day', 'soon', 'later', 'unknown', 'planned', 'active']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'planned', now).map(({ lot }) => lot.id), ['planned']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'active', now).map(({ lot }) => lot.id), ['active']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'completed', now).map(({ lot }) => lot.id), ['done']);
@@ -1182,4 +1184,27 @@ test('the zone last used for a house is offered for its next auction', () => {
   assert.equal(rememberedZone(events, 'Nomos 30'), null);
   assert.equal(rememberedZone(events, ''), null);
   assert.equal(rememberedZone(events, 'Leu 33', '2')?.from, 'Leu Web Auction 30', 'the auction being edited is not its own precedent');
+});
+
+// N7: an open coin whose auction has passed needs its outcome recorded. It gets a queue of its own and is counted for
+// the popup; a coin already settled, or whose auction is still to come or under way, does not.
+test('open coins whose auction has passed are the ones needing an outcome', () => {
+  const now = '2026-09-24T12:00:00.000Z';
+  const events = [
+    { id: 'closed', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-20', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-20T12:00:00.000Z' },
+    { id: 'yesterday', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-23', timeZone: 'UTC' },
+    { id: 'today', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-24', timeZone: 'UTC' },
+    { id: 'live', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-24', localTime: '09:00', timeZone: 'UTC', startsAt: '2026-09-24T09:00:00.000Z' },
+  ];
+  const lots = [
+    { id: 'a', auctionEventId: 'closed', outcome: { status: 'open' } },
+    { id: 'b', auctionEventId: 'yesterday', outcome: { status: 'open' } },
+    { id: 'c', auctionEventId: 'today', outcome: { status: 'open' } },
+    { id: 'd', auctionEventId: 'live', outcome: { status: 'open' } },
+    { id: 'e', auctionEventId: 'closed', outcome: { status: 'won' } },
+    { id: 'f', outcome: { status: 'open' } },
+  ];
+  assert.deepEqual(auctionQueueForLots(lots, events, 'needs-outcome', now).map(({ lot }) => lot.id), ['a', 'b']);
+  assert.deepEqual(lotsNeedingOutcome({ lots, auctionEvents: events }, now).map((lot) => lot.id), ['a', 'b']);
+  assert.equal(auctionQueueForLots(lots, events, 'closing-soon', now).some(({ lot }) => ['a', 'b'].includes(lot.id)), false, 'an ended sale is not closing soon');
 });

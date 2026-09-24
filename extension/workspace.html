@@ -84,7 +84,7 @@
       <div class="section-heading"><div><h2 id="watchlist-heading">Coin workspace</h2><p>Choose a coin to keep its details, auction, bid and outcome together.</p></div><button id="new-lot" type="button">Add coin</button></div>
       <div id="coin-workspace" class="coin-workspace" data-mobile-view="list">
         <aside class="coin-index" aria-label="Watched coins">
-          <div class="queue-controls"><label>Queue<select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter">Filter coins<input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
+          <div class="queue-controls"><label>Queue<select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-outcome">Needs outcome</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter">Filter coins<input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
           <p id="lot-count" class="field-note"></p>
           <div id="lot-list" class="record-list coin-list" role="listbox" aria-label="Watched coins"></div>
           <section class="comparison-picker"><div class="subheading"><h3>Compare coins</h3><button id="open-comparison" class="quiet" type="button" disabled>Open comparison</button></div><p id="comparison-count" class="field-note">Select 2–4 coins.</p><div id="comparison-picker" class="record-list"></div></section>
@@ -94,7 +94,7 @@
           <button id="back-to-coins" class="back-button quiet" type="button">Back to coins</button>
           <div id="coin-empty" class="empty-state"><h3>Select a coin</h3><p>Its notes, auction, bid, reminders and outcome will appear here.</p></div>
           <div id="coin-editor" hidden>
-            <div class="detail-heading"><div><p id="selected-reference" class="coin-reference"></p><h3 id="selected-title">Coin details</h3></div><span id="selected-status" class="status-pill"></span></div>
+            <div class="detail-heading"><div><p id="selected-reference" class="coin-reference"></p><h3 id="selected-title">Coin details</h3></div><div class="detail-pills"><span id="selected-status" class="status-pill"></span><span id="selected-ended" class="status-pill" data-tone="ended" hidden>Ended · record outcome</span></div></div>
             <form id="lot-form" class="detail-section" data-editor="lot">
               <input type="hidden" name="id"><div id="lot-page-values" class="page-values" hidden></div>
               <label>Title<input name="title" required maxlength="500"></label>

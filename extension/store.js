@@ -516,7 +516,9 @@ function mutation(snapshot, command, context) {
       let changed = 0;
       for (const alert of next.alerts) {
         if (ids && !ids.has(alert.triggerId)) continue;
-        if (!['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)) continue;
+        // A missed reminder is acknowledged like a due one, but snoozing it would bring back a moment already past.
+        const actionable = command.type === 'alert.snooze' ? ['due', 'claimed', 'delivered', 'snoozed'] : ['due', 'claimed', 'delivered', 'snoozed', 'missed'];
+        if (!actionable.includes(alert.status)) continue;
         if (command.type === 'alert.snooze') {
           alert.status = 'snoozed';
           alert.snoozedUntil = command.snoozedUntil;

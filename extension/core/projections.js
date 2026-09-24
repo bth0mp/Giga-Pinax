@@ -265,3 +265,16 @@ export function eventTiming(event, now = new Date().toISOString()) {
 export function reminderInstants(event) {
   return new Map(deriveReminderTriggers([event]).map((trigger) => [trigger.reminderId, trigger.triggerAt]));
 }
+
+/**
+ * The open coins whose auction has passed with no outcome recorded: a closing or a sale day that is over, or a live
+ * sale whose day is over. The workspace queues them and the popup can count them from the same reading.
+ * @param {{ lots?: Lot[], auctionEvents?: AuctionEvent[] } | null | undefined} snapshot
+ * @param {string} [now]
+ * @returns {Lot[]}
+ */
+export function lotsNeedingOutcome(snapshot, now = new Date().toISOString()) {
+  const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
+  return (snapshot?.lots ?? []).filter((lot) => (!lot?.outcome?.status || lot.outcome.status === 'open') && lot.auctionEventId
+    && eventTiming(events.get(lot.auctionEventId), now).state === 'ended');
+}

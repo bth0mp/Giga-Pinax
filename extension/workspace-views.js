@@ -128,23 +128,20 @@ export function auctionTimeLabel(event, view) {
  */
 export function auctionQueueForLots(lots, events, queue = 'all-open', now = new Date().toISOString()) {
   const eventById = new Map((events ?? []).map((event) => [event.id, event]));
-  const nowMs = Date.parse(now);
   const entries = (lots ?? []).map((lot, index) => ({ lot, event: eventById.get(lot.auctionEventId) ?? null, index }));
   const matches = ({ lot, event }) => {
     if (queue === 'all-coins') return true;
     if (queue === 'completed') return !OPEN_OUTCOME(lot);
     if (!OPEN_OUTCOME(lot)) return false;
-    if (queue === 'closing-soon') {
-      const eventMs = event?.precision === 'timed' ? Date.parse(event.startsAt) : NaN;
-      return Number.isFinite(eventMs) && eventMs >= nowMs && eventMs <= nowMs + 48 * 60 * 60 * 1000;
-    }
+    if (queue === 'closing-soon') return eventTiming(event, now).state === 'soon';
+    if (queue === 'needs-outcome') return eventTiming(event, now).state === 'ended';
     if (queue === 'needs-research') return !String(lot.reference ?? '').trim();
     if (queue === 'planned') return Boolean(lot.plannedBid) && !lot.activeBid;
     if (queue === 'active') return Boolean(lot.activeBid);
     return true;
   };
-  const sortKey = ({ event }) => event?.precision === 'timed' && Number.isFinite(Date.parse(event.startsAt))
-    ? [0, Date.parse(event.startsAt)] : event?.localDate ? [1, Date.parse(`${event.localDate}T00:00:00Z`)] : [2, 0];
+  // A timed auction sorts at its instant and a date-only day at its own midnight, so the two interleave by time.
+  const sortKey = ({ event }) => { const sortMs = eventTiming(event, now).sortMs; return sortMs === null ? [1, 0] : [0, sortMs]; };
   return entries.filter(matches).sort((left, right) => {
     const a = sortKey(left); const b = sortKey(right);
     return a[0] - b[0] || a[1] - b[1] || left.index - right.index;

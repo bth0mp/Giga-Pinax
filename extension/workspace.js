@@ -1,6 +1,6 @@
 import { computeStatistics } from './core/evidence.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { projectCollection, reminderInstants } from './core/projections.js';
+import { lotsNeedingOutcome, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -496,6 +496,7 @@ async function initWorkspace() {
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
+    const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
     if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
@@ -503,7 +504,9 @@ async function initWorkspace() {
       const amount = lotRowAmount(lot); if (amount) top.append(text('span', formatMoney(amount), 'coin-row-amount'));
       const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
-      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot)); if (event) status.append(text('span', event.name, 'coin-row-event'));
+      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
+      if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
+      if (event) status.append(text('span', event.name, 'coin-row-event'));
       row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
       row.addEventListener('click', () => selectLot(lot.id));
       list.append(row);
@@ -615,6 +618,7 @@ async function initWorkspace() {
       populateLotForm(lot);
     }
     $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot); $('selected-status').dataset.tone = lotStatusTone(lot);
+    $('selected-ended').hidden = !lotsNeedingOutcome({ lots: [lot], auctionEvents: snapshot.auctionEvents }).length;
     if (lot.auctionContext?.pageUrl) $('open-auction').href = lot.auctionContext.pageUrl; else $('open-auction').removeAttribute('href');
     $('research-reference').disabled = !String(lot.reference ?? '').trim();
     $('delete-lot').hidden = false;
@@ -793,7 +797,13 @@ async function initWorkspace() {
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
     for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(eventLine(event, '', 'p', false)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
-    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed' }; alerts.replaceChildren(...due.map((alert) => text('p', `${eventsById.get(alert.eventId)?.name ?? 'Auction'} · ${alertLabel[alert.status]}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
+    // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
+    // them, and never snoozed back into a moment already past.
+    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
+    alerts.replaceChildren(...due.map((alert) => text('p', `${alertLabel[alert.status]} · ${eventsById.get(alert.eventId)?.name ?? 'Auction'}`, `record${alert.status === 'missed' ? ' alert-missed' : ''}`)));
+    $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
+    $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
+    if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
@@ -914,9 +924,9 @@ async function initWorkspace() {
       void send(attach).then((attached) => { if (attached?.ok) { routeChangeFromNav = false; location.hash = '#watchlist'; announce('Auction saved and attached to the coin.'); } });
     }); });
   $('delete-event').addEventListener('click', () => { const basis = editorBases.get('event'); if (basis?.id && confirm(`Remove “${basis.record.name}”?`)) void send({ type: 'event.delete', requestId: requestId(), eventId: basis.id, expectedRevision: basis.revision }, 'event'); });
-  const displayedAlertIds = () => $('ack-alerts').dataset.ids.split(',').filter(Boolean);
-  $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds() }));
-  $('snooze-alerts').addEventListener('click', () => void send({ type: 'alert.snooze', requestId: requestId(), triggerIds: displayedAlertIds(), snoozedUntil: new Date(Date.now() + 15 * 60_000).toISOString() }));
+  const displayedAlertIds = (button) => String($(button).dataset.ids ?? '').split(',').filter(Boolean);
+  $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds('ack-alerts') }));
+  $('snooze-alerts').addEventListener('click', () => void send({ type: 'alert.snooze', requestId: requestId(), triggerIds: displayedAlertIds('snooze-alerts'), snoozedUntil: new Date(Date.now() + 15 * 60_000).toISOString() }));
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
   $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 

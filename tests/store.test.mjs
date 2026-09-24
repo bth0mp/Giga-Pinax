@@ -2230,3 +2230,30 @@ test('a version one backup document imports through the writer, replacing or mer
   for (const key of RESEARCH_FORM_KEYS) assert.equal(key in folded.value.preferences, false, key);
   assert.deepEqual(folded.value.lots, V1_ROOT.lots);
 });
+
+// N7: a reminder that passed while the browser was closed is missed. The collector sees it and acknowledges it like a
+// due one, and it stays acknowledged through the next reconcile; a missed reminder cannot be snoozed.
+test('a missed alert can be acknowledged and stays so, but not snoozed', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Past sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const [missed] = state.alerts;
+  assert.equal(missed.status, 'missed');
+  const snoozed = applyCommand(state, command('alert.snooze', { triggerIds: [missed.triggerId], snoozedUntil: LATER }), context());
+  assert.equal(snoozed.error.code, 'validation');
+  state = reduce(state, command('alert.ack', { triggerIds: [missed.triggerId] })).snapshot;
+  assert.equal(state.alerts[0].status, 'acknowledged');
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  assert.equal(state.alerts[0].status, 'acknowledged');
+  const pastSale = reduce(reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event: {
+    name: 'Past sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+    reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }] } })).snapshot, command('scheduler.reconcile')).snapshot;
+  const all = reduce(pastSale, command('alert.markAllRead'));
+  assert.equal(all.snapshot.alerts[0].status, 'acknowledged', 'mark all read takes missed alerts too');
+});
