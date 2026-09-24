@@ -77,8 +77,16 @@ export const bopSeries = (number) => referenceNumber('Bop', number).toUpperCase(
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // "Bop Euthydemus I 24A", "Bopearachchi 9C", "Bop-9C" (prefix first, king optional) or "Euthydemus I Bop. 24A", "Euthydemus I, Bop 24A" (king first).
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
+// A French dealer writes the word for series between the key and the number ("Bopearachchi Série 6C"), which is no king. Nor is anything a king that
+// starts with the "&" or "and" a co-author is joined by: "Bopearachchi & Rahman 268" cites Pre-Kushana Coins in Pakistan, another book (below).
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
-const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\s+)?|([^\d\s][^\d]*?)\s*,?\s*${BOP}[\s-]*)(\d\S*)$`, 'i');
+// "Séries" too, the plural a dealer writes over a run of them.
+const SERIES_WORD = String.raw`S[ée]ries?\s+`;
+const KING = String.raw`(?!&|and\s)([^\d\s][^\d]*?)`;
+const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:${SERIES_WORD})?(?:${KING}\s+)?|${KING}\s*,?\s*${BOP}[\s-]*(?:${SERIES_WORD})?)(\d\S*)$`, 'i');
+// Bopearachchi with a co-author joined on ("& Rahman", "and Rahman", "-Rahman") is another book with no type data here: an Other reference, its own
+// citation searched for its prices, never a Bop type of the king "& Rahman". Read case-sensitively, since the co-author's name has its capital.
+const BOP_COAUTHORED = /^(?:Bopearachchi|Bop\.?)(?:\s*&\s*|\s+and\s+|-)\p{Lu}\p{L}+/u;
 // RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3",
 // or in Roman numerals after the word, ", part I"), optional second-edition marker, then the ruler or mint section if any (starting with a non-digit,
 // so "RIC I 2 Nero 306" fails) and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
@@ -173,7 +181,10 @@ export function parseReference(text, clean = true) {
     const type = readType(part.replace(/[–—]/g, '-'), clean);
     if (type) return type;
   }
-  const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
+  // A part that is Bopearachchi's co-authored book names no supported catalogue, however it begins, and with whatever dash it is joined: the type
+  // rules above read an en dash as the hyphen, so this does too.
+  const coauthored = (text) => BOP_COAUTHORED.test(text.replace(/[–—]/g, '-'));
+  const supported = (SUPPORTED.test(value) && !coauthored(value)) || parts.some((part) => /\d/.test(part) && NAMED.test(part) && !coauthored(part));
   return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
@@ -246,7 +257,7 @@ function readClean(value) {
     const number = referencePattern && value.match(referencePattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
   }
-  const bop = value.match(BOP_REFERENCE);
+  const bop = BOP_COAUTHORED.test(value) ? null : value.match(BOP_REFERENCE);
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
@@ -769,6 +780,14 @@ export function otherVolumePart(reference, title) {
   return Boolean(hit) && norm(hit.volume) !== norm(volume);
 }
 
+// Whether a coin OCRE titles as the answer was struck at a RIC VI–IX mint that is none of the ones the lot's heading names beside its ruler ("Constantius I.
+// Follis. Trier. RIC VI 12." found only his Alexandria 12): the ruler's number there is not the dealer's coin, so it is offered, never opened.
+export function strayMint(reference, title) {
+  const struck = [].concat(reference?.struckAt ?? []).map(unquote).filter(Boolean).map((name) => norm(ricMintSection(name) || name));
+  const section = parseReference(title, false)?.section ?? '';
+  return struck.length > 0 && isMintOnly(section) && !struck.includes(norm(section));
+}
+
 function pickRic(xml, reference) {
   const entries = parseFeed(xml);
   const total = Number(xml.match(/<opensearch:totalResults>(\d+)</)?.[1] ?? entries.length);
@@ -891,7 +910,7 @@ export async function lookupType(given, options = {}) {
     // and no rulers beside it ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case, with nothing at all to say whose coin it is.
     // Nor is a coin found for a joint heading one half of which is a section ("Philip I and Otacilia Severa"): that section is half of what it says.
     const halfHeading = rulers.length > 1 && rulers.some(isSectionOnly);
-    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading || strayMint(reference, picked.entry.title)) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);

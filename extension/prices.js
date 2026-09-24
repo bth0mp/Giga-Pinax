@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, searchablePart, sgNumber } from './lookup.js';
 import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase } from './lot.js';
@@ -288,11 +288,17 @@ export const coinArchivesSection = (reference) =>
 export const coinArchivesUrl = (term, section = 'a') => `https://www.coinarchives.com/${section}/results.php?search=${encodeURIComponent(squash(term))}&s=0`;
 
 const PAGE_SIZE = 100;
+// What the coverage line and the copy say of the rows summarise left out for a sale day still ahead; nothing when there are none.
+export const futureText = ({ future = 0 }) => (future ? `${future} future-dated ${future === 1 ? 'lot' : 'lots'} not counted` : '');
 const EXAMPLE_LIMIT = 5;
 
-export function summarise(lots, currency) {
+// A row dated after the collector's own today has not been sold, whatever its price field holds (a starting price, an estimate): it is no sale and
+// is never counted, only told apart as future. A row with no readable date is not placed in time, so it is counted as before.
+export function summarise(lots, currency, now = new Date()) {
+  const today = localDay(now);
   const parsed = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price, currency) }));
-  const priced = parsed.filter((entry) => entry.amount !== null);
+  const ahead = (entry) => (saleDate(entry.date) ?? today) > today;
+  const priced = parsed.filter((entry) => entry.amount !== null && !ahead(entry));
   const amounts = priced.map((entry) => entry.amount).sort((a, b) => a - b);
   const at = (fraction) => {
     const position = fraction * (amounts.length - 1);
@@ -319,6 +325,8 @@ export function summarise(lots, currency) {
     latest: years.length ? Math.max(...years) : null,
     // Lots with no price at all (unsold, unpriced: blank, "*" and "-" style markers), told apart from prices that could not be counted.
     unpriced: lots.filter((entry) => !/\d/.test(entry.price)).length,
+    // Lots whose price reads but whose sale day is still ahead: not sales, so not counted, and said apart from both.
+    future: parsed.filter((entry) => entry.amount !== null && ahead(entry)).length,
     // Raw prices the strict parser (or the currency check) rejected, so the collector can report an unseen format; blank, "*" and "-" style markers are not prices.
     uncounted: parsed.filter((entry) => entry.amount === null && /\d/.test(entry.price)).slice(0, EXAMPLE_LIMIT).map((entry) => entry.price),
   };
@@ -342,6 +350,16 @@ const citationKeys = (reference) => {
   const keys = catalogueOf(reference?.catalogue)?.citationKeys ?? null;
   return keys && reference.catalogue === 'Bop' ? [...keys, 'Bop'] : keys;
 };
+// Crawford writes a moneyer's issue and its type with a slash ("344/1a"); some German houses write a hyphen there. A hyphen is read as the slash only
+// where it cannot be a range: in front of a lettered type ("344-1a"), or of one a shortened range would count down to ("385-4" would be 385 to 384).
+// "44-5" and "344-5" are how a dealer shortens 44–45 and 344–345, which may be two types, so they keep citing nothing.
+const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
+function numberPattern(catalogue, number) {
+  const [, issue, type, letter] = (catalogue === 'RRC' && CRAWFORD.exec(number)) || [];
+  if (!issue) return eitherCase(number);
+  const shortened = Number(`${issue.slice(0, Math.max(0, issue.length - type.length))}${type}`);
+  return `${eitherCase(issue)}${letter || shortened <= Number(issue) ? '[/-]' : '\\/'}${eitherCase(`${type}${letter}`)}`;
+}
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
@@ -387,7 +405,12 @@ function volumeParts(volume) {
 
 // Only RIC carries a volume, and only its own: a card on volume I is not cited by "RIC II 306", while a card without a volume takes any numeral.
 // A ".1", "-1" or "/1" glued to the numeral is that volume's part and nothing else — the guard behind the part makes it impossible to leave one
-// unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1.
+// unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1. A volume RIC does not publish in parts has no
+// part to leave unread, so there a full stop is only the separator CGB writes ("RIC.I.53"); a hyphen or a slash still is not.
+// A volume published in parts may be written in Arabic figures with its part ("RIC 2.1 356"), and only with it: "RIC 2 306" is as likely to be the
+// second edition of volume I spaced out as volume II.
+const ROMAN_NUMERALS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
+const publishedInParts = (numeral) => ['1', '2', '3'].some((part) => realVolumePart(numeral, part));
 function between({ catalogue, volume }) {
   // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
   if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
@@ -397,8 +420,15 @@ function between({ catalogue, volume }) {
   const part = partPattern(volumeParts(text));
   // The volume may be introduced as one ("RIC vol. I 306"), and volume I written as a digit ("RIC 1 306"). Only I: "RIC 2 306" is as likely to be the
   // second edition of volume I spaced out as volume II.
-  const written = numeral === 'I' ? '(?:I|1)' : numeral ? escaped(numeral) : NUMERAL;
-  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
+  const figure = ROMAN_NUMERALS.indexOf(numeral) + 1;
+  const written = numeral === 'I' ? '(?:I|1)' : numeral && publishedInParts(numeral) ? `(?:${escaped(numeral)}|${figure}(?=[-/.]\\d))`
+    : numeral ? escaped(numeral) : NUMERAL;
+  // A part is one figure, so a full stop with two or more behind it is only the separator ("RIC.II.53", "RIC.II.1.53"). On a volume without parts a
+  // figure glued behind the numeral with another number after it ("RIC VI.1 53") is read as a volume published in parts is read: the figure is the
+  // part and the last number the type, as before, so it cites VI 53 and never VI 1.
+  const parted = !numeral || publishedInParts(numeral);
+  const guard = parted ? String.raw`(?![-/]\d|\.\d(?!\d))` : String.raw`(?![-/]\d|\.\d+\s+\d)`;
+  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}${guard}${SEP})?${RULERS}`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -422,7 +452,7 @@ export function citesReference(description, reference) {
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
+    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
   return new RegExp(pattern, 'u').test(text);
 }
 
@@ -451,25 +481,32 @@ const MINT = 'AU/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
 
 // Class 1. The English abbreviations, exactly as the trade writes them: nothing else in a lot description is spelled this way, so a closing edge is
-// all they need.
-const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT };
+// all they need. The British houses capitalise the qualifier ("GVF", "NEF") and NAC writes "Fdc" in mixed case; the capitals are still exact, so
+// "gvf" and "fdc" stay prose.
+const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT,
+  Fdc: MINT, GVF: 'VF', NVF: 'VF', nVF: 'VF', GEF: 'EF', NEF: 'EF', nEF: 'EF', aUNC: MINT, AUNC: MINT };
 // Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
 // ordinary adjective, and only a range whose first half was read lends it a grade's standing.
 const NAMES = {
-  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT,
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'Brilliant Uncirculated': MINT,
   Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
-// never stands in front of the words a compliment carries on with.
-const BARE_FINE = { Fine: FINE };
+// never stands in front of the words a compliment carries on with. "Fair", the grade below it, is as ordinary a word ("a fair portrait") and is read
+// by the same rule.
+const BARE_FINE = { Fine: FINE, Fair: FINE };
 // Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials. The Spanish
 // (BC, MBC, EBC, SC: bien, muy bien, extraordinariamente bien conservada, sin circular) and the Dutch (ZF zeer fraai, PR prachtig) are marks too.
+// So are the other short spellings, for the same reason: the American "BU" and NGC's "Gem MS", the German "Stgl" (Stempelglanz), "prfr"
+// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash.
 const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
-  BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF' };
+  BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF',
+  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
+// "prägefrisch" is the Austrian trade's Stempelglanz, written in lower case mid-sentence as "vorzüglich" is.
 const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE,
-  'zeer fraai': 'VF', prachtig: 'EF' };
+  'zeer fraai': 'VF', prachtig: 'EF', 'prägefrisch': MINT };
 // Class 7. The marks that are a word of their own far more often than a grade: German "s." is "siehe", see; a lone "F" is an initial; and "schön" is
 // what a dealer calls any pretty coin, as Dutch "fraai" is. Each is read only as a half of a range with another grade, or directly behind a grade
 // label.
@@ -537,7 +574,8 @@ const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|drit
 const SIDE_OPENS = new RegExp(String.raw`(?<![\p{L}\d])${SIDE}\.?\s+$`, 'iu');
 const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
-const LABEL = /(?:Erhaltung|Grade|Condition)\s*:?\s*$/i;
+// A Spanish house labels it "Conservación".
+const LABEL = /(?:Erhaltung|Grade|Condition|Conservaci[oó]n)\s*:?\s*$/i;
 // Two grades a range separator joins are one statement, read as the lower of the two.
 const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
 // So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
@@ -563,21 +601,29 @@ const CAPITAL = /\p{Lu}/u;
 // "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins. A spaced dash
 // or a bracket behind it is a Seleucid Coins citation's own aside ("SC –; cf. ESM 123.", "SC (unlisted)"): the type is not in the book.
 const DESCRIBED = /(?<![\p{L}\d])\p{Ll}\p{L}*\.\s*$/u;
+// The Spanish spelling with its slash is the same mark, and a legend is split across the field the same way ("S/C").
+const SENATE = new Set(['SC', 'S/C']);
 const CITATION_ASIDE = /^\s[-–(]/;
-const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
-  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before));
+// Áureo & Calicó close a lot with the weight or a remark and then the grade ("27,23 g. S/C.", "Brillo original. S/C."): a sentence ending in a
+// measurement, or in one of a closed list of Spanish remark words, describes no type, so the Spanish spelling with its slash opens there. "SC" keeps
+// the senate's rule, since a Roman bronze's weight is followed by its reverse as often.
+const SPANISH_CLOSE = /(?:\d\s?(?:g|gr|mm)|(?<!\p{L})(?:original|bella|bello|pátina|patina|brillo|rara|escasa|atractiva))\.\s*$/iu;
+const senateFree = (token, start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
+  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && (!DESCRIBED.test(before) || (token === 'S/C' && SPANISH_CLOSE.test(before))))
+  || quals !== '' || joined || LABEL.test(before));
 // A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
 // It is no statement at all, so it can neither be the last one nor join a range, and the grade a range separator joins to it is the provenance's
 // too ("there described as VF/EF"). "NGC graded AU" is the slab's own grade and stays.
 const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
 
+const BARE_FINE_NAMES = new Set(Object.keys(BARE_FINE).map((name) => name.toLowerCase()));
 const kindOf = (token) => {
   if (Object.hasOwn(RANGE_ONLY, token)) return 'range-only';
   if (Object.hasOwn(ABBREVIATIONS, token)) return 'abbreviation';
   if (Object.hasOwn(MARKS, token)) return 'mark';
   const spelled = token.toLowerCase();
   if (Object.hasOwn(RANGE_ONLY, spelled)) return 'range-only';
-  if (Object.hasOwn(BARE_FINE, token) || spelled === 'fine') return 'bare-fine';
+  if (BARE_FINE_NAMES.has(spelled)) return 'bare-fine';
   return Object.hasOwn(PRAISE, spelled) ? 'praise' : 'name';
 };
 const bucketOf = (token) => EXACT[token] ?? SPELLED_BUCKETS.get(token.toLowerCase()) ?? null;
@@ -604,7 +650,7 @@ export function gradeOf(description) {
     const before = text.slice(Math.max(0, start - EDGE), start);
     // The slab's own tail is read only where a slab prints one: behind NGC or PCGS in the same clause, or as the numeric Mint State grade opening the
     // text ("MS 63"). Anywhere else " 12" behind a grade is a lot number or a weight ("Slg. vz 12.", "Very Fine 17.23 g").
-    const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && token === 'MS');
+    const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && (token === 'MS' || token === 'Gem MS'));
     const end = start + quals.length + token.length + plus.length + (slabbed ? slab.length : 0);
     ends.push(end);
     const tail = text.slice(end, end + EDGE);
@@ -633,7 +679,7 @@ export function gradeOf(description) {
     else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
-      && !PLACE_COMMA.test(before) && (token !== 'SC' || senateFree(start, before, quals, ranged || sided, tail));
+      && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
     else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;
@@ -670,15 +716,17 @@ const gradeOfLot = (lot) => (lot.grade === undefined ? gradeOf(lot.description) 
 
 const GRADE_MIN = 3;
 // A median per grade, from the rows on show: a bucket resting on fewer than GRADE_MIN counted sales says nothing and is left out.
-export function gradeMedians(lots, currency) {
+export function gradeMedians(lots, currency, now = new Date()) {
   const graded = new Map(GRADE_BUCKETS.map((bucket) => [bucket, []]));
   for (const entry of lots) graded.get(gradeOfLot(entry))?.push(entry);
   return GRADE_BUCKETS.flatMap((bucket) => {
-    const summary = summarise(graded.get(bucket), currency);
+    const summary = summarise(graded.get(bucket), currency, now);
     return summary.count >= GRADE_MIN ? [{ bucket, median: summary.median, count: summary.count }] : [];
   });
 }
-export const gradeText = ({ bucket, median, count }, format) => `${bucket}: median ${format(median)} (${count})`;
+// One line per bucket or year, as the ledger reads it: the label, the median, the sales it rests on, one separator throughout ("VF · $260 · 3 sales").
+const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
+export const gradeText = ({ bucket, median, count }, format) => `${bucket} · ${format(median)} · ${sales(count)}`;
 
 // How much of the counted sample the buckets say nothing about: a bucket of three beside a median of forty is a thin reading unless the panel says
 // how many rows carry no grade a dealer wrote. Nothing to say when every row is graded.
@@ -773,12 +821,13 @@ export function lotsInPeriod(lots, period, now) {
 // ("28.07.2026 14:00") is left out: the day is all that is carried.
 export const isoDay = (text) => saleDate(text)?.toISOString().slice(0, 10) ?? '';
 
-// The lots acsearch lists that have not been sold yet: no price at all (the same test summarise counts "without a price" by) and a sale day that is
-// the collector's own today or later. A lot sold today already shows its price. Soonest first, the next sale at the top; a tie keeps page order.
+// The lots acsearch lists that have not been sold yet: a sale day after the collector's own today, whatever the price field holds (summarise never
+// counts one), or today with no price at all (the same test summarise counts "without a price" by): a lot sold today already shows its price.
+// Soonest first, the next sale at the top; a tie keeps page order.
 export function upcomingLots(lots, now) {
   const today = localDay(now);
   return lots.map((entry, index) => ({ entry, index, date: saleDate(entry.date) }))
-    .filter(({ entry, date }) => date !== null && date >= today && !/\d/.test(entry.price))
+    .filter(({ entry, date }) => date !== null && date >= today && (date > today || !/\d/.test(entry.price)))
     .sort((a, b) => a.date - b.date || a.index - b.index)
     .map(({ entry }) => entry);
 }
@@ -794,7 +843,7 @@ const YEAR_MIN = 3;
 // A median per calendar year of sale, over whatever rows the caller counts (the median's own: the same filters, hand decisions and period). A year
 // resting on fewer than YEAR_MIN counted sales says nothing and is left out, as a thin grade bucket is; a lot without a readable date has no year.
 // Oldest first. One provider and one currency per call: nothing here pools them.
-export function mediansByYear(lots, currency) {
+export function mediansByYear(lots, currency, now = new Date()) {
   const byYear = new Map();
   for (const entry of lots) {
     const year = saleDate(entry.date)?.getUTCFullYear();
@@ -803,11 +852,11 @@ export function mediansByYear(lots, currency) {
     byYear.get(year).push(entry);
   }
   return [...byYear.keys()].sort((a, b) => a - b).flatMap((year) => {
-    const summary = summarise(byYear.get(year), currency);
+    const summary = summarise(byYear.get(year), currency, now);
     return summary.count >= YEAR_MIN ? [{ year, median: summary.median, count: summary.count }] : [];
   });
 }
-export const yearText = ({ year, median, count }, format) => `${year}: median ${format(median)} (${count})`;
+export const yearText = ({ year, median, count }, format) => `${year} · ${format(median)} · ${sales(count)}`;
 // The strip's accessible name: one sentence, year by year.
 export const yearsSentence = (years, format) => (years.length
   ? `Median by year: ${years.map(({ year, median, count }) => `${year}, ${format(median)} from ${count} ${count === 1 ? 'sale' : 'sales'}`).join('; ')}.` : '');
@@ -817,8 +866,8 @@ const TREND_MIN = 3;
 // before, each median trusted only when it rests on at least TREND_MIN sales. A lot without a readable date belongs to neither side.
 export function trendOf(lots, currency, now) {
   const recentLots = lotsInPeriod(lots, '2y', now);
-  const recent = summarise(recentLots, currency);
-  const earlier = summarise(lots.filter((entry) => saleDate(entry.date) && !recentLots.includes(entry)), currency);
+  const recent = summarise(recentLots, currency, now);
+  const earlier = summarise(lots.filter((entry) => saleDate(entry.date) && !recentLots.includes(entry)), currency, now);
   if (recent.count < TREND_MIN || earlier.count < TREND_MIN) return null;
   return { recent: recent.median, recentCount: recent.count, earlier: earlier.median, earlierCount: earlier.count, change: recent.median / earlier.median - 1 };
 }
@@ -903,7 +952,7 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds. Each lot's
     // grade is read here, once, and travels with it: a redraw would otherwise read every description again, once per bucket.
     const page = lots.slice(0, PAGE_SIZE).map((entry) => ({ ...entry, grade: gradeOf(entry.description) }));
-    const summary = summarise(page, currency);
+    const summary = summarise(page, currency, now);
     // A page without a counted price still lists the lots not sold yet, so its lots come back with it for the Upcoming list.
     if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out', lots: page };
     if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), lots: page };
@@ -946,6 +995,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (ungraded) lines.push(ungraded);
   lines.push(...years.map((year) => yearText(year, money.format)));
   if (upcoming.length) lines.push(upcomingText(upcoming));
+  if (summary.future) lines.push(futureText(summary));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);

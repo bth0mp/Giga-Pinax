@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -1290,6 +1290,48 @@ test('gradeOf reads the German "s." as see, never as a grade of its own', () => 
   assert.equal(gradeOf('Erhaltung: s'), 'Fine and below');
 });
 
+// Loop N5: whole houses grade in spellings the reader did not know, so their rows fell out of every grade median: NAC's mixed-case "Fdc", the British
+// "GVF"/"GEF"/"NEF"/"NVF", German "Stgl." and "prfr.", Austrian "prägefrisch", the American "BU", "aUNC" and "Gem MS", Italian "Spl", Spanish "S/C",
+// German "sge" and English "Fair". Each is read in the class whose edges fit it, and each keeps out of the prose it could be mistaken for.
+test('gradeOf reads the house spellings of NAC, Baldwin’s, Künker, Rauch, Heritage, Artemide, Áureo and Gorny', () => {
+  for (const [text, bucket] of [
+    ['Virtually as struck and Fdc', 'AU/Mint State'], ['Rare. Fdc.', 'AU/Mint State'], ['Extremely fine / Fdc', 'EF'],
+    ['Toned, GVF.', 'VF'], ['Attractive, GEF, rare.', 'EF'], ['NEF with some lustre', 'EF'], ['Some porosity, NVF.', 'VF'], ['Toned, nEF.', 'EF'],
+    ['Toned, nVF.', 'VF'], ['GVF/GEF', 'VF'],
+    ['RIC 53. 3,42 g. Stgl.', 'AU/Mint State'], ['Feine Tönung. Stgl', 'AU/Mint State'], ['fast Stgl.', 'AU/Mint State'], ['f.Stgl.', 'AU/Mint State'],
+    ['vz-Stgl.', 'EF'], ['Feine Tönung, prfr.', 'AU/Mint State'], ['Herrliche Tönung, prägefrisch.', 'AU/Mint State'], ['Fast prägefrisch.', 'AU/Mint State'],
+    ['BU, prooflike', 'AU/Mint State'], ['Choice BU.', 'AU/Mint State'], ['aUNC.', 'AU/Mint State'], ['AUNC', 'AU/Mint State'],
+    ['NGC Gem MS 5/5 - 5/5', 'AU/Mint State'], ['Brilliant Uncirculated.', 'AU/Mint State'],
+    ['Bella patina. Spl', 'EF'], ['qSpl.', 'EF'], ['BB/Spl', 'VF'],
+    ['S/C. Brillo original.', 'AU/Mint State'], ['EBC/S/C', 'EF'],
+    ['Schöne Patina, sge', 'Fine and below'], ['sge-s', 'Fine and below'], ['sge/ss', 'Fine and below'],
+    ['Fair, worn.', 'Fine and below'], ['Fair to Fine', 'Fine and below'], ['Pitted. Fair.', 'Fine and below']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // None of them reads the prose, the monogram, the senate's mark or the collection it could be taken for.
+  for (const prose of ['A fair portrait.', 'Fair Lawn collection. Unread.', 'Ex Fair collection', 'fair', 'Of Fair style',
+    'Rev. BU monogram in field.', 'Ex BU collection.', 'Cohen 302 (BU).', 'control: BU.',
+    'Rev. Spes advancing left. S/C.', 'Rev. S/C, legend around.', 'SC (unlisted)', 'S/C (unlisted)',
+    'Splendido esemplare.', 'Gemma incisa. Pubblicato.', 'Gem of a portrait.', 'fdc', 'gvf', 'Stglanz', 'prägefrischer Glanz']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
+  // Loop N5 review: Áureo & Calicó write S/C behind the weight or a closing remark, a German grade sentence opens "Prfr.", Heritage writes "Gem BU",
+  // and a Spanish lot labels its grade "Conservación:". A remark outside the closed list, or a described reverse, still leaves S/C the senate's.
+  for (const [text, bucket] of [['Felipe II. 1589. Sevilla. B. 8 reales. (Cal. 690). 27,23 g. S/C.', 'AU/Mint State'],
+    ['Felipe II. 8 reales. 27,23 g. S/C.', 'AU/Mint State'], ['Felipe II. 8 reales. Brillo original. S/C.', 'AU/Mint State'],
+    ['Felipe II. 8 reales. Muy bella. S/C.', 'AU/Mint State'], ['Felipe II. 8 reales. Bonita pátina. S/C.', 'AU/Mint State'],
+    ['Nero. Denar. Prfr.', 'AU/Mint State'], ['Morgan Dollar. Gem BU.', 'AU/Mint State'], ['Conservación: S/C', 'AU/Mint State'],
+    ['Conservación: EBC', 'EF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  for (const prose of ['Rev.: Roma sentada. S/C.', 'Rev. Victory standing. 10,85 g. Rev. S/C.', 'Felipe II. 8 reales. Victoria alada. S/C.', 'Gem BUlk lot']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
+  // A new spelling joins the others exactly as the old ones do: the grade still counted is the dealer's last statement, and a labelled one wins.
+  assert.equal(gradeOf('Ex Fair collection. GVF.'), 'VF');
+  assert.equal(gradeOf('Erhaltung: Stgl. Notes: vz for the type'), 'AU/Mint State');
+});
+
 // 0.32 review, round 3: three rounds of patching the reader traded one class of error for another, so it was redesigned against a corpus instead of
 // patched again. Every description the reviewer's probes and the report's own tables name is in the corpus with the bucket the design reads it into;
 // a row the design cannot read carries null there, and its note says why. A wrong bucket is what this guards against — an ungraded row is not one.
@@ -1334,7 +1376,9 @@ test('gradeMedians reports only a bucket resting on at least three counted sales
     graded('900', 'Extremely Fine', 'e'), graded('1100', 'EF', 'f')];
   assert.deepEqual(gradeMedians(lots, 'USD'), [{ bucket: 'VF', median: 200, count: 3 }]);
   assert.deepEqual(gradeMedians([], 'USD'), []);
-  assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF: median $180 (9)');
+  // Loop P-09: the figure between the bucket and its count, one separator throughout, the count as sales.
+  assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF · $180 · 9 sales');
+  assert.equal(gradeText({ bucket: 'AU/Mint State', median: 1200, count: 1 }, usd), 'AU/Mint State · $1,200 · 1 sale');
   // What the buckets leave unsaid: a row the dealer graded nothing at all.
   const plain = lot('400', '01.01.2024', 'g', 'Nero. As. RIC 306.');
   assert.equal(ungradedText([...lots, plain]), '1 of 7 results carry no grade');
@@ -1383,8 +1427,8 @@ test('summaryText carries what the filters left out and the median of each grade
     ungraded: '27 of 39 results carry no grade' };
   assert.deepEqual(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"', extras).split('\n').slice(2), [
     '39 of 55 results cite Price 23',
-    'VF: median $180 (9)',
-    'EF: median $400 (3)',
+    'VF · $180 · 9 sales',
+    'EF · $400 · 3 sales',
     '27 of 39 results carry no grade',
   ]);
 });
@@ -1461,8 +1505,9 @@ test('upcomingLots keeps the unpriced lots dated today or later in the collector
   const now = new Date(2026, 8, 11, 12);
   const lots = [lot('*', '10.09.2026', 'yesterday'), lot('*', '11.09.2026 18:00', 'today'), lot('*', '2026-10-12', 'october'),
     lot('', '01.12.2026', 'blank'), lot('250', '12.10.2026', 'priced'), lot('*', 'n/a', 'undated'), lot('*', '12.10.2026', 'october-2'),
-    lot('*', '31.02.2027', 'no-such-day')];
-  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'october-2', 'blank']);
+    lot('*', '31.02.2027', 'no-such-day'), lot('200', '11.09.2026', 'sold-today')];
+  // A priced row dated after today is not sold either (loop N11): its figure is a starting price, and it is listed. One priced today was sold.
+  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'priced', 'october-2', 'blank']);
   assert.deepEqual(upcomingLots([], now), []);
 });
 
@@ -1492,7 +1537,7 @@ test('mediansByYear gives a median per year of at least three counted sales, old
   assert.deepEqual(mediansByYear(lots, 'USD'), [{ year: 2021, median: 120, count: 4 }, { year: 2023, median: 200, count: 3 }]);
   assert.deepEqual(mediansByYear(lots.slice(3, 5), 'USD'), []);
   const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
-  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021: median $120 (4)');
+  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021 · $120 · 4 sales');
   assert.equal(yearsSentence(mediansByYear(lots, 'USD'), usd), 'Median by year: 2021, $120 from 4 sales; 2023, $200 from 3 sales.');
   assert.equal(yearsSentence([], usd), '');
 });
@@ -1506,9 +1551,81 @@ test('summaryText adds the medians by year and the upcoming lots', () => {
   assert.equal(text, [
     'Price 23',
     'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 3 recorded sales matching “Price 23” · 2023',
-    '2023: median $200 (3)',
+    '2023 · $200 · 3 sales',
     'Upcoming: 2 lots, first on 2026-10-12',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { years: [], upcoming: [] }).split('\n').length, 3);
+});
+
+// Loop N11: acsearch marks a lot it has not sold yet with "*", but a row dated after today that carried a figure — a starting price, say — was
+// medianed as a hammer, stretched the years to 2028 and became the "Last sale". A sale day after the collector's own today is no sale, whatever the
+// price field holds: the row is left out of every count, listed as upcoming, and the coverage says how many.
+test('a lot dated after today is never counted as a sale, whatever its price field holds', async () => {
+  const now = new Date(2026, 8, 11, 12);
+  const lots = [lot('100', '01.01.2024', 'a'), lot('200', '11.09.2026', 'today'), lot('380', '01.06.2028', 'future'), lot('150', '12.09.2026', 'tomorrow'),
+    lot('*', '01.10.2026', 'starred')];
+  const summary = summarise(lots, 'USD', now);
+  assert.deepEqual(summary.priced.map(({ id }) => id), ['a', 'today']);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.future, 2);
+  assert.equal(summary.latest, 2026);
+  assert.equal(summary.unpriced, 1);
+  assert.equal(futureText(summary), '2 future-dated lots not counted');
+  assert.equal(futureText(summarise([lot('380', '01.06.2028')], 'USD', now)), '1 future-dated lot not counted');
+  assert.equal(futureText(summarise(lots.slice(0, 2), 'USD', now)), '');
+  // They are upcoming, soonest first, as the starred lots are; a priced lot dated today has been sold.
+  assert.deepEqual(upcomingLots(lots, now).map(({ id }) => id), ['tomorrow', 'starred', 'future']);
+  // The last sale, the years and the medians rest on the counted sales only.
+  assert.equal(lastSale(summary).id, 'today');
+  assert.deepEqual(mediansByYear([...lots, lot('900', '02.06.2028', 'f2'), lot('900', '03.06.2028', 'f3')], 'USD', now), []);
+  // fetchPrices reads the page as of its own now, and a page whose only priced rows lie ahead has counted nothing.
+  const page = (rows) => `<script>acsearch.initSearchResults = ${JSON.stringify(rows)};</script>`;
+  const fetched = await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page(lots)), now });
+  assert.equal(fetched.status, 'ok');
+  assert.equal(fetched.summary.count, 2);
+  const ahead = await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('380', '01.06.2028')])), now });
+  assert.equal(ahead.status, 'unpriced');
+  // The copied summary says so beside what it could not count.
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  assert.ok(summaryText(card, summary, 'USD', 'Price 23').split('\n').includes('2 future-dated lots not counted'));
+});
+
+// Loop N20: three spellings of a citation the filter did not know, each written by a whole house: some German houses put a hyphen where Crawford
+// writes the slash ("Crawford 344-1a"), a volume published in parts is written in Arabic figures ("RIC 2.1 356"), and CGB separates key, volume and
+// number with full stops ("RIC.I.53").
+test('citesReference reads a hyphen for Crawford’s slash, an Arabic volume with its part, and full stops between key, volume and number', () => {
+  const titurius = { catalogue: 'RRC', number: '344/1a' };
+  for (const cited of ['Crawford 344-1a', 'Cr. 344-1a', 'RRC 344-1a.', 'Crawford 344/1a']) assert.equal(citesReference(cited, titurius), true, cited);
+  // A hyphen is the slash only where it cannot be a range: a lettered sub-number, or a sub-number a range would count down to.
+  assert.equal(citesReference('Crawford 385-4', { catalogue: 'RRC', number: '385/4' }), true);
+  // "44-5" and "344-5" are the way a dealer shortens 44–45 and 344–345: they may be two types, so neither cites 44/5 or 344/5.
+  assert.equal(citesReference('Crawford 44-5', { catalogue: 'RRC', number: '44/5' }), false);
+  assert.equal(citesReference('Crawford 344-5', { catalogue: 'RRC', number: '344/5' }), false);
+  for (const other of ['Crawford 344-1b', 'Crawford 344-1', 'Crawford 344-10a', 'Crawford 3441a', 'Crawford 344-1a,5 g']) {
+    assert.equal(citesReference(other, titurius), false, other);
+  }
+  const vespasian = { catalogue: 'RIC', number: '356', volume: 'II, Part 1 (2nd edition)', section: 'Vespasian' };
+  for (const cited of ['RIC 2.1 356', 'RIC 2-1 356', 'RIC 2/1 356', 'RIC II.1 356']) assert.equal(citesReference(cited, vespasian), true, cited);
+  // The figure stands for the volume only with its part: "RIC 2 356" may be the second edition of volume I spaced out, and part 3 is another book.
+  for (const other of ['RIC 2 356', 'RIC 2.3 356', 'RIC 3.1 356', 'RIC 2.1 3561', 'RIC 2.1 356 g']) assert.equal(citesReference(other, vespasian), false, other);
+  const nero = { catalogue: 'RIC', number: '53', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['RIC.I.53', 'RIC. I. 53', 'RIC.53', 'C.119 - RIC.I.53 - BMC/RE.74']) assert.equal(citesReference(cited, nero), true, cited);
+  for (const other of ['RIC.I.530', 'RIC.I.5.3', 'RIC.II.53', 'RIC.I.53a']) assert.equal(citesReference(other, nero), false, other);
+  // A volume RIC publishes in parts keeps its guard: the figure glued behind the numeral is the part, never the type.
+  assert.equal(citesReference('RIC.IV.1 266', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  // Loop N20 review: the full stops reach a volume published in parts too. A part is one figure, so two or more behind the stop are the number.
+  const trajan = { catalogue: 'RIC', number: '53', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC.II.53', 'RIC.II.1.53', 'C.119 - RIC.II.53 - BMC 74']) assert.equal(citesReference(cited, trajan), true, cited);
+  assert.equal(citesReference('RIC.II.1.53', { ...trajan, volume: 'II, Part 1 (2nd edition)' }), true);
+  assert.equal(citesReference('RIC.IV.1.266', { catalogue: 'RIC', number: '266', volume: 'IV' }), true);
+  for (const other of ['RIC.II.3.53', 'RIC.II.530', 'RIC.II.5']) assert.equal(citesReference(other, { ...trajan, volume: 'II, Part 1 (2nd edition)' }), false, other);
+  // "RIC.VI.1 53" and "RIC VII.1 53" read as "RIC II.1 356" does: the figure glued behind the numeral is a part, the last number the type. So the
+  // row cites VI 53, as it did before the full stop was a separator, and never VI 1.
+  for (const [cited, number, volume] of [['RIC.VI.1 53', '1', 'VI'], ['RIC VII.1 53', '1', 'VII'], ['RIC I.5 53', '5', 'I (2nd edition)']]) {
+    assert.equal(citesReference(cited, { catalogue: 'RIC', number, volume }), false, `${cited} as ${volume} ${number}`);
+  }
+  for (const [cited, volume] of [['RIC.VI.1 53', 'VI'], ['RIC VI.1 53', 'VI'], ['RIC VII.1 53', 'VII'], ['RIC I.5 53', 'I (2nd edition)']]) {
+    assert.equal(citesReference(cited, { catalogue: 'RIC', number: '53', volume }), true, `${cited} as ${volume} 53`);
+  }
 });

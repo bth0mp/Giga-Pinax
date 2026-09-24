@@ -37,3 +37,22 @@ test('finds duplicate lots only from auction URL or complete house sale lot iden
   assert.equal(findDuplicateLot([{ id: 'type', sourceLinks: [{ source: 'coinarchives', sourceRecordId: 'RIC-1', url: 'https://catalogue.test/types/RIC-1' }] }],
     { sourceLinks: [{ source: 'coinarchives', sourceRecordId: 'RIC-1', url: 'https://catalogue.test/types/RIC-1' }] }), null);
 });
+
+// Loop N19: the same lot captured from a tracking link and from its canonical page was saved twice, since only the page address was compared. A
+// page is the same lot as the page another names as its canonical one. Two canonical addresses alone prove nothing: a catalogue that names its sale
+// page as every lot's canonical one would make every lot of the sale one lot, and the store would refuse to save the second.
+test('a lot is the same lot as the page another names canonical, and two canonical addresses alone are not', () => {
+  const saved = [{ id: 'canon', auctionContext: { pageUrl: 'https://house.test/lot/7', canonicalUrl: 'https://house.test/lot/7' } }];
+  assert.equal(findDuplicateLot(saved, { auctionContext: { pageUrl: 'https://mail.test/c?u=7', canonicalUrl: 'https://house.test/lot/7#photo' } }).id, 'canon');
+  const tracked = [{ id: 'tracked', auctionContext: { pageUrl: 'https://mail.test/c?u=7', canonicalUrl: 'https://house.test/lot/7' } }];
+  assert.equal(findDuplicateLot(tracked, { auctionContext: { pageUrl: 'https://house.test/lot/7?utm_source=x' } }).id, 'tracked');
+  // Every lot of a sale naming the sale page as canonical is still its own lot.
+  const sale = [{ id: 'one', auctionContext: { pageUrl: 'https://house.test/lot/1', canonicalUrl: 'https://house.test/sale/5' } }];
+  assert.equal(findDuplicateLot(sale, { auctionContext: { pageUrl: 'https://house.test/lot/2', canonicalUrl: 'https://house.test/sale/5' } }), null);
+  // A complete house, sale and lot identity that differs still wins over a matching address.
+  const identified = [{ id: 'seven', auctionContext: { pageUrl: 'https://house.test/lot/7', house: 'CNG', saleId: '1', lotNumber: '7' } }];
+  assert.equal(findDuplicateLot(identified, { auctionContext: { pageUrl: 'https://x.test', canonicalUrl: 'https://house.test/lot/7', house: 'CNG', saleId: '1', lotNumber: '8' } }), null);
+  // A canonical address that is no web address is ignored.
+  assert.equal(findDuplicateLot([{ id: 'bad', auctionContext: { pageUrl: 'javascript:alert(1)' } }],
+    { auctionContext: { pageUrl: 'https://b.test/2', canonicalUrl: 'javascript:alert(1)' } }), null);
+});

@@ -1,5 +1,5 @@
 import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
-import { isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
+import { EXTRA_SPELLINGS, isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -97,12 +97,28 @@ const BODY = /^(?:\s*(?:[^\s()]+|\([^()]*\))){0,1}(?:\s+(?:[^\s()]+|\([^()]*\)))
 const WORDS = /^(?:\s*[^\s\d()]+){0,3}\s*$/u;
 // A weight, size, die axis or date after the references ("3.21g", "8 h", "AD 69-79") is not a number that carries one on.
 const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\.)\s/i;
-const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)((?:Ex|From|Provenance)\b)/;
+// The German, Italian, Spanish and French houses open one with their own words ("Exemplar der Auktion …", "Aus Sammlung …", "Erworben 1998 bei …",
+// "Provenienz: …", "Provient de la vente …", "Proviene da asta …"), each at the start of its sentence and with its capital, as "Ex" is.
+const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Ex|From`;
+const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MARKERS})\b)`);
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
 // Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975.", "no. 1973", "Nr. 12"), nor at the one a day
 // is written with before its month and year ("25. Mai 1973"), whose tail would be left behind as a reference.
-const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
+// The German abbreviations a provenance is written with are no end either: "Slg." (Sammlung), "Smlg.", "Auk." (Auktion), "Kat.", "Abb.", "Taf.",
+// "Lot." and "Los.".
+// A full stop with a catalogue citation behind it ends the sentence whatever stands before it: a collection anonymised by its initials ("Aus
+// Sammlung Dr. W. R. RIC 53.") would otherwise run on and take the references with it. The citation is any key the reader knows, then what may
+// stand between a key and its number — an edition mark, a volume with its part, up to four capitalised or bracketed words (a ruler, a mint, a
+// section, a corpus's own words: "RIC VII (Trier) 12", "SNG Cop 123", "Bop Euthydemus I 24A") — then the number, which may carry Price's P or L. A
+// "cf." in front of the key is the citation's own, so the sentence ends before it and the row keeps its mark. The key must be followed by its number,
+// so "Dr. Sear collection" is still the collector's name; and only a typed catalogue's number may look like a year ("Price 1985"), since behind any
+// other key a year is a date ("Ex Slg. Dr. W. Müller 1985, Nr. 12."). The single letters C and S are left out: they are initials here.
+const TYPED_NEXT = String.raw`RIC|R\.I\.C|RRC|Crawford|Craw|Cr|Price|Pr|SC|Seleucid Coins|Bopearachchi|Bop|CPE|Newell`;
+const BETWEEN = String.raw`\.?[²³]?(?:[\s.,:#-]*(?:vol\.?\s?)?[IVX]+(?:\s?[./-]\s?\d|,?\s*part\s*\d)?[²³]?,?)?(?:\s+(?:\p{Lu}[\p{L}'’]*\.?|\([^()]{1,40}\)),?){0,4}[\s.,:#-]*[PL]?`;
+const OTHER_NEXT = KEYS.filter((key) => key.length > 1).join('|');
+const CITED_NEXT = String.raw`\.(?=\s(?:[Cc]f\.?\s)?(?:(?:${TYPED_NEXT})${BETWEEN}\d|(?:${OTHER_NEXT})${BETWEEN}(?!(?:1[5-9]|20)\d\d(?!\d))\d))`;
+const PROVENANCE_END = new RegExp(String.raw`${CITED_NEXT}|` + /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u.source, 'u');
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
@@ -123,11 +139,25 @@ const PROVENANCE_READ = 6000;
 const PROVENANCE_ENTRIES = 10;
 const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
-const PROVENANCE_LABEL = /^provenance ?:? ?/i;
-const PROVENANCE_MARKER = /^(?:ex|from)\b\.? ?:? ?/i;
-const PROVENANCE_LOT = /,? ?\b(?:lots?|los)\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
-const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
-const PROVENANCE_DATE = /(?:\b\d{1,2}(?:st|nd|rd|th)?\.? )?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?)\.? (?:\d{1,2}(?:st|nd|rd|th)?,? )?$|\b\d{1,2}[./]\d{1,2}[./]$/i;
+const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
+// The words that only introduce the owner: "Ex", "From", "Exemplar der", "Aus (der)", "Provient de", "Proviene da". "Erworben" is kept, since
+// "Erworben bei Lanz" says how the coin came, as "privately purchased from" does.
+const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|proviene(?: d[a-z']*)?)\b\.? ?:? ?/i;
+// The lot, after the word a house writes for it: "lot", German "Los", Italian "lotto", Spanish "lote". A "no.", "Nr." or "n°" is the lot only in a
+// clause of its own after a comma ("Zürich 2000, Nr. 12"), and only where no lot word is written, since "Auction no. 45" is the sale's number.
+const PROVENANCE_LOT = /,? ?\b(?:lots?|los|lotto|lote)\b\.? ?(?:no\.? ?|nr\.? ?|n\.?[°º] ?|n\. ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+// "n°" is written with the degree sign or with the ordinal indicator the Spanish and French keyboards type ("nº", "n.º"), and Italian writes "n.".
+const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n\.?[°º]|n\.) ?(\d{1,6}[a-z]?)(?![\da-z])/i;
+// A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
+// The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
+// "24 avril").
+const PROVENANCE_DATE = new RegExp(String.raw`(?:\b\d{1,2}(?:st|nd|rd|th|er)?\.? (?:de )?)?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März`
+  + String.raw`|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?`
+  + String.raw`|enero|febrero|marzo|abril|mayo|junio|julio|agosto|sep?tiembre|octubre|noviembre|diciembre`
+  + String.raw`|gennaio|febbraio|aprile|maggio|giugno|luglio|settembre|ottobre|novembre|dicembre`
+  + String.raw`|janvier|f[ée]vrier|mars|avril|juin|juillet|ao[uû]t|septembre|octobre|d[ée]cembre)\.? (?:de )?(?:\d{1,2}(?:st|nd|rd|th)?,? )?$`
+  + String.raw`|\b\d{1,2}[./]\d{1,2}[./]$`, 'i');
 const TRIMMED = new Set([' ', ',', '.', ';', ':', '-', '–', '\n']);
 const trimEnds = (value) => {
   let start = 0, end = value.length;
@@ -155,7 +185,7 @@ function provenanceEntry(piece) {
   let working = trimEnds(text.replace(PROVENANCE_MARKER, ''));
   if (!/[\p{L}\d]/u.test(working)) return null;
   const entry = { text: text.slice(0, 300) };
-  const lot = PROVENANCE_LOT.exec(working);
+  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
@@ -169,18 +199,21 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/, ?(?=,)/g, '')).slice(0, 120);
+  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ',')).slice(0, 120);
   if (/\p{L}/u.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];
   return entry;
 }
 
+// Where one sentence holds several owners: a ";", a comma before another "ex", and a full stop before another marker that the sentence ran past at an
+// initial ("Aus Sammlung Dr. X. Erworben 1998 bei …").
+const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
 export function readProvenance(text) {
   if (typeof text !== 'string') return [];
   const entries = [];
   for (const sentence of provenanceSentences(text)) {
-    for (const piece of sentence.split(/;|,(?= ?ex )/i)) {
+    for (const piece of sentence.split(PROVENANCE_PIECES)) {
       if (entries.length >= PROVENANCE_ENTRIES) return entries;
       const entry = provenanceEntry(piece);
       if (entry) entries.push(entry);
@@ -288,8 +321,15 @@ for (const name of sectionPeople) {
     if (!labelGroups.get(label).includes(name)) labelGroups.get(label).push(name);
   }
 }
+// A dealer's own spelling (EXTRA_SPELLINGS) is read with the capital a name is written with, in any case after it ("Jovian", "JOVIAN"), so the
+// adjective a sentence writes in lower case ("a jovian eagle") is never a ruler. Nomisma's labels and RIC's sections are read in any case, as always.
+// "Jovian" is also an English adjective, so before a lower-case word ("Jovian eagle") it is that adjective, even where it opens a sentence.
+const EXTRA = new Set(EXTRA_SPELLINGS.map(([label]) => label));
+const ADJECTIVES = new Set(['jovian']);
+const namePattern = (label) => (EXTRA.has(label) && !fromSection.has(label)
+  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}` : anyCase(label));
 const RULERS = Object.freeze([...labelGroups.entries()]
-  .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
+  .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${namePattern(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
   .sort((a, b) => b[1].length - a[1].length));
 const LABELS = new Set(labelGroups.keys());
 
@@ -299,25 +339,35 @@ const LABELS = new Set(labelGroups.keys());
 const MINTS = Object.freeze(MINT_SPELLINGS.filter(([label]) => !LABELS.has(label))
   .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'u'), label.split(' ')[0]]))
   .sort((a, b) => b[1].source.length - a[1].source.length));
-// The mint a heading names, or none: the earliest one in the text, since a heading names the mint once. Read exactly as the rulers are, with the
-// same cheap substring test in front of each pattern and the same fold, so a heading written "Trèves" is compared as the table holds it.
-function headingMint(text) {
-  const rest = fold(text);
+// The city a commemorative honours is no mint: "Urbs Roma" and "VRBS ROMA" always, and "Constantinopolis" where the heading says it is the
+// commemorative ("Constantinopolis commemorative", "for Constantinopolis", "Commemorative Series. Constantinopolis") rather than the mint's own
+// Latin name. They are blanked before the mints are read, as the god Elagabal is before the rulers.
+const COMMEMORATED = /\b[uv]rbs\s+roma\b|\b(?:for|commemorative(?:\s+series)?)[\s.,:]+(?:the\s+)?constantinopolis\b|\bconstantinopolis(?=[\s,]+(?:commemorative|series|type|issue)\b)/gi;
+// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Rome Roman
+// Empire. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
+// the same fold, so a heading written "Trèves" is compared as the table holds it.
+function headingMints(text) {
+  const rest = fold(text).replace(COMMEMORATED, (match) => ' '.repeat(match.length));
   const lower = rest.toLowerCase();
-  let best = null;
+  const found = [];
   for (const [section, pattern, probe] of MINTS) {
     if (!lower.includes(probe)) continue;
-    const found = pattern.exec(rest);
-    if (found && (!best || found.index < best.index)) best = { index: found.index, section };
+    const at = pattern.exec(rest);
+    if (at) found.push({ index: at.index, section });
   }
-  return best?.section ?? '';
+  return [...new Set(found.sort((a, b) => a.index - b.index).map(({ section }) => section))];
 }
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
+// Elagabal is also the god of Emesa, whose sacred stone the coins of Elagabalus and of Uranius Antoninus show: "the stone of Elagabal", "Stein des
+// Elagabal", "la pierre d'Élagabal", "Sol Elagabal", "Stein des Gottes Elagabal", "Piedra sagrada de Elagabal" name the god, and the man they would
+// name is then someone else's coin. One word may stand between the noun and its preposition ("sacred", "sagrada"). "Elagabal in quadriga" is left
+// the emperor's: he rides one on his own coins as often as the stone does.
+const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|gottes|dieu|dio|dios|deus|sol|temple|tempel|tempio|templo)(?:\s+[a-z]+)?\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:(?:god|gott|gottes|dieu|dio|dios|deus)\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
 function rulersIn(text) {
-  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '');
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
   // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
   const lower = rest.toLowerCase();
@@ -515,8 +565,12 @@ export function findReferences(input) {
   const rulers = rulersIn(headline);
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
-  const mint = rulers.length === 0 ? headingMint(headline) : '';
-  return { references: mint ? references.map((found) => ({ ...found, mint })) : references, rulers };
+  // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the
+  // lookup never opens his coin from a mint of RIC VI–IX that is none of them. A heading with no ruler is the section of the first mint it names.
+  const named = headingMints(headline);
+  const mint = rulers.length === 0 ? named[0] ?? '' : '';
+  const mark = mint ? { mint } : named.length ? { struckAt: named } : null;
+  return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
@@ -557,7 +611,8 @@ export function lotLookup(found, rulers) {
   if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, ''), headingMint: true };
   if (!borrowsRulers(found, rulers)) return found.reference;
   const section = found.reference.section ? '' : headingSection(rulers);
-  return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
+  if (section) return { ...found.reference, section, volume: volumeFor(section, found.reference.volume) };
+  return { ...found.reference, rulers, ...(found.struckAt ? { struckAt: found.struckAt } : {}) };
 }
 // A lone Svoronos number may open the CPE type PCO files it under (catalogues.js), so its row promises nothing either way.
 const MAYBE_FILED = /^Svoronos \d+[A-Za-z]?$/i;

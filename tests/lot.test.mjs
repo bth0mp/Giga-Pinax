@@ -48,8 +48,9 @@ test('every lot gives its references in text order, as the dealer wrote them', (
 
 test('the type references are read, and only RIC, RRC, SC, Price and Bop are typed', () => {
   const [one, two, three, four, five, , seven, eight, nine, ten] = LOTS.map((lot) => findReferences(lot).references);
-  assert.deepEqual(one[0], { text: 'RIC 972', reference: ric('972'), cf: false, variant: false, typed: true });
-  assert.deepEqual(one[1], { text: 'Cohen 17', reference: other('Cohen 17'), cf: false, variant: false, typed: false });
+  // The heading names Rome beside Titus: each row carries it as where the coin was struck (loop N6 review).
+  assert.deepEqual(one[0], { text: 'RIC 972', reference: ric('972'), cf: false, variant: false, typed: true, struckAt: ['Rome'] });
+  assert.deepEqual(one[1], { text: 'Cohen 17', reference: other('Cohen 17'), cf: false, variant: false, typed: false, struckAt: ['Rome'] });
   assert.deepEqual(two[2].reference, ric('1073'));
   assert.deepEqual(three.map((found) => found.reference), [ric('268', '', 'Elagabalus'), other('BMC 76'), other('S 7756'), other('C 36')]);
   assert.deepEqual(four[0].reference, ric('394a', 'III', 'Antoninus Pius'));
@@ -97,7 +98,7 @@ test('a typed reference ends at its first number: a second one after a comma is 
 
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
-  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
+  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], ['Faustina the Elder'], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
   assert.deepEqual(findReferences('Claudius with Nero, as Caesar. RIC 107').rulers, ['Claudius', 'Nero']);
   assert.deepEqual(findReferences('Divus Vespasian. Struck under Titus. RIC 357').rulers, ['Vespasian', 'Titus']);
   // A mint is a RIC section too, but not a person; a name after the first reference is not the lot's ruler.
@@ -112,7 +113,7 @@ test('a mint-volume lot keeps its RIC citation clean and carries a strict matchi
   assert.equal(lot.references.length, 1);
   assert.equal(lot.references[0].text, 'RIC VII 287');
   assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
-    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287',
+    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: ['Rome', 'Londinium'],
   });
   assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC VII 287 · Constantine II');
 });
@@ -240,9 +241,67 @@ test('a regnal numeral, "Magnus" and an "as Augustus" title never make another p
   assert.deepEqual(rulers('Augustus, 27 BC-AD 14. Denarius. RIC 207.'), ['Augustus']);
 });
 
+// Loop N6: the European houses head a lot with the ruler in their own language, and a heading nobody could read left "RIC 347" to every volume's
+// thirty-four types, or sent a Spanish Nero to the Rome mint's folles.
+test('a heading names its ruler in Latin, German, French, Italian or Spanish', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [text, person] of [
+    ['Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. BMC 549; Calicó 1035; Coh. 276; RIC 347; Woytek 571f. Fast Stempelglanz.', 'Trajan'],
+    ['TRAJANUS, 98-117. Denar. RIC 347.', 'Trajan'], ['Traiano (98-117). Aureo, Roma. RIC 347; C 276.', 'Trajan'],
+    ['Trajano. Denario. Roma. RIC 347.', 'Trajan'], ['Nerón. Denario. 65-66 d.C. Roma. RIC 53; RSC 119. Ag 3,42 g. Pátina. EBC-.', 'Nero'],
+    ['Néron (54-68). Denier, 65-66, Rome. RIC.53 - RSC.119.', 'Nero'], ['Nerone (54-68). Denario, Roma, 65-66. RIC 53; C 119.', 'Nero'],
+    ['Adriano. Denario. Roma. RIC 241.', 'Hadrian'], ['Hadrien (117-138). Denier. RIC 241.', 'Hadrian'],
+    ['Vespasiano. Denario. RIC 356.', 'Vespasian'], ['Vespasien (69-79). Denier. RIC 356.', 'Vespasian'],
+    ['Philippus I. Arabs, 244-249. Antoninian. RIC 27b.', 'Philip the Arab'], ['Valerianus I., 253-260. Antoninian. RIC 106.', 'Valerian'],
+    ['Elagabal, 218-222. Denar. RIC 88.', 'Elagabalus'], ['Heliogabalus. Denarius. RIC 88.', 'Elagabalus'],
+    ['Faustina II., 147-176. Denar. RIC 677.', 'Faustina the Younger'],
+    ['Faustina Minor. Denarius. RIC 677.', 'Faustina the Younger'], ['Faustina Maior. Denar. RIC 344.', 'Faustina the Elder'],
+    ['Constantius I., 293-306. Follis. RIC 170a.', 'Constantius Chlorus'], ['Maximinus II. Daia, 305-313. Follis. RIC 845.', 'Maximinus Daia'],
+    ['Julian II. AD 360-363. Siliqua. RIC 212.', 'Julian the Apostate'], ['Jovian. AD 363-364. Solidus. RIC 175.', 'Jovianus'],
+    ['Constantine the Great. Follis. RIC 105.', 'Constantine I'], ['Konstantin I., 306-337. Follis. RIC 105.', 'Constantine I'],
+    ['Costantino I (306-337). Follis. RIC 105.', 'Constantine I'], ['Traianus Decius, 249-251. Antoninian. RIC 21b.', 'Trajan Decius']]) {
+    assert.deepEqual(rulers(text), [person], text);
+  }
+  // A heading the table read already reads as it did, and a spelling with another numeral behind it is someone else.
+  assert.deepEqual(rulers('Faustina II. Denar. RIC 677. Faustina I'), ['Faustina the Younger']);
+  assert.deepEqual(rulers('Constantius II. AE3. RIC 123.'), ['Constantius II']);
+  // No new spelling reads an ordinary word or the start of one: an adjective, the sea, a style, the god of Emesa whose stone the coins show.
+  for (const prose of ['Neronian style. Denarius. RIC 53.', 'Adriatic hoard. Denarius. RIC 241.', 'A jovian eagle. RIC 175.',
+    'Traianeum at Pergamon. RIC 347.', 'Emesa. Aureus. The sacred stone of Elagabal in a quadriga. RIC 2.', 'Emesa. Stein des Elagabal. RIC 2.']) {
+    assert.deepEqual(rulers(prose), [], prose);
+  }
+  assert.deepEqual(rulers('Uranius Antoninus. Aureus, Emesa. The baetyl of Elagabal in a quadriga. RIC 2.'), ['Uranius Antoninus']);
+  // Loop N6 review: the god in three more phrasings, with a word between the noun and the god's name.
+  for (const god of ['Uranius Antoninus. Aureus. Sol Elagabal. RIC 2.', 'Uranius Antoninus. Aureus. Der heilige Stein des Gottes Elagabal. RIC 2.',
+    'Uranius Antoninus. Áureo. Piedra sagrada de Elagabal. RIC 2.']) {
+    assert.deepEqual(rulers(god), ['Uranius Antoninus'], god);
+  }
+  // "Elagabal in quadriga" stays the emperor: he rides one on his own coins as often as the stone does.
+  assert.deepEqual(rulers('Elagabal in Quadriga. Aureus. RIC 2.'), ['Elagabalus']);
+  // A joint heading in German, French, Italian or Spanish reads both people, as its English form does.
+  for (const [text, people] of [['Philipp I. und Philipp II. Antoninian. RIC 1.', ['Philip the Arab', 'Philip II']],
+    ['Philippe Ier et Philippe II. RIC 1.', ['Philip the Arab', 'Philip II']], ['Filippo I e Filippo II. RIC 1.', ['Philip the Arab', 'Philip II']],
+    ['Konstantin I. für Konstantin II. Follis. RIC 1.', ['Constantine I', 'Constantine II']],
+    ['Costantino I per Costantino II. RIC 1.', ['Constantine I', 'Constantine II']],
+    ['Valerianus I. für Valerianus II. Antoninian. RIC 1.', ['Valerian', 'Valerian II']]]) {
+    assert.deepEqual(rulers(text), people, text);
+  }
+  // "Jovian" is also an English adjective: at the start of a sentence, before a lower-case noun, it is the adjective.
+  assert.deepEqual(rulers('Jovian eagle. RIC 175.'), []);
+  assert.deepEqual(rulers('Jovian, 363-364. AE3. RIC 175.'), ['Jovianus']);
+  assert.deepEqual(rulers('Jovian AV Solidus. RIC 175.'), ['Jovianus']);
+  // The Künker heading reads the ruler, so the row borrows him rather than every volume's RIC 347.
+  const kunker = findReferences('Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. RIC 347; Woytek 571f.');
+  assert.deepEqual(lotLookup(kunker.references[0], kunker.rulers), { catalogue: 'RIC', number: '347', volume: '', section: '', rulers: ['Trajan'] });
+  // The Spanish Nero no longer falls through to the heading's mint.
+  const aureo = findReferences('Nerón. Denario. 65-66 d.C. Roma. RIC 53; RSC 119.');
+  assert.equal(lotLookup(aureo.references[0], aureo.rulers).section, '');
+  assert.deepEqual(lotLookup(aureo.references[0], aureo.rulers).rulers, ['Nero']);
+});
+
 test('a lot row looks up its parsed reference, with the rulers only on a RIC reference without a section, and says so', () => {
   const [lot, maesa] = [LOTS[0], LOTS[2]].map(findReferences);
-  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), { ...ric('972'), rulers: ['Titus'] });
+  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), { ...ric('972'), rulers: ['Titus'], struckAt: ['Rome'] });
   assert.deepEqual(lotLookup(lot.references[1], lot.rulers), other('Cohen 17'));
   assert.deepEqual(lotLookup(maesa.references[0], ['Julia Maesa']), ric('268', '', 'Elagabalus'));
   assert.deepEqual(lotLookup(lot.references[0], []), ric('972'));
@@ -465,6 +524,26 @@ test('a group lot listing several numbers under one key gives a row that can be 
   assert.deepEqual(rest, []);
   assert.equal(found.text, 'SNG von Aulock 5960, 5961, 5962, 5963, 5964');
   assert.equal(defaultTerm(found.reference), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
+});
+
+// Loop N8: CNG cites the co-authored Pre-Kushana Coins in Pakistan beside Bopearachchi's own book, and CGB and Elsen put "Série" before the number.
+// The first is another book and only its prices are searched; the second is the Bop number with no king.
+test('a Bopearachchi citation with a co-author is prices only, and the French series word is no king', () => {
+  const lot = findReferences('BAKTRIA, Greco-Baktrian Kingdom. Eukratides I Megas. Circa 170-145 BC. AR Tetradrachm (33mm, 16.95 g, 12h). '
+    + 'Bopearachchi 6C; Bopearachchi & Rahman 268; SNG ANS 464-5; HGC 12, 131. EF, lightly toned.');
+  assert.deepEqual(lot.references.map((found) => [found.text, found.reference.catalogue, found.reference.section ?? '']), [
+    ['Bopearachchi 6C', 'Bop', ''], ['Bopearachchi & Rahman 268', 'Other', ''], ['SNG ANS 464-5', 'Other', ''], ['HGC 12, 131', 'Other', '']]);
+  assert.equal(lotLabel(lot.references[1], lot.rulers), 'Bopearachchi & Rahman 268 · prices only');
+  assert.equal(defaultTerm(lot.references[1].reference), '"Bopearachchi & Rahman 268"');
+  for (const text of ['Bopearachchi and Rahman 268.', 'Bopearachchi-Rahman 268.']) {
+    assert.equal(only(text).reference.catalogue, 'Other', text);
+    assert.equal(only(text).typed, false, text);
+  }
+  const french = only('Royaume de Bactriane. Eucratide Ier (v. 171-145). Tétradrachme. Bopearachchi Série 6C. Superbe.');
+  assert.deepEqual(french.reference, { catalogue: 'Bop', number: '6C', volume: '', section: '' });
+  assert.equal(defaultTerm(french.reference), '("Bopearachchi 6C" "Bop 6C" "Bopearachchi Série 6C")');
+  // A Bop number with its king still reads as it did.
+  assert.deepEqual(only('Euthydemos II. Bopearachchi 1C.').reference, { catalogue: 'Bop', number: '1C', volume: '', section: '' });
 });
 
 test('a publication year after a key is no type number when the clause says it is a book', () => {
@@ -917,7 +996,8 @@ test('a regnal numeral after a name is read in capitals only, so a lower-case le
 // "Sévère", a Spanish "Juan" and a Latin dative "Iovi" all became rulers, and "Sept. Severus. RIC 16" then opened a Severus II follis. Each of these
 // is prose, a month, a legend or an abbreviation, and none of them named a ruler before the aliases were widened.
 test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abbreviation stay text', () => {
-  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina Senior, 138-141. AR Denarius. RIC III 344.',
+  // "Diva Faustina Senior" is Faustina the Elder (loop N6); the Portuguese word alone is still nobody.
+  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina, 138-141. AR Denarius. RIC III 344.',
     'Severe scratches and a flan crack. RIC 1', 'Denarius. Rev: Pietas Augusti. RIC 1', 'Struck August 70. RIC 1', 'Jovi Statori. RIC 1',
     'Marc Antony legionary denarius. RIC 1', 'Juan Carlos collection. RIC 1', 'Mario Ratto, 1962. RIC 1', 'Drusus. RIC 1', 'Maximinus. RIC 1',
   ]) assert.deepEqual(findReferences(text).rulers, [], text);
@@ -1024,14 +1104,18 @@ test('the heading spellings the English and Latin labels really carry resolve, a
     ['Florian', ['Florian']],
     ['Severina', ['Severina']],
     ['Mariniana', ['Mariniana']],
-    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: they name nobody rather than somebody.
-    ['Maximinus I', []],
-    ['Maximinus II', []],
-    ['Constantius I', []],
-    ['Faustina II', []],
-    ['Faustina Junior', []],
-    ['Diva Faustina I', []],
-    ['Julian II', []],
+    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: the closed table of dealers' spellings
+    // (catalogues.js EXTRA_SPELLINGS, loop N6) names each one person, and without it they would name nobody rather than somebody.
+    ['Maximinus I', ['Maximinus Thrax']],
+    ['Maximinus II', ['Maximinus Daia']],
+    ['Constantius I', ['Constantius Chlorus']],
+    ['Faustina II', ['Faustina the Younger']],
+    ['Faustina Junior', ['Faustina the Younger']],
+    ['Diva Faustina I', ['Faustina the Elder']],
+    ['Julian II', ['Julian the Apostate']],
+    ['Maximinus III', []],
+    ['Faustina', []],
+    ['Julianus', []],
   ]) assert.deepEqual(rulers(`${heading}. Denarius. RIC 12.`), expected, heading);
 });
 
@@ -1069,9 +1153,12 @@ test('a mint written beside a RIC number with no volume keeps the heading ruler'
 // came from the heading's mint, and the lookup offers what it finds there rather than opening it.
 test('a section taken from the heading\'s mint is marked as such, and a section the lot cites is not', () => {
   const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
-  for (const text of ['Constantius I. Follis. Trier. RIC VI 1.', 'Julian II. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
+  for (const text of ['Sept. Severus. Follis. Trier. RIC VI 1.', 'Usurper. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
     assert.equal(lookup(text).headingMint, true, text);
   }
+  // Those two headings of the first rounds now name their rulers (loop N6), and the ruler is asked for instead of the mint.
+  assert.deepEqual(lookup('Constantius I. Follis. Trier. RIC VI 1.').rulers, ['Constantius Chlorus']);
+  assert.deepEqual(lookup('Julian II. Siliqua. Arles. RIC VIII 12.').rulers, ['Julian the Apostate']);
   for (const text of ['Constantine I. Follis. RIC VII Trier 12.', 'Constantine I. Follis. Trier. RIC VII 12.', 'Rome mint. RIC IV 460', 'RIC VII Treveri 12']) {
     assert.equal(lookup(text).headingMint, undefined, text);
   }
@@ -1203,10 +1290,94 @@ test('hostile provenance text stays linear: long runs, nested brackets and no ye
 // its end - so the entry is offered whole, and the references after it are still read.
 test('a provenance sentence runs past a dated day and a "no." to its real end', () => {
   assert.deepEqual(readProvenance('Ex Leu 7, 25. Mai 1973, Los 123.'), [{ text: 'Ex Leu 7, 25. Mai 1973, Los 123', source: 'Leu 7', year: 1973, lot: '123' }]);
-  assert.deepEqual(readProvenance('Ex Leu 7, no. 1973.'), [{ text: 'Ex Leu 7, no. 1973', source: 'Leu 7, no. 1973' }]);
+  // "no." after the sale's own clause is its lot (loop N9), and never a year.
+  assert.deepEqual(readProvenance('Ex Leu 7, no. 1973.'), [{ text: 'Ex Leu 7, no. 1973', source: 'Leu 7', lot: '1973' }]);
   assert.deepEqual(readProvenance('Ex Hess, Nr. 12. Ex Leu 4, 3. Dez. 1990.').map(({ text }) => text), ['Ex Hess, Nr. 12', 'Ex Leu 4, 3. Dez. 1990']);
   assert.deepEqual(texts('Ex Leu 7, 25. Mai 1973, Los 123. RIC 972; Cohen 17.'), ['RIC 972', 'Cohen 17']);
   assert.deepEqual(texts('Ex Leu 7, no. 1973. RIC 972.'), ['RIC 972']);
   // A number closing a sentence before a word that is no month still ends it.
   assert.deepEqual(texts('Ex CNG 105, lot 12. Marble-like patina. RIC 972.'), ['RIC 972']);
+});
+
+// Loop N9: half the European market writes provenance in German, Italian, Spanish or French, and the reader cut "Ex Slg." at its full stop, took no
+// lot from "Nr. 1234", no year from "Zürich 2000," and did not see "Exemplar der Auktion", "Aus Sammlung", "Erworben", "Provenienz:", "lotto",
+// "lote", "n°" or "Provient de" at all.
+test('the provenance reader reads German, Italian, Spanish and French provenance', () => {
+  for (const [text, entries] of [
+    ['Ex Slg. Dr. X, erworben 1988 bei Lanz.', [{ text: 'Ex Slg. Dr. X, erworben 1988 bei Lanz', source: 'Slg. Dr. X, erworben bei Lanz', year: 1988 }]],
+    ['Ex Lanz 145, 5. Januar 2009, Nr. 1234.', [{ text: 'Ex Lanz 145, 5. Januar 2009, Nr. 1234', source: 'Lanz 145', year: 2009, lot: '1234' }]],
+    ['Ex Auktion Leu 79, Zürich 2000, Nr. 12.', [{ text: 'Ex Auktion Leu 79, Zürich 2000, Nr. 12', source: 'Auktion Leu 79, Zürich', year: 2000, lot: '12' }]],
+    ['Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234.',
+      [{ text: 'Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234', source: 'Auktion NAC 78, Zürich', year: 2014, lot: '1234' }]],
+    ['Aus Sammlung Dr. X. Erworben 1998 bei Münzen und Medaillen AG Basel.', [
+      { text: 'Aus Sammlung Dr. X', source: 'Sammlung Dr. X' },
+      { text: 'Erworben 1998 bei Münzen und Medaillen AG Basel', source: 'Erworben bei Münzen und Medaillen AG Basel', year: 1998 }]],
+    ['Provenienz: Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456.',
+      [{ text: 'Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456', source: 'Sammlung X, Auktion Gorny & Mosch 250', year: 2017, lot: '456' }]],
+    ['Ex asta Nomisma 50, 2014, lotto 123.', [{ text: 'Ex asta Nomisma 50, 2014, lotto 123', source: 'asta Nomisma 50', year: 2014, lot: '123' }]],
+    ['Proviene da asta Varesi 60, 12 maggio 2012, lotto 45.',
+      [{ text: 'Proviene da asta Varesi 60, 12 maggio 2012, lotto 45', source: 'asta Varesi 60', year: 2012, lot: '45' }]],
+    ['Provient de la vente Vinchon, 24 avril 1985, n° 123.',
+      [{ text: 'Provient de la vente Vinchon, 24 avril 1985, n° 123', source: 'la vente Vinchon', year: 1985, lot: '123' }]],
+    ['Ex Áureo & Calicó 300, 7 marzo 2018, lote 1234.',
+      [{ text: 'Ex Áureo & Calicó 300, 7 marzo 2018, lote 1234', source: 'Áureo & Calicó 300', year: 2018, lot: '1234' }]],
+    ['Ex Áureo & Calicó 300, 7 de marzo de 2018, lote 1234.',
+      [{ text: 'Ex Áureo & Calicó 300, 7 de marzo de 2018, lote 1234', source: 'Áureo & Calicó 300', year: 2018, lot: '1234' }]],
+  ]) assert.deepEqual(readProvenance(text), entries, text);
+  // A Künker lot's references are read and its provenance sentences stay out of them, the collection one as much as the auction one.
+  const kunker = 'Traianus, 98-117. Aureus. RIC 347; Woytek 571f. Fast Stempelglanz. Exemplar der Sammlung Dr. X. Ex Auktion Leu 79, Zürich 2000, Nr. 12.';
+  assert.deepEqual(texts(kunker), ['RIC 347', 'Woytek 571f']);
+  assert.deepEqual(readProvenance(kunker).map(({ text }) => text), ['Exemplar der Sammlung Dr. X', 'Ex Auktion Leu 79, Zürich 2000, Nr. 12']);
+  // A sale number is never the lot, the lot word the dealer wrote wins over a "no." before it, and a year still needs four digits of its own.
+  assert.deepEqual(readProvenance('Ex Leu Auction no. 45, lot 12.'), [{ text: 'Ex Leu Auction no. 45, lot 12', source: 'Leu Auction no. 45', lot: '12' }]);
+  assert.deepEqual(readProvenance('Ex Leu 7, 1973,5.'), [{ text: 'Ex Leu 7, 1973,5', source: 'Leu 7, 1973,5' }]);
+  // "Nr." with no comma before it is the sale's number, not the lot.
+  assert.deepEqual(readProvenance('Ex Künker Auktion Nr. 145.'), [{ text: 'Ex Künker Auktion Nr. 145', source: 'Künker Auktion Nr. 145' }]);
+  // Ordinary words are no marker: "aus" inside a sentence, "Erworben" in the middle of one, and "Exemplar" without "der".
+  assert.deepEqual(readProvenance('Vorzügliches Exemplar mit feiner Tönung. RIC 347.'), []);
+  assert.deepEqual(readProvenance('Nero. Denar aus der Zeit um 65. RIC 53.'), []);
+});
+
+// Loop N9 review (Important 1): a provenance sentence the new markers open and an initial keeps running ("Sammlung Dr. W. R.") swallowed the
+// references after it, and the lot offered nothing. A full stop with a catalogue key behind it ends the sentence, initial or not.
+test('a provenance sentence ends at the full stop a catalogue key follows, even behind an initial', () => {
+  for (const [text, expected] of [['Aus Sammlung H. W. RIC 53.', ['RIC 53']], ['Exemplar der Sammlung Dr. W. R. RIC 53.', ['RIC 53']],
+    ['Provenienz: Slg. Dr. H. RIC 53.', ['RIC 53']], ['Ex Slg. Dr. X. RIC 53.', ['RIC 53']], ['Nero. Denar. Erworben bei M. RIC 53.', ['RIC 53']],
+    ['Nero. Denar. Aus Slg. X. RIC 53. Cohen 17.', ['RIC 53', 'Cohen 17']], ['Ex Dr. Sear collection. Price 3949.', ['Price 3949']]]) {
+    assert.deepEqual(texts(text), expected, text);
+  }
+  assert.deepEqual(readProvenance('Aus Sammlung H. W. RIC 53.'), [{ text: 'Aus Sammlung H. W', source: 'Sammlung H. W' }]);
+  // Loop N9 re-review: whatever may stand between a key and its number ends the sentence too — a volume, its part or edition, a ruler or mint, a
+  // bracketed section, Price's P or L, a Bop king — and any catalogue key the reader knows, not only the typed ones.
+  for (const [text, expected] of [['Aus Sammlung H. W. RIC I Nero 53.', ['RIC I Nero 53']], ['Aus Sammlung H. W. RIC I² Nero 53.', ['RIC I² Nero 53']],
+    ['Aus Sammlung H. W. RIC II Hadrian 241.', ['RIC II Hadrian 241']], ['Aus Sammlung H. W. RIC VII Trier 12.', ['RIC VII Trier 12']],
+    ['Aus Sammlung H. W. RIC VII (Trier) 12.', ['RIC VII (Trier) 12']], ['Aus Sammlung H. W. RIC IV Caracalla 266.', ['RIC IV Caracalla 266']],
+    ['Aus Sammlung H. W. RIC² 12.', ['RIC² 12']], ['Aus Sammlung H. W. RIC IV.1 266.', ['RIC IV.1 266']],
+    ['Aus Sammlung H. W. Price P12.', ['Price P12']], ['Aus Sammlung H. W. Bop Euthydemus I 24A.', ['Bop Euthydemus I 24A']],
+    ['Aus Sammlung H. W. SNG Cop 123.', ['SNG Cop 123']], ['Aus Sammlung H. W. SNG ANS 464.', ['SNG ANS 464']],
+    ['Aus Sammlung H. W. MIR 36, 123.', ['MIR 36, 123']], ['Aus Sammlung H. W. Göbl 123.', ['Göbl 123']],
+    ['Aus Sammlung H. W. Kampmann 12.3.', ['Kampmann 12.3']], ['Aus Sammlung H. W. Price 3949.', ['Price 3949']]]) {
+    assert.deepEqual(texts(text), expected, text);
+  }
+  // A "cf." before the key belongs to the citation: the sentence ends in front of it and the row keeps its mark.
+  const compared = only('Aus Sammlung H. W. Cf. RIC 53.');
+  assert.deepEqual([compared.text, compared.cf], ['RIC 53', true]);
+  // A capitalised word with a number is no citation unless it is a key, and a key's bare year is a year: these stay in the provenance.
+  for (const text of ['Ex Slg. Dr. W. Müller 1985, Nr. 12.', 'Ex Slg. Dr. W. Hess 12, Nr. 5.', 'Aus Sammlung H. W. Leu 79, 2000.',
+    'Ex Dr. A. Weber 1920, lot 3.', 'Aus Sammlung Dr. W. R. Zürich 2000, Nr. 12.']) {
+    assert.deepEqual(texts(text), [], text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  // Loop N9 review: the ordinal indicator the Spanish and French keyboards type (nº, n.º), the Italian "n." and "lotto n.", and no space left
+  // before a comma where the year came out.
+  for (const [text, lot] of [['Ex Áureo 300, 7 marzo 2018, nº 1234.', '1234'], ['Ex Áureo 300, 2018, n.º 1234.', '1234'],
+    ['Ex asta Varesi 60, 2012, n. 45.', '45'], ['Ex asta Varesi 60, 2012, lotto n. 45.', '45'], ['Provient de la vente X, 1985, lot nº 12.', '12']]) {
+    assert.equal(readProvenance(text)[0].lot, lot, text);
+  }
+  assert.deepEqual(readProvenance('Ex Auktion Hirsch, München 1998, Nr. 5.'), [
+    { text: 'Ex Auktion Hirsch, München 1998, Nr. 5', source: 'Auktion Hirsch, München', year: 1998, lot: '5' }]);
+  assert.equal(readProvenance('Ex Auktion Hirsch, München 1998, Wien.')[0].source, 'Auktion Hirsch, München, Wien');
+  // The initial still keeps a sentence whole where no key follows it.
+  assert.deepEqual(readProvenance('Ex Dr. Sear collection, 1975.').map(({ text }) => text), ['Ex Dr. Sear collection, 1975']);
+  assert.deepEqual(readProvenance('Aus Sammlung Dr. W. R. Erworben 1998.').map(({ text }) => text), ['Aus Sammlung Dr. W. R', 'Erworben 1998']);
 });
