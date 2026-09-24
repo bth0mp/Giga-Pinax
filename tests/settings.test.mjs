@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 import * as backup from '../extension/core/backup.js';
 import * as bidTools from '../extension/bid-tools.js';
+import * as csv from '../extension/core/csv.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
@@ -102,7 +103,7 @@ function loadSettings({
   };
 
   const sandbox = {
-    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue,
+    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv,
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
@@ -127,7 +128,7 @@ function loadSettings({
   // Each download is one object URL followed by one anchor that is clicked, so the two line up.
   const downloads = () => created
     .filter((element) => element.tagName === 'a' && element.clickCount > 0)
-    .map((element, index) => ({ name: element.download, text: blobs[index]?.parts?.[0] }));
+    .map((element, index) => ({ name: element.download, text: blobs[index]?.parts?.[0], type: blobs[index]?.type }));
 
   return {
     document,
@@ -823,6 +824,52 @@ test('Export backup writes an importable file of the current records', async () 
   assert.match(file.name, /^giga-pinax-\d{4}-\d{2}-\d{2}\.json$/);
   assert.equal(backup.validateBackup(file.text).ok, true);
   assert.equal(page.status(), 'Backup exported.');
+});
+
+// --- CSV export ----------------------------------------------------------------------------------
+
+test('Export CSV offers every table and downloads the chosen one as a UTF-8 CSV file', async () => {
+  const snapshot = snapshotWith({ lots: [lot(uuid(1), { title: '=Hadrian, "denarius"' })] });
+  const page = await openSettings({ snapshot });
+  const choices = page.element('csv-table').querySelectorAll('option');
+  assert.deepEqual(choices.map((option) => option.value), csv.CSV_TABLES.map(({ key }) => key));
+  assert.deepEqual(choices.map((option) => option.textContent), csv.CSV_TABLES.map(({ label }) => label));
+
+  await page.element('export-csv').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-lots-\d{4}-\d{2}-\d{2}\.csv$/);
+  assert.equal(file.type, 'text/csv;charset=utf-8');
+  assert.equal(file.text, csv.csvFiles(snapshot).lots);
+  assert.equal(page.status(), 'Watchlist lots exported as CSV.');
+  assert.equal(page.statusIsError(), 'false');
+});
+
+test('Export CSV writes the table chosen in the list, one file per click', async () => {
+  const snapshot = snapshotWith({ lots: [lot(uuid(1), {
+    bidHistory: [{ id: uuid(9), action: 'planned-revised', amount: { currency: 'EUR', minor: 1000 }, recordedAt: NOW }],
+    plannedBid: { amount: { currency: 'EUR', minor: 1000 } },
+  })] });
+  const page = await openSettings({ snapshot });
+  page.element('csv-table').value = 'bids';
+  await page.element('export-csv').click();
+  await settle();
+  page.element('csv-table').value = 'outcomes';
+  await page.element('export-csv').click();
+  await settle();
+  const files = page.downloads();
+  assert.deepEqual(files.map(({ name }) => name.replace(/-\d{4}-\d{2}-\d{2}/, '')), ['giga-pinax-bids.csv', 'giga-pinax-outcomes.csv']);
+  assert.equal(files[0].text, csv.csvFiles(snapshot).bids);
+  assert.equal(page.status(), 'Outcome history exported as CSV.');
+});
+
+test('a CSV export that cannot read the records says so and writes no file', async () => {
+  const page = await openSettings({ snapshotReply: { ok: false, message: 'Could not read local records.' } });
+  await page.element('export-csv').click();
+  await settle();
+  assert.deepEqual(page.downloads(), []);
+  assert.equal(page.status(), 'Could not read local records.');
+  assert.equal(page.statusIsError(), 'true');
 });
 
 // --- the Updates card ---------------------------------------------------------------------------

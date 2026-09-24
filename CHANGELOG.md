@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- **Export CSV** under **Backup and import** in Settings writes one table at a time as a spreadsheet file — watchlist lots (title, reference, house, sale and lot, auction date, status, planned and placed bid, outcome, hammer, invoice, notes), collection entries, bid history or outcome history — one row per record. Amounts are plain decimals such as `250.50` with the currency in the next column, and are never added across currencies; dates are ISO. The file is UTF-8 with a byte order mark so Excel keeps accents, and a cell that a spreadsheet would run as a formula (one starting with `=`, `+`, `-` or `@`) is written with a leading `'` so a title copied from an auction page is shown, never run. A CSV file cannot be imported back; the JSON backup is still the copy to keep.
+
 ## [0.33.0] - 2026-09-24
 
 ### Added
