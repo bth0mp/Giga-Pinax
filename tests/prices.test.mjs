@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -1491,8 +1491,9 @@ test('upcomingLots keeps the unpriced lots dated today or later in the collector
   const now = new Date(2026, 8, 11, 12);
   const lots = [lot('*', '10.09.2026', 'yesterday'), lot('*', '11.09.2026 18:00', 'today'), lot('*', '2026-10-12', 'october'),
     lot('', '01.12.2026', 'blank'), lot('250', '12.10.2026', 'priced'), lot('*', 'n/a', 'undated'), lot('*', '12.10.2026', 'october-2'),
-    lot('*', '31.02.2027', 'no-such-day')];
-  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'october-2', 'blank']);
+    lot('*', '31.02.2027', 'no-such-day'), lot('200', '11.09.2026', 'sold-today')];
+  // A priced row dated after today is not sold either (loop N11): its figure is a starting price, and it is listed. One priced today was sold.
+  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'priced', 'october-2', 'blank']);
   assert.deepEqual(upcomingLots([], now), []);
 });
 
@@ -1541,4 +1542,37 @@ test('summaryText adds the medians by year and the upcoming lots', () => {
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { years: [], upcoming: [] }).split('\n').length, 3);
+});
+
+// Loop N11: acsearch marks a lot it has not sold yet with "*", but a row dated after today that carried a figure — a starting price, say — was
+// medianed as a hammer, stretched the years to 2028 and became the "Last sale". A sale day after the collector's own today is no sale, whatever the
+// price field holds: the row is left out of every count, listed as upcoming, and the coverage says how many.
+test('a lot dated after today is never counted as a sale, whatever its price field holds', async () => {
+  const now = new Date(2026, 8, 11, 12);
+  const lots = [lot('100', '01.01.2024', 'a'), lot('200', '11.09.2026', 'today'), lot('380', '01.06.2028', 'future'), lot('150', '12.09.2026', 'tomorrow'),
+    lot('*', '01.10.2026', 'starred')];
+  const summary = summarise(lots, 'USD', now);
+  assert.deepEqual(summary.priced.map(({ id }) => id), ['a', 'today']);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.future, 2);
+  assert.equal(summary.latest, 2026);
+  assert.equal(summary.unpriced, 1);
+  assert.equal(futureText(summary), '2 future-dated lots not counted');
+  assert.equal(futureText(summarise([lot('380', '01.06.2028')], 'USD', now)), '1 future-dated lot not counted');
+  assert.equal(futureText(summarise(lots.slice(0, 2), 'USD', now)), '');
+  // They are upcoming, soonest first, as the starred lots are; a priced lot dated today has been sold.
+  assert.deepEqual(upcomingLots(lots, now).map(({ id }) => id), ['tomorrow', 'starred', 'future']);
+  // The last sale, the years and the medians rest on the counted sales only.
+  assert.equal(lastSale(summary).id, 'today');
+  assert.deepEqual(mediansByYear([...lots, lot('900', '02.06.2028', 'f2'), lot('900', '03.06.2028', 'f3')], 'USD', now), []);
+  // fetchPrices reads the page as of its own now, and a page whose only priced rows lie ahead has counted nothing.
+  const page = (rows) => `<script>acsearch.initSearchResults = ${JSON.stringify(rows)};</script>`;
+  const fetched = await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page(lots)), now });
+  assert.equal(fetched.status, 'ok');
+  assert.equal(fetched.summary.count, 2);
+  const ahead = await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('380', '01.06.2028')])), now });
+  assert.equal(ahead.status, 'unpriced');
+  // The copied summary says so beside what it could not count.
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  assert.ok(summaryText(card, summary, 'USD', 'Price 23').split('\n').includes('2 future-dated lots not counted'));
 });

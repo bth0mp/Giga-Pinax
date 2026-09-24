@@ -288,11 +288,17 @@ export const coinArchivesSection = (reference) =>
 export const coinArchivesUrl = (term, section = 'a') => `https://www.coinarchives.com/${section}/results.php?search=${encodeURIComponent(squash(term))}&s=0`;
 
 const PAGE_SIZE = 100;
+// What the coverage line and the copy say of the rows summarise left out for a sale day still ahead; nothing when there are none.
+export const futureText = ({ future = 0 }) => (future ? `${future} future-dated ${future === 1 ? 'lot' : 'lots'} not counted` : '');
 const EXAMPLE_LIMIT = 5;
 
-export function summarise(lots, currency) {
+// A row dated after the collector's own today has not been sold, whatever its price field holds (a starting price, an estimate): it is no sale and
+// is never counted, only told apart as future. A row with no readable date is not placed in time, so it is counted as before.
+export function summarise(lots, currency, now = new Date()) {
+  const today = localDay(now);
   const parsed = lots.map((entry) => ({ ...entry, amount: parsePrice(entry.price, currency) }));
-  const priced = parsed.filter((entry) => entry.amount !== null);
+  const ahead = (entry) => (saleDate(entry.date) ?? today) > today;
+  const priced = parsed.filter((entry) => entry.amount !== null && !ahead(entry));
   const amounts = priced.map((entry) => entry.amount).sort((a, b) => a - b);
   const at = (fraction) => {
     const position = fraction * (amounts.length - 1);
@@ -319,6 +325,8 @@ export function summarise(lots, currency) {
     latest: years.length ? Math.max(...years) : null,
     // Lots with no price at all (unsold, unpriced: blank, "*" and "-" style markers), told apart from prices that could not be counted.
     unpriced: lots.filter((entry) => !/\d/.test(entry.price)).length,
+    // Lots whose price reads but whose sale day is still ahead: not sales, so not counted, and said apart from both.
+    future: parsed.filter((entry) => entry.amount !== null && ahead(entry)).length,
     // Raw prices the strict parser (or the currency check) rejected, so the collector can report an unseen format; blank, "*" and "-" style markers are not prices.
     uncounted: parsed.filter((entry) => entry.amount === null && /\d/.test(entry.price)).slice(0, EXAMPLE_LIMIT).map((entry) => entry.price),
   };
@@ -680,11 +688,11 @@ const gradeOfLot = (lot) => (lot.grade === undefined ? gradeOf(lot.description) 
 
 const GRADE_MIN = 3;
 // A median per grade, from the rows on show: a bucket resting on fewer than GRADE_MIN counted sales says nothing and is left out.
-export function gradeMedians(lots, currency) {
+export function gradeMedians(lots, currency, now = new Date()) {
   const graded = new Map(GRADE_BUCKETS.map((bucket) => [bucket, []]));
   for (const entry of lots) graded.get(gradeOfLot(entry))?.push(entry);
   return GRADE_BUCKETS.flatMap((bucket) => {
-    const summary = summarise(graded.get(bucket), currency);
+    const summary = summarise(graded.get(bucket), currency, now);
     return summary.count >= GRADE_MIN ? [{ bucket, median: summary.median, count: summary.count }] : [];
   });
 }
@@ -783,12 +791,13 @@ export function lotsInPeriod(lots, period, now) {
 // ("28.07.2026 14:00") is left out: the day is all that is carried.
 export const isoDay = (text) => saleDate(text)?.toISOString().slice(0, 10) ?? '';
 
-// The lots acsearch lists that have not been sold yet: no price at all (the same test summarise counts "without a price" by) and a sale day that is
-// the collector's own today or later. A lot sold today already shows its price. Soonest first, the next sale at the top; a tie keeps page order.
+// The lots acsearch lists that have not been sold yet: a sale day after the collector's own today, whatever the price field holds (summarise never
+// counts one), or today with no price at all (the same test summarise counts "without a price" by): a lot sold today already shows its price.
+// Soonest first, the next sale at the top; a tie keeps page order.
 export function upcomingLots(lots, now) {
   const today = localDay(now);
   return lots.map((entry, index) => ({ entry, index, date: saleDate(entry.date) }))
-    .filter(({ entry, date }) => date !== null && date >= today && !/\d/.test(entry.price))
+    .filter(({ entry, date }) => date !== null && date >= today && (date > today || !/\d/.test(entry.price)))
     .sort((a, b) => a.date - b.date || a.index - b.index)
     .map(({ entry }) => entry);
 }
@@ -804,7 +813,7 @@ const YEAR_MIN = 3;
 // A median per calendar year of sale, over whatever rows the caller counts (the median's own: the same filters, hand decisions and period). A year
 // resting on fewer than YEAR_MIN counted sales says nothing and is left out, as a thin grade bucket is; a lot without a readable date has no year.
 // Oldest first. One provider and one currency per call: nothing here pools them.
-export function mediansByYear(lots, currency) {
+export function mediansByYear(lots, currency, now = new Date()) {
   const byYear = new Map();
   for (const entry of lots) {
     const year = saleDate(entry.date)?.getUTCFullYear();
@@ -813,7 +822,7 @@ export function mediansByYear(lots, currency) {
     byYear.get(year).push(entry);
   }
   return [...byYear.keys()].sort((a, b) => a - b).flatMap((year) => {
-    const summary = summarise(byYear.get(year), currency);
+    const summary = summarise(byYear.get(year), currency, now);
     return summary.count >= YEAR_MIN ? [{ year, median: summary.median, count: summary.count }] : [];
   });
 }
@@ -827,8 +836,8 @@ const TREND_MIN = 3;
 // before, each median trusted only when it rests on at least TREND_MIN sales. A lot without a readable date belongs to neither side.
 export function trendOf(lots, currency, now) {
   const recentLots = lotsInPeriod(lots, '2y', now);
-  const recent = summarise(recentLots, currency);
-  const earlier = summarise(lots.filter((entry) => saleDate(entry.date) && !recentLots.includes(entry)), currency);
+  const recent = summarise(recentLots, currency, now);
+  const earlier = summarise(lots.filter((entry) => saleDate(entry.date) && !recentLots.includes(entry)), currency, now);
   if (recent.count < TREND_MIN || earlier.count < TREND_MIN) return null;
   return { recent: recent.median, recentCount: recent.count, earlier: earlier.median, earlierCount: earlier.count, change: recent.median / earlier.median - 1 };
 }
@@ -913,7 +922,7 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // One results page at most; the slice still has PAGE_SIZE entries whenever acsearch returned PAGE_SIZE or more, so `capped` holds. Each lot's
     // grade is read here, once, and travels with it: a redraw would otherwise read every description again, once per bucket.
     const page = lots.slice(0, PAGE_SIZE).map((entry) => ({ ...entry, grade: gradeOf(entry.description) }));
-    const summary = summarise(page, currency);
+    const summary = summarise(page, currency, now);
     // A page without a counted price still lists the lots not sold yet, so its lots come back with it for the Upcoming list.
     if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out', lots: page };
     if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), lots: page };
@@ -956,6 +965,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (ungraded) lines.push(ungraded);
   lines.push(...years.map((year) => yearText(year, money.format)));
   if (upcoming.length) lines.push(upcomingText(upcoming));
+  if (summary.future) lines.push(futureText(summary));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);
