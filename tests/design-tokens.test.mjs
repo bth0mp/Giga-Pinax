@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 
 const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
 const PAGES = ['popup.html', 'workspace.html', 'settings.html'];
-const PAGE_SHEETS = ['popup.css', 'workspace.css', 'settings.css', 'bid-tools.css', 'companion-popup.css', 'updates.css'];
+const PAGE_SHEETS = ['popup.css', 'workspace.css', 'settings.css', 'bid-tools.css', 'companion-popup.css'];
 
 // Every rule of a stylesheet as { selector, body }, media queries flattened; comments dropped.
 function rules(css) {
@@ -37,6 +37,8 @@ test('every page loads the shared layer before its own stylesheets', () => {
   // The workspace's and Settings' bare buttons are primary through the page class on <body>.
   assert.match(read('workspace.html'), /<body class="page-workspace">/);
   assert.match(read('settings.html'), /<body class="page-settings">/);
+  // Fix round: updates.css styled nothing any page carries (the Updates card uses ids), so Settings loads the layer and its own sheet only.
+  assert.deepEqual([...read('settings.html').matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((match) => match[1]), ['design-tokens.css', 'settings.css']);
 });
 
 test('the layer defines the scale, the control size and the four button kinds once', () => {
@@ -65,6 +67,11 @@ test('no page stylesheet sizes a control or draws a button kind of its own', () 
       if (!/textarea/.test(selector)) assert.doesNotMatch(body, /(^|;)\s*(min-)?height:\s*\d{2,}px/, `${sheet} ${selector}`);
       assert.doesNotMatch(body, /border-radius:\s*\d+px/, `${sheet} ${selector}`);
       if (!/danger/.test(selector)) assert.doesNotMatch(body, /background:\s*var\(--accent\)/, `${sheet} ${selector}`);
+      // A rule that ends on a kind's own class may place that button, never colour it again: the kind is drawn once, in the layer.
+      const last = selector.split(/[\s>+~]+/).pop();
+      if (/\.(primary-button|secondary-button|secondary|quiet|danger|button-link|companion-outline-button|companion-save-watchlist)\b/.test(last)) {
+        assert.doesNotMatch(body, /(^|;)\s*(color|background|border-color):/, `${sheet} ${selector} redraws its kind`);
+      }
     }
   }
 });

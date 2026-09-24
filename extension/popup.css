@@ -17,11 +17,9 @@ h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:
 .popup-header p {font-size:11px; margin-top:2px; color:var(--muted);}
 .header-actions {margin-left:auto; display:flex; align-items:center; gap:10px;}
 .header-action,.header-actions summary {border:0; padding:5px 0; background:transparent; color:var(--accent); font-size:11px; font-weight:650; cursor:pointer;}
-/* Sources opens a menu, so it reads as the text button beside it with the ⌄ every other fold in the popup carries, not as a bare disclosure marker. */
+/* Sources opens a menu, so it reads as the text button beside it with the chevron every fold carries (drawn by design-tokens.css), not as a bare disclosure marker. */
 .header-actions summary {list-style:none;}
 .header-actions summary::-webkit-details-marker {display:none;}
-.header-actions summary::after {content:"⌄"; display:inline-block; width:auto; height:auto; margin:0 0 0 3px; border:0; color:inherit; font-size:12px; line-height:1; vertical-align:baseline; transform:translateY(-2px);}
-.header-actions details[open] > summary::after {transform:translateY(1px) rotate(180deg);}
 /* The light or dark switch sits at the header's end, the size of the brand icon; Settings → Appearance shows the same choice. */
 .popup-header .header-icon {margin-left:0; width:28px; height:28px;}
 .popup-header .header-icon svg {width:15px; height:15px;}
