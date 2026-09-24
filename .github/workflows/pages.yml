@@ -27,17 +27,28 @@ jobs:
     outputs:
       enabled: ${{ steps.pages.outputs.enabled }}
     steps:
+      # Only GitHub's answer that the repository has no Pages site (HTTP 404) means "not turned on"; any other failure of
+      # the call (a missing permission, an outage) fails the run rather than passing for that answer.
       - name: Check that Pages publishes from GitHub Actions
         id: pages
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if build_type="$(gh api "repos/$GH_REPO/pages" --jq .build_type 2>/dev/null)" && [ "$build_type" = 'workflow' ]; then
-            echo 'enabled=true' >> "$GITHUB_OUTPUT"
-          else
+          if build_type="$(gh api "repos/$GH_REPO/pages" --jq .build_type 2> pages-error.txt)"; then
+            if [ "$build_type" = 'workflow' ]; then
+              echo 'enabled=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'enabled=false' >> "$GITHUB_OUTPUT"
+              echo "::notice::GitHub Pages publishes from a branch ($build_type), not from GitHub Actions, so nothing is published. See docs/RELEASING.md."
+            fi
+          elif grep -q 'HTTP 404' pages-error.txt; then
             echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::GitHub Pages is not turned on with the source GitHub Actions, so nothing is published. See docs/RELEASING.md.'
+            echo '::notice::GitHub Pages is not turned on, so nothing is published. See docs/RELEASING.md.'
+          else
+            cat pages-error.txt >&2
+            echo 'Could not ask GitHub whether Pages is turned on.' >&2
+            exit 1
           fi
 
   # Builds the site from the latest release's tag with the release's own update manifest. Read-only.
@@ -47,14 +58,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+    # The token is in the environment of the two gh steps only, never of the step that runs repository code.
     steps:
       - name: Find the latest published release
         id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           tag="$(gh release view --json tagName -q .tagName)"
           if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -72,6 +84,8 @@ jobs:
       - name: Fetch the release's Firefox update manifest, if it has one
         env:
           TAG: ${{ steps.release.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "$TAG" --json assets -q '.assets[].name' | grep -Fxq firefox-updates.json; then
             gh release download "$TAG" --pattern firefox-updates.json --dir release
