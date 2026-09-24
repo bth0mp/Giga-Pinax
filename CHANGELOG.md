@@ -8,7 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Added
 
-- The workspace's **History** tab shows your collection in a table per currency: how many entries carry an amount in it, their total hammer and total invoice paid, and the years they were acquired in. No amount is converted and no total adds up different currencies; an entry paid in another currency than its hammer counts under each. Beside each entry is the median of the comparables you saved under exactly that coin's reference, in the entry's own currency, with how many there are — or "No saved comparables". It is labelled as your own records and evidence, never as an appraisal or a valuation, and gives no median from fewer than three comparables, as the Search tab does.
+- The workspace's **History** tab shows your collection in a table per currency: how many entries carry an amount in it, their total hammer and total invoice paid, and the years they were acquired in. No amount is converted and no total adds up different currencies; an entry paid in another currency than its hammer counts under each. Beside each entry is the median of the comparables you saved under exactly that coin's reference, in the entry's own currency, with how many there are — or "No saved comparables". It is labelled as your own records and evidence, never as an appraisal or a valuation, and gives no median from fewer than three comparables, as the Search tab does. So that a comparable you save is found there, the **Search** tab's query box, when empty, now starts with the reference of the coin you have open; it stays editable, and text you typed is never replaced.
 
 ### Changed
 

@@ -284,3 +284,35 @@ test('the harness refuses a command the background worker would not answer', asy
   const listed = await page.browser.runtime.sendMessage({ type: 'snapshot.get', requestId: 'request-listed' });
   assert.equal(listed.ok, true);
 });
+
+// A comparable saved while a coin is open is saved under that coin's reference unless the collector
+// typed another query, so the History route's own-comparables line can find it.
+test('the Search route offers the open coin’s reference as the query, never over typed text', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Philip I, antoninianus', reference: 'RIC 27b', sourceLinks: [] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Uncatalogued coin', sourceLinks: [] } });
+  const page = await mountWorkspace({ background, hash: '#search' });
+  assert.equal(page.$('research-query').value, '', 'no coin is open, so nothing is offered');
+
+  await page.navigate('#watchlist');
+  await page.openCoin('Philip I, antoninianus');
+  await page.navigate('#search');
+  assert.equal(page.$('research-query').value, 'RIC 27b');
+  for (const [field, value] of [['auctionHouse', 'Test House'], ['lotNumber', '12'], ['auctionDate', '2025-03-01'], ['priceBasis', 'hammer'], ['amount', '180'], ['currency', 'EUR']]) {
+    await page.type('evidence-form', field, value);
+  }
+  await page.submit('evidence-form');
+  assert.deepEqual(background.root().evidence.flatMap((row) => row.observations.map((item) => item.queryLabel)), ['RIC 27b']);
+
+  page.$('research-query').value = 'Philip I antoninianus Rome';
+  await page.$('research-form').emit('input', { target: page.$('research-query') });
+  await page.navigate('#watchlist');
+  await page.navigate('#search');
+  assert.equal(page.$('research-query').value, 'Philip I antoninianus Rome', 'typed text is never replaced');
+
+  page.$('research-query').value = '';
+  await page.navigate('#watchlist');
+  await page.openCoin('Uncatalogued coin');
+  await page.navigate('#search');
+  assert.equal(page.$('research-query').value, '', 'a coin with no reference offers nothing');
+});

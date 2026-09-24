@@ -673,7 +673,18 @@ async function initWorkspace() {
   const setRoute = (focusLink = false) => {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
+    if (active === 'search') offerSelectedReference();
     if (focusLink) document.querySelector(`[data-route="${active}"]`)?.focus({ preventScroll: true });
+  };
+  // A comparable saved while a coin is open belongs, unless the collector says otherwise, to that
+  // coin's reference: an empty query box is filled with it, in view and editable, and typed text is
+  // never replaced. The History route matches saved comparables by exactly this query text.
+  const offerSelectedReference = () => {
+    const reference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
+    if (!reference || $('research-query').value.trim()) return;
+    $('research-query').value = reference;
+    ensureActiveQuery();
+    renderEvidence();
   };
   document.querySelector('.workspace-nav').addEventListener('click', (event) => { routeChangeFromNav = Boolean(event.target.closest('[data-route]')); });
   addEventListener('hashchange', () => { const fromNav = routeChangeFromNav; routeChangeFromNav = false; setRoute(fromNav); });

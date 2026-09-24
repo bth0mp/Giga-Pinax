@@ -720,6 +720,13 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     async submit(form, submitter) { await this.startSubmit(form, submitter); await settle(); },
     saveDetails() { return this.submit('lot-form'); },
     async click(id) { await $(id).click(); await settle(); },
+    // Moves to another route the way a link in the page's nav does: the hash changes, then the
+    // window hears of it.
+    async navigate(hash) {
+      location.hash = hash;
+      for (const listener of windowListeners.get('hashchange') ?? []) listener({ type: 'hashchange' });
+      await settle();
+    },
     // Opens a coin from the list by its title, as the collector does.
     async openCoin(title) {
       const row = $('lot-list').children.find((item) => item.textContent.includes(title));
