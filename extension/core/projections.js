@@ -278,3 +278,31 @@ export function lotsNeedingOutcome(snapshot, now = new Date().toISOString()) {
   return (snapshot?.lots ?? []).filter((lot) => (!lot?.outcome?.status || lot.outcome.status === 'open') && lot.auctionEventId
     && eventTiming(events.get(lot.auctionEventId), now).state === 'ended');
 }
+
+/**
+ * One coin's own saved comparables, per currency: the rows saved under exactly its reference (spacing and case set
+ * aside), through the same statistics the Search route shows, so excluded rows stay out and no row in another currency
+ * is converted in. Fewer than three rows in a currency give a count without a median. Most rows first.
+ * @param {Evidence[] | null | undefined} evidence
+ * @param {*} reference
+ * @returns {Array<{ currency: string, count: number, median: Money | null, firstYear: number | null, lastYear: number | null }>}
+ */
+export function lotComparables(evidence, reference) {
+  const key = normalReference(reference);
+  const rows = key ? indexByReference(evidence).get(key) ?? [] : [];
+  const observations = rows.flatMap((row) => row.observations ?? []);
+  const dates = observations.map((item) => item.auctionDate).filter((date) => typeof date === 'string').sort();
+  if (!rows.length || !dates.length) return [];
+  const sources = [...new Set(observations.map((item) => item.source))];
+  const currencies = CURRENCIES.filter((currency) => rows.some((row) => row?.resolved?.hammer?.currency === currency));
+  const found = [];
+  for (const currency of currencies) {
+    const stats = computeStatistics(rows, { currency, fromDate: dates[0], toDate: /** @type {string} */ (dates.at(-1)), sources });
+    if (stats.validationError || !stats.count) continue;
+    const included = new Set(stats.includedIds);
+    const years = rows.filter((row) => included.has(row.id)).flatMap((row) => row.observations ?? [])
+      .map((item) => dateParts(item.auctionDate)?.[0]).filter((year) => Number.isInteger(year));
+    found.push({ currency, count: stats.count, median: stats.median, firstYear: years.length ? Math.min(...years) : null, lastYear: years.length ? Math.max(...years) : null });
+  }
+  return found.sort((left, right) => right.count - left.count);
+}

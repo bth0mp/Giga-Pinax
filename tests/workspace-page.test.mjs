@@ -854,3 +854,26 @@ test('text boxes take their limits from the store and count down near the end', 
   assert.equal(lot.title.parentElement.querySelector('.char-count').textContent, '20 characters left');
   assert.equal(lot.title.parentElement.querySelector('.char-count').hidden, false);
 });
+
+// W-02: the Bid tab shows what the coin's own saved comparables sold for, in the bid's currency, with the other
+// currencies counted apart; "Add comparable" opens the Search route on the coin's reference.
+test('the Bid tab shows the coin’s saved comparables beside the maximum hammer', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const queryId = '00000000-0000-4000-9000-000000000077';
+  for (const [lotNumber, minor, currency] of [[1, 50000, 'GBP'], [2, 62000, 'GBP'], [3, 70000, 'GBP'], [4, 80000, 'USD']]) {
+    await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'RIC I² 306', source: 'manual', auctionHouse: 'CNG', auctionDate: `202${lotNumber}-03-01`,
+      lotNumber: String(lotNumber), priceBasis: 'hammer', amount: { currency, minor } } });
+  }
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const strip = page.$('bid-evidence');
+  assert.equal(strip.closest('.detail-section'), page.$('bid-form').closest('.detail-section'));
+  assert.equal(strip.querySelector('.bid-evidence-figure').textContent, 'Your saved comparables for RIC I² 306: median £620.00 from 3, 2021–2023');
+  assert.equal(strip.querySelector('.bid-evidence-other').textContent, 'Also 1 in USD, not converted.');
+  await page.type('bid-form', 'currency', 'USD');
+  assert.equal(strip.querySelector('.bid-evidence-figure').textContent, 'Your saved comparables for RIC I² 306: 1 in USD, too few for a median, 2024');
+  await page.click('bid-add-comparable');
+  assert.equal(page.location.hash, '#search');
+  assert.equal(page.$('research-query').value, 'RIC I² 306');
+  assert.equal(page.$('evidence-query').value, queryId, 'the set already saved for the reference is the one shown');
+});

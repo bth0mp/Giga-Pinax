@@ -21,7 +21,7 @@ import {
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
-import { eventTiming, lotsNeedingOutcome, reminderInstants } from '../extension/core/projections.js';
+import { eventTiming, lotComparables, lotsNeedingOutcome, reminderInstants } from '../extension/core/projections.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -1207,4 +1207,23 @@ test('open coins whose auction has passed are the ones needing an outcome', () =
   assert.deepEqual(auctionQueueForLots(lots, events, 'needs-outcome', now).map(({ lot }) => lot.id), ['a', 'b']);
   assert.deepEqual(lotsNeedingOutcome({ lots, auctionEvents: events }, now).map((lot) => lot.id), ['a', 'b']);
   assert.equal(auctionQueueForLots(lots, events, 'closing-soon', now).some(({ lot }) => ['a', 'b'].includes(lot.id)), false, 'an ended sale is not closing soon');
+});
+
+// W-02: the coin's own saved comparables by currency - exactly its reference, each currency on its own, never pooled
+// or converted - as the Bid tab shows them beside the maximum hammer.
+test('a coin’s saved comparables are counted per currency for its exact reference', () => {
+  const row = (id, queryLabel, currency, minor, auctionDate, inclusion = 'included') => ({
+    id, inclusion, resolved: { priceBasis: 'hammer', hammer: { currency, minor } },
+    observations: [{ id: `${id}-o`, queryId: `q-${queryLabel}`, queryLabel, source: 'manual', auctionDate, priceBasis: 'hammer', amount: { currency, minor } }],
+  });
+  const evidence = [
+    row('a', 'RIC 27b', 'EUR', 15000, '2024-03-01'), row('b', 'ric  27B', 'EUR', 18000, '2025-01-01'), row('c', 'RIC 27b', 'EUR', 30000, '2026-02-01'),
+    row('d', 'RIC 27b', 'USD', 99900, '2026-02-02'), row('e', 'RIC 27', 'EUR', 1, '2026-02-02'), row('f', 'RIC 27b', 'EUR', 5, '2026-02-03', 'excluded'),
+  ];
+  assert.deepEqual(lotComparables(evidence, 'RIC 27b'), [
+    { currency: 'EUR', count: 3, median: { currency: 'EUR', minor: 18000 }, firstYear: 2024, lastYear: 2026 },
+    { currency: 'USD', count: 1, median: null, firstYear: 2026, lastYear: 2026 },
+  ]);
+  assert.deepEqual(lotComparables(evidence, ''), []);
+  assert.deepEqual(lotComparables(evidence, 'RIC 60'), []);
 });

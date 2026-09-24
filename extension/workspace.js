@@ -1,7 +1,7 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { lotsNeedingOutcome, projectCollection, reminderInstants } from './core/projections.js';
+import { lotComparables, lotsNeedingOutcome, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -639,6 +639,7 @@ async function initWorkspace() {
     $('undo-lot').hidden = lastLotUndo?.saved?.id !== lot.id;
     $('bid-form').elements.lotId.value = lot.id; $('outcome-form').elements.lotId.value = lot.id;
     if (!dirtyEditors.has('bid')) loadBidEditor(lot); if (!dirtyEditors.has('outcome')) loadOutcomeEditor(lot);
+    renderBidEvidence();
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
     attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
@@ -795,6 +796,36 @@ async function initWorkspace() {
     const termsKey = lot ? [lot.id, f.currency.value, terms?.amount?.minor ?? '', terms?.buyerPremiumBps ?? '', JSON.stringify(calculatorCostEstimate)].join('|') : null;
     bidCalculator?.setValues({ lotId: termsKey, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
   }
+  // Beside the maximum hammer, what the coin's own saved comparables sold for: in the bid's currency, the other
+  // currencies only counted, never converted or pooled, and worded as the collector's own records.
+  function renderBidEvidence() {
+    const strip = $('bid-evidence'); strip.replaceChildren();
+    const lot = (snapshot.lots ?? []).find((item) => item.id === selection.selectedLotId);
+    if (!lot) return;
+    const reference = String(lot.reference ?? '').trim();
+    if (!reference) { strip.append(text('p', 'Add a reference under Details to see your saved comparables here.', 'bid-evidence-figure')); return; }
+    const currency = $('bid-form').elements.currency.value;
+    const found = lotComparables(snapshot.evidence, reference);
+    const own = found.find((item) => item.currency === currency);
+    const years = (item) => item.firstYear === null ? '' : `, ${item.firstYear === item.lastYear ? item.firstYear : `${item.firstYear}–${item.lastYear}`}`;
+    strip.append(text('p', !own ? `No saved comparables for ${reference} in ${currency}.`
+      : own.median ? `Your saved comparables for ${reference}: median ${formatMoney(own.median)} from ${own.count}${years(own)}`
+        : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
+    const others = found.filter((item) => item.currency !== currency);
+    if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
+    const add = text('button', 'Add comparable', 'quiet'); add.type = 'button'; add.id = 'bid-add-comparable';
+    add.addEventListener('click', () => {
+      // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
+      const saved = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => String(item.queryLabel ?? '').trim() === reference);
+      $('research-query').value = reference;
+      activeQuery = saved ? { id: saved.queryId, text: reference } : { id: requestId(), text: reference };
+      selectedQueryId = activeQuery.id;
+      routeChangeFromNav = false; location.hash = '#search'; setRoute(); renderEvidence();
+      $('evidence-form').elements.auctionHouse.focus();
+    });
+    strip.append(add);
+  }
+  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); });
   const loadBidEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);
     setBasis('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });

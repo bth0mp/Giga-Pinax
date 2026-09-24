@@ -8,6 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Added
 
+- The workspace's **Bid** tab shows, above **Maximum hammer**, what the coin's own saved comparables sold for: the median and count of the comparables you saved under exactly its reference, in the bid's currency, with the years they span — `Your saved comparables for RIC 27b: median €180.00 from 3, 2024–2026` — and the other currencies only counted beside it, never converted or added in. Fewer than three give a count without a median. **Add comparable** opens the **Search** route on the coin's reference, in the set already saved for it.
 - A **Needs outcome** queue in the workspace lists the open coins whose auction has passed with no outcome recorded — a closing or a sale day that is over, or a live sale whose day is over — and their rows and heading carry a red **Ended · record outcome** pill. **Closing soon** now takes a date-only sale day from the day before through the day itself, where it took timed auctions only, and a date-only day sorts among the timed auctions by its own midnight instead of after all of them. A reminder that passed while the browser was closed is listed under **Due reminders** as **Missed** and cleared with **Acknowledge displayed** or **Mark all read**; it is never snoozed.
 
 ### Changed
