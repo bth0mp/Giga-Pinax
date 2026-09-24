@@ -777,6 +777,14 @@ export function otherVolumePart(reference, title) {
   return Boolean(hit) && norm(hit.volume) !== norm(volume);
 }
 
+// Whether a coin OCRE titles as the answer was struck at another RIC VI–IX mint than the one the lot's heading names beside its ruler ("Constantius I.
+// Follis. Trier. RIC VI 12." found only his Alexandria 12): the ruler's number there is not the dealer's coin, so it is offered, never opened.
+export function strayMint(reference, title) {
+  const struck = unquote(reference?.struckAt);
+  const section = parseReference(title, false)?.section ?? '';
+  return Boolean(struck) && isMintOnly(section) && norm(section) !== norm(ricMintSection(struck) || struck);
+}
+
 function pickRic(xml, reference) {
   const entries = parseFeed(xml);
   const total = Number(xml.match(/<opensearch:totalResults>(\d+)</)?.[1] ?? entries.length);
@@ -899,7 +907,7 @@ export async function lookupType(given, options = {}) {
     // and no rulers beside it ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case, with nothing at all to say whose coin it is.
     // Nor is a coin found for a joint heading one half of which is a section ("Philip I and Otacilia Severa"): that section is half of what it says.
     const halfHeading = rulers.length > 1 && rulers.some(isSectionOnly);
-    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
+    if (reference.headingMint || (byMint && !unquote(reference.volume) && rulers.length === 0) || halfHeading || strayMint(reference, picked.entry.title)) return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
     const found = await lookupById(corpus, picked.entry.id, { ...options, signal: timer.signal, citation: picked.citation });
     if (rulers.length && found.status === 'ok') {
       const asked = rulers.map(norm);

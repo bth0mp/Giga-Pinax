@@ -1,0 +1,63 @@
+// Loop N6 review (Important 3): RIC VI–IX file a coin by the mint that struck it, and a heading that names a ruler and a mint ("Constantius I. Follis.
+// Trier. RIC VI 12.") is looked up by the ruler, so the mint was dropped and his one coin with the number at another mint opened as the answer. The
+// heading's mint now travels with the reference as where the coin was struck, and a single coin from another RIC VI–IX mint is offered, never opened.
+// Swept over the bundled catalogue; skipped where it is not checked out.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { RIC_SECTIONS } from '../extension/catalogues.js';
+import { findReferences, lotLookup } from '../extension/lot.js';
+import { parseReference } from '../extension/lookup.js';
+import { answer, skip } from './helpers/bundle.mjs';
+
+const lookup = (text) => {
+  const lot = findReferences(text);
+  return answer(lotLookup(lot.references[0], lot.rulers));
+};
+const sectionOf = (result) => parseReference(result.card?.label ?? '', false)?.section ?? '';
+
+test('a ruler beside a mint keeps the mint as where the coin was struck', () => {
+  const lot = findReferences('Constantius I. Follis. Trier. RIC VI 12.');
+  assert.deepEqual(lotLookup(lot.references[0], lot.rulers),
+    { catalogue: 'RIC', number: '12', volume: 'VI', section: '', rulers: ['Constantius Chlorus'], struckAt: 'Treveri' });
+  // A heading with no mint carries none, and a heading with a mint and no ruler is that mint's section, as before.
+  const plain = findReferences('Constantius I. Follis. RIC VI 12.');
+  assert.equal(lotLookup(plain.references[0], plain.rulers).struckAt, undefined);
+  const mint = findReferences('Follis. Trier. RIC VI 12.');
+  assert.deepEqual(lotLookup(mint.references[0], mint.rulers), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Treveri', headingMint: true });
+});
+
+test('over the bundled catalogue, a ruler beside a mint never opens his coin from another mint', { skip }, async () => {
+  for (const text of ['Constantius I. Follis. Trier. RIC VI 12.', 'Constantius Chlorus. Follis. Trier. RIC VI 12.',
+    'Constantius I. Follis. Londinium. RIC VI 14.', 'Constantius Chlorus. Follis. London. RIC VI 14.']) {
+    const result = await lookup(text);
+    assert.notEqual(result.status, 'ok', `${text}: ${result.card?.id}`);
+    assert.ok(result.candidates?.length > 0, text);
+  }
+});
+
+test('over the bundled catalogue, across RIC VI–IX, a heading\'s mint opens only a coin of that mint', { skip }, async () => {
+  let opened = 0;
+  let offered = 0;
+  for (const ruler of ['Constantius I', 'Constantius Chlorus', 'Konstantin I', 'Constantine I', 'Maximinus II', 'Licinius', 'Julian II', 'Jovian']) {
+    for (const volume of ['VI', 'VII', 'VIII', 'IX']) {
+      const mints = RIC_SECTIONS[volume];
+      for (let number = 1; number <= 120; number += 1) {
+        const plain = await lookup(`${ruler}. Follis. RIC ${volume} ${number}.`);
+        if (plain.status !== 'ok') continue;
+        const struck = sectionOf(plain);
+        if (!mints.includes(struck)) continue;
+        // Named at its own mint, the coin still opens.
+        const own = await lookup(`${ruler}. Follis. ${struck}. RIC ${volume} ${number}.`);
+        assert.equal(own.card?.id, plain.card.id, `${ruler} ${struck} ${volume} ${number}`);
+        opened += 1;
+        // Named at another mint, it never does.
+        const other = mints.find((mint) => mint !== struck);
+        const elsewhere = await lookup(`${ruler}. Follis. ${other}. RIC ${volume} ${number}.`);
+        assert.ok(elsewhere.status !== 'ok' || sectionOf(elsewhere) === other, `${ruler} at ${other}, ${volume} ${number}: ${elsewhere.card?.id}`);
+        offered += 1;
+      }
+    }
+  }
+  assert.ok(opened > 50 && offered > 50, `${opened} opened, ${offered} offered`);
+});

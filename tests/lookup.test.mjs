@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries, strayMint } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -1478,6 +1478,22 @@ test('a section taken only from the heading\'s mint is offered online too, never
   assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }], partial: true, corpus: 'ocre',
     query: 'RIC VII Treveri 12' });
   assert.equal(fetchImpl.calls.length, 1);
+});
+
+// Loop N6 review (Important 3): a ruler named beside a mint, whose one coin with the number OCRE finds at another RIC VI–IX mint, is offered that coin
+// online too, never opened; at the mint the heading names it still opens.
+test('a ruler\'s coin from another mint than the heading names is offered online, never opened', async () => {
+  const alexandria = '<feed><entry><title>RIC VI Alexandria 12</title><id>ric.6.alex.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': alexandria });
+  const reference = { catalogue: 'RIC', volume: 'VI', section: '', number: '12', rulers: ['Constantius Chlorus'], struckAt: 'Treveri' };
+  assert.deepEqual(await lookupType(reference, { fetchImpl }), { status: 'candidates', candidates: [{ id: 'ric.6.alex.12', title: 'RIC VI Alexandria 12' }],
+    partial: true, corpus: 'ocre', query: 'RIC VI 12 (Constantius Chlorus)' });
+  assert.equal(fetchImpl.calls.length, 1);
+  // The modern name the heading wrote is the same mint as RIC's own.
+  assert.equal(strayMint({ struckAt: 'Trier' }, 'RIC VI Treveri 12'), false);
+  assert.equal(strayMint({ struckAt: 'Trier' }, 'RIC VI Alexandria 12'), true);
+  assert.equal(strayMint({ struckAt: 'Treveri' }, 'RIC V Diocletian 12'), false);
+  assert.equal(strayMint({}, 'RIC VI Alexandria 12'), false);
 });
 
 // Prose and word processors write a range with an en or em dash ("RIC II Hadrian 1009–1012"), and lot text has always read it as the hyphen it

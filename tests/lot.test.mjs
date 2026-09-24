@@ -48,8 +48,9 @@ test('every lot gives its references in text order, as the dealer wrote them', (
 
 test('the type references are read, and only RIC, RRC, SC, Price and Bop are typed', () => {
   const [one, two, three, four, five, , seven, eight, nine, ten] = LOTS.map((lot) => findReferences(lot).references);
-  assert.deepEqual(one[0], { text: 'RIC 972', reference: ric('972'), cf: false, variant: false, typed: true });
-  assert.deepEqual(one[1], { text: 'Cohen 17', reference: other('Cohen 17'), cf: false, variant: false, typed: false });
+  // The heading names Rome beside Titus: each row carries it as where the coin was struck (loop N6 review).
+  assert.deepEqual(one[0], { text: 'RIC 972', reference: ric('972'), cf: false, variant: false, typed: true, struckAt: 'Rome' });
+  assert.deepEqual(one[1], { text: 'Cohen 17', reference: other('Cohen 17'), cf: false, variant: false, typed: false, struckAt: 'Rome' });
   assert.deepEqual(two[2].reference, ric('1073'));
   assert.deepEqual(three.map((found) => found.reference), [ric('268', '', 'Elagabalus'), other('BMC 76'), other('S 7756'), other('C 36')]);
   assert.deepEqual(four[0].reference, ric('394a', 'III', 'Antoninus Pius'));
@@ -112,7 +113,7 @@ test('a mint-volume lot keeps its RIC citation clean and carries a strict matchi
   assert.equal(lot.references.length, 1);
   assert.equal(lot.references[0].text, 'RIC VII 287');
   assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
-    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287',
+    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: 'Rome',
   });
   assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC VII 287 · Constantine II');
 });
@@ -281,7 +282,7 @@ test('a heading names its ruler in Latin, German, French, Italian or Spanish', (
 
 test('a lot row looks up its parsed reference, with the rulers only on a RIC reference without a section, and says so', () => {
   const [lot, maesa] = [LOTS[0], LOTS[2]].map(findReferences);
-  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), { ...ric('972'), rulers: ['Titus'] });
+  assert.deepEqual(lotLookup(lot.references[0], lot.rulers), { ...ric('972'), rulers: ['Titus'], struckAt: 'Rome' });
   assert.deepEqual(lotLookup(lot.references[1], lot.rulers), other('Cohen 17'));
   assert.deepEqual(lotLookup(maesa.references[0], ['Julia Maesa']), ric('268', '', 'Elagabalus'));
   assert.deepEqual(lotLookup(lot.references[0], []), ric('972'));

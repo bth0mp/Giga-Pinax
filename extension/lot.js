@@ -547,8 +547,12 @@ export function findReferences(input) {
   const rulers = rulersIn(headline);
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
-  const mint = rulers.length === 0 ? headingMint(headline) : '';
-  return { references: mint ? references.map((found) => ({ ...found, mint })) : references, rulers };
+  // A heading that names a ruler as well still says where the coin was struck: the row carries that mint beside the rulers, and the lookup never
+  // opens his coin from another mint of RIC VI–IX for it.
+  const named = headingMint(headline);
+  const mint = rulers.length === 0 ? named : '';
+  const mark = mint ? { mint } : named ? { struckAt: named } : null;
+  return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
@@ -589,7 +593,8 @@ export function lotLookup(found, rulers) {
   if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, ''), headingMint: true };
   if (!borrowsRulers(found, rulers)) return found.reference;
   const section = found.reference.section ? '' : headingSection(rulers);
-  return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
+  if (section) return { ...found.reference, section, volume: volumeFor(section, found.reference.volume) };
+  return { ...found.reference, rulers, ...(found.struckAt ? { struckAt: found.struckAt } : {}) };
 }
 // A lone Svoronos number may open the CPE type PCO files it under (catalogues.js), so its row promises nothing either way.
 const MAYBE_FILED = /^Svoronos \d+[A-Za-z]?$/i;
