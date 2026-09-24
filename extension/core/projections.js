@@ -6,11 +6,13 @@ import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
 import { OWN } from './fields.js';
+import { localDateAtInstant, resolveZonedDateTime } from './reminders.js';
 /**
  * @typedef {import('./types.js').Lot} Lot
  * @typedef {import('./types.js').Evidence} Evidence
  * @typedef {import('./types.js').CollectionEntry} CollectionEntry
  * @typedef {import('./types.js').Money} Money
+ * @typedef {import('./types.js').AuctionEvent} AuctionEvent
  */
 /**
  * What the open bids in one currency add up to: hammers, hammers with the premium where it is known,
@@ -209,4 +211,47 @@ export function projectCollection(snapshot) {
   const ordered = {};
   for (const currency of CURRENCIES) if (byCurrency[currency]) ordered[currency] = byCurrency[currency];
   return { byCurrency: ordered, unpriced, entries };
+}
+
+/**
+ * Where an auction stands against now. `soon` is a timed instant within the next 48 hours, or a date-only sale day
+ * from the day before through the day itself; `ended` is an instant that has passed, or a day that is over in the
+ * auction's own zone. A live sale that has started (`auction-starts`) is `started` for the rest of its day: its lots
+ * come up for hours afterwards, so it is not ended before its day is. `daysUntil` counts calendar days in the
+ * auction's zone, and `sortMs` places a date-only day at its own midnight, among the timed instants.
+ * @typedef {object} EventTiming
+ * @property {'unknown' | 'upcoming' | 'soon' | 'started' | 'ended'} state
+ * @property {number | null} msUntil
+ * @property {number | null} daysUntil
+ * @property {number | null} sortMs
+ */
+const SOON_MS = 48 * 60 * 60 * 1000;
+const dayNumber = (localDate) => {
+  const parts = dateParts(localDate);
+  return parts ? Date.UTC(parts[0], parts[1] - 1, parts[2]) / 86400000 : null;
+};
+/**
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [now]
+ * @returns {EventTiming}
+ */
+export function eventTiming(event, now = new Date().toISOString()) {
+  const nowMs = Date.parse(now);
+  const eventDay = dayNumber(event?.localDate);
+  if (!event || eventDay === null || !Number.isFinite(nowMs)) return { state: 'unknown', msUntil: null, daysUntil: null, sortMs: null };
+  let today = null;
+  try { today = dayNumber(localDateAtInstant(String(event.timeZone), nowMs)); } catch { today = null; }
+  const daysUntil = today === null ? null : eventDay - today;
+  const startsMs = event.precision === 'timed' ? Date.parse(String(event.startsAt)) : NaN;
+  if (Number.isFinite(startsMs)) {
+    const msUntil = startsMs - nowMs;
+    /** @type {EventTiming['state']} */
+    let state = msUntil > SOON_MS ? 'upcoming' : msUntil >= 0 ? 'soon' : 'ended';
+    if (state === 'ended' && event.eventKind === 'auction-starts' && (daysUntil ?? -1) >= 0) state = 'started';
+    return { state, msUntil, daysUntil, sortMs: startsMs };
+  }
+  const midnight = resolveZonedDateTime({ localDate: event.localDate, localTime: '00:00', timeZone: event.timeZone, disambiguation: 'reject' });
+  const sortMs = midnight.ok ? Date.parse(midnight.value.startsAt) : eventDay * 86400000;
+  if (daysUntil === null) return { state: 'unknown', msUntil: null, daysUntil, sortMs };
+  return { state: daysUntil < 0 ? 'ended' : daysUntil <= 1 ? 'soon' : 'upcoming', msUntil: null, daysUntil, sortMs };
 }

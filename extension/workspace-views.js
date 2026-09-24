@@ -3,7 +3,7 @@
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
-import { projectExposure } from './core/projections.js';
+import { eventTiming, projectExposure } from './core/projections.js';
 import { moneyInputText } from './workspace-forms.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -69,15 +69,53 @@ export function filterWorkspaceLots(lots, query) {
 }
 
 const OPEN_OUTCOME = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
+/** The collector's own time zone, as the browser reports it. */
+export const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
+const VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
+const PAST_WORD = { 'lot-closes': 'closed', 'auction-starts': 'started', 'auction-day': 'ended' };
+// A format in the browser's language, or the ISO text the record holds where the language or zone cannot be used.
+const formatWith = (locale, options, date, fallback) => {
+  try { return new Intl.DateTimeFormat(locale, options).format(date); } catch { return fallback; }
+};
 /**
- * @param {AuctionEvent | null | undefined} event
+ * An auction's day and time as the collector reads it: in the browser's language, at the auction's own wall time,
+ * with the auction's zone named only where it is not the collector's; and how soon, amber (`soon`) within 48 hours
+ * or from the day before a sale day, muted (`past`) once it has passed.
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {{ now?: string, locale?: string, timeZone?: string }} [view]
+ * @returns {{ when: string, relative: string, tone: '' | 'soon' | 'past' }}
+ */
+export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
+  if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
+  const verb = VERB[String(event.eventKind)] ?? 'Auction';
+  const zone = event.timeZone && event.timeZone !== timeZone ? ` ${event.timeZone}` : '';
+  const timing = eventTiming(event, now);
+  const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
+  const day = timed
+    ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localDate)
+    : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate);
+  const time = timed ? `, ${formatWith(locale, { hour: 'numeric', minute: '2-digit', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localTime ?? '')}`
+    : event.precision === 'timed' && event.localTime ? `, ${event.localTime}` : '';
+  const when = `${verb} ${day}${time}${zone}`;
+  if (timing.state === 'ended' || timing.state === 'started') return { when, relative: PAST_WORD[String(event.eventKind)] ?? 'past', tone: 'past' };
+  if (timing.state === 'unknown') return { when, relative: '', tone: '' };
+  const tone = timing.state === 'soon' ? 'soon' : '';
+  if (timing.msUntil === null) {
+    const days = /** @type {number} */ (timing.daysUntil);
+    return { when, relative: days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`, tone };
+  }
+  const minutes = Math.floor(timing.msUntil / 60000);
+  const relative = minutes < 60 ? `in ${minutes} min` : timing.msUntil <= 48 * 3600000 ? `in ${Math.floor(minutes / 60)} h` : `in ${timing.daysUntil ?? Math.round(timing.msUntil / 86400000)} days`;
+  return { when, relative, tone };
+}
+/**
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {{ now?: string, locale?: string, timeZone?: string }} [view]
  * @returns {string}
  */
-export function auctionTimeLabel(event) {
-  if (!event?.localDate) return 'Time unknown';
-  const kind = event.eventKind === 'lot-closes' ? 'Lot deadline' : event.eventKind === 'auction-day' ? 'Auction day' : 'Event starts';
-  if (event.precision === 'timed' && event.localTime) return `${kind} · ${event.localDate} at ${event.localTime} ${event.timeZone}`;
-  return `${kind} · ${event.localDate} (date only, ${event.timeZone})`;
+export function auctionTimeLabel(event, view) {
+  const { when, relative } = eventWhen(event, view);
+  return relative ? `${when} · ${relative}` : when;
 }
 
 /**
@@ -184,6 +222,28 @@ export function lotStatusLabel(lot) {
   if (lot?.activeBid) return 'Bid active';
   if (lot?.plannedBid) return 'Bid planned';
   return 'Watching';
+}
+
+/**
+ * The status pill's colour, one per state: grey watching, plum outline planned, plum fill active, and the three
+ * outcomes.
+ * @param {Lot | null | undefined} lot
+ * @returns {'watching' | 'planned' | 'active' | 'won' | 'lost' | 'passed'}
+ */
+export function lotStatusTone(lot) {
+  const status = lot?.outcome?.status;
+  if (status === 'won' || status === 'lost' || status === 'passed') return status;
+  return lot?.activeBid ? 'active' : lot?.plannedBid ? 'planned' : 'watching';
+}
+
+/**
+ * The one amount a coin row shows beside its title: the final hammer of a settled coin, else the bid in force.
+ * @param {Lot | null | undefined} lot
+ * @returns {import('./core/types.js').Money | null}
+ */
+export function lotRowAmount(lot) {
+  if (lot?.outcome?.status && lot.outcome.status !== 'open') return lot.outcome.hammer ?? null;
+  return lot?.activeBid?.amount ?? lot?.plannedBid?.amount ?? null;
 }
 
 export const DETAIL_TABS = Object.freeze(['details', 'bid', 'reminders', 'outcome']);

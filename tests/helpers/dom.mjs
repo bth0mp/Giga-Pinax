@@ -706,9 +706,9 @@ function loadBridge(browser) {
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
 export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, records, sourceLaunchers] = await Promise.all([
+  const [money, evidence, projections, sourceLaunchers] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
-    import('../../extension/core/records.js'), import('../../extension/source-launchers.js'),
+    import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
   ]);
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
@@ -718,8 +718,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const bridge = browser ? loadBridge(browser) : null;
   const location = { hash };
   const sandbox = {
-    ...money, ...evidence, ...sourceLaunchers,
-    projectExposure: records.projectExposure, projectCollection: records.projectCollection,
+    ...money, ...evidence, ...projections, ...sourceLaunchers,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
     ...browserGlobals(document, {

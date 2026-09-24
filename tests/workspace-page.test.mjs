@@ -472,3 +472,31 @@ test('saving again after a lost auction reply writes one auction and attaches th
   assert.equal(sent.length, 2);
   assert.equal(sent[0], sent[1]);
 });
+
+// W-01: a coin row reads title and amount on one line, the auction's day, time and how soon on the next, and its
+// status as a pill of its own; the coin's attached auction and the Auctions list say the time the same way.
+async function backgroundWithBidOnAuction() {
+  const background = await createWorkspaceBackground();
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma E-Sale 130', eventKind: 'lot-closes', precision: 'timed',
+    localDate: '2030-10-01', localTime: '15:00', timeZone: 'Europe/London', reminderScope: 'linked-lots', reminders: [] } });
+  assert.equal(event.ok, true, event.message);
+  const lot = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, denarius', reference: 'RIC I² 306', sourceLinks: [], auctionEventId: event.value.id } });
+  const placed = await background.send({ type: 'bid.place', lotId: lot.value.id, expectedRevision: lot.value.revision, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } });
+  assert.equal(placed.ok, true, placed.message);
+  return background;
+}
+
+test('a coin row shows its amount beside the title, the auction’s time and how soon, and a status pill', async () => {
+  const page = await mountWorkspace({ background: await backgroundWithBidOnAuction(), hash: '#watchlist' });
+  const [row] = page.$('lot-list').children;
+  assert.equal(row.querySelector('.coin-row-title').textContent, 'RIC I² 306');
+  assert.equal(row.querySelector('.coin-row-amount').textContent, '£650.00');
+  assert.match(row.querySelector('.coin-row-when').textContent, /^Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days$/);
+  assert.equal(row.querySelector('.status-pill').textContent, 'Bid active');
+  assert.equal(row.querySelector('.coin-row-event').textContent, 'Roma E-Sale 130');
+  assert.equal(row.querySelector('.status-pill').dataset.tone, 'active');
+  await page.openCoin('Nero, denarius');
+  assert.match(page.$('attached-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days$/);
+  await page.navigate('#auctions');
+  assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days/);
+});

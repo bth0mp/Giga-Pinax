@@ -16,9 +16,9 @@ import {
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
-  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
-  comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
-  filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
+  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
+  comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen, evidenceRowsForQuery,
+  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, routeFromHash,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -66,6 +66,17 @@ async function initWorkspace() {
     if (className) node.className = className;
     return node;
   };
+  const view = () => ({ locale: navigator.language });
+  // An auction's name, its day and time, and how soon, the relative part toned: amber within 48 hours, muted once past.
+  const eventLine = (event, className, tag = 'span', withName = true) => {
+    const line = text(tag, '', className);
+    if (!event) { line.textContent = 'No auction attached'; return line; }
+    const { when, relative, tone } = eventWhen(event, view());
+    line.append(document.createTextNode(withName ? `${event.name} · ${when}` : when));
+    if (relative) { line.append(document.createTextNode(' · ')); line.append(text('span', relative, `when-relative${tone ? ` when-${tone}` : ''}`)); }
+    return line;
+  };
+  const statusPill = (lot) => { const pill = text('span', lotStatusLabel(lot), 'status-pill'); pill.dataset.tone = lotStatusTone(lot); return pill; };
   // What a lot draft's page stated about its sale, offered until the drafted coin is saved or the form is left: the closing, and the auction
   // written for it once the collector has ticked it.
   let pageOffer = null;
@@ -481,13 +492,12 @@ async function initWorkspace() {
     if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
-      const main = text('span', '', 'coin-row-main'); main.append(text('strong', lot.reference || lot.title), text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin')));
+      const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
+      const amount = lotRowAmount(lot); if (amount) top.append(text('span', formatMoney(amount), 'coin-row-amount'));
+      const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
-      const meta = text('span', '', 'coin-row-meta'); meta.append(text('span', event ? `${event.name} · ${auctionTimeLabel(event)}` : 'Time unknown'), text('span', lotStatusLabel(lot), 'row-status'));
-      const amounts = text('span', '', 'coin-row-bids');
-      if (lot.plannedBid) amounts.append(text('span', `Plan ${formatMoney(lot.plannedBid.amount)}`));
-      if (lot.activeBid) amounts.append(text('span', `Placed ${formatMoney(lot.activeBid.amount)}`));
-      row.append(main, meta, amounts);
+      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot)); if (event) status.append(text('span', event.name, 'coin-row-event'));
+      row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
       row.addEventListener('click', () => selectLot(lot.id));
       list.append(row);
     }
@@ -580,7 +590,7 @@ async function initWorkspace() {
       setBasis('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl: lot.sourceLinks?.find((link) => link.source === 'manual')?.url });
       populateLotForm(lot);
     }
-    $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot);
+    $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot); $('selected-status').dataset.tone = lotStatusTone(lot);
     if (lot.auctionContext?.pageUrl) $('open-auction').href = lot.auctionContext.pageUrl; else $('open-auction').removeAttribute('href');
     $('research-reference').disabled = !String(lot.reference ?? '').trim();
     $('delete-lot').hidden = false;
@@ -588,7 +598,7 @@ async function initWorkspace() {
     $('bid-form').elements.lotId.value = lot.id; $('outcome-form').elements.lotId.value = lot.id;
     if (!dirtyEditors.has('bid')) loadBidEditor(lot); if (!dirtyEditors.has('outcome')) loadOutcomeEditor(lot);
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
-    attached.append(text('p', event ? `${event.name} · ${event.localDate}${event.localTime ? ` at ${event.localTime}` : ''}` : 'No auction is attached.'));
+    attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
     const reminders = $('selected-reminders'); reminders.replaceChildren();
     if (!event) reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
@@ -725,7 +735,7 @@ async function initWorkspace() {
 
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
-    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(text('p', `${event.localDate}${event.localTime ? ` at ${event.localTime}` : ' · date only'} · ${event.timeZone}`)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
+    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(eventLine(event, '', 'p', false)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
     const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed' }; alerts.replaceChildren(...due.map((alert) => text('p', `${eventsById.get(alert.eventId)?.name ?? 'Auction'} · ${alertLabel[alert.status]}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would

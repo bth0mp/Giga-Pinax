@@ -10,7 +10,7 @@ import {
   selectionAfterSnapshot, submissionContext, WORKSPACE_EDITORS,
 } from '../extension/workspace-editing.js';
 import {
-  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
+  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
   filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
 } from '../extension/workspace-views.js';
@@ -21,6 +21,7 @@ import {
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
+import { eventTiming } from '../extension/core/projections.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -832,9 +833,12 @@ test('auction queue classifies closing, research, bid and completed lots and sor
 });
 
 test('auction labels distinguish a timed lot deadline from a date-only auction day', () => {
-  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Lot deadline · 2026-09-15 at 12:00 UTC');
-  assert.equal(auctionTimeLabel({ eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Event starts · 2026-09-15 at 12:00 UTC');
-  assert.equal(auctionTimeLabel({ eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-15', timeZone: 'UTC' }), 'Auction day · 2026-09-15 (date only, UTC)');
+  const view = { locale: 'en-GB', timeZone: 'UTC', now: '2026-09-01T00:00:00.000Z' };
+  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' }, view), 'Closes Tue 15 Sept, 12:00 · in 14 days');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' }, view), 'Starts Tue 15 Sept, 12:00 · in 14 days');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-15', timeZone: 'UTC' }, view), 'Sale day Tue 15 Sept · in 14 days');
+  // A timed record written without its instant still shows the wall time it holds.
+  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }, view), 'Closes Tue 15 Sept, 12:00 · in 14 days');
 });
 
 test('workspace detail save replaces optional metadata while preserving calculator cost estimate', () => {
@@ -1081,4 +1085,47 @@ test('a danger button draws its red on a transparent face with a red border', ()
   assert.match(danger, /color:var\(--error\)/);
   const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
   for (const id of ['delete-event', 'delete-lot']) assert.ok(markup.getElementById(id).classList.contains('quiet'), id);
+});
+
+// W-01: an auction's time as a collector reads it - the day and time in the browser's language, the auction's zone
+// named only when it is not the collector's own, and how soon: amber within 48 hours, muted once it has passed.
+test('an auction’s time reads as a day, a time and how soon, in the collector’s language', () => {
+  const closes = { eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-01', localTime: '15:00', timeZone: 'Europe/London', startsAt: '2026-10-01T14:00:00.000Z' };
+  const view = { locale: 'en-GB', timeZone: 'Europe/London' };
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 7 days', tone: '' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-30T07:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 31 h', tone: 'soon' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-01T13:20:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 40 min', tone: 'soon' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
+  // The auction's own zone is named when the collector is elsewhere; the time stays the auction's.
+  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 Europe/London');
+  assert.equal(eventWhen(closes, { locale: 'en-US', timeZone: 'Europe/London', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu, Oct 1, 3:00 PM');
+  const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/London' };
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'in 7 days', tone: '' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-30T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'tomorrow', tone: 'soon' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-01T22:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'today', tone: 'soon' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'ended', tone: 'past' });
+  const starts = { ...closes, eventKind: 'auction-starts' };
+  assert.deepEqual(eventWhen(starts, { ...view, now: '2026-10-01T16:00:00.000Z' }), { when: 'Starts Thu 1 Oct, 15:00', relative: 'started', tone: 'past' });
+  assert.deepEqual(eventWhen(null, view), { when: 'Time unknown', relative: '', tone: '' });
+  assert.equal(auctionTimeLabel(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), 'Closes Thu 1 Oct, 15:00 · in 7 days');
+});
+
+// An auction event's standing against now, which the queues, the row badges and the popup all read the same way.
+test('an event is soon within 48 hours or from the day before a sale day, and ended once its instant or day is past', () => {
+  const timed = { eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-01', localTime: '15:00', timeZone: 'Europe/London', startsAt: '2026-10-01T14:00:00.000Z' };
+  assert.equal(eventTiming(timed, '2026-09-24T14:00:00.000Z').state, 'upcoming');
+  assert.equal(eventTiming(timed, '2026-09-29T14:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(timed, '2026-10-01T14:00:00.001Z').state, 'ended');
+  // A live sale that has started is still under way on its day, so it is not ended until the day is over.
+  const starts = { ...timed, eventKind: 'auction-starts' };
+  assert.equal(eventTiming(starts, '2026-10-01T20:00:00.000Z').state, 'started');
+  assert.equal(eventTiming(starts, '2026-10-01T23:30:00.000Z').state, 'ended', 'midnight in London has passed');
+  // A sale day is read in its own zone: 23:30 UTC on 30 September is already 1 October in Zurich.
+  const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/Zurich' };
+  assert.equal(eventTiming(day, '2026-09-29T12:00:00.000Z').state, 'upcoming');
+  assert.equal(eventTiming(day, '2026-09-30T12:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(day, '2026-10-01T21:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(day, '2026-10-01T22:30:00.000Z').state, 'ended');
+  assert.equal(eventTiming(day, '2026-09-30T12:00:00.000Z').sortMs, Date.parse('2026-09-30T22:00:00.000Z'), 'a day sorts from its own midnight');
+  assert.equal(eventTiming(null, '2026-09-30T12:00:00.000Z').state, 'unknown');
 });
