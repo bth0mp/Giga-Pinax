@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries } from '../extension/lookup.js';
+import { buildQuery, parseFeed, pickMatch, formatDates, toCard, nomismaSlugs, nomismaLabel, lookupType, lookupById, referenceNumber, parseReference, resolveLabels, bopSeries, kmNumber, sgNumber, bopCitation, seriesOf, kingOf, bopDetails, rpcUrl, searchablePart, portraitSlug, filingNote, pickRicEntries, strayMint } from '../extension/lookup.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fixture(name));
@@ -833,6 +833,31 @@ test('Bop references parse from one box with or without a king, and build a BIGR
   assert.deepEqual(buildQuery(parseReference('Euthydemus I, Bop 24A')), { corpus: 'bigr', query: 'Bopearachchi Euthydemus I 24A', king: 'Euthydemus I', series: '24A' });
 });
 
+// Loop N8: CGB and Elsen put the French word for series between the key and the number ("Bopearachchi Série 6C"), which read as the king "Série";
+// and the co-authored Pre-Kushana Coins in Pakistan ("Bopearachchi & Rahman 268") read as Bop 268 of the king "& Rahman", searched on BIGR and
+// acsearch under that name. The series word is no king, and a co-author makes it another book: prices only.
+test('the French series word is read past, and Bopearachchi with a co-author is another book', () => {
+  const bop = (section, number) => ({ catalogue: 'Bop', number, volume: '', section });
+  for (const [text, expected] of [['Bopearachchi Série 6C', bop('', '6C')], ['Bopearachchi série 6C', bop('', '6C')], ['Bop. Serie 6C', bop('', '6C')],
+    ['Bopearachchi Series 6C', bop('', '6C')], ['Bopearachchi Série Euthydemus I 24A', bop('Euthydemus I', '24A')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // The co-authored book is its own citation, searched for its prices as the dealer wrote it.
+  for (const text of ['Bopearachchi & Rahman 268', 'Bopearachchi and Rahman 268', 'Bopearachchi-Rahman 268', 'Bop & Rahman 268']) {
+    assert.deepEqual(parseReference(text), { catalogue: 'Other', number: text, volume: '', section: '' }, text);
+  }
+  // Loop N8 review: typed with an en dash, as a word processor writes the hyphen, it is the same book; the plural "Séries" is no king either.
+  assert.deepEqual(parseReference('Bopearachchi–Rahman 268'), { catalogue: 'Other', number: 'Bopearachchi–Rahman 268', volume: '', section: '' });
+  assert.deepEqual(parseReference('Bopearachchi Séries 6C'), bop('', '6C'));
+  // A king never starts with the ampersand or the joining word, whichever side of the key he is written on.
+  for (const text of ['& Rahman Bop 268', 'and Rahman, Bop 268']) assert.notEqual(parseReference(text)?.catalogue, 'Bop', text);
+  // Nothing else changes: a king, a key glued to its number by a hyphen, and a real king who happens to start like the joining word.
+  assert.deepEqual(parseReference('Bop-9C'), bop('', '9C'));
+  assert.deepEqual(parseReference('Bopearachchi Euthydemus I 24A'), bop('Euthydemus I', '24A'));
+  assert.deepEqual(parseReference('Bop Andragoras 1'), bop('Andragoras', '1'));
+  assert.deepEqual(parseReference('Bopearachchi Antimachus I 1A'), bop('Antimachus I', '1A'));
+});
+
 test('bopCitation reads the Bopearachchi idno from a NUDS record and fails closed; seriesOf and kingOf split citation and title', () => {
   assert.equal(bopCitation(fixture('bigr-euthydemus-i-13-1.xml')), 'Euthydème I 24A');
   assert.equal(bopCitation(fixture('bigr-euthydemus-i-13.xml')), 'Euthydème I 24');
@@ -1422,9 +1447,13 @@ test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, 
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius Gothicus'] }, { fetchImpl: feed });
   assert.ok(feed.calls[0].includes(encodeURIComponent('portrait_facet:"Claudius II Gothicus"')), feed.calls[0]);
   // A spelling no English or Latin label carries is asked for exactly as it was written, never resolved to a guess.
+  const unplaced = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus III'] }, { fetchImpl: unplaced });
+  assert.ok(unplaced.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus III"')), unplaced.calls[0]);
+  // A dealer's spelling the closed table names (loop N6) is asked for under the name it names, as an alias is.
   const daia = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
-  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
+  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus Daia"')), daia.calls[0]);
 });
 
 // A mint bracketed after a number with no volume ("Nero. RIC 411 (Rome)") is no ruler's section: the lot's rulers are still asked for, so the one RIC
@@ -1452,6 +1481,26 @@ test('a section taken only from the heading\'s mint is offered online too, never
   assert.deepEqual(result, { status: 'candidates', candidates: [{ id: 'ric.7.tri.12', title: 'RIC VII Treveri 12' }], partial: true, corpus: 'ocre',
     query: 'RIC VII Treveri 12' });
   assert.equal(fetchImpl.calls.length, 1);
+});
+
+// Loop N6 review (Important 3): a ruler named beside a mint, whose one coin with the number OCRE finds at another RIC VI–IX mint, is offered that coin
+// online too, never opened; at the mint the heading names it still opens.
+test('a ruler\'s coin from another mint than the heading names is offered online, never opened', async () => {
+  const alexandria = '<feed><entry><title>RIC VI Alexandria 12</title><id>ric.6.alex.12</id></entry></feed>';
+  const fetchImpl = fakeFetch({ 'ocre/apis/search': alexandria });
+  const reference = { catalogue: 'RIC', volume: 'VI', section: '', number: '12', rulers: ['Constantius Chlorus'], struckAt: 'Treveri' };
+  assert.deepEqual(await lookupType(reference, { fetchImpl }), { status: 'candidates', candidates: [{ id: 'ric.6.alex.12', title: 'RIC VI Alexandria 12' }],
+    partial: true, corpus: 'ocre', query: 'RIC VI 12 (Constantius Chlorus)' });
+  assert.equal(fetchImpl.calls.length, 1);
+  // The modern name the heading wrote is the same mint as RIC's own.
+  assert.equal(strayMint({ struckAt: 'Trier' }, 'RIC VI Treveri 12'), false);
+  assert.equal(strayMint({ struckAt: 'Trier' }, 'RIC VI Alexandria 12'), true);
+  assert.equal(strayMint({ struckAt: 'Treveri' }, 'RIC V Diocletian 12'), false);
+  assert.equal(strayMint({}, 'RIC VI Alexandria 12'), false);
+  // A heading naming several places carries them all: a coin at any of them is no stray (loop N6 re-review).
+  assert.equal(strayMint({ struckAt: ['Rome', 'Siscia'] }, 'RIC VIII Siscia 323'), false);
+  assert.equal(strayMint({ struckAt: ['Rome', 'Sisak'] }, 'RIC VIII Siscia 323'), false);
+  assert.equal(strayMint({ struckAt: ['Rome', 'Siscia'] }, 'RIC VIII Alexandria 323'), true);
 });
 
 // Prose and word processors write a range with an en or em dash ("RIC II Hadrian 1009–1012"), and lot text has always read it as the hyphen it

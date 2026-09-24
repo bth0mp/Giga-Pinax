@@ -1010,9 +1010,9 @@ test('a median per grade appears once a bucket rests on three sales', async () =
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('grade-medians').hidden, false);
-  assert.deepEqual(popup.element('grade-medians').children.map((line) => line.textContent), ['VF: median $200 (3)']);
+  assert.deepEqual(popup.element('grade-medians').children.map((line) => line.textContent), ['VF · $200 · 3 sales']);
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\nVF: median \$200 \(3\)/);
+  assert.match(popup.clipboard[0], /\nVF · \$200 · 3 sales/);
 });
 
 test('a redraw takes the verified card, so Copy summary heads the text with its label', async () => {
@@ -1133,7 +1133,7 @@ test('the grade medians say how much of the sample carries no grade', async () =
   assert.equal(popup.element('ungraded-count').hidden, false);
   assert.equal(popup.element('ungraded-count').textContent, '1 of 4 results carry no grade');
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\nVF: median \$200 \(3\)\n1 of 4 results carry no grade/);
+  assert.match(popup.clipboard[0], /\nVF · \$200 · 3 sales\n1 of 4 results carry no grade/);
 });
 
 // A public row the filter leaves out is still a sale the collector may know is his type: it stays listed, and counting it is one click, as on acsearch.
@@ -1725,7 +1725,7 @@ test('the median by year is drawn under the range from the counted sales, with i
   assert.equal(popup.element('year-strip').style.width, '96px');
   assert.equal(popup.element('year-strip').style.height, '74px');
   assert.equal(popup.element('year-strip')['aria-label'], 'Median by year: 2023, $200 from 3 sales; 2024, $500 from 3 sales.');
-  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023 · $200 · 3 sales', '2024 · $500 · 3 sales']);
   // One bar per year, and under it the year and the count; every node is SVG.
   const nodes = popup.element('year-strip').children;
   assert.ok(nodes.every((node) => node.namespace === 'http://www.w3.org/2000/svg'));
@@ -1733,10 +1733,10 @@ test('the median by year is drawn under the range from the counted sales, with i
   const texts = nodes.filter((node) => node.tag === 'text').map((node) => node.textContent);
   for (const text of ['2023', '2024', '3 sales']) assert.ok(texts.includes(text), text);
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\n2023: median \$200 \(3\)\n2024: median \$500 \(3\)/);
+  assert.match(popup.clipboard[0], /\n2023 · \$200 · 3 sales\n2024 · \$500 · 3 sales/);
   // A sale left out by hand leaves 2024 on two: the year goes.
   await popup.element('sale-list').children[3].children[2].emit('click');
-  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)']);
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023 · $200 · 3 sales']);
 });
 
 test('the CoinArchives panel draws its own median by year, never pooled with acsearch', async () => {
@@ -1751,8 +1751,8 @@ test('the CoinArchives panel draws its own median by year, never pooled with acs
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
   assert.equal(popup.element('coinarchives-year-medians').hidden, false);
-  assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025: median $250 (3)']);
-  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+  assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025 · $250 · 3 sales']);
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023 · $200 · 3 sales', '2024 · $500 · 3 sales']);
 });
 
 // The toggles stand for the rows on show: clearing the Upcoming list takes them down with it, as it does after a re-fetch that finds nothing and after

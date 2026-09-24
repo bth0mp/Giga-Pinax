@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATALOGUES, RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, catalogueForCorpus, catalogueOf, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
+import { CATALOGUES, EXTRA_SPELLINGS, RIC_VOLUMES, RIC_SECTIONS, RIC_RULERS, ANY_VOLUME, VOLUME_OPTIONS, BIGR_KINGS, canonicalRicPerson, catalogueForCorpus, catalogueOf, isRicPerson, ricMintSection, ricPeople, sectionMismatch, volumesOf, volumeFor, selectOptions } from '../extension/catalogues.js';
 import { buildQuery, parseReference } from '../extension/lookup.js';
+import { RIC_PEOPLE } from '../extension/ric-people.js';
 
 test('the twelve RIC volumes are in RIC order, and every volume and section round-trips through parseReference and buildQuery', () => {
   assert.deepEqual(RIC_VOLUMES.map((volume) => volume.value), [
@@ -146,8 +147,10 @@ test('a person is found by the English and Latin spellings Nomisma files, folded
   // A regnal "I" only tells the plain name from a "II" the table also holds.
   assert.equal(canonicalRicPerson('Licinius I'), 'Licinius');
   assert.deepEqual(ricPeople('Valerian I').map(({ id }) => id), ['valerian']);
+  // "Maximinus I", "Julian II" and "Faustina II" are the dealers' spellings of people the table holds, and EXTRA_SPELLINGS says so (loop N6, below);
+  // "Philip I" is RIC's section name, which no person answers to.
   for (const unknown of ['', '  ', 'hello', 'Tit', 'Leo', 'Theodosius', 'Croesus', 'constructor', '__proto__', 'toString', undefined, null,
-    'Maximinus I', 'Julian II', 'Faustina Junior', 'Faustina II', 'Severus', 'Philip I']) {
+    'Severus', 'Philip I', 'Faustina', 'Julianus', 'Maximinus', 'Constantinus']) {
     assert.deepEqual(ricPeople(unknown), [], String(unknown));
   }
   // Aliases never make a name a volume's section: the volume lists are RIC's own.
@@ -195,7 +198,50 @@ test('an English -ian name is also reached by its regular Latin -ianus form, wit
   assert.equal(canonicalRicPerson('Numerianus'), 'Numerian');
   assert.deepEqual(ricPeople('Valerianus').map(({ id }) => id), ['valerian', 'valerian_ii']);
   // Only the English -ian names are Latinised, and only by this one ending: nothing is invented for a name shaped otherwise.
-  for (const unknown of ['Titusus', 'Neroius', 'Trajanus', 'Constantinus']) assert.deepEqual(ricPeople(unknown), [], unknown);
+  for (const unknown of ['Titusus', 'Neroius', 'Constantinus', 'Trajanianus', 'Titiano']) assert.deepEqual(ricPeople(unknown), [], unknown);
+});
+
+// Loop N6: a Künker heading writes "Traianus, 98-117", a Spanish one "Nerón", an Italian one "Traiano", a French one "Hadrien", and none of them
+// was read, so "RIC 347" listed thirty-four types from every volume. The -ian rule reaches the Romance endings, a -jan name its Latin ones, and a
+// small closed table the rest: every entry is a spelling of one person the table already holds, never a new person.
+test('the Latin, German, French, Italian and Spanish spellings of the RIC I–V rulers name the one person each', () => {
+  for (const [spelling, person] of [['Traianus', 'Trajan'], ['Trajanus', 'Trajan'], ['Traiano', 'Trajan'], ['Trajano', 'Trajan'],
+    ['Adriano', 'Hadrian'], ['Hadrien', 'Hadrian'], ['Vespasiano', 'Vespasian'], ['Vespasien', 'Vespasian'], ['Aureliano', 'Aurelian'],
+    ['Aurélien', 'Aurelian'], ['Dioclétien', 'Diocletian'], ['Nerón', 'Nero'], ['Néron', 'Nero'], ['Nerone', 'Nero'],
+    ['Philippus I', 'Philip the Arab'], ['Philipp I', 'Philip the Arab'], ['Valerianus I', 'Valerian'], ['Elagabal', 'Elagabalus'],
+    ['Heliogabalus', 'Elagabalus'], ['Faustina II', 'Faustina the Younger'], ['Faustina Minor', 'Faustina the Younger'],
+    ['Faustina Iunior', 'Faustina the Younger'], ['Faustina Junior', 'Faustina the Younger'], ['Faustina I', 'Faustina the Elder'],
+    ['Faustina Maior', 'Faustina the Elder'], ['Faustina Major', 'Faustina the Elder'], ['Constantius I', 'Constantius Chlorus'],
+    ['Maximinus I', 'Maximinus Thrax'], ['Maximinus II', 'Maximinus Daia'], ['Julian II', 'Julian the Apostate'], ['Iulianus II', 'Julian the Apostate'],
+    ['Jovian', 'Jovianus'], ['Constantine the Great', 'Constantine I'], ['Konstantin I', 'Constantine I'], ['Costantino I', 'Constantine I'],
+    ['Constantin Ier', 'Constantine I'], ['Traianus Decius', 'Trajan Decius']]) {
+    assert.equal(canonicalRicPerson(spelling), person, spelling);
+  }
+  // The table names people, not spellings of its own: each entry's person is there, and no entry was already a spelling of anybody, a section's
+  // name or a mint's, so none of them takes a name from someone else.
+  const byId = new Map(RIC_PEOPLE.map((person) => [person.id, person]));
+  const fold = (text) => text.toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '');
+  const labels = new Set(RIC_PEOPLE.flatMap((person) => [person.name, ...person.aliases]).map(fold));
+  const sections = new Set(Object.values(RIC_SECTIONS).flat().map((name) => fold(name.split(' (')[0])));
+  for (const [spelling, id] of EXTRA_SPELLINGS) {
+    assert.ok(byId.has(id), `${spelling}: ${id}`);
+    assert.ok(!labels.has(spelling) && !sections.has(spelling) && !ricMintSection(spelling), spelling);
+    assert.deepEqual(ricPeople(spelling).map((person) => person.id), [id], spelling);
+    assert.deepEqual(volumesOf(spelling), [], spelling);
+  }
+  // The Romance endings of every -ian name name that one person too, and none of them is a section or a mint (Trajan's are above).
+  for (const person of RIC_PEOPLE.filter(({ name }) => /^[A-Z][a-z]+ian$/.test(name))) {
+    const stem = fold(person.name).replace(/ian$/, '');
+    for (const spelling of [`${stem}iano`, `${stem}ien`]) {
+      assert.deepEqual(ricPeople(spelling).map(({ id }) => id), [person.id], spelling);
+      assert.ok(!sections.has(spelling) && !ricMintSection(spelling), spelling);
+    }
+  }
+  // A numeral the spelling does not carry is someone else, as it always was: the second Faustina is not the first, nor Maximinus II the first.
+  assert.deepEqual(ricPeople('Faustina III'), []);
+  assert.deepEqual(ricPeople('Constantius III').map((person) => person.id), ['constantius_iii']);
+  assert.deepEqual(ricPeople('Costantino II').map((person) => person.id), ['constantine_ii']);
+  assert.deepEqual(ricPeople('Costantino III'), []);
 });
 
 // Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.

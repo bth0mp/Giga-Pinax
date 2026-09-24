@@ -1,4 +1,4 @@
-import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits } from './lookup.js';
+import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, strayMint } from './lookup.js';
 import { isMintOnly, isRicPerson, isSectionOnly, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -292,7 +292,10 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.
-        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title) && headed.length === 0) return await listedById('ocre', final.entry.id);
+        // Nor is a coin from another RIC VI–IX mint than the one the heading names beside the ruler: his number there is not the dealer's coin.
+        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title) && headed.length === 0 && !strayMint(reference, final.entry.title)) {
+          return await listedById('ocre', final.entry.id);
+        }
         if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
         return local(final, 'ocre', query);
       }
