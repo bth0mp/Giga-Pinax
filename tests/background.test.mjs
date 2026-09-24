@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SCHEMA_VERSION } from '../extension/core/records.js';
 import { STORAGE_KEY } from '../extension/store.js';
+import { DIAGNOSTICS_KEY } from '../extension/core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
 const listeners = {
@@ -73,8 +74,6 @@ globalThis.browser = {
 };
 
 await import(`../extension/background.js?integration=${Date.now()}`);
-// Imported only now: it shares browser-api.js with the background, which reads the extension API as it loads.
-const { DIAGNOSTICS_KEY } = await import('../extension/core/diagnostics.js');
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 // A command comes from one of this extension's own pages, and the background answers nothing else.
@@ -437,7 +436,7 @@ const settleDiagnostics = async () => { for (let index = 0; index < 12; index +=
 
 test('a store command refused for its validity is recorded in the diagnostics, without what it carried', async () => {
   const before = diagnostics().length;
-  const reply = await send({ type: 'draft.get', requestId: crypto.randomUUID(), draftId: 'RIC II 207 Hadrian' });
+  const reply = await send({ type: 'lot.delete', requestId: crypto.randomUUID(), lotId: 'RIC II 207 Hadrian', expectedRevision: 0 });
   assert.equal(reply.code, 'validation');
   await settleDiagnostics();
   assert.equal(diagnostics().length, before + 1);
@@ -451,6 +450,18 @@ test('a store command refused for its validity is recorded in the diagnostics, w
   await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
   await settleDiagnostics();
   assert.equal(diagnostics().length, before + 1);
+});
+
+// A workspace link to a capture draft that has expired or was already used is refused as `validation`, and that is an
+// everyday event: recorded, it would push real failures out of a list of fifty.
+test('an expired or already-used draft link is not recorded as a failure', async () => {
+  const before = diagnostics().length;
+  for (const type of ['draft.get', 'draft.consume']) {
+    const reply = await send({ type, requestId: crypto.randomUUID(), draftId: '00000000-0000-4000-8000-000000000999' });
+    assert.equal(reply.code, 'validation', type);
+  }
+  await settleDiagnostics();
+  assert.equal(diagnostics().length, before);
 });
 
 test('a failed reminder reconcile, a capture that cannot be shown and a lookup window that cannot open are recorded', async () => {

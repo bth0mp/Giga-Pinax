@@ -186,6 +186,15 @@ test('a cell that a spreadsheet would read as a formula is neutralised with a le
     '@SUM(A1:A2)',
     '\t=1+1',
     '\r=1+1',
+    // Whitespace ahead of the sign, and the full-width signs a spreadsheet may fold to the ASCII ones.
+    ' =1+1',
+    '\u00a0=1+1',
+    '\uFEFF=1+1',
+    '\n=1+1',
+    '\uFF1D1+1',
+    '\uFF0BSUM(1,2)',
+    '\uFF0D2+3',
+    '\uFF20SUM(A1:A2)',
   ];
   for (const title of hostile) {
     assert.equal(csvCell(title), `"'${title.replace(/"/g, '""')}"`, JSON.stringify(title));
@@ -196,7 +205,11 @@ test('a cell that a spreadsheet would read as a formula is neutralised with a le
   assert.deepEqual(rows.map((row) => row.title), hostile.map((title) => `'${title}`));
   assert.deepEqual(rows.map((row) => row.notes), hostile.map((title) => `'${title}`));
   assert.ok(rows.every((row) => row.reference === `'=cmd|"/c calc"!A1`));
+  // A cell that opens with a tab or a carriage return is guarded whatever follows, as the brief lists them.
+  assert.equal(csvCell('\tnote'), `"'\tnote"`);
+  assert.equal(csvCell('\rnote'), `"'\rnote"`);
   // Harmless text is left exactly as it was.
+  assert.equal(csvCell(' Hadrian'), '" Hadrian"');
   assert.equal(csvCell('Hadrian = good'), '"Hadrian = good"');
   assert.equal(csvCell('2026-09-12'), '"2026-09-12"');
   assert.equal(csvCell(''), '""');

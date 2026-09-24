@@ -39,6 +39,10 @@ test('an entry keeps only the allowed fields, each checked against its own shape
     diagnosticEntry({ area: 'acsearch', code: 'too-large', bytes: 4194304 }, { at: NOW, page: 'workspace', version: '0.34.0' }),
     { at: NOW, page: 'workspace', area: 'acsearch', code: 'too-large', bytes: 4194304, version: '0.34.0' },
   );
+  // A status outside the HTTP range is left out, however it is written.
+  for (const status of [99, 600, 7e20, -503, 503.5, '503']) {
+    assert.equal(diagnosticEntry({ area: 'lookup', code: 'http', status }, { at: NOW, page: 'popup', version: '0.34.0' }).status, undefined, String(status));
+  }
   // An area outside the list is no entry at all; an unknown code, page or version is named as unknown.
   assert.equal(diagnosticEntry({ area: 'somewhere', code: 'http' }, { at: NOW }), null);
   assert.equal(diagnosticEntry(null, { at: NOW }), null);

@@ -2,15 +2,18 @@
 //
 // Every field is quoted (RFC 4180) and every record ends in CRLF, so a comma, a quote or a line break in a note
 // survives. A title copied from an auction page is untrusted, and a spreadsheet runs a cell that opens with `=`, `+`,
-// `-` or `@` (or a tab or carriage return ahead of one) as a formula, so such a cell is written with a leading
+// `-` or `@` (after any leading whitespace, and in full width too) as a formula, so such a cell is written with a leading
 // apostrophe: the spreadsheet shows the text and runs nothing. Money is a plain decimal with a `.` and its currency in
 // a column of its own - never formatted for a locale, and never added up, because the records hold four currencies
 // and no rate between them. Dates and instants are written as the ISO text the records keep. Each file opens with a
 // byte order mark, which is what makes Excel read the file as UTF-8 rather than mangle an accented title.
 
-const BOM = '﻿';
-const FORMULA_START = /^[=+\-@\t\r]/;
-const MINOR_DIGITS = 2;
+import { FRACTION_DIGITS as MINOR_DIGITS } from './money.js';
+
+const BOM = '\uFEFF';
+// A tab or carriage return first, or a sign after any leading whitespace (a space, a no-break space, a stray byte order
+// mark, a line break) - the ASCII signs and their full-width forms, which a spreadsheet may fold to the ASCII ones.
+const FORMULA_START = /^(?:[\t\r]|\s*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20])/;
 
 export function csvCell(value) {
   let text = value === undefined || value === null ? '' : String(value);

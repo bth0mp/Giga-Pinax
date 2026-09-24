@@ -57,9 +57,14 @@ let reconcileFailed = false;
 // A failure kept in the local diagnostics the collector can copy from Settings: where and what kind, never what the
 // command or the page carried. Recording never throws and is not waited for.
 const noteFailure = (area, code) => { void recordDiagnostic({ page: 'background', area, code }); };
-// A command refused because storage failed or its data was invalid; a conflict or a duplicate is everyday traffic.
-const noteStoreFailure = (reply) => {
-  if (reply && !reply.ok && ['storage', 'validation'].includes(reply.code)) noteFailure('store', reply.code);
+// A command refused because storage failed or its data was invalid; a conflict or a duplicate is everyday traffic. So is
+// a workspace link to a capture draft that expired or was already used: that is the one `validation` refusal draft.get
+// and draft.consume give a page's well-formed command, and fifty of them would push every real failure out of the list.
+const EVERYDAY_REFUSALS = new Set(['draft.get', 'draft.consume']);
+const noteStoreFailure = (command, reply) => {
+  if (!reply || reply.ok || !['storage', 'validation'].includes(reply.code)) return;
+  if (reply.code === 'validation' && EVERYDAY_REFUSALS.has(command?.type)) return;
+  noteFailure('store', reply.code);
 };
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
@@ -227,8 +232,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
   // Only an extension page sends a command, so the collector is looking at their records.
   void clearCaptureFailure();
-  processCommand(message).then((reply) => { noteStoreFailure(reply); sendResponse(reply); }, (error) => {
-    noteFailure('store', 'storage');
+  // The page is answered first, so its reply never waits on or depends on the note.
+  processCommand(message).then((reply) => { sendResponse(reply); noteStoreFailure(message, reply); }, (error) => {
     sendResponse({
       ok: false,
       requestId: message?.requestId ?? '',
@@ -236,6 +241,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       outcome: 'not-committed',
       message: error.message || 'The command failed.',
     });
+    noteFailure('store', 'storage');
   });
   return true;
 });
