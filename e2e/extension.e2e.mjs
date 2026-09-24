@@ -128,6 +128,29 @@ test('step 19: a bare RIC number offers types and shows no median until one is c
   }
 });
 
+// Loop 1 (P-02): after a list of types, a pasted lot's answer scrolled the document itself, and the header and tabs went
+// off the top for good. Only the panel under them may scroll.
+test('the popup keeps its header and tabs in place through a lot lookup after a list of types', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await lookUp(page, 'RIC 237');
+    await page.locator('#candidates').waitFor({ state: 'visible', timeout: 15000 });
+    await lookUp(page, 'Philip I, 244-249. Antoninianus, Rome. RIC 27b. 4.23 g.');
+    await page.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator('#median-line').waitFor({ state: 'visible', timeout: 15000 });
+    // Past the reveal's last pass (400 ms) and its smooth scroll.
+    await page.waitForTimeout(1500);
+    const frame = await page.evaluate(() => ({ document: document.scrollingElement.scrollTop,
+      header: document.querySelector('.popup-header').getBoundingClientRect().top }));
+    assert.deepEqual(frame, { document: 0, header: 0 });
+  } finally {
+    await browser.close();
+  }
+});
+
 test('step 17: in Arabic, a house premium reads back as 22.50 and saves again untouched', async () => {
   const browser = await launch({ locale: 'ar-EG' });
   try {

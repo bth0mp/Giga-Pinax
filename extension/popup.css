@@ -24,7 +24,12 @@ h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:
 .icon-button:not([hidden]) + .icon-button {margin-left:-2px;}
 .text-button {border:0; background:transparent; color:var(--accent); font-weight:600; font-size:12px; padding:12px;}
 .text-button:hover {text-decoration:underline; text-underline-offset:3px;}
-.popup-scroll {overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; min-height:0;}
+/* The panel is the containing block of everything placed absolutely inside it: a visually hidden line deep in the answer, placed against the page
+   instead, stretched the document past the popup's height. */
+.popup-scroll {position:relative; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; min-height:0;}
+/* The toolbar popup's frame never scrolls: only its middle does. A window and the side panel fill their height and may need the page's own scroll
+   sideways when narrowed past their minimum width. */
+:root:not(.windowed):not(.panel-mode),:root:not(.windowed):not(.panel-mode) body {overflow:hidden;}
 /* A window opened with ?window=1 can be dragged to any size, so the page fills it: the header and footer stay put and the middle scrolls. */
 .windowed body {width:auto; min-width:360px;}
 .windowed .popup {height:100vh; max-height:none;}

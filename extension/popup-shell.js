@@ -28,7 +28,9 @@ function reveal(id) {
   const box = $(id).getBoundingClientRect();
   // Nothing to do once the answer starts at the top of the panel, which is also what stops the later passes from fighting the first.
   if (scroller.scrollTop !== restingScroll || box.top <= view.top + 8) return;
-  $(id).scrollIntoView({ block: 'start', behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+  // The panel alone is scrolled. scrollIntoView scrolls every ancestor, and a lot's answer can make the document taller than the popup for a moment:
+  // the document then scrolled too, taking the header and tabs off the top where no wheel could bring them back.
+  scroller.scrollTo({ top: scroller.scrollTop + box.top - view.top, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
   // Where the panel now rests is where we put it, or the next pass reads our own scroll as his and never moves.
   scroller.addEventListener('scrollend', markScroll, { once: true });
   setTimeout(markScroll, 700);

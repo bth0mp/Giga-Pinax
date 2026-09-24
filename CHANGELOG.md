@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- The popup no longer loses its header and Research, Calculator and Watchlist tabs after some lookups. A pasted lot looked up after a list of types scrolled the whole popup page, and no scrolling brought the header back; only the panel under the tabs scrolls now.
+
 ## [0.34.1] - 2026-09-24
 
 ### Changed

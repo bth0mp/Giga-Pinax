@@ -63,8 +63,10 @@ class TestElement {
   setAttribute(name, value) { this[name] = String(value); }
   removeAttribute(name) { delete this[name]; }
   toggleAttribute(name, force) { this[name] = force; }
-  getBoundingClientRect() { return { top: 0 }; }
-  scrollIntoView() {}
+  getBoundingClientRect() { return { top: this.top ?? 0, bottom: (this.top ?? 0) + (this.height ?? 0), height: this.height ?? 0 }; }
+  // Recorded, so a test can show the popup never scrolls with it: it scrolls every ancestor, the document included.
+  scrollIntoView() { this.scrolledIntoView = (this.scrolledIntoView ?? 0) + 1; }
+  scrollTo(options) { this.scrolledTo = [...(this.scrolledTo ?? []), options]; this.scrollTop = options.top; }
   focus() { this.focused = (this.focused ?? 0) + 1; }
   reportValidity() { return true; }
   setSelectionRange() {}
@@ -75,7 +77,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -141,7 +143,8 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
     CustomEvent: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
     URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set, AbortController,
-    setTimeout: () => 0,
+    // Timers never run unless a test asks to hold them (timers: []) and run them itself.
+    setTimeout: (callback) => { timers?.push(callback); return 0; },
     clearTimeout() {},
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
     // with the card still on screen at the time, so what the other half would have seen is what this records.
@@ -1948,4 +1951,27 @@ test('no specimen request for candidates, for a card with no type, or without ac
     permissionContains: async ({ origins }) => !origins.includes('https://nomisma.org/*') });
   assert.equal(popup.element('result').hidden, false);
   assert.equal(refused.requests.length, 0);
+});
+
+// Loop 1 (P-02): reveal() used scrollIntoView, which scrolls every ancestor of the answer - the document too, while a lot's answer made the page
+// taller than the popup for a moment - and the header and tabs went off the top for good. Only the panel is scrolled now, by its own scrollTo.
+test('bringing the answer into view scrolls the panel alone, never the document', async () => {
+  const timers = [];
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+  popup.element('result').top = 420;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('result').scrolledIntoView, undefined);
+  assert.equal(popup.element('popup-scroll').scrolledTo?.[0]?.top, 320);
+});
+
+test('the popup frame keeps absolutely placed text inside its scrolling panel', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  // Without a containing block of its own, a visually hidden line deep in the answer is placed against the page and stretches the document.
+  assert.match(css, /\.popup-scroll \{[^}]*position:relative/);
 });
