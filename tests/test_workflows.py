@@ -61,5 +61,23 @@ class RefreshWorkflowTests(unittest.TestCase):
         self.assertEqual(sorted(order), order)
 
 
+class CiWorkflowTests(unittest.TestCase):
+    """CI only reads the checkout: no job keeps the token in the checkout, and each tool it runs is installed from a lockfile."""
+
+    def setUp(self):
+        self.text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+
+    def test_every_checkout_drops_its_credentials(self):
+        checkouts = re.findall(r"uses: actions/checkout@\S+[^\n]*\n((?:\s+with:\n(?:\s{10}.*\n)+)?)", self.text)
+        self.assertEqual(2, len(checkouts))
+        for block in checkouts:
+            self.assertIn("persist-credentials: false", block)
+
+    def test_typescript_comes_from_its_lockfile(self):
+        self.assertIn("npm ci --prefix tools/typescript --no-audit --no-fund", self.text)
+        self.assertIn("tools/typescript/node_modules/.bin/tsc -p jsconfig.json --noEmit", self.text)
+        self.assertNotIn("npx", self.text)
+
+
 if __name__ == "__main__":
     unittest.main()
