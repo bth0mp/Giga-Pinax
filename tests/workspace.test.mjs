@@ -1258,3 +1258,17 @@ test('the coin and outcome forms keep a focused control clear of the sticky bar'
     assert.match(cssDeclarations(selector), /scroll-margin-bottom:72px/, selector);
   }
 });
+
+// Review Minor 5: once a placed bid is cancelled the form is filled from the cancelled terms, for the collector to
+// save again or change; nothing is written back to the store as a plan.
+test('after a cancellation the bid form offers the cancelled terms, and only then', () => {
+  const cancelled = { bidHistory: [
+    { action: 'planned-revised', amount: { currency: 'EUR', minor: 120000 } },
+    { action: 'placed', amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 },
+    { action: 'externally-cancelled', amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 },
+  ] };
+  assert.deepEqual(bidFormValues(cancelled, 'en-US', 'USD'), { amount: '1300.00', currency: 'EUR', premium: '20' });
+  const clearedSince = { bidHistory: [...cancelled.bidHistory, { action: 'planned-cleared', amount: { currency: 'EUR', minor: 1 } }] };
+  assert.deepEqual(bidFormValues(clearedSince, 'en-US', 'USD'), { amount: '', currency: 'USD', premium: '' });
+  assert.deepEqual(bidFormValues({ bidHistory: [] }, 'en-US', 'GBP'), { amount: '', currency: 'GBP', premium: '' });
+});

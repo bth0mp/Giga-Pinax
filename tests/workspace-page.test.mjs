@@ -920,3 +920,16 @@ test('Add comparable opens the set saved under the reference however it was spel
   await page.click('bid-add-comparable');
   assert.equal(page.$('evidence-query').value, queryId);
 });
+
+// Review Minor 5: after a cancellation the Bid tab offers the cancelled terms in the form, and the store keeps no plan.
+test('after recording a cancellation the Bid tab offers the cancelled terms without restoring a plan', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('cancel-bid');
+  const lot = storedLot(background, 'Nero, denarius');
+  assert.equal(lot.activeBid, undefined);
+  assert.equal(lot.plannedBid, undefined, 'no plan is written');
+  const f = page.$('bid-form').elements;
+  assert.deepEqual([f.amount.value, f.currency.value, f.premium.value], ['650.00', 'GBP', '20']);
+});

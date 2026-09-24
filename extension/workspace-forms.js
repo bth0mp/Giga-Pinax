@@ -93,8 +93,10 @@ export function premiumInputText(buyerPremiumBps) {
  * @returns {{ amount: string, currency: string, premium: string }}
  */
 export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
-  // The bid in force binds; a plan is only what the form shows before one is placed.
-  const terms = lot?.activeBid ?? lot?.plannedBid;
+  // The bid in force binds; a plan is only what the form shows before one is placed. Right after a cancellation the
+  // cancelled terms fill the form, for the collector to save again or change; the store keeps no plan for them.
+  const last = lot?.bidHistory?.at(-1);
+  const terms = lot?.activeBid ?? lot?.plannedBid ?? (last?.action === 'externally-cancelled' && last.amount ? last : undefined);
   return {
     amount: moneyInputText(terms?.amount, locale),
     currency: terms?.amount?.currency ?? fallbackCurrency,
