@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Added
 
 - **Upcoming on acsearch**: under the acsearch panel, the lots on the fetched page that have not been sold yet (no price, sale date today or later), newest first, each linked to its lot on acsearch. The list follows the citation and denomination switches exactly as the median does and says what they left out in the same words; it also appears when the page has no counted price yet. **Copy summary** adds `Upcoming: N lots, first on <date>`. **Watch** beside a lot opens it in the workspace as a watchlist draft (its title, the reference and its acsearch page) for you to review and save, as **Save reference to watchlist** does; its sale date is not yet carried into the draft, so add the auction there to be reminded. Nothing new is fetched for it.
+- **Median by year**: under the middle 50% of sales, a strip of bars gives the median of each year with at least three counted sales, oldest to newest, with the year and the number of sales under each bar. It is drawn from exactly the sales the median counts (the same filters, your own includes and excludes, and the period), for acsearch and CoinArchives separately and in the chosen currency only, and says that it covers only the sales on the fetched page (acsearch returns the 100 most recent, CoinArchives the first 100 results). Screen readers hear it as one sentence and as a line per year, and **Copy summary** adds the same lines (`2023: median $200 (3)`).
 
 ## [0.33.0] - 2026-09-24
 

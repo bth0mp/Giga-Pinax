@@ -158,6 +158,13 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .curation-controls {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;color:var(--muted);font-size:11px;}
 .sale-list li.excluded {opacity:.62;}
 .sale-toggle {flex:0 0 auto;font-size:11px;}
+/* A median per year: a strip of bars under the range, the median above each bar and the year and the sales under it. */
+.year-medians {margin:12px 0 0;}
+.year-strip {display:block; width:100%; height:auto; margin-top:4px; overflow:visible;}
+.year-bar {fill:var(--accent);}
+.year-strip text {fill:var(--muted); font-size:9px; font-variant-numeric:tabular-nums;}
+.year-strip .year-median {fill:var(--ink);}
+.year-strip .year-label {font-weight:600;}
 /* The lots on the fetched page not sold yet, under the acsearch panel: the sale list's rows, each with Watch in place of Exclude. */
 .upcoming {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
 .upcoming .sale-list {margin-top:6px;}

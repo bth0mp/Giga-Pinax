@@ -1703,3 +1703,43 @@ test('every element the popup looks up by id is in its markup', () => {
   assert.deepEqual(ids.filter((id) => !markup.getElementById(id)), []);
   assert.equal(markup.getElementById('upcoming').hidden, true);
 });
+const saleIn = (id, price, date) => ({ ...citingSale(id, price, 'Macedon, Alexander III. Tetradrachm. Price 23. Very Fine.'), date });
+const byYear = { status: 'ok', lots: [saleIn('a', '100', '01.01.2023'), saleIn('b', '200', '01.02.2023'), saleIn('c', '300', '01.03.2023'),
+  saleIn('d', '400', '01.01.2024'), saleIn('e', '500', '01.02.2024'), saleIn('f', '600', '01.03.2024'), saleIn('g', '900', '01.01.2025')] };
+
+test('the median by year is drawn under the range from the counted sales, with its lines for screen readers and the copy', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => byYear });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('year-medians').hidden, false);
+  assert.equal(popup.element('year-strip')['aria-label'], 'Median by year: 2023, $200 from 3 sales; 2024, $500 from 3 sales.');
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+  // One bar per year, and under it the year and the count; every node is SVG.
+  const nodes = popup.element('year-strip').children;
+  assert.ok(nodes.every((node) => node.namespace === 'http://www.w3.org/2000/svg'));
+  assert.equal(nodes.filter((node) => node.tag === 'rect').length, 2);
+  const texts = nodes.filter((node) => node.tag === 'text').map((node) => node.textContent);
+  for (const text of ['2023', '2024', '3 sales']) assert.ok(texts.includes(text), text);
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /\n2023: median \$200 \(3\)\n2024: median \$500 \(3\)/);
+  // A sale left out by hand leaves 2024 on two: the year goes.
+  await popup.element('sale-list').children[3].children[2].emit('click');
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)']);
+});
+
+test('the CoinArchives panel draws its own median by year, never pooled with acsearch', async () => {
+  const publicLot = (id, amount, date) => ({ id, title: `Auction, Lot ${id}`, description: 'Alexander III. Tetradrachm. Price 23.', date, price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('p1', 150, '2025-02-01'), publicLot('p2', 250, '2025-03-01'), publicLot('p3', 350, '2025-04-01')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => byYear,
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('coinarchives-year-medians').hidden, false);
+  assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025: median $250 (3)']);
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+});

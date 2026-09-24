@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -1482,4 +1482,33 @@ test('summaryText adds the upcoming lots', () => {
   const upcoming = upcomingLots([lot('*', '12.10.2026', 'u1'), lot('*', '01.11.2026', 'u2')], new Date(2026, 8, 11, 12));
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming }).split('\n')[2], 'Upcoming: 2 lots, first on 2026-10-12');
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming: [] }).split('\n').length, 3);
+});
+test('mediansByYear gives a median per year of at least three counted sales, oldest first', () => {
+  const lots = [lot('100', '01.01.2023', 'a'), lot('200', '2023-06-01', 'b'), lot('300', '31.12.2023', 'c'),
+    lot('400', '01.01.2024', 'd'), lot('500', '01.02.2024', 'e'),
+    lot('90', '01.01.2021', 'f'), lot('110', '01.02.2021', 'g'), lot('130', '01.03.2021', 'h'), lot('150', '01.04.2021', 'i'),
+    // Not a counted sale: no price, another currency, no readable date.
+    lot('*', '01.05.2021', 'j'), lot('200 EUR', '01.05.2023', 'k'), lot('1000', 'n/a', 'l')];
+  assert.deepEqual(mediansByYear(lots, 'USD'), [{ year: 2021, median: 120, count: 4 }, { year: 2023, median: 200, count: 3 }]);
+  assert.deepEqual(mediansByYear(lots.slice(3, 5), 'USD'), []);
+  const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
+  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021: median $120 (4)');
+  assert.equal(yearsSentence(mediansByYear(lots, 'USD'), usd), 'Median by year: 2021, $120 from 4 sales; 2023, $200 from 3 sales.');
+  assert.equal(yearsSentence([], usd), '');
+});
+
+test('summaryText adds the medians by year and the upcoming lots', () => {
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  const lots = [lot('100', '01.01.2023', 'a'), lot('200', '01.02.2023', 'b'), lot('300', '01.03.2023', 'c')];
+  const summary = summarise(lots, 'USD');
+  const upcoming = upcomingLots([lot('*', '12.10.2026', 'u1'), lot('*', '01.11.2026', 'u2')], new Date(2026, 8, 11, 12));
+  const text = summaryText(card, summary, 'USD', 'Price 23', { years: mediansByYear(lots, 'USD'), upcoming });
+  assert.equal(text, [
+    'Price 23',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 3 recorded sales matching “Price 23” · 2023',
+    '2023: median $200 (3)',
+    'Upcoming: 2 lots, first on 2026-10-12',
+    'https://numismatics.org/pella/id/price.23',
+  ].join('\n'));
+  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { years: [], upcoming: [] }).split('\n').length, 3);
 });

@@ -786,6 +786,26 @@ export function upcomingText(lots) {
   return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first}`;
 }
 
+const YEAR_MIN = 3;
+// A median per calendar year of sale, over whatever rows the caller counts (the median's own: the same filters, hand decisions and period). A year
+// resting on fewer than YEAR_MIN counted sales says nothing and is left out, as a thin grade bucket is; a lot without a readable date has no year.
+// Oldest first. One provider and one currency per call: nothing here pools them.
+export function mediansByYear(lots, currency) {
+  const byYear = new Map();
+  for (const entry of lots) {
+    const year = saleDate(entry.date)?.getUTCFullYear();
+    if (year !== undefined) byYear.set(year, [...(byYear.get(year) ?? []), entry]);
+  }
+  return [...byYear.keys()].sort((a, b) => a - b).flatMap((year) => {
+    const summary = summarise(byYear.get(year), currency);
+    return summary.count >= YEAR_MIN ? [{ year, median: summary.median, count: summary.count }] : [];
+  });
+}
+export const yearText = ({ year, median, count }, format) => `${year}: median ${format(median)} (${count})`;
+// The strip's accessible name: one sentence, year by year.
+export const yearsSentence = (years, format) => (years.length
+  ? `Median by year: ${years.map(({ year, median, count }) => `${year}, ${format(median)} from ${count} ${count === 1 ? 'sale' : 'sales'}`).join('; ')}.` : '');
+
 const TREND_MIN = 3;
 // Recent sales against earlier ones, whatever period is on show: the counted sales of the last 2 years (the same boundary as its button) and those
 // before, each median trusted only when it rests on at least TREND_MIN sales. A lot without a readable date belongs to neither side.
@@ -903,7 +923,7 @@ export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', upcoming = [] } = {}) {
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', years = [], upcoming = [] } = {}) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
@@ -917,6 +937,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (trend) lines.push(trendText(trend, money.format));
   lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
   if (ungraded) lines.push(ungraded);
+  lines.push(...years.map((year) => yearText(year, money.format)));
   if (upcoming.length) lines.push(upcomingText(upcoming));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.

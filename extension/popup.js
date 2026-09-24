@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText, yearText, yearsSentence } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
@@ -836,6 +836,9 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const ungraded = grades.length ? ungradedText(countedLots) : '';
   $('ungraded-count').textContent = ungraded;
   $('ungraded-count').hidden = !ungraded || $('grade-medians').hidden;
+  // The median of each year's counted sales, under the range: the same rows the median rests on, this provider's and this currency's only.
+  const byYear = mediansByYear(countedLots, currency);
+  renderYears('', byYear, money.format);
   $('sale-count').textContent = String(count);
   let restore = null;
   $('sale-list').replaceChildren(...periodLots.map((sale) => {
@@ -868,7 +871,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
   const upcoming = renderUpcoming(lots, term, context, card);
-  shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, upcoming } };
+  shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, years: byYear, upcoming } };
   renderPriceFilters();
   showCheck();
   $('prices-panel').hidden = false;
@@ -876,6 +879,40 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const heading = named || period.years ? `${period.label}: median` : 'Median';
   const left = filters.length ? ` ${spokenFilters(filters)}` : '';
   $('announcement').textContent = empty ? `${none}${left}` : `${heading} ${spoken} from ${count} recorded ${count === 1 ? 'sale' : 'sales'}.${left}`;
+}
+
+// A median per year as a strip of bars, the year and the number of sales under each and the median above it, drawn in SVG from the panel's own
+// counted rows; its name is the whole of it in one sentence, and the same lines stand as text for a screen reader. prefix picks the panel ('' for
+// acsearch, 'coinarchives-'): each provider draws its own, in its own currency, and nothing is pooled.
+const SVG = 'http://www.w3.org/2000/svg';
+const YEAR_COLUMN = 48;
+const YEAR_BAR = 36;
+function renderYears(prefix, years, format) {
+  const strip = $(`${prefix}year-strip`);
+  const node = (tag, attributes, text = '') => {
+    const made = document.createElementNS(SVG, tag);
+    for (const [name, value] of Object.entries(attributes)) made.setAttribute(name, String(value));
+    if (text) made.textContent = text;
+    return made;
+  };
+  const top = Math.max(0, ...years.map(({ median }) => median));
+  strip.setAttribute('viewBox', `0 0 ${Math.max(1, years.length) * YEAR_COLUMN} ${YEAR_BAR + 38}`);
+  strip.setAttribute('aria-label', yearsSentence(years, format));
+  strip.style.maxWidth = `${years.length * YEAR_COLUMN}px`;
+  strip.replaceChildren(...years.flatMap(({ year, median, count }, index) => {
+    const middle = index * YEAR_COLUMN + YEAR_COLUMN / 2;
+    const height = Math.max(2, Math.round((YEAR_BAR * median) / top));
+    const text = (y, className, value) => node('text', { x: middle, y, 'text-anchor': 'middle', class: className }, value);
+    return [text(10, 'year-median', format(median)),
+      node('rect', { x: middle - 10, y: 12 + YEAR_BAR - height, width: 20, height, rx: 2, class: 'year-bar' }),
+      text(YEAR_BAR + 24, 'year-label', String(year)), text(YEAR_BAR + 35, 'year-count', `${count} ${count === 1 ? 'sale' : 'sales'}`)];
+  }));
+  $(`${prefix}year-lines`).replaceChildren(...years.map((entry) => {
+    const line = document.createElement('li');
+    line.textContent = yearText(entry, format);
+    return line;
+  }));
+  $(`${prefix}year-medians`).hidden = years.length === 0;
 }
 
 function setCoinArchivesBusy(busy) {
@@ -938,6 +975,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
+  renderYears('coinarchives-', mediansByYear(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency), money.format);
   const counts = coinArchivesCuration.counts(periodLots);
   $('coinarchives-curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('coinarchives-sale-count').textContent = String(summary.count);
