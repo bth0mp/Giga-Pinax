@@ -117,3 +117,19 @@ test('the comparison picker is a short box of one-line choices with the chosen o
   assert.match(body('.compare-choice:has(:checked)'), /background:var\(--accent-soft\)/);
   assert.match(body('#comparison-picker:empty'), /margin:0;padding:0/);
 });
+
+// S-01 (what was left): Settings on the shared scale. Its section headings are the workspace's panel headings (16, subsections 14), its prose
+// one size, and its everyday actions secondary buttons, with only Clear left quiet beside Copy diagnostics.
+test('Settings uses the shared scale and button kinds', () => {
+  const settings = rules(read('settings.css'));
+  const body = (selector) => settings.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('h2'), /font:600 var\(--text-h3\)/);
+  assert.match(body('h3'), /font:600 var\(--text-h4\)/);
+  assert.match(body('p'), /font-size:13px/);
+  const html = read('settings.html');
+  for (const id of ['add-premium', 'copy-presets', 'paste-presets', 'export-csv', 'download-quarantine', 'export-raw', 'copy-diagnostics']) {
+    assert.match(html, new RegExp(`<button id="${id}" class="secondary"`), id);
+  }
+  assert.match(html, /<button class="secondary" type="submit">Preview import<\/button>/);
+  assert.match(html, /<button id="clear-diagnostics" class="quiet"/);
+});
