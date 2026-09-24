@@ -46,6 +46,8 @@ test('a current-lot draft carries the page’s estimate, closing time and photo 
     [{ closesAt: '2026-02-30' }, 'payload.closesAt'],
     [{ closesAt: '2026-10-15T24:00Z' }, 'payload.closesAt'],
     [{ closesAt: '2026-10-15T14:00+15:00' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00+14:30' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00-14:01' }, 'payload.closesAt'],
     [{ closesAt: 'next Tuesday' }, 'payload.closesAt'],
     [{ photoUrl: 'javascript:alert(1)' }, 'payload.photoUrl'],
     [{ photoUrl: `https://house.test/${'x'.repeat(2048)}` }, 'payload.photoUrl'],

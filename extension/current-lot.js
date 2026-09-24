@@ -196,7 +196,8 @@ export function pageClosesAt(value) {
   if (Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59) return '';
   if (zone && zone !== 'Z') {
     const [, sign, offsetHours, offsetMinutes] = /^([+-])(\d{2}):?(\d{2})$/.exec(zone);
-    if (Number(offsetHours) > 14 || Number(offsetMinutes) > 59) return '';
+    // No zone lies further from UTC than fourteen hours.
+    if (Number(offsetHours) * 60 + Number(offsetMinutes) > 14 * 60 || Number(offsetMinutes) > 59) return '';
     if (!(second === '00' && /^0*$/.test(fraction))) return dayOnly;
     return `${dayOnly}T${hour}:${minute}${sign}${offsetHours}:${offsetMinutes}`;
   }

@@ -597,7 +597,7 @@ function preferencesResult(preferences, path) {
 // the page's own figure in the page's own currency - any three-letter code, since nothing is converted and nothing is pooled - in that currency's
 // minor units. A closing is a day, or a time only with the offset the page wrote beside it: a time with no offset names no zone, and none is
 // invented for it.
-const CLOSES_AT = /^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d))?$/;
+const CLOSES_AT = /^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?:Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00)))?$/;
 
 function pageEstimateResult(value, path) {
   const object = objectResult(value, path); if (!object.ok) return object;

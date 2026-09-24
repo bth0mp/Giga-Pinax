@@ -1066,6 +1066,7 @@ test('the offered auction keeps the page’s instant in the collector’s own zo
     eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-15', timeZone: 'Europe/Zurich',
     reminderScope: 'linked-lots', reminders: createEventDraft('date-only').reminders, capturedText: 'From the page: 2026-10-15',
   });
-  for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
+  assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00+14:00' }, 'UTC').localTime, '00:00');
+  for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30', '2026-10-15T14:00+14:30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
 });

@@ -278,7 +278,7 @@ export function estimateNoteText(estimate) {
 }
 
 // A closing as a draft holds it (core/records.js validateDraftPayload): a day, or a day and time with the offset the page wrote.
-const CLOSES_AT = /^(\d{4})-(\d{2})-(\d{2})(?:T((?:[01]\d|2[0-3]):[0-5]\d)(Z|[+-](?:0\d|1[0-4]):[0-5]\d))?$/;
+const CLOSES_AT = /^(\d{4})-(\d{2})-(\d{2})(?:T((?:[01]\d|2[0-3]):[0-5]\d)(Z|[+-](?:(?:0\d|1[0-3]):[0-5]\d|14:00)))?$/;
 function closesAtParts(value) {
   const match = typeof value === 'string' ? CLOSES_AT.exec(value) : null;
   if (!match) return null;

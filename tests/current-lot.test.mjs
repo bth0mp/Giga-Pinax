@@ -324,7 +324,10 @@ test('a closing time is kept only with the offset the page wrote, and a day stay
   assert.equal(pageClosesAt('2026-10-15T14:00:00'), '2026-10-15');
   // Seconds a minute cannot hold are not rounded away; the day stays.
   assert.equal(pageClosesAt('2026-10-15T14:00:30+02:00'), '2026-10-15');
-  for (const bad of ['2026-02-30', '2026-10-15T25:00Z', '2026-10-15T14:00+15:00', '15.10.2026', 'soon', '', null, 20261015, {}]) {
+  // No zone lies further from UTC than fourteen hours.
+  assert.equal(pageClosesAt('2026-10-15T14:00+14:00'), '2026-10-15T14:00+14:00');
+  assert.equal(pageClosesAt('2026-10-15T14:00-14:00'), '2026-10-15T14:00-14:00');
+  for (const bad of ['2026-02-30', '2026-10-15T25:00Z', '2026-10-15T14:00+15:00', '2026-10-15T14:00+14:30', '2026-10-15T14:00-1401', '15.10.2026', 'soon', '', null, 20261015, {}]) {
     assert.equal(pageClosesAt(bad), '', String(bad));
   }
 });
