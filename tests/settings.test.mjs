@@ -317,8 +317,25 @@ test('Copy house presets puts the houses as they stand in the rows on the clipbo
   await page.element('copy-presets').click();
   await settle();
   assert.deepEqual(bidTools.parseHousePresets(page.copied[0]).value, [...saved, { name: 'Roma', buyerPremiumBps: 2000 }]);
-  assert.equal(page.status(), '2 house presets copied. Paste them into Settings in another browser.');
+  assert.equal(page.element('paste-status').textContent, '2 house presets copied. Paste them into Settings in another browser.');
+  assert.equal(page.element('paste-status').dataset.error, 'false');
+  assert.equal(page.status(), '', 'said once, beside the button, not again at the foot of the page');
   assert.deepEqual(page.commands, [], 'copying saves nothing');
+});
+
+// The share fold sits at the top of the page and the page status at its foot, thousands of pixels
+// below at phone width: what Copy and Add pasted houses answer is said beside them, as an alert.
+test('the copy and paste answers have a line of their own right under Add pasted houses', async () => {
+  const page = await openSettings();
+  const line = page.element('paste-status');
+  assert.equal(line.getAttribute('role'), 'alert');
+  const siblings = page.element('paste-presets').parentNode.children;
+  assert.equal(siblings[siblings.indexOf(page.element('paste-presets')) + 1], line);
+  await page.element('copy-presets').click();
+  await settle();
+  assert.equal(line.textContent, 'There are no house presets to copy.');
+  assert.equal(line.dataset.error, 'true');
+  assert.equal(page.status(), '');
 });
 
 test('Copy house presets refuses a row it cannot read, beside that row', async () => {
@@ -345,7 +362,8 @@ test('pasted house presets become rows to review, update a house of the same nam
   assert.deepEqual(rows.map((row) => row.querySelector('.premium-value').value), ['24.00', '25.00']);
   assert.equal(rows[1].querySelector('.premium-vat').value, '19.00');
   assert.equal(rows[1].querySelector('.premium-ladder-currency').value, 'EUR');
-  assert.equal(page.status(), '1 house added and 1 updated. Review them, then Save settings.');
+  assert.equal(page.element('paste-status').textContent, '1 house added and 1 updated. Review them, then Save settings.');
+  assert.equal(page.status(), '');
   assert.equal(page.element('paste-presets-text').value, '');
   assert.deepEqual(page.commands, []);
 });
@@ -355,8 +373,9 @@ test('pasted text that is not house presets changes no row and says why', async 
   page.element('paste-presets-text').value = '[{"name":"Roma","buyerPremiumBps":20000}]';
   await page.element('paste-presets').click();
   assert.equal(page.document.querySelector('.premium-value').value, '20.00');
-  assert.match(page.status(), /^House 1 \(Roma\): /);
-  assert.equal(page.statusIsError(), 'true');
+  assert.match(page.element('paste-status').textContent, /^House 1 \(Roma\): /);
+  assert.equal(page.element('paste-status').dataset.error, 'true');
+  assert.equal(page.status(), '', 'the refusal is not sent to the foot of the page, out of sight');
   assert.equal(page.element('paste-presets-text').value, '[{"name":"Roma","buyerPremiumBps":20000}]', 'the text stays to be corrected');
 });
 

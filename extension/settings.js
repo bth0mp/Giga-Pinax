@@ -448,23 +448,29 @@ async function loadCatalogueInfo() {
 
 $('add-premium').addEventListener('click', () => $('premium-list').append(premiumRow()));
 
+// What Copy and Add pasted houses answer is said on the line under the paste button: the share fold is
+// at the top of the page, and the page status at its foot is out of sight from there.
+function shareStatus(message, error = false) {
+  $('paste-status').textContent = message;
+  $('paste-status').dataset.error = String(error);
+}
+
 // The rows as they stand, read with the rule Save uses, so what is copied is what would be saved.
 $('copy-presets').addEventListener('click', async () => {
+  shareStatus('');
   const presets = collectPresets();
-  if (!presets.ok) {
-    status('');
-    return;
-  }
+  // A row that cannot be read has already said so beside its own field.
+  if (!presets.ok) return;
   if (presets.value.length === 0) {
-    status('There are no house presets to copy.', true);
+    shareStatus('There are no house presets to copy.', true);
     return;
   }
   try {
     await navigator.clipboard.writeText(housePresetsText(presets.value));
     const count = presets.value.length;
-    status(`${count} house ${count === 1 ? 'preset' : 'presets'} copied. Paste them into Settings in another browser.`);
+    shareStatus(`${count} house ${count === 1 ? 'preset' : 'presets'} copied. Paste them into Settings in another browser.`);
   } catch {
-    status('The house presets could not be copied. Click Copy house presets again with this page in front.', true);
+    shareStatus('The house presets could not be copied. Click Copy house presets again with this page in front.', true);
   }
 });
 
@@ -475,7 +481,7 @@ const nameKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocal
 $('paste-presets').addEventListener('click', () => {
   const parsed = parseHousePresets($('paste-presets-text').value);
   if (!parsed.ok) {
-    status(parsed.error.message, true);
+    shareStatus(parsed.error.message, true);
     return;
   }
   let added = 0;
@@ -494,7 +500,7 @@ $('paste-presets').addEventListener('click', () => {
   }
   $('paste-presets-text').value = '';
   const parts = [added ? `${added} ${added === 1 ? 'house' : 'houses'} added` : '', updated ? `${updated} updated` : ''].filter(Boolean);
-  status(`${parts.join(' and ')}. Review them, then Save settings.`.replace(/^./, (first) => first.toUpperCase()));
+  shareStatus(`${parts.join(' and ')}. Review them, then Save settings.`.replace(/^./, (first) => first.toUpperCase()));
 });
 
 $('save-settings').addEventListener('click', async () => {
