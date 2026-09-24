@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
@@ -49,6 +49,10 @@ let researchContext = null;
 // What the prices panel is showing, for Copy summary; only in memory, and cleared with the panel.
 let shownPrices = null;
 let shownCoinArchivesPrices = null;
+// The acsearch lots not sold yet, as the Upcoming list under the panel shows them: the whole page they came from, so a toggle can redraw the list.
+let shownUpcoming = null;
+// Watch on an upcoming lot hands it to the other half of this page, which owns the watchlist draft path (companion-popup.js).
+const WATCH_EVENT = 'giga-pinax-watch';
 let coinArchivesRequestId = 0;
 const priceCuration = createPriceCuration('acsearch');
 // The public panel curates its own rows: the same filter, the same Include, over the results CoinArchives returned.
@@ -280,6 +284,9 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   renderPriceFilters();
   resetCopyLabel();
   $('prices-panel').hidden = true;
+  shownUpcoming = null;
+  $('upcoming').hidden = true;
+  $('upcoming-list').replaceChildren();
   // A new result starts with Inspect sales folded; a period redraw leaves it as it was.
   $('sale-details').open = false;
   // A new lookup or currency starts the price check empty.
@@ -621,9 +628,10 @@ const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
 const rangePercent = (summary, value) => (summary.max > summary.min ? ((value - summary.min) / (summary.max - summary.min)) * 100 : 50);
 
 // A link to one lot on acsearch, in a new tab.
+const lotUrl = (sale) => `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
 function lotLink(sale, text) {
   const link = document.createElement('a');
-  link.href = `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
+  link.href = lotUrl(sale);
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.textContent = text;
@@ -654,13 +662,75 @@ function filterLines(periodLots, curation, { name, denomination, citing, uncited
   return lines;
 }
 
+// The filters an acsearch page is drawn with, for the median and the Upcoming list alike.
+// Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
+// The citation filter judges the reference the card is about, so it only applies while the term still searches it: a term the collector edited to
+// find something else is his own search, and every row it found is counted. It also never empties the statistics — a page whose text names the
+// reference nowhere (a provider that gives no lot text, a layout nobody reads any more) is counted whole and says so. Whether the text can be read
+// at all is a fact about the page acsearch returned, not about the period on show: a period of that page holding no citation is simply a period
+// without a sale of this type, and the count beside the empty median says so.
+function acsearchFilter(lots, term, reference, card) {
+  const denomination = filterableDenomination(card.denomination);
+  const wanted = onlyDenomination ? denomination : '';
+  const searched = filtersCitations(reference) && searchesReference(term, reference);
+  const unsearched = filtersCitations(reference) && !searched;
+  const uncited = searched && lots.length > 0 && !lots.some((sale) => citesReference(sale.description, reference));
+  const citing = searched && onlyCiting && !uncited;
+  const passes = { citing: (sale) => citesReference(sale.description, reference), denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
+  const reason = (sale) => (citing && !passes.citing(sale) ? 'not-cited' : wanted && !passes.denomination(sale) ? 'other-denomination' : null);
+  return { denomination, wanted, searched, unsearched, uncited, citing, passes, reason };
+}
+
+// The lots on the page that are not sold yet, under the panel: only those the median's own filters would count, and the filter line in the median's
+// own words over them. Nothing is fetched for it and nothing a collector decided by hand applies, since none of these rows is a sale to include.
+// Each row links the lot on acsearch and offers Watch; the list is the page's, so the 100-lot cap holds for it too.
+function renderUpcoming(lots, term, context = researchContext, card = priceCard(context)) {
+  if (!context) return [];
+  const { denomination, wanted, searched, unsearched, uncited, citing, passes, reason } = acsearchFilter(lots, term, context.reference, card);
+  const upcoming = upcomingLots(lots, new Date());
+  const listed = upcoming.filter((sale) => reason(sale) === null);
+  const filters = filterLines(upcoming, { reasonFor: reason }, { name: referenceName(context.reference), denomination: wanted, citing, uncited, unsearched, passes });
+  $('upcoming-filtered').textContent = filters.join(' · ');
+  $('upcoming-filtered').hidden = filters.length === 0;
+  $('upcoming-list').replaceChildren(...listed.map((sale) => {
+    const row = document.createElement('li');
+    const label = document.createElement('span');
+    const day = isoDay(sale.date);
+    const title = sale.title || `Lot ${sale.id}`;
+    label.append(`${day} · `, lotLink(sale, title));
+    const watch = document.createElement('button');
+    watch.type = 'button';
+    watch.className = 'text-button sale-toggle';
+    watch.textContent = 'Watch';
+    watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}`);
+    watch.addEventListener('click', () => watchUpcoming(sale, context));
+    row.append(label, watch);
+    return row;
+  }));
+  $('upcoming').hidden = upcoming.length === 0;
+  shownUpcoming = { context, lots, term, searched, denomination };
+  renderPriceFilters();
+  return listed;
+}
+
+// Watch saves the lot as a watchlist draft through the path Save to watchlist takes (companion-popup.js builds the payload and opens the workspace
+// draft for the collector to confirm): the lot's title, the card's reference and the lot's own acsearch page. The sale day goes with it as a date,
+// never a time. OWNER DECISION (0.34 I2): a current-lot draft has no field for it yet (core/records.js validateDraftPayload), so
+// buildWatchlistDraftPayload leaves it off and the workspace opens no date-only auction event for it; see .superpowers/sdd/improve-0.34/i2-report.md.
+function watchUpcoming(sale, context) {
+  if (context !== researchContext) return;
+  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: sale.title || `Lot ${sale.id}`, reference: priceCard(context).label,
+    pageUrl: lotUrl(sale), saleDate: isoDay(sale.date) }) }));
+}
+
 // The two toggles stand above both providers' panels: one state governs both medians, and either panel may be the only one a collector fetched — the
 // public CoinArchives search is the whole of the signed-out path. Each is offered while a panel on show has rows it applies to.
 function renderPriceFilters() {
-  const shown = shownPrices ?? shownCoinArchivesPrices;
-  const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched);
+  const shown = shownPrices ?? shownCoinArchivesPrices ?? shownUpcoming;
+  // The Upcoming list follows the same toggles, and on a page without a counted price it is the only thing they govern.
+  const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched || shownUpcoming?.searched);
   // Both panels filter on the denomination the verified card carries, so either may be the one offering the toggle.
-  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || '';
+  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || shownUpcoming?.denomination || '';
   $('citing-row').hidden = !citing;
   $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
   $('citing-filter').checked = onlyCiting;
@@ -690,23 +760,10 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const eligibleLots = pageSummary.priced;
   // The rows the median rests on, before any filter: everything counted below is counted over these, so the panel's figures agree with each other.
   const periodLots = lotsInPeriod(eligibleLots, period.value, now);
-  // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
-  const denomination = filterableDenomination(card.denomination);
-  const wanted = onlyDenomination ? denomination : '';
-  // The citation filter judges the reference the card is about, so it only applies while the term still searches it: a term the collector edited to
-  // find something else is his own search, and every row it found is counted. It also never empties the statistics — a page whose text names the
-  // reference nowhere (a provider that gives no lot text, a layout nobody reads any more) is counted whole and says so. Whether the text can be read
-  // at all is a fact about the page acsearch returned, not about the period on show: a period of that page holding no citation is simply a period
-  // without a sale of this type, and the count beside the empty median says so.
-  const searched = filtersCitations(reference) && searchesReference(term, reference);
-  const unsearched = filtersCitations(reference) && !searched;
-  const uncited = searched && lots.length > 0 && !lots.some((sale) => citesReference(sale.description, reference));
-  const citing = searched && onlyCiting && !uncited;
-  const passes = { citing: (sale) => citesReference(sale.description, reference), denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
+  const { denomination, wanted, searched, unsearched, uncited, citing, passes, reason } = acsearchFilter(lots, term, reference, card);
   // A row that does not cite the reference is no sale of this type; with the toggle on, nor is one that never names the denomination. Either can
   // still be counted by hand, and Reset restores this default rather than an empty set.
-  priceCuration.filter((sale) => (citing && !passes.citing(sale) ? 'not-cited'
-    : wanted && !passes.denomination(sale) ? 'other-denomination' : null));
+  priceCuration.filter(reason);
   const includedLots = priceCuration.included(eligibleLots);
   const page = summarise(includedLots, currency);
   const summary = summarise(lotsInPeriod(includedLots, period.value, now), currency);
@@ -810,7 +867,8 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('price-note').textContent = pageSummary.capped
     ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
     : 'Hammer prices exclude buyer’s fees, tax and shipping.';
-  shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded } };
+  const upcoming = renderUpcoming(lots, term, context, card);
+  shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, upcoming } };
   renderPriceFilters();
   showCheck();
   $('prices-panel').hidden = false;
@@ -1032,7 +1090,7 @@ async function run(perform, note = '', failedReference = null) {
       if (shownPrices?.context === researchContext) {
         resetCopyLabel();
         renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term);
-      }
+      } else if (shownUpcoming?.context === researchContext) renderUpcoming(shownUpcoming.lots, shownUpcoming.term);
     }
     if (!researchContext) {
       const reference = referenceFromCard(outcome.card);
@@ -1105,14 +1163,19 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId || context !== researchContext) return;
-  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealAgain('research-prices'); }
-  else if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
+  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealAgain('research-prices'); return; }
+  if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
   else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
+  // A page without a counted price still lists the lots not sold yet; the note is said first, then how many are coming up.
+  if (outcome.lots) {
+    const listed = renderUpcoming(outcome.lots, term, context);
+    if (listed.length) $('announcement').textContent += ` ${upcomingText(listed)}.`;
+  }
 }
 
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.
@@ -1468,7 +1531,7 @@ const redrawPrices = () => {
   if (shownPrices) {
     const { lots, currency, term } = shownPrices;
     renderPrices(lots, currency, term, true);
-  }
+  } else if (shownUpcoming) renderUpcoming(shownUpcoming.lots, shownUpcoming.term, shownUpcoming.context);
   if (shownCoinArchivesPrices) renderCoinArchivesPrices(shownCoinArchivesPrices, true);
 };
 $('citing-filter').addEventListener('change', () => {

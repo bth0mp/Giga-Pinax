@@ -348,6 +348,9 @@ async function initCompanionPopup() {
     }
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
+  // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
+  // lot is acsearch's, not the page captured here.
+  addEventListener('giga-pinax-watch', (event) => void saveWatchlistDraft(buildWatchlistDraftPayload(event.detail)));
 
   const reviewedCapture = () => {
     if (!captureDraft) return null;

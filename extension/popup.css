@@ -158,6 +158,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .curation-controls {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;color:var(--muted);font-size:11px;}
 .sale-list li.excluded {opacity:.62;}
 .sale-toggle {flex:0 0 auto;font-size:11px;}
+/* The lots on the fetched page not sold yet, under the acsearch panel: the sale list's rows, each with Watch in place of Exclude. */
+.upcoming {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
+.upcoming .sale-list {margin-top:6px;}
 .price-note {font-size:11px; line-height:1.5; color:var(--muted); margin-top:8px;}
 .price-basis {font-size:11px; line-height:1.5; color:var(--muted); margin-top:5px;}
 .copy-button {padding:8px 0 0;}

@@ -76,6 +76,12 @@
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>
         </section>
         <p id="prices-note" class="prices-note" hidden><span id="prices-note-text"></span> <a id="signin-link" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" hidden>Sign in <span aria-hidden="true">↗</span></a></p>
+        <section id="upcoming" class="upcoming" aria-labelledby="upcoming-title" hidden>
+          <h3 id="upcoming-title" class="price-source-title">Upcoming on acsearch</h3>
+          <p id="upcoming-filtered" class="sale-filtered" hidden></p>
+          <ol id="upcoming-list" class="sale-list"></ol>
+          <p class="price-basis">Lots on the fetched page not sold yet, by sale date. Watch opens the lot in the workspace for you to review and save; add its auction there to be reminded.</p>
+        </section>
         <form id="prices-form" class="prices">
           <label for="price-term">acsearch search</label>
           <div class="search-row"><input id="price-term" name="term" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="prices-error prices-note"><button id="prices-button" class="primary-button" type="submit"><span id="prices-label">Get prices</span></button></div>

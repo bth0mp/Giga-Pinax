@@ -765,6 +765,27 @@ export function lotsInPeriod(lots, period, now) {
   });
 }
 
+// A sale's day as the workspace writes a date-only auction day, "2026-10-12"; nothing when the page gives no readable date. A time the page gives
+// ("28.07.2026 14:00") is left out: the day is all that is carried.
+export const isoDay = (text) => saleDate(text)?.toISOString().slice(0, 10) ?? '';
+
+// The lots acsearch lists that have not been sold yet: no price at all (the same test summarise counts "without a price" by) and a sale day that is
+// the collector's own today or later. A lot sold today already shows its price. Newest first, as the page lists its sales; a tie keeps page order.
+export function upcomingLots(lots, now) {
+  const today = localDay(now);
+  return lots.map((entry, index) => ({ entry, index, date: saleDate(entry.date) }))
+    .filter(({ entry, date }) => date !== null && date >= today && !/\d/.test(entry.price))
+    .sort((a, b) => b.date - a.date || a.index - b.index)
+    .map(({ entry }) => entry);
+}
+
+// How many lots are coming up and the first day one is sold, as the copy says it. Nothing when none is.
+export function upcomingText(lots) {
+  if (!lots.length) return '';
+  const first = lots.map((entry) => isoDay(entry.date)).sort()[0];
+  return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first}`;
+}
+
 const TREND_MIN = 3;
 // Recent sales against earlier ones, whatever period is on show: the counted sales of the last 2 years (the same boundary as its button) and those
 // before, each median trusted only when it rests on at least TREND_MIN sales. A lot without a readable date belongs to neither side.
@@ -857,8 +878,9 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // grade is read here, once, and travels with it: a redraw would otherwise read every description again, once per bucket.
     const page = lots.slice(0, PAGE_SIZE).map((entry) => ({ ...entry, grade: gradeOf(entry.description) }));
     const summary = summarise(page, currency);
-    if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out' };
-    if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };
+    // A page without a counted price still lists the lots not sold yet, so its lots come back with it for the Upcoming list.
+    if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out', lots: page };
+    if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), lots: page };
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };
   } catch {
@@ -881,7 +903,7 @@ export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '' } = {}) {
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', upcoming = [] } = {}) {
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
@@ -895,6 +917,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   if (trend) lines.push(trendText(trend, money.format));
   lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
   if (ungraded) lines.push(ungraded);
+  if (upcoming.length) lines.push(upcomingText(upcoming));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
   if (card?.corpus && card.corpus !== 'other') lines.push(`https://numismatics.org/${card.corpus}/id/${encodeURIComponent(card.id)}`);

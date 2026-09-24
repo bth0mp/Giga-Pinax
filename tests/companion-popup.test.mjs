@@ -19,9 +19,11 @@ globalThis.browser = {
   scripting: { executeScript: (request) => answerScript(request) },
 };
 const lookupListeners = [];
+const watchListeners = [];
 globalThis.addEventListener = (type, listener) => {
   if (type === 'giga-pinax-card') cardListeners.push(listener);
   if (type === 'giga-pinax-lookup-received') lookupListeners.push(listener);
+  if (type === 'giga-pinax-watch') watchListeners.push(listener);
 };
 globalThis.dispatchEvent = () => true;
 globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
@@ -121,6 +123,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
   lookupListeners.length = 0;
+  watchListeners.length = 0;
   started = element;
   await import(`../extension/companion-popup.js?start=${++loaded}`);
   // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
@@ -131,6 +134,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
     element,
     card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
     lookupReceived: () => lookupListeners[0]?.({ type: 'giga-pinax-lookup-received' }),
+    watch: (detail) => watchListeners[0]?.({ type: 'giga-pinax-watch', detail }),
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
@@ -576,4 +580,27 @@ test('date-only next auctions use each event local calendar day and sort with ti
   assert.equal(summary.nextEvent.id, 'ny');
   const afterNewYorkMidnight = buildWatchlistSummary({ auctionEvents: [newYork], alerts: [], lots: [] }, '2026-09-13T04:00:00.001Z');
   assert.equal(afterNewYorkMidnight.nextEvent, null);
+});
+
+// 0.34 (I2): Watch on an upcoming acsearch lot in the research half saves it through the same draft path as Save to watchlist, and opens the draft.
+test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, without the captured page', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-7' } } : WORKING_SNAPSHOT; },
+    script: capturedPage({ reference: { value: 'Price 23', provenance: 'visible-text' } }),
+  });
+  await page.click('companion-capture-current');
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', saleDate: '2099-10-12' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const saved = commands.filter(({ type }) => type === 'draft.save');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].kind, 'current-lot');
+  assert.deepEqual(saved[0].payload, { target: 'watchlist', title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23',
+    pageUrl: 'https://www.acsearch.info/search.html?id=7' });
+  globalThis.browser.tabs.create = create;
+  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
+  assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });

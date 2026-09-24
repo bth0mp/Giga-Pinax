@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- **Upcoming on acsearch**: under the acsearch panel, the lots on the fetched page that have not been sold yet (no price, sale date today or later), newest first, each linked to its lot on acsearch. The list follows the citation and denomination switches exactly as the median does and says what they left out in the same words; it also appears when the page has no counted price yet. **Copy summary** adds `Upcoming: N lots, first on <date>`. **Watch** beside a lot opens it in the workspace as a watchlist draft (its title, the reference and its acsearch page) for you to review and save, as **Save reference to watchlist** does; its sale date is not yet carried into the draft, so add the auction there to be reminded. Nothing new is fetched for it.
+
 ## [0.33.0] - 2026-09-24
 
 ### Added
