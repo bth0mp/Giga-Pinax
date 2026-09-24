@@ -1,7 +1,7 @@
 {
  "batchSize": 320,
  "endpoint": "https://nomisma.org/query",
- "labelledCount": 1621,
+ "labelledCount": 1620,
  "labels": {
   "-des_cos": "[…]des",
   "-dokles_chios": "[…]dokles",
@@ -1606,7 +1606,6 @@
   "victory_and_spearhead_issuer_rrc": "Victory and Spearhead (Republican Moneyer)",
   "victory_issuer_rrc": "Victory (Republican Moneyer)",
   "viminacium": "Viminacium",
-  "vindobona": "Vindobona",
   "virtus": "Virtus",
   "vitellius": "Vitellius",
   "volusian": "Volusian",
@@ -1629,6 +1628,6 @@
  "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
  "query": "BASE <http://nomisma.org/id/>\nPREFIX skos: <http://www.w3.org/2004/02/skos/core#>\nSELECT ?id ?label WHERE { VALUES ?id { %s } ?id skos:prefLabel ?label . FILTER(lang(?label) = \"en\") }",
  "requestCount": 6,
- "requestedCount": 1623,
+ "requestedCount": 1622,
  "retrievedOn": "2026-09-24"
 }

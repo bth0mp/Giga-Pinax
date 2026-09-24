@@ -4,14 +4,14 @@ The extension includes derived type databases for six of the American Numismatic
 
 | Corpus | Source | Export | Bundled | Left out |
 | --- | --- | ---: | ---: | --- |
-| OCRE (RIC) | [numismatics.org/ocre](https://numismatics.org/ocre/) | `nomisma.rdf`, 117,226,810 bytes | 52,254 active types, 2,808 redirects | 1,050 ambiguous replacement chains, 1 conflicting record |
+| OCRE (RIC) | [numismatics.org/ocre](https://numismatics.org/ocre/) | `nomisma.rdf`, 127,151,792 bytes | 52,254 active types, 2,808 redirects | 1,050 ambiguous replacement chains, 1 conflicting record |
 | CRRO (RRC) | [numismatics.org/crro](https://numismatics.org/crro/) | `crro.rdf`, 4,922,384 bytes | all 2,602 RRC types | nothing |
 | PELLA (Price) | [numismatics.org/pella](https://numismatics.org/pella/) | `pella.rdf`, 22,154,165 bytes | 4,573 Price types | 2,274 Le Rider die combinations, 382 PELLA type numbers |
 | SCO (Seleucid Coins) | [numismatics.org/sco](https://numismatics.org/sco/) | `sco.rdf`, 23,373,517 bytes | all 8,694 types | nothing |
 | PCO (Lorber, CPE) | [numismatics.org/pco](https://numismatics.org/pco/) | `pco.rdf`, 7,334,635 bytes | all 1,691 CPE types, and PCO's 1,067 links from a Svoronos number to the CPE type it became | 1,959 Svoronos records |
 | AGCO (Newell, Demetrius Poliorcetes) | [numismatics.org/agco](https://numismatics.org/agco/) | `agco.rdf`, 484,052 bytes | all 182 types | nothing |
 
-The CRRO, PELLA and SCO exports were retrieved on 17 September 2026, and the PCO and AGCO exports on 24 September 2026; each `metadata.json` records its file's SHA-256 and byte size.
+All six exports were retrieved on 24 September 2026; each `metadata.json` records its file's SHA-256 and byte size.
 
 **BIGR (Bopearachchi) is not bundled and still goes online.** A Bopearachchi reference is resolved by searching BIGR and verifying every hit against the Bopearachchi citation in the hit's NUDS XML, because BIGR numbers its own types differently from Bopearachchi's series ("Euthydemus I 13.1" against "Euthydème I 24A"). That citation is in the NUDS records only: none of the 2,109 `nmo:TypeSeriesItem` records in `bigr.rdf` carries it, and the file's 910 mentions of Bopearachchi are all monogram labels. Nothing in the export can tell "Bop 24A" from "Bop 24", so bundling it could only answer with a record nobody verified. The corpus stays online until the export carries the citation.
 
@@ -35,7 +35,7 @@ RDF values preserve multiple authorities, denominations, materials and mints. A 
 
 Nomisma concept labels and classes are absent from every one of these exports, so the names travel with the package in a file of their own. `extension/data/nomisma-labels.json` is slug to English label and nothing else, for every Nomisma concept any bundled record names in a field a card shows — authority or issuer, denomination, mint, material and portrait. It is generated from the tracked snapshot `scripts/data/nomisma-labels.json`, which holds the endpoint, the query text, the retrieval date, the licence and the whole fetched result. `extension/data/NOTICE.txt` attributes it. Nomisma publishes its concepts under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), so the derived label file is CC BY 3.0 while the type records beside it stay ODbL.
 
-Of the 1,623 concepts the six bundles name, 1,621 carry an English preferred label; `dupondius_or_as` and `uncertain_74_sco` have none and are absent from the generated file, so a card shows those two identifiers as they are. Nothing is guessed and nothing is title-cased into a label nobody published.
+Of the 1,622 concepts the six bundles name, 1,620 carry an English preferred label; `dupondius_or_as` and `uncertain_74_sco` have none and are absent from the generated file, so a card shows those two identifiers as they are. Nothing is guessed and nothing is title-cased into a label nobody published.
 
 A field the export gives more than one value is left off the local card rather than one of them being chosen: `labelFor` names a field only where the record holds exactly one identifier for it, so a type with two authorities, or a denomination recorded two ways, shows no authority or no denomination at all. It is not rare — 569 of the 15,869 records in CRRO, PELLA and SCO, 36 of PCO's 1,691 and 8,904 of OCRE's 52,254 carry at least one such field (none of AGCO's 182 does), almost all of them two authorities or two denominations. The online card is less careful: `toCard` takes the first value of each field, so **Check online** names one of them, and the **Type** link on every card opens the record itself, which lists them all.
 
@@ -107,7 +107,7 @@ python scripts/import_people.py fetch-wikidata scripts/data/nomisma-mints.json s
 
 Both mint snapshots travel together: a regeneration stops if the Wikidata one no longer holds an item the Nomisma one links to, or the town one of those items leads to, rather than losing those names without saying so.
 
-The concept labels are refreshed the same way, from the bundled records themselves. `--fetch-labels` collects every concept the records name and asks Nomisma's SPARQL endpoint for their English preferred labels, in batches of 320 identifiers given as a `VALUES` list — six requests for the 1,623 concepts the six bundles name, under the same User-Agent `import_people.py` uses. `--write-labels` then rewrites `extension/data/nomisma-labels.json` from that snapshot and the records, with no network at all, and is what `scripts/build.py` checks the committed file against:
+The concept labels are refreshed the same way, from the bundled records themselves. `--fetch-labels` collects every concept the records name and asks Nomisma's SPARQL endpoint for their English preferred labels, in batches of 320 identifiers given as a `VALUES` list — six requests for the 1,622 concepts the six bundles name, under the same User-Agent `import_people.py` uses. `--write-labels` then rewrites `extension/data/nomisma-labels.json` from that snapshot and the records, with no network at all, and is what `scripts/build.py` checks the committed file against:
 
 ```powershell
 python scripts/import_rdf.py --fetch-labels --retrieved-on 2026-09-24

@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- The bundled OCRE, CRRO, PELLA and SCO data is refreshed from the ANS exports of 24 September 2026. The type counts are unchanged. OCRE now gives Galba's RIC I² 85–94 three uncertain mints (Vienne, Narbo or Lugdunum) instead of Vindobona, so their cards name no mint. RIC II.3 Hadrian 2726 is an AR denarius, no longer an AV quinarius aureus. The Hadrian quinarii of RIC II.3 337–345 are now quinarii rather than quinarii aurei.
+
 ### Fixed
 
 - The catalogue importer reads a Nomisma link written as `https://nomisma.org/id/…` as the same concept as `http://…`. The ANS export of 24 September 2026 writes the RIC II.3 Hadrian quinarii that way, and a refresh would otherwise have shown their denomination as a raw web address instead of **Quinarius**.
