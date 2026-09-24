@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- The bid calculator takes **VAT on premium %** and **Platform fee % on hammer** under **Fees and bid increments**. VAT is charged on the premium alone, as European houses invoice it (Künker's 25 % premium plus 19 % VAT on it is 29.75 % on the hammer, so a CHF 1,000 hammer costs CHF 1,297.50, not CHF 1,250), and a live-bidding platform's fee on the hammer alone; the percentage payment fee then applies to both. The answer names them ("Premium CHF 250.00 + VAT CHF 47.50"), the maximum hammer from a budget counts them, so it is no longer too high for such a house, and both are saved with a bid's cost estimate. A house preset in **Settings** carries them beside its premium, choosing the house fills them, and **Save these terms for a house** in the calculator stores what you typed there. Both are optional: presets, estimates and backups written before them read and import unchanged. Every amount stays in the hammer's currency.
+
 ### Changed
 
 - An amount typed as `1,200` in the calculator, a bid, an outcome or a house's increment tiers is read as twelve hundred where your browser groups thousands with a comma (English locales), and `1.200` where it groups them with a point (German, Spanish, Italian, Dutch). It is still refused where that mark is the browser's decimal mark, since there it could mean 1.20.

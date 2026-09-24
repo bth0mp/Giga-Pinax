@@ -11,11 +11,14 @@ import { failure } from './validate.js';
  * @typedef {import('./types.js').Result<T>} Result
  */
 /**
- * The fees a cost is worked out with; each defaults to zero.
+ * The fees a cost is worked out with; each defaults to zero. VAT on the premium is charged on the
+ * premium alone (Künker, Roma, Leu), a platform fee on the hammer alone (biddr, NumisBids, Sixbid).
  * @typedef {object} BidCostOptions
  * @property {number} [shippingMinor]
  * @property {number} [paymentFeeBps]
  * @property {number} [paymentFeeMinor]
+ * @property {number} [premiumVatBps]
+ * @property {number} [platformFeeBps]
  */
 /**
  * The fees, and the grid a bid must sit on: a fixed increment from the minimum bid, or a house ladder.
@@ -25,6 +28,8 @@ import { failure } from './validate.js';
  * @typedef {object} BidCost
  * @property {Money} hammer
  * @property {Money} premium
+ * @property {Money} premiumVat
+ * @property {Money} platformFee
  * @property {Money} hammerPlusPremium
  * @property {Money} shipping
  * @property {Money} paymentFee
@@ -159,20 +164,31 @@ export function parseMoney(text, currency, locale = 'en-US') {
   return { ok: true, value: { currency, minor: parsed.value } };
 }
 
+// A percentage typed as text, as basis points; the subject names the field in its errors.
+/**
+ * @param {string} text
+ * @param {string} [locale]
+ * @param {string} [subject]
+ * @returns {Result<number>} basis points
+ */
+export function parsePercent(text, locale = 'en-US', subject = 'Percentage') {
+  const parsed = parseFixed(text, 10000n, subject, locale);
+  if (!parsed.ok) {
+    if (parsed.error.code === 'unsafe-money') {
+      return failure('invalid-basis-points', `${subject} must be between 0% and 100%.`);
+    }
+    return parsed;
+  }
+  return { ok: true, value: parsed.value };
+}
+
 /**
  * @param {string} text
  * @param {string} [locale]
  * @returns {Result<number>} basis points
  */
 export function parsePremiumPercent(text, locale = 'en-US') {
-  const parsed = parseFixed(text, 10000n, 'Buyer premium', locale);
-  if (!parsed.ok) {
-    if (parsed.error.code === 'unsafe-money') {
-      return failure('invalid-basis-points', 'Buyer premium must be between 0% and 100%.');
-    }
-    return parsed;
-  }
-  return { ok: true, value: parsed.value };
+  return parsePercent(text, locale, 'Buyer premium');
 }
 
 /**
@@ -365,6 +381,23 @@ function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE
   return { ok: true, value };
 }
 
+const FEE_DEFAULTS = Object.freeze({ shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 0, platformFeeBps: 0 });
+
+// Every fee a cost is worked out with: amounts are non-negative, percentages from 0 through 100 %.
+/**
+ * @param {Record<string, any>} values
+ * @returns {Result<any>}
+ */
+function feeOptions(values) {
+  for (const key of ['shippingMinor', 'paymentFeeMinor']) {
+    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
+  }
+  for (const key of ['paymentFeeBps', 'premiumVatBps', 'platformFeeBps']) {
+    const valid = optionInteger(values[key], key, { maximum: 10000 }); if (!valid.ok) return valid;
+  }
+  return { ok: true, value: values };
+}
+
 /**
  * @param {Money} hammer
  * @param {*} buyerPremiumBps checked here: an integer from 0 through 10,000
@@ -376,22 +409,22 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
   if (!checked.ok) return checked;
   const premium = calculatePremium(hammer, buyerPremiumBps);
   if (!premium.ok) return premium;
-  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, ...options };
-  for (const key of ['shippingMinor', 'paymentFeeMinor']) {
-    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
-  }
-  const feeBps = optionInteger(values.paymentFeeBps, 'paymentFeeBps', { maximum: 10000 });
-  if (!feeBps.ok) return feeBps;
-  const base = BigInt(premium.value.hammerPlusPremium.minor) + BigInt(values.shippingMinor);
-  const percentageFee = (base * BigInt(values.paymentFeeBps) + 5000n) / 10000n;
-  const paymentFee = percentageFee + BigInt(values.paymentFeeMinor);
+  const values = { ...FEE_DEFAULTS, ...options };
+  const valid = feeOptions(values); if (!valid.ok) return valid;
+  // Each share is rounded half up on its own, as an invoice rounds each line: the VAT on the premium
+  // as the house invoices it, the platform's fee on the hammer.
+  const share = (minor, bps) => (minor * BigInt(bps) + 5000n) / 10000n;
+  const premiumVat = share(BigInt(premium.value.premium.minor), values.premiumVatBps);
+  const platformFee = share(BigInt(hammer.minor), values.platformFeeBps);
+  const base = BigInt(premium.value.hammerPlusPremium.minor) + premiumVat + platformFee + BigInt(values.shippingMinor);
+  const paymentFee = share(base, values.paymentFeeBps) + BigInt(values.paymentFeeMinor);
   const total = base + paymentFee;
   if ([base, paymentFee, total].some((value) => value > MAX_SAFE_BIGINT)) {
     return failure('unsafe-money', 'Bid cost calculation is outside the supported integer range.');
   }
   const money = (minor) => ({ currency: hammer.currency, minor: Number(minor) });
   return { ok: true, value: {
-    hammer: { ...hammer }, premium: premium.value.premium,
+    hammer: { ...hammer }, premium: premium.value.premium, premiumVat: money(premiumVat), platformFee: money(platformFee),
     hammerPlusPremium: premium.value.hammerPlusPremium,
     shipping: money(BigInt(values.shippingMinor)), paymentFee: money(paymentFee), total: money(total),
   }};
@@ -405,14 +438,10 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
  */
 export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
   const checked = validateMoney(budget); if (!checked.ok) return checked;
-  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, ...options };
-  for (const key of ['shippingMinor', 'paymentFeeMinor', 'minimumBidMinor']) {
-    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
-  }
-  // Read as [key, bounds] pairs: a literal list of mixed pairs is otherwise typed as a list of either.
-  for (const [key, config] of /** @type {Array<[string, { positive?: boolean, maximum?: number }]>} */ ([['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]])) {
-    const valid = optionInteger(values[key], key, config); if (!valid.ok) return valid;
-  }
+  const values = { ...FEE_DEFAULTS, incrementMinor: 1, minimumBidMinor: 0, ...options };
+  const fees = feeOptions(values); if (!fees.ok) return fees;
+  const minimum = optionInteger(values.minimumBidMinor, 'minimumBidMinor'); if (!minimum.ok) return minimum;
+  const increment = optionInteger(values.incrementMinor, 'incrementMinor', { positive: true }); if (!increment.ok) return increment;
   // A house ladder replaces the fixed grid; without one the fixed increment is a single tier
   // anchored at the minimum bid, which is the grid this calculator has always used.
   const tiers = values.ladder === undefined

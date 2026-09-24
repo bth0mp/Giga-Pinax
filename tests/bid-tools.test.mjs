@@ -16,6 +16,39 @@ test('calculator includes shipping and percentage plus fixed payment fees', () =
   assert.deepEqual(result.costEstimate, { currency: 'USD', shippingMinor: 1000, paymentFeeBps: 300, paymentFeeMinor: 200, incrementMinor: 100, minimumBidMinor: 0 });
 });
 
+// A house's VAT on its premium and a platform's fee on the hammer are part of what the lot costs, and
+// part of the estimate the lot is saved with. Left blank they are not written at all, so an estimate
+// keeps the shape every earlier version saved and reads.
+test('the calculator adds VAT on the premium and a platform fee on the hammer, and saves them with the estimate', () => {
+  const input = { mode: 'total', amountText: '1000', premiumText: '25', premiumVatText: '19', platformFeeText: '3', currency: 'CHF', locale: 'en-US' };
+  const result = buildBidCalculation(input);
+  assert.equal(result.value.premiumVat.minor, 4750);
+  assert.equal(result.value.platformFee.minor, 3000);
+  assert.equal(result.value.total.minor, 132750);
+  assert.equal(result.costEstimate.premiumVatBps, 1900);
+  assert.equal(result.costEstimate.platformFeeBps, 300);
+  const plain = buildBidCalculation({ ...input, premiumVatText: ' ', platformFeeText: '' });
+  assert.equal(plain.value.total.minor, 125000);
+  assert.equal(Object.hasOwn(plain.costEstimate, 'premiumVatBps'), false);
+  assert.equal(Object.hasOwn(plain.costEstimate, 'platformFeeBps'), false);
+  // The budget answer is the highest hammer whose whole cost, VAT included, fits.
+  assert.equal(buildBidCalculation({ ...input, mode: 'budget', amountText: '1297.50', platformFeeText: '' }).value.hammer.minor, 100000);
+  const refused = buildBidCalculation({ ...input, premiumVatText: '120' });
+  assert.equal(refused.ok, false);
+  assert.match(refused.error.message, /^VAT on premium /);
+});
+
+test('a saved estimate fills the VAT and platform fee fields, and an older one leaves them blank', () => {
+  const values = { lotId: 'lot-a', currency: 'EUR', hammerMinor: 100000, buyerPremiumBps: 2500,
+    costEstimate: { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900, platformFeeBps: 250 } };
+  const inputs = calculatorInputsForLot(values, { loadedLotId: null });
+  assert.equal(inputs.premiumVat, '19.00');
+  assert.equal(inputs.platformFee, '2.50');
+  const older = calculatorInputsForLot({ ...values, costEstimate: { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }, { loadedLotId: null });
+  assert.equal(older.premiumVat, '');
+  assert.equal(older.platformFee, '');
+});
+
 test('budget calculator honors the fixed minimum and increment grid', () => {
   const result = buildBidCalculation({ mode: 'budget', amountText: '135', premiumText: '20', shippingText: '10', paymentPercentText: '3', paymentFixedText: '2', incrementText: '10', minimumText: '10', currency: 'USD', locale: 'en-US' });
   assert.equal(result.ok, true);
@@ -69,7 +102,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   };
   assert.deepEqual(calculatorInputsForLot(values, { loadedLotId: null, mode: 'total', locale: 'en-US' }), {
     currency: 'EUR', amount: '150.00', premium: '20.00', shipping: '5.00',
-    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00',
+    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00', premiumVat: '', platformFee: '',
     preset: '', ladder: null,
   });
   assert.equal(calculatorInputsForLot(values, { loadedLotId: 'lot-a', mode: 'total', locale: 'en-US' }), null);
@@ -77,7 +110,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   assert.equal(Object.hasOwn(budget, 'amount'), false);
   assert.equal(budget.premium, '20.00');
   assert.deepEqual(calculatorInputsForLot({ currency: 'GBP' }, { loadedLotId: 'lot-a', locale: 'en-US' }), {
-    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '',
+    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '', premiumVat: '', platformFee: '',
     preset: '', ladder: null,
   });
 });
@@ -184,6 +217,25 @@ test('a preset row reports which field its error belongs to', () => {
   assert.equal(presetFromFields({ name: 'Nomos', premiumText: '20', ladderText: '0: 5', ladderCurrency: '' }).error.field, 'ladderCurrency');
 });
 
+test("a preset row carries the house's VAT on premium and platform fee, and names the field an error belongs to", () => {
+  assert.deepEqual(presetFromFields({ name: 'Künker', premiumText: '25', premiumVatText: '19', platformFeeText: '', ladderText: '', ladderCurrency: 'EUR' }), {
+    ok: true, value: { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 },
+  });
+  assert.deepEqual(presetFromFields({ name: 'biddr house', premiumText: '18', premiumVatText: '', platformFeeText: '3', ladderText: '', ladderCurrency: 'EUR' }).value,
+    { name: 'biddr house', buyerPremiumBps: 1800, platformFeeBps: 300 });
+  // A preset saved before these fields existed has neither key, and a blank row writes neither.
+  assert.deepEqual(presetFromFields({ name: 'Roma', premiumText: '20' }).value, { name: 'Roma', buyerPremiumBps: 2000 });
+  assert.equal(presetFromFields({ name: 'Roma', premiumText: '20', premiumVatText: 'twenty' }).error.field, 'premiumVat');
+  assert.equal(presetFromFields({ name: 'Roma', premiumText: '20', platformFeeText: '101' }).error.field, 'platformFee');
+});
+
+test('saving from the calculator writes the VAT and platform fee it holds, and keeps what it was not given', () => {
+  const presets = [{ name: 'Künker', buyerPremiumBps: 2000, premiumVatBps: 1900, platformFeeBps: 100 }];
+  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500), [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, platformFeeBps: 100 }]);
+  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500, { premiumVatBps: 2000 }),
+    [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 2000, platformFeeBps: 100 }]);
+});
+
 test('saving a premium from the calculator keeps the ladder that editor never showed', () => {
   const presets = [
     { name: 'Nomos AG', buyerPremiumBps: 2000, incrementLadder: { currency: 'CHF', tiers: [{ from: 0, step: 500 }] } },
@@ -272,8 +324,15 @@ async function mountCalculator({ snapshot }) {
   context.mountBidCalculator(container);
   for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
   const inputs = container.querySelectorAll('input');
+  // A control by the caption of its label, as the collector finds it.
+  const field = (caption) => container.querySelectorAll('label')
+    .find((label) => label.querySelector('span')?.textContent === caption)?.querySelector('input, select');
   return {
     commands,
+    container,
+    field,
+    output: container.querySelector('.bid-calculator-output'),
+    note: container.querySelector('.bid-calculator-note'),
     premium: inputs[1],
     presetName: inputs.at(-1),
     save: container.querySelectorAll('button').find((button) => button.textContent === 'Save house preset'),
@@ -303,4 +362,59 @@ test('saving a preset sends it against the revision the calculator read', async 
   assert.equal(calculator.commands[0].expectedRevision, 5);
   assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [{ name: 'Roma', buyerPremiumBps: 2000 }]);
   assert.equal(calculator.status.textContent, 'House preset saved.');
+});
+
+const KUNKER = { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 };
+const settle = async () => { for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => { setImmediate(resolve); }); };
+
+test('the calculator has VAT on premium and platform fee fields, and names both in its answer', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'CHF', housePremiumPresets: [] } } } });
+  const vat = calculator.field('VAT on premium %');
+  const platform = calculator.field('Platform fee % on hammer');
+  assert.ok(vat && platform, 'both fields are under Fees and bid increments');
+  assert.ok(vat.closest('.bid-calculator-fees'));
+  calculator.field('Currency').value = 'CHF';
+  calculator.field('Hammer price').value = '1000';
+  calculator.premium.value = '25';
+  vat.value = '19';
+  await vat.emit('input');
+  assert.match(calculator.output.textContent, /Premium CHF\s?250\.00 \+ VAT CHF\s?47\.50/);
+  assert.match(calculator.output.textContent, /Total CHF\s?1,297\.50/);
+  assert.doesNotMatch(calculator.output.textContent, /Platform fee/, 'a platform fee nobody entered is not listed');
+  platform.value = '3';
+  await platform.emit('input');
+  assert.match(calculator.output.textContent, /Platform fee CHF\s?30\.00/);
+  assert.doesNotMatch(calculator.note.textContent, /Tax is excluded/);
+});
+
+test('choosing a house fills its VAT and platform fee, and a house without them clears both', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'EUR', housePremiumPresets: [
+    KUNKER, { name: 'Biddr house', buyerPremiumBps: 1800, platformFeeBps: 300 }, { name: 'Old preset', buyerPremiumBps: 2000 },
+  ] } } } });
+  const preset = calculator.field('House preset');
+  assert.deepEqual(preset.options.map((option) => option.textContent), [
+    'Choose house preset', 'Künker — 25.00% + 19.00% VAT', 'Biddr house — 18.00% · 3.00% platform fee', 'Old preset — 20.00%',
+  ]);
+  const pick = async (name) => { preset.value = preset.options.find((option) => option.textContent.startsWith(name)).value; await preset.emit('change'); };
+  await pick('Künker');
+  assert.deepEqual([calculator.premium.value, calculator.field('VAT on premium %').value, calculator.field('Platform fee % on hammer').value], ['25.00', '19.00', '']);
+  await pick('Biddr');
+  assert.deepEqual([calculator.premium.value, calculator.field('VAT on premium %').value, calculator.field('Platform fee % on hammer').value], ['18.00', '', '3.00']);
+  await pick('Old preset');
+  assert.deepEqual([calculator.field('VAT on premium %').value, calculator.field('Platform fee % on hammer').value], ['', '']);
+});
+
+test('saving a house from the calculator saves the VAT and platform fee typed there', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { revision: 2, preferences: { revision: 5, currency: 'EUR', housePremiumPresets: [] } } } });
+  calculator.premium.value = '25';
+  calculator.field('VAT on premium %').value = '19';
+  calculator.presetName.value = 'Künker';
+  await calculator.save.click();
+  await settle();
+  assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [KUNKER]);
+  calculator.field('VAT on premium %').value = 'nineteen';
+  calculator.presetName.value = 'Künker';
+  await calculator.save.click();
+  assert.equal(calculator.commands.length, 1, 'a VAT that cannot be read saves nothing');
+  assert.match(calculator.status.textContent, /^VAT on premium /);
 });

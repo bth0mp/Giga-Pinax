@@ -31,9 +31,63 @@ test('calculates full bid cost with half-up percentage fees', () => {
     shippingMinor: 1000, paymentFeeBps: 300, paymentFeeMinor: 20,
   }), { ok: true, value: {
     hammer: { currency: 'GBP', minor: 10000 }, premium: { currency: 'GBP', minor: 2250 },
+    premiumVat: { currency: 'GBP', minor: 0 }, platformFee: { currency: 'GBP', minor: 0 },
     hammerPlusPremium: { currency: 'GBP', minor: 12250 }, shipping: { currency: 'GBP', minor: 1000 },
     paymentFee: { currency: 'GBP', minor: 418 }, total: { currency: 'GBP', minor: 13668 },
   }});
+});
+
+// Künker: 25 % premium and 19 % German VAT on that premium, which is 29.75 % on the hammer, not 25 %.
+// A live platform adds its own fee on the hammer alone. The percentage payment fee then applies to
+// everything the invoice carries, these two included.
+test('VAT on the premium and a platform fee on the hammer join the cost before the payment fee', () => {
+  const hammer = { currency: 'CHF', minor: 100000 };
+  assert.equal(calculateBidCost(hammer, 2500, { premiumVatBps: 1900 }).value.total.minor, 129750,
+    'CHF 1,000 at 25 % + 19 % VAT on the premium costs CHF 1,297.50');
+  assert.deepEqual(calculateBidCost(hammer, 2500, {
+    premiumVatBps: 1900, platformFeeBps: 300, shippingMinor: 2000, paymentFeeBps: 200,
+  }), { ok: true, value: {
+    hammer, premium: { currency: 'CHF', minor: 25000 }, premiumVat: { currency: 'CHF', minor: 4750 },
+    platformFee: { currency: 'CHF', minor: 3000 }, hammerPlusPremium: { currency: 'CHF', minor: 125000 },
+    shipping: { currency: 'CHF', minor: 2000 }, paymentFee: { currency: 'CHF', minor: 2695 },
+    total: { currency: 'CHF', minor: 137445 },
+  }});
+  // The VAT is worked out on the premium as invoiced, half up: 20 % of £0.05 is £0.01.
+  assert.equal(calculateBidCost({ currency: 'GBP', minor: 25 }, 2000, { premiumVatBps: 2000 }).value.premiumVat.minor, 1);
+  for (const key of ['premiumVatBps', 'platformFeeBps']) {
+    for (const bad of [-1, 10001, 1.5, '19', null]) {
+      assert.equal(calculateBidCost(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
+      assert.equal(calculateAffordableBid(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
+    }
+  }
+});
+
+// The one direction a budget answer must never err in is too high.
+test('the affordable hammer counts VAT on the premium and the platform fee, so it is never too high', () => {
+  const budget = { currency: 'CHF', minor: 129750 };
+  assert.equal(calculateAffordableBid(budget, 2500, { premiumVatBps: 1900 }).value.hammer.minor, 100000);
+  assert.equal(calculateAffordableBid(budget, 2500).value.hammer.minor, 103800, 'without the VAT the answer was CHF 38 too high');
+  let seed = 20260924;
+  const next = (bound) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % bound;
+  };
+  for (let index = 0; index < 300; index += 1) {
+    const money = { currency: 'EUR', minor: next(2_000_000) };
+    const buyerPremiumBps = next(3001);
+    const options = {
+      premiumVatBps: next(2600), platformFeeBps: next(500), shippingMinor: next(5000), paymentFeeBps: next(400),
+      incrementMinor: 1 + next(2000), minimumBidMinor: next(20000),
+    };
+    const result = calculateAffordableBid(money, buyerPremiumBps, options);
+    if (!result.ok) {
+      assert.equal(result.error.code, 'no-affordable-bid', `index ${index}`);
+      continue;
+    }
+    assert.ok(result.value.total.minor <= money.minor, `index ${index} within budget`);
+    const above = calculateBidCost({ currency: 'EUR', minor: result.value.hammer.minor + options.incrementMinor }, buyerPremiumBps, options);
+    assert.ok(above.value.total.minor > money.minor, `index ${index} maximal`);
+  }
 });
 
 test('finds the highest affordable hammer on the configured bid grid', () => {

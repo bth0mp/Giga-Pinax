@@ -142,6 +142,7 @@ function costEstimateResult(value, path) {
     integerResult(value.paymentFeeMinor, `${path}.paymentFeeMinor`),
     integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
     integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
+    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path),
   );
 }
 
@@ -500,6 +501,7 @@ function preferencesResult(preferences, path) {
     const valid = firstFailure(
       stringResult(preset.name, `${presetPath}.name`, LIMITS.shortText),
       integerResult(preset.buyerPremiumBps, `${presetPath}.buyerPremiumBps`, { maximum: 10000 }),
+      bpsResult(preset, 'premiumVatBps', presetPath), bpsResult(preset, 'platformFeeBps', presetPath),
       // The ladder is optional: a preset saved before this version simply has no such key, which is
       // why the stored shape needs no migration step of its own.
       OWN(preset, 'incrementLadder')

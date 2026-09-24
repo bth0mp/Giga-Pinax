@@ -142,6 +142,19 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   bps.inputMode = 'decimal';
   bps.placeholder = 'e.g. 22.50';
   bps.value = formatMinorInput(item.buyerPremiumBps, navigator.language);
+  // What the house charges on top of its premium: VAT on the premium alone, and a live-bidding
+  // platform's fee on the hammer alone. Blank is none, and a blank field is not stored.
+  const charge = (className, bpsValue) => {
+    const input = document.createElement('input');
+    input.className = className;
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.placeholder = 'None';
+    input.value = formatMinorInput(bpsValue, navigator.language);
+    return input;
+  };
+  const vat = charge('premium-vat', item.premiumVatBps);
+  const platform = charge('premium-platform', item.platformFeeBps);
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'quiet';
@@ -181,12 +194,20 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
     'Optional. One tier per line: the amount the tier starts at, a colon, then the step from there. Copy the tiers from this house’s published terms — Giga Pinax ships no house’s ladder.');
   currencyField.classList.add('premium-ladder-field');
   ladderField.classList.add('premium-ladder-field');
-  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, currencyField, ladderField);
+  const vatField = premiumField('VAT on premium %', vat,
+    'Optional. VAT the house adds to its premium only.');
+  const platformField = premiumField('Platform fee % on hammer', platform,
+    'Optional. A live-bidding platform’s fee.');
+  // The two charges sit side by side on a line of their own, under the premium they belong with.
+  const charges = document.createElement('div');
+  charges.className = 'premium-charges';
+  charges.append(vatField, platformField);
+  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, charges, currencyField, ladderField);
   return row;
 }
 
 const PRESET_FIELD_CLASS = {
-  name: 'premium-name', premium: 'premium-value', ladder: 'premium-ladder',
+  name: 'premium-name', premium: 'premium-value', premiumVat: 'premium-vat', platformFee: 'premium-platform', ladder: 'premium-ladder',
   ladderCurrency: 'premium-ladder-currency',
 };
 
@@ -291,6 +312,8 @@ function collectPresets() {
     const field = presetFromFields({
       name: row.querySelector('.premium-name').value,
       premiumText: row.querySelector('.premium-value').value,
+      premiumVatText: row.querySelector('.premium-vat').value,
+      platformFeeText: row.querySelector('.premium-platform').value,
       ladderText: row.querySelector('.premium-ladder').value,
       ladderCurrency: row.querySelector('.premium-ladder-currency').value,
     }, { locale: navigator.language });

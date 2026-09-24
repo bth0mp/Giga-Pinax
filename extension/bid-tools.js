@@ -1,6 +1,6 @@
 import {
   CURRENCIES, MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney,
-  nextBidOnLadder, parseMoney, parsePremiumPercent, validateIncrementLadder,
+  nextBidOnLadder, parseMoney, parsePercent, parsePremiumPercent, validateIncrementLadder,
 } from './core/money.js';
 import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './browser-api.js';
 
@@ -60,16 +60,35 @@ export function formatIncrementLadder(tiers) {
   return tiers.map((tier) => `${plain(tier.from)}: ${plain(tier.step)}`).join('\n');
 }
 
+// The two house charges a buyer's premium does not cover, by the key a cost estimate and a house
+// preset store them under, the field they are typed in and the name their errors use.
+const HOUSE_CHARGES = Object.freeze([
+  { key: 'premiumVatBps', field: 'premiumVat', subject: 'VAT on premium' },
+  { key: 'platformFeeBps', field: 'platformFee', subject: 'Platform fee on hammer' },
+]);
+
+// An optional percentage: blank is none at all (null), anything else must read as one.
+const optionalPercent = (text, locale, subject) => (typeof text === 'string' && text.trim()
+  ? parsePercent(text, locale, subject) : { ok: true, value: null });
+
 // The house preset behind one row of the presets editor. It names the field its error belongs to so
-// the page can show the message beside that field rather than in a page-wide status line.
-export function presetFromFields({ name, premiumText, ladderText, ladderCurrency } = {}, { locale = 'en-US' } = {}) {
+// the page can show the message beside that field rather than in a page-wide status line. VAT on the
+// premium and a platform fee are written only when typed, so a row without them saves the shape an
+// older preset has.
+export function presetFromFields({ name, premiumText, premiumVatText, platformFeeText, ladderText, ladderCurrency } = {}, { locale = 'en-US' } = {}) {
   const trimmed = String(name ?? '').trim().replace(/\s+/g, ' ');
   if (!trimmed) return { ok: false, error: { code: 'missing-name', message: 'Enter an auction house name.', field: 'name' } };
   const premium = parsePremiumPercent(premiumText, locale);
   if (!premium.ok) return { ok: false, error: { ...premium.error, field: 'premium' } };
+  const preset = { name: trimmed, buyerPremiumBps: premium.value };
+  const texts = { premiumVat: premiumVatText, platformFee: platformFeeText };
+  for (const { key, field, subject } of HOUSE_CHARGES) {
+    const charge = optionalPercent(texts[field], locale, subject);
+    if (!charge.ok) return { ok: false, error: { ...charge.error, field } };
+    if (charge.value !== null) preset[key] = charge.value;
+  }
   const ladder = parseIncrementLadder(ladderText, ladderCurrency, locale);
   if (!ladder.ok) return { ok: false, error: { field: 'ladder', ...ladder.error } };
-  const preset = { name: trimmed, buyerPremiumBps: premium.value };
   if (ladder.value) preset.incrementLadder = ladder.value;
   return { ok: true, value: preset };
 }
@@ -85,14 +104,19 @@ function ladderForCurrency(ladder, currency) {
   };
 }
 
-// The calculator's own preset editor knows about the premium and nothing else, so it replaces that
-// one field and leaves the rest of the house's preset — its ladder — as Settings wrote it.
-export function presetsWithPremium(presets, name, buyerPremiumBps) {
+// The calculator's own preset editor knows the premium, and the VAT on it and the platform fee when
+// they are filled in; it replaces those and leaves the rest of the house's preset — its ladder, and
+// a charge the calculator was not given — as Settings wrote it.
+export function presetsWithPremium(presets, name, buyerPremiumBps, charges = {}) {
   const key = presetKey(name);
   const existing = (presets ?? []).find((item) => presetKey(item.name) === key);
+  const given = {};
+  for (const { key: chargeKey } of HOUSE_CHARGES) {
+    if (Number.isSafeInteger(charges[chargeKey])) given[chargeKey] = charges[chargeKey];
+  }
   return [
     ...(presets ?? []).filter((item) => presetKey(item.name) !== key),
-    { ...existing, name: String(name).trim().replace(/\s+/g, ' '), buyerPremiumBps },
+    { ...existing, name: String(name).trim().replace(/\s+/g, ' '), buyerPremiumBps, ...given },
   ];
 }
 
@@ -103,18 +127,23 @@ export function buildBidCalculation(input) {
   const amount = parseMoney(input.amountText, input.currency, input.locale);
   const premium = parsePremiumPercent(input.premiumText, input.locale);
   const shipping = optionalMoney(input.shippingText, 0);
-  const paymentPercent = typeof input.paymentPercentText === 'string' && input.paymentPercentText.trim()
-    ? parsePremiumPercent(input.paymentPercentText, input.locale) : { ok: true, value: 0 };
+  const paymentPercent = optionalPercent(input.paymentPercentText, input.locale, 'Payment fee');
   const paymentFixed = optionalMoney(input.paymentFixedText, 0);
   const increment = optionalMoney(input.incrementText, 1);
   const minimum = optionalMoney(input.minimumText, 0);
-  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum].find((entry) => !entry.ok);
+  const premiumVat = optionalPercent(input.premiumVatText, input.locale, 'VAT on premium');
+  const platformFee = optionalPercent(input.platformFeeText, input.locale, 'Platform fee on hammer');
+  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]
+    .find((entry) => !entry.ok);
   if (failed) return failed;
   if (increment.value.minor <= 0) return { ok: false, error: { code: 'invalid-increment', message: 'Enter an increment greater than zero.' } };
   const costEstimate = {
-    currency: input.currency, shippingMinor: shipping.value.minor, paymentFeeBps: paymentPercent.value,
+    currency: input.currency, shippingMinor: shipping.value.minor, paymentFeeBps: paymentPercent.value ?? 0,
     paymentFeeMinor: paymentFixed.value.minor, incrementMinor: increment.value.minor, minimumBidMinor: minimum.value.minor,
   };
+  // Written only when typed, so an estimate without them keeps the shape earlier versions saved.
+  if (premiumVat.value !== null) costEstimate.premiumVatBps = premiumVat.value;
+  if (platformFee.value !== null) costEstimate.platformFeeBps = platformFee.value;
   const options = { ...costEstimate };
   delete options.currency;
   // A house ladder belongs to the house, not to this lot, so it drives the calculation without
@@ -180,6 +209,8 @@ export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total
     paymentFixed: formatMinorInput(estimate.paymentFeeMinor, locale),
     increment: formatMinorInput(estimate.incrementMinor, locale),
     minimum: formatMinorInput(estimate.minimumBidMinor, locale),
+    premiumVat: formatMinorInput(estimate.premiumVatBps, locale),
+    platformFee: formatMinorInput(estimate.platformFeeBps, locale),
     // A house's tiers belong to that house, not to whichever lot is on screen: leaving them
     // selected would compute this lot's premium and minimum on the last house's schedule. The lot's
     // own saved increment applies until the collector picks a house again.
@@ -216,6 +247,8 @@ export function mountBidCalculator(
   const paymentFixed = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0.00' });
   const increment = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0.01' });
   const minimum = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0.00' });
+  const premiumVat = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
+  const platformFee = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
   const preset = el('select');
   const fields = el('div', { className: 'bid-calculator-fields' });
   const label = (text, control) => {
@@ -235,6 +268,7 @@ export function mountBidCalculator(
   const fees = el('details', { className: 'bid-calculator-fees' });
   const feeFields = el('div', { className: 'bid-fees-fields' });
   feeFields.append(
+    label('VAT on premium %', premiumVat).node, label('Platform fee % on hammer', platformFee).node,
     label('Shipping', shipping).node, label('Payment fee %', paymentPercent).node,
     label('Fixed payment fee', paymentFixed).node, label('Bid increment', increment).node,
     label('Minimum bid', minimum).node);
@@ -243,7 +277,7 @@ export function mountBidCalculator(
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. Tax is excluded.',
+    className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer and import taxes are excluded.',
   });
   const ladderNote = el('p', { className: 'bid-calculator-ladder', hidden: true });
   const status = el('p', {
@@ -254,7 +288,7 @@ export function mountBidCalculator(
     type: 'button', textContent: 'Use in bid', disabled: true, hidden: typeof onUseHammer !== 'function',
   });
   const editor = el('details', { className: 'bid-preset-editor' });
-  const editorSummary = el('summary', { textContent: 'Save this premium for a house' });
+  const editorSummary = el('summary', { textContent: 'Save these terms for a house' });
   const presetName = el('input', {
     type: 'text', maxLength: 120, placeholder: 'Auction house name',
   });
@@ -281,9 +315,12 @@ export function mountBidCalculator(
     (preferences?.housePremiumPresets ?? []).forEach((item) => {
       const count = item.incrementLadder?.tiers?.length ?? 0;
       const tiers = count ? ` · ${count}-tier ${item.incrementLadder.currency} ladder` : '';
+      const percent = (bps) => (bps / 100).toFixed(2);
+      const vat = Number.isSafeInteger(item.premiumVatBps) ? ` + ${percent(item.premiumVatBps)}% VAT` : '';
+      const platform = Number.isSafeInteger(item.platformFeeBps) ? ` · ${percent(item.platformFeeBps)}% platform fee` : '';
       preset.append(el('option', {
         value: presetKey(item.name),
-        textContent: `${item.name} — ${(item.buyerPremiumBps / 100).toFixed(2)}%${tiers}`,
+        textContent: `${item.name} — ${percent(item.buyerPremiumBps)}%${vat}${platform}${tiers}`,
       }));
     });
     if ([...preset.options].some(({ value }) => value === selected)) preset.value = selected;
@@ -327,6 +364,7 @@ export function mountBidCalculator(
     const calculated = buildBidCalculation({ mode: mode.value, amountText: amount.value, premiumText: premium.value,
       shippingText: shipping.value, paymentPercentText: paymentPercent.value, paymentFixedText: paymentFixed.value,
       incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.record ?? null,
+      premiumVatText: premiumVat.value, platformFeeText: platformFee.value,
       currency: currencyControl.value, locale: language() });
     if (!calculated.ok) {
       output.textContent = 'Enter an amount and buyer premium.';
@@ -337,7 +375,11 @@ export function mountBidCalculator(
     const locale = language();
     const next = calculated.nextValidBid.minor === hammer.minor
       ? '' : ` · Next valid bid ${formatMoney(calculated.nextValidBid, locale)}`;
-    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
+    // VAT and a platform fee are named only when entered, so a house without them reads as before.
+    const estimate = calculated.costEstimate;
+    const vat = Object.hasOwn(estimate, 'premiumVatBps') ? ` + VAT ${formatMoney(calculated.value.premiumVat, locale)}` : '';
+    const platform = Object.hasOwn(estimate, 'platformFeeBps') ? ` · Platform fee ${formatMoney(calculated.value.platformFee, locale)}` : '';
+    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)}${vat}${platform} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
@@ -345,14 +387,20 @@ export function mountBidCalculator(
     amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Hammer price';
     calculate();
   });
-  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum]) {
+  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]) {
     control.addEventListener('input', calculate);
   }
   preset.addEventListener('change', () => {
     const item = selectedPreset();
     if (preset.value !== '' && !item) return;
     selectLadder();
-    if (item) premium.value = formatMinorInput(item.buyerPremiumBps, language());
+    // A house's terms are the premium and what it charges on top; a house without VAT or a platform
+    // fee clears the one the last house left, which would otherwise count against this one.
+    if (item) {
+      premium.value = formatMinorInput(item.buyerPremiumBps, language());
+      premiumVat.value = formatMinorInput(item.premiumVatBps, language());
+      platformFee.value = formatMinorInput(item.platformFeeBps, language());
+    }
     calculate();
   });
   use.addEventListener('click', () => {
@@ -368,6 +416,15 @@ export function mountBidCalculator(
     if (!parsed.ok || !name) {
       showError(parsed.error?.message || 'Enter an auction house name.');
       return;
+    }
+    const charges = {};
+    for (const [{ key, subject }, control] of [[HOUSE_CHARGES[0], premiumVat], [HOUSE_CHARGES[1], platformFee]]) {
+      const charge = optionalPercent(control.value, language(), subject);
+      if (!charge.ok) {
+        showError(charge.error.message);
+        return;
+      }
+      if (charge.value !== null) charges[key] = charge.value;
     }
     presetSavePending = true;
     save.disabled = true;
@@ -387,7 +444,7 @@ export function mountBidCalculator(
         requestId: newRequestId(),
         expectedRevision: preferences.revision,
         preferences: {
-          housePremiumPresets: presetsWithPremium(preferences.housePremiumPresets, name, parsed.value),
+          housePremiumPresets: presetsWithPremium(preferences.housePremiumPresets, name, parsed.value, charges),
         },
       });
       if (!reply.ok) {
@@ -424,7 +481,8 @@ export function mountBidCalculator(
       ladder = inputs.ladder;
       if (Object.hasOwn(inputs, 'amount')) amount.value = inputs.amount;
       for (const [control, key] of [[premium, 'premium'], [shipping, 'shipping'], [paymentPercent, 'paymentPercent'],
-        [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum']]) {
+        [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum'],
+        [premiumVat, 'premiumVat'], [platformFee, 'platformFee']]) {
         control.value = inputs[key];
       }
       calculate();

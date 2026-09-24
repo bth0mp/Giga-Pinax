@@ -10,7 +10,7 @@ import * as diagnostics from '../extension/core/diagnostics.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
-import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { GIGA_PREFERENCES_KEY } from '../extension/companion-preferences.js';
 import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
 import { browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
@@ -252,6 +252,59 @@ test('a saved row is carried into the command as the parsed preset, and the row 
   }]);
   assert.equal(page.status(), 'Settings saved.');
   assert.equal(page.element('save-settings').disabled, false);
+});
+
+// A house's VAT on its premium and a platform's fee on the hammer are part of its terms: typed once
+// in its row, carried by every calculation that picks the house.
+test('a preset row takes VAT on premium and a platform fee, and saves them only when typed', async () => {
+  const page = await openSettings({ reply: (command) => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: command.preferences.housePremiumPresets }) }) });
+  await page.element('add-premium').click();
+  await page.element('add-premium').click();
+  const [kunker, plain] = page.document.querySelectorAll('.premium-row');
+  const label = (control) => control.closest('.premium-field').querySelector('label').querySelector('span').textContent;
+  assert.equal(label(kunker.querySelector('.premium-vat')), 'VAT on premium %');
+  assert.equal(label(kunker.querySelector('.premium-platform')), 'Platform fee % on hammer');
+  kunker.querySelector('.premium-name').value = 'Künker';
+  kunker.querySelector('.premium-value').value = '25';
+  kunker.querySelector('.premium-vat').value = '19';
+  plain.querySelector('.premium-name').value = 'Heritage';
+  plain.querySelector('.premium-value').value = '20';
+  plain.querySelector('.premium-platform').value = '3';
+  await page.element('save-settings').click();
+  await settle();
+  assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [
+    { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 },
+    { name: 'Heritage', buyerPremiumBps: 2000, platformFeeBps: 300 },
+  ]);
+});
+
+test('a VAT that cannot be read is refused beside its own field', async () => {
+  const page = await openSettings();
+  await page.element('add-premium').click();
+  const row = page.document.querySelector('.premium-row');
+  row.querySelector('.premium-name').value = 'Künker';
+  row.querySelector('.premium-value').value = '25';
+  row.querySelector('.premium-vat').value = '190';
+  await page.element('save-settings').click();
+  const vat = row.querySelector('.premium-vat');
+  assert.equal(vat.closest('.premium-field').querySelector('.premium-error').textContent, 'VAT on premium must be between 0% and 100%.');
+  assert.equal(vat.getAttribute('aria-invalid'), 'true');
+  assert.deepEqual(page.commands, []);
+});
+
+test('a saved preset with VAT and a platform fee is drawn back and saves unchanged in every locale', async () => {
+  const saved = { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, platformFeeBps: 150 };
+  for (const language of ['ar-EG', 'de-DE', 'en-US']) {
+    const page = await openSettings({
+      language,
+      snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [saved] }) }),
+      reply: () => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: [saved] }) }),
+    });
+    const row = page.document.querySelector('.premium-row');
+    assert.deepEqual([row.querySelector('.premium-vat').value, row.querySelector('.premium-platform').value], ['19.00', '1.50'], language);
+    await page.element('save-settings').click();
+    assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [saved], language);
+  }
 });
 
 test('removing a row takes it out of the next save', async () => {
@@ -882,6 +935,48 @@ test('Export backup writes an importable file of the current records', async () 
   assert.match(file.name, /^giga-pinax-\d{4}-\d{2}-\d{2}\.json$/);
   assert.equal(backup.validateBackup(file.text).ok, true);
   assert.equal(page.status(), 'Backup exported.');
+});
+
+// --- VAT on premium and platform fee in stored records ---------------------------------------------
+
+const OLD_ESTIMATE = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 };
+
+// Both charges are optional keys a preset and a lot's estimate may carry; a backup written before they
+// existed has neither, and imports as it always did.
+test('a backup from before VAT on premium and platform fees still validates, previews and imports', async () => {
+  const old = snapshotWith({
+    preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000, incrementLadder: { currency: 'GBP', tiers: [{ from: 0, step: 500 }] } }] }),
+    lots: [lot(uuid(2), { costEstimate: OLD_ESTIMATE })],
+  });
+  const documentText = backupDocument(old);
+  assert.doesNotMatch(documentText, /premiumVatBps|platformFeeBps/);
+  const validated = backup.validateBackup(documentText);
+  assert.equal(validated.ok, true, validated.error?.message);
+  assert.deepEqual(validated.value.lots[0].costEstimate, OLD_ESTIMATE);
+  const page = await openSettings({ snapshot: snapshotWith(), reply: () => ({ ok: true }) });
+  await preview(page, documentText);
+  assert.equal(page.element('confirm-import').disabled, false);
+  await page.element('confirm-import').click();
+  await settle();
+  const sent = page.commands.filter(({ type }) => type === 'backup.import');
+  assert.equal(sent.length, 1);
+  assert.equal(page.status(), 'Backup imported.');
+});
+
+test('a preset and an estimate carry VAT on premium and a platform fee from 0 to 100 %, and nothing else', () => {
+  const withCharges = (presetCharges, estimateCharges) => snapshotWith({
+    preferences: preferences({ housePremiumPresets: [{ name: 'Künker', buyerPremiumBps: 2500, ...presetCharges }] }),
+    lots: [lot(uuid(3), { costEstimate: { ...OLD_ESTIMATE, ...estimateCharges } })],
+  });
+  const good = withCharges({ premiumVatBps: 1900, platformFeeBps: 0 }, { premiumVatBps: 1900, platformFeeBps: 300 });
+  assert.equal(validateSnapshot(good).ok, true);
+  assert.equal(backup.validateBackup(backupDocument(good)).ok, true);
+  for (const bad of [-1, 10001, 19.5, '1900', null]) {
+    for (const key of ['premiumVatBps', 'platformFeeBps']) {
+      assert.equal(validateSnapshot(withCharges({ [key]: bad }, {})).error?.path, `preferences.housePremiumPresets[0].${key}`, `preset ${key} ${bad}`);
+      assert.equal(validateSnapshot(withCharges({}, { [key]: bad })).error?.path, `lots[0].costEstimate.${key}`, `estimate ${key} ${bad}`);
+    }
+  }
 });
 
 // --- CSV export ----------------------------------------------------------------------------------
