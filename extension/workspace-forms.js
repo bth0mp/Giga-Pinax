@@ -213,11 +213,27 @@ export function offeredEventFromDraft({ closesAt, startsAt, pageUrl } = {}, time
   };
 }
 
-// The house an auction is from, as its name starts: `Leu Web Auction 32` and `Leu Numismatik 31` are both Leu's.
-const houseKey = (name) => String(name ?? '').trim().split(/\s+/, 1)[0].normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}&'-]/gu, '');
-// The time zone the collector gave the house's most recently saved auction, offered for its next one: the saved
-// auctions are what remembers it, so nothing new is stored. Another auction of the same first word only proposes a
-// zone, which the form names with the auction it came from and the collector can change.
+// The house an auction is from: its name cut before the sale's number - a token holding a digit, a Roman numeral, or
+// `E-Sale`, `Auction`, `Auktion` or `Sale` followed by one - with case and spacing set aside. `Roma Numismatics E-Sale
+// 130` and `Roma Numismatics Auction XXV` are both `roma numismatics`; `Heritage Europe 78` is not `Heritage 3110`'s
+// house. Fewer than three characters name no house.
+const ROMAN_NUMERAL = /^(?=[mdclxvi])m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/i;
+const SALE_WORD = /^(?:e-?sale|e-?auction|auction|auktion|sale)$/i;
+const bare = (token) => token.replace(/[.,:;]+$/, '');
+const saleNumber = (token) => /\d/.test(token) || ROMAN_NUMERAL.test(bare(token));
+const houseKey = (name) => {
+  const tokens = String(name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean);
+  const kept = [];
+  for (const [index, token] of tokens.entries()) {
+    if (saleNumber(token) || (SALE_WORD.test(bare(token)) && saleNumber(tokens[index + 1] ?? ''))) break;
+    kept.push(token);
+  }
+  const key = kept.join(' ').toLocaleLowerCase('en-US').replace(/[\s,.:;–-]+$/, '');
+  return key.length >= 3 ? key : '';
+};
+// The time zone the collector gave the same house's most recently saved auction, offered for its next one: the saved
+// auctions are what remembers it, so nothing new is stored. Only the same house name proposes a zone; any other name,
+// however alike, leaves the collector's own zone.
 /**
  * @param {Array<{ id?: string, name?: string, timeZone?: string, updatedAt?: string }> | null | undefined} events
  * @param {*} name
@@ -226,7 +242,7 @@ const houseKey = (name) => String(name ?? '').trim().split(/\s+/, 1)[0].normaliz
  */
 export function rememberedZone(events, name, excludeId = null) {
   const key = houseKey(name);
-  if (key.length < 2) return null;
+  if (!key) return null;
   const match = (events ?? []).filter((event) => event.id !== excludeId && event.timeZone && houseKey(event.name) === key)
     .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))[0];
   return match ? { timeZone: String(match.timeZone), from: String(match.name) } : null;

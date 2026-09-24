@@ -1172,18 +1172,28 @@ test('a reminder reads as when it goes off in the collector’s time, and in the
   assert.deepEqual([...reminderInstants(event)], [['a', '2026-10-15T12:00:00.000Z'], ['b', '2026-10-16T11:00:00.000Z']]);
 });
 
-// N14: a new auction starts in the zone the collector last used for the same house, read from the auctions already saved.
-test('the zone last used for a house is offered for its next auction', () => {
+// N14 (review Important 3): a new auction takes the zone of the house's last auction only when the house names are the
+// same - the name cut before its sale number, `E-Sale N`, `Auction N` or Roman numeral, compared with case and spacing
+// set aside. A near miss proposes nothing and the auction starts in the collector's own zone.
+test('the zone last used for a house is offered only for the same house name', () => {
+  const at = (id, name, timeZone, month) => ({ id, name, timeZone, updatedAt: `2026-0${month}-01T00:00:00.000Z` });
   const events = [
-    { id: '1', name: 'Leu Web Auction 30', timeZone: 'Europe/Zurich', updatedAt: '2026-01-01T00:00:00.000Z' },
-    { id: '2', name: 'Leu Numismatik 31', timeZone: 'Europe/Berlin', updatedAt: '2026-03-01T00:00:00.000Z' },
-    { id: '3', name: 'Roma E-Sale 130', timeZone: 'Europe/London', updatedAt: '2026-05-01T00:00:00.000Z' },
+    at('1', 'Leu Web Auction 30', 'Europe/Zurich', 1), at('2', 'Leu Numismatik 31', 'Europe/Berlin', 3),
+    at('3', 'Roma Numismatics E-Sale 130', 'Europe/London', 5), at('4', 'The New York Sale 61', 'America/New_York', 2),
+    at('5', 'Heritage 3110', 'America/Chicago', 2), at('6', 'Spink 24001', 'Europe/London', 2), at('7', 'Numismatik Naumann 140', 'Europe/Vienna', 2),
   ];
-  assert.deepEqual(rememberedZone(events, 'Leu Web Auction 32'), { timeZone: 'Europe/Berlin', from: 'Leu Numismatik 31' });
-  assert.deepEqual(rememberedZone(events, '  roma e-sale 131'), { timeZone: 'Europe/London', from: 'Roma E-Sale 130' });
+  assert.deepEqual(rememberedZone(events, 'Leu Web Auction 32'), { timeZone: 'Europe/Zurich', from: 'Leu Web Auction 30' });
+  assert.deepEqual(rememberedZone(events, 'Roma Numismatics Auction XXV'), { timeZone: 'Europe/London', from: 'Roma Numismatics E-Sale 130' });
+  assert.deepEqual(rememberedZone(events, '  roma   NUMISMATICS e-sale 131'), { timeZone: 'Europe/London', from: 'Roma Numismatics E-Sale 130' });
+  assert.deepEqual(rememberedZone(events, 'The New York Sale 62'), { timeZone: 'America/New_York', from: 'The New York Sale 61' });
+  // The review's wrong proposals: another house sharing the first word, or a word too short to name a house.
+  for (const name of ['The Coin Cabinet 12', 'Heritage Europe 78', 'Spink New York 390', 'Numismatik Lanz 170', 'the']) {
+    assert.equal(rememberedZone(events, name), null, name);
+  }
   assert.equal(rememberedZone(events, 'Nomos 30'), null);
   assert.equal(rememberedZone(events, ''), null);
-  assert.equal(rememberedZone(events, 'Leu 33', '2')?.from, 'Leu Web Auction 30', 'the auction being edited is not its own precedent');
+  assert.equal(rememberedZone(events, 'XII'), null, 'a sale number alone names no house');
+  assert.equal(rememberedZone(events, 'Leu Web Auction 33', '1'), null, 'the auction being edited is not its own precedent');
 });
 
 // N7: an open coin whose auction has passed needs its outcome recorded. It gets a queue of its own and is counted for
