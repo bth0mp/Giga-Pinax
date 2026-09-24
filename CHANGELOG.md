@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-24
+
 ### Added
 
 - The popup's **Watchlist** tab says how many lots ended without an outcome (“2 lots ended without an outcome”), and a click opens the workspace on its **Needs outcome** queue.
@@ -393,7 +395,8 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
-[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.34.1...HEAD
+[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.35.0
 [0.34.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.34.1
 [0.34.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.34.0
 [0.33.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.33.0
