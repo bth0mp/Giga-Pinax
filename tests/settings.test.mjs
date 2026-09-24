@@ -10,10 +10,11 @@ import * as diagnostics from '../extension/core/diagnostics.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
-import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
+import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { GIGA_PREFERENCES_KEY } from '../extension/companion-preferences.js';
 import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
 import { browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
+import { skip } from './helpers/bundle.mjs';
 
 const NOW = '2026-09-12T12:00:00.000Z';
 const LATER = '2026-09-13T12:00:00.000Z';
@@ -252,6 +253,154 @@ test('a saved row is carried into the command as the parsed preset, and the row 
   }]);
   assert.equal(page.status(), 'Settings saved.');
   assert.equal(page.element('save-settings').disabled, false);
+});
+
+// A house's VAT on its premium and a platform's fee on the hammer are part of its terms: typed once
+// in its row, carried by every calculation that picks the house.
+test('a preset row takes VAT on premium and a platform fee, and saves them only when typed', async () => {
+  const page = await openSettings({ reply: (command) => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: command.preferences.housePremiumPresets }) }) });
+  await page.element('add-premium').click();
+  await page.element('add-premium').click();
+  const [kunker, plain] = page.document.querySelectorAll('.premium-row');
+  const label = (control) => control.closest('.premium-field').querySelector('label').querySelector('span').textContent;
+  assert.equal(label(kunker.querySelector('.premium-vat')), 'VAT on premium %');
+  assert.equal(label(kunker.querySelector('.premium-platform')), 'Platform fee % on hammer');
+  kunker.querySelector('.premium-name').value = 'Künker';
+  kunker.querySelector('.premium-value').value = '25';
+  kunker.querySelector('.premium-vat').value = '19';
+  plain.querySelector('.premium-name').value = 'Heritage';
+  plain.querySelector('.premium-value').value = '20';
+  plain.querySelector('.premium-platform').value = '3';
+  await page.element('save-settings').click();
+  await settle();
+  assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [
+    { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 },
+    { name: 'Heritage', buyerPremiumBps: 2000, platformFeeBps: 300 },
+  ]);
+});
+
+test('a VAT that cannot be read is refused beside its own field', async () => {
+  const page = await openSettings();
+  await page.element('add-premium').click();
+  const row = page.document.querySelector('.premium-row');
+  row.querySelector('.premium-name').value = 'Künker';
+  row.querySelector('.premium-value').value = '25';
+  row.querySelector('.premium-vat').value = '190';
+  await page.element('save-settings').click();
+  const vat = row.querySelector('.premium-vat');
+  assert.equal(vat.closest('.premium-field').querySelector('.premium-error').textContent, 'VAT on premium must be between 0% and 100%.');
+  assert.equal(vat.getAttribute('aria-invalid'), 'true');
+  assert.deepEqual(page.commands, []);
+});
+
+test('a saved preset with VAT and a platform fee is drawn back and saves unchanged in every locale', async () => {
+  const saved = { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, platformFeeBps: 150 };
+  for (const language of ['ar-EG', 'de-DE', 'en-US']) {
+    const page = await openSettings({
+      language,
+      snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [saved] }) }),
+      reply: () => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: [saved] }) }),
+    });
+    const row = page.document.querySelector('.premium-row');
+    assert.deepEqual([row.querySelector('.premium-vat').value, row.querySelector('.premium-platform').value], ['19.00', '1.50'], language);
+    await page.element('save-settings').click();
+    assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [saved], language);
+  }
+});
+
+test('Copy house presets puts the houses as they stand in the rows on the clipboard', async () => {
+  const saved = [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }];
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: saved }) }) });
+  await page.element('add-premium').click();
+  const added = page.document.querySelectorAll('.premium-row')[1];
+  added.querySelector('.premium-name').value = 'Roma';
+  added.querySelector('.premium-value').value = '20';
+  await page.element('copy-presets').click();
+  await settle();
+  assert.deepEqual(bidTools.parseHousePresets(page.copied[0]).value, [...saved, { name: 'Roma', buyerPremiumBps: 2000 }]);
+  assert.equal(page.element('paste-status').textContent, '2 house presets copied. Paste them into Settings in another browser.');
+  assert.equal(page.element('paste-status').dataset.error, 'false');
+  assert.equal(page.status(), '', 'said once, beside the button, not again at the foot of the page');
+  assert.deepEqual(page.commands, [], 'copying saves nothing');
+});
+
+// The share fold sits at the top of the page and the page status at its foot, thousands of pixels
+// below at phone width: what Copy and Add pasted houses answer is said beside them, as an alert.
+test('the copy and paste answers have a line of their own right under Add pasted houses', async () => {
+  const page = await openSettings();
+  const line = page.element('paste-status');
+  assert.equal(line.getAttribute('role'), 'alert');
+  const siblings = page.element('paste-presets').parentNode.children;
+  assert.equal(siblings[siblings.indexOf(page.element('paste-presets')) + 1], line);
+  await page.element('copy-presets').click();
+  await settle();
+  assert.equal(line.textContent, 'There are no house presets to copy.');
+  assert.equal(line.dataset.error, 'true');
+  assert.equal(page.status(), '');
+});
+
+test('Copy house presets refuses a row it cannot read, beside that row', async () => {
+  const page = await openSettings();
+  await page.element('add-premium').click();
+  const row = page.document.querySelector('.premium-row');
+  row.querySelector('.premium-name').value = 'Roma';
+  row.querySelector('.premium-value').value = 'twenty';
+  await page.element('copy-presets').click();
+  await settle();
+  assert.deepEqual(page.copied, []);
+  assert.equal(row.querySelector('.premium-value').getAttribute('aria-invalid'), 'true');
+});
+
+test('pasted house presets become rows to review, update a house of the same name, and save nothing by themselves', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  page.element('paste-presets-text').value = bidTools.housePresetsText([
+    { name: 'roma', buyerPremiumBps: 2400 },
+    { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }] } },
+  ]);
+  await page.element('paste-presets').click();
+  const rows = page.document.querySelectorAll('.premium-row');
+  assert.deepEqual(rows.map((row) => row.querySelector('.premium-name').value), ['roma', 'Künker']);
+  assert.deepEqual(rows.map((row) => row.querySelector('.premium-value').value), ['24.00', '25.00']);
+  assert.equal(rows[1].querySelector('.premium-vat').value, '19.00');
+  assert.equal(rows[1].querySelector('.premium-ladder-currency').value, 'EUR');
+  assert.equal(page.element('paste-status').textContent, '1 house added and 1 updated. Review them, then Save settings.');
+  assert.equal(page.status(), '');
+  assert.equal(page.element('paste-presets-text').value, '');
+  assert.deepEqual(page.commands, []);
+});
+
+test('pasted text that is not house presets changes no row and says why', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  page.element('paste-presets-text').value = '[{"name":"Roma","buyerPremiumBps":20000}]';
+  await page.element('paste-presets').click();
+  assert.equal(page.document.querySelector('.premium-value').value, '20.00');
+  assert.match(page.element('paste-status').textContent, /^House 1 \(Roma\): /);
+  assert.equal(page.element('paste-status').dataset.error, 'true');
+  assert.equal(page.status(), '', 'the refusal is not sent to the foot of the page, out of sight');
+  assert.equal(page.element('paste-presets-text').value, '[{"name":"Roma","buyerPremiumBps":20000}]', 'the text stays to be corrected');
+});
+
+// A list of houses reads as a list: each ladder is folded under a line saying what it holds, and it
+// opens itself when Save has something to say about it.
+test('each ladder is folded under a line that says what it holds, and opens on its own error', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [
+    { name: 'Leu', buyerPremiumBps: 2000, incrementLadder: { currency: 'CHF', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 10000 }] } },
+    { name: 'Roma', buyerPremiumBps: 2000 },
+  ] }) }) });
+  const [leu, roma] = page.document.querySelectorAll('.premium-row');
+  const folded = (row) => row.querySelector('.premium-ladder-details');
+  assert.equal(folded(leu).querySelector('summary').textContent, 'Increment ladder · 2 tiers in CHF');
+  assert.equal(folded(roma).querySelector('summary').textContent, 'Increment ladder · none');
+  assert.equal(folded(leu).open, false);
+  assert.ok(folded(leu).querySelector('.premium-ladder'), 'the tiers box is inside the fold');
+  const tiers = roma.querySelector('.premium-ladder');
+  tiers.value = '5: 5';
+  await tiers.emit('input');
+  assert.equal(folded(roma).querySelector('summary').textContent, 'Increment ladder · 1 tier in USD');
+  await page.element('save-settings').click();
+  assert.equal(folded(roma).open, true);
+  assert.equal(page.document.activeElement, tiers);
+  assert.deepEqual(page.commands, []);
 });
 
 test('removing a row takes it out of the next save', async () => {
@@ -884,6 +1033,48 @@ test('Export backup writes an importable file of the current records', async () 
   assert.equal(page.status(), 'Backup exported.');
 });
 
+// --- VAT on premium and platform fee in stored records ---------------------------------------------
+
+const OLD_ESTIMATE = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 };
+
+// Both charges are optional keys a preset and a lot's estimate may carry; a backup written before they
+// existed has neither, and imports as it always did.
+test('a backup from before VAT on premium and platform fees still validates, previews and imports', async () => {
+  const old = snapshotWith({
+    preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000, incrementLadder: { currency: 'GBP', tiers: [{ from: 0, step: 500 }] } }] }),
+    lots: [lot(uuid(2), { costEstimate: OLD_ESTIMATE })],
+  });
+  const documentText = backupDocument(old);
+  assert.doesNotMatch(documentText, /premiumVatBps|platformFeeBps/);
+  const validated = backup.validateBackup(documentText);
+  assert.equal(validated.ok, true, validated.error?.message);
+  assert.deepEqual(validated.value.lots[0].costEstimate, OLD_ESTIMATE);
+  const page = await openSettings({ snapshot: snapshotWith(), reply: () => ({ ok: true }) });
+  await preview(page, documentText);
+  assert.equal(page.element('confirm-import').disabled, false);
+  await page.element('confirm-import').click();
+  await settle();
+  const sent = page.commands.filter(({ type }) => type === 'backup.import');
+  assert.equal(sent.length, 1);
+  assert.equal(page.status(), 'Backup imported.');
+});
+
+test('a preset and an estimate carry VAT on premium and a platform fee from 0 to 100 %, and nothing else', () => {
+  const withCharges = (presetCharges, estimateCharges) => snapshotWith({
+    preferences: preferences({ housePremiumPresets: [{ name: 'Künker', buyerPremiumBps: 2500, ...presetCharges }] }),
+    lots: [lot(uuid(3), { costEstimate: { ...OLD_ESTIMATE, ...estimateCharges } })],
+  });
+  const good = withCharges({ premiumVatBps: 1900, platformFeeBps: 0 }, { premiumVatBps: 1900, platformFeeBps: 300 });
+  assert.equal(validateSnapshot(good).ok, true);
+  assert.equal(backup.validateBackup(backupDocument(good)).ok, true);
+  for (const bad of [-1, 10001, 19.5, '1900', null]) {
+    for (const key of ['premiumVatBps', 'platformFeeBps']) {
+      assert.equal(validateSnapshot(withCharges({ [key]: bad }, {})).error?.path, `preferences.housePremiumPresets[0].${key}`, `preset ${key} ${bad}`);
+      assert.equal(validateSnapshot(withCharges({}, { [key]: bad })).error?.path, `lots[0].costEstimate.${key}`, `estimate ${key} ${bad}`);
+    }
+  }
+});
+
 // --- CSV export ----------------------------------------------------------------------------------
 
 test('Export CSV offers every table and downloads the chosen one as a UTF-8 CSV file', async () => {
@@ -1041,18 +1232,29 @@ const dataRoot = new URL('../extension/data/', import.meta.url);
 const bundledCorpora = () => readdirSync(dataRoot).filter((name) => !name.includes('.')).sort();
 const corpusMetadata = (corpus) => JSON.parse(readFileSync(new URL(`${corpus}/metadata.json`, dataRoot), 'utf8'));
 
-test('the bundled-data panel names every corpus the package carries, and only those', async () => {
+// These two read the bundle itself, so they skip where extension/data is not checked out.
+test('the bundled-data panel names every corpus the package carries, and only those', { skip }, async () => {
   const bundled = bundledCorpora();
   assert.deepEqual(Object.keys(LOCAL_CORPORA).sort(), bundled);
   const page = await openSettings({ catalogueMetadata: async (corpus) => corpusMetadata(corpus) });
 
-  // One row per corpus, each built from that corpus's own metadata rather than from a sentence written here.
+  // One table row per corpus, each built from that corpus's own metadata rather than from a sentence written here:
+  // the bundle, its type counts and what it leaves out, the day its local files were made, and its source and licence.
   const rows = page.element('catalogue-list').children;
-  assert.deepEqual(rows.map((row) => row.querySelector('strong').textContent),
-    Object.keys(LOCAL_CORPORA).map((corpus) => `${LOCAL_CORPORA[corpus].label}: `));
+  assert.deepEqual(rows.map((row) => row.querySelector('th').textContent), Object.keys(LOCAL_CORPORA).map((corpus) => LOCAL_CORPORA[corpus].label));
+  const count = (value) => new Intl.NumberFormat('en-GB').format(value);
   for (const [index, corpus] of Object.keys(LOCAL_CORPORA).entries()) {
-    assert.ok(rows[index].textContent.includes(catalogueMetadataText(corpusMetadata(corpus))), corpus);
-    assert.deepEqual(rows[index].querySelectorAll('a').map((link) => link.textContent), ['Source', 'Licence'], corpus);
+    const metadata = corpusMetadata(corpus);
+    const [types, files, links] = rows[index].querySelectorAll('td');
+    assert.equal(types.querySelector('span').textContent, `${count(metadata.activeRecordCount)} active of ${count(metadata.recordCount)}`, corpus);
+    assert.equal(types.querySelector('small')?.textContent,
+      metadata.excluded ? `Leaving out ${count(metadata.excluded.count)}: ${metadata.excluded.reason}.` : undefined, corpus);
+    assert.equal(files.querySelector('span').textContent, new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+      .format(new Date(`${metadata.generatedOn}T00:00:00Z`)), corpus);
+    assert.deepEqual(links.querySelectorAll('a').map((link) => link.textContent), ['Source', 'Licence'], corpus);
+    // Each link says whose source and licence it is, since every row has one of each.
+    assert.deepEqual(links.querySelectorAll('a').map((link) => link.getAttribute('aria-label')),
+      [`${LOCAL_CORPORA[corpus].label} source`, `${LOCAL_CORPORA[corpus].label} licence`], corpus);
   }
 
   // The sentence beside the rows says which references are answered locally and which still go online. Bopearachchi
@@ -1080,12 +1282,12 @@ test('a corpus whose files cannot be read keeps its row and says so', async () =
   const rows = page.element('catalogue-list').children;
   assert.equal(rows.length, Object.keys(LOCAL_CORPORA).length);
   for (const row of rows) {
-    assert.ok(row.textContent.includes('Local catalogue unavailable.'), row.textContent);
+    assert.equal(row.querySelectorAll('td').at(-1).textContent, 'Local catalogue unavailable.');
     assert.deepEqual(row.querySelectorAll('a'), []);
   }
 });
 
-test('each panel row reports the counts and the date its own corpus metadata carries', () => {
+test('each panel row reports the counts and the date its own corpus metadata carries', { skip }, () => {
   for (const corpus of bundledCorpora()) {
     const metadata = corpusMetadata(corpus);
     const line = catalogueMetadataText(metadata);
