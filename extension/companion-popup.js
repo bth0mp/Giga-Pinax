@@ -353,7 +353,8 @@ async function initCompanionPopup() {
   let draftSavePending = false;
   const saveWatchlistDraft = async (payload, leftOff = []) => {
     if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
-    if (draftSavePending) return;
+    // The two save buttons are disabled while a save is pending, so only a Watch in the research half reaches this: refused aloud, not dropped.
+    if (draftSavePending) return { ok: false, message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' };
     draftSavePending = true;
     $('companion-save-watchlist').disabled = true;
     $('companion-capture-watchlist').disabled = true;

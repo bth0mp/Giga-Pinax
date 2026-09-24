@@ -537,7 +537,7 @@ test('a lookup sent to this window takes the captured page off the coin saved fr
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
-  assert.match(source, /if \(draftSavePending\) return;[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
+  assert.match(source, /if \(draftSavePending\) return \{ ok: false, [^\n]*\};[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
   assert.match(source, /finally \{[\s\S]*draftSavePending = false;[\s\S]*companion-save-watchlist[\s\S]*companion-capture-watchlist/);
 });
 
@@ -622,6 +622,40 @@ test('a failed Watch hands its reason back to the research half', async () => {
   for (let tick = 0; tick < 20; tick += 1) await settle();
   globalThis.dispatchEvent = dispatch;
   assert.equal(handedBack.length, 1);
+});
+
+// 0.34 final review: a second Watch pressed while the first lot's draft is still being saved is refused aloud, not dropped - the collector who
+// pressed Watch on B is told so beside the list, rather than being told the details are ready and finding only A.
+test('a second Watch while the first draft is saving is refused and handed back, and only the first is saved', async () => {
+  const commands = [];
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(command);
+    if (command.type !== 'draft.save') return WORKING_SNAPSHOT;
+    await held;
+    return { ok: true, value: { id: 'draft-9' } };
+  } });
+  const handedBack = [];
+  const dispatch = globalThis.dispatchEvent;
+  globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
+  const create = globalThis.browser.tabs.create;
+  const opened = [];
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  page.watch({ title: 'Roma, Lot A', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=1', closesAt: '2099-10-12' });
+  await settle(); await settle();
+  page.watch({ title: 'Roma, Lot B', reference: 'Price 24', pageUrl: 'https://www.acsearch.info/search.html?id=2', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 5; tick += 1) await settle();
+  release();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  globalThis.dispatchEvent = dispatch;
+  globalThis.browser.tabs.create = create;
+  const saved = commands.filter(({ type }) => type === 'draft.save');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].payload.title, 'Roma, Lot A');
+  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-9']);
+  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed',
+    detail: { message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' } }]);
 });
 
 // 0.34 (W2a): a capture the page refused is kept in the local diagnostics list as a kind of failure only - no page title, address or text reaches it.
