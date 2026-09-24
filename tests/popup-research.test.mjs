@@ -140,7 +140,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
     CustomEvent: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
-    URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set,
+    URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set, AbortController,
     setTimeout: () => 0,
     clearTimeout() {},
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
@@ -1903,7 +1903,8 @@ test('switched on, one query per card draws at most three specimen pairs, each c
 test('a slow specimen query never delays the card, and a late answer for a card no longer shown is dropped', async () => {
   let answer;
   const asked = [];
-  const specimenFetch = (card) => { asked.push(card.id); return new Promise((resolve) => { answer = resolve; }); };
+  const signals = [];
+  const specimenFetch = (card, options) => { asked.push(card.id); signals.push(options?.signal); return new Promise((resolve) => { answer = resolve; }); };
   let lookups = 0;
   const popup = await lookUpNero({ stored: SPECIMENS_ON(), specimenFetch,
     lookupTypeImpl: async () => ((lookups += 1) === 1 ? { status: 'ok', card: { ...neroCard } } : { status: 'none', corpus: 'ocre', query: 'RIC 1' }) });
@@ -1911,10 +1912,13 @@ test('a slow specimen query never delays the card, and a late answer for a card 
   assert.equal(popup.element('result').hidden, false, 'the card is on screen while the query waits');
   assert.equal(popup.element('result-reference').textContent, neroCard.label);
   assert.equal(popup.element('specimens').hidden, true);
+  assert.equal(signals[0]?.aborted, false, 'the query carries a signal of its own');
   // The collector looks up something else before Nomisma answers, and that lookup finds nothing.
+  // Clearing the card cancels its query too, rather than leaving it running for the rest of its deadline.
   popup.element('quick-reference').value = 'RIC 1';
   await popup.element('reference-form').emit('submit');
   await settle();
+  assert.equal(signals[0].aborted, true);
   answer([{ page: 'https://example.org/coin', collection: 'Example Museum', obverse: 'https://example.org/o.jpg', reverse: 'https://example.org/r.jpg' }]);
   await settle(); await settle();
   assert.equal(popup.element('specimens').hidden, true);

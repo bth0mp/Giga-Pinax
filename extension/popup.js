@@ -500,12 +500,16 @@ function renderCard(card) {
 // list and not in Copy summary. Only a granted nomisma.org is asked; the popup never prompts for it here.
 const SPECIMEN_PHOTOS_KEY = 'giga-pinax-specimen-photos-v1';
 let specimenTicket = 0;
+// The shown card's query, cancelled with the card, so a superseded query stops rather than running out its deadline.
+let specimenRequest = null;
 function specimenPhotosOn() {
   try { return localStorage.getItem(SPECIMEN_PHOTOS_KEY) === 'on'; } catch { return false; }
 }
 
 function clearSpecimens() {
   specimenTicket += 1;
+  specimenRequest?.abort();
+  specimenRequest = null;
   $('specimens').hidden = true;
   $('specimen-list').replaceChildren();
 }
@@ -543,7 +547,8 @@ async function showSpecimens(card) {
   const ticket = specimenTicket;
   const shown = () => ticket === specimenTicket && currentCard === card;
   if (!(await hasHostAccess(['https://nomisma.org/*'])) || !shown()) return;
-  const specimens = await fetchSpecimens(card);
+  specimenRequest = new AbortController();
+  const specimens = await fetchSpecimens(card, { signal: specimenRequest.signal });
   if (!shown() || !specimens.length) return;
   $('specimen-list').replaceChildren(...specimens.slice(0, 3).map(specimenItem));
   $('specimens').hidden = false;
