@@ -3,6 +3,8 @@ import {
   importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
+import { CSV_TABLES, csvFiles } from './core/csv.js';
+import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
 import { CURRENCIES } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
@@ -49,8 +51,8 @@ function rememberTheme(theme) {
   }
 }
 
-function download(text, name) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+function download(text, name, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -403,6 +405,79 @@ $('export-backup').addEventListener('click', async () => {
   }
 });
 
+// One table per click. Several files from one click is what a zip would be for, and there is no zip library here.
+// Without one, a browser treats the second and later downloads of a click as automatic: Chrome and Brave can hold
+// them behind a "download multiple files" site permission, so a table could go missing without a word. A single
+// download from a click is an ordinary one in Brave, Chrome and Firefox alike.
+function renderCsvTables() {
+  $('csv-table').replaceChildren(...CSV_TABLES.map(({ key, label }) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    return option;
+  }));
+  $('csv-table').value = CSV_TABLES[0].key;
+}
+
+$('export-csv').addEventListener('click', async () => {
+  try {
+    const table = CSV_TABLES.find(({ key }) => key === $('csv-table').value) ?? CSV_TABLES[0];
+    const latest = await bridge.getSnapshot();
+    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+    const files = csvFiles(latest.value);
+    download(files[table.key], `giga-pinax-${table.key}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+    status(`${table.label} exported as CSV.`);
+  } catch (error) {
+    status(error.message || 'Could not export the CSV file.', true);
+  }
+});
+
+// The diagnostics are the collector's to hand over: nothing reads them but this card, and only a copy takes them off
+// the page. The list is read again for every copy, so a failure recorded since the page opened is in it.
+function manifestVersion() {
+  try { return (globalThis.browser ?? globalThis.chrome)?.runtime?.getManifest?.()?.version; } catch { return undefined; }
+}
+
+function showDiagnosticsCount(entries) {
+  $('diagnostics-count').textContent = entries.length === 0 ? 'No failures recorded.'
+    : `${entries.length} ${entries.length === 1 ? 'failure' : 'failures'} recorded on this device.`;
+}
+
+async function refreshDiagnostics() {
+  try {
+    showDiagnosticsCount(await readDiagnostics());
+  } catch {
+    $('diagnostics-count').textContent = 'The diagnostics could not be read.';
+  }
+}
+
+$('copy-diagnostics').addEventListener('click', async () => {
+  let entries;
+  try {
+    entries = await readDiagnostics();
+  } catch {
+    status('The diagnostics could not be read.', true);
+    return;
+  }
+  showDiagnosticsCount(entries);
+  try {
+    await navigator.clipboard.writeText(diagnosticsText(entries, { version: manifestVersion(), now: new Date().toISOString() }));
+    status('Diagnostics copied.');
+  } catch {
+    status('The diagnostics could not be copied. Click Copy diagnostics again with this page in front.', true);
+  }
+});
+
+$('clear-diagnostics').addEventListener('click', async () => {
+  try {
+    await clearDiagnostics();
+    showDiagnosticsCount([]);
+    status('Diagnostics cleared.');
+  } catch {
+    status('The diagnostics could not be cleared.', true);
+  }
+});
+
 // Raw data is the rescue route: it reads storage without validating it, so it stays available even
 // when nothing else on this page could load.
 $('export-raw').addEventListener('click', async () => {
@@ -527,5 +602,7 @@ $('confirm-import').addEventListener('click', async () => {
 });
 
 clearPreview();
+renderCsvTables();
+void refreshDiagnostics();
 void load().catch((error) => status(error.message || 'Could not load settings.', true));
 void loadCatalogueInfo();

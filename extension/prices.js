@@ -1,4 +1,5 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
@@ -845,10 +846,10 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
   const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES } = options;
   try {
     const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
-    if (!response.ok) return { status: 'network' };
+    if (!response.ok) { void recordFetchFailure('acsearch', response); return { status: 'network' }; }
     let html;
     try { html = await boundedText(response, maxBytes, { fatal: false }); }
-    catch (error) { if (error?.message === 'too-large') return { status: 'network', reason: 'too-large' }; throw error; }
+    catch (error) { if (error?.message === 'too-large') { void recordFetchFailure('acsearch', error, { bytes: maxBytes }); return { status: 'network', reason: 'too-large' }; } throw error; }
     const lots = extractLots(html);
     // A search without hits comes back as acsearch's "No results found" page, which has no results array at all.
     if (!lots) return /No results found/i.test(html) ? { status: 'empty', term } : { status: 'network' };
@@ -861,7 +862,8 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     if (summary.count === 0) return summary.uncounted.length ? { status: 'unpriced', term, examples: summary.uncounted } : { status: 'unpriced', term };
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };
-  } catch {
+  } catch (error) {
+    void recordFetchFailure('acsearch', error);
     return { status: 'network' };
   }
 }

@@ -5,6 +5,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 import * as backup from '../extension/core/backup.js';
 import * as bidTools from '../extension/bid-tools.js';
+import * as csv from '../extension/core/csv.js';
+import * as diagnostics from '../extension/core/diagnostics.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
@@ -66,7 +68,11 @@ function loadSettings({
   language = 'en-US',
   siteDataBlocked = false,
   snapshotReply = { ok: true, value: snapshot },
+  diagnosticsStored = {},
+  clipboard: givenClipboard = null,
 } = {}) {
+  const copied = [];
+  const clipboard = givenClipboard ?? { writeText: async (text) => { copied.push(text); } };
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
   const createElement = document.createElement.bind(document);
@@ -91,6 +97,10 @@ function loadSettings({
     },
   };
 
+  const diagnosticsStorage = {
+    get: async (key) => (Object.hasOwn(diagnosticsStored, key) ? { [key]: structuredClone(diagnosticsStored[key]) } : {}),
+    set: async (items) => { Object.assign(diagnosticsStored, structuredClone(items)); },
+  };
   const localStorage = {
     getItem: (key) => (stored.has(key) ? stored.get(key) : null),
     setItem: (key, value) => { stored.set(key, String(value)); },
@@ -102,11 +112,16 @@ function loadSettings({
   };
 
   const sandbox = {
-    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue,
+    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv,
+    diagnosticsText: diagnostics.diagnosticsText,
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
+    navigator: { language, clipboard },
     browser: { runtime: { getManifest: () => manifest } },
+    // The diagnostics buffer lives in extension storage; the page reads and clears it through the real module.
+    readDiagnostics: () => diagnostics.readDiagnostics({ storage: diagnosticsStorage }),
+    clearDiagnostics: () => diagnostics.clearDiagnostics({ storage: diagnosticsStorage }),
     globalThis: null,
     Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
     Error, TypeError, TextEncoder, structuredClone,
@@ -127,7 +142,7 @@ function loadSettings({
   // Each download is one object URL followed by one anchor that is clicked, so the two line up.
   const downloads = () => created
     .filter((element) => element.tagName === 'a' && element.clickCount > 0)
-    .map((element, index) => ({ name: element.download, text: blobs[index]?.parts?.[0] }));
+    .map((element, index) => ({ name: element.download, text: blobs[index]?.parts?.[0], type: blobs[index]?.type }));
 
   return {
     document,
@@ -139,6 +154,8 @@ function loadSettings({
     downloads,
     stored,
     state,
+    copied,
+    diagnosticsStored,
   };
 }
 
@@ -823,6 +840,114 @@ test('Export backup writes an importable file of the current records', async () 
   assert.match(file.name, /^giga-pinax-\d{4}-\d{2}-\d{2}\.json$/);
   assert.equal(backup.validateBackup(file.text).ok, true);
   assert.equal(page.status(), 'Backup exported.');
+});
+
+// --- CSV export ----------------------------------------------------------------------------------
+
+test('Export CSV offers every table and downloads the chosen one as a UTF-8 CSV file', async () => {
+  const snapshot = snapshotWith({ lots: [lot(uuid(1), { title: '=Hadrian, "denarius"' })] });
+  const page = await openSettings({ snapshot });
+  const choices = page.element('csv-table').querySelectorAll('option');
+  assert.deepEqual(choices.map((option) => option.value), csv.CSV_TABLES.map(({ key }) => key));
+  assert.deepEqual(choices.map((option) => option.textContent), csv.CSV_TABLES.map(({ label }) => label));
+
+  await page.element('export-csv').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-lots-\d{4}-\d{2}-\d{2}\.csv$/);
+  assert.equal(file.type, 'text/csv;charset=utf-8');
+  assert.equal(file.text, csv.csvFiles(snapshot).lots);
+  assert.equal(page.status(), 'Watchlist lots exported as CSV.');
+  assert.equal(page.statusIsError(), 'false');
+});
+
+test('Export CSV writes the table chosen in the list, one file per click', async () => {
+  const snapshot = snapshotWith({ lots: [lot(uuid(1), {
+    bidHistory: [{ id: uuid(9), action: 'planned-revised', amount: { currency: 'EUR', minor: 1000 }, recordedAt: NOW }],
+    plannedBid: { amount: { currency: 'EUR', minor: 1000 } },
+  })] });
+  const page = await openSettings({ snapshot });
+  page.element('csv-table').value = 'bids';
+  await page.element('export-csv').click();
+  await settle();
+  page.element('csv-table').value = 'outcomes';
+  await page.element('export-csv').click();
+  await settle();
+  const files = page.downloads();
+  assert.deepEqual(files.map(({ name }) => name.replace(/-\d{4}-\d{2}-\d{2}/, '')), ['giga-pinax-bids.csv', 'giga-pinax-outcomes.csv']);
+  assert.equal(files[0].text, csv.csvFiles(snapshot).bids);
+  assert.equal(page.status(), 'Outcome history exported as CSV.');
+});
+
+test('a CSV export that cannot read the records says so and writes no file', async () => {
+  const page = await openSettings({ snapshotReply: { ok: false, message: 'Could not read local records.' } });
+  await page.element('export-csv').click();
+  await settle();
+  assert.deepEqual(page.downloads(), []);
+  assert.equal(page.status(), 'Could not read local records.');
+  assert.equal(page.statusIsError(), 'true');
+});
+
+// --- diagnostics ----------------------------------------------------------------------------------
+
+const DIAGNOSTIC_ENTRIES = [
+  { at: '2026-09-20T08:00:00.000Z', page: 'popup', area: 'acsearch', code: 'http', status: 503, version: '0.32.1' },
+  { at: '2026-09-21T09:30:00.000Z', page: 'background', area: 'store', code: 'storage', version: '0.32.1' },
+];
+
+test('the Diagnostics card says how many failures are kept, and copies them as plain text', async () => {
+  const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: DIAGNOSTIC_ENTRIES } });
+  assert.equal(page.element('diagnostics-count').textContent, '2 failures recorded on this device.');
+  await page.element('copy-diagnostics').click();
+  await settle();
+  assert.equal(page.copied.length, 1);
+  const [text] = page.copied;
+  assert.match(text, /^Giga Pinax diagnostics\nVersion: 0\.32\.1\nCopied: \d{4}-\d{2}-\d{2}T[\d:.]+Z\n/);
+  assert.ok(text.endsWith([
+    'Failures recorded: 2 (oldest first, at most 50 kept)',
+    '2026-09-20T08:00:00.000Z popup acsearch http 503 (0.32.1)',
+    '2026-09-21T09:30:00.000Z background store storage (0.32.1)',
+    '',
+  ].join('\n')), text);
+  assert.equal(page.status(), 'Diagnostics copied.');
+  assert.equal(page.statusIsError(), 'false');
+});
+
+test('with nothing recorded the card says so, and a copy still says so in words', async () => {
+  const page = await openSettings();
+  assert.equal(page.element('diagnostics-count').textContent, 'No failures recorded.');
+  await page.element('copy-diagnostics').click();
+  await settle();
+  assert.match(page.copied[0], /No failures recorded\.\n$/);
+});
+
+test('a clipboard that refuses the copy is reported, and nothing claims it worked', async () => {
+  const page = await openSettings({
+    diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: DIAGNOSTIC_ENTRIES },
+    clipboard: { writeText: async () => { throw new Error('Document is not focused.'); } },
+  });
+  await page.element('copy-diagnostics').click();
+  await settle();
+  assert.equal(page.status(), 'The diagnostics could not be copied. Click Copy diagnostics again with this page in front.');
+  assert.equal(page.statusIsError(), 'true');
+});
+
+test('Clear empties the diagnostics and says so', async () => {
+  const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: DIAGNOSTIC_ENTRIES } });
+  await page.element('clear-diagnostics').click();
+  await settle();
+  assert.deepEqual(page.diagnosticsStored[diagnostics.DIAGNOSTICS_KEY], []);
+  assert.equal(page.element('diagnostics-count').textContent, 'No failures recorded.');
+  assert.equal(page.status(), 'Diagnostics cleared.');
+  assert.equal(page.element('clear-diagnostics').getAttribute('aria-label'), 'Clear diagnostics');
+});
+
+test('the diagnostics are never written into an exported backup', async () => {
+  const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: DIAGNOSTIC_ENTRIES } });
+  await page.element('export-backup').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.ok(!file.text.includes('acsearch') && !file.text.includes('diagnostics'));
 });
 
 // --- the Updates card ---------------------------------------------------------------------------

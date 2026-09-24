@@ -3,7 +3,7 @@ import { failure } from './validate.js';
 export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 
 const CURRENCY_SET = new Set(CURRENCIES);
-const FRACTION_DIGITS = 2;
+export const FRACTION_DIGITS = 2;
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
 const DECIMAL = /^(\d+)([.,])(\d+)$/;

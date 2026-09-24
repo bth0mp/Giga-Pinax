@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { SCHEMA_VERSION } from '../extension/core/records.js';
 import { STORAGE_KEY } from '../extension/store.js';
+import { DIAGNOSTICS_KEY } from '../extension/core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
 
 const listeners = {
@@ -31,6 +32,7 @@ globalThis.browser = {
     onInstalled: { addListener(listener) { listeners.installed.push(listener); } },
     onStartup: { addListener(listener) { listeners.startup.push(listener); } },
     getURL(path) { return `moz-extension://test/${path}`; },
+    getManifest() { return { version: '0.33.0' }; },
   },
   contextMenus: {
     async removeAll() { menus.length = 0; },
@@ -425,6 +427,83 @@ test('a lookup window that cannot be opened is not reported as a lost capture', 
   for (let index = 0; index < 8; index += 1) await flush();
   assert.notEqual(badges.at(-1), '!');
   assert.equal(titles.at(-1), '');
+});
+
+// --- diagnostics ----------------------------------------------------------------------------------
+
+const diagnostics = () => stored[DIAGNOSTICS_KEY] ?? [];
+const settleDiagnostics = async () => { for (let index = 0; index < 12; index += 1) await flush(); };
+
+test('a store command refused for its validity is recorded in the diagnostics, without what it carried', async () => {
+  const before = diagnostics().length;
+  const reply = await send({ type: 'lot.delete', requestId: crypto.randomUUID(), lotId: 'RIC II 207 Hadrian', expectedRevision: 0 });
+  assert.equal(reply.code, 'validation');
+  await settleDiagnostics();
+  assert.equal(diagnostics().length, before + 1);
+  const entry = diagnostics().at(-1);
+  assert.match(entry.at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual({ ...entry, at: 'at' }, { at: 'at', page: 'background', area: 'store', code: 'validation', version: '0.33.0' });
+  assert.ok(!JSON.stringify(stored[DIAGNOSTICS_KEY]).includes('Hadrian'));
+  assert.ok(!JSON.stringify(stored[STORAGE_KEY]).includes('diagnostics'), 'the buffer is never part of the records');
+
+  // A command that works, or one refused for an everyday reason such as a conflict, is not a failure worth keeping.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  await settleDiagnostics();
+  assert.equal(diagnostics().length, before + 1);
+});
+
+// A workspace link to a capture draft that has expired or was already used is refused as `validation`, and that is an
+// everyday event: recorded, it would push real failures out of a list of fifty.
+test('an expired or already-used draft link is not recorded as a failure', async () => {
+  const before = diagnostics().length;
+  for (const type of ['draft.get', 'draft.consume']) {
+    const reply = await send({ type, requestId: crypto.randomUUID(), draftId: '00000000-0000-4000-8000-000000000999' });
+    assert.equal(reply.code, 'validation', type);
+  }
+  await settleDiagnostics();
+  assert.equal(diagnostics().length, before);
+});
+
+test('a failed reminder reconcile, a capture that cannot be shown and a lookup window that cannot open are recorded', async () => {
+  const intact = structuredClone(stored[STORAGE_KEY]);
+  stored[STORAGE_KEY].lots = 'not a list';
+  const realError = console.error;
+  console.error = () => {};
+  try {
+    await wake();
+  } finally {
+    console.error = realError;
+    stored[STORAGE_KEY] = intact;
+  }
+  await settleDiagnostics();
+  assert.deepEqual(
+    { ...diagnostics().at(-1), at: 'at' },
+    { at: 'at', page: 'background', area: 'reminders', code: 'storage', version: '0.33.0' },
+  );
+
+  tabCreateFails = true;
+  listeners.clicked[0]({
+    menuItemId: 'auction-companion:research-selection', selectionText: 'Nero denarius, Rome', pageUrl: 'https://house.test/sale?q=secret',
+  });
+  await settleDiagnostics();
+  tabCreateFails = false;
+  assert.deepEqual({ ...diagnostics().at(-1), at: 'at' }, { at: 'at', page: 'background', area: 'capture', code: 'not-opened', version: '0.33.0' });
+
+  const realCreate = globalThis.browser.windows.create;
+  globalThis.browser.windows.create = async () => { throw new Error('no window'); };
+  try {
+    listeners.clicked[0]({ menuItemId: 'giga-pinax-lookup', selectionText: 'RIC 306' });
+    await settleDiagnostics();
+  } finally {
+    globalThis.browser.windows.create = realCreate;
+  }
+  assert.deepEqual({ ...diagnostics().at(-1), at: 'at' }, { at: 'at', page: 'background', area: 'lookup', code: 'not-opened', version: '0.33.0' });
+  const written = JSON.stringify(stored[DIAGNOSTICS_KEY]);
+  for (const secret of ['Nero', 'house.test', 'secret', 'RIC 306']) assert.ok(!written.includes(secret), secret);
+
+  // Leave the toolbar as the earlier tests expect to find it.
+  await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  await wake();
 });
 
 test.after(() => { delete globalThis.browser; });
