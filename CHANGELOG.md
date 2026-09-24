@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- At phone width the workspace's navigation wraps onto a second line, so **History** and **Settings** are no longer cut off at the right edge with no sign that they are there.
+
 ## [0.34.1] - 2026-09-24
 
 ### Changed

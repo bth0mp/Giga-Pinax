@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand, buildLotSaveCommand, buildLotUndoCommand,
@@ -1040,4 +1041,34 @@ test('the offered auction keeps the page’s instant in the collector’s own zo
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-16T12:00Z', startsAt: '2026-10-15' }, 'UTC').eventKind, 'lot-closes');
   for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30', '2026-10-15T14:00+14:30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
+});
+
+// The workspace's stylesheet, read as rules: `{ media, selector, declarations }` for every rule, with the media query
+// the rule sits in ('' at the top level). The file is written by hand, one rule after another, so this reads it.
+function workspaceCssRules() {
+  const css = readFileSync(new URL('../extension/workspace.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [];
+  const read = (text, media) => {
+    let index = 0;
+    while (index < text.length) {
+      const open = text.indexOf('{', index);
+      if (open === -1) break;
+      const head = text.slice(index, open).trim();
+      let depth = 1; let close = open + 1;
+      while (depth && close < text.length) { if (text[close] === '{') depth += 1; else if (text[close] === '}') depth -= 1; close += 1; }
+      const body = text.slice(open + 1, close - 1);
+      if (head.startsWith('@media')) read(body, head.replace(/\s+/g, ''));
+      else for (const selector of head.split(',')) rules.push({ media, selector: selector.trim(), declarations: body });
+      index = close;
+    }
+  };
+  read(css, '');
+  return rules;
+}
+const cssDeclarations = (selector, media = '') => workspaceCssRules()
+  .filter((rule) => rule.selector === selector && rule.media === media).map((rule) => rule.declarations).join(';');
+
+// W-06: at phone width the nav wraps onto a second line instead of hiding History and Settings off screen.
+test('the workspace nav wraps at phone width, so no route is scrolled out of sight', () => {
+  assert.match(cssDeclarations('.workspace-nav', '@media(max-width:760px)'), /flex-wrap:wrap/);
 });
