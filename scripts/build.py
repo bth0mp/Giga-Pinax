@@ -36,6 +36,7 @@ ASSET_PATHS = (
     "core/backup.js",
     "core/csv.js",
     "core/diagnostics.js",
+    "core/drafts.js",
     "core/evidence.js",
     "core/fields.js",
     "core/lot-context.js",
