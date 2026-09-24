@@ -62,12 +62,13 @@ python -m unittest discover -s tests -p "test_*.py"
 python scripts/build.py
 npm ci --prefix tools/web-ext
 tools/web-ext/node_modules/.bin/web-ext lint --source-dir dist/firefox --warnings-as-errors --self-hosted
-npx --yes --package typescript@6.0.3 tsc -p jsconfig.json --noEmit
+npm ci --prefix tools/typescript
+tools/typescript/node_modules/.bin/tsc -p jsconfig.json --noEmit
 ```
 
 The popup, the workspace and the record store are each split by responsibility into modules beside them: `popup-*.js` holds the popup's fixed words, its host access requests, its frame (element lookup, scrolling, theme) and the panel pieces drawn from their arguments alone; `workspace-*.js` the workspace's views, its forms and its editors' bookkeeping; `store-*.js` the store's record builders, reminder reconciliation and quarantine restore; and in `core/`, `fields.js` holds the record bounds and field validators, `drafts.js` a draft's payload and `projections.js` the views' exposure and collection totals. `core/types.js` writes down, as JSDoc typedefs and nothing else, the shapes the store keeps. The files that start with `// @ts-check` (all of `core/`, the store and the modules above) are type-checked by the last command, which uses no build step and emits nothing; CI runs it on every pull request and every push to main. The page tests run each page with the modules it was split into in one sandbox (`tests/helpers/dom.mjs`, `PAGE_MODULES`).
 
-`python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext`, pinned with its whole dependency tree in `tools/web-ext/`, validates the Firefox package and, in the release workflow, signs it. Publishing is described in the [release guide](docs/RELEASING.md).
+`python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext`, pinned with its whole dependency tree in `tools/web-ext/`, validates the Firefox package and, in the release workflow, signs it; TypeScript, pinned with its lockfile in `tools/typescript/`, checks the types. Publishing is described in the [release guide](docs/RELEASING.md).
 
 ## Data attribution
 

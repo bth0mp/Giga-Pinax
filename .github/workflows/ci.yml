@@ -42,8 +42,8 @@ jobs:
         run: tools/web-ext/node_modules/.bin/web-ext lint --source-dir dist/firefox --warnings-as-errors --self-hosted
 
   # The JSDoc types of the store, core/ and the page modules (jsconfig.json), checked with no build step: nothing is
-  # emitted and the extension ships as it is. TypeScript 6 has no dependencies of its own (7 adds a native binary per
-  # platform), so the exact version pins the whole tool.
+  # emitted and the extension ships as it is. TypeScript is pinned, with its integrity hash, in
+  # tools/typescript/package-lock.json and installed with npm ci, as web-ext is.
   types:
     runs-on: ubuntu-latest
     permissions:
@@ -55,5 +55,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
+      - name: Install the pinned TypeScript
+        run: npm ci --prefix tools/typescript --no-audit --no-fund
       - name: Check the types
-        run: npx --yes --package typescript@6.0.3 tsc -p jsconfig.json --noEmit
+        run: tools/typescript/node_modules/.bin/tsc -p jsconfig.json --noEmit
