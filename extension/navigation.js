@@ -49,6 +49,7 @@ export function openSettings(section = '', api = apiDefault()) {
   return openPage(`settings.html${fragment}`, api);
 }
 
-export function openWorkspace(route = 'watchlist', api = apiDefault()) {
-  return openPage(`workspace.html#${encodeURIComponent(route)}`, api);
+// queue names a Watchlist queue to open on ("needs-outcome"); the workspace ignores a name its Queue select does not list.
+export function openWorkspace(route = 'watchlist', api = apiDefault(), queue = '') {
+  return openPage(`workspace.html#${encodeURIComponent(route)}${queue ? `?queue=${encodeURIComponent(queue)}` : ''}`, api);
 }

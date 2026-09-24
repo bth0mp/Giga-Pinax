@@ -39,10 +39,29 @@ function pricedAcsearchPage(scale = 1) {
   return readFileSync(FIXTURE, 'utf8').replace(/"price": "\*"/g, () => `"price": "${(price += 40) * scale}"`);
 }
 
+// A Price 23 page as the re-review's probe wrote it: ten results, eight citing Price 23 (two of them drachms), one Philip II stater that cites
+// something else and one tetradrachm without a price - so the counts line carries a filter, the matches and "1 without a price".
+function price23Page(scale = 1) {
+  const lot = (id, date, price, description) => ({ id, title: `House ${id % 100}, Auction ${id % 7}, Lot ${id % 50}`, description,
+    image: 'media/css/images/design/blank.gif', date, price: String(price), last: false });
+  const tetradrachm = 'Greek. Kings of Macedon. Alexander III. Tetradrachm (silver, 17.1 g), Amphipolis. Price 23. Very Fine.';
+  const drachm = 'Greek. Kings of Macedon. Alexander III. Drachm (silver, 4.2 g), Sardes. Price 23. Very Fine.';
+  const lots = [
+    lot(90030001, '20.08.2026', 300 * scale, tetradrachm), lot(90030002, '10.05.2026', 280 * scale, tetradrachm),
+    lot(90030003, '03.02.2026', 320 * scale, tetradrachm), lot(90030004, '14.11.2025', 290 * scale, drachm),
+    lot(90030005, '12.06.2023', 200 * scale, tetradrachm), lot(90030006, '02.03.2023', 210 * scale, tetradrachm),
+    lot(90030007, '21.09.2022', 190 * scale, tetradrachm), lot(90030008, '05.01.2022', 220 * scale, drachm),
+    lot(90030009, '27.06.2026', 900 * scale, 'Greek. Kings of Macedon. Philip II. Stater (gold, 8.6 g), Pella. Le Rider 12. Extremely Fine.'),
+    { ...lot(90030010, '05.06.2026', 0, tetradrachm), price: '*' },
+  ];
+  return readFileSync(FIXTURE, 'utf8').replace(/initSearchResults = \[[\s\S]*?\];\s*\n/, `initSearchResults = ${JSON.stringify(lots)};\n`);
+}
+
 const refused = [];
 
 // acsearchDelay holds the acsearch answer back, as a real search takes a second or two to come in.
-async function launch({ locale, acsearchDelay = 0, priceScale = 1 } = {}) {
+// acsearchPage replaces the fixture page with one of the test's own.
+async function launch({ locale, acsearchDelay = 0, priceScale = 1, acsearchPage = null } = {}) {
   assert.ok(existsSync(join(EXTENSION, 'manifest.json')), `${EXTENSION} holds no build: run python scripts/build.py brave first`);
   const profile = await mkdtemp(join(tmpdir(), 'giga-pinax-e2e-'));
   const context = await chromium.launchPersistentContext(profile, {
@@ -62,7 +81,7 @@ async function launch({ locale, acsearchDelay = 0, priceScale = 1 } = {}) {
     if (url.protocol === 'chrome-extension:') return route.continue();
     if (url.origin === 'https://www.acsearch.info' && url.pathname === '/search.html') {
       if (acsearchDelay) await new Promise((resolve) => { setTimeout(resolve, acsearchDelay); });
-      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: pricedAcsearchPage(priceScale) });
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: acsearchPage ?? pricedAcsearchPage(priceScale) });
     }
     refused.push(url.href);
     return route.abort('blockedbyclient');
@@ -192,6 +211,77 @@ test('prices arriving after the card leave the card where it is', async () => {
     } finally {
       await browser.close();
     }
+  }
+});
+
+// Fix round 2: the stat lines under the median wrap rather than lose a count at the side panel's widths, and one wrap moves
+// nothing, since the block holds a second line's room under 400 px. Two wraps (CHF millions at 320) may move only what is
+// under the block.
+test('the stat lines keep every count at 360 and 320, and one wrap moves nothing', async () => {
+  for (const [scale, currency, sizes] of [[1, '', [360, 320]], [5000, 'CHF', [320]]]) {
+    const browser = await launch({ acsearchDelay: 1500, acsearchPage: price23Page(scale) });
+    try {
+      for (const width of sizes) {
+        const label = `${width} px, ×${scale} ${currency}`;
+        const page = await browser.context.newPage();
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(browser.url('popup.html?panel=1'));
+        if (currency) {
+          await page.locator('#refine-summary').click();
+          await page.locator('#currency').selectOption(currency);
+        }
+        await lookUp(page, 'Price 23');
+        await page.locator('#prices-panel[data-state="loading"]').waitFor({ timeout: 15000 });
+        await page.waitForTimeout(900);
+        const frame = () => page.evaluate(() => ({
+          result: Math.round(document.getElementById('result').getBoundingClientRect().top),
+          median: Math.round(document.getElementById('median-line').getBoundingClientRect().top),
+          range: Math.round(document.getElementById('range-block').getBoundingClientRect().top),
+        }));
+        const before = await frame();
+        await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+        await page.waitForTimeout(600);
+        const lines = await page.evaluate(() => ['stat-sales', 'stat-counts'].map((id) => {
+          const line = document.getElementById(id);
+          return { id, text: line.textContent, cut: line.scrollWidth > line.clientWidth, lines: Math.round(line.getBoundingClientRect().height / 17) };
+        }));
+        for (const line of lines) assert.equal(line.cut, false, `${label}: ${line.id} is cut: ${line.text}`);
+        assert.match(lines[1].text, /1 without a price/, label);
+        const after = await frame();
+        assert.equal(after.result, before.result, label);
+        assert.equal(after.median, before.median, label);
+        if (lines[0].lines + lines[1].lines <= 3) assert.equal(after.range, before.range, `${label}: ${JSON.stringify(lines)}`);
+        await page.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  }
+});
+
+// Fix round 2 (re-review Important 2): what Save reference to watchlist says is said under its button, so the Reference box
+// stays uncovered and can be clicked straight away.
+test('after Save reference to watchlist the Reference box is still the thing under its own centre', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await lookUp(page, 'Price 23');
+    await page.locator('#companion-save-watchlist:not([disabled])').waitFor({ timeout: 15000 });
+    await page.locator('#companion-save-watchlist').click();
+    await page.locator('#announcement', { hasText: 'Watchlist details are ready to review.' }).waitFor({ state: 'attached', timeout: 15000 });
+    await page.bringToFront();
+    // The panel scrolled as after a longer answer, so the Reference row is the one stuck under the tabs.
+    await page.evaluate(() => document.querySelector('.popup-scroll').scrollTo(0, 300));
+    await page.waitForTimeout(300);
+    const hit = await page.evaluate(() => {
+      const box = document.getElementById('quick-reference').getBoundingClientRect();
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.id;
+    });
+    assert.equal(hit, 'quick-reference');
+  } finally {
+    await browser.close();
   }
 });
 

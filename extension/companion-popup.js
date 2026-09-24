@@ -3,6 +3,7 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
+import { lotsNeedingOutcome } from './core/projections.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
@@ -244,8 +245,8 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
-// How long the status line stays over the panel before it clears itself.
-const STATUS_SHOWN_MS = 8000;
+// How long a message stands in a hint line before the line's own words come back.
+const SAID_FOR_MS = 8000;
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
 // background, so the note must not promise a loss that is not one.
 const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
@@ -299,14 +300,27 @@ async function initCompanionPopup() {
     live.textContent = '';
     requestAnimationFrame(() => { live.textContent = message; });
   };
-  // The line lies over the top of the panel (companion-popup.css), so it clears itself once read; the live region has said it already.
-  let statusTimer = 0;
-  const announce = (message, error = false) => {
-    $('companion-status').textContent = message;
-    $('companion-status').classList.toggle('companion-error', error);
+  // A message is said where it happened: in the hint line under the control that caused it (the Save hint, the capture line, the Upcoming note, the
+  // storage note), for a while, and then that line's own words come back. Nothing is drawn over the panel, so the Reference box is never covered.
+  // The live region speaks it too. With no line (a Watch whose failure the research half shows beside its list), it is only spoken.
+  const swapped = new Map();
+  const announce = (message, error = false, anchor = 'storage-note') => {
     speak(message);
-    clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => { if ($('companion-status').textContent === message) $('companion-status').textContent = ''; }, STATUS_SHOWN_MS);
+    const line = anchor ? $(anchor) : null;
+    if (!line) return;
+    const own = swapped.get(anchor) ?? { text: line.textContent, hidden: line.hidden, timer: 0 };
+    clearTimeout(own.timer);
+    line.textContent = message;
+    line.hidden = false;
+    line.classList.toggle('said-error', error);
+    own.timer = setTimeout(() => {
+      swapped.delete(anchor);
+      if (line.textContent !== message) return;
+      line.textContent = own.text;
+      line.hidden = own.hidden;
+      line.classList.toggle('said-error', false);
+    }, SAID_FOR_MS);
+    swapped.set(anchor, own);
   };
   const activate = (name, focus = false) => {
     for (const tabName of TABS) {
@@ -354,6 +368,10 @@ async function initCompanionPopup() {
     const summary = buildWatchlistSummary(snapshot);
     $('companion-next-event').textContent = summary.nextEvent?.name ?? 'No upcoming auction';
     $('companion-due-count').textContent = String(summary.dueAuctionCount);
+    // Lots whose auction has ended with no outcome recorded, and the way to the workspace queue that lists them.
+    const ended = lotsNeedingOutcome(snapshot).length;
+    $('companion-needs-outcome').hidden = ended === 0;
+    $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
     for (const currency of CURRENCIES) {
       const item = summary.exposure[currency];
       $('companion-exposure-' + currency).textContent = `${formatMoney({ currency, minor: item.hammerMinor }, navigator.language)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
@@ -385,8 +403,9 @@ async function initCompanionPopup() {
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let draftSavePending = false;
-  const saveWatchlistDraft = async (payload, leftOff = []) => {
-    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
+  // anchor: the hint line under the control the save came from (null: the caller says it elsewhere).
+  const saveWatchlistDraft = async (payload, leftOff = [], anchor = 'companion-save-hint') => {
+    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true, anchor); return { ok: false, message: STORAGE_UNAVAILABLE }; }
     // The two save buttons are disabled while a save is pending, so only a Watch in the research half reaches this: refused aloud, not dropped.
     if (draftSavePending) return { ok: false, message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' };
     draftSavePending = true;
@@ -394,9 +413,10 @@ async function initCompanionPopup() {
     $('companion-capture-watchlist').disabled = true;
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
-      if (!saved.ok) { announce(saved.message, true); return saved; }
+      if (!saved.ok) { announce(saved.message, true, anchor === 'upcoming-note' ? null : anchor); return saved; }
       // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
-      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.');
+      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.',
+        false, anchor);
     } finally {
       draftSavePending = false;
       $('companion-save-watchlist').disabled = !canSave(safeCard);
@@ -408,7 +428,7 @@ async function initCompanionPopup() {
   // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
   // lot is acsearch's, not the page captured here. A failure is handed back too, to be said beside the list Watch was pressed in.
   addEventListener('giga-pinax-watch', async (event) => {
-    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail));
+    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail), [], 'upcoming-note');
     if (saved?.ok === false) dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
   });
 
@@ -477,7 +497,7 @@ async function initCompanionPopup() {
       applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
       // The message is an alert beside the Reference box already: announcing it as well would have it read out twice.
-      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.');
+      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.', false, 'companion-capture-source');
       else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
@@ -495,7 +515,7 @@ async function initCompanionPopup() {
       for (const id of captureFieldIds) $(id).value = '';
       $('companion-capture-source').textContent = '';
       applyCaptureState(false, false, true);
-      // Said once, beside the button that failed: not in the status line as well, and never over the Reference box's own line.
+      // Said once, beside the button that failed, and never over the Reference box's own line.
       $('companion-capture-error').textContent = error.message;
       $('companion-capture-error').hidden = false;
       speak(error.message);
@@ -518,7 +538,7 @@ async function initCompanionPopup() {
     const draft = reviewedCapture();
     if (!draft) return;
     const payload = watchlistPayloadFromCapture(draft);
-    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload));
+    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload), 'companion-capture-source');
   });
   // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
   // stopped being about that page.
@@ -535,7 +555,7 @@ async function initCompanionPopup() {
   $('companion-clear-auction-context').addEventListener('click', () => {
     if (!captureDraft) return;
     dropAuctionContext();
-    announce('Auction context cleared.');
+    announce('Auction context cleared.', false, 'companion-capture-source');
   });
   // A lookup this window was SENT is about a page somebody right-clicked on, not the one captured here, so the captured
   // page must not ride along on the coin saved from it. popup.js says so before it opens the card. A reference typed into
@@ -543,11 +563,16 @@ async function initCompanionPopup() {
   addEventListener('giga-pinax-lookup-received', () => {
     if (researchAuctionContext) dropAuctionContext();
   });
-  const navigate = async (action, fallback) => {
+  // A link that could not open says so under the Watchlist tab's own buttons, or in the storage note for the header's.
+  const navigate = async (action, fallback, anchor = 'storage-note') => {
     const result = await runVisibleAction(action, fallback);
-    if (!result.ok) announce(result.message, true);
+    if (!result.ok) announce(result.message, true, anchor);
   };
-  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.'));
+  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) {
+    $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
+  }
+  $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
+    'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 

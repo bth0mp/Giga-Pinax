@@ -1153,6 +1153,9 @@ async function initWorkspace() {
     }
   }
   function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
+  // The popup opens a queue by name ("#watchlist?queue=needs-outcome"); a name the Queue select does not list is ignored.
+  const namedQueue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
+  if (namedQueue && [...$('lot-queue').options].some((option) => option.value === namedQueue)) $('lot-queue').value = namedQueue;
   setRoute();
   if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {

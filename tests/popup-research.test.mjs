@@ -2295,14 +2295,19 @@ test('a search that is not the reference\'s own draws no filter row while it loa
 });
 
 // Fix round (review Minor 2, 3, 6, 7).
-test('Change search never wraps, and the stat lines hold one line each', () => {
+// Fix round 2 (re-review Important 3 and Minor 8): the stat lines were cut with an ellipsis at 360 and 320, hiding "1 without a price". They wrap
+// now, and the block holds a second line's room under 400 px, so one wrap moves nothing; the trend, which arrives with the answer, stands under the
+// range block, beside the year strip and the grade medians that arrive with it.
+test('Change search never wraps; the stat lines wrap inside a held height; the trend comes after the range', () => {
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
   assert.match(css, /\.price-search summary > span:first-child \{[^}]*flex-shrink:0; white-space:nowrap/);
-  assert.match(css, /\.stat-meta \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis/);
-  // The trend is a sentence of its own under the block, so the block keeps one height whatever the page holds.
+  const statMeta = /\.stat-meta \{[^}]*\}/.exec(css)[0];
+  assert.doesNotMatch(statMeta, /nowrap|ellipsis|overflow:hidden/);
+  assert.match(css, /\.median-block \{min-height:98px;\}/);
+  assert.match(css, /@media \(max-width:399px\) \{[^@]*\.median-block \{min-height:115px;\}/);
   const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  const block = html.slice(html.indexOf('<div class="median-block">'), html.indexOf('<div id="range-block"'));
-  assert.doesNotMatch(block.slice(0, block.lastIndexOf('</div>')), /id="sale-trend"/);
+  assert.ok(html.indexOf('id="range-block"') < html.indexOf('id="sale-trend"'));
+  assert.ok(html.indexOf('id="sale-trend"') < html.indexOf('id="year-medians"'));
 });
 
 test('each stat line carries its whole text as a tooltip, since a narrow panel may cut it', async () => {

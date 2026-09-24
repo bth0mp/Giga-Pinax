@@ -739,7 +739,7 @@ function watchUpcoming(sale, context) {
     pageUrl: lotUrl(sale), closesAt: isoDay(sale.date) }) }));
 }
 
-// A Watch the other half could not save: it says why on its own status line, at the foot of the popup, and hands the reason back to be shown here,
+// A Watch the other half could not save: it speaks the reason and hands it back to be shown here,
 // beside the list the collector pressed Watch in. The live region has already spoken it, so this line is only seen.
 window.addEventListener('giga-pinax-watch-failed', (event) => {
   $('upcoming-status').textContent = String(event.detail?.message ?? '');
