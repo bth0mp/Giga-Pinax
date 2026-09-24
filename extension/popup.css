@@ -149,6 +149,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .price-search {margin-top:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
 .price-search summary {list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; min-height:40px; font-size:12px; font-weight:600; color:var(--accent);}
 .price-search summary::-webkit-details-marker {display:none;}
+.price-search summary > span:first-child {flex-shrink:0; white-space:nowrap;}
 .price-search-term {flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-mono); font-size:11px; font-weight:400; color:var(--muted); text-align:right;}
 .price-search[open] .chevron {transform:rotate(180deg);}
 .prices {padding:2px 0 12px;}
@@ -161,7 +162,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* The median sits right under the heading; without prices, the note takes its place. */
 .median-block,.prices-note {margin-top:10px;}
 /* One stat block: the figure, then one line of sales, years and the last sale, and one line of what the filters left out and how many matched. */
-.stat-meta {font-size:12px; line-height:1.45; margin-top:4px; font-variant-numeric:tabular-nums;}
+/* One line each, whatever the amount or the filter says: the block keeps the height held for it while acsearch answers, and a line cut short carries its
+   whole text as a tooltip. The trend, a sentence of its own, stands under the block. */
+.stat-meta {font-size:12px; line-height:1.45; margin-top:4px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .stat-meta > :not([hidden]) ~ :not([hidden])::before {content:" · "; color:var(--muted); font-weight:400;}
 .stat-meta .sale-filtered,.stat-meta .sale-period {font-size:11px; color:var(--muted);}
 /* Both blocks keep the height they will have while acsearch answers, so its answer moves nothing under them. */
@@ -187,6 +190,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .grade-medians {list-style:none; padding:0; margin:6px 0 0;}
 .grade-medians li {font-size:11px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
 .sale-trend,.last-sale {font-size:12px; margin-top:4px; font-variant-numeric:tabular-nums;}
+.stat-meta .last-sale {margin-top:0;}
+.sale-trend {margin-top:8px;}
 /* The sales period: three pills like the Recent chips, the chosen one filled with the accent. Each radio covers its pill unseen, so it stays
    focusable and clickable, and its focus ring is drawn on the pill. The fieldset places its hidden legend: placed by the page instead, the
    legend stays where the fieldset sat before scrolling and stretches the page into a second scrollbar. */

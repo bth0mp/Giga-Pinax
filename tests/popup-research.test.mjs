@@ -1764,7 +1764,8 @@ test('the CoinArchives panel draws its own median by year, never pooled with acs
   await settle();
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
-  assert.equal(popup.element('coinarchives-year-medians').hidden, false);
+  // One year is one bar, which says nothing the median does not: the strip stays down (fix round, from L2's P-09).
+  assert.equal(popup.element('coinarchives-year-medians').hidden, true);
   assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025: median $250 (3)']);
   assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
 });
@@ -2097,7 +2098,9 @@ test('the acsearch panel reads as one stat block with one basis line', async () 
   assert.equal(popup.element('cited-count').textContent, '3 of 4 results cite Price 23');
   assert.equal(popup.element('sale-period').textContent, '4 matches on acsearch');
   assert.equal(popup.element('range-all').textContent, 'all $220–$380');
-  assert.equal(popup.element('price-note').textContent, 'Hammer only, no premium, tax or shipping · by year: years with at least 3 counted sales');
+  // Three sales in one year draw no strip, so the basis line says nothing about one.
+  assert.equal(popup.element('price-note').textContent, 'Hammer only, no premium, tax or shipping');
+  assert.equal(popup.element('year-medians').hidden, true);
   assert.equal(popup.element('price-search').open, false);
 });
 
@@ -2188,6 +2191,9 @@ test('a list of types is grouped by volume, says once where it came from, and st
   assert.equal(popup.element('candidates-count').textContent, '14 types, local catalogue');
   const groups = popup.element('candidate-list').children;
   assert.deepEqual(groups.map((group) => group.children[0].textContent), ['RIC I² · 3', 'RIC IV · 10', 'RIC VII · 1']);
+  // Each heading names its own list, so a screen reader says "RIC IV, list, 10 items".
+  for (const group of groups) assert.equal(group.children[1]['aria-labelledby'], group.children[0].id);
+  assert.ok(groups.every((group) => group.children[0].id));
   const row = groups[1].children[1].children[0].children[0];
   assert.equal(row['aria-label'], 'RIC IV Caracalla 237');
   assert.equal(row.children[0].textContent, 'Caracalla');
@@ -2197,6 +2203,12 @@ test('a list of types is grouped by volume, says once where it came from, and st
   popup.element('candidate-filter').value = 'treveri';
   await popup.element('candidate-filter').emit('input');
   assert.deepEqual(groups.map((group) => group.hidden), [true, true, false]);
+  popup.element('candidate-filter').value = 'sever';
+  await popup.element('candidate-filter').emit('input');
+  // The count follows the filter: two of RIC IV's ten are Severan.
+  assert.deepEqual(groups.map((group) => [group.hidden, group.children[0].textContent]), [[true, 'RIC I² · 0'], [false, 'RIC IV · 2'], [true, 'RIC VII · 0']]);
+  popup.element('candidate-filter').value = 'treveri';
+  await popup.element('candidate-filter').emit('input');
   assert.equal(groups[1].children[1].children[0].hidden, true);
   await row.emit('click');
   await settle();
@@ -2244,4 +2256,85 @@ test('the header shows Sources like its neighbours and a working theme switch', 
   assert.equal(popup.document.documentElement.dataset.theme, 'light');
   assert.equal(stored.get('giga-pinax-theme-v1'), 'light');
   assert.equal(popup.element('theme-toggle')['aria-pressed'], 'false');
+});
+
+// Fix round (review Important 1): the citing-filter row was drawn only when the prices landed, so everything under it, the held median included,
+// dropped 28 px. It is drawn while acsearch answers, from the reference and term already known, and says the same once the answer is in.
+test('the filter row is drawn while acsearch answers, so its arrival moves nothing', async () => {
+  const answer = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: () => answer.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').dataset.state, 'loading');
+  assert.equal(popup.element('price-filters').hidden, false);
+  assert.equal(popup.element('citing-row').hidden, false);
+  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  answer.resolve(mixedSales);
+  await settle();
+  assert.equal(popup.element('price-filters').hidden, false);
+  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+});
+
+test('a search that is not the reference\'s own draws no filter row while it loads', async () => {
+  const first = deferred();
+  const later = deferred();
+  const answers = [first, later];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: () => answers.shift().promise });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  first.resolve(mixedSales);
+  await settle();
+  // The edited term searches something else: no citation filter applies to it, loading or loaded.
+  popup.element('price-term').value = 'Alexander tetradrachm';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').dataset.state, 'loading');
+  assert.equal(popup.element('citing-row').hidden, true);
+});
+
+// Fix round (review Minor 2, 3, 6, 7).
+test('Change search never wraps, and the stat lines hold one line each', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.price-search summary > span:first-child \{[^}]*flex-shrink:0; white-space:nowrap/);
+  assert.match(css, /\.stat-meta \{[^}]*white-space:nowrap; overflow:hidden; text-overflow:ellipsis/);
+  // The trend is a sentence of its own under the block, so the block keeps one height whatever the page holds.
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const block = html.slice(html.indexOf('<div class="median-block">'), html.indexOf('<div id="range-block"'));
+  assert.doesNotMatch(block.slice(0, block.lastIndexOf('</div>')), /id="sale-trend"/);
+});
+
+test('each stat line carries its whole text as a tooltip, since a narrow panel may cut it', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('stat-sales').title, `${popup.element('sale-strength').textContent} · ${popup.element('last-sale').children.map((part) => part.textContent ?? part).join('')}`);
+  assert.equal(popup.element('stat-counts').title, `${popup.element('cited-count').textContent} · ${popup.element('sale-period').textContent}`);
+});
+
+test('the Reference box is described only by its error line', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('quick-reference').getAttribute('aria-describedby'), 'form-error');
+});
+
+test('the example chips go once a lookup has answered or the box holds text', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => volumeChoices(3) });
+  assert.equal(popup.element('first-run').hidden, false);
+  popup.element('quick-reference').value = 'R';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('first-run').hidden, true);
+  popup.element('quick-reference').value = '';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('first-run').hidden, false);
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  // A list of types is an answer: it has no Recent row, and still the examples go.
+  assert.equal(popup.element('candidates').hidden, false);
+  popup.element('quick-reference').value = '';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('first-run').hidden, true);
 });

@@ -44,8 +44,10 @@
 .companion-outline-button:hover {background:var(--accent-soft);}
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
 .companion-full-button {width:100%; margin-top:14px;}
-.companion-status {min-height:0; flex-shrink:0; padding:0 16px; color:var(--muted); font-size:11px; line-height:1.4;}
-.companion-status:not(:empty) {padding-top:7px; padding-bottom:7px; border-bottom:1px solid var(--line);}
+/* The status line lies over the top of the panel under the tabs, so a message moves nothing under it, and clears itself (companion-popup.js). */
+.status-anchor {position:relative; height:0; flex-shrink:0; z-index:10;}
+.companion-status {position:absolute; top:0; left:0; right:0; margin:0; padding:0 16px; color:var(--muted); background:var(--surface); font-size:11px; line-height:1.4;}
+.companion-status:not(:empty) {padding-top:7px; padding-bottom:7px; border-bottom:1px solid var(--line); box-shadow:var(--shadow);}
 .companion-status.companion-error {color:var(--error);}
 .windowed .companion-tab-panel {flex:1 1 auto;}
 .panel-mode .companion-tab-panel {flex:1 1 auto;}

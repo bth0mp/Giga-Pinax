@@ -29,6 +29,13 @@ globalThis.addEventListener = (type, listener) => {
 };
 globalThis.dispatchEvent = () => true;
 globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
+// The status line clears itself after some seconds; that timer must not keep this file running once its tests are done.
+const nodeSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (callback, wait, ...rest) => {
+  const timer = nodeSetTimeout(callback, wait, ...rest);
+  if (wait >= 1000) timer.unref?.();
+  return timer;
+};
 
 // Imported after the surroundings exist: browser-api.js takes up the extension API as it is evaluated, and the page starts itself where a document is.
 const {
@@ -917,4 +924,28 @@ test('Ctrl+K, "/" and the skip link bring the Reference box back from any tab', 
   await page.element('skip-to-research').emit('click');
   assert.equal(page.element('companion-panel-research').hidden, false);
   assert.equal(box.focused, true);
+});
+
+// Fix round (review Minor 5): a status line under the tabs pushed the Reference row and the card down, and stayed. It lies over the panel's top
+// instead, moving nothing, and clears itself; the live region has said it already.
+test('the status line lies over the panel and clears itself', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const anchor = markup.getElementById('companion-status').parentNode;
+  assert.match(anchor.getAttribute('class') ?? '', /\bstatus-anchor\b/);
+  const css = readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.status-anchor \{[^}]*position:relative; height:0/);
+  assert.match(css, /\.companion-status \{[^}]*position:absolute/);
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
+  try {
+    const page = await loadCompanion({ sendMessage: async () => ({ ok: false, message: 'Extension storage is unavailable.' }) });
+    assert.equal(page.element('companion-status').textContent, 'Extension storage is unavailable.');
+    const clear = timers.filter(({ wait }) => wait >= 4000).at(-1);
+    assert.ok(clear, 'a clear is scheduled');
+    clear.callback();
+    assert.equal(page.element('companion-status').textContent, '');
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
 });

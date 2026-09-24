@@ -33,15 +33,16 @@ const FIXTURE = new URL('../tests/fixtures/acsearch-search-nero-306.html', impor
 
 // The fixture is a signed-out page, whose hammer prices read "*". Here every lot is given one, so the panel draws a
 // median and the filters above it; the lots, descriptions and citations are the fixture's own.
-function pricedAcsearchPage() {
+// scale multiplies every price, for a panel drawn with the long amounts a gold coin fetches.
+function pricedAcsearchPage(scale = 1) {
   let price = 180;
-  return readFileSync(FIXTURE, 'utf8').replace(/"price": "\*"/g, () => `"price": "${(price += 40)}"`);
+  return readFileSync(FIXTURE, 'utf8').replace(/"price": "\*"/g, () => `"price": "${(price += 40) * scale}"`);
 }
 
 const refused = [];
 
 // acsearchDelay holds the acsearch answer back, as a real search takes a second or two to come in.
-async function launch({ locale, acsearchDelay = 0 } = {}) {
+async function launch({ locale, acsearchDelay = 0, priceScale = 1 } = {}) {
   assert.ok(existsSync(join(EXTENSION, 'manifest.json')), `${EXTENSION} holds no build: run python scripts/build.py brave first`);
   const profile = await mkdtemp(join(tmpdir(), 'giga-pinax-e2e-'));
   const context = await chromium.launchPersistentContext(profile, {
@@ -61,7 +62,7 @@ async function launch({ locale, acsearchDelay = 0 } = {}) {
     if (url.protocol === 'chrome-extension:') return route.continue();
     if (url.origin === 'https://www.acsearch.info' && url.pathname === '/search.html') {
       if (acsearchDelay) await new Promise((resolve) => { setTimeout(resolve, acsearchDelay); });
-      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: pricedAcsearchPage() });
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: pricedAcsearchPage(priceScale) });
     }
     refused.push(url.href);
     return route.abort('blockedbyclient');
@@ -159,27 +160,38 @@ test('the popup keeps its header and tabs in place through a lot lookup after a 
 // Loop 1 (P-01): the card is the answer and comes first; acsearch answering a moment later draws the prices under it
 // and moves nothing the collector is reading.
 test('prices arriving after the card leave the card where it is', async () => {
-  const browser = await launch({ acsearchDelay: 1500 });
-  try {
-    for (const [path, width, height] of [['popup.html', 400, 600], ['popup.html?panel=1', 360, 900]]) {
-      const page = await browser.context.newPage();
-      await page.setViewportSize({ width, height });
-      await page.goto(browser.url(path));
-      await lookUp(page, 'RIC I² Nero 306');
-      await page.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
-      // Past the reveal's last pass (400 ms) and its smooth scroll, but before acsearch answers.
-      await page.waitForTimeout(900);
-      const top = () => page.evaluate(() => Math.round(document.getElementById('result').getBoundingClientRect().top));
-      const before = await top();
-      assert.equal(await page.locator('#median-line').isVisible(), true, `${path}: the median's place is held while acsearch answers`);
-      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
-      await page.waitForTimeout(900);
-      assert.equal(await top(), before, path);
-      assert.ok(before >= 0 && before < height / 2, `${path}: the card starts at ${before}`);
-      await page.close();
+  // Fix round: the median's own line and block are held too, the filter row above them included, at every width the popup is drawn at, and with
+  // amounts as long as a gold coin's.
+  for (const priceScale of [1, 5000]) {
+    const browser = await launch({ acsearchDelay: 1500, priceScale });
+    try {
+      for (const [path, width, height] of [['popup.html', 400, 600], ['popup.html?panel=1', 360, 900], ['popup.html?panel=1', 320, 700]]) {
+        const label = `${path} at ${width}, prices ×${priceScale}`;
+        const page = await browser.context.newPage();
+        await page.setViewportSize({ width, height });
+        await page.goto(browser.url(path));
+        await lookUp(page, 'RIC I² Nero 306');
+        await page.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
+        // Past the reveal's last pass (400 ms) and its smooth scroll, but before acsearch answers.
+        await page.waitForTimeout(900);
+        const frame = () => page.evaluate(() => ({
+          result: Math.round(document.getElementById('result').getBoundingClientRect().top),
+          median: Math.round(document.getElementById('median-line').getBoundingClientRect().top),
+          block: Math.round(document.querySelector('.median-block').getBoundingClientRect().height),
+          range: Math.round(document.getElementById('range-block').getBoundingClientRect().top),
+        }));
+        assert.equal(await page.locator('#prices-panel[data-state="loading"]').count(), 1, `${label}: still loading when measured`);
+        assert.equal(await page.locator('#median-line').isVisible(), true, `${label}: the median's place is held while acsearch answers`);
+        const before = await frame();
+        await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+        await page.waitForTimeout(900);
+        assert.deepEqual(await frame(), before, label);
+        assert.ok(before.result >= 0 && before.result < height / 2, `${label}: the card starts at ${before.result}`);
+        await page.close();
+      }
+    } finally {
+      await browser.close();
     }
-  } finally {
-    await browser.close();
   }
 });
 

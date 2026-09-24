@@ -244,6 +244,8 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// How long the status line stays over the panel before it clears itself.
+const STATUS_SHOWN_MS = 8000;
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
 // background, so the note must not promise a loss that is not one.
 const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
@@ -297,10 +299,14 @@ async function initCompanionPopup() {
     live.textContent = '';
     requestAnimationFrame(() => { live.textContent = message; });
   };
+  // The line lies over the top of the panel (companion-popup.css), so it clears itself once read; the live region has said it already.
+  let statusTimer = 0;
   const announce = (message, error = false) => {
     $('companion-status').textContent = message;
     $('companion-status').classList.toggle('companion-error', error);
     speak(message);
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { if ($('companion-status').textContent === message) $('companion-status').textContent = ''; }, STATUS_SHOWN_MS);
   };
   const activate = (name, focus = false) => {
     for (const tabName of TABS) {

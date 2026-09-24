@@ -150,7 +150,8 @@ function renderYears(prefix, years, format) {
     line.textContent = yearText(entry, format);
     return line;
   }));
-  $(`${prefix}year-medians`).hidden = years.length === 0;
+  // One year is one bar, which says nothing the median above it does not: the strip is drawn from two years on. Its lines stay for Copy summary.
+  $(`${prefix}year-medians`).hidden = years.length < 2;
 }
 
 // A long list of RIC types, grouped by the volume each is filed in, in the order the list gives them: each row keeps its candidate, and splits its title
@@ -158,7 +159,7 @@ function renderYears(prefix, years, format) {
 // back as a RIC volume, section and number is grouped; anything else is listed as it came (null).
 /**
  * @param {Array<{ id: string, title: string, source?: string }>} candidates
- * @returns {Array<{ heading: string, rows: Array<{ candidate: { id: string, title: string, source?: string }, section: string, rest: string }> }> | null}
+ * @returns {Array<{ name: string, rows: Array<{ candidate: { id: string, title: string, source?: string }, section: string, rest: string }> }> | null}
  */
 function candidateGroups(candidates) {
   if (candidates.length <= 3) return null;
@@ -175,7 +176,7 @@ function candidateGroups(candidates) {
   });
   // The volume as the Volume select names it, without its edition note: "I² (2nd ed.)" heads its group as "RIC I²".
   const name = (volume) => (RIC_VOLUMES.find((entry) => entry.value === volume)?.label ?? volume).replace(/ \(2nd ed\.\)$/, '');
-  return [...groups].map(([volume, rows]) => ({ heading: `RIC ${name(volume)} · ${rows.length}`, rows }));
+  return [...groups].map(([volume, rows]) => ({ name: `RIC ${name(volume)}`, rows }));
 }
 
 // Text as the list filter compares it: case folded and accents stripped, so "lugdunum" finds Lugdunum and "neron" finds Nerón.
