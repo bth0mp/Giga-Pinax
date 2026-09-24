@@ -88,3 +88,43 @@ test('a failed, unreadable, oversized or slow query is no specimens', { timeout:
   assert.deepEqual(await fetchSpecimens(nero, { fetchImpl: hang, timeoutMs: 20 }), []);
   assert.ok(Date.now() - started < 2000);
 });
+
+// The nine bundled OCRE ids (of 68,123 bundled records) that carry a "?" or a "," — a doubtful letter and RIC II.3² Hadrian's number lists. Both
+// characters may stand inside a SPARQL IRI, so each is asked for, literally and with the two characters percent-encoded, under both schemes.
+const PUNCTUATED_IDS = [
+  'ric.2.hdn.312a?', 'ric.2.hdn.323e?', 'ric.2_3(2).hdn.1299-1303,1305-1309', 'ric.2_3(2).hdn.1343-1347,1349', 'ric.2_3(2).hdn.1715-1719,1721-1722',
+  'ric.2_3(2).hdn.2848,2850', 'ric.2_3(2).hdn.2849,2850A', 'ric.2_3(2).hdn.2911,2913', 'ric.2_3(2).hdn.870-873,875',
+];
+test('a bundled id with a "?" or a "," is asked for, as written and percent-encoded', async () => {
+  for (const id of PUNCTUATED_IDS) {
+    const requests = [];
+    await fetchSpecimens({ id, corpus: 'ocre' }, { fetchImpl: async (url) => { requests.push(url); return answer(fixture())(); } });
+    assert.equal(requests.length, 1, id);
+    const query = new URL(requests[0]).searchParams.get('query');
+    const encoded = id.replace(/[?,]/g, (character) => encodeURIComponent(character));
+    for (const scheme of ['http', 'https']) {
+      assert.ok(query.includes(`<${scheme}://numismatics.org/ocre/id/${id}>`), `${id} ${scheme}`);
+      assert.ok(query.includes(`<${scheme}://numismatics.org/ocre/id/${encoded}>`), `${id} ${scheme} encoded`);
+    }
+  }
+});
+
+// Anything that could end the IRI, start another term or hide in it is refused before a request is made.
+test('an id that could break out of the query makes no request', async () => {
+  const HOSTILE = ['ric.1>', 'ric.1"', "ric.1'", 'ric 1', 'ric.1\n', 'ric.1\r', 'ric.1#x', 'ric.1%3E', 'ric.1{', 'ric.1|', 'ric.1`', 'ric.1\\', '<ric.1',
+    'ric.1> } ; DROP <x', '', 'ric\u00a01', 'ric\u200b1', '../ric.1', 'ric.1\u0000', 'rice\u0301', 'ric.1^', 'ric.1}'];
+  let requests = 0;
+  const fetchImpl = async () => { requests += 1; return answer(fixture())(); };
+  for (const id of HOSTILE) assert.deepEqual(await fetchSpecimens({ id, corpus: 'ocre' }, { fetchImpl }), [], JSON.stringify(id));
+  assert.equal(requests, 0);
+});
+
+test('the caller cancelling stops the request itself', async () => {
+  const controller = new AbortController();
+  let seen;
+  const fetchImpl = (url, { signal }) => { seen = signal; return new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))); };
+  const pending = fetchSpecimens(nero, { fetchImpl, signal: controller.signal });
+  controller.abort();
+  assert.deepEqual(await pending, []);
+  assert.equal(seen.aborted, true);
+});

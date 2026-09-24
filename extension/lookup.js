@@ -888,16 +888,19 @@ export async function lookupType(given, options = {}) {
 // forgets it. A failed, slow, oversized or unreadable answer is no specimens, never an error the card has to wait for.
 export async function fetchSpecimens(card, { fetchImpl = fetch, timeoutMs = 8000, signal } = {}) {
   const TYPE_CORPORA = ['ocre', 'crro', 'pella', 'sco', 'bigr'];
-  // An id is written into the query between angle brackets, so only the characters the corpora's ids use may reach it.
-  if (!TYPE_CORPORA.includes(card?.corpus) || !/^[A-Za-z0-9._~()+-]+$/.test(String(card.id ?? ''))) return [];
-  const path = `numismatics.org/${card.corpus}/id/${card.id}`;
+  // An id is written into the query between angle brackets, so only the characters the corpora's ids use may reach it: none of them can end the
+  // IRI or start another term. Nine bundled OCRE ids carry a "?" (a doubtful letter) or a "," (a list of numbers); both may stand in an IRI, and
+  // whether Nomisma holds such a type as written or percent-encoded is not known, so both forms are asked for, as both schemes are.
+  if (!TYPE_CORPORA.includes(card?.corpus) || !/^[A-Za-z0-9._~()+,?-]+$/.test(String(card.id ?? ''))) return [];
+  const ids = [...new Set([card.id, card.id.replace(/[?,]/g, (character) => encodeURIComponent(character))])];
+  const types = ids.flatMap((id) => ['http', 'https'].map((scheme) => `<${scheme}://numismatics.org/${card.corpus}/id/${id}>`));
   const query = [
     'PREFIX nmo: <http://nomisma.org/ontology#>',
     'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
     'PREFIX skos: <http://www.w3.org/2004/02/skos/core#>',
     'SELECT ?object (SAMPLE(?label) AS ?collection) (SAMPLE(?obverseThumb) AS ?obverseThumbnail) (SAMPLE(?obverseImage) AS ?obverseDepiction)',
     '  (SAMPLE(?reverseThumb) AS ?reverseThumbnail) (SAMPLE(?reverseImage) AS ?reverseDepiction) WHERE {',
-    `  VALUES ?type { <http://${path}> <https://${path}> }`,
+    `  VALUES ?type { ${types.join(' ')} }`,
     '  ?object nmo:hasTypeSeriesItem ?type ; a nmo:NumismaticObject ; nmo:hasCollection ?holder ; nmo:hasObverse ?obverse ; nmo:hasReverse ?reverse .',
     '  ?holder skos:prefLabel ?label FILTER(langMatches(lang(?label), "en"))',
     '  OPTIONAL { ?obverse foaf:thumbnail ?obverseThumb } OPTIONAL { ?obverse foaf:depiction ?obverseImage }',
