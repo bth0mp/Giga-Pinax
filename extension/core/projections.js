@@ -5,6 +5,7 @@
 import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
+import { OWN } from './fields.js';
 /**
  * @typedef {import('./types.js').Lot} Lot
  * @typedef {import('./types.js').Evidence} Evidence
@@ -45,9 +46,6 @@ import { dateParts } from './validate.js';
  * @property {Array<{ id: string, lotId: string, title: string, acquisitionDate: string, reference: string,
  *   currency: string | null, comparables: OwnComparables }>} entries
  */
-
-/** @type {(value: any, key: PropertyKey) => boolean} */
-const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 
 function emptyExposure() {
   return {

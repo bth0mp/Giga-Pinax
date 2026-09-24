@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   LIMITS,
@@ -1144,4 +1145,11 @@ test('correcting won flags its linked collection entry for explicit review', () 
   assert.equal(corrected.ok, true);
   assert.equal(corrected.value.collectionReviewReason, 'source-lot-no-longer-won');
   assert.equal(corrected.value.outcome.correctedAt, NOW);
+});
+
+// 0.34 final review: the one own-key test the core modules share lives in core/fields.js; the projections import it rather than keep a copy.
+test('core/projections.js takes OWN from core/fields.js and declares no copy of its own', () => {
+  const source = readFileSync(new URL('../extension/core/projections.js', import.meta.url), 'utf8');
+  assert.match(source, /^import \{[^}]*\bOWN\b[^}]*\} from '\.\/fields\.js';$/m);
+  assert.doesNotMatch(source, /^(?:export )?(?:const|let|function) OWN\b/m);
 });
