@@ -146,14 +146,18 @@ test('date-only reminders remain actionable through the confirmed local event da
   assert.equal(plan.overdueByEvent[eventId].length, 1);
 });
 
-// N14: a zone is named as a collector says it - the place in its IANA name - and only a zone with no place keeps its id.
+// N14: a zone is named as a collector says it - the place in its IANA name - and a zone with no place by its offset.
 test('a time zone is named by its place', () => {
   assert.equal(zonePlace('Europe/London'), 'London');
   assert.equal(zonePlace('America/New_York'), 'New York');
   assert.equal(zonePlace('America/Argentina/Buenos_Aires'), 'Buenos Aires');
   assert.equal(zonePlace('UTC'), 'UTC');
   assert.equal(zonePlace('Etc/UTC'), 'UTC');
-  assert.equal(zonePlace('Etc/GMT-2'), 'Etc/GMT-2');
+  // Review Minor 2: a zone with no place reads as its offset, never as an Etc id whose sign is the other way round.
+  assert.equal(zonePlace('Etc/GMT+5'), 'GMT-5');
+  assert.equal(zonePlace('Etc/GMT-2'), 'GMT+2');
+  assert.equal(zonePlace('Etc/GMT+0'), 'UTC');
+  assert.equal(zonePlace('Etc/Unknown'), 'Etc/Unknown');
   assert.equal(zonePlace(''), '');
   assert.equal(zonePlace(undefined), '');
 });

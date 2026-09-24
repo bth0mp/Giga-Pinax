@@ -174,22 +174,29 @@ function earliest(current, candidate) {
   return current === null || candidate < current ? candidate : current;
 }
 
+// The name a browser resolves a zone to (Etc/UTC and UTC are both UTC), or the name as written where it knows none.
+function resolvedZone(timeZone) {
+  try { return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone; } catch { return String(timeZone ?? ''); }
+}
+
 /**
  * A time zone as a collector names it: the place in its IANA name (`Europe/London` is `London`, `America/New_York`
- * is `New York`). UTC is `UTC`; any other zone with no place (`Etc/GMT-2`) keeps its id.
+ * is `New York`). UTC is `UTC`. An `Etc/` zone has no place and a fixed offset, and its id's sign is the other way
+ * round (`Etc/GMT+5` is five hours behind), so it reads as the offset: `GMT-5`. Any other name keeps its id.
  * @param {*} timeZone
  * @returns {string}
  */
 export function zonePlace(timeZone) {
   const zone = String(timeZone ?? '');
-  if (/^(?:Etc\/)?(?:UTC|UCT|GMT|Zulu|Universal)$/.test(zone)) return 'UTC';
-  if (!zone.includes('/') || zone.startsWith('Etc/')) return zone;
+  if (/^(?:Etc\/)?(?:UTC|UCT|GMT|Zulu|Universal)$/.test(zone) || (zone && resolvedZone(zone) === 'UTC')) return 'UTC';
+  if (zone.startsWith('Etc/')) {
+    try {
+      return new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(0)
+        .find(({ type }) => type === 'timeZoneName')?.value ?? zone;
+    } catch { return zone; }
+  }
+  if (!zone.includes('/')) return zone;
   return zone.slice(zone.lastIndexOf('/') + 1).replaceAll('_', ' ');
-}
-
-// The name a browser resolves a zone to (Etc/UTC and UTC are both UTC), or the name as written where it knows none.
-function resolvedZone(timeZone) {
-  try { return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone; } catch { return String(timeZone ?? ''); }
 }
 
 /**
