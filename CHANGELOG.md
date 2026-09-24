@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-25
+
 ### Added
 
 - A won coin's **real cost** is worked out when its outcome is saved and kept with it: the hammer, the buyer's premium at the rate on the bid it was won on, VAT on that premium, a platform's fee on the hammer, and the shipping and payment fee saved with the bid, all in the hammer's currency. Its **History** card and its collection entry show one money line — **Hammer · Premium · Fees · Total**, the currency named once — with the premium rate and each fee spelled out beneath it, the collection table gains a **Total cost** column per currency, and the CSV exports carry `premium`, `fees`, `total_cost` and `total_cost_currency`. A figure that was never recorded is never estimated: the total then reads **Incomplete** and says which one is missing (no premium rate on the bid, no fees saved with the coin, fees saved in another currency), and the CSV names it in `total_cost_missing`. A house preset or a fee changed later never rewrites the cost of a coin won from this version on; a coin won before it has no stored cost and is costed from its records as they stand, so its total follows a later edit to its fees until its outcome is saved again. The invoice you typed stays as you typed it. Backups need no new version: older ones import unchanged, and 0.35.0 opens a backup that carries costs.
@@ -414,7 +416,8 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
-[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.36.0
 [0.35.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.35.0
 [0.34.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.34.1
 [0.34.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.34.0
