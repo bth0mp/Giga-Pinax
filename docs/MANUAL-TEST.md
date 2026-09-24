@@ -1,4 +1,4 @@
-# Manual test script for 0.33.0
+# Manual test script for 0.34.0
 
 Much of what a release changes is page behaviour the automated suites cannot reach: the popup's own storage, capture
 permissions, the import downloads, a browser's own language and a signed-in acsearch session. The workspace editors are
