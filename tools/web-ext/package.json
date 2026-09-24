@@ -4,6 +4,6 @@
   "description": "The Firefox lint and signing tool, pinned with its whole dependency tree; installed with npm ci by the workflows.",
   "license": "MIT",
   "devDependencies": {
-    "web-ext": "10.6.0"
+    "web-ext": "10.7.0"
   }
 }
