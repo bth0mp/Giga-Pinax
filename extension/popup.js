@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText, yearText, yearsSentence } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
@@ -334,6 +334,7 @@ function clearOutput() {
   $('online-fallback').hidden = true;
   $('online-fallback').disabled = false;
   $('online-fallback').onclick = null;
+  clearSpecimens();
   // A note about the fields as they were must not outlive a lookup that rewrites them. Both writers announce after their own clearOutput(), so this
   // never erases a line just written.
   clearRicNote();
@@ -490,6 +491,62 @@ function renderCard(card) {
   if (refocus) $('refine-summary').focus({ preventScroll: true });
   announce(announcement(card));
   revealAgain('result');
+  void showSpecimens(card);
+}
+
+// Show specimen photos, switched on in Settings and read from the local storage both pages share: 'on', or anything else for off. Off, a card asks
+// nothing. On, a card of one type asks Nomisma once for photographed specimens after it is drawn, so a slow or failed answer never holds the card
+// up, and an answer for a card no longer shown is dropped. Nothing about the photos is kept: not the answer, not an image address, not in the Recent
+// list and not in Copy summary. Only a granted nomisma.org is asked; the popup never prompts for it here.
+const SPECIMEN_PHOTOS_KEY = 'giga-pinax-specimen-photos-v1';
+let specimenTicket = 0;
+function specimenPhotosOn() {
+  try { return localStorage.getItem(SPECIMEN_PHOTOS_KEY) === 'on'; } catch { return false; }
+}
+
+function clearSpecimens() {
+  specimenTicket += 1;
+  $('specimens').hidden = true;
+  $('specimen-list').replaceChildren();
+}
+
+// One specimen: its two sides and, under them, the collection that holds it as a link to the specimen's own page. Every address is http(s),
+// checked by fetchSpecimens; the attributes that keep the referrer back and defer the load are set before the source, so the first request obeys them.
+function specimenItem({ page, collection, obverse, reverse }) {
+  const item = document.createElement('li');
+  const pair = document.createElement('div');
+  pair.className = 'specimen-pair';
+  for (const [side, source] of [['Obverse', obverse], ['Reverse', reverse]]) {
+    const image = document.createElement('img');
+    image.setAttribute('loading', 'lazy');
+    image.setAttribute('referrerpolicy', 'no-referrer');
+    image.alt = `${side}, ${collection}`;
+    // A photo the museum no longer serves takes its specimen off the strip rather than leaving a broken image.
+    image.addEventListener('error', () => { item.hidden = true; });
+    image.src = source;
+    pair.append(image);
+  }
+  const link = document.createElement('a');
+  link.className = 'specimen-link';
+  link.href = page;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = collection;
+  link.setAttribute('aria-label', `${collection}: this specimen, opens a new tab`);
+  item.append(pair, link);
+  return item;
+}
+
+async function showSpecimens(card) {
+  clearSpecimens();
+  if (card.corpus === 'other' || !specimenPhotosOn()) return;
+  const ticket = specimenTicket;
+  const shown = () => ticket === specimenTicket && currentCard === card;
+  if (!(await hasHostAccess(['https://nomisma.org/*'])) || !shown()) return;
+  const specimens = await fetchSpecimens(card);
+  if (!shown() || !specimens.length) return;
+  $('specimen-list').replaceChildren(...specimens.slice(0, 3).map(specimenItem));
+  $('specimens').hidden = false;
 }
 
 // A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
