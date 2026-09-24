@@ -174,6 +174,89 @@ function earliest(current, candidate) {
   return current === null || candidate < current ? candidate : current;
 }
 
+// The name a browser resolves a zone to (Etc/UTC and UTC are both UTC), or the name as written where it knows none.
+function resolvedZone(timeZone) {
+  try { return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone; } catch { return String(timeZone ?? ''); }
+}
+
+/**
+ * A time zone as a collector names it: the place in its IANA name (`Europe/London` is `London`, `America/New_York`
+ * is `New York`). UTC is `UTC`. An `Etc/` zone has no place and a fixed offset, and its id's sign is the other way
+ * round (`Etc/GMT+5` is five hours behind), so it reads as the offset: `GMT-5`. Any other name keeps its id.
+ * @param {*} timeZone
+ * @returns {string}
+ */
+export function zonePlace(timeZone) {
+  const zone = String(timeZone ?? '');
+  if (/^(?:Etc\/)?(?:UTC|UCT|GMT|Zulu|Universal)$/.test(zone) || (zone && resolvedZone(zone) === 'UTC')) return 'UTC';
+  if (zone.startsWith('Etc/')) {
+    try {
+      return new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(0)
+        .find(({ type }) => type === 'timeZoneName')?.value ?? zone;
+    } catch { return zone; }
+  }
+  if (!zone.includes('/')) return zone;
+  return zone.slice(zone.lastIndexOf('/') + 1).replaceAll('_', ' ');
+}
+
+/**
+ * Whether two zone names are one zone as the browser knows them: `UTC` and `Etc/UTC` are, `Europe/London` and
+ * `Europe/Dublin` are not. A name the browser does not know is compared as it is written.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+export function sameZone(left, right) {
+  return left === right || resolvedZone(left) === resolvedZone(right);
+}
+
+const NOTICE_VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
+
+// A date or a time in the collector's language, or the ISO text the record holds where the language or zone cannot be used.
+function formatIn(locale, timeZone, options, instant, fallback) {
+  try { return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(new Date(instant)); } catch { return fallback; }
+}
+const dayIn = (locale, timeZone, instant, fallback) => formatIn(locale, timeZone, { weekday: 'short', day: 'numeric', month: 'short' }, instant, fallback);
+const timeIn = (locale, timeZone, instant, fallback) => formatIn(locale, timeZone, { hour: 'numeric', minute: '2-digit' }, instant, fallback);
+function dateIn(timeZone, instant) {
+  try { return localDateAtInstant(timeZone, instant); } catch { return String(instant).slice(0, 10); }
+}
+
+/**
+ * The words of a reminder's desktop notification, the collector's clock first so a banner that cuts the text keeps it.
+ * A timed auction: `Closes Fri 16 Oct, 8:00 your time — 14:00 Zurich`. A date-only sale day is a calendar day in the
+ * auction's zone and its reminder goes off at a wall time there: `Sale day Fri 2 Oct — Thu 1 Oct 10:00 your time,
+ * 9:00 London`. Your day is named where it is not the sale day (or, for a timed auction, always), the auction's where it
+ * is not yours; the auction's clock and place only where its zone is not yours and the browser can read it. Nothing
+ * here moves when a reminder goes off.
+ * @param {ReminderTrigger} trigger
+ * @param {{ eventKind?: string, timeZone: string, locale?: string }} view the auction's kind, and the collector's zone and language
+ * @returns {string}
+ */
+export function reminderNotice(trigger, { eventKind, timeZone: viewerZone, locale }) {
+  const zone = trigger.timeZone;
+  const verb = NOTICE_VERB[String(eventKind)] ?? 'Auction';
+  // The auction's side of one instant: its day where that is not the collector's, its time and its place.
+  const theirs = (instant) => {
+    if (sameZone(zone, viewerZone)) return '';
+    const time = timeIn(locale, zone, instant, '');
+    if (!time) return '';
+    const day = dateIn(zone, instant) === dateIn(viewerZone, instant) ? '' : `${dayIn(locale, zone, instant, '')} `;
+    return `${day}${time} ${zonePlace(zone)}`;
+  };
+  const yourTime = (instant) => `${timeIn(locale, viewerZone, instant, String(instant).slice(11, 16))} your time`;
+  if (trigger.precision === 'timed' && Number.isFinite(Date.parse(String(trigger.eventStartsAt)))) {
+    const starts = /** @type {string} */ (trigger.eventStartsAt);
+    const there = theirs(starts);
+    return `${verb} ${dayIn(locale, viewerZone, starts, trigger.localDate)}, ${yourTime(starts)}${there ? ` — ${there}` : ''}`;
+  }
+  const saleDay = dayIn(locale, 'UTC', `${trigger.localDate}T12:00:00Z`, trigger.localDate);
+  const at = trigger.triggerAt;
+  const yourDay = dateIn(viewerZone, at) === trigger.localDate ? '' : `${dayIn(locale, viewerZone, at, at.slice(0, 10))} `;
+  const there = theirs(at);
+  return `${verb} ${saleDay} — ${yourDay}${yourTime(at)}${there ? `, ${there}` : ''}`;
+}
+
 /**
  * @param {AuctionEvent[]} events
  * @param {{ alerts?: Alert[] } | null | undefined} schedulerState

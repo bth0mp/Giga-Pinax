@@ -1100,8 +1100,10 @@ test('an auction’s time reads as a day, a time and how soon, in the collector�
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-30T07:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 31 h', tone: 'soon' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-01T13:20:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 40 min', tone: 'soon' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
-  // The auction's own zone is named when the collector is elsewhere; the time stays the auction's.
-  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 Europe/London');
+  // The auction's own zone is named by its place when the collector is elsewhere (M3 review), as the reminder rows name
+  // it; the time stays the auction's. Two names of one zone are one zone.
+  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 London');
+  assert.equal(eventWhen({ ...closes, timeZone: 'Etc/UTC' }, { locale: 'en-GB', timeZone: 'UTC', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 14:00');
   assert.equal(eventWhen(closes, { locale: 'en-US', timeZone: 'Europe/London', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu, Oct 1, 3:00 PM');
   const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/London' };
   assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'in 7 days', tone: '' });
@@ -1165,10 +1167,16 @@ test('the bid form reads the placed bid before a plan', () => {
 test('a reminder reads as when it goes off in the collector’s time, and in the auction’s zone when that differs', () => {
   const view = { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-10-14T12:00:00.000Z' };
   // 14:00 in Zurich on 16 October is 08:00 in New York.
-  assert.deepEqual(reminderAtLabel('2026-10-15T12:00:00.000Z', 'Europe/Zurich', view), { text: 'Tomorrow 8:00 (your time) · 14:00 Europe/Zurich', tone: '' });
-  assert.deepEqual(reminderAtLabel('2026-10-14T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 14:00 (your time) · 20:00 Europe/Zurich', tone: 'soon' });
+  assert.deepEqual(reminderAtLabel('2026-10-15T12:00:00.000Z', 'Europe/Zurich', view), { text: 'Tomorrow 8:00 (your time) · 14:00 Zurich', tone: '' });
+  assert.deepEqual(reminderAtLabel('2026-10-14T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 14:00 (your time) · 20:00 Zurich', tone: 'soon' });
   assert.deepEqual(reminderAtLabel('2026-10-20T18:00:00.000Z', 'America/New_York', view), { text: 'Tue 20 Oct 14:00 (your time)', tone: '' });
   assert.deepEqual(reminderAtLabel('2026-10-13T18:00:00.000Z', 'America/New_York', view), { text: 'Yesterday 14:00 (your time) · passed', tone: 'past' });
+  // N14 (M3): the auction's clock stays named once a reminder has passed, and its day is named where it is not the
+  // collector's: 22:00 in New York is already 04:00 the next morning in Zurich.
+  assert.deepEqual(reminderAtLabel('2026-10-13T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Yesterday 14:00 (your time) · 20:00 Zurich · passed', tone: 'past' });
+  assert.deepEqual(reminderAtLabel('2026-10-15T02:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 22:00 (your time) · Thu 15 Oct 4:00 Zurich', tone: 'soon' });
+  // Review Minor 1: two names of one zone are one zone, and the auction's clock is not repeated.
+  assert.deepEqual(reminderAtLabel('2026-10-20T18:00:00.000Z', 'Etc/UTC', { ...view, timeZone: 'UTC' }), { text: 'Tue 20 Oct 18:00 (your time)', tone: '' });
   const event = { id: 'e', revision: 1, name: 'Leu', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-16', localTime: '14:00', timeZone: 'Europe/Zurich', startsAt: '2026-10-16T12:00:00.000Z',
     reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }, { id: 'b', kind: 'offset', offsetMinutes: 60 }] };
   assert.deepEqual([...reminderInstants(event)], [['a', '2026-10-15T12:00:00.000Z'], ['b', '2026-10-16T11:00:00.000Z']]);
