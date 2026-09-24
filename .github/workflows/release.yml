@@ -87,16 +87,109 @@ jobs:
           path: dist
       - name: Unpack the versioned Firefox package
         run: unzip -q dist/giga-pinax-firefox-"${GITHUB_REF_NAME#v}".zip -d firefox
+      # --self-hosted: the package names its own update manifest (browser_specific_settings.gecko.update_url), which
+      # the linter refuses only for an add-on addons.mozilla.org would host.
       - name: Lint the Firefox package
-        run: npx --yes web-ext@10.6.0 lint --source-dir firefox --warnings-as-errors
+        run: npx --yes web-ext@10.6.0 lint --source-dir firefox --warnings-as-errors --self-hosted
 
-  # Uploads the ZIPs the build job made, once the checksums prove they are those ZIPs. No checkout, no npm and no code
-  # from the repository run here: the write scope is held only by gh and the checksum check.
-  release:
+  # Signs the Firefox package with Mozilla as an unlisted, self-distributed add-on when the repository holds the secrets
+  # AMO_JWT_ISSUER and AMO_JWT_SECRET, and does nothing else without them. It can only read the repository, and the
+  # credentials reach the one step that signs. The signed XPI and the update manifest Firefox reads for it
+  # (scripts/build_site.py update-manifest) leave as an artifact with their checksums, which the release job checks.
+  # sign-firefox.yml signs a release that was tagged before the secrets existed.
+  sign:
     needs: [build, lint]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.credentials.outputs.present }}
+      sums: ${{ steps.sums.outputs.sums }}
+    steps:
+      - name: Check for the AMO credentials
+        id: credentials
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -n "$AMO_JWT_ISSUER" ] && [ -n "$AMO_JWT_SECRET" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::No AMO_JWT_ISSUER and AMO_JWT_SECRET secrets, so the Firefox package is not signed.'
+          fi
+      - if: steps.credentials.outputs.present == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - if: steps.credentials.outputs.present == 'true'
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - if: steps.credentials.outputs.present == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - if: steps.credentials.outputs.present == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: packages
+          path: dist
+      - name: Unpack the versioned Firefox package
+        if: steps.credentials.outputs.present == 'true'
+        run: unzip -q dist/giga-pinax-firefox-"${GITHUB_REF_NAME#v}".zip -d firefox
+      # Mozilla signs one version once: a second run for the same version is refused, and docs/RELEASING.md says how to
+      # fetch the signed file from the developer hub instead.
+      - name: Sign the Firefox package with Mozilla (unlisted)
+        if: steps.credentials.outputs.present == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npx --yes web-ext@10.6.0 sign --source-dir firefox --channel unlisted --artifacts-dir web-ext-artifacts
+      - name: Name the signed package and write its update manifest
+        if: steps.credentials.outputs.present == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          set -- web-ext-artifacts/*.xpi
+          test "$#" -eq 1 && test -f "$1"
+          mkdir signed
+          mv "$1" "signed/giga-pinax-firefox-$version.xpi"
+          python scripts/build_site.py update-manifest --xpi "signed/giga-pinax-firefox-$version.xpi" --output signed/firefox-updates.json
+      - name: Record the checksums of the signed package and its update manifest
+        if: steps.credentials.outputs.present == 'true'
+        id: sums
+        working-directory: signed
+        run: |
+          sha256sum giga-pinax-firefox-*.xpi firefox-updates.json > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 2
+          {
+            echo 'sums<<SHA256SUMS_END'
+            cat SHA256SUMS
+            echo 'SHA256SUMS_END'
+          } >> "$GITHUB_OUTPUT"
+      - if: steps.credentials.outputs.present == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed
+          path: |
+            signed/giga-pinax-firefox-*.xpi
+            signed/firefox-updates.json
+            signed/SHA256SUMS
+          if-no-files-found: error
+
+  # Uploads the ZIPs the build job made, once the checksums prove they are those ZIPs, and the signed XPI and its update
+  # manifest when the sign job made them. No checkout, no npm and no code from the repository run here: the write scope
+  # is held only by gh and the checksum checks. A signing that failed does not hold back the ZIPs: the draft is filled
+  # without the XPI, and the run says so.
+  release:
+    needs: [build, lint, sign]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.lint.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
       contents: write
+    env:
+      SIGNED: ${{ needs.sign.result == 'success' && needs.sign.outputs.signed == 'true' }}
+      SIGN_RESULT: ${{ needs.sign.result }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -114,8 +207,24 @@ jobs:
           sha256sum --check --strict expected.sums
           # Exactly the five ZIPs the sums name, and nothing else that the upload's pattern would pick up.
           test "$(ls giga-pinax-*.zip | wc -l)" -eq 5
+      - if: env.SIGNED == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: signed
+          path: signed
+      - name: Check the signed package is the one the sign job made
+        if: env.SIGNED == 'true'
+        working-directory: signed
+        env:
+          SUMS: ${{ needs.sign.outputs.sums }}
+        run: |
+          printf '%s\n' "$SUMS" | sed '/^$/d' > expected.sums
+          test "$(wc -l < expected.sums)" -eq 2
+          cmp expected.sums SHA256SUMS
+          sha256sum --check --strict expected.sums
+          test -f "giga-pinax-firefox-${GITHUB_REF_NAME#v}.xpi"
       # The draft is never published here: a person checks the assets and the notes, then publishes.
-      - name: Attach the five packages to the release draft
+      - name: Attach the packages to the release draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -131,3 +240,8 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes 'Draft release. Add the notes and the install instructions from docs/RELEASING.md, then publish.'
           fi
           gh release upload "$GITHUB_REF_NAME" dist/giga-pinax-*.zip --clobber
+          if [ "$SIGNED" = 'true' ]; then
+            gh release upload "$GITHUB_REF_NAME" "signed/giga-pinax-firefox-${GITHUB_REF_NAME#v}.xpi" signed/firefox-updates.json --clobber
+          elif [ "$SIGN_RESULT" != 'success' ]; then
+            echo "::warning::Signing the Firefox package did not succeed ($SIGN_RESULT), so the draft carries no signed XPI. See docs/RELEASING.md."
+          fi

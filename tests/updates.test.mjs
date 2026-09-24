@@ -44,3 +44,26 @@ test('the Updates card belongs to an install no store keeps up to date', () => {
   const source = readFileSync(new URL('../extension/updates.js', import.meta.url), 'utf8');
   assert.match(source, /getElementById\('updates'\)[\s\S]{0,80}hidden = view\.fromStore/);
 });
+
+// A signed Firefox build names its own update manifest under browser_specific_settings.gecko, and Firefox keeps an
+// installed XPI up to date from it: the card's ZIP would only hand that collector a temporary add-on in place of a
+// permanent one. The same manifest is loaded through about:debugging too, and a temporary add-on is never updated, so
+// it keeps the card; a build whose install type is not known keeps it as well, since only an update it would miss is
+// at stake.
+test('a signed Firefox install that updates itself hides the card; a temporary one keeps it', () => {
+  const manifest = {
+    version: '0.34.0',
+    browser_specific_settings: { gecko: { id: 'giga-pinax@local.invalid', update_url: 'https://bth0mp.github.io/Giga-Pinax/firefox/updates.json' } },
+  };
+  for (const installType of ['normal', 'sideload', 'admin', 'other']) {
+    assert.equal(buildUpdateView(manifest, { installType }).fromStore, true, installType);
+  }
+  assert.equal(buildUpdateView(manifest, { installType: 'development' }).fromStore, false);
+  assert.equal(buildUpdateView(manifest).fromStore, false);
+  assert.equal(buildUpdateView(manifest, { installType: undefined }).fromStore, false);
+  // Without an update manifest nothing updates it, whatever the install type.
+  assert.equal(buildUpdateView({ version: '0.34.0', browser_specific_settings: { gecko: { id: 'x@test' } } }, { installType: 'normal' }).fromStore, false);
+  // The Chromium rule is unchanged: a store's update_url alone decides it.
+  assert.equal(buildUpdateView({ version: '0.34.0' }, { installType: 'normal' }).fromStore, false);
+  assert.equal(buildUpdateView({ version: '0.34.0', update_url: 'https://clients2.google.com/service/update2/crx' }, { installType: 'development' }).fromStore, true);
+});

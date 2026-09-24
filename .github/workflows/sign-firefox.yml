@@ -1,0 +1,187 @@
+name: Sign Firefox package
+
+# Signs the Firefox package of a release that already exists - one tagged before the AMO secrets were added, or whose
+# signing failed in the release workflow before Mozilla accepted it - and attaches the signed XPI and its update
+# manifest. The release workflow signs a new tag by itself when the secrets exist; this is only for the ones it did not.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag to sign, such as v0.34.0. Its release must exist and must not carry an XPI yet.'
+        required: true
+        type: string
+
+# Nothing is granted by default: each job names the one scope it needs, and only the job that uploads can write.
+permissions: {}
+
+# Actions are pinned to full commit SHAs (the release in the trailing comment); .github/dependabot.yml proposes updates.
+jobs:
+  # Builds the Firefox package from the tag again. The build is byte-for-byte repeatable, so this is the ZIP the release
+  # carries; the attach job checks that before it uploads anything.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      zip_sum: ${{ steps.sum.outputs.zip_sum }}
+    steps:
+      - name: Check the tag is a release tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "not a release tag: $TAG" >&2
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Check the tag matches the manifest version
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          manifest_version="$(python -c 'import json; print(json.load(open("manifests/firefox.json"))["version"])')"
+          if [ "$manifest_version" != "$VERSION" ]; then
+            echo "the tag carries version $VERSION, but manifests/firefox.json says $manifest_version" >&2
+            exit 1
+          fi
+          # A build without an update URL would be signed with no way for Firefox to update it later.
+          python -c 'import json, sys; sys.exit(0 if json.load(open("manifests/firefox.json"))["browser_specific_settings"]["gecko"].get("update_url") else "manifests/firefox.json names no update_url at this tag")'
+      - name: Build the Firefox package
+        run: python scripts/build.py firefox
+      - name: Lint the Firefox package
+        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors --self-hosted
+      - name: Record the checksum of the Firefox ZIP
+        id: sum
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: echo "zip_sum=$(sha256sum "dist/giga-pinax-firefox-$VERSION.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: firefox
+          path: dist/giga-pinax-firefox-${{ steps.tag.outputs.version }}.zip
+          if-no-files-found: error
+
+  # The same signing as the release workflow's sign job. It can only read the repository, and the credentials reach the
+  # one step that signs.
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sums: ${{ steps.sums.outputs.sums }}
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Check for the AMO credentials
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo 'The repository has no AMO_JWT_ISSUER and AMO_JWT_SECRET secrets; nothing can be signed.' >&2
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: firefox
+          path: dist
+      - name: Unpack the versioned Firefox package
+        run: unzip -q "dist/giga-pinax-firefox-$VERSION.zip" -d firefox
+      - name: Sign the Firefox package with Mozilla (unlisted)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npx --yes web-ext@10.6.0 sign --source-dir firefox --channel unlisted --artifacts-dir web-ext-artifacts
+      - name: Name the signed package and write its update manifest
+        run: |
+          set -- web-ext-artifacts/*.xpi
+          test "$#" -eq 1 && test -f "$1"
+          mkdir signed
+          mv "$1" "signed/giga-pinax-firefox-$VERSION.xpi"
+          python scripts/build_site.py update-manifest --xpi "signed/giga-pinax-firefox-$VERSION.xpi" --output signed/firefox-updates.json
+      - name: Record the checksums of the signed package and its update manifest
+        id: sums
+        working-directory: signed
+        run: |
+          sha256sum giga-pinax-firefox-*.xpi firefox-updates.json > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 2
+          {
+            echo 'sums<<SHA256SUMS_END'
+            cat SHA256SUMS
+            echo 'SHA256SUMS_END'
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed
+          path: |
+            signed/giga-pinax-firefox-*.xpi
+            signed/firefox-updates.json
+            signed/SHA256SUMS
+          if-no-files-found: error
+
+  # Attaches the signed XPI and its update manifest to the tag's release, draft or published, once the checksums prove
+  # they are the sign job's and the release's own Firefox ZIP proves to be the one that was signed. It only ever adds:
+  # an asset of the same name already on the release is never replaced. No checkout, no npm and no repository code.
+  attach:
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: signed
+          path: signed
+      - name: Check the signed package is the one the sign job made
+        working-directory: signed
+        env:
+          SUMS: ${{ needs.sign.outputs.sums }}
+        run: |
+          printf '%s\n' "$SUMS" | sed '/^$/d' > expected.sums
+          test "$(wc -l < expected.sums)" -eq 2
+          cmp expected.sums SHA256SUMS
+          sha256sum --check --strict expected.sums
+          test -f "giga-pinax-firefox-$VERSION.xpi"
+      - name: Check the release carries the Firefox ZIP that was signed
+        env:
+          ZIP_SUM: ${{ needs.build.outputs.zip_sum }}
+        run: |
+          gh release download "$TAG" --pattern "giga-pinax-firefox-$VERSION.zip" --dir release
+          echo "$ZIP_SUM  release/giga-pinax-firefox-$VERSION.zip" | sha256sum --check --strict
+      - name: Attach the signed package and its update manifest
+        run: |
+          existing="$(gh release view "$TAG" --json assets -q '.assets[].name')"
+          for name in "giga-pinax-firefox-$VERSION.xpi" firefox-updates.json; do
+            if printf '%s\n' "$existing" | grep -Fxq "$name"; then
+              echo "release $TAG already carries $name; refusing to replace it" >&2
+              exit 1
+            fi
+          done
+          gh release upload "$TAG" "signed/giga-pinax-firefox-$VERSION.xpi" signed/firefox-updates.json

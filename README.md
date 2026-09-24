@@ -30,9 +30,9 @@ Bop Euthydemus I 24A   RPC I 1234          SG 6829           Netherlands KM# 123
 Open the [Giga Pinax releases](https://github.com/bth0mp/Giga-Pinax/releases), choose the latest release, and download the ZIP for your browser under **Assets** — not GitHub's **Source code** archive. No GitHub account is needed, and you do not need Python.
 
 - **Brave or Chrome:** extract the Brave ZIP, open `brave://extensions` or `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the folder holding `manifest.json`.
-- **Firefox 142+:** open `about:debugging`, select **This Firefox**, choose **Load Temporary Add-on**, and select the unsigned Firefox ZIP. Firefox removes a temporary add-on when it restarts; permanent installation needs a Mozilla-signed build.
+- **Firefox 142+:** when the release carries a signed `giga-pinax-firefox-x.y.z.xpi`, select it in Firefox and confirm the installation; it stays installed and Firefox keeps it up to date. Otherwise open `about:debugging`, select **This Firefox**, choose **Load Temporary Add-on**, and select the unsigned Firefox ZIP. Firefox removes a temporary add-on when it restarts.
 
-**Settings → Updates** shows the installed version and opens the latest package for your browser. Giga Pinax never polls GitHub or installs an update by itself. The [installation guide](docs/INSTALL.md) has the full steps, and the [changelog](CHANGELOG.md) has what each version changed.
+**Settings → Updates** shows the installed version and opens the latest package for your browser. Giga Pinax never polls GitHub or installs an update by itself; a signed Firefox install is updated by Firefox, from the project's update manifest. The [installation guide](docs/INSTALL.md) has the full steps, and the [changelog](CHANGELOG.md) has what each version changed.
 
 ## Privacy
 
@@ -44,6 +44,7 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 | `www.acsearch.info` | Every lookup, once acsearch access is granted: the price search starts with the lookup and uses your existing acsearch session. |
 | `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
 | `github.com` | Only when you choose a release or update download. |
+| `bth0mp.github.io`, `github.com` | Firefox only, and not from Giga Pinax: Firefox's own add-on update check may read the project's update manifest, as it does for every add-on that names one, and a signed install downloads a newer signed version from the GitHub release. |
 | Your own photo hosts | Only once saved-coin comparison opens, for the external photo URLs you entered. |
 
 Links Giga Pinax offers but you open yourself — a CoinArchives Pro or acsearch search page, an RPC Online type page, an OCRE type page at the ANS, the auction page a saved coin came from — are ordinary browser navigations in a new tab, not requests the extension makes: they carry whatever that site already knows about your browser, and nothing from the extension beyond the search phrase in the link itself.
@@ -58,7 +59,7 @@ The runtime has no dependencies, no bundler and no build step: plain ES modules 
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 python scripts/build.py
-npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
+npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors --self-hosted
 ```
 
 `python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext` is used only to validate the Firefox package. Publishing is described in the [release guide](docs/RELEASING.md).

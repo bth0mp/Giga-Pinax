@@ -34,5 +34,6 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Build the packages
         run: python scripts/build.py
+      # --self-hosted: the package names its own update manifest, which the linter refuses only for an AMO-hosted add-on.
       - name: Lint the Firefox package
-        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
+        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors --self-hosted
