@@ -40,7 +40,7 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 
 | Host | When |
 | --- | --- |
-| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price or SC reference answered by the bundled data contacts neither for its type record: the concept names a card shows are packaged with the records. Only **Show specimen photos**, when switched on, then asks `nomisma.org` for that type's photographed specimens. Bopearachchi references are always online. |
+| `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price, SC, CPE or Newell Demetrius reference answered by the bundled data contacts neither for its type record: the concept names a card shows are packaged with the records. Only **Show specimen photos**, when switched on, then asks `nomisma.org` for that type's photographed specimens. Bopearachchi references are always online. |
 | `www.acsearch.info` | Every lookup, once acsearch access is granted: the price search starts with the lookup and uses your existing acsearch session. |
 | `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
 | `github.com` | Only when you choose a release or update download. |
