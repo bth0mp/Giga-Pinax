@@ -3,7 +3,7 @@ import { isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
-const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
+const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop', 'CPE', 'Newell']);
 
 // A run of references starts only at one of these keys. The single letters C (Cohen) and S (Sear) are matched upper case only and kept only in a run
 // that also has a longer key, so "c. 386-338 BC" and the legend "S - C" stay text while "C.309 - RIC.112" is two references. Keys inside a bracket are
@@ -57,7 +57,9 @@ const KEYS = [
   surname('Hendin'), surname('Meshorer'), 'TJC', 'AJC', 'GBC', surname('Mildenberg'), 'HN Italy', surname('Vlasto'), surname('Fischer-Bossert'),
   surname('Böhringer'), surname('Boehringer'), surname('Bohringer'), surname('Noe'), surname('Jenkins'), surname('Weber'), surname('Forrer'),
   surname('Pozzi'), surname('Jameson'),
-  surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'), surname('Newell'), surname('Le Rider'),
+  // Newell's Demetrius Poliorcetes is AGCO's book, and the one Newell a reference names by title: it goes before the bare surname, which stays prices only.
+  surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'),
+  String.raw`Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?`, surname('Newell'), surname('Le Rider'),
   'ACGC', surname('Kraay'), surname('Grose'), 'ACIP', 'CNH', surname('Betlyon'), surname('Rouvier'), surname('Klein'), surname('Asyut'), 'IGCH',
   surname('Carradice'), surname('Bodenstedt'), surname('Ashton'), surname('Draganov'), plateName('Von Fritze'), plateName('Karayotov'),
   // Seleucid and Ptolemaic, then the East: Parthia, the Sasanians, Bactria and their collections.
@@ -121,11 +123,11 @@ const numberOnly = (body) => NUMBER_ONLY.test(unpunctuate(body.replace(REMARKS, 
 const unseparate = (body) => body.replace(/^(?![.,]\s)[\s.:#-]+(?!\p{Lu})/u, ' ');
 const YEAR = /^\s*(?:1[5-9]\d\d|20\d\d|2100)$/;
 // A bare 1500-2100 number after a key may be the year of a book rather than a type number, and only evidence decides which. First, a typed catalogue
-// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s and a Bopearachchi series is one or two digits, so a number
-// this big is a year whatever else the line says. Otherwise the clause must say so: a citation cue in front of the year, or a page, plate, note,
+// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits, Lorber's CPE I
+// ends at 965 and B560 and Newell's Demetrius at 182, so a number this big is a year whatever else the line says. Otherwise the clause must say so: a citation cue in front of the year, or a page, plate, note,
 // edition, bracketed year or verb of argument behind it. With neither, the reference is kept - Price runs past 3900 and Sear, Hendin, Svoronos and SNG
 // Copenhagen all have real numbers in that range, and losing one of those costs the collector more than a stray prices-only row does.
-const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?)$/i;
+const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?|CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
 // The cue stands in the reference's own sentence: across a full stop "As." is the Roman denomination, not the cue of "as Price 1991 argues".
 const CUE = /\b(?:see|cf|per|following|compare|contra|after|from|published|discussed|cited|dated|attributed)(?:\s+(?:by|in|as))?\s*$/i;
 // Only what is said of an author: "reads", "gives", "places" and "attributes" are what a dealer says of the coin, and a reference is no book because
@@ -304,7 +306,7 @@ function chunks(span) {
 }
 
 // The keys of the catalogues with type data. Their reference is its first chunk: "Price 3949, 3950" cites two types, so 3950 ends Price 3949.
-const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?)$/i;
+const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?|CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
 // A full stop a dealer puts after a typed key ("RIC. 60", "Pr. 3949") is the key's own, as "RSC. 119" has always been read. Only the keys that are no
 // English word take it: "Price." is left alone for the reason readable leaves "Price:" alone, and "SC." ends many a legend ("large SC. 12 h").
 const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;

@@ -7,13 +7,16 @@ import { squash } from './core/validate.js';
 // published under, the shard group an identifier falls in, and what a valid group name looks like. ANS writes CRRO,
 // PELLA and SCO identifiers over http in both their RDF and their JSON-LD, so that is what a local card says and it is
 // what the online card for the same record says; OCRE's card has written https since the bundle existed, and that is
-// the one field where a local card and an online card of the same record differ.
+// the one field where a local card and an online card of the same record differ. PCO and AGCO write http in their RDF,
+// which is what these two cards follow.
 export const LOCAL_CORPORA = Object.freeze({
   ocre: { uri: 'https://numismatics.org/ocre/id/', label: 'OCRE', group: (id) => String(id).split('.')[1] ?? '',
     groups: /^[0-9]+(?:_[0-9]+)?(?:\([0-9]+\))?$/, people: true },
   crro: { uri: 'http://numismatics.org/crro/id/', label: 'CRRO', group: () => 'rrc', groups: /^rrc$/ },
   pella: { uri: 'http://numismatics.org/pella/id/', label: 'PELLA', group: () => 'price', groups: /^price$/ },
   sco: { uri: 'http://numismatics.org/sco/id/', label: 'SCO', group: () => 'sc', groups: /^sc$/ },
+  pco: { uri: 'http://numismatics.org/pco/id/', label: 'PCO', group: () => 'cpe', groups: /^cpe$/ },
+  agco: { uri: 'http://numismatics.org/agco/id/', label: 'AGCO', group: () => 'newell', groups: /^newell$/ },
 });
 // A volume too large for one file is split into parts named in id order, so every part's name is derived here and none is ever read from the data.
 const shardFile = (prefix, parts, position) => `records-${prefix}${parts.length === 1 ? '' : `.${String.fromCharCode(97 + position)}`}.json`;

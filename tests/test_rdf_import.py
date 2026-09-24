@@ -15,7 +15,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "local-rdf-small.rdf"
 DATA = ROOT / "extension" / "data"
 BUNDLE = DATA / "ocre"
 # The corpora bundled beside OCRE, each with a trimmed export of its own under tests/fixtures.
-CORPUS_FIXTURES = {name: ROOT / "tests" / "fixtures" / f"{name}-rdf-small.rdf" for name in ("crro", "pella", "sco")}
+CORPUS_FIXTURES = {name: ROOT / "tests" / "fixtures" / f"{name}-rdf-small.rdf" for name in ("crro", "pella", "sco", "pco", "agco")}
 NAMESPACES = ("xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
               "xmlns:nmo='http://nomisma.org/ontology#' "
               "xmlns:skos='http://www.w3.org/2004/02/skos/core#' "
@@ -225,6 +225,43 @@ class CorpusImportTests(unittest.TestCase):
         # the identifier lookup.js builds from "SC 1315.3c".
         self.assertEqual("Seleucid Coins (part 2) 1315.3c", entries["sc.1.1315.3c"])
         self.assertEqual({"sc": [{"file": "records-sc.json", "from": ""}]}, load(output / "metadata.json")["shards"])
+
+    def test_pco_bundles_only_lorber_cpe_types_and_no_redirect_out_of_svoronos(self):
+        output = self.imported("pco")
+        metadata = load(output / "metadata.json")
+        self.assertEqual((6, 3), (metadata["recordCount"], metadata["activeRecordCount"]))
+        self.assertEqual({"count": 3, "reason": metadata["excluded"]["reason"], "byGroup": {"svoronos": 3}}, metadata["excluded"])
+        self.assertIn("Svoronos", metadata["excluded"]["reason"])
+        # Both parts of CPE volume I, part 2 numbering its bronzes with a B, in one group; the identifier keeps its case.
+        self.assertEqual([["cpe.1_1.330", "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330"],
+                          ["cpe.1_1.466A", "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 466A"],
+                          ["cpe.1_2.B146", "Coins of the Ptolemaic Empire Vol. I, Part II, no. B146"]],
+                         load(output / "index.json")["entries"])
+        self.assertEqual({"cpe": [{"file": "records-cpe.json", "from": ""}]}, metadata["shards"])
+        # Two Svoronos numbers are replaced by the CPE types they became. No reference the extension reads builds a
+        # Svoronos identifier, so the redirects out of them are never asked for and are counted rather than written.
+        self.assertEqual({}, metadata["aliases"])
+        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0, "fromExcluded": 2}, metadata["replacementSkips"])
+        record = load(output / "records-cpe.json")["records"]["cpe.1_1.330"]
+        self.assertEqual({
+            "i": "cpe.1_1.330", "l": "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330", "a": ["ptolemy_ii"], "d": ["decadrachm"],
+            "m": ["alexandreia_egypt"], "x": ["ar"], "s": "-0270", "e": "-0246",
+            "o": {"d": "Veiled Head of deified Arsinoe II right, with ram's horn, wearing diademed stephane, lotus scepter over far "
+                       "shoulder, sometimes with serpent coiled around shaft, dotted border", "p": ["arsinoe_ii"]},
+            "r": {"l": "ΑΡΣΙΝΟΗΣ l., ΦΙΛΑΔΕΛΦΟΥ r.", "d": "Double Cornucopiae bound with royal diadem, containing pyramidal cakes, "
+                  "pomegranate, and other fruits, a grape cluster hanging from the rim of each horn, dotted border"},
+        }, record)
+
+    def test_agco_bundles_every_newell_demetrius_type(self):
+        output = self.imported("agco")
+        metadata = load(output / "metadata.json")
+        self.assertEqual((2, 2), (metadata["recordCount"], metadata["activeRecordCount"]))
+        self.assertNotIn("excluded", metadata)
+        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0}, metadata["replacementSkips"])
+        self.assertEqual({"newell": [{"file": "records-newell.json", "from": ""}]}, metadata["shards"])
+        self.assertEqual([["newell.demetrius.1", "Newell Demetrius Poliorcetes, no. 1"],
+                          ["newell.demetrius.45", "Newell Demetrius Poliorcetes, no. 45"]], load(output / "index.json")["entries"])
+        self.assertEqual(["index.json", "metadata.json", "records-newell.json"], sorted(path.name for path in output.iterdir()))
 
     def test_every_corpus_import_is_byte_deterministic_and_reindexes_to_the_same_bytes(self):
         for corpus, fixture in CORPUS_FIXTURES.items():
@@ -456,7 +493,7 @@ class CorpusTableTests(unittest.TestCase):
         body = source.split("LOCAL_CORPORA = Object.freeze({", 1)[1].split("\n});", 1)[0]
         self.local = {name: {"uri": uri, "label": label} for name, uri, label
                       in re.findall(r"(\w+): \{ uri: '([^']+)', label: '([^']+)'", body)}
-        self.assertEqual(4, len(self.local), "LOCAL_CORPORA could not be read")
+        self.assertEqual(6, len(self.local), "LOCAL_CORPORA could not be read")
 
     def test_the_two_tables_name_the_same_corpora_as_the_bundled_directories(self):
         corpora = sorted(load_import_script().CORPORA)

@@ -80,6 +80,34 @@ CORPORA = {
         "reason": "",
         "numbers": False,
     },
+    "pco": {
+        "label": "PCO",
+        "base": "http://numismatics.org/pco/id/",
+        "url": "https://numismatics.org/pco/",
+        # Lorber's Coins of the Ptolemaic Empire, volume I: part 1's numbers are plain ("cpe.1_1.330"), part 2 numbers
+        # its bronzes with a B ("cpe.1_2.B549"). A CPE reference names one or the other, so nothing else is bundled.
+        "bundled": re.compile(r"cpe\.1_1\.[0-9][0-9A-Za-z]*|cpe\.1_2\.B[0-9][0-9A-Za-z]*"),
+        "group": lambda record_id: "cpe",
+        "groups": "cpe",
+        # PCO also publishes Svoronos's older numbers, most of them replaced by the CPE type they became. A Svoronos
+        # reference stays a prices-only citation, so its records, and the redirects out of them, are weight nothing reads.
+        "excluded": {"svoronos": re.compile(r"svoronos-1904\..+")},
+        "reason": "only Lorber's CPE numbers are read as PCO references; Svoronos numbers are searched for prices only",
+        "numbers": False,
+    },
+    "agco": {
+        "label": "AGCO",
+        "base": "http://numismatics.org/agco/id/",
+        "url": "https://numismatics.org/agco/",
+        # Newell's The Coinages of Demetrius Poliorcetes, the one book AGCO publishes: "newell.demetrius.45" is titled
+        # "Newell Demetrius Poliorcetes, no. 45".
+        "bundled": re.compile(r"newell\.demetrius\.[0-9][0-9A-Za-z]*"),
+        "group": lambda record_id: "newell",
+        "groups": "newell",
+        "excluded": {},
+        "reason": "",
+        "numbers": False,
+    },
 }
 # Mozilla's add-on linter rejects any non-binary file of 5 MiB or more, so no generated file may pass this cap.
 CAP_BYTES = 4 * 1024 * 1024
@@ -472,6 +500,13 @@ def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     # An id the corpus publishes but the extension cannot ask for is no target for a redirect either, so it joins the
     # conflicts as somewhere a replacement chain must not end.
     aliases, replacement_skips = replacement_aliases(records, replacements, conflicts | (set(records) - kept), corpus["base"])
+    # A redirect out of an id the extension never builds (PCO's Svoronos numbers, replaced by the CPE types they became)
+    # is never asked for, so it is counted rather than written. Only a corpus that has one says so.
+    unreachable = [old_id for old_id in aliases if not corpus["bundled"].fullmatch(old_id)]
+    for old_id in unreachable:
+        del aliases[old_id]
+    if unreachable:
+        replacement_skips["fromExcluded"] = len(unreachable)
     active = {record_id: record for record_id, record in records.items()
               if record_id in kept and record_id not in replacements and record_id not in conflicts}
     metadata = {

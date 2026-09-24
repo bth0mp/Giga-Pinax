@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- Two more ANS type databases travel inside the package: Ptolemaic Coins Online, which indexes Catharine Lorber's *Coins of the Ptolemaic Empire* I (1,691 types), and Antigonid Coinage Online, which is Edward T. Newell's *The Coinages of Demetrius Poliorcetes* (182 types). `CPE 330`, `CPE B549`, `CPE I 330`, `Lorber CPE 330` and `Newell Demetrius 45` — typed, pasted in lot text or right-clicked — open their type card from the package with no request to numismatics.org or nomisma.org, and the **Catalogue** list offers **CPE** and **Newell**. A CPE number the package lacks offers the types that carry its number (`CPE 466a` offers 466, 466A and 466B); otherwise the lookup asks numismatics.org for the one record the number names, where a CPE citation used to be searched on acsearch only. Svoronos numbers, and a bare `Newell 45` (Newell's other books are numbered too), stay prices only, and the acsearch search for a Newell type also asks for `Demetrius` or `Demetrios` in the lot. Settings lists both under **Local catalogue data**; the package grows by about 55 KB.
+
 ### Changed
 
 - A RIC lookup answered from the bundled catalogue builds only the few dozen index entries its number reaches, where it used to rebuild all 52,254 on every lookup, and every later lookup in the same window reuses them and the titles it has already read, so a second RIC lookup takes a fraction of the time it did. Crawford, Price and Seleucid Coins lookups build their index once per window instead of once per lookup. The answers are unchanged.

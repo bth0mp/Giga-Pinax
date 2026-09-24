@@ -188,7 +188,10 @@ export function defaultTerm(reference) {
   // A catalogue name outside the table is Price's whole row, the typed prefix it strips included, exactly as buildQuery looks one up as Price.
   const name = catalogueOf(catalogue) ? catalogue : 'Price';
   const digits = referenceNumber(name, number);
-  return group(CATALOGUES[name].termKeys.map((key) => phrase(key, digits)));
+  // A catalogue whose number other books by the same author also carry names its king beside it, in Latin and Greek, as a Bop search does:
+  // "Newell 45" is only Demetrius Poliorcetes's coin in a lot that names Demetrius.
+  const { king, termKeys } = CATALOGUES[name];
+  return squash(`${king ? bopKing(king) : ''} ${group(termKeys.map((key) => phrase(key, digits)))}`);
 }
 
 // The exact phrases the default term looks for, bare, and the first of them as the panel names the reference ("Price 23", "RIC 306"). The citation

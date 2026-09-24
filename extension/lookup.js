@@ -34,6 +34,19 @@ export const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\
 
 // Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
 const SCO_ID = 'sc.1.';
+// The record a reference names outright, for the catalogues whose records are identified by the number itself: SC's above; a CPE number is part 1's
+// (cpe.1_1.330) unless Lorber's B says it is part 2's (cpe.1_2.B549), a letter after it being part of the number and its case kept, since 506A and
+// 506a are two types; a Newell number is its Demetrius Poliorcetes type (newell.demetrius.45).
+const RECORD_IDS = Object.freeze({
+  SC: (number) => `${SCO_ID}${number}`,
+  CPE: (number) => (number.startsWith('B') ? `cpe.1_2.${number}` : `cpe.1_1.${number}`),
+  Newell: (number) => `newell.demetrius.${number}`,
+});
+// The number as the corpus writes it: Lorber's B is a capital whoever typed it.
+const catalogueNumber = (catalogue, number) => {
+  const digits = referenceNumber(catalogue, number);
+  return catalogue === 'CPE' ? digits.replace(/^b(?=\d)/, 'B') : digits;
+};
 // Bopearachchi (1991) references resolve through BIGR, whose own numbering ("Euthydemus I 13.1") differs from Bopearachchi's series ("Euthydème I 24A");
 // the series is read from each record's NUDS XML, which is where BIGR keeps the citation.
 const BIGR = 'bigr';
@@ -284,10 +297,11 @@ export function buildQuery({ catalogue, number, volume, section }) {
   // Cleaned as parseReference cleans it, so the guided field and the Reference box give the same card, Recent chip and term.
   if (catalogue === 'Other') return { corpus: OTHER, query: otherNumber(unwrap(unquote(number))) };
   // The rest are a key and a number: the key as the corpus titles its types, the number without the key a collector typed.
-  const { corpus, queryKey, prefixPattern } = catalogueOf(catalogue) ?? CATALOGUES.Price;
-  const digits = unquote(number).replace(prefixPattern, '');
+  const known = catalogueOf(catalogue) ? catalogue : 'Price';
+  const { corpus, queryKey } = CATALOGUES[known];
+  const digits = catalogueNumber(known, number);
   const query = squash(`${queryKey} ${digits}`);
-  return catalogue === 'SC' ? { corpus, query, id: `${SCO_ID}${digits}` } : { corpus, query };
+  return Object.hasOwn(RECORD_IDS, known) ? { corpus, query, id: RECORD_IDS[known](digits) } : { corpus, query };
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -597,7 +611,15 @@ const scBase = (number) => referenceNumber('SC', number).split('.')[0];
 // SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
 // The bundled catalogue filters its own index by the same rule, so the near misses it offers are the ones this offers.
+// A CPE or Newell number the corpus lacks keeps the records that carry its number with no letter, or with any letter after it ("466a" keeps 466,
+// 466A and 466B, never 4660).
+const LETTERED = Object.freeze({ pco: 'CPE', agco: 'Newell' });
 export function inGroup(entries, corpus, reference) {
+  if (Object.hasOwn(LETTERED, corpus)) {
+    const catalogue = LETTERED[corpus];
+    const base = RECORD_IDS[catalogue](catalogueNumber(catalogue, reference.number).replace(/[A-Za-z]+$/, ''));
+    return entries.filter((entry) => entry.id === base || (entry.id.startsWith(base) && /^[A-Za-z]+$/.test(entry.id.slice(base.length))));
+  }
   if (corpus === 'sco') {
     const base = `${SCO_ID}${scBase(reference.number)}`;
     return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
@@ -833,12 +855,14 @@ export async function lookupType(given, options = {}) {
       // SCO titles ("Seleucid Coins (part 1) 1266.2") never match "SC 1266.2", but the record id is predictable: fetch it directly,
       // and only when it is missing (404) run the plain search for "Did you mean"; any other failure is a network error.
       // The search is for the base number: SCO finds nothing for a missing "SC 1266.9" but finds sc.1.1266 for "SC 1266".
+      // CPE and Newell numbers name their records the same way, and a missing one is a clean miss: nothing here says what a PCO or AGCO search
+      // returns for a number, so no search is made for one, and the bundle offers the near misses of its own index before the lookup comes here.
       const record = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal).then((jsonld) => ({ jsonld }), (error) => {
         if (error?.status === 404) return null;
         throw error;
       });
       if (record) return await cardOutcome(record.jsonld, corpus, { fetchImpl, cache, signal: timer.signal });
-      picked = pickMatch(inGroup(await search(`SC ${scBase(reference.number)}`), corpus, reference), query);
+      picked = reference.catalogue === 'SC' ? pickMatch(inGroup(await search(`SC ${scBase(reference.number)}`), corpus, reference), query) : { status: 'none' };
     } else {
       // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
       picked = pickMatch(await search(`"${query}"`), query);

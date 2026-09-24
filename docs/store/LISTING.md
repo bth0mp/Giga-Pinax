@@ -18,8 +18,8 @@ Giga Pinax is a research and collection workspace for ancient-coin collectors. E
 
 Features include:
 
-- RIC, RRC/Crawford, Seleucid Coins, Price and Bopearachchi type lookups, plus prices-only references;
-- 68,123 type records packaged inside the extension, derived from the American Numismatic Society's OCRE, CRRO, PELLA and SCO data, with the English Nomisma.org name of the concepts they carry, so the type record for a RIC, Crawford, Price or Seleucid Coins reference is resolved and named from inside the package, with no request to numismatics.org or nomisma.org and with the network disabled;
+- RIC, RRC/Crawford, Seleucid Coins, Price, CPE (Ptolemaic), Newell (Demetrius Poliorcetes) and Bopearachchi type lookups, plus prices-only references;
+- 69,996 type records packaged inside the extension, derived from the American Numismatic Society's OCRE, CRRO, PELLA, SCO, PCO and AGCO data, with the English Nomisma.org name of the concepts they carry, so the type record for a RIC, Crawford, Price, Seleucid Coins, CPE or Newell Demetrius reference is resolved and named from inside the package, with no request to numismatics.org or nomisma.org and with the network disabled;
 - public type data from American Numismatic Society projects and Nomisma.org for a reference the package does not hold, and for every Bopearachchi reference;
 - session sale-price research from acsearch, searched as the phrase dealers cite, counting how many results cite the reference and keeping the rest out of the median, with collector-controlled exclusions, an optional denomination filter, medians per dealer grade, and consistent count, range, median and summary calculations;
 - auction identity and duplicate checks, workflow queues, reminders, notes and outcomes;

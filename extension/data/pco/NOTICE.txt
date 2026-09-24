@@ -1,0 +1,29 @@
+Bundled PCO reference data
+
+Derived from Ptolemaic Coins Online (PCO), American Numismatic Society.
+Source: https://numismatics.org/pco/
+Source export: pco.rdf (https://numismatics.org/pco/nomisma.rdf), retrieved
+24 September 2026
+
+The source type database and this derived database are available under the
+Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Source filename, SHA-256, coverage, record counts and conversion date are in
+metadata.json. Only the types of Catharine Lorber's Coins of the Ptolemaic
+Empire, volume I, are bundled: part 1 under its plain numbers and part 2 under
+its B numbers. The export's 1,959 Svoronos records are left out, because a
+Svoronos reference is searched for prices only, and so are the 1,067 links
+that replace a Svoronos record with the CPE type it became. metadata.json
+records those counts and the reason. The source publication date is unknown.
+This bundle excludes monograms, symbols, images and auction-price data. The
+converter and editable derived data are provided at
+https://github.com/bth0mp/Giga-Pinax .
+Conversion instructions:
+https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
+
+Nomisma.org concept labels are absent from this export. The English name of
+every concept these records carry for an authority, issuer, denomination, mint,
+material or portrait is bundled in ../nomisma-labels.json instead, under CC BY
+3.0; see ../NOTICE.txt. A concept Nomisma publishes no English name for is left
+unresolved rather than labelled from another source.

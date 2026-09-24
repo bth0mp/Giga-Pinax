@@ -1,6 +1,6 @@
 # Install Giga Pinax
 
-Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Bundled OCRE, CRRO, PELLA and SCO reference data answers RIC, Crawford, Price and Seleucid Coins lookups without a network request, and names the concepts on those cards from bundled Nomisma.org labels. Bopearachchi references always use the online services. acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
+Giga Pinax provides auction identity and duplicate checks, provenance and measurements, external photo links, fee-aware bid planning, session price curation, workflow queues and saved-coin comparison. Bundled OCRE, CRRO, PELLA, SCO, PCO and AGCO reference data answers RIC, Crawford, Price, Seleucid Coins, CPE and Newell (Demetrius Poliorcetes) lookups without a network request, and names the concepts on those cards from bundled Nomisma.org labels. Bopearachchi references always use the online services. acsearch price research remains independent of ANS catalogue availability. It never places, changes or cancels bids.
 
 RIC ruler suggestions cover the mint-organised volumes too. For the Constantine II example, use volume **VII**, ruler **Constantine II** (or **Constantinus II**), number **287**; the included catalogue resolves **RIC VII Londinium 287** locally.
 
@@ -41,7 +41,7 @@ Use Firefox 142 or later.
 
 Firefox removes a temporary unsigned add-on when Firefox restarts. Permanent installation requires a Mozilla-signed build; see Mozilla's [signing and distribution overview](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/). To update a temporary installation on Firefox 142 or later, open **Settings** → **Updates**, download the latest Firefox ZIP, and load it again through `about:debugging`.
 
-Bundled RIC, Crawford, Price and Seleucid Coins results work even if ANS access is disabled in `about:addons`. If an online fallback needs access, select **Check online**; a reference the bundle does not hold, every Bopearachchi lookup and **Get prices** request their respective provider access. If the popup closes during a permission prompt, reopen it: the reference you typed is still in the Reference box, so the lookup can simply be repeated.
+Bundled RIC, Crawford, Price, Seleucid Coins, CPE and Newell (Demetrius Poliorcetes) results work even if ANS access is disabled in `about:addons`. If an online fallback needs access, select **Check online**; a reference the bundle does not hold, every Bopearachchi lookup and **Get prices** request their respective provider access. If the popup closes during a permission prompt, reopen it: the reference you typed is still in the Reference box, so the lookup can simply be repeated.
 
 ## First checks
 

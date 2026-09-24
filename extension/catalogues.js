@@ -1,7 +1,7 @@
 import { RIC_MINTS, RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
 
-// Everything that differs between the six catalogues the Reference box offers: the corpus each is looked up in and the
+// Everything that differs between the eight catalogues the Reference box offers: the corpus each is looked up in and the
 // name it goes by, how its key is spelled wherever a reference is read or searched, and what the guided fields say about
 // it. Plain data, so the table pulls nothing in behind it. prefixPattern strips a typed key from in front of the number
 // ("Cr. 44/5"); referencePattern reads a whole plain reference, which only the catalogues carrying neither a volume nor a
@@ -26,6 +26,23 @@ export const CATALOGUES = Object.freeze({
   Bop: Object.freeze({ corpus: 'bigr', corpusName: 'BIGR', idPrefix: 'bigr.', label: 'Bop number',
     help: 'Example: 24A. Leave the king blank to list every king with that number.', defaultNumber: '24A', defaultSection: 'Euthydemus I',
     notFoundHint: 'Check the king and Bop number.', citationKeys: ['Bopearachchi'], prefixPattern: /^(?:Bopearachchi|Bop\.?)[\s-]*(?=\d|$)/i }),
+  // Lorber's Coins of the Ptolemaic Empire, volume I, as PCO publishes it: part 1's precious-metal types under plain numbers ("CPE 330") and part 2's
+  // bronzes under B numbers ("CPE B549"), so the number alone says the part. "CPE I" is the volume both are in; a volume PCO does not publish ("CPE
+  // II 330") is left unread and searched for prices, as every CPE citation was before. PCO's own titles ("Coins of the Ptolemaic Empire Vol. I, Part 1,
+  // no. 330", "... Part II, no. B146") read too, the part agreeing with the number, so a Recent chip fills the fields like the others. Svoronos,
+  // whose older numbers PCO also publishes, stays prices only.
+  CPE: Object.freeze({ corpus: 'pco', corpusName: 'PCO', idPrefix: 'cpe.', label: 'CPE number (B for a bronze)', help: 'Example: CPE 330 or CPE B549',
+    defaultNumber: '330', notFoundHint: 'Check the number.', queryKey: 'CPE', termKeys: ['CPE'], citationKeys: ['CPE'],
+    prefixPattern: /^(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*(?=[Bb]?\d|$)/iu,
+    referencePattern: /^(?:(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*|Coins of the Ptolemaic Empire Vol\. I, Part (?:1, no\.\s*(?=\d)|II, no\.\s*(?=B)))([Bb]?\d\S*)$/iu }),
+  // Newell's The Coinages of Demetrius Poliorcetes, the one book AGCO publishes, which titles its types "Newell Demetrius Poliorcetes, no. 45". Newell's
+  // other books are cited by number as well (the Seleucid mints, the Alexander hoards), so a reference is read only where it names Demetrius; a bare
+  // "Newell 45" stays prices only. The king is what an acsearch lot must name beside the citation, in Latin or in Greek, for the same reason.
+  Newell: Object.freeze({ corpus: 'agco', corpusName: 'AGCO', idPrefix: 'newell.', label: 'Newell (Demetrius Poliorcetes) number', help: 'Example: Newell Demetrius 45',
+    defaultNumber: '45', notFoundHint: 'Check the number.', queryKey: 'Newell Demetrius', termKeys: ['Newell', 'Newell Demetrius'],
+    citationKeys: ['Newell', 'Newell Demetrius', 'Newell, Demetrius'], king: 'Demetrius',
+    prefixPattern: /^Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?,?\s*(?:no\.\s*)?(?=\d|$)/i,
+    referencePattern: /^Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?,?\s*(?:no\.\s*)?(\d\S*)$/i }),
   // Any other reference has no open type database, so no corpus name and no "not found" hint: its card is its own text.
   Other: Object.freeze({ corpus: 'other', label: 'Reference, as the dealer cites it', defaultNumber: 'BCD Boiotia 174b',
     help: 'Example: BCD Boiotia 174b; HGC 4, 1218. No type data, only acsearch prices.' }),
