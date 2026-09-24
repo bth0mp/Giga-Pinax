@@ -98,8 +98,9 @@ const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\
 const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)((?:Ex|From|Provenance)\b)/;
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
-// Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975."), whose tail would be left behind as a reference.
-const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec))\.(?=\s)|\n|$/u;
+// Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975.", "no. 1973", "Nr. 12"), nor at the one a day
+// is written with before its month and year ("25. Mai 1973"), whose tail would be left behind as a reference.
+const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
@@ -122,8 +123,8 @@ const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
 const PROVENANCE_LABEL = /^provenance ?:? ?/i;
 const PROVENANCE_MARKER = /^(?:ex|from)\b\.? ?:? ?/i;
-const PROVENANCE_LOT = /,? ?\blots?\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
-const PROVENANCE_YEAR = /(?<!(?:\blots?|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
+const PROVENANCE_LOT = /,? ?\b(?:lots?|los)\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
 const PROVENANCE_DATE = /(?:\b\d{1,2}(?:st|nd|rd|th)?\.? )?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?)\.? (?:\d{1,2}(?:st|nd|rd|th)?,? )?$|\b\d{1,2}[./]\d{1,2}[./]$/i;
 const TRIMMED = new Set([' ', ',', '.', ';', ':', '-', '–', '\n']);
 const trimEnds = (value) => {
@@ -166,7 +167,7 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/,(?= ?,)/g, '')).slice(0, 120);
+  const source = trimEnds(working.replace(/, ?(?=,)/g, '')).slice(0, 120);
   if (/\p{L}/u.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];

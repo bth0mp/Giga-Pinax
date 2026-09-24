@@ -1190,3 +1190,15 @@ test('hostile provenance text stays linear: long runs, nested brackets and no ye
     for (const entry of entries) assert.ok(entry.text.length <= 300 && (entry.source ?? '').length <= 120 && (entry.lot ?? '').length <= 20);
   }
 });
+
+// 0.34 review (W2a, Minor 2): a day written with a full stop before its month, and "no." before a number, are inside the provenance sentence, not
+// its end - so the entry is offered whole, and the references after it are still read.
+test('a provenance sentence runs past a dated day and a "no." to its real end', () => {
+  assert.deepEqual(readProvenance('Ex Leu 7, 25. Mai 1973, Los 123.'), [{ text: 'Ex Leu 7, 25. Mai 1973, Los 123', source: 'Leu 7', year: 1973, lot: '123' }]);
+  assert.deepEqual(readProvenance('Ex Leu 7, no. 1973.'), [{ text: 'Ex Leu 7, no. 1973', source: 'Leu 7, no. 1973' }]);
+  assert.deepEqual(readProvenance('Ex Hess, Nr. 12. Ex Leu 4, 3. Dez. 1990.').map(({ text }) => text), ['Ex Hess, Nr. 12', 'Ex Leu 4, 3. Dez. 1990']);
+  assert.deepEqual(texts('Ex Leu 7, 25. Mai 1973, Los 123. RIC 972; Cohen 17.'), ['RIC 972', 'Cohen 17']);
+  assert.deepEqual(texts('Ex Leu 7, no. 1973. RIC 972.'), ['RIC 972']);
+  // A number closing a sentence before a word that is no month still ends it.
+  assert.deepEqual(texts('Ex CNG 105, lot 12. Marble-like patina. RIC 972.'), ['RIC 972']);
+});
