@@ -1241,3 +1241,10 @@ test('a refused record path leads back to the form field that holds it', () => {
   assert.equal(lotFieldForPath('lots[3].provenanceNotes[0].text'), null);
   assert.equal(lotFieldForPath(undefined), null);
 });
+
+// Review Important 2: a control scrolled into view never lands under the sticky action bar.
+test('the coin and outcome forms keep a focused control clear of the sticky bar', () => {
+  for (const selector of ['#lot-form input', '#lot-form select', '#lot-form textarea', '#lot-form button', '#outcome-form input', '#outcome-form textarea']) {
+    assert.match(cssDeclarations(selector), /scroll-margin-bottom:72px/, selector);
+  }
+});
