@@ -2257,3 +2257,21 @@ test('a missed alert can be acknowledged and stays so, but not snoozed', () => {
   const all = reduce(pastSale, command('alert.markAllRead'));
   assert.equal(all.snapshot.alerts[0].status, 'acknowledged', 'mark all read takes missed alerts too');
 });
+
+// Review Minor 1: a second tab acknowledging an alert the first has just acknowledged is satisfied, not refused; an id
+// that names no alert is still refused.
+test('acknowledging an alert already acknowledged succeeds without a second change', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event: {
+    name: 'Past sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+    reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }] } })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const [alert] = state.alerts;
+  state = reduce(state, command('alert.ack', { triggerIds: [alert.triggerId] })).snapshot;
+  const again = reduce(state, command('alert.ack', { triggerIds: [alert.triggerId] }));
+  assert.equal(again.value.changed, 0);
+  assert.equal(again.snapshot.alerts[0].revision, state.alerts[0].revision, 'nothing was written twice');
+  const unknown = applyCommand(state, command('alert.ack', { triggerIds: [alert.triggerId, 'no-such-alert'] }), context());
+  assert.equal(unknown.error.code, 'validation');
+  const snooze = applyCommand(state, command('alert.snooze', { triggerIds: [alert.triggerId], snoozedUntil: LATER }), context());
+  assert.equal(snooze.error.code, 'validation', 'an acknowledged alert is not snoozed back');
+});

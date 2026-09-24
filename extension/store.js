@@ -514,8 +514,11 @@ function mutation(snapshot, command, context) {
     case 'alert.markAllRead': {
       const ids = command.type === 'alert.markAllRead' ? null : new Set(command.triggerIds ?? []);
       let changed = 0;
+      // A second view acknowledging what the first already has is satisfied, not refused; nothing is written twice.
+      let satisfied = 0;
       for (const alert of next.alerts) {
         if (ids && !ids.has(alert.triggerId)) continue;
+        if (ids && command.type === 'alert.ack' && alert.status === 'acknowledged') { satisfied += 1; continue; }
         // A missed reminder is acknowledged like a due one, but snoozing it would bring back a moment already past.
         const actionable = command.type === 'alert.snooze' ? ['due', 'claimed', 'delivered', 'snoozed'] : ['due', 'claimed', 'delivered', 'snoozed', 'missed'];
         if (!actionable.includes(alert.status)) continue;
@@ -530,7 +533,7 @@ function mutation(snapshot, command, context) {
         alert.updatedAt = now;
         changed += 1;
       }
-      if (ids && changed !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
+      if (ids && changed + satisfied !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
       value = { changed };
       break;
     }
