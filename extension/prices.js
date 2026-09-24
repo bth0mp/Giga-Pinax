@@ -1,5 +1,6 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
-import { canonicalRicPerson, CATALOGUES, catalogueOf } from './catalogues.js';
+import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
+import { anyCase } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
@@ -17,33 +18,46 @@ export function buildSearchUrl({ term, currency, order = 1, category = '1' }) {
   return `${SEARCH_URL}?${params}`;
 }
 
-// The most of a reply this ever reads, and the most "];" it ever tries: every retry parses the whole slice again, so a
-// page made of nothing but terminators would keep the popup busy for as long as that page cared to make it. An acsearch
-// result page is a few hundred kilobytes; a full one is a hundred lots, and a dealer may write several "];" into each
-// description, so the retry limit sits where no real page reaches it - two thousand, about 17 ms on the worst shape.
+// The most of a reply this ever reads. An acsearch result page is a few hundred kilobytes; the bound is a backstop, since the array's end is found in
+// one pass whatever the page holds.
 const MAX_RESULT_BYTES = 2 * 1024 * 1024;
-const MAX_TERMINATORS = 2000;
-// ponytail: the page inlines its lots as JSON; try each "];" until one parses, so a "];" inside a description can't truncate it.
+const [QUOTE, BACKSLASH, OPEN_ARRAY, CLOSE_ARRAY, OPEN_OBJECT, CLOSE_OBJECT] = ['"', '\\', '[', ']', '{', '}'].map((char) => char.charCodeAt(0));
+
+// Where the JSON array opening at `from` closes, read the way JSON writes it: a bracket inside a string is text, and a backslash escapes the character
+// behind it, so a "];" in a dealer's description never ends the array. One pass, each character looked at once; -1 when the text ends first.
+function arrayEnd(text, from) {
+  let depth = 0;
+  let quoted = false;
+  for (let index = from; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (quoted) {
+      if (code === BACKSLASH) index += 1;
+      else if (code === QUOTE) quoted = false;
+    } else if (code === QUOTE) quoted = true;
+    else if (code === OPEN_ARRAY || code === OPEN_OBJECT) depth += 1;
+    else if ((code === CLOSE_ARRAY || code === CLOSE_OBJECT) && --depth === 0) return index;
+  }
+  return -1;
+}
+
+// The page inlines its lots as a JSON array behind the marker; its real end is found by arrayEnd and the slice is parsed once.
 export function extractLots(html) {
   const text = String(html ?? '').slice(0, MAX_RESULT_BYTES);
   const start = text.indexOf(MARKER);
   if (start < 0) return null;
-  const from = start + MARKER.length;
-  let end = text.indexOf('];', from);
-  for (let tried = 0; end >= 0 && tried < MAX_TERMINATORS; tried += 1) {
-    try {
-      const lots = JSON.parse(text.slice(from, end + 1));
-      if (Array.isArray(lots)) {
-        // The description comes along: it is what says whether a lot cites the reference at all, what it was graded and what it is called.
-        return lots.filter((lot) => lot && typeof lot === 'object').map((lot) => ({
-          id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''), description: String(lot.description ?? ''),
-        }));
-      }
-      return null;
-    } catch { /* a "];" inside a string; keep scanning */ }
-    end = text.indexOf('];', end + 1);
-  }
-  return null;
+  const opening = /\s*\[/y;
+  opening.lastIndex = start + MARKER.length;
+  if (!opening.test(text)) return null;
+  const from = opening.lastIndex - 1;
+  const end = arrayEnd(text, from);
+  if (end < 0) return null;
+  let lots;
+  try { lots = JSON.parse(text.slice(from, end + 1)); } catch { return null; }
+  if (!Array.isArray(lots)) return null;
+  // The description comes along: it is what says whether a lot cites the reference at all, what it was graded and what it is called.
+  return lots.filter((lot) => lot && typeof lot === 'object').map((lot) => ({
+    id: String(lot.id ?? ''), title: String(lot.title ?? ''), date: String(lot.date ?? ''), price: String(lot.price ?? ''), description: String(lot.description ?? ''),
+  }));
 }
 
 const CURRENCY_MARKS = [['USD', /US\$|\$|\bUSD\b/i], ['EUR', /€|\bEUR\b/i], ['GBP', /£|\bGBP\b/i], ['CHF', /\bCHF\b|\bFr\./i]];
@@ -77,14 +91,18 @@ export const greekName = (latin) => String(latin ?? '').replace(/us$/, 'os').rep
 const firstName = (section) => squash(section).split(' ')[0];
 
 // acsearch ANDs every word anywhere in a lot ("20" matched "20 mm") and offers (a b) for either-or and "…" for an exact phrase, so the term is
-// the king in both spellings, "(Hermaeus Hermaios)" (one word when they agree: Menander), and the series as the exact phrase "Bopearachchi 20".
-// No series (an uncited BIGR type) leaves the bare word Bopearachchi; no king leaves the phrase alone.
-function bopTerm(section, number) {
+// the king in both spellings, "(Hermaeus Hermaios)" (one word when they agree: Menander), and the series as the exact phrases dealers cite it with,
+// either-or: "Bopearachchi 20", the short "Bop. 20" (acsearch ignores the stop inside a phrase) and the French "Bopearachchi Série 20".
+// No series (an uncited BIGR type) leaves the bare word Bopearachchi; no king leaves the phrases alone.
+const bopKing = (section) => {
   const latin = firstName(section);
   const greek = greekName(latin);
-  const king = latin && greek !== latin ? `(${latin} ${greek})` : latin;
+  return latin && greek !== latin ? `(${latin} ${greek})` : latin;
+};
+function bopTerm(section, number) {
   const series = bopSeries(number);
-  return squash(`${king} ${series ? `"Bopearachchi ${series}"` : 'Bopearachchi'}`);
+  const cited = series ? group([phrase('Bopearachchi', series), phrase('Bop', series), phrase('Bopearachchi Série', series)]) : 'Bopearachchi';
+  return squash(`${bopKing(section)} ${cited}`);
 }
 
 // A reference without type data is searched as dealers cite it: each ";" reference an exact phrase ("HGC 4, 1218" also finds "HGC 4 1218", since
@@ -179,42 +197,76 @@ export function defaultTerm(reference) {
 export const citationPhrases = (reference) => (defaultTerm(reference).match(/"[^"]*"/g) ?? []).map((quoted) => quoted.slice(1, -1));
 export const referenceName = (reference) => citationPhrases(reference)[0] ?? '';
 // An edition mark the collector kept on the key or the volume ("RIC I² 306") still searches the card's own citation; the default term leaves it out.
-const TERM_MARK = String.raw`(?:[²³]|\(\d\)|\d)?`;
+// A stop the dealer wrote after an abbreviated key ("Bop. 24A") is the same citation.
+const TERM_MARK = String.raw`(?:[²³.]|\(\d\)|\d)?`;
 // A phrase as the term must still hold it: every word of it, the number last and whole. "Price 230" and "RIC 3061" are searches for another type,
 // and so is a number a decimal part continues ("Price 23.5").
+// The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
+// really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
+const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
+// Between a volume numeral and the number the collector may name the ruler, as dealers write it ("RIC I Nero 306", "RIC X Leo I 605"): a few words
+// of letters, each with its own regnal numeral, and nothing a number or a sentence could hide in. Another catalogue's key is no ruler ("RIC I Cohen
+// 306" searches Cohen 306), and the words are captured so the ruler they name can be held against the card's.
+const RULER_WORDS = String.raw`((?:\s+(?!(?:${OTHER_KEYS.join('|')})(?![\p{L}\d]))\p{L}+(?:\s+[IVX]+(?![\p{L}\d]))?){0,3})`;
 const searchPattern = (phrase) => {
   const words = squash(phrase).split(' ');
-  const body = words.map((word, index) => (index === words.length - 1 ? escaped(word)
-    : escaped(word.replace(/,$/, '')) + TERM_MARK + (word.endsWith(',') ? ',' : ''))).join('\\s*');
-  return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'iu');
+  const last = words.length - 1;
+  const body = words.map((word, index) => {
+    if (index === last) return escaped(word);
+    const bare = word.replace(/,$/, '');
+    const written = escaped(bare) + TERM_MARK + (word.endsWith(',') ? ',' : '');
+    return index === last - 1 && /^[IVXLC]+$/.test(bare) ? written + RULER_WORDS : written;
+  }).join('\\s*');
+  return new RegExp(`(?<![\\p{L}\\d])${body}(?![\\p{L}\\d])(?!\\.\\d)`, 'giu');
 };
+// Whether the words between the volume and the number name another ruler than the card's: "RIC I Galba 306" searches Galba's coin, not Nero's. A
+// run of them that names the card's own ruler settles it ("Nero Augustus", "Leo I"); otherwise a run naming anybody RIC knows is somebody else. A
+// card without a section, and words that name nobody (a mint), have nothing to hold against each other.
+function namesOtherRuler(words, section) {
+  const card = squash(section);
+  const tokens = squash(words).split(' ').filter(Boolean);
+  if (!card || tokens.length === 0) return false;
+  const own = new Set([...ricPeople(card), ...ricPeople(card.replace(/\s*\([^)]*\)$/, ''))].map(({ id }) => id));
+  let other = false;
+  for (let from = 0; from < tokens.length; from += 1) {
+    for (let to = from + 1; to <= tokens.length; to += 1) {
+      const people = ricPeople(tokens.slice(from, to).join(' '));
+      if (people.some(({ id }) => own.has(id))) return false;
+      if (people.length) other = true;
+    }
+  }
+  return other;
+}
 export function searchesReference(term, reference) {
   const phrases = citationPhrases(reference);
   const text = squash(term);
-  return phrases.length === 0 || phrases.some((phrase) => searchPattern(phrase).test(text));
+  return phrases.length === 0 || phrases.some((phrase) => [...text.matchAll(searchPattern(phrase))]
+    .some((match) => match[1] === undefined || !namesOtherRuler(match[1], reference.section)));
 }
 
 // v0.12's Bop default ("Hermaeus Bopearachchi 20") was stored under the type whenever Get prices ran, so it would hide the new default for good;
-// a remembered term that is exactly that old default counts as unsaved. Anything else the collector saved still wins.
-const oldBopTerm = ({ section, number }) => squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`);
+// a remembered term that is exactly that old default counts as unsaved, and so does 0.32's single phrase ("(Hermaeus Hermaios) "Bopearachchi 20"")
+// now that the series is searched in every spelling. Anything else the collector saved still wins.
+const oldBopTerms = ({ section, number }) => [squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`),
+  squash(`${bopKing(section)} "Bopearachchi ${bopSeries(number)}"`)];
 // The same for the unquoted defaults of 0.31 and before, which 0.32's exact phrases replace: the bare ruler and number, "Price 23", "Crawford 44/5",
 // "SC 1266.2". An Other reference has searched as phrases since 0.19, so it has no old default to retire.
-function oldDefaultTerm(reference) {
+function oldDefaultTerms(reference) {
   const { catalogue, number, section, rulers } = reference;
-  if (catalogue === 'Bop') return oldBopTerm(reference);
+  if (catalogue === 'Bop') return oldBopTerms(reference);
   if (catalogue === 'RIC') {
     const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
-    return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`);
+    return [squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`)];
   }
   // The key each of the rest was written under, which is the first of the phrases the default term now offers.
   const [key] = catalogueOf(catalogue)?.termKeys ?? [];
-  return key ? squash(`${key} ${referenceNumber(catalogue, number)}`) : '';
+  return key ? [squash(`${key} ${referenceNumber(catalogue, number)}`)] : [];
 }
 export function chooseTerm(reference, saved) {
   const term = squash(saved);
   // A term saved before 0.22 for text now read as prose is that whole sentence: it would search acsearch for it again, so it goes with the default.
   const none = reference.catalogue === 'Other' && !defaultTerm(reference);
-  if (!term || none || term === oldDefaultTerm(reference)) return defaultTerm(reference);
+  if (!term || none || oldDefaultTerms(reference).includes(term)) return defaultTerm(reference);
   return term;
 }
 
@@ -281,7 +333,11 @@ const eitherCase = (text) => [...String(text)].map((char) => {
 // The spellings dealers write each key in are the table's citationKeys. A key ending in a full stop needs no entry of its own — the separator below
 // already eats the stop, so "Cr" covers "Cr." and "Craw" covers "Craw." — and an Other reference is already searched as the exact citation, so every
 // row it finds cites it and the table gives it no keys.
-const citationKeys = (reference) => catalogueOf(reference?.catalogue)?.citationKeys ?? null;
+// Bopearachchi is cited "Bop." as often as spelled out; the short key is read here beside the table's.
+const citationKeys = (reference) => {
+  const keys = catalogueOf(reference?.catalogue)?.citationKeys ?? null;
+  return keys && reference.catalogue === 'Bop' ? [...keys, 'Bop'] : keys;
+};
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
@@ -292,10 +348,8 @@ const citationNumber = ({ catalogue, number }) => {
 // is, which is what made 'RIC ' followed by 100,000 full stops cost seconds. The bracket of "RIC (306)" belongs to the number and is taken there.
 const SEP = String.raw`[\s.,]*`;
 // An edition mark, on the key or on the volume: "RIC² 306", "RIC2 306", "RIC I(2) 306", "RIC I (2) 306".
-const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\d)?`;
-// The key another catalogue's number follows: what comes after "RIC I, Cohen" is Cohen's number, not RIC's. A small closed list — the keys dealers
-// really write beside RIC on one line, and the words they join two citations with — so an unlisted ruler still reads as a ruler.
-const OTHER_KEYS = ['Cohen', 'C', 'BMC', 'BMCRE', 'RSC', 'RCV', 'Sear', 'Calicó', 'Calico', 'Hunter', 'Cayón', 'Cayon', 'Not', 'Unlisted', 'unlisted', 'and', 'or'];
+// "(2nd ed.)" is the bracket abbreviated ("RIC I (2nd ed.) 306"); "(second edition)" spelled out reads as a bracketed word below.
+const EDITION = String.raw`(?:[²³]|\s?\(\d\)|\s?\(\d(?:st|nd|rd|th)\.?\s?ed(?:ition|n?\.)?\)|\d)?`;
 // A ruler or an edition spelled out, between the volume and the number: plain words, or a bracketed phrase of them, each with an optional comma, and
 // a ruler may carry his own regnal numeral ("RIC X Leo I 605"). A word holding a digit or ending in a full stop is another citation's, so
 // "RIC -; C. 306" and "RIC 12; Cohen 306" stop here. A bare Roman numeral is never a word of its own: it is a volume, and which volumes count is
@@ -331,11 +385,16 @@ function volumeParts(volume) {
 // A ".1", "-1" or "/1" glued to the numeral is that volume's part and nothing else — the guard behind the part makes it impossible to leave one
 // unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1.
 function between({ catalogue, volume }) {
+  // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
+  if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
   if (catalogue !== 'RIC') return SEP;
   const text = squash(volume);
   const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
   const part = partPattern(volumeParts(text));
-  return `${EDITION}${SEP}(?:(?:${numeral ? escaped(numeral) : NUMERAL})${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
+  // The volume may be introduced as one ("RIC vol. I 306"), and volume I written as a digit ("RIC 1 306"). Only I: "RIC 2 306" is as likely to be the
+  // second edition of volume I spaced out as volume II.
+  const written = numeral === 'I' ? '(?:I|1)' : numeral ? escaped(numeral) : NUMERAL;
+  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -399,32 +458,33 @@ const NAMES = {
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
 // never stands in front of the words a compliment carries on with.
 const BARE_FINE = { Fine: FINE };
-// Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials.
-const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF' };
+// Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials. The Spanish
+// (BC, MBC, EBC, SC: bien, muy bien, extraordinariamente bien conservada, sin circular) and the Dutch (ZF zeer fraai, PR prachtig) are marks too.
+const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
+  BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF' };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
-const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE };
+const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE,
+  'zeer fraai': 'VF', prachtig: 'EF' };
 // Class 7. The marks that are a word of their own far more often than a grade: German "s." is "siehe", see; a lone "F" is an initial; and "schön" is
-// what a dealer calls any pretty coin. Each is read only as a half of a range with another grade, or directly behind a grade label.
-const RANGE_ONLY = { s: FINE, F: FINE, 'schön': FINE };
+// what a dealer calls any pretty coin, as Dutch "fraai" is. Each is read only as a half of a range with another grade, or directly behind a grade
+// label.
+const RANGE_ONLY = { s: FINE, F: FINE, 'schön': FINE, fraai: FINE };
 const EXACT = { ...ABBREVIATIONS, ...MARKS, s: RANGE_ONLY.s, F: RANGE_ONLY.F };
-const SPELLED = { ...NAMES, ...BARE_FINE, ...PRAISE, 'schön': RANGE_ONLY['schön'] };
+const SPELLED = { ...NAMES, ...BARE_FINE, ...PRAISE, 'schön': RANGE_ONLY['schön'], fraai: RANGE_ONLY.fraai };
 const SPELLED_BUCKETS = new Map(Object.entries(SPELLED).map(([name, bucket]) => [name.toLowerCase(), bucket]));
 
 // A qualifier in front of a grade keeps its bucket, exactly as the gVF and aEF it abbreviates, and gives a mark the opening edge it needs. Read in
 // either case, since a dealer writes "fast vz" as readily as "Fast vorzüglich"; it is the capital rule above, not the qualifier, that keeps prose out.
 const GRADE_QUALIFIERS = ['Near', 'Nearly', 'Almost', 'About', 'Good', 'Choice', 'Ch', 'Superb', 'Nice', 'Toned', 'otherwise', 'sonst',
-  'Fast', 'Gutes', 'Knapp', 'Buon', 'Presque', 'NGC', 'PCGS'];
+  'Fast', 'Gutes', 'Knapp', 'Buon', 'Presque', 'Casi', 'NGC', 'PCGS'];
 // The qualifiers bare "Fine" takes in place of an opening edge.
 const FINE_QUALIFIERS = /^(?:About|Good|Near|Nearly|Almost|Choice)\b/i;
 // The slabbers: only their line prints a score behind the grade.
 const SLABBERS = /\b(?:NGC|PCGS)\b/;
 
-// A word read whatever its capitals. (eitherCase above reads a catalogue number, where a full stop is also the comma dealers write.)
-const anyCase = (text) => [...String(text)].map((char) => {
-  const [lower, upper] = [char.toLowerCase(), char.toUpperCase()];
-  return lower === upper ? escaped(char) : `[${lower}${upper}]`;
-}).join('');
+// A word is read whatever its capitals with lot.js's anyCase, as a heading's names are. (eitherCase above reads a catalogue number, where a full stop
+// is also the comma dealers write.)
 // Longest first, so "Extremely Fine" is one grade and not the word "Fine" inside it, and "About Uncirculated" is not "Uncirculated".
 const alternation = (patterns) => [...patterns].sort((a, b) => b.length - a.length).join('|');
 const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(SPELLED).map(anyCase)]);
@@ -433,8 +493,9 @@ const TOKENS = alternation([...Object.keys(EXACT).map(escaped), ...Object.keys(S
 // manuscript and a monogram's own capitals are never a qualified mark.
 const QUALIFIER = `(?:(?:${alternation(GRADE_QUALIFIERS.map(anyCase))})[.,]?\\s+|[qQ]\\.?|m(?=\\p{Lu}))`;
 // A slab prints its strike and surface scores behind the grade ("NGC Choice VF 5/5 - 4/5"), and a numeric grade its number ("MS 63"); a star marks the
-// eye appeal. Whether the tail may be read at all is decided below — behind a slabber, or at the very start of the text, and nowhere else.
-const SLAB = String.raw`★?(?:\s\d{1,2}(?:/\d{1,2})?)?`;
+// eye appeal. The number may be glued to the grade as often as spaced ("PCGS MS63", "NGC AU58"). Whether the tail may be read at all is decided
+// below — behind a slabber, or at the very start of the text, and nowhere else; anywhere else a glued number leaves no closing edge.
+const SLAB = String.raw`★?(?:\s?\d{1,2}(?:/\d{1,2})?)?`;
 // The qualifiers are lazy, so a name a qualifier stands in front of is read as that name qualified ("About Uncirculated" is Uncirculated with the
 // qualifier every qualifier keeps: the same bucket), whatever the dealer's capitals.
 const GRADE_CANDIDATE = new RegExp(`(?<![\\p{L}\\d])((?:${QUALIFIER}){0,2}?)(${TOKENS})(\\+*)(${SLAB})(?![\\p{L}\\d])`, 'gu');
@@ -448,10 +509,12 @@ const EDGE = 24;
 const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
   + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // "AU" is the chemical symbol for gold as often as it is "About Uncirculated", so a gold lot that never graded anything was counted in the top
-// bucket. Three shapes say the metal is meant: the weight or diameter printed straight behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g."), the
+// bucket. Three shapes say the metal is meant: the weight or diameter printed behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g.", "AU. 4.45g."), the
 // bracket it stands in behind "Gold" ("Gold (AU) solidus"), and the denomination it follows ("Byzantine. Solidus. AU."). A die axis is no such tail —
 // "AU 12 h." is the grade with the axis behind it — and a slab's own line is never read this way, since "Solidus. NGC AU 58" is what NGC graded.
-const METAL_TAIL = new RegExp(String.raw`^,?\s?\d{1,3}(?:[.,]\d{1,3})?\s?(?:mm|cm|gr|g)(?![\p{L}\d])`, 'u');
+// The weight may stand behind a comma, a full stop, an opening bracket or both ("AU. 4.45g.", "AU (4.45 g)", "AU. (4.45 g, 20 mm)"), and be spelled
+// "grams" or "gm": the metal, then its measurements.
+const METAL_TAIL = new RegExp(String.raw`^(?:[,.]?\s?\(?\s?)\d{1,3}(?:[.,]\d{1,3})?\s?(?:mm|cm|grams?|gr|gm|g)(?![\p{L}\d])`, 'u');
 const GOLD_BRACKET = /(?<![\p{L}\d])gold\s*\(\s*$/iu;
 // The denominations a dealer writes the metal behind. A closed list, as every other word list here is: any word at all would take the grade off a
 // row that really was graded.
@@ -464,21 +527,45 @@ const metalAu = (before, tail) => METAL_TAIL.test(tail) || (GOLD_BRACKET.test(be
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
 const PRAISE_OPENS = /[.;,:/]\s*$/;
-// The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s").
-const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|dritto|rovescio)`;
+// The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s", "Vz. ZF, Kz. PR"). The
+// Dutch voorzijde, "Vz.", is not one: it is spelled as the German grade vz.
+const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|dritto|rovescio)`;
 const SIDE_OPENS = new RegExp(String.raw`(?<![\p{L}\d])${SIDE}\.?\s+$`, 'iu');
 const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
 const LABEL = /(?:Erhaltung|Grade|Condition)\s*:?\s*$/i;
 // Two grades a range separator joins are one statement, read as the lower of the two.
 const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
+// So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
+// lower one is what the lot is worth. The word lends the second grade neither a capital nor a range-only mark's standing, so "Good VF and fine for
+// the type" and "vz und s. Anm." are not ranges; and only English "and" closes a grade by itself: "und", "e", "et" and "y" close one only where the
+// next grade token follows them, since "AU y AR" is gold and silver.
+const RANGE_WORD = /^\s+(?:and|und|e|et|y)\s+$/i;
+const joins = (gap) => RANGE_GAP.test(gap) || RANGE_WORD.test(gap);
 // A mark in brackets is a control mark or a catalogue's own aside ("Cohen 302 (MB)."), and one behind a colon that follows an all-lower-case word is a
 // label's value ("control: TB."); neither is a grade. A capitalised label is the collector's own ("Erhaltung: ss", "Rev: MS").
 const LOWER_COLON = /(?<![\p{L}\d])\p{Ll}+:\s*$/u;
+// A mark a comma sets behind a place on the coin is the control letters struck there, not a grade: "in left field, MB.", "in exergue, TB.",
+// "monogram below, TTB.", "below throne, MB.", "im Abschnitt, TB.", "in esergo, TB.". A comma behind anything else still opens a mark ("Patina
+// verde, BB.", "Leicht korrodiert, ss."). "links" and "rechts" are not in the list, since a German dealer grades straight behind the bust's
+// direction ("Kopf links, ss."), so "Im Feld links, MB." still reads as a grade.
+const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|beneath|under|monogram|control|controls|throne|wreath|Feld|Abschnitt|campo|esergo|champ)\.?\s*,\s*$/iu;
 // What bare "Fine" may not stand in front of: the compliment a dealer pays the dies ("Fine Style", "Fine-style"), the "and" that joins it to one, and
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
 const CAPITAL = /\p{Lu}/u;
+// "SC" is also the senate's mark on a Roman bronze ("Rev. SC, legend around.", "Minerva standing right; SC."), so as the Spanish sin circular it must
+// open the text or a sentence (never one a side label opens, nor one behind a sentence ending in a lower-case word, which is the type described:
+// "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins. A spaced dash
+// or a bracket behind it is a Seleucid Coins citation's own aside ("SC –; cf. ESM 123.", "SC (unlisted)"): the type is not in the book.
+const DESCRIBED = /(?<![\p{L}\d])\p{Ll}\p{L}*\.\s*$/u;
+const CITATION_ASIDE = /^\s[-–(]/;
+const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
+  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before));
+// A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
+// It is no statement at all, so it can neither be the last one nor join a range, and the grade a range separator joins to it is the provenance's
+// too ("there described as VF/EF"). "NGC graded AU" is the slab's own grade and stays.
+const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
 
 const kindOf = (token) => {
   if (Object.hasOwn(RANGE_ONLY, token)) return 'range-only';
@@ -505,6 +592,8 @@ export function gradeOf(description) {
   const ends = [];
   const statements = [];
   let previous = null;
+  // The end of the last provenance grade passed over, so its range partner is passed over with it.
+  let quoted = null;
   for (const [index, match] of candidates.entries()) {
     const start = match.index;
     const [, quals, token, plus, slab] = match;
@@ -517,13 +606,20 @@ export function gradeOf(description) {
     const tail = text.slice(end, end + EDGE);
     // The metal, not the grade: the lot says what the coin is made of and grades nothing.
     if (token === 'AU' && !slabbed && metalAu(before, tail)) continue;
-    if (!CLOSES.test(tail)) continue;
+    if (PROVENANCE_GRADE.test(before) || (quoted !== null && start - quoted <= EDGE && joins(text.slice(quoted, start)))) {
+      quoted = end;
+      continue;
+    }
+    // On a slab "PR" is Proof, not the Dutch prachtig: no bucket here is a proof's.
+    if (token === 'PR' && slabbed) continue;
+    if (!CLOSES.test(tail) && !joinsNext(candidates, index, end, text)) continue;
     const gap = previous === null ? '' : text.slice(previous.end, start);
     const joinable = previous !== null && gap.length <= EDGE;
-    const ranged = joinable && RANGE_GAP.test(gap);
+    const signed = joinable && RANGE_GAP.test(gap);
+    const ranged = signed || (joinable && RANGE_WORD.test(gap));
     const sided = joinable && SIDE_GAP.test(gap);
     const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before);
-    const capital = CAPITAL.test(quals + token) || ranged;
+    const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
     let read = false;
@@ -532,11 +628,12 @@ export function gradeOf(description) {
     // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
     else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
-    else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before);
+    else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
+      && !PLACE_COMMA.test(before) && (token !== 'SC' || senateFree(start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
-    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || ranged;
-    else read = ranged || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
+    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;
+    else read = signed || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
     if (!read) continue;
     const bucket = bucketOf(token);
     previous = { end };
@@ -556,6 +653,12 @@ function opensRange(candidates, ends, index, text) {
   if (!next || Object.hasOwn(RANGE_ONLY, next[2]) || Object.hasOwn(RANGE_ONLY, next[2].toLowerCase())) return false;
   const gap = text.slice(ends[index], next.index);
   return gap.length <= EDGE && (RANGE_GAP.test(gap) || SIDE_GAP.test(gap));
+}
+
+// Whether a joining word stands between this token and the next ("ss und vz"). Only the token beside it is looked at, as in opensRange.
+function joinsNext(candidates, index, end, text) {
+  const next = candidates[index + 1];
+  return Boolean(next) && next.index - end <= EDGE && RANGE_WORD.test(text.slice(end, next.index));
 }
 
 // The grade the page read when it arrived; a row from elsewhere is read here, once, rather than once per bucket.
@@ -704,12 +807,48 @@ export function signedOutPage(html, lots, now = new Date()) {
   });
 }
 
+// A provider's reply is untrusted, so it is read through a byte bound rather than whole: a declared length past it is refused unread, and a stream is
+// cut off the moment it passes it. Either throws 'too-large'. CoinArchives decodes strictly; acsearch is read as the browser reads a page (fatal: false).
+export async function boundedText(response, maxBytes, { fatal = true } = {}) {
+  const decode = (bytes) => new TextDecoder('utf-8', { fatal }).decode(bytes);
+  const length = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(length) && length > maxBytes) { await response.body?.cancel?.(); throw new Error('too-large'); }
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new Error('too-large');
+    return decode(bytes);
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) { await reader.cancel(); throw new Error('too-large'); }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return decode(bytes);
+}
+
+// The most of an acsearch reply read at all: twice the results text extractLots reads, and several times a real result page.
+export const ACSEARCH_MAX_BYTES = 4 * 1024 * 1024;
+
 export async function fetchPrices({ term, currency, category }, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date() } = options;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES } = options;
   try {
     const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
     if (!response.ok) return { status: 'network' };
-    const html = await response.text();
+    let html;
+    try { html = await boundedText(response, maxBytes, { fatal: false }); }
+    catch (error) { if (error?.message === 'too-large') return { status: 'network', reason: 'too-large' }; throw error; }
     const lots = extractLots(html);
     // A search without hits comes back as acsearch's "No results found" page, which has no results array at all.
     if (!lots) return /No results found/i.test(html) ? { status: 'empty', term } : { status: 'network' };
@@ -735,6 +874,10 @@ const quote = (text) => {
   return `“${chars.length > QUOTE_LIMIT ? `${chars.slice(0, QUOTE_LIMIT).join('')}…` : chars.join('')}”`;
 };
 export const quoteList = (texts) => texts.map(quote).join(', ');
+// A search term as the panel and the copy say it: in curly quotes, unless the term already carries punctuation of its own. A default term is written
+// in acsearch's own syntax — exact phrases in straight quotes, alternatives in brackets — and a second pair round it read as “"RIC 237"” and
+// “Nero ("RIC 306" …)”. What the collector typed is quoted as any other phrase is.
+export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`);
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
@@ -743,7 +886,7 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
-  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching “${term}”`;
+  stats += ` · range ${money.format(summary.min)}–${money.format(summary.max)} · ${count} recorded ${count === 1 ? 'sale' : 'sales'} matching ${quotedTerm(term)}`;
   if (summary.earliest !== null) stats += ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   // What the filters left out, then the sales themselves, then the median of each grade the panel shows.
   const lines = [card.label, stats, ...filters];

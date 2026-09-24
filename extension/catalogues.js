@@ -10,7 +10,8 @@ import { squash } from './core/validate.js';
 export const CATALOGUES = Object.freeze({
   Price: Object.freeze({ corpus: 'pella', corpusName: 'PELLA', idPrefix: 'price.', label: 'Price number', help: 'Example: Price 23',
     defaultNumber: '23', notFoundHint: 'Check the number.', queryKey: 'Price', termKeys: ['Price'], citationKeys: ['Price'],
-    prefixPattern: /^Price\s*(?=\d|$)/i, referencePattern: /^Price\s*(\d\S*)$/i }),
+    // PELLA titles 302 types with a letter before the number, P for Philip III and L for Lysimachus ("Price P23", "Price L1").
+    prefixPattern: /^Price\s*(?=\d|$)/i, referencePattern: /^Price\s*([PL]?\d\S*)$/i }),
   RIC: Object.freeze({ corpus: 'ocre', corpusName: 'OCRE', idPrefix: 'ric.', label: 'RIC number (including any suffix)',
     help: 'Example: 306 with Nero. Leave the ruler blank and choose Any volume to list every type with that number.',
     defaultNumber: '306', defaultSection: 'Nero', notFoundHint: 'Check the ruler, volume and number.', citationKeys: ['RIC', 'R.I.C'] }),
@@ -233,6 +234,15 @@ for (const [alias, section] of MINT_BY_ALIAS) {
 const MINT_SECTIONS = new Map(['VI', 'VII', 'VIII', 'IX'].flatMap((volume) => RIC_SECTIONS[volume]).map((section) => [rulerKey(section), section]));
 export const MINT_SPELLINGS = Object.freeze([...MINT_SECTIONS, ...MINT_BY_ALIAS].map((entry) => Object.freeze(entry)));
 export const volumesOf = (ruler) => [...(VOLUMES_BY_SECTION.get(rulerKey(ruler)) ?? [])];
+// A section that is a mint and nothing else: filed in RIC VI–IX only, and no person's name. It says where a coin was struck, never whose coin it is,
+// so a lot citing no volume keeps the ruler its heading names beside it ("Probus. RIC 40 (Ticinum)").
+export const isMintOnly = (name) => {
+  const volumes = volumesOf(name);
+  return volumes.length > 0 && volumes.every((volume) => ['VI', 'VII', 'VIII', 'IX'].includes(volume)) && !isRicPerson(name);
+};
+// A name RIC heads a ruler's section with and no person answers to ("Philip I", "Gaius/Caligula"): OCRE has no facet value under it, so a heading
+// naming it is looked for by the section, not by a portrait.
+export const isSectionOnly = (name) => volumesOf(name).length > 0 && !isRicPerson(name) && !isMintOnly(name);
 
 // The volume a ruler implies: the current one when it has the ruler (or the ruler is unknown), else the ruler's only volume (Titus: II.1²),
 // else Any volume (Hadrian is in II and II.3², Antioch in VI–IX).

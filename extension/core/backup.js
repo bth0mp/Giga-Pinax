@@ -1,6 +1,6 @@
 import {
-  LIMITS, SCHEMA_VERSION, foldQuarantine, migrateSnapshot, quarantineEntryId, unusableRevisions,
-  validateSnapshot,
+  LIMITS, SCHEMA_VERSION, foldQuarantine, isRestorableCollection, migrateSnapshot, quarantineEntryId,
+  unusableRevisions, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
@@ -13,7 +13,7 @@ export const BACKUP_FORMAT = 'ancient-coin-auction-companion';
 export const MAX_BACKUP_BYTES = 16 * 1024 * 1024;
 // The rescue file says on its face that it is one, so an import can turn it away by name rather
 // than by whatever its unvalidated contents happen to trip over first.
-export const RAW_EXPORT_KIND = 'raw-rescue';
+const RAW_EXPORT_KIND = 'raw-rescue';
 const RAW_EXPORT_REFUSAL =
   'This is a raw rescue file, not a backup. Use Export backup to make a file that can be imported.';
 // A write time beyond the export that carries it is a skewed clock or a hand-edited file, and a
@@ -120,11 +120,22 @@ function readBackup(document) {
   }
   data.recentCommands = [];
   data.drafts = [];
+  // The set-aside list is folded into this install's own on import, so a crafted one is turned away by its length
+  // before anything walks it. Only a document is held to this: a store that set more aside must still open.
+  if (Array.isArray(data.quarantine) && data.quarantine.length > LIMITS.quarantine) {
+    return failure(
+      'collection-limit',
+      `This backup lists more than ${LIMITS.quarantine.toLocaleString('en-US')} set-aside records, more than an import takes in, so nothing in it was imported.`,
+      'data.quarantine',
+    );
+  }
   // Before validation, because validation says only that a revision is an integer within the ceiling a stored root may
   // carry: it cannot say that no run of writes produced it. A revision above the usable ceiling is turned away here
   // rather than restarted as a stored one is - a record taken in above it would be refused by its own next save - and
   // it is told what the file is, instead of being reported as an integer out of range.
-  const unusable = unusableRevisions(data);
+  // The root's own revision is left out: an import never adopts it (the store counts on from its own), and v0.32.1
+  // still exported from a root locked at 2^53-1, so that file is the collector's real backup, not a crafted one.
+  const unusable = unusableRevisions(data).filter(({ collection }) => collection !== 'root');
   if (unusable.length) {
     return failure(
       'invalid-record',
@@ -632,21 +643,45 @@ export async function importWithSafetyCopy({ exportCopy, exportRaw, download, co
   }
 }
 
+// Settings set aside whole are never put back, so what the collector stands to lose there - their house presets - is
+// counted and named, with the way to keep them, instead of being one more record that could not be read.
+const isSetAsideSettings = (entry) => entry?.collection === 'preferences' && entry.record !== null;
+const presetCount = (entry) =>
+  (Array.isArray(entry.record?.housePremiumPresets) ? entry.record.housePremiumPresets.length : 0);
+const presetsText = (count) => `${count} house preset${count === 1 ? '' : 's'}`;
+
+function settingsSummaryText(settings) {
+  const presets = settings.reduce((sum, entry) => sum + presetCount(entry), 0);
+  if (!presets) return 'Your settings could not be read and were set aside. They held no house presets.';
+  const them = presets === 1 ? 'it' : 'them';
+  return `Your settings could not be read and were set aside, with ${presetsText(presets)}. ` +
+    `Download set-aside records to keep ${them}, then enter ${them} again under House premiums.`;
+}
+
 export function quarantineSummaryText(entries) {
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return '';
+  const settings = list.filter(isSetAsideSettings);
   // An entry with no record of its own exists only to carry links the repair had to clear.
-  const records = list.filter((entry) => entry.record !== null).length;
-  if (!records) return 'Some links were cleared while repairing local data.';
-  return records === 1
-    ? '1 record could not be read and was set aside.'
-    : `${records} records could not be read and were set aside.`;
+  const records = list.filter((entry) => entry.record !== null && !isSetAsideSettings(entry)).length;
+  const parts = [];
+  if (records) {
+    parts.push(records === 1
+      ? '1 record could not be read and was set aside.'
+      : `${records} records could not be read and were set aside.`);
+  }
+  if (settings.length) parts.push(settingsSummaryText(settings));
+  return parts.length ? parts.join(' ') : 'Some links were cleared while repairing local data.';
 }
 
 function quarantineLine(entry) {
   const cleared = entry.clearedReferences?.length ?? 0;
   const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
-  return `${entry.collection}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
+  const presets = presetCount(entry);
+  const name = isSetAsideSettings(entry)
+    ? `settings with ${presets ? presetsText(presets) : 'no house presets'}`
+    : entry.collection;
+  return `${name}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
 }
 
 export function quarantineLines(entries) {
@@ -655,12 +690,13 @@ export function quarantineLines(entries) {
 
 // One row per set-aside entry as the page draws it: the line to read, the identifier a restore names,
 // and whether the entry holds a record to put back at all. An entry with no record of its own exists
-// only to carry links the repair cleared, and there is nothing in it to restore.
+// only to carry links the repair cleared, and there is nothing in it to restore; nor is there in one
+// set aside from somewhere no record goes back to, such as the settings.
 export function quarantineRows(entries) {
   return (Array.isArray(entries) ? entries : []).map((entry) => ({
     id: quarantineEntryId(entry),
     line: quarantineLine(entry),
-    restorable: entry?.record !== null && entry?.record !== undefined,
+    restorable: entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection),
   }));
 }
 
@@ -674,6 +710,9 @@ export function quarantineRestoreText(value) {
   // other with it, and the reply says so rather than leaving a second entry seemingly untouched.
   for (const also of value.alsoRestored ?? []) {
     parts.push(`The record it is linked to went back into ${also.collection} with it.`);
+  }
+  if (value.placedLastInGroup) {
+    parts.push('It now comes last in its alternative group, because its old place there has been taken since.');
   }
   if (restored) parts.push(`${restored} link${restored === 1 ? ' was' : 's were'} restored with it.`);
   if (kept.length) {

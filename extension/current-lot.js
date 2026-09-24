@@ -110,8 +110,10 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     }
   }
   if (!candidates.reference) {
+    // A volume may carry its edition as a superscript (RIC I² 306, RIC II.1² 12). SC is Seleucid Coins only with a number behind it: "SC" alone is the
+    // senate's mark in a Roman coin's field.
     for (const line of lines) {
-      const match = /\b(?:(?:RIC|RPC)\s+(?:[IVX]+(?:\.\d+)?\s+)?[A-Za-z0-9()./\-]+|(?:Price|Crawford|Sear|BMC)\s+[A-Za-z0-9()./\-]+)\b/i.exec(line.text);
+      const match = /\b(?:(?:RIC|RPC)\s+(?:[IVX]+(?:\.\d+)?²?\s+)?[A-Za-z0-9()./\-]+|(?:Price|Crawford|Sear|BMC)\s+[A-Za-z0-9()./\-]+|SC\s+\d[A-Za-z0-9()./\-]*)\b/i.exec(line.text);
       if (match) {
         candidates.reference = { value: limit(match[0], 120), provenance: line.provenance };
         break;

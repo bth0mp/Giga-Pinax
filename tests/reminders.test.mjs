@@ -26,6 +26,24 @@ test('a trigger that lands outside the instants a record can hold is skipped, no
   assert.equal(triggers[0].triggerAt, '0000-01-01T00:00:00.000Z');
 });
 
+// A timed event stays relevant a quarter of an hour past its start, and for one after 23:45 on the last day an instant
+// can spell, that end is in year 10000 - written "+010000-…", which sorts before every ordinary instant. The reminder
+// was reported missed eight thousand years early, and the wake time after an overdue one was no instant at all.
+test('an event at the very end of the instants a record can hold is neither missed early nor woken at no instant', () => {
+  const event = {
+    id: eventId, revision: 0, name: 'Last sale', precision: 'timed', startsAt: '9999-12-31T23:50:00.000Z',
+    localDate: '9999-12-31', localTime: '23:50', timeZone: 'UTC', reminders: [{ id: reminderA, kind: 'offset', offsetMinutes: 0 }],
+  };
+  const waiting = reconcileScheduler([event], { alerts: [] }, '2026-09-12T12:00:00.000Z');
+  assert.deepEqual(waiting.missedTriggerIds, []);
+  assert.equal(waiting.nextWakeAt, '9999-12-31T23:50:00.000Z');
+
+  const overdue = reconcileScheduler([event], { alerts: [] }, '9999-12-31T23:55:00.000Z');
+  assert.deepEqual(overdue.missedTriggerIds, []);
+  assert.deepEqual(Object.keys(overdue.overdueByEvent), [eventId]);
+  assert.equal(overdue.nextWakeAt, '9999-12-31T23:59:59.999Z', 'the wake time is still an instant a record can hold');
+});
+
 test('resolves a unique London local time and rejects DST gaps and overlaps', () => {
   assert.deepEqual(resolveZonedDateTime({
     localDate: '2026-02-10', localTime: '10:30', timeZone: 'Europe/London', disambiguation: 'reject',

@@ -63,6 +63,9 @@ function loadSettings({
   stored = new Map(),
   confirmAnswers = [],
   catalogueMetadata = async () => null,
+  language = 'en-US',
+  siteDataBlocked = false,
+  snapshotReply = { ok: true, value: snapshot },
 } = {}) {
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
@@ -76,7 +79,7 @@ function loadSettings({
   const commands = [];
   const prompts = [];
   const blobs = [];
-  const state = { snapshot: { ok: true, value: snapshot } };
+  const state = { snapshot: snapshotReply };
   let requestIds = 0;
   const bridge = {
     newRequestId: () => `request-${(requestIds += 1)}`,
@@ -102,12 +105,18 @@ function loadSettings({
     ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue,
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
-    ...browserGlobals(document, { localStorage, confirm, downloads: blobs }),
+    ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
     browser: { runtime: { getManifest: () => manifest } },
     globalThis: null,
     Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
     Error, TypeError, TextEncoder, structuredClone,
   };
+  // A browser that blocks site data for the extension throws on reading localStorage at all.
+  if (siteDataBlocked) {
+    Object.defineProperty(sandbox, 'localStorage', {
+      get() { throw new Error("Failed to read the 'localStorage' property from 'Window': Access is denied for this document."); },
+    });
+  }
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
   for (const name of ['updates.js', 'settings.js']) {
@@ -242,6 +251,58 @@ test('removing a row takes it out of the next save', async () => {
   assert.deepEqual(page.commands[0].preferences.housePremiumPresets, []);
 });
 
+// A saved row is drawn back into fields the next Save reads, so a row nobody touched has to save
+// as it was in every locale: ar-EG and fa-IR write ٫ as their decimal mark, which the parser refuses.
+test('a preset row nobody touched saves unchanged whatever the browser locale is', async () => {
+  const saved = { name: 'Roma', buyerPremiumBps: 2250, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 2500 }] } };
+  for (const language of ['ar-EG', 'fa-IR', 'bn-BD', 'de-DE', 'en-US']) {
+    const page = await openSettings({
+      language,
+      snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [saved] }) }),
+      reply: () => ({ ok: true, value: preferences({ revision: 4, housePremiumPresets: [saved] }) }),
+    });
+    const row = page.document.querySelector('.premium-row');
+    assert.equal(row.querySelector('.premium-value').value, '22.50', language);
+    await page.element('save-settings').click();
+    assert.equal(row.querySelector('.premium-value').getAttribute('aria-invalid'), null, language);
+    assert.equal(page.commands.length, 1, `${language}: the untouched row is saved`);
+    assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [saved], language);
+  }
+});
+
+// Every row has a Remove button, so the house it removes is what tells one from another by name.
+test('each Remove button is named by the house its row holds', async () => {
+  const page = await openSettings({
+    snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [
+      { name: 'Roma', buyerPremiumBps: 2000 }, { name: 'Leu Numismatik', buyerPremiumBps: 1800 },
+    ] }) }),
+  });
+  const removeOf = (row) => row.querySelector('.premium-remove').querySelector('button');
+  const rows = () => page.document.querySelectorAll('.premium-row');
+  assert.deepEqual(rows().map((row) => removeOf(row).getAttribute('aria-label')), ['Remove Roma', 'Remove Leu Numismatik']);
+  assert.deepEqual(rows().map((row) => removeOf(row).textContent), ['Remove', 'Remove'], 'the visible text starts the name');
+
+  await page.element('add-premium').click();
+  const added = rows()[2];
+  assert.equal(removeOf(added).getAttribute('aria-label'), 'Remove unnamed house');
+  added.querySelector('.premium-name').value = '  Nomos  AG ';
+  await added.querySelector('.premium-name').emit('input');
+  assert.equal(removeOf(added).getAttribute('aria-label'), 'Remove Nomos AG');
+});
+
+// A conflict is not something a second click can fix, so the refusal says what will.
+test('a Save refused because presets changed elsewhere says how to see them without losing input', async () => {
+  const page = await openSettings({
+    reply: () => ({ ok: false, code: 'conflict', outcome: 'not-committed', message: 'Preferences changed in another view.' }),
+  });
+  page.element('currency').value = 'CHF';
+  await page.element('save-settings').click();
+  await settle();
+  assert.match(page.status(), /^Preferences changed in another view\. Note what you typed, then reload this page to see the settings saved elsewhere\.$/);
+  assert.equal(page.statusIsError(), 'true');
+  assert.equal(page.element('currency').value, 'CHF', 'what was typed stays on the page');
+});
+
 // --- the default currency -----------------------------------------------------------------------
 
 test('saving a new default currency sends it and writes the cache the research popup prices from', async () => {
@@ -291,6 +352,31 @@ test('the chosen theme is remembered locally and applied to the open page', asyn
   await settle();
   assert.equal(stored.has('giga-pinax-theme-v1'), false);
   assert.equal(page.document.documentElement.dataset.theme, undefined);
+});
+
+// Blocked site data costs the theme and the popup's currency cache, both kept in localStorage. The
+// settings themselves live in extension storage, so the page loads and saves them all the same.
+test('with site data blocked the page still loads and saves, and says the theme cannot be remembered', async () => {
+  const page = await openSettings({
+    siteDataBlocked: true,
+    reply: (command) => ({ ok: true, value: preferences({ revision: 4, currency: command.preferences.currency }) }),
+  });
+  assert.equal(page.status(), '', 'loading is not reported as a failure');
+  assert.equal(page.element('save-settings').disabled, false);
+  assert.equal(page.element('currency').value, 'USD');
+
+  page.element('currency').value = 'EUR';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands.at(-1).preferences.currency, 'EUR');
+  assert.equal(page.status(), 'Settings saved.');
+
+  page.element('theme').value = 'dark';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.document.documentElement.dataset.theme, 'dark', 'the open page still takes the theme');
+  assert.equal(page.status(), 'Settings saved. This browser profile blocks site data, so the theme applies to this page only and can’t be remembered.');
+  assert.equal(page.statusIsError(), 'false');
 });
 
 // --- import: preview, then confirm ---------------------------------------------------------------
@@ -524,6 +610,171 @@ test('a Restore the store refuses says so and offers the button again', async ()
   assert.equal(page.status(), 'That record could not be put back.');
   assert.equal(page.statusIsError(), 'true');
   assert.equal(button.disabled, false);
+});
+
+// Typing a preset and putting a set-aside record back are two separate jobs on one page: the second
+// reads the list again and leaves every field the collector has not saved exactly as it was typed.
+async function typeUnsavedSettings(page) {
+  await page.element('add-premium').click();
+  const rows = page.document.querySelectorAll('.premium-row');
+  rows[1].querySelector('.premium-name').value = 'Leu Numismatik';
+  rows[1].querySelector('.premium-value').value = '18.5';
+  rows[0].querySelector('.premium-value').value = '22';
+  page.element('currency').value = 'CHF';
+  page.element('theme').value = 'dark';
+}
+
+const unsavedSettingsOf = (page) => ({
+  currency: page.element('currency').value,
+  theme: page.element('theme').value,
+  rows: page.document.querySelectorAll('.premium-row').map((row) => [
+    row.querySelector('.premium-name').value, row.querySelector('.premium-value').value,
+  ]),
+});
+
+const TYPED = { currency: 'CHF', theme: 'dark', rows: [['Roma', '22'], ['Leu Numismatik', '18.5']] };
+
+test('Restore reads the set-aside list again and keeps every setting not yet saved', async () => {
+  const roma = [{ name: 'Roma', buyerPremiumBps: 2000 }];
+  const restored = { collection: 'lots', id: uuid(5), restoredReferences: [], keptReferences: [] };
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: SET_ASIDE, preferences: preferences({ housePremiumPresets: roma }) }),
+    reply: (command, state) => {
+      if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 4 }) };
+      state.snapshot = { ok: true, value: snapshotWith({ quarantine: [SET_ASIDE[1]], preferences: preferences({ housePremiumPresets: roma }) }) };
+      return { ok: true, value: restored };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await page.element('quarantine-list').children[0].querySelector('button').click();
+  await settle();
+
+  assert.equal(page.status(), backup.quarantineRestoreText(restored));
+  assert.equal(page.element('quarantine-list').children.length, 1, 'the list is read again');
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'nothing typed is redrawn away');
+  await page.element('save-settings').click();
+  await settle();
+  const saved = page.commands.at(-1);
+  assert.equal(saved.type, 'preferences.save');
+  assert.equal(saved.expectedRevision, 3);
+  assert.equal(saved.preferences.currency, 'CHF');
+  assert.deepEqual(saved.preferences.housePremiumPresets,
+    [{ name: 'Roma', buyerPremiumBps: 2200 }, { name: 'Leu Numismatik', buyerPremiumBps: 1850 }]);
+});
+
+// The revision the page saves against moves only when the settings it drew are still the settings
+// stored: another view's new presets are not overwritten by a page that never showed them.
+test('after Restore the page saves against a newer revision only when the stored settings are unchanged', async () => {
+  const roma = [{ name: 'Roma', buyerPremiumBps: 2000 }];
+  for (const [elsewhere, expectedRevision] of [
+    [{ desktopAlertsEnabled: true }, 4],
+    [{ housePremiumPresets: [{ name: 'Nomos', buyerPremiumBps: 1800 }] }, 3],
+  ]) {
+    const page = await openSettings({
+      snapshot: snapshotWith({ quarantine: SET_ASIDE, preferences: preferences({ housePremiumPresets: roma }) }),
+      reply: (command, state) => {
+        if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 5 }) };
+        state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 4, housePremiumPresets: roma, ...elsewhere }) }) };
+        return { ok: true, value: { collection: 'lots', id: uuid(5), restoredReferences: [], keptReferences: [] } };
+      },
+    });
+    await page.element('quarantine-list').children[0].querySelector('button').click();
+    await settle();
+    await page.element('save-settings').click();
+    await settle();
+    assert.equal(page.commands.at(-1).expectedRevision, expectedRevision, JSON.stringify(elsewhere));
+  }
+});
+
+test('an import confirmed over unsaved settings keeps them and says the imported ones are not shown', async () => {
+  const stored = new Map();
+  const current = snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) });
+  const page = await openSettings({
+    stored,
+    snapshot: current,
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({
+        lots: [lot(uuid(1)), lot(uuid(2))], quarantine: [SET_ASIDE[1]],
+        preferences: preferences({ revision: 1, currency: 'GBP', housePremiumPresets: [{ name: 'Imported', buyerPremiumBps: 1500 }] }),
+      }) };
+      return { ok: true };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'the typed settings are still on the page');
+  assert.match(page.status(), /^Backup imported\. .*not saved.*reload this page/i);
+  assert.equal(page.element('quarantine-list').children.length, 1, 'the set-aside list follows the import');
+  assert.equal(JSON.parse(stored.get(GIGA_PREFERENCES_KEY)).currency, 'GBP', 'the popup prices in the imported default');
+});
+
+// A backup's preferences can carry the very revision the page holds, so the store alone cannot
+// tell a Save from this page apart from one made after seeing the imported settings.
+test('after an import kept unsaved settings over imported ones, Save refuses rather than overwrite them', async () => {
+  const imported = [{ name: 'Imported', buyerPremiumBps: 1500 }];
+  const page = await openSettings({
+    snapshot: snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }),
+    reply: (command, state) => {
+      if (command.type === 'preferences.save') return { ok: true, value: preferences({ revision: 4 }) };
+      state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 3, currency: 'GBP', housePremiumPresets: imported }) }) };
+      return { ok: true };
+    },
+  });
+  await typeUnsavedSettings(page);
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })), 'replace');
+  await page.element('confirm-import').click();
+  await settle();
+  await page.element('save-settings').click();
+  await settle();
+
+  assert.equal(page.commands.some(({ type }) => type === 'preferences.save'), false, 'the imported presets are not overwritten');
+  assert.match(page.status(), /not saved.*note what you typed, then reload this page to see the imported settings/i);
+  assert.equal(page.statusIsError(), 'true');
+  assert.deepEqual(unsavedSettingsOf(page), TYPED, 'what was typed stays on the page');
+  assert.equal(page.element('save-settings').disabled, false);
+});
+
+test('an import confirmed with nothing unsaved redraws the page from the imported settings', async () => {
+  const page = await openSettings({
+    snapshot: snapshotWith({ lots: [lot(uuid(1))], preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }),
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({
+        preferences: preferences({ revision: 1, currency: 'GBP', housePremiumPresets: [{ name: 'Imported', buyerPremiumBps: 1500 }] }),
+      }) };
+      return { ok: true };
+    },
+  });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.status(), 'Backup imported.');
+  assert.deepEqual(unsavedSettingsOf(page), { currency: 'GBP', theme: '', rows: [['Imported', '15.00']] });
+});
+
+// A page whose first read failed drew no settings, so there is nothing typed to keep and the import
+// is the chance to load it.
+test('an import on a page that could not load its settings loads the page', async () => {
+  const page = await openSettings({
+    snapshotReply: { ok: false, message: 'Worker asleep.' },
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith({ preferences: preferences({ revision: 1, currency: 'GBP' }) }) };
+      return { ok: true };
+    },
+  });
+  assert.equal(page.status(), 'Worker asleep.');
+  assert.equal(page.element('save-settings').disabled, true);
+
+  page.state.snapshot = { ok: true, value: snapshotWith({ lots: [lot(uuid(1))] }) };
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  await page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.status(), 'Backup imported.');
+  assert.equal(page.statusIsError(), 'false');
+  assert.equal(page.element('currency').value, 'GBP');
+  assert.equal(page.element('save-settings').disabled, false);
 });
 
 test('the set-aside records can be taken out as a file of their own', async () => {

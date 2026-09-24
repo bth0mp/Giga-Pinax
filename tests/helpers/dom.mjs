@@ -114,6 +114,8 @@ export class FakeElement {
     const key = String(name).toLowerCase();
     this.attributes.set(key, String(value));
     if (key === 'value') this._value = String(value);
+    // Markup's data-* attributes read back through dataset, as a page reads them.
+    if (key.startsWith('data-')) this.dataset[key.slice(5).replace(/-([a-z])/g, (whole, letter) => letter.toUpperCase())] = String(value);
   }
 
   getAttribute(name) {
@@ -172,6 +174,8 @@ export class FakeElement {
 
   get children() { return this.childNodes.filter((node) => node.nodeType === 1); }
 
+  get parentElement() { return this.parentNode?.nodeType === 1 ? this.parentNode : null; }
+
   get textContent() { return this.childNodes.map((node) => node.textContent).join(''); }
 
   set textContent(value) {
@@ -206,6 +210,21 @@ export class FakeElement {
     if (!this.parentNode) return;
     this.parentNode.childNodes = this.parentNode.childNodes.filter((node) => node !== this);
     this.parentNode = null;
+  }
+
+  after(...nodes) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    const rest = parent.childNodes.splice(parent.childNodes.indexOf(this) + 1);
+    parent.append(...nodes);
+    parent.childNodes.push(...rest);
+  }
+
+  // Markup a page writes is parsed like the page's own; it never carries text from a record here.
+  set innerHTML(markup) {
+    const parsed = parseHtml(`<body>${markup}</body>`).body;
+    for (const element of descendants(parsed)) element.ownerDocument = this.ownerDocument;
+    this.replaceChildren(...parsed.childNodes);
   }
 
   contains(node) {
@@ -285,6 +304,37 @@ export class FakeElement {
   getBoundingClientRect() { return { top: 0, left: 0, width: 0, height: 0 }; }
 
   requestSubmit(submitter) { return this.emit('submit', { submitter }); }
+
+  // --- forms and dialogs --------------------------------------------------------------------------
+
+  // A form's controls by name. Radios sharing a name answer as one group, whose value is the checked one.
+  get elements() {
+    const byName = {};
+    for (const control of this.querySelectorAll('input, select, textarea, button, fieldset, output')) {
+      if (control.name) (byName[control.name] ??= []).push(control);
+    }
+    return Object.fromEntries(Object.entries(byName).map(([name, [first, ...rest]]) => [name, !rest.length ? first : {
+      get value() { return [first, ...rest].find((radio) => radio.checked)?.value ?? ''; },
+      set value(next) { for (const radio of [first, ...rest]) radio.checked = radio.value === String(next); },
+    }]));
+  }
+
+  // Back to the markup's own values. Checked state is the attribute here, so it is left as it is.
+  reset() {
+    for (const control of this.querySelectorAll('input, select, textarea')) {
+      if (control.tagName === 'textarea') control.value = control.textContent;
+      else if (control.tagName === 'select') {
+        const option = control.querySelector('option[selected]') ?? control.querySelector('option');
+        control.value = option ? option.getAttribute('value') ?? option.textContent : '';
+      } else if (!['radio', 'checkbox'].includes(control.type)) control.value = control.getAttribute('value') ?? '';
+    }
+  }
+
+  get options() { return this.querySelectorAll('option'); }
+
+  showModal() { this.open = true; }
+
+  close() { this.open = false; }
 }
 
 for (const attribute of BOOLEAN_ATTRIBUTES) {
@@ -452,20 +502,23 @@ export function parseHtmlFile(url) {
 }
 
 // A page's source with its import statements taken out, ready for a sandbox that is handed the same
-// names as globals - the way tests/popup-research.test.mjs loads extension/popup.js.
+// names as globals - the way tests/popup-research.test.mjs loads extension/popup.js. A dynamic
+// import() becomes a call to the sandbox's `importModule`, since vm cannot import without a flag;
+// a sandbox that has none fails it the way a page without the module would.
 export function pageSource(url) {
   return readFileSync(url, 'utf8')
     .replace(/^import\b[\s\S]*?';\r?\n/gm, '')
+    .replace(/\bimport\((?=['"])/g, 'importModule(')
     .replace(/^export\s+(?=(?:default\s+|async\s+)?(?:function|const|let|var|class)\b)/gm, '');
 }
 
 // A browser's own globals, as far as a page loaded here uses them.
-export function browserGlobals(document, { localStorage, confirm = () => true, downloads = [] } = {}) {
+export function browserGlobals(document, { localStorage, confirm = () => true, downloads = [], language = 'en-US' } = {}) {
   return {
     document,
     localStorage,
     confirm,
-    navigator: { language: 'en-US' },
+    navigator: { language },
     FormData: FakeFormData,
     Event: FakeEvent,
     CustomEvent: FakeCustomEvent,

@@ -353,6 +353,22 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
   assert.equal(read.value.id, state.drafts[0].id);
 });
 
+// A capture draft is half-hour scratch holding page text, but only saving another draft ever cleared the expired ones:
+// a store that captured once kept that text for good.
+test('an expired draft is cleared by the next change of any kind', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('draft.save', {
+    kind: 'auction-capture', payload: { rawText: 'Lot 12, Nero denarius' },
+  })).snapshot;
+  const fresh = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Soon after', sourceLinks: [] } }));
+  assert.equal(fresh.snapshot.drafts.length, 1, 'a draft still inside its half hour stays');
+  const expired = state.drafts[0].expiresAt;
+  const later = { now: () => expired, newId: uuid };
+  const consumed = applyCommand(state, command('draft.consume', { draftId: state.drafts[0].id }), later);
+  assert.equal(consumed.ok, false, 'an expired draft is not handed out');
+  state = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Much later', sourceLinks: [] } }), later);
+  assert.deepEqual(state.snapshot.drafts, [], 'and it is gone with the next write');
+});
+
 test('saves bounded unique house premiums and preserves them for older callers', () => {
   const base = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
     preferences: { currency: 'GBP' },
@@ -812,6 +828,59 @@ test('half a pair alone is refused by naming the partner that is not there', asy
   assert.equal(storage.read().quarantine.length, 1, 'nothing is lost by the refusal');
 });
 
+// Two restores that could never succeed, whatever the collector did: a group member whose place was
+// taken when the group closed up behind it, and a collection entry whose lot is saved but lost its
+// link to it. Each was refused by the validator over something the restore itself can settle.
+test('a group member whose place has been taken is put back last in its group', async () => {
+  const group = { id: uuid(), revision: 0, dataClass: 'collector', name: 'Alternatives', createdAt: NOW, updatedAt: NOW };
+  const first = plainLot(uuid(), { alternativeGroupId: group.id, priority: 1 });
+  const second = plainLot(uuid(), { alternativeGroupId: group.id, priority: 2 });
+  const setAside = plainLot(uuid(), { alternativeGroupId: group.id, priority: 2 });
+  const stored = setAsideRoot([{ collection: 'lots', reason: 'collection-limit', quarantinedAt: NOW, record: setAside }], [first, second]);
+  stored.alternativeGroups.push(group);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.value.placedLastInGroup, true, 'the reply says where it went');
+  const after = storage.read();
+  const priorities = Object.fromEntries(after.lots.map(({ id, priority }) => [id, priority]));
+  assert.deepEqual(priorities, { [first.id]: 1, [second.id]: 2, [setAside.id]: 3 }, 'the order already there is kept');
+  assert.equal(after.lots.find(({ id }) => id === second.id).revision, second.revision, 'and no other lot is written');
+  assert.match(quarantineRestoreText(restored.value), /last in its alternative group/);
+});
+
+test('a collection entry whose lot is saved without its link is put back and linked again', async () => {
+  const won = plainLot(uuid(), { outcome: { status: 'won' } });
+  const entry = {
+    id: uuid(), revision: 0, dataClass: 'collector', lotId: won.id, title: 'Won', acquisitionDate: '2026-08-01',
+    sourceLinks: [], notes: 'bought at the sale', createdAt: NOW, updatedAt: NOW,
+  };
+  const stored = setAsideRoot([{ collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW, record: entry }], [won]);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+
+  const restored = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.deepEqual(restored.value.restoredReferences, [{ collection: 'lots', id: won.id, field: 'collectionEntryId' }]);
+  const after = storage.read();
+  assert.equal(after.collectionEntries[0].notes, 'bought at the sale');
+  assert.equal(after.lots[0].collectionEntryId, entry.id);
+  assert.equal(after.lots[0].revision, won.revision + 1, 'the lot changed, so a holder of the old row is asked again');
+
+  // A lot that already names another entry keeps it: the restore is refused and nothing moves.
+  const other = uuid();
+  const claimed = setAsideRoot([{ collection: 'collectionEntries', reason: 'foreign-key', quarantinedAt: NOW, record: entry }],
+    [plainLot(won.id, { outcome: { status: 'won' }, collectionEntryId: other })]);
+  claimed.collectionEntries.push({ ...structuredClone(entry), id: other, notes: 'the one kept' });
+  const claimedStorage = memoryStorage(claimed);
+  const refused = await createCommandWriter(claimedStorage, context())
+    .commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(claimed.quarantine[0]) }));
+  assert.equal(refused.ok, false);
+  assert.deepEqual(claimedStorage.read(), claimed);
+});
+
 // A restore the root refuses is refused in the validator's own words. The reminder preflight runs
 // over every schedule-changing command, so its sentence used to be put in front of a refusal that
 // was never about reminders at all.
@@ -855,9 +924,105 @@ test('a bin holding one set-aside record twice folds it into a single entry on r
   assert.equal(opened.value.quarantine.length, 2, 'the lot the repair set aside is the other entry');
 });
 
+// The load-time repair stamps what it sets aside with the moment of that load, and a stored root is only
+// rewritten by the next write. Every read in between repaired again at a later moment, so an entry's
+// identity - taken from its bytes - changed with each read, and a Restore could never find the entry
+// its page had drawn: "no longer in the list. Reload" on every attempt, however often the page reloaded.
+test('an entry the load-time repair set aside keeps its identity from one read to the next', async () => {
+  let tick = Date.parse(NOW);
+  const moving = { now: () => new Date((tick += 1500)).toISOString(), newId: uuid };
+  const stored = createEmptySnapshot(NOW);
+  const lotId = uuid();
+  const entryId = uuid();
+  stored.lots.push(plainLot(lotId, { outcome: { status: 'maybe' }, collectionEntryId: entryId }));
+  stored.collectionEntries.push({
+    id: entryId, revision: 0, dataClass: 'collector', lotId, title: 'Nero denarius',
+    acquisitionDate: '2026-08-01', sourceLinks: [], createdAt: NOW, updatedAt: NOW,
+  });
+  const writer = createCommandWriter(memoryStorage(stored), moving);
+
+  const first = await writer.commitCommand(command('snapshot.get'));
+  const second = await writer.commitCommand(command('snapshot.get'));
+  const ids = (reply) => quarantineRows(reply.value.quarantine).map(({ id }) => id);
+  assert.equal(ids(first).length, 2);
+  assert.deepEqual(ids(second), ids(first), 'the same entry is named the same way on every read');
+
+  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('collectionEntries'));
+  const reply = await writer.commitCommand(command('quarantine.restore', { entryId: entryRow.id }));
+  assert.equal(reply.ok, false);
+  assert.doesNotMatch(reply.message, /no longer in the list/, 'the entry the page drew is found');
+  assert.match(reply.message, /allowed set/, 'and the restore is answered on its merits: its lot is still broken');
+});
+
+// The fold behind an import and behind every load-time repair compared each entry and each cleared link
+// with all the others. The single command queue waits on it, so it has to stay linear.
+test('a crafted set-aside list is imported by the worker without holding the queue', async () => {
+  const quarantine = Array.from({ length: 20000 }, (_, index) => ({
+    collection: 'lots', reason: 'invalid-record', quarantinedAt: NOW, record: { id: 'x', n: index },
+  }));
+  const document = JSON.stringify({
+    format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW,
+    data: { ...createEmptySnapshot(NOW), quarantine },
+  });
+  const writer = createCommandWriter(memoryStorage(createEmptySnapshot(NOW)), context());
+  const started = performance.now();
+  const reply = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'merge', document }));
+  const elapsed = performance.now() - started;
+  assert.equal(reply.ok, true, reply.message);
+  assert.ok(elapsed < 2000, `imported in ${Math.round(elapsed)} ms`);
+});
+
+test('a repair clearing thousands of links to one missing record stays linear', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const missing = uuid();
+  for (let index = 0; index < LIMITS.lots; index += 1) stored.lots.push(plainLot(uuid(), { auctionEventId: missing }));
+  const writer = createCommandWriter(memoryStorage(stored), context());
+  const started = performance.now();
+  const opened = await writer.commitCommand(command('snapshot.get'));
+  const elapsed = performance.now() - started;
+  assert.equal(opened.ok, true, opened.message);
+  assert.equal(opened.value.quarantine.length, 1, 'one note for the one missing sale');
+  assert.equal(opened.value.quarantine[0].clearedReferences.length, LIMITS.lots, 'carrying every link it cleared');
+  assert.ok(elapsed < 2000, `opened in ${Math.round(elapsed)} ms`);
+});
+
+// Damage to what every record shares locked the collector out of all of them, down to a plain read.
+test('damaged settings, schedule, scratch or root counter no longer lock the store', async () => {
+  const settings = (extra) => ({
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'USD', housePremiumPresets: [], desktopAlertsEnabled: false,
+    createdAt: NOW, updatedAt: NOW, ...extra,
+  });
+  for (const [label, damage] of [
+    ['a currency no build writes', (root) => { root.preferences = settings({ currency: 'JPY' }); }],
+    ['a preset with a broken ladder', (root) => {
+      root.preferences = settings({ housePremiumPresets: [{ name: 'X', buyerPremiumBps: 2000, incrementLadder: { currency: 'USD', tiers: 'oops' } }] });
+    }],
+    ['settings from a later version', (root) => { root.preferences = settings({ schemaVersion: SCHEMA_VERSION + 1 }); }],
+    ['a wake time that is no instant', (root) => { root.scheduler.nextWakeAt = 'soon'; }],
+    ['no list of drafts', (root) => { root.drafts = null; }],
+    ['no request ledger', (root) => { root.recentCommands = {}; }],
+    ['a root revision at the last safe integer', (root) => { root.revision = Number.MAX_SAFE_INTEGER; }],
+  ]) {
+    const stored = createEmptySnapshot(NOW);
+    const kept = plainLot(uuid());
+    stored.lots.push(kept);
+    damage(stored);
+    const storage = memoryStorage(stored);
+    const writer = createCommandWriter(storage, context());
+    const opened = await writer.commitCommand(command('snapshot.get'));
+    assert.equal(opened.ok, true, `${label}: ${opened.message}`);
+    assert.deepEqual(opened.value.lots, [kept], label);
+    const saved = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'New', sourceLinks: [] } }));
+    assert.equal(saved.ok, true, `${label}: ${saved.message}`);
+    assert.equal(storage.read().lots.length, 2, label);
+    const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+    assert.equal(reconciled.ok, true, `${label}: ${reconciled.message}`);
+  }
+});
+
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
-  stored.lots.push({ id: 'not-a-uuid', title: 'Rescue me' });
+  stored.lots = { id: 'not-a-uuid', title: 'Rescue me' };
   stored.scheduler = 'corrupt';
   const storage = memoryStorage(stored);
   const writer = createCommandWriter(storage, context());
@@ -1005,6 +1170,32 @@ test('an import over the storage bound is refused as an import, not as a reminde
   assert.doesNotMatch(restore.error.message, /reminder/i);
 });
 
+// The reminder preflight ran before the command's own result had been judged, so a lot too many, or a
+// store already at the bound, was reported as reminders that could not be scheduled - and the way out
+// it offered was removing reminders.
+test('a schedule-changing command refused for its own sake does not blame reminders', () => {
+  const full = createEmptySnapshot(NOW);
+  for (let index = 0; index < LIMITS.lots; index += 1) full.lots.push(plainLot(uuid()));
+  const counted = applyCommand(full, command('lot.save', {
+    expectedRevision: null, lot: { title: 'One lot too many', sourceLinks: [] },
+  }), context());
+  assert.equal(counted.ok, false);
+  assert.equal(counted.error.code, 'validation');
+  assert.equal(counted.error.message, `Expected an array with at most ${LIMITS.lots} entries.`);
+
+  const notes = 'x'.repeat(LIMITS.notes);
+  const heavy = createEmptySnapshot(NOW);
+  const lotBytes = new TextEncoder().encode(JSON.stringify(plainLot(uuid(), { notes }))).length + 1;
+  while (heavy.lots.length * lotBytes < MAX_ROOT_BYTES - LIMITS.commandReplyBytes) heavy.lots.push(plainLot(uuid(), { notes }));
+  const bounded = applyCommand(heavy, command('lot.save', {
+    expectedRevision: null, lot: { title: 'One more', notes, sourceLinks: [] },
+  }), context());
+  assert.equal(bounded.ok, false);
+  assert.equal(bounded.error.code, 'storage-bound');
+  assert.match(bounded.error.message, /5 MiB/);
+  assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
+});
+
 test('writer preflights linked reminders when a lot activates their event', async () => {
   const current = createEmptySnapshot(NOW);
   for (let eventIndex = 0; eventIndex < 500; eventIndex += 1) {
@@ -1121,6 +1312,23 @@ test('a backup carrying a revision no write could have produced is refused whole
       assert.match(refused.message, /crafted or corrupt/i);
       assert.deepEqual(storage.read().lots, [], 'nothing of the file reached storage');
     }
+  }
+});
+
+// A store whose root had reached 2^53-1 under v0.32.1 refused every save but still exported. The root revision a
+// document carries is never adopted - the import counts on from this store's own - so that file must still import.
+test('a backup exported from a root at 2^53-1 imports, and its root revision is not adopted', async () => {
+  for (const mode of ['replace', 'merge']) {
+    const storage = memoryStorage(createEmptySnapshot(NOW));
+    const writer = createCommandWriter(storage, context());
+    const { snapshot, lotId } = rootWithRevisions(0);
+    snapshot.revision = Number.MAX_SAFE_INTEGER;
+    const imported = await writer.commitCommand(command('backup.import', {
+      expectedRevision: 0, mode, document: exportBackup(snapshot, NOW).value,
+    }));
+    assert.equal(imported.ok, true, `${mode}: ${imported.message}`);
+    assert.equal(storage.read().revision, 1, `${mode}: the store counts on from its own revision`);
+    assert.deepEqual(storage.read().lots.map(({ id }) => id), [lotId]);
   }
 });
 

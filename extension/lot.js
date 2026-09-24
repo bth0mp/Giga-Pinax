@@ -1,5 +1,5 @@
 import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
-import { isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
+import { isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
@@ -44,7 +44,7 @@ const notHouse = (first, key) => String.raw`(?<!${first}\s)${key}`;
 const KEYS = [
   // Roman: the British Museum's three, the Republic's Crawford line, Sear's Imperators, the Hunter cabinet, the late bronze and the Gallic hoards.
   'BMC/RE', 'BMCRE', 'BMCRR', 'BMC', 'Bopearachchi', String.raw`Bop\.?`, 'Calicó', 'Calico', 'Cohen', String.raw`Coh\.?`, 'Crawford',
-  String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
+  String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', String.raw`R\.I\.C\.?`, 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
   surname('Cunetio'), surname('Elmer'), surname('Normanby'), surname('Mairat'), surname('Bastien'), surname('Giard'), surname('Depeyrot'),
   surname('Estiot'), surname('Szaivert'), surname('Gnecchi'), surname('Babelon'), surname('Bahrfeldt'), surname('Banti'), 'CNR',
   'AGK', surname('Kampmann'), surname('Van Meter'), surname('Vagi'), surname('Foss'), surname('Mazzini'), surname('Biaggi'), surname('Seaby'), 'DCA',
@@ -79,7 +79,7 @@ const KEYS = [
   surname('Friedberg'), surname('Davenport'), String.raw`Dav\.?`, surname('Bitkin'), 'Y#',
   // The rest of the older keys, the single letters last of all.
   // A sale's "Price realized 1,200" is plain English, never the Alexander corpus.
-  'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'SC', String.raw`Price(?!\s+reali[sz]ed)`, 'Pr', 'Mitchiner', 'MIG',
+  'SNG', 'HGC', 'BCD', 'Sear', 'SBCV', 'SB', 'SGCV', 'GCV', 'SG', 'Scholten', 'Seleucid Coins', 'SC', String.raw`Price(?!\s+reali[sz]ed)`, 'Pr', 'Mitchiner', 'MIG',
   'DOC', 'MIR', 'Sydenham',
   String.raw`Syd\.?`, 'Müller', 'Muller', 'KM', 'Kroll', 'Svoronos', 'McClean', 'Benner', 'CBN', 'BN', 'GRPC', 'ESMS', 'ESM', 'C', 'S'];
 // Only "Y#" ends in a separator, and Krause glues its number to it ("Y#31a"), so the boundary after a "#" is the "#" itself.
@@ -181,8 +181,10 @@ const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').rep
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
 // A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
-// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler.
-const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
+// fold too, and a lower-case "i", "v" or "x" behind a name ("Gallienus x 3", "Nero i.e.") would read as a numeral and hide the ruler. A letter whose
+// other case is not one letter ("ß", whose capital is "SS") is matched as written rather than as a class that would take a bare "S", and a space is
+// any run of them. prices.js reads its grade words with this one too.
+export const anyCase = (value) => String(value).replace(/\s+/g, ' ').split('').map((character) => {
   if (character === ' ') return String.raw`\s+`;
   const [upper, lower] = [character.toUpperCase(), character.toLowerCase()];
   return upper === lower || upper.length !== 1 || lower.length !== 1
@@ -302,7 +304,16 @@ function chunks(span) {
 }
 
 // The keys of the catalogues with type data. Their reference is its first chunk: "Price 3949, 3950" cites two types, so 3950 ends Price 3949.
-const TYPED_KEY_WORD = /^(?:RIC|RRC|Crawford|Craw\.?|Cr\.?|SC|Price|Pr|Bopearachchi|Bop\.?)$/i;
+const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?)$/i;
+// A full stop a dealer puts after a typed key ("RIC. 60", "Pr. 3949") is the key's own, as "RSC. 119" has always been read. Only the keys that are no
+// English word take it: "Price." is left alone for the reason readable leaves "Price:" alone, and "SC." ends many a legend ("large SC. 12 h").
+const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;
+// "Price" and "Pr." are also what a dealer writes before a sale amount, and a number with a currency straight after it ("Pr. 1200 EUR", "Price 1,200 €")
+// is that amount, never a type: the key keeps no number, as "Price:" and "Price." keep none. One fixed run, so the test is linear.
+const AMOUNT_KEY = /^(?:Price|Pr)$/i;
+const AMOUNT = /^[\s.:]*\d+(?:[.,']\d+)*\s*(?:[$€£]|(?:EUR|USD|CHF|GBP)(?!\p{L}))/u;
+// RIC spelled with stops is RIC.
+const RIC_STOPS = /^R\.I\.C\.?\s*/;
 
 // The reference after one key: its first chunk (read up to its last number), then, for a catalogue without type data, every chunk that starts with a
 // number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
@@ -342,7 +353,9 @@ function pieceAfter(raw, typed = false) {
   return { body, broken };
 }
 
-function normalise(written, key, cf) {
+function normalise(stopped, spelled, cf) {
+  const written = stopped.replace(RIC_STOPS, 'RIC ');
+  const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
@@ -388,13 +401,14 @@ export function findReferences(input) {
     const end = keys[index + 1]?.index ?? text.length;
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
-    const span = text.slice(match.index + match[0].length, opens ? end - 1 : end);
+    const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
+    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '') : after;
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
     const number = unseparate(body);
     const own = (!SURNAMES.has(match[2].toLowerCase()) || (numberOnly(number) && !(broken && YEAR.test(number))))
-      && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before);
+      && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before) && !(AMOUNT_KEY.test(match[2]) && AMOUNT.test(after));
     const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run,
       written: `${text.slice(keyStart, match.index + match[0].length)}${own ? body : ''}` };
     if (broken || opens) run += 1;
@@ -428,30 +442,34 @@ export function looksLikeLot(input) {
 
 // Lot text is long or names two catalogues; a short heading with one reference in it ("Diva Faustina I … RIC III (Antoninus Pius) 394a", "SELEUCID
 // KINGDOM. … SC 2069") is one too, since parseReference can't read it whole. Text that starts with a type catalogue's key and still can't be read is a
-// typo ("RIC XI Nero 1", "RIC 2 Titus", "Price P1") and stays an error; a corpus title ("Seleucid", BIGR's) is no key.
+// typo ("RIC XI Nero 1", "RIC 2 Titus", "Price Q1") and stays an error; a corpus title ("Seleucid", BIGR's) is no key.
 const TYPED_KEY = /^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Bop)/i;
 export const isLot = (text) => looksLikeLot(text)
   || (!parseReference(text) && !TYPED_KEY.test(String(text ?? '').replace(INVISIBLE, '').trim()) && findReferences(text).references.length > 0);
 
 // A lot row looks up its parsed reference, never the row itself. Only a RIC reference without a ruler of its own borrows the text's rulers (the facet
-// search); "(Elagabalus)" in the reference keeps today's path.
+// search); "(Elagabalus)" in the reference keeps today's path. A mint section is no ruler of its own: beside a mint volume, or with no volume at all
+// ("Probus. RIC 40 (Ticinum)"), the heading's ruler still says whose coin it is, where the mint alone opened Constantine's RIC VII Ticinum 40.
 const borrowsRulers = ({ reference }, rulers) => reference.catalogue === 'RIC' && rulers.length > 0
-  && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume));
+  && (!reference.section || ['VI', 'VII', 'VIII', 'IX'].includes(reference.volume) || (!reference.volume && isMintOnly(reference.section)));
 // A heading name RIC itself heads a section with, and that no person answers to ("Philip I", "Gaius/Caligula"), is that section rather than a
 // portrait: OCRE has no facet value under that name and the local index files the coin under RIC's own section, so asking for the person found
-// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it.
-const headingSection = (rulers) => rulers.find((name) => !isRicPerson(name) && volumesOf(name).length > 0) ?? '';
+// nothing and left two dozen numbers to choose from. The section brings the volume it implies with it. Only a heading naming one ruler is read so:
+// a section standing for one of several is half of what the heading says, and "Aurelian and Severina" opened Severina's own RIC V 2.
+const headingSection = (rulers) => (rulers.length === 1 && !isRicPerson(rulers[0]) && volumesOf(rulers[0]).length > 0 ? rulers[0] : '');
 // A heading that named a mint and nobody else ("Londinium. RIC 12", "Arles mint") is that mint's section: RIC VI-IX file their coins by mint, so the
 // name is where the number lives, and without it a numberless RIC row left every mint of every volume to choose between. The section brings the
 // volumes it implies with it, exactly as a ruler section does — but only where the lot has stated no volume of its own, or one the mint really is a
 // section of. "Rome mint" stands in most RIC I-V descriptions, and a heading is ruler-less wherever the table does not hold its spelling, so a mint
 // that overrode the volume sent "Rome mint. RIC IV 460" to RIC VIII. A mint says where the coin was struck; it never says the lot cited another book.
+// Nor does it say whose coin it is: a heading is ruler-less wherever the table lacks its spelling ("Constantius I. Follis. Trier. RIC VI 1"), so the
+// row is marked headingMint and the lookup offers what the mint's section holds, never opening it.
 const mintSection = (found) => (found.reference.catalogue === 'RIC' && !found.reference.section && found.mint
   && (!found.reference.volume || volumesOf(found.mint).includes(found.reference.volume)) ? found.mint : '');
 export function lotLookup(found, rulers) {
   const mint = mintSection(found);
   // The volume the lot stated is one of the mint's own by then, so volumeFor only ever fills a blank one in.
-  if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, '') };
+  if (mint) return { ...found.reference, section: mint, volume: found.reference.volume || volumeFor(mint, ''), headingMint: true };
   if (!borrowsRulers(found, rulers)) return found.reference;
   const section = found.reference.section ? '' : headingSection(rulers);
   return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };

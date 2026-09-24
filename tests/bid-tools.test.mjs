@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import * as money from '../extension/core/money.js';
+import { FakeDocument, browserGlobals, pageSource } from './helpers/dom.mjs';
 import {
   buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
   formatMinorInput, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
@@ -123,7 +126,36 @@ test('ladder text is written with a point and no grouping, whatever the locale i
   assert.equal(text, '0.00: 5.00\n1000.00: 25.00');
   assert.deepEqual(parseIncrementLadder(text, 'EUR').value, { currency: 'EUR', tiers });
   assert.equal(formatIncrementLadder(null), '');
-  assert.equal(formatMinorInput(500, 'ar-EG').includes('.'), false, 'the localized field format is not this one');
+});
+
+// Every field the calculator fills from a saved lot is read back by the same parser, so it is
+// written the one way that parser reads in every locale: ASCII digits, a point, no grouping. ar-EG
+// and fa-IR write ٫ as their decimal mark, and bn-BD its own digits; neither could be read back.
+const FIELD_LOCALES = ['ar-EG', 'fa-IR', 'bn-BD', 'de-DE', 'en-US'];
+
+test('the calculator fields a lot fills are written so the parser reads them back in every locale', () => {
+  const values = {
+    lotId: 'lot-a', currency: 'EUR', hammerMinor: 123456, buyerPremiumBps: 2250,
+    costEstimate: { shippingMinor: 1550, paymentFeeBps: 275, paymentFeeMinor: 35, incrementMinor: 1000, minimumBidMinor: 2000 },
+  };
+  for (const locale of FIELD_LOCALES) {
+    const inputs = calculatorInputsForLot(values, { loadedLotId: null, mode: 'total', locale });
+    assert.deepEqual(
+      [inputs.amount, inputs.premium, inputs.shipping, inputs.paymentPercent, inputs.paymentFixed, inputs.increment, inputs.minimum],
+      ['1234.56', '22.50', '15.50', '2.75', '0.35', '10.00', '20.00'],
+      locale,
+    );
+    assert.equal(formatMinorInput(2250, locale), '22.50', locale);
+    const calculated = buildBidCalculation({
+      mode: 'total', amountText: inputs.amount, premiumText: inputs.premium, shippingText: inputs.shipping,
+      paymentPercentText: inputs.paymentPercent, paymentFixedText: inputs.paymentFixed, incrementText: inputs.increment,
+      minimumText: inputs.minimum, currency: 'EUR', locale,
+    });
+    assert.equal(calculated.ok, true, `${locale}: ${calculated.error?.message}`);
+    assert.equal(calculated.value.hammer.minor, 123456, locale);
+    assert.equal(calculated.buyerPremiumBps, 2250, locale);
+    assert.deepEqual(calculated.costEstimate, { currency: 'EUR', ...values.costEstimate }, locale);
+  }
 });
 
 test('a preset row reports which field its error belongs to', () => {
@@ -203,4 +235,58 @@ test('preset save has a synchronous pending guard and disables its control', () 
   const source = readFileSync(new URL('../extension/bid-tools.js', import.meta.url), 'utf8');
   assert.match(source, /if \(presetSavePending\) return;[\s\S]*presetSavePending = true;[\s\S]*save\.disabled = true;/);
   assert.match(source, /finally \{[\s\S]*presetSavePending = false;[\s\S]*save\.disabled = false;/);
+});
+
+// The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
+// by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
+async function mountCalculator({ snapshot }) {
+  const document = new FakeDocument();
+  const container = document.createElement('div');
+  const commands = [];
+  const sandbox = {
+    ...money,
+    getSnapshot: async () => snapshot,
+    sendCommand: async (command) => { commands.push(structuredClone(command)); return { ok: true, value: command.preferences }; },
+    newRequestId: () => `request-${commands.length + 1}`,
+    subscribeToSnapshots: () => () => {},
+    ...browserGlobals(document),
+    Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
+  };
+  sandbox.globalThis = sandbox;
+  const context = vm.createContext(sandbox);
+  vm.runInContext(pageSource(new URL('../extension/bid-tools.js', import.meta.url)), context, { filename: 'bid-tools.js' });
+  context.mountBidCalculator(container);
+  for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
+  const inputs = container.querySelectorAll('input');
+  return {
+    commands,
+    premium: inputs[1],
+    presetName: inputs.at(-1),
+    save: container.querySelectorAll('button').find((button) => button.textContent === 'Save house preset'),
+    status: container.querySelector('.bid-calculator-status'),
+  };
+}
+
+// A preferences record without a whole-number revision cannot be saved against, and the page says
+// that in words rather than as the TypeError reading it would throw.
+test('saving a preset over preferences without a revision says so and sends nothing', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { currency: 'USD', housePremiumPresets: [] } } } });
+  calculator.premium.value = '20';
+  calculator.presetName.value = 'Roma';
+  await calculator.save.click();
+  assert.deepEqual(calculator.commands, []);
+  assert.equal(calculator.status.textContent, 'House presets are not ready, so the preset was not saved. Reload the page and try again.');
+  assert.equal(calculator.status.dataset.error, 'true');
+  assert.equal(calculator.save.disabled, false);
+});
+
+test('saving a preset sends it against the revision the calculator read', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { revision: 2, preferences: { revision: 5, currency: 'USD', housePremiumPresets: [] } } } });
+  calculator.premium.value = '20';
+  calculator.presetName.value = 'Roma';
+  await calculator.save.click();
+  assert.equal(calculator.commands.length, 1);
+  assert.equal(calculator.commands[0].expectedRevision, 5);
+  assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [{ name: 'Roma', buyerPremiumBps: 2000 }]);
+  assert.equal(calculator.status.textContent, 'House preset saved.');
 });

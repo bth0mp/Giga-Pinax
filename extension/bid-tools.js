@@ -8,11 +8,13 @@ const el = (tag, props = {}) => Object.assign(document.createElement(tag), props
 const language = () => globalThis.navigator?.language ?? 'en-US';
 const presetKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
+// A saved amount written back into a field the collector saves again, so it is written the one way
+// the money parser reads in every locale: ASCII digits, a point and no grouping. A locale's own
+// digits or decimal mark (ar-EG writes ٫, bn-BD its own digits) could not be read back at all. The
+// locale is accepted for call-site symmetry with the parser, which does not depend on it either.
 export function formatMinorInput(minor, locale = 'en-US') {
   if (!Number.isSafeInteger(minor) || minor < 0) return '';
-  const decimal = new Intl.NumberFormat(locale).formatToParts(1.1)
-    .find(({ type }) => type === 'decimal')?.value ?? '.';
-  return `${Math.floor(minor / 100)}${decimal}${String(minor % 100).padStart(2, '0')}`;
+  return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`;
 }
 
 const LADDER_FORMAT = 'write each tier as the amount it starts at, a colon, and the step from there.';
@@ -73,7 +75,7 @@ export function presetFromFields({ name, premiumText, ladderText, ladderCurrency
 
 // A house's schedule is written in that house's own money. Applied under another currency the tiers
 // would be a schedule no house published, so the fixed increment stands in and the page says why.
-export function ladderForCurrency(ladder, currency) {
+function ladderForCurrency(ladder, currency) {
   if (!Array.isArray(ladder?.tiers) || ladder.tiers.length === 0) return { tiers: null, notice: '' };
   if (ladder.currency === currency) return { tiers: ladder.tiers, notice: '' };
   return {
@@ -374,6 +376,11 @@ export function mountBidCalculator(
         throw new Error(snapshotReply?.message || 'Open Settings once before saving house presets.');
       }
       takePreferences(snapshotReply.value);
+      // A record without a whole-number revision is one the gate refused: there is nothing to save
+      // against, and saying so beats the TypeError reading its revision would throw.
+      if (!Number.isInteger(preferences?.revision)) {
+        throw new Error('House presets are not ready, so the preset was not saved. Reload the page and try again.');
+      }
       const reply = await sendCommand({
         type: 'preferences.save',
         requestId: newRequestId(),

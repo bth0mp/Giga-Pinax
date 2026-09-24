@@ -1,7 +1,7 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quoteList, referenceName, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, lastSale, localDay, lotsInPeriod, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences, restoreTheme } from './preferences.js';
-import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
+import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { documentMode, shouldRevealRefine } from './companion-popup.js';
@@ -13,8 +13,10 @@ const api = globalThis.browser ?? globalThis.chrome;
 const LABELS_KEY = 'giga-pinax-labels-v1';
 const CONNECTION_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later. You can still search auction results below.';
 const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the catalogue lookup again later.';
+const BARE_RIC_HINT = 'Type a ruler or volume to search auction results.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
+const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
@@ -29,6 +31,7 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
+const PRICES_WAIT_MESSAGE = 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
 const onlineMessage = (corpus) => `This type was not available in the local ${catalogueForCorpus(corpus)?.corpusName ? `${catalogueForCorpus(corpus).corpusName} ` : ''}catalogue. `
@@ -269,9 +272,10 @@ function resetCopyLabel() {
   $('copy-summary').textContent = 'Copy summary';
 }
 
-function clearAcsearchPrices() {
+// A currency re-fetch keeps the collector's own decisions (keepCuration): acsearch and CoinArchives give a lot the same id in every currency.
+function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
-  priceCuration.reset();
+  if (!keepCuration) priceCuration.reset();
   shownPrices = null;
   renderPriceFilters();
   resetCopyLabel();
@@ -287,22 +291,23 @@ function clearAcsearchPrices() {
   setPricesBusy(false);
 }
 
-function clearCoinArchivesPrices() {
+function clearCoinArchivesPrices({ keepCuration = false } = {}) {
   coinArchivesRequestId += 1;
-  coinArchivesCuration.reset();
+  if (!keepCuration) coinArchivesCuration.reset();
   shownCoinArchivesPrices = null;
   renderPriceFilters();
   $('coinarchives-prices-panel').hidden = true;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-error').textContent = '';
+  $('coinarchives-prices-note').hidden = true;
   $('coinarchives-details').open = false;
   $('coinarchives-prices-button').disabled = false;
   $('coinarchives-prices-label').textContent = 'Get CoinArchives prices';
 }
 
-function clearPrices() {
-  clearAcsearchPrices();
-  clearCoinArchivesPrices();
+function clearPrices(options) {
+  clearAcsearchPrices(options);
+  clearCoinArchivesPrices(options);
 }
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
@@ -332,11 +337,12 @@ function clearOutput() {
   clearPrices();
 }
 
-function catalogueFailureMessage(outcome, hasFallback) {
-  const searches = hasFallback ? ' You can still search auction results below.' : '';
+// A bare RIC number starts no auction search of its own (namesOneType), so where there is none below, the message says what would start one.
+function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
+  const searches = hasFallback ? ' You can still search auction results below.' : bareRic ? ` ${BARE_RIC_HINT}` : '';
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
-  return hasFallback ? CONNECTION_MESSAGE : CONNECTION_ONLY_MESSAGE;
+  return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
 }
 
 // Only a reference that wasn't found or read marks its field invalid; network and permission messages name no field.
@@ -468,7 +474,12 @@ function renderCard(card) {
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
   $('result').hidden = false;
+  // Closing the section hides whatever inside it had the keyboard (a refined Search, Enter in a field), and a busy Search may already have lost it to
+  // the document; either way it goes to the section's own summary, which stays on screen, rather than back to the top of the popup.
+  const focused = document.activeElement;
+  const refocus = $('refine-reference').open && (!focused || focused === document.body || $('refine-reference').contains(focused));
   $('refine-reference').open = false;
+  if (refocus) $('refine-summary').focus({ preventScroll: true });
   announce(announcement(card));
   revealAgain('result');
 }
@@ -509,7 +520,7 @@ function renderCandidates(candidates, corpus, partial, personMismatch = false) {
 }
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
-// from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or "Price P1" would not read back) and makes
+// from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or an SC "Ad." title would not read back) and makes
 // no permission request. It empties the lot list too, whose chosen row would name another type.
 function openRecent(entry) {
   clearLot();
@@ -619,22 +630,27 @@ function lotLink(sale, text) {
   return link;
 }
 
-// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter that dropped no row. The rows counted are the
-// ones the median itself rests on — the period on show — and a row counts in N when the statistics count it and it either passes that filter or the
-// collector counted it by hand. A row he put back and took out again is out of the median, so it is out of the count: it never cited the reference.
-// The line stays while any row the filter names is out. A page that names the reference nowhere is counted whole instead, and says so.
-function filterLines(periodLots, curation, { name, denomination, citing, uncited, passes }) {
+// What the filters left out of the statistics, in the panel's own words; nothing is said about a filter every row passes. Every figure is over the
+// rows the median itself rests on — the period on show. N is how many of them pass the filter, and nothing else: a row the collector counted by hand
+// still does not cite the reference. Where the median rests on other rows than those — his own decisions, or the other filter — the number it rests
+// on follows ("1 of 3 results cite Price 23; 2 of 3 counted"). The line stays while any row fails the filter, counted by hand or not. A page that
+// names the reference nowhere is counted whole instead, and says so.
+// A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
+function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
   const total = periodLots.length;
-  if (uncited) return [`No result text names ${name}, so all ${total} ${total === 1 ? 'result is' : 'results are'} counted.`];
-  const counted = (test) => periodLots.filter((sale) => curation.reasonFor(sale) === null && (test(sale) || curation.includedByHand(sale))).length;
-  const dropped = (test) => periodLots.some((sale) => !test(sale) && curation.reasonFor(sale) !== null);
+  const all = `all ${total} ${total === 1 ? 'result is' : 'results are'} counted`;
+  if (uncited) return [`No result text names ${name}, so ${all}.`];
+  if (unsearched) return [`This search does not look for ${name}, so ${all}.`, ...filterLines(periodLots, curation, { name, denomination, passes })];
+  const counted = periodLots.filter((sale) => curation.reasonFor(sale) === null).length;
+  // Whether the rows counted are not the rows that pass, even where the two numbers happen to agree.
+  const differs = (test) => periodLots.some((sale) => test(sale) !== (curation.reasonFor(sale) === null));
+  const line = (test, verb) => `${periodLots.filter(test).length} of ${total} ${verb}${differs(test) ? `; ${counted} of ${total} counted` : ''}`;
+  // A filter's line stays while any row fails it, whether the filter leaves that row out or the collector counts it by hand: a row that does not cite
+  // the reference is no citation for being counted. A filter every row passes has nothing to say, whatever the other filter leaves out.
+  const shown = (test) => periodLots.some((sale) => !test(sale));
   const lines = [];
-  if (citing && dropped(passes.citing)) {
-    lines.push(`${counted(passes.citing)} of ${total} ${total === 1 ? 'result cites' : 'results cite'} ${name}`);
-  }
-  if (denomination && dropped(passes.denomination)) {
-    lines.push(`${counted(passes.denomination)} of ${total} ${total === 1 ? 'result names' : 'results name'} “${denomination}”`);
-  }
+  if (citing && shown(passes.citing)) lines.push(line(passes.citing, `${total === 1 ? 'result cites' : 'results cite'} ${name}`));
+  if (denomination && shown(passes.denomination)) lines.push(line(passes.denomination, `${total === 1 ? 'result names' : 'results name'} “${denomination}”`));
   return lines;
 }
 
@@ -653,11 +669,6 @@ function renderPriceFilters() {
   $('denomination-filter').checked = onlyDenomination && Boolean(denomination);
   $('price-filters').hidden = !citing && !denomination;
 }
-
-// A search term as the line says it: in the panel's curly quotes, unless the term already carries punctuation of its own. A default term is written
-// in acsearch's own syntax — exact phrases in straight quotes, alternatives in brackets — and a second pair round it read as “"RIC 237"” and
-// “Nero ("RIC 306" …)”. What the collector typed is quoted as any other phrase is.
-const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`);
 
 // The filter lines as a screen reader hears them, each its own sentence.
 const spokenFilters = (filters) => filters.map((line) => (line.endsWith('.') ? line : `${line}.`)).join(' ');
@@ -688,6 +699,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // at all is a fact about the page acsearch returned, not about the period on show: a period of that page holding no citation is simply a period
   // without a sale of this type, and the count beside the empty median says so.
   const searched = filtersCitations(reference) && searchesReference(term, reference);
+  const unsearched = filtersCitations(reference) && !searched;
   const uncited = searched && lots.length > 0 && !lots.some((sale) => citesReference(sale.description, reference));
   const citing = searched && onlyCiting && !uncited;
   const passes = { citing: (sale) => citesReference(sale.description, reference), denomination: (sale) => !String(sale.description ?? '').trim() || namesDenomination(sale.description, wanted) };
@@ -718,7 +730,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
   $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
-  const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, passes });
+  const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('cited-count').textContent = filters.join(' · ');
   $('cited-count').hidden = filters.length === 0;
   const trend = trendOf(includedLots, currency, now);
@@ -737,8 +749,10 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const drawnFrom = summarise(lotsInPeriod(lots, period.value, now), currency);
   const { total, unpriced } = drawnFrom;
   const skipped = total - drawnFrom.count - unpriced;
-  // "+" only when every lot on the page falls in the period, so acsearch may hold more of them.
-  let drawn = `Out of ${total}${pageSummary.capped ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${quotedTerm(term)}`;
+  // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
+  // is proves the page reaches back past the period, so every sale of the period is already on it.
+  const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
+  let drawn = `Out of ${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${quotedTerm(term)}`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
@@ -834,6 +848,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   // the same rules as the acsearch panel, under the same toggle, and a row left out stays in the list below, one click from being counted.
   const periodLots = lotsInPeriod(outcome.selectedLots, period.value, localDay(new Date()));
   const searched = filtersCitations(reference) && searchesReference(outcome.term, reference);
+  const unsearched = filtersCitations(reference) && !searched;
   // Readable or not is a fact about the page CoinArchives returned, as on the acsearch panel, so a period of it may still hold no citation at all.
   const uncited = searched && outcome.selectedLots.length > 0 && !outcome.selectedLots.some((sale) => citesReference(sale.description, reference));
   const citing = searched && onlyCiting && !uncited;
@@ -862,7 +877,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
-  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, passes });
+  const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
   const counts = coinArchivesCuration.counts(periodLots);
@@ -960,9 +975,26 @@ function showPricesError(message) {
   $('prices-error').hidden = false;
 }
 
+// A RIC number with no volume, no section and no single ruler names a type in every volume ("RIC 237" is Caracalla's denarius, Vespasian's aureus and
+// Constantine's follis), so a median of it would mix them all. Its prices wait for one type: run() prices a card that arrives with no research of its
+// own, and a chosen candidate begins research with its own volume and ruler.
+const blank = (value) => !String(value ?? '').trim();
+// A mint with no volume ("RIC 40 (Ticinum)") is filed in several volumes, so it names no single type either and waits like a bare number.
+const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume)
+  || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1;
+
+// A choice of types, or too many to list: prices already fetched for the reference mix those types, so they go, and the panel says why.
+function setPricesAside() {
+  if (!researchContext) return;
+  clearAcsearchPrices();
+  clearCoinArchivesPrices();
+  $('prices-note-text').textContent = PRICES_WAIT_MESSAGE;
+  $('prices-note').hidden = false;
+}
+
 function beginResearch(reference, perform, note = '', identity = null) {
   clearOutput();
-  const hasPrices = reference && initialisePriceResearch(reference, identity);
+  const hasPrices = reference && namesOneType(reference) && initialisePriceResearch(reference, identity);
   run(perform, note, reference);
   if (hasPrices) fetchAutomaticPrices();
 }
@@ -988,7 +1020,8 @@ async function run(perform, note = '', failedReference = null) {
     const title = outcome.card.corpus === 'ocre' ? parseReference(outcome.card.label) : null;
     if (outcome.card.bop) fillFields({ catalogue: 'Bop', number: outcome.card.bop.series ?? '', volume: '', section: outcome.card.bop.king });
     else if (outcome.card.corpus === 'other') fillFields({ catalogue: 'Other', number: outcome.card.label, volume: '', section: '' });
-    // A PELLA title that does not read back ("Price P1") would leave the last reference in the fields, and both searches with it.
+    // A PELLA title that does not read back would leave the last reference in the fields, and both searches with it. Every bundled title reads back
+    // now that Price P and L numbers are read ("Price P1"), so this is for a title only the online catalogue carries.
     else if (outcome.card.corpus === 'pella' && !parseReference(outcome.card.label)) fillFields({ catalogue: 'Price', number: outcome.card.id.replace(/^price\./, ''), volume: '', section: '' });
     else if (title) fillFields(title);
     renderCard(outcome.card);
@@ -1012,7 +1045,10 @@ async function run(perform, note = '', failedReference = null) {
     savePreferences();
     renderRecent();
   }
-  else if (outcome.status === 'candidates') renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
+  else if (outcome.status === 'candidates') {
+    if (outcome.partial && researchContext?.reference.catalogue === 'RIC') setPricesAside();
+    renderCandidates(outcome.candidates, outcome.corpus, outcome.partial, outcome.personMismatch);
+  }
   else if (outcome.status === 'permission') showError(PERMISSION_MESSAGE);
   else if (outcome.status === 'online-required') {
     showError(onlineMessage(outcome.corpus));
@@ -1039,16 +1075,20 @@ async function run(perform, note = '', failedReference = null) {
     };
   }
   else if (outcome.status === 'cancelled') return;
-  else if (outcome.status === 'too-many') { if (shouldRevealRefine(outcome)) $('refine-reference').open = true; showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`); }
+  else if (outcome.status === 'too-many') {
+    setPricesAside();
+    if (shouldRevealRefine(outcome)) $('refine-reference').open = true;
+    showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
+  }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus)?.corpusName}. ${catalogueForCorpus(outcome.corpus)?.notFoundHint}`, 'reference-number');
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
-    showError(catalogueFailureMessage(outcome, hasFallback));
+    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
   }
 }
 
-async function runPrices(term, currency, { remember = true, context = researchContext } = {}) {
+async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
   if (!context || context !== researchContext) return;
   const card = verifiedPriceCards.get(context) ?? context.identity;
   if (remember && card && cardMatchesContext(card, context)) {
@@ -1057,7 +1097,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   }
   requestedPriceContexts.add(context);
   updateAcsearchLink();
-  clearAcsearchPrices();
+  clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
   setPricesBusy(true);
   let outcome;
@@ -1072,7 +1112,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
-  else showPricesError(ACSEARCH_NETWORK_MESSAGE);
+  else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
 }
 
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.
@@ -1216,19 +1256,29 @@ $('catalogue').addEventListener('change', () => {
 // empty panel with a Get prices button on it. This is what a default currency arriving from the durable root, after a
 // Settings change or a replace import, does to a window that has already priced its lookup. Without access nothing is
 // fetched and nothing is asked: a permission prompt closes the popup in Firefox, and nobody pressed anything here.
+// CoinArchives is fetched only on a click and never converted, so its median goes with the old currency; the panel's place says so and how to get it
+// back, and so does the announcement, rather than the median simply vanishing.
 $('currency').addEventListener('change', () => {
   savePreferences();
   const repriced = shownPrices?.context === researchContext ? researchContext : null;
+  const publicCurrency = shownCoinArchivesPrices && shownCoinArchivesPrices.context === researchContext ? shownCoinArchivesPrices.currency : '';
   const term = $('price-term').value;
-  clearPrices();
+  const currency = $('currency').value;
+  clearPrices({ keepCuration: true });
   updateAcsearchLink();
-  $('announcement').textContent = `Currency set to ${$('currency').value}.`;
+  const note = publicCurrency && publicCurrency !== currency
+    ? `The CoinArchives median was in ${publicCurrency} and is not converted. Select “Get CoinArchives prices” to fetch it in ${currency}.` : '';
+  $('coinarchives-prices-note').textContent = note;
+  $('coinarchives-prices-note').hidden = !note;
+  $('announcement').textContent = [`Currency set to ${currency}.`, note].filter(Boolean).join(' ');
   if (repriced) void repriceShownLots(repriced, term, $('currency').value);
 });
 async function repriceShownLots(context, term, currency) {
   if (!(await hasAcsearchAccess())) return;
   if (context !== researchContext || currency !== $('currency').value) return;
-  runPrices(term || context.term, currency, { remember: false, context });
+  await runPrices(term || context.term, currency, { remember: false, context, keepCuration: true });
+  // The redraw announced the new median; nothing the collector decided by hand was reset, and he is told so.
+  if (shownPrices?.context === context && priceCuration.changed()) $('announcement').textContent += ' Sales you included or excluded by hand are kept.';
 }
 // A listed volume clears a known ruler it lacks (Titus under I²), since blank means any ruler, and says so; Any volume, a volume OCRE does not list
 // (a parsed "IV, Part 1") and text that names no known ruler keep it. The form's input handler has already cleared the one-box and the output, and a
@@ -1282,7 +1332,7 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
-    // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or "Price P1", would read as lot text.
+    // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or an SC "Ad." title, would read as lot text.
     const entry = preferences.recent[recalled];
     if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
     // Lot text (long, two catalogue keys, or a reference inside other words) is listed instead of read as one reference; showLot's own permission request is still synchronous.
@@ -1379,6 +1429,7 @@ $('coinarchives-prices-button').addEventListener('click', async () => {
   const section = coinArchivesSection(context.reference);
   const currency = $('currency').value;
   $('coinarchives-prices-error').hidden = true;
+  $('coinarchives-prices-note').hidden = true;
   setCoinArchivesBusy(true);
   const allowed = await access;
   if (ticket !== coinArchivesRequestId || context !== researchContext) return;
@@ -1428,11 +1479,14 @@ $('denomination-filter').addEventListener('change', () => {
   onlyDenomination = $('denomination-filter').checked === true;
   redrawPrices();
 });
+// Reset disables itself once nothing is left to reset, which would drop the keyboard to the document: it goes to the Inspect sales summary instead.
 $('reset-curation').addEventListener('click', () => {
   if (!shownPrices) return;
   const { lots, currency, term } = shownPrices;
+  const focused = document.activeElement === $('reset-curation');
   priceCuration.reset();
   renderPrices(lots, currency, term, true);
+  if (focused && $('reset-curation').disabled) $('sale-summary').focus();
 });
 // Only matters while following the system: shownTheme reads a stored choice first.
 darkScheme.addEventListener('change', syncThemeButton);

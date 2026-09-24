@@ -23,6 +23,8 @@ const OVER_THE_BOUND = new Map([
   ['backup.import', ['This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document']],
   ['quarantine.restore', ['Putting this record back would exceed the 5 MiB local storage bound. Remove records you no longer need, then put it back.', 'entryId']],
 ]);
+// What any other command says when its own result, before any reminder it schedules, does not fit.
+const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
@@ -303,6 +305,9 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
+  // A capture draft is half-hour scratch holding the text of a page, and only saving another draft used to clear the
+  // expired ones, so one capture kept its text for good. Every change clears them now; a read still leaves the root alone.
+  next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
 
   switch (command.type) {
     case 'preferences.migrateIfAbsent': {
@@ -689,7 +694,6 @@ function mutation(snapshot, command, context) {
     case 'draft.save': {
       const payload = validateDraftPayload(command.kind, command.payload);
       if (!payload.ok) return fail('validation', payload.error.message, payload.error.path);
-      next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
       value = {
         id: getId(context),
         revision: 0,
@@ -800,12 +804,32 @@ function mutation(snapshot, command, context) {
         restoring.push({ entry: held, ...second.value });
       }
       const references = [];
+      let placedLastInGroup = false;
       for (const { entry, home, record } of restoring) {
         // The bin is not the collection: a record coming back out of it is counted again from zero
         // rather than from wherever its last write left it. Nothing can be holding the old number -
         // the record was not there to be read - and a save composed before it was set aside is told.
         record.revision = 0;
         record.updatedAt = now;
+        // A group closes up behind a member that leaves it, so the place this one held can be taken
+        // by now. The order the collector has there since is theirs: this one goes in after it.
+        if (entry.collection === 'lots' && own(record, 'alternativeGroupId') &&
+            next.alternativeGroups.some(({ id }) => id === record.alternativeGroupId)) {
+          const last = next.lots.filter(({ alternativeGroupId }) => alternativeGroupId === record.alternativeGroupId).length + 1;
+          if (record.priority !== last) {
+            record.priority = last;
+            placedLastInGroup = true;
+          }
+        }
+        // An entry follows its lot into the bin when the lot does not name it. Where that lot is still
+        // saved and names no entry at all, the link goes back as a cleared one would: only into an
+        // empty field, and named in the reply.
+        if (entry.collection === 'collectionEntries') {
+          const lot = next.lots.find(({ id }) => id === record.lotId);
+          if (lot && !own(lot, 'collectionEntryId')) {
+            references.push({ collection: 'lots', id: lot.id, field: 'collectionEntryId', value: record.id });
+          }
+        }
         home.push(record);
         references.push(...(entry.clearedReferences ?? []));
       }
@@ -833,6 +857,7 @@ function mutation(snapshot, command, context) {
         id: first.value.record.id,
         restoredReferences,
         keptReferences,
+        ...(placedLastInGroup ? { placedLastInGroup } : {}),
         ...(restoring.length > 1
           ? { alsoRestored: restoring.slice(1).map(({ entry, record }) => ({ collection: entry.collection, id: record.id })) }
           : {}),
@@ -878,16 +903,32 @@ function mutation(snapshot, command, context) {
       return fail('unsupported', `Unsupported command: ${String(command.type)}`, 'type');
   }
 
+  next.revision = snapshot.revision + 1;
+  next.updatedAt = now;
+  const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
+  next.recentCommands.push({
+    requestId: command.requestId,
+    commandType: command.type,
+    revision: next.revision,
+    committedAt: now,
+    reply: clone(reply),
+  });
+  next.recentCommands = next.recentCommands.slice(-200);
+  // The command's own result is judged, and measured, before the schedule it leads to: a lot too many or a store
+  // already at the bound is the command's own refusal, in its own words, and was reported as reminders that could not
+  // be scheduled - with removing reminders offered as the way out.
+  const validated = validateSnapshot(next);
+  if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
   if (SCHEDULE_CHANGING_COMMANDS.has(command.type)) {
+    // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back
+    // is answered by removing reminders, and each names what to change.
+    const overTheBound = OVER_THE_BOUND.get(command.type);
+    if (storageBytesWithReserve(next) > MAX_ROOT_BYTES) {
+      const bounded = overTheBound ?? [THIS_CHANGE_OVER_THE_BOUND, 'type'];
+      return fail('storage-bound', bounded[0], bounded[1]);
+    }
     let projectedId = 0;
     const projected = clone(next);
-    projected.revision = snapshot.revision + 1;
-    projected.updatedAt = now;
-    const projectedReply = { ok: true, requestId: command.requestId, revision: projected.revision, value: clone(value) };
-    projected.recentCommands.push({
-      requestId: command.requestId, commandType: command.type, revision: projected.revision, committedAt: now, reply: projectedReply,
-    });
-    projected.recentCommands = projected.recentCommands.slice(-200);
     reconcileIntoSnapshot(projected, {
       now: () => now,
       newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
@@ -901,33 +942,18 @@ function mutation(snapshot, command, context) {
     });
     projected.recentCommands = projected.recentCommands.slice(-200);
     // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
-    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is.
+    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
+    // command itself has already passed, so what failed is the schedule it leads to.
     const projectedValid = validateSnapshot(projected);
     if (!projectedValid.ok) {
       return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
     }
     if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a
-      // record being put back is answered by removing reminders, and each names what to change.
-      const bounded = OVER_THE_BOUND.get(command.type) ??
+      const bounded = overTheBound ??
         ['These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders'];
       return fail('storage-bound', bounded[0], bounded[1]);
     }
   }
-
-  next.revision = snapshot.revision + 1;
-  next.updatedAt = now;
-  const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
-  next.recentCommands.push({
-    requestId: command.requestId,
-    commandType: command.type,
-    revision: next.revision,
-    committedAt: now,
-    reply: clone(reply),
-  });
-  next.recentCommands = next.recentCommands.slice(-200);
-  const validated = validateSnapshot(next);
-  if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
@@ -1000,8 +1026,10 @@ export function createCommandWriter(storageArea, context) {
       // Continue with the records that still validate; the rest wait in quarantine for the
       // collector. The repair reaches storage with the next write, not with this read. A root
       // migration could not bring to this version is not a broken record: judging its records by
-      // today's validators would condemn a shape they were never meant to read.
-      const rescued = current.error.code === 'unsupported-schema'
+      // today's validators would condemn a shape they were never meant to read. Settings alone
+      // claiming another version inside this version's root are damage like any other, and wait in
+      // quarantine with the rest.
+      const rescued = current.error.code === 'unsupported-schema' && current.error.path === 'schemaVersion'
         ? current
         : quarantineInvalidRecords(stored, getNow(context));
       if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);

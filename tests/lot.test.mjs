@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { anyCase, looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
 import { parseReference } from '../extension/lookup.js';
 import { defaultTerm } from '../extension/prices.js';
 
@@ -269,7 +269,7 @@ test('isLot: lot text, or a reference inside other words, but a mistyped type re
     'SELEUCID KINGDOM. Antiochus VII Euergetes, 138-129 BC. AE. SC 2069']) {
     assert.equal(isLot(text), true, text);
   }
-  for (const text of ['RIC XI Nero 1', 'Price P1', 'RIC 2 Titus', 'RIC Nerro 306', 'RIC I2 Nero 306', 'RIC 972', 'Titus 123', 'Craw. 44/5', 'SC 1266.2',
+  for (const text of ['RIC XI Nero 1', 'RIC 2 Titus', 'RIC Nerro 306', 'RIC I2 Nero 306', 'RIC 972', 'Titus 123', 'Craw. 44/5', 'SC 1266.2',
     'Bop Euthydemus I 24A', 'Price 23', 'RPC I 1234', 'BCD Boiotia 174b', 'Cohen 17', 'Seleucid Coins 1044.1x', '']) {
     assert.equal(isLot(text), false, text);
   }
@@ -992,10 +992,10 @@ test('a mint named beside a volume of its own is that section, and one beside an
     assert.deepEqual(lookup(text), { catalogue: 'RIC', number: text.match(/(\d+)$/)[1], volume, section: '' }, text);
   }
   // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
-  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri' });
-  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium' });
+  assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri', headingMint: true });
+  assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium', headingMint: true });
   // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
-  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome' });
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome', headingMint: true });
 });
 
 test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
@@ -1043,4 +1043,100 @@ test('a heading of three thousand characters, and a long run of capitals in it, 
     findReferences(text);
     assert.ok(Date.now() - start < 2000, `a 2,900-character heading must not freeze the reader: ${text.slice(0, 20)}`);
   }
+});
+
+// A mint bracketed after a RIC number with no volume ("RIC 40 (Ticinum)") is where the coin was struck, and says nothing about whose coin it is. Read
+// as the section, it took the heading's ruler away, and every RIC VI-IX coin with that mint and number opened as the single answer: Probus's RIC 40
+// opened Constantine's RIC VII Ticinum 40. The ruler is kept, exactly as it is kept beside a mint volume's section.
+test('a mint written beside a RIC number with no volume keeps the heading ruler', () => {
+  for (const [text, ruler, section] of [['Probus. Antoninianus. RIC 40 (Ticinum).', 'Probus', 'Ticinum'], ['Nero. AR Denarius. RIC 411 (Rome).', 'Nero', 'Rome'],
+    ['Probus. Antoninianus. RIC Ticinum 40.', 'Probus', 'Ticinum'], ['Gallienus. Antoninianus. RIC 12 (Trier).', 'Gallienus', 'Trier']]) {
+    const lot = findReferences(text);
+    assert.deepEqual(lot.rulers, [ruler], text);
+    const found = lotLookup(lot.references[0], lot.rulers);
+    assert.deepEqual(found.rulers, [ruler], text);
+    assert.equal(found.section, section, text);
+    assert.equal(found.volume, '', text);
+    assert.ok(lotLabel(lot.references[0], lot.rulers).includes(ruler), text);
+  }
+  // A bracket naming a ruler's own section is still that section, and the heading's ruler is not asked for on top of it.
+  const maesa = findReferences('Julia Maesa, 218-222 AD. Denarius. RIC 268 (Elagabalus).');
+  assert.deepEqual(lotLookup(maesa.references[0], maesa.rulers), { catalogue: 'RIC', number: '268', volume: '', section: 'Elagabalus' });
+});
+
+// A heading is ruler-less wherever the people table lacks its spelling ("Constantius I", "Julian II", "Sept. Severus"), so a mint named in it is no
+// evidence that nobody else is on the coin: "Constantius I. Follis. Trier. RIC VI 1" opened Maximian's RIC VI Treveri 1. The row says the section
+// came from the heading's mint, and the lookup offers what it finds there rather than opening it.
+test('a section taken from the heading\'s mint is marked as such, and a section the lot cites is not', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  for (const text of ['Constantius I. Follis. Trier. RIC VI 1.', 'Julian II. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
+    assert.equal(lookup(text).headingMint, true, text);
+  }
+  for (const text of ['Constantine I. Follis. RIC VII Trier 12.', 'Constantine I. Follis. Trier. RIC VII 12.', 'Rome mint. RIC IV 460', 'RIC VII Treveri 12']) {
+    assert.equal(lookup(text).headingMint, undefined, text);
+  }
+});
+
+// PELLA titles 302 of Price's types P or L before the number (Philip III, Lysimachus): "Price P1" is one of them, not a typo, and a lot citing one
+// looks it up rather than only pricing it.
+test('a Price number lettered P or L is a Price type, typed or in a lot', () => {
+  assert.equal(isLot('Price P1'), false);
+  assert.deepEqual(parseReference('Price P1'), { catalogue: 'Price', number: 'P1', volume: '', section: '' });
+  const found = only('Kings of Macedon. Philip III Arrhidaios. AR Tetradrachm. Babylon. Price P181.');
+  assert.deepEqual(found.reference, { catalogue: 'Price', number: 'P181', volume: '', section: '' });
+  assert.equal(found.typed, true);
+});
+
+// A section name standing for one of several rulers in a heading is only half of what the heading says: "Aurelian and Severina" named Severina's
+// section and opened RIC V Severina 2 for a joint coin. With more than one ruler the heading's people are asked for together.
+test('a joint heading keeps every ruler it names instead of one ruler\'s section', () => {
+  const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
+  for (const text of ['Aurelian and Severina. Antoninianus. RIC 2.', 'Aurelian & Severina. RIC 2.', 'Aurelian, with Severina. RIC 2.']) {
+    assert.deepEqual(lookup(text), { catalogue: 'RIC', number: '2', volume: '', section: '', rulers: ['Aurelian', 'Severina'] }, text);
+  }
+  // One ruler whose name is RIC's section is still that section.
+  assert.deepEqual(lookup('Severina. Antoninianus. RIC 2.'), { catalogue: 'RIC', number: '2', volume: 'V', section: 'Severina' });
+});
+
+// Keys dealers really write that no row was read for: RIC spelled with stops ("R.I.C. 128"), Seleucid Coins in full, and a typed key with a full
+// stop after it ("RIC. 60", "Pr. 3949"), which RSC's "RSC. 119" beside it has always kept.
+test('R.I.C., Seleucid Coins and a typed key followed by a full stop are read as their catalogues', () => {
+  const rows = (text) => findReferences(text).references.map(({ text: written, reference, typed }) => ({ written, reference, typed }));
+  assert.deepEqual(rows('Trajan. R.I.C. 128; C. 74.')[0], { written: 'RIC 128', reference: ric('128'), typed: true });
+  assert.deepEqual(rows('Nero. R.I.C. I² 60; BMC 74.')[0].reference, ric('60', 'I (2nd edition)'));
+  assert.deepEqual(rows('Antiochos III. Tetradrachm. Seleucid Coins 1266.2; HGC 9, 12.')[0],
+    { written: 'Seleucid Coins 1266.2', reference: { catalogue: 'SC', number: '1266.2', volume: '', section: '' }, typed: true });
+  assert.deepEqual(rows('Nero. Denarius. RIC. 60; RSC. 119.').map(({ reference }) => reference), [ric('60'), other('RSC. 119')]);
+  assert.deepEqual(texts('Nero. Denarius. RIC. 60; RSC. 119.'), ['RIC 60', 'RSC. 119']);
+  assert.deepEqual(rows('Alexander III. Drachm. Pr. 3949; Müller 12.')[0].reference, { catalogue: 'Price', number: '3949', volume: '', section: '' });
+  // "Price." stays unread as "Price:" does: it is the English word a dealer puts before a sale amount ("Price. 1200 EUR"), and read as the key it
+  // would open the PELLA type with that number.
+  assert.deepEqual(texts('Alexander III. Drachm. Price. 1200 EUR.'), []);
+  // A pasted lot citing R.I.C. is lot text, not one Other reference.
+  assert.equal(isLot('Trajan. R.I.C. 128; C. 74.'), true);
+});
+
+// "Pr." is Price's abbreviation and also a price's: a number with a currency straight after it ("Pr. 1200 EUR", "Pr 1,200 €") is a sale amount, as it
+// is after "Price", and reading it as the key would add a second Price row with that amount's number. "Pr. 3949" alone still reads.
+test('Price or Pr followed by an amount in a currency is a sale price, never a Price row', () => {
+  assert.deepEqual(texts('Alexander III. Price 3949. Pr. 1200 EUR.'), ['Price 3949']);
+  for (const written of ['Pr 1200 EUR', 'Pr. 1,200 €', 'Pr. 1.200 CHF', 'Price 1200 EUR', 'Price 1,200 USD', 'Pr. 450 GBP', 'Pr. 450$', 'Pr. 450 £']) {
+    assert.deepEqual(texts(`Alexander III. Drachm. Price 3949. ${written}.`), ['Price 3949'], written);
+  }
+  assert.deepEqual(texts('Alexander III. Drachm. Pr. 3949.'), ['Pr 3949']);
+  assert.deepEqual(texts('Alexander III. Drachm. Pr 3949; Müller 12.'), ['Pr 3949', 'Müller 12']);
+  // A currency further on, in the next sentence, says nothing about the number.
+  assert.deepEqual(texts('Alexander III. Drachm. Price 3949. EUR 1200.'), ['Price 3949']);
+});
+
+// The one anyCase the lot reader and the grade reader share (prices.js imports it): a letter is either case, a space any run of spaces, and a letter
+// whose other case is not one letter ("ß", whose capital is "SS") is matched as written, never as a class that would take a bare "S".
+test('anyCase reads a word whatever its capitals, and a letter with no one-letter other case as written', () => {
+  const reads = (word, text) => new RegExp(`^(?:${anyCase(word)})$`, 'u').test(text);
+  assert.ok(reads('Good VF', 'good  vf'));
+  assert.ok(reads('Straße', 'STRAßE'));
+  assert.ok(!reads('ß', 'S'));
+  assert.ok(!reads('ß', 'SS'));
+  assert.ok(reads('a.b', 'A.B'));
+  assert.ok(!reads('a.b', 'AxB'));
 });

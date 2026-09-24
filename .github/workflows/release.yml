@@ -5,22 +5,29 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+# Nothing is granted by default: each job names the one scope it needs, and only the job that uploads can write.
+permissions: {}
 
+# Actions are pinned to full commit SHAs (the release in the trailing comment); .github/dependabot.yml proposes updates.
 jobs:
-  release:
+  # Tests and builds the five ZIPs once, and records their checksums. Read-only: it runs the test suites and the build,
+  # and nothing it runs could reach the release.
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sums: ${{ steps.sums.outputs.sums }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Nothing here pushes, and the job runs on a tag anybody with write access can move: the checkout leaves no
           # credential in .git/config for a later step, or a compromised one, to push with.
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       # The packages are named from the manifests, so a tag that disagrees would upload
@@ -42,12 +49,76 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Build the packages
         run: python scripts/build.py
+      # The checksums leave this job twice: in the artifact beside the ZIPs, and as this job's output, which no later
+      # job can change. The release job checks the artifact against the output before it uploads anything.
+      - name: Record the checksums of the five ZIPs
+        id: sums
+        working-directory: dist
+        run: |
+          sha256sum giga-pinax-*.zip > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 5
+          {
+            echo 'sums<<SHA256SUMS_END'
+            cat SHA256SUMS
+            echo 'SHA256SUMS_END'
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: packages
+          path: |
+            dist/giga-pinax-*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  # Lints the Firefox package exactly as it was built. npx fetches web-ext from npm, so this job holds no write scope
+  # and its only input is the artifact.
+  lint:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: packages
+          path: dist
+      - name: Unpack the versioned Firefox package
+        run: unzip -q dist/giga-pinax-firefox-"${GITHUB_REF_NAME#v}".zip -d firefox
       - name: Lint the Firefox package
-        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
+        run: npx --yes web-ext@10.6.0 lint --source-dir firefox --warnings-as-errors
+
+  # Uploads the ZIPs the build job made, once the checksums prove they are those ZIPs. No checkout, no npm and no code
+  # from the repository run here: the write scope is held only by gh and the checksum check.
+  release:
+    needs: [build, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: packages
+          path: dist
+      - name: Check the ZIPs are the ones the build job made
+        working-directory: dist
+        env:
+          SUMS: ${{ needs.build.outputs.sums }}
+        run: |
+          # The output comes back without its last line break, or with it: blank lines are dropped either way.
+          printf '%s\n' "$SUMS" | sed '/^$/d' > expected.sums
+          test "$(wc -l < expected.sums)" -eq 5
+          cmp expected.sums SHA256SUMS
+          sha256sum --check --strict expected.sums
+          # Exactly the five ZIPs the sums name, and nothing else that the upload's pattern would pick up.
+          test "$(ls giga-pinax-*.zip | wc -l)" -eq 5
       # The draft is never published here: a person checks the assets and the notes, then publishes.
       - name: Attach the five packages to the release draft
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # A published release is somebody's decision and its assets are what people have already downloaded: this job
           # only ever fills a draft. A tag re-pushed at a published release uploads nothing and says why.
@@ -57,6 +128,6 @@ jobs:
               exit 1
             fi
           else
-            gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes 'Draft release. Add the notes and the install instructions from docs/RELEASING.md, then publish.'
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes 'Draft release. Add the notes and the install instructions from docs/RELEASING.md, then publish.'
           fi
           gh release upload "$GITHUB_REF_NAME" dist/giga-pinax-*.zip --clobber

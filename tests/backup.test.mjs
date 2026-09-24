@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
@@ -683,6 +683,45 @@ test('merge folds one record set aside on both installs into a single entry', ()
   assert.equal(quarantineRows(preview.value.snapshot.quarantine).length, 1, 'so Settings offers one Restore');
 });
 
+// Folding compared every entry under one key with every other, and every link with every link already
+// held: a crafted bin of 20,000 bodies under one ID took a minute to preview and over two in the
+// worker, holding the one command queue all that time. The reviewer's shapes, at their largest.
+const binDocument = (quarantine) => JSON.stringify({
+  format: BACKUP_FORMAT, schemaVersion: SCHEMA_VERSION, exportedAt: NOW,
+  data: { ...createEmptySnapshot(NOW), quarantine },
+});
+const manyBodies = (count) => Array.from({ length: count }, (_, index) => ({
+  collection: 'lots', reason: 'invalid-record', quarantinedAt: NOW, record: { id: 'x', n: index },
+}));
+
+test('a crafted set-aside list is folded in linear time', () => {
+  const links = Array.from({ length: LIMITS.clearedReferences }, (_, index) => ({
+    collection: 'lots', id: 'l', field: 'auctionEventId', value: `v-${index}`,
+  }));
+  const linked = [0, 1].map(() => ({
+    collection: 'auctionEvents', reason: 'missing-record', quarantinedAt: NOW, record: { id: 'e' },
+    clearedReferences: structuredClone(links),
+  }));
+  for (const [label, quarantine, kept] of [['bodies', manyBodies(20000), 20000], ['links', linked, 1]]) {
+    const started = performance.now();
+    const validated = validateBackup(binDocument(quarantine));
+    assert.equal(validated.ok, true, validated.error?.message);
+    const preview = previewImport(createEmptySnapshot(NOW), validated.value, 'merge');
+    const elapsed = performance.now() - started;
+    assert.equal(preview.ok, true, preview.error?.message);
+    assert.equal(preview.value.snapshot.quarantine.length, kept, label);
+    assert.ok(elapsed < 2000, `${label}: read and previewed in ${Math.round(elapsed)} ms`);
+  }
+});
+
+test('a backup listing more set-aside records than any store holds is refused before anything is folded', () => {
+  const refused = validateBackup(binDocument(manyBodies(LIMITS.quarantine + 1)));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'data.quarantine');
+  assert.match(refused.error.message, /more than 30,000 set-aside records/);
+  assert.equal(validateBackup(binDocument(manyBodies(LIMITS.quarantine))).ok, true, 'the cap itself imports');
+});
+
 test('merge renumbers alternative priorities two installs assigned independently', () => {
   const current = createEmptySnapshot(NOW);
   current.alternativeGroups.push(group(uuid(1)));
@@ -948,6 +987,14 @@ test('each set-aside row carries the line, the entry it names, and whether there
   assert.deepEqual(quarantineRows(null), []);
 });
 
+test('settings set aside whole, or an unreadable entry of the list itself, offer no Restore', () => {
+  const rows = quarantineRows([
+    { collection: 'preferences', record: { currency: 'JPY' }, reason: 'invalid-enum', quarantinedAt: NOW },
+    { collection: 'quarantine', record: { broken: true }, reason: 'invalid-entry', quarantinedAt: NOW },
+  ]);
+  assert.deepEqual(rows.map(({ restorable }) => restorable), [false, false]);
+});
+
 test('a restore reply reads as a sentence naming what went back and what was left alone', () => {
   const put = { collection: 'auctionEvents', id: uuid(1), restoredReferences: [], keptReferences: [] };
   assert.equal(quarantineRestoreText(put), 'The record was put back into auctionEvents.');
@@ -1006,4 +1053,45 @@ test('a raw rescue file is refused as a backup and says which file to use instea
 
 test('backup file names carry an instant a file system accepts', () => {
   assert.equal(backupFileName('giga-pinax-before-import', NOW), 'giga-pinax-before-import-2026-09-12T12-00-00.000Z.json');
+});
+
+// v0.32.1 still exported from a root locked at 2^53-1. The root's revision is discarded on import, so it is no
+// evidence of a crafted file; a record's revision above the usable ceiling still is.
+test('a backup whose root revision is 2^53-1 validates, while a record revision above the usable ceiling does not', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.revision = Number.MAX_SAFE_INTEGER;
+  snapshot.lots.push(lot(uuid(1), { title: 'Nero' }));
+  const document = exportBackup(snapshot, NOW);
+  assert.equal(document.ok, true);
+  const valid = validateBackup(document.value);
+  assert.equal(valid.ok, true, valid.error?.message);
+  assert.equal(valid.value.lots.length, 1);
+  snapshot.lots[0].revision = LIMITS.usableRevision + 1;
+  const refused = validateBackup(exportBackup(snapshot, NOW).value);
+  assert.equal(refused.ok, false);
+  assert.match(refused.error.message, /crafted or corrupt/);
+  assert.equal(refused.error.path, 'data.lots');
+});
+
+// Settings set aside whole cannot be restored, and what the collector stands to lose there is their house presets:
+// Data health names them, counts them and says how to keep them, rather than calling them one unreadable record.
+test('settings set aside whole are named with their house presets and how to keep them', () => {
+  const presets = [{ name: 'CNG', buyerPremiumBps: 2000 }, { name: 'NAC', buyerPremiumBps: 2250 }, { name: 'Roma', buyerPremiumBps: 2000 }];
+  const settings = {
+    collection: 'preferences', reason: 'invalid-ladder', quarantinedAt: NOW,
+    record: { currency: 'USD', housePremiumPresets: presets },
+  };
+  assert.equal(quarantineSummaryText([settings]),
+    'Your settings could not be read and were set aside, with 3 house presets. ' +
+    'Download set-aside records to keep them, then enter them again under House premiums.');
+  assert.deepEqual(quarantineLines([settings]), ['settings with 3 house presets: invalid-ladder (2026-09-12)']);
+  const one = { ...settings, record: { housePremiumPresets: presets.slice(0, 1) } };
+  assert.deepEqual(quarantineLines([one]), ['settings with 1 house preset: invalid-ladder (2026-09-12)']);
+  const lot = { collection: 'lots', record: { id: 'broken' }, reason: 'invalid-enum', quarantinedAt: NOW };
+  assert.equal(quarantineSummaryText([lot, one]),
+    '1 record could not be read and was set aside. Your settings could not be read and were set aside, with 1 house preset. ' +
+    'Download set-aside records to keep it, then enter it again under House premiums.');
+  const none = { ...settings, record: 'not an object' };
+  assert.equal(quarantineSummaryText([none]), 'Your settings could not be read and were set aside. They held no house presets.');
+  assert.deepEqual(quarantineLines([none]), ['settings with no house presets: invalid-ladder (2026-09-12)']);
 });
