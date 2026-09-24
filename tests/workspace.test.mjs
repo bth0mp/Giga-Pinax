@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHtmlFile } from './helpers/dom.mjs';
 import {
-  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildAttachEventCommand, buildBidSaveCommand,
-  buildExposureSections, buildGroupReorderCommand, buildLotSaveCommand, buildLotUndoCommand, chooseSelectedLot,
-  COIN_REMOVED_NOTICE, commandExpectedRevisions, commandReplacedRevisions, commandWasCommitted, comparisonPickerLabel,
-  comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, conflictNoteMessage,
-  draftToConsumeAfterLotSave, editorCompletion, editorsWithChangedBasis, eventAttachDecision, evidenceRowsForQuery,
-  filterWorkspaceLots, lotSaveFollowup, lotStatusLabel, moveDetailTab, planCommit, removedCoinNotice,
-  removedHereAfterDeleteReply, routeFromHash, sameEditorIdentity, sameEventReturnContext, selectionAfterSnapshot,
-  submissionContext, WORKSPACE_EDITORS,
+  buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand, buildLotSaveCommand, buildLotUndoCommand,
+  COIN_REMOVED_NOTICE, commandExpectedRevisions, commandReplacedRevisions, commandWasCommitted, conflictNoteMessage,
+  draftToConsumeAfterLotSave, editorCompletion, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup,
+  planCommit, removedCoinNotice, removedHereAfterDeleteReply, sameEditorIdentity, sameEventReturnContext,
+  selectionAfterSnapshot, submissionContext, WORKSPACE_EDITORS,
 } from '../extension/workspace.js';
+import {
+  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
+  comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
+  filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
+} from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
