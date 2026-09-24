@@ -19,12 +19,43 @@ const sectionOf = (result) => parseReference(result.card?.label ?? '', false)?.s
 test('a ruler beside a mint keeps the mint as where the coin was struck', () => {
   const lot = findReferences('Constantius I. Follis. Trier. RIC VI 12.');
   assert.deepEqual(lotLookup(lot.references[0], lot.rulers),
-    { catalogue: 'RIC', number: '12', volume: 'VI', section: '', rulers: ['Constantius Chlorus'], struckAt: 'Treveri' });
+    { catalogue: 'RIC', number: '12', volume: 'VI', section: '', rulers: ['Constantius Chlorus'], struckAt: ['Treveri'] });
   // A heading with no mint carries none, and a heading with a mint and no ruler is that mint's section, as before.
   const plain = findReferences('Constantius I. Follis. RIC VI 12.');
   assert.equal(lotLookup(plain.references[0], plain.rulers).struckAt, undefined);
   const mint = findReferences('Follis. Trier. RIC VI 12.');
   assert.deepEqual(lotLookup(mint.references[0], mint.rulers), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Treveri', headingMint: true });
+});
+
+// Loop N6 re-review: a heading names other places than its mint — a category ("Rome Roman Empire"), the city a commemorative honours ("Urbs Roma",
+// "Constantinopolis commemorative") — and the earliest of them was taken for the mint, so the coin of the mint the heading really names was only
+// offered. Every mint the heading names travels with the row, and the commemorative names are not read as mints at all.
+test('a heading carries every mint it names, and a commemorative city is no mint', () => {
+  const struck = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers).struckAt; };
+  assert.deepEqual(struck('Rome Roman Empire 323 - 324 PLON AE Nummus - Constantinus II (BEATA TRANQVILLITAS) Bronze Londinium Mint 3.22g XF RIC VII 287; Condition XF.'),
+    ['Rome', 'Londinium']);
+  assert.deepEqual(struck('Constantius II. Commemorative Series. Urbs Roma. Follis. Siscia. RIC VIII 323.'), ['Siscia']);
+  assert.deepEqual(struck('Constantius II, for Urbs Roma. Follis. Siscia. RIC VIII 323.'), ['Siscia']);
+  assert.deepEqual(struck('Constantius II. Follis. VRBS ROMA commemorative. Siscia mint. RIC VIII 323.'), ['Siscia']);
+  assert.deepEqual(struck('Constantius II. Constantinopolis commemorative. Follis. Siscia. RIC VIII 323.'), ['Siscia']);
+  assert.deepEqual(struck('Crispus. Commemorative for Constantinopolis. Follis. Aquileia. RIC VII 9.'), ['Aquileia']);
+  // Constantinopolis as the mint's own Latin name is still that mint.
+  assert.deepEqual(struck('Constantius II. Solidus. Constantinopolis. RIC VIII 100.'), ['Constantinople']);
+  // The same blanking serves a heading that names no ruler: its mint is the one it strikes at, not the city it honours.
+  const urbs = findReferences('Urbs Roma commemorative. Follis. Siscia. RIC VII 222.');
+  assert.equal(lotLookup(urbs.references[0], urbs.rulers).section, 'Siscia');
+});
+
+test('over the bundled catalogue, a heading naming a place before its mint still opens the coin of that mint', { skip }, async () => {
+  for (const text of ['Constantius II. Commemorative Series. Urbs Roma. Follis. Siscia. RIC VIII 323.',
+    'Constantius II. Constantinopolis commemorative. Follis. Siscia. RIC VIII 323.', 'Rome Roman Empire. Constantius II. Follis. Siscia mint. RIC VIII 323.',
+    'Roman Empire, Rome. Constantius II. Follis. Siscia. RIC VIII 323.', 'Constantius II (Rome). Follis. Siscia. RIC VIII 323.']) {
+    const result = await lookup(text);
+    assert.equal(result.card?.id, 'ric.8.sis.323', text);
+  }
+  // The repository's own mint-volume lot, without its OCRE id hint, opens its Londinium coin.
+  const fixture = await lookup('Rome Roman Empire 323 - 324 PLON AE Nummus - Constantinus II (BEATA TRANQVILLITAS) Bronze Londinium Mint 3.22g XF RIC VII 287; Condition XF.');
+  assert.equal(fixture.card?.id, 'ric.7.lon.287');
 });
 
 test('over the bundled catalogue, a ruler beside a mint never opens his coin from another mint', { skip }, async () => {

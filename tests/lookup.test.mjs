@@ -1497,6 +1497,10 @@ test('a ruler\'s coin from another mint than the heading names is offered online
   assert.equal(strayMint({ struckAt: 'Trier' }, 'RIC VI Alexandria 12'), true);
   assert.equal(strayMint({ struckAt: 'Treveri' }, 'RIC V Diocletian 12'), false);
   assert.equal(strayMint({}, 'RIC VI Alexandria 12'), false);
+  // A heading naming several places carries them all: a coin at any of them is no stray (loop N6 re-review).
+  assert.equal(strayMint({ struckAt: ['Rome', 'Siscia'] }, 'RIC VIII Siscia 323'), false);
+  assert.equal(strayMint({ struckAt: ['Rome', 'Sisak'] }, 'RIC VIII Siscia 323'), false);
+  assert.equal(strayMint({ struckAt: ['Rome', 'Siscia'] }, 'RIC VIII Alexandria 323'), true);
 });
 
 // Prose and word processors write a range with an en or em dash ("RIC II Hadrian 1009–1012"), and lot text has always read it as the hyphen it

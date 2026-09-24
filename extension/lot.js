@@ -332,18 +332,23 @@ const LABELS = new Set(labelGroups.keys());
 const MINTS = Object.freeze(MINT_SPELLINGS.filter(([label]) => !LABELS.has(label))
   .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'u'), label.split(' ')[0]]))
   .sort((a, b) => b[1].source.length - a[1].source.length));
-// The mint a heading names, or none: the earliest one in the text, since a heading names the mint once. Read exactly as the rulers are, with the
-// same cheap substring test in front of each pattern and the same fold, so a heading written "Trèves" is compared as the table holds it.
-function headingMint(text) {
-  const rest = fold(text);
+// The city a commemorative honours is no mint: "Urbs Roma" and "VRBS ROMA" always, and "Constantinopolis" where the heading says it is the
+// commemorative ("Constantinopolis commemorative", "for Constantinopolis", "Commemorative Series. Constantinopolis") rather than the mint's own
+// Latin name. They are blanked before the mints are read, as the god Elagabal is before the rulers.
+const COMMEMORATED = /\b[uv]rbs\s+roma\b|\b(?:for|commemorative(?:\s+series)?)[\s.,:]+(?:the\s+)?constantinopolis\b|\bconstantinopolis(?=[\s,]+(?:commemorative|series|type|issue)\b)/gi;
+// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Rome Roman
+// Empire. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
+// the same fold, so a heading written "Trèves" is compared as the table holds it.
+function headingMints(text) {
+  const rest = fold(text).replace(COMMEMORATED, (match) => ' '.repeat(match.length));
   const lower = rest.toLowerCase();
-  let best = null;
+  const found = [];
   for (const [section, pattern, probe] of MINTS) {
     if (!lower.includes(probe)) continue;
-    const found = pattern.exec(rest);
-    if (found && (!best || found.index < best.index)) best = { index: found.index, section };
+    const at = pattern.exec(rest);
+    if (at) found.push({ index: at.index, section });
   }
-  return best?.section ?? '';
+  return [...new Set(found.sort((a, b) => a.index - b.index).map(({ section }) => section))];
 }
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
@@ -553,11 +558,11 @@ export function findReferences(input) {
   const rulers = rulersIn(headline);
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
-  // A heading that names a ruler as well still says where the coin was struck: the row carries that mint beside the rulers, and the lookup never
-  // opens his coin from another mint of RIC VI–IX for it.
-  const named = headingMint(headline);
-  const mint = rulers.length === 0 ? named : '';
-  const mark = mint ? { mint } : named ? { struckAt: named } : null;
+  // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the
+  // lookup never opens his coin from a mint of RIC VI–IX that is none of them. A heading with no ruler is the section of the first mint it names.
+  const named = headingMints(headline);
+  const mint = rulers.length === 0 ? named[0] ?? '' : '';
+  const mark = mint ? { mint } : named.length ? { struckAt: named } : null;
   return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
 }
 

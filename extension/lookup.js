@@ -780,12 +780,12 @@ export function otherVolumePart(reference, title) {
   return Boolean(hit) && norm(hit.volume) !== norm(volume);
 }
 
-// Whether a coin OCRE titles as the answer was struck at another RIC VI–IX mint than the one the lot's heading names beside its ruler ("Constantius I.
+// Whether a coin OCRE titles as the answer was struck at a RIC VI–IX mint that is none of the ones the lot's heading names beside its ruler ("Constantius I.
 // Follis. Trier. RIC VI 12." found only his Alexandria 12): the ruler's number there is not the dealer's coin, so it is offered, never opened.
 export function strayMint(reference, title) {
-  const struck = unquote(reference?.struckAt);
+  const struck = [].concat(reference?.struckAt ?? []).map(unquote).filter(Boolean).map((name) => norm(ricMintSection(name) || name));
   const section = parseReference(title, false)?.section ?? '';
-  return Boolean(struck) && isMintOnly(section) && norm(section) !== norm(ricMintSection(struck) || struck);
+  return struck.length > 0 && isMintOnly(section) && !struck.includes(norm(section));
 }
 
 function pickRic(xml, reference) {
