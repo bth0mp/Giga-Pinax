@@ -1,13 +1,13 @@
 import { computeStatistics } from './core/evidence.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { projectCollection } from './core/projections.js';
+import { projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
-  moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, reminderControlsForPrecision,
+  moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
@@ -18,7 +18,7 @@ import {
 import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen, evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderLabel, routeFromHash, viewerTimeZone,
+  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -636,8 +636,12 @@ async function initWorkspace() {
       return;
     }
     reminders.append(eventLine(event, 'reminder-event', 'p'));
+    const instants = reminderInstants(event);
     for (const reminder of event.reminders ?? []) {
-      const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when')); reminders.append(row);
+      const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when'));
+      const instant = instants.get(reminder.id);
+      if (instant) { const at = reminderAtLabel(instant, event.timeZone, view()); row.append(text('span', at.text, `reminder-at${at.tone ? ` when-${at.tone}` : ''}`)); }
+      reminders.append(row);
     }
     if ((event.reminders ?? []).length) return;
     reminders.append(text('p', 'No reminders set.', 'field-note'));
@@ -789,7 +793,7 @@ async function initWorkspace() {
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
-  const openEventEditor = (event) => { eventReturnLot = null; $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
@@ -805,10 +809,21 @@ async function initWorkspace() {
   // The time zone is picked from the browser's list; a name the list lacks is kept and shown under "Other…".
   const zoneChoices = (() => { let zones = []; try { zones = Intl.supportedValuesOf('timeZone'); } catch { /* no list: Other… only */ } return [...new Set([...zones, 'UTC', viewerTimeZone()])].sort(); })();
   $('event-form').elements.timeZoneChoice.replaceChildren(...zoneChoices.map((zone) => { const option = text('option', zone.replaceAll('_', ' ')); option.value = zone; return option; }), (() => { const option = text('option', 'Other…'); option.value = 'other'; return option; })());
-  function setEventZone(zone) {
+  // Whether the collector chose this form's zone: a zone they chose is never replaced by a remembered one.
+  let zoneChosen = false;
+  function setEventZone(zone, { note = '' } = {}) {
     const f = $('event-form').elements; const listed = zoneChoices.includes(zone);
     f.timeZone.value = zone; f.timeZoneChoice.value = listed ? zone : 'other'; $('time-zone-other').hidden = listed;
+    $('time-zone-note').textContent = note; $('time-zone-note').hidden = !note;
   }
+  // A new auction takes the zone the collector gave the same house's last auction, and says which auction that was.
+  const offerRememberedZone = () => {
+    const basis = editorBases.get('event');
+    if (zoneChosen || basis?.id) return;
+    const remembered = rememberedZone(snapshot.auctionEvents, $('event-form').elements.name.value);
+    if (remembered) setEventZone(remembered.timeZone, { note: `The time zone of your last auction from this house, ${remembered.from}. Change it if this one differs.` });
+    else if ($('time-zone-note').textContent) setEventZone(viewerTimeZone());
+  };
   // Two reminder choices for a timed auction, a custom number of minutes only when asked for.
   const PRESET_OFFSETS = ['1440', '60', '30'];
   const reminderChoice = (enabled, minutes) => !enabled ? 'off' : PRESET_OFFSETS.includes(String(minutes)) ? String(minutes) : 'custom';
@@ -856,10 +871,11 @@ async function initWorkspace() {
     }
     $('event-summary').textContent = `Saves “${f.name.value.trim() || 'this auction'}”: ${kind} ${day}${time} ${f.timeZone.value.trim() || '(no time zone)'}, with ${reminders}.`;
   }
-  $('event-form').addEventListener('input', updateEventSummary);
+  $('event-form').addEventListener('input', (event) => { if (event.target === $('event-form').elements.name) offerRememberedZone(); else if (event.target === $('event-form').elements.timeZone) zoneChosen = true; updateEventSummary(); });
   $('event-form').addEventListener('change', (event) => {
     const f = $('event-form').elements;
     if (event.target === f.timeZoneChoice) {
+      zoneChosen = true; $('time-zone-note').hidden = true;
       const other = f.timeZoneChoice.value === 'other';
       $('time-zone-other').hidden = !other;
       if (other) f.timeZone.focus(); else f.timeZone.value = f.timeZoneChoice.value;

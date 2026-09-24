@@ -6,7 +6,7 @@ import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
 import { OWN } from './fields.js';
-import { localDateAtInstant, resolveZonedDateTime } from './reminders.js';
+import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from './reminders.js';
 /**
  * @typedef {import('./types.js').Lot} Lot
  * @typedef {import('./types.js').Evidence} Evidence
@@ -254,4 +254,14 @@ export function eventTiming(event, now = new Date().toISOString()) {
   const sortMs = midnight.ok ? Date.parse(midnight.value.startsAt) : eventDay * 86400000;
   if (daysUntil === null) return { state: 'unknown', msUntil: null, daysUntil, sortMs };
   return { state: daysUntil < 0 ? 'ended' : daysUntil <= 1 ? 'soon' : 'upcoming', msUntil: null, daysUntil, sortMs };
+}
+
+/**
+ * When each of an auction's reminders goes off, by reminder id: the same instants the scheduler derives. A reminder
+ * that resolves to no instant (a wall time that does not exist on that day in the auction's zone) is left out.
+ * @param {AuctionEvent} event
+ * @returns {Map<string, string>}
+ */
+export function reminderInstants(event) {
+  return new Map(deriveReminderTriggers([event]).map((trigger) => [trigger.reminderId, trigger.triggerAt]));
 }

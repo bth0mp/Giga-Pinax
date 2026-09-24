@@ -213,6 +213,25 @@ export function offeredEventFromDraft({ closesAt, startsAt, pageUrl } = {}, time
   };
 }
 
+// The house an auction is from, as its name starts: `Leu Web Auction 32` and `Leu Numismatik 31` are both Leu's.
+const houseKey = (name) => String(name ?? '').trim().split(/\s+/, 1)[0].normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}&'-]/gu, '');
+// The time zone the collector gave the house's most recently saved auction, offered for its next one: the saved
+// auctions are what remembers it, so nothing new is stored. Another auction of the same first word only proposes a
+// zone, which the form names with the auction it came from and the collector can change.
+/**
+ * @param {Array<{ id?: string, name?: string, timeZone?: string, updatedAt?: string }> | null | undefined} events
+ * @param {*} name
+ * @param {string | null} [excludeId]
+ * @returns {{ timeZone: string, from: string } | null}
+ */
+export function rememberedZone(events, name, excludeId = null) {
+  const key = houseKey(name);
+  if (key.length < 2) return null;
+  const match = (events ?? []).filter((event) => event.id !== excludeId && event.timeZone && houseKey(event.name) === key)
+    .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))[0];
+  return match ? { timeZone: String(match.timeZone), from: String(match.name) } : null;
+}
+
 /**
  * @param {'timed' | 'date-only'} [precision]
  * @returns {{ precision: 'timed' | 'date-only', reminders: Array<Record<string, *>> }}

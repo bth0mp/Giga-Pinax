@@ -723,3 +723,36 @@ test('the auction form offers a time zone list, reminder choices and a summary i
   await page.$('event-form').emit('change', { target: f.timeZoneChoice });
   assert.equal(page.$('time-zone-other').hidden, false);
 });
+
+// N14: a new auction for a house starts in the zone its last auction was saved in, and says where the zone came
+// from; a zone the collector chose is never replaced. Each reminder of the coin's auction shows when it goes off.
+test('a new auction takes the zone of the house’s last auction until the collector picks one', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Leu Web Auction 30', eventKind: 'lot-closes', precision: 'timed', localDate: '2030-10-15',
+    localTime: '14:00', timeZone: 'Asia/Tokyo', reminderScope: 'standalone', reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }] } });
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  await page.click('new-event');
+  const f = page.$('event-form').elements;
+  await page.type('event-form', 'name', 'Leu Web Auction 32');
+  assert.equal(f.timeZone.value, 'Asia/Tokyo');
+  assert.equal(f.timeZoneChoice.value, 'Asia/Tokyo');
+  assert.equal(page.$('time-zone-note').hidden, false);
+  assert.equal(page.$('time-zone-note').textContent, 'The time zone of your last auction from this house, Leu Web Auction 30. Change it if this one differs.');
+  f.timeZoneChoice.value = 'Europe/Zurich';
+  await page.$('event-form').emit('change', { target: f.timeZoneChoice });
+  await page.type('event-form', 'name', 'Leu Web Auction 33');
+  assert.equal(f.timeZone.value, 'Europe/Zurich', 'the collector’s choice stands');
+  assert.equal(page.$('time-zone-note').hidden, true);
+});
+
+test('each reminder in the Reminders tab says when it goes off in the collector’s time', async () => {
+  const background = await createWorkspaceBackground();
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Leu 30', eventKind: 'lot-closes', precision: 'timed', localDate: '2030-10-15',
+    localTime: '14:00', timeZone: 'Asia/Tokyo', reminderScope: 'linked-lots', reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, denarius', sourceLinks: [], auctionEventId: event.value.id } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const [row] = page.$('selected-reminders').querySelectorAll('.reminder-row');
+  assert.equal(row.querySelector('.reminder-when').textContent, '1 day before');
+  assert.match(row.querySelector('.reminder-at').textContent, /^\S.* \(your time\)( · 2:00 PM Asia\/Tokyo)?$/);
+});

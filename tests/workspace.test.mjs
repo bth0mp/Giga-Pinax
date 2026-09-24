@@ -12,16 +12,16 @@ import {
 import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
-  filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
+  filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
-  outcomeDraftForLot, premiumInputText, reminderControlsForPrecision,
+  outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
-import { eventTiming } from '../extension/core/projections.js';
+import { eventTiming, reminderInstants } from '../extension/core/projections.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -1154,4 +1154,32 @@ test('the outcome form opens an open lot on Won, in its bid’s currency, with t
 test('the bid form reads the placed bid before a plan', () => {
   const lot = { plannedBid: { amount: { currency: 'EUR', minor: 120000 } }, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } };
   assert.deepEqual(bidFormValues(lot, 'en-US', 'USD'), { amount: '1300.00', currency: 'EUR', premium: '20' });
+});
+
+// N14: a reminder is shown as the moment it goes off, in the collector's own time, and at the auction's wall time too
+// when the auction is in another zone.
+test('a reminder reads as when it goes off in the collector’s time, and in the auction’s zone when that differs', () => {
+  const view = { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-10-14T12:00:00.000Z' };
+  // 14:00 in Zurich on 16 October is 08:00 in New York.
+  assert.deepEqual(reminderAtLabel('2026-10-15T12:00:00.000Z', 'Europe/Zurich', view), { text: 'Tomorrow 8:00 (your time) · 14:00 Europe/Zurich', tone: '' });
+  assert.deepEqual(reminderAtLabel('2026-10-14T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 14:00 (your time) · 20:00 Europe/Zurich', tone: 'soon' });
+  assert.deepEqual(reminderAtLabel('2026-10-20T18:00:00.000Z', 'America/New_York', view), { text: 'Tue 20 Oct 14:00 (your time)', tone: '' });
+  assert.deepEqual(reminderAtLabel('2026-10-13T18:00:00.000Z', 'America/New_York', view), { text: 'Yesterday 14:00 (your time) · passed', tone: 'past' });
+  const event = { id: 'e', revision: 1, name: 'Leu', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-16', localTime: '14:00', timeZone: 'Europe/Zurich', startsAt: '2026-10-16T12:00:00.000Z',
+    reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }, { id: 'b', kind: 'offset', offsetMinutes: 60 }] };
+  assert.deepEqual([...reminderInstants(event)], [['a', '2026-10-15T12:00:00.000Z'], ['b', '2026-10-16T11:00:00.000Z']]);
+});
+
+// N14: a new auction starts in the zone the collector last used for the same house, read from the auctions already saved.
+test('the zone last used for a house is offered for its next auction', () => {
+  const events = [
+    { id: '1', name: 'Leu Web Auction 30', timeZone: 'Europe/Zurich', updatedAt: '2026-01-01T00:00:00.000Z' },
+    { id: '2', name: 'Leu Numismatik 31', timeZone: 'Europe/Berlin', updatedAt: '2026-03-01T00:00:00.000Z' },
+    { id: '3', name: 'Roma E-Sale 130', timeZone: 'Europe/London', updatedAt: '2026-05-01T00:00:00.000Z' },
+  ];
+  assert.deepEqual(rememberedZone(events, 'Leu Web Auction 32'), { timeZone: 'Europe/Berlin', from: 'Leu Numismatik 31' });
+  assert.deepEqual(rememberedZone(events, '  roma e-sale 131'), { timeZone: 'Europe/London', from: 'Roma E-Sale 130' });
+  assert.equal(rememberedZone(events, 'Nomos 30'), null);
+  assert.equal(rememberedZone(events, ''), null);
+  assert.equal(rememberedZone(events, 'Leu 33', '2')?.from, 'Leu Web Auction 30', 'the auction being edited is not its own precedent');
 });
