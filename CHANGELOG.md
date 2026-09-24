@@ -12,6 +12,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Fixed
 
+- The workspace's **Outcome** tab opens an open lot on **Won**, in the currency of the bid you placed (else your plan's, else your default currency), where it used to open on the no-op **Still open** with the hammer in USD — so a hammer typed straight away was saved in the wrong currency. The placed bid shows in the empty hammer box as a hint, never as a value. **Still open** and the question whether the last binding terms are active again appear only for a settled lot being re-opened. The acquisition date starts on the attached auction's day (else today), and ticking **Add a won coin to collection history** with the date cleared now says so beside the field and saves nothing, where the store used to refuse the whole outcome.
 - At phone width the workspace's navigation wraps onto a second line, so **History** and **Settings** are no longer cut off at the right edge with no sign that they are there.
 - **Remove event** in the workspace's auction form was red text on a purple button, which was hard to read; it is now a red outline button like **Remove coin**.
 

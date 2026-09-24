@@ -262,19 +262,29 @@ export function moneyInputText(money, locale = 'en-US') {
   return `${money.minor < 0 ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
 }
 
+// The outcome form opens on the action the collector is about to take: an open lot on Won, in the currency of the bid
+// in force (else the plan's, else the default), and a settled lot on what was recorded. The placed bid is offered as
+// the hammer box's hint only, never as its value, and a won coin's acquisition day is the attached auction's, else
+// today.
 /**
  * @param {Lot | null | undefined} lot
  * @param {string} [locale]
+ * @param {{ defaultCurrency?: string, event?: { localDate?: string } | null, today?: string }} [context]
  * @returns {Record<string, string>}
  */
-export function outcomeDraftForLot(lot, locale = 'en-US') {
+export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'USD', event = null, today = '' } = {}) {
+  const settled = Boolean(lot?.outcome?.status && lot.outcome.status !== 'open');
+  const bidCurrency = lot?.activeBid?.amount?.currency ?? lot?.plannedBid?.amount?.currency ?? defaultCurrency;
+  const hammerCurrency = lot?.outcome?.hammer?.currency ?? bidCurrency;
   return {
-    status: lot?.outcome?.status ?? 'won',
+    status: settled ? String(lot?.outcome?.status) : 'won',
     hammer: moneyInputText(lot?.outcome?.hammer, locale),
-    hammerCurrency: lot?.outcome?.hammer?.currency ?? 'USD',
+    hammerCurrency,
     invoice: moneyInputText(lot?.outcome?.actualInvoice, locale),
-    invoiceCurrency: lot?.outcome?.actualInvoice?.currency ?? 'USD',
+    invoiceCurrency: lot?.outcome?.actualInvoice?.currency ?? hammerCurrency,
     bindingActive: '',
+    hammerPlaceholder: !settled && lot?.activeBid?.amount ? `Your bid ${moneyInputText(lot.activeBid.amount, locale)}` : '',
+    acquisitionDate: lot?.collectionEntryId ? '' : event?.localDate ?? today,
   };
 }
 

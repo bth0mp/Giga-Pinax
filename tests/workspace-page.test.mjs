@@ -500,3 +500,54 @@ test('a coin row shows its amount beside the title, the auction’s time and how
   await page.navigate('#auctions');
   assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days/);
 });
+
+// N3: on an open lot the Outcome tab opens on Won in the bid's currency, asks no re-open question and offers no
+// "Still open" no-op; ticking "Add to collection" with the date cleared stops in the page, beside the field, and
+// saves nothing - the won outcome is not lost to a refused collection entry.
+test('the Outcome tab opens an open lot on Won in its bid’s currency and checks the acquisition date in the page', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const f = page.$('outcome-form').elements;
+  assert.equal(f.status.value, 'won');
+  assert.equal(f.hammerCurrency.value, 'GBP');
+  assert.equal(f.invoiceCurrency.value, 'GBP');
+  assert.equal(f.hammer.value, '');
+  assert.equal(f.hammer.placeholder, 'Your bid 650.00');
+  assert.equal(page.$('reopen-choice').hidden, true);
+  assert.equal(page.$('open-outcome').closest('label').hidden, true, 'no no-op choice on an open lot');
+  assert.equal(f.acquisitionDate.value, '2030-10-01', 'the auction’s day is offered');
+
+  await page.type('outcome-form', 'hammer', '700');
+  f.addToCollection.checked = true;
+  await page.type('outcome-form', 'acquisitionDate', '');
+  const sent = page.commands.length;
+  await page.submit('outcome-form');
+  assert.equal(page.commands.length, sent, 'nothing was sent');
+  assert.equal(page.$('acquisition-error').textContent, 'Enter the acquisition date to add this coin to the collection.');
+  assert.equal(page.$('acquisition-error').hidden, false);
+
+  await page.type('outcome-form', 'acquisitionDate', '2030-10-01');
+  await page.submit('outcome-form');
+  const saved = storedLot(background, 'Nero, denarius');
+  assert.equal(saved.outcome.status, 'won');
+  assert.deepEqual(saved.outcome.hammer, { currency: 'GBP', minor: 70000 });
+  assert.equal(background.root().collectionEntries[0].acquisitionDate, '2030-10-01');
+  assert.equal(page.$('acquisition-error').hidden, true);
+});
+
+test('the re-open question appears only when a settled lot is set back to open', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const lot = background.root().lots[0];
+  assert.equal((await background.send({ type: 'lot.outcome.set', lotId: lot.id, expectedRevision: lot.revision, outcome: { status: 'won', hammer: { currency: 'GBP', minor: 70000 } } })).ok, true);
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  page.$('lot-queue').value = 'all-coins';
+  await page.$('lot-queue').emit('change');
+  await page.openCoin('Nero, denarius');
+  assert.equal(page.$('outcome-form').elements.status.value, 'won');
+  assert.equal(page.$('reopen-choice').hidden, true);
+  assert.equal(page.$('open-outcome').closest('label').hidden, false, 'a settled lot can be re-opened');
+  page.$('outcome-form').elements.status.value = 'open';
+  await page.$('outcome-form').emit('change', { target: page.$('open-outcome') });
+  assert.equal(page.$('reopen-choice').hidden, false);
+});

@@ -86,7 +86,7 @@ test('unknown writes are resolved from the request ledger and outcome editors pr
   assert.equal(commandWasCommitted({ recentCommands: [{ requestId: 'req-1' }] }, 'req-1'), true);
   assert.equal(commandWasCommitted({ recentCommands: [] }, 'req-1'), false);
   assert.deepEqual(outcomeDraftForLot({ outcome: { status: 'won', hammer: { currency: 'GBP', minor: 1234 }, actualInvoice: { currency: 'EUR', minor: 1600 } } }, 'de-DE'), {
-    status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '',
+    status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: '', acquisitionDate: '',
   });
   assert.equal(moneyInputText({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 'en-US'), '90071992547409.91');
 });
@@ -1128,4 +1128,23 @@ test('an event is soon within 48 hours or from the day before a sale day, and en
   assert.equal(eventTiming(day, '2026-10-01T22:30:00.000Z').state, 'ended');
   assert.equal(eventTiming(day, '2026-09-30T12:00:00.000Z').sortMs, Date.parse('2026-09-30T22:00:00.000Z'), 'a day sorts from its own midnight');
   assert.equal(eventTiming(null, '2026-09-30T12:00:00.000Z').state, 'unknown');
+});
+
+// N3: the outcome form opens on the action the collector is about to take - Won, in the bid's currency - and never on
+// a no-op; the placed bid is a hint in the hammer box, never a value; and a won coin's acquisition date is offered.
+test('the outcome form opens an open lot on Won, in its bid’s currency, with the bid only as a hint', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const open = { outcome: { status: 'open' }, activeBid: { amount: eur(130000) }, plannedBid: { amount: { currency: 'GBP', minor: 100 } } };
+  assert.deepEqual(outcomeDraftForLot(open, 'en-US', { defaultCurrency: 'USD', event: { localDate: '2026-10-01' }, today: '2026-10-03' }), {
+    status: 'won', hammer: '', hammerCurrency: 'EUR', invoice: '', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: 'Your bid 1300.00', acquisitionDate: '2026-10-01',
+  });
+  const planned = { outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 50000 } } };
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerCurrency, 'CHF');
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerPlaceholder, '', 'a plan is not a bid');
+  const watched = { outcome: { status: 'open' } };
+  assert.deepEqual(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).hammerCurrency, 'GBP');
+  assert.equal(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).acquisitionDate, '2026-10-03', 'no auction: today');
+  // A settled lot opens on what was recorded.
+  assert.equal(outcomeDraftForLot({ outcome: { status: 'lost', hammer: eur(900) } }, 'en-US', { defaultCurrency: 'USD' }).status, 'lost');
+  assert.equal(outcomeDraftForLot({ outcome: { status: 'passed' } }, 'en-US', { defaultCurrency: 'GBP' }).status, 'passed');
 });
