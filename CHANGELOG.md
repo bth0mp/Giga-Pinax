@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- The popup shows the coin before its prices. The type card now comes first and the auction research under it; while acsearch answers, the median's place is held with “Fetching acsearch…”, so prices arriving a moment later no longer push the card off the popup.
+
 ### Fixed
 
 - The popup no longer loses its header and Research, Calculator and Watchlist tabs after some lookups. A pasted lot looked up after a list of types scrolled the whole popup page, and no scrolling brought the header back; only the panel under the tabs scrolls now.

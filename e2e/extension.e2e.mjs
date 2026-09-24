@@ -37,7 +37,8 @@ function pricedAcsearchPage() {
 
 const refused = [];
 
-async function launch({ locale } = {}) {
+// acsearchDelay holds the acsearch answer back, as a real search takes a second or two to come in.
+async function launch({ locale, acsearchDelay = 0 } = {}) {
   assert.ok(existsSync(join(EXTENSION, 'manifest.json')), `${EXTENSION} holds no build: run python scripts/build.py brave first`);
   const profile = await mkdtemp(join(tmpdir(), 'giga-pinax-e2e-'));
   const context = await chromium.launchPersistentContext(profile, {
@@ -52,10 +53,11 @@ async function launch({ locale } = {}) {
       ...(locale ? [`--lang=${locale}`] : []),
     ],
   });
-  await context.route('**/*', (route) => {
+  await context.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (url.protocol === 'chrome-extension:') return route.continue();
     if (url.origin === 'https://www.acsearch.info' && url.pathname === '/search.html') {
+      if (acsearchDelay) await new Promise((resolve) => { setTimeout(resolve, acsearchDelay); });
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: pricedAcsearchPage() });
     }
     refused.push(url.href);
@@ -146,6 +148,33 @@ test('the popup keeps its header and tabs in place through a lot lookup after a 
     const frame = await page.evaluate(() => ({ document: document.scrollingElement.scrollTop,
       header: document.querySelector('.popup-header').getBoundingClientRect().top }));
     assert.deepEqual(frame, { document: 0, header: 0 });
+  } finally {
+    await browser.close();
+  }
+});
+
+// Loop 1 (P-01): the card is the answer and comes first; acsearch answering a moment later draws the prices under it
+// and moves nothing the collector is reading.
+test('prices arriving after the card leave the card where it is', async () => {
+  const browser = await launch({ acsearchDelay: 1500 });
+  try {
+    for (const [path, width, height] of [['popup.html', 400, 600], ['popup.html?panel=1', 360, 900]]) {
+      const page = await browser.context.newPage();
+      await page.setViewportSize({ width, height });
+      await page.goto(browser.url(path));
+      await lookUp(page, 'RIC I² Nero 306');
+      await page.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
+      // Past the reveal's last pass (400 ms) and its smooth scroll, but before acsearch answers.
+      await page.waitForTimeout(900);
+      const top = () => page.evaluate(() => Math.round(document.getElementById('result').getBoundingClientRect().top));
+      const before = await top();
+      assert.equal(await page.locator('#median-line').isVisible(), true, `${path}: the median's place is held while acsearch answers`);
+      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(900);
+      assert.equal(await top(), before, path);
+      assert.ok(before >= 0 && before < height / 2, `${path}: the card starts at ${before}`);
+      await page.close();
+    }
   } finally {
     await browser.close();
   }

@@ -181,6 +181,21 @@ function setPricesBusy(busy) {
   $('prices-label').textContent = busy ? 'Fetching…' : 'Get prices';
 }
 
+// While acsearch answers, the median block is drawn with its label, a dash and what is happening, and the range block keeps its room: the panel has
+// its final height before the prices are in it, so their arrival moves nothing below the card. Nothing of a previous answer is shown in it.
+const LOADING_HIDDEN = ['cited-count', 'sale-trend', 'last-sale', 'sale-period', 'year-medians', 'grade-medians', 'ungraded-count', 'check-row',
+  'check-result', 'sale-details', 'copy-summary'];
+function showPricesLoading() {
+  $('prices-panel').dataset.state = 'loading';
+  $('median-amount').textContent = '—';
+  $('median-currency').textContent = '';
+  $('sale-strength').textContent = 'Fetching acsearch…';
+  $('median-line').hidden = false;
+  $('range-block').hidden = false;
+  for (const id of LOADING_HIDDEN) $(id).hidden = true;
+  $('prices-panel').hidden = false;
+}
+
 function resetCopyLabel() {
   clearTimeout(copiedTimer);
   $('copy-summary').textContent = 'Copy summary';
@@ -195,6 +210,10 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   renderPriceFilters();
   resetCopyLabel();
   $('prices-panel').hidden = true;
+  $('prices-panel').dataset.state = '';
+  // The dash and "Fetching" of a search this replaces go with it.
+  $('median-amount').textContent = '';
+  $('sale-strength').textContent = '';
   $('upcoming').hidden = true;
   $('upcoming-list').replaceChildren();
   $('upcoming-status').hidden = true;
@@ -718,6 +737,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
+  $('sale-period').hidden = false;
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
@@ -779,6 +799,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, years: byYear, upcoming } };
   renderPriceFilters();
   showCheck();
+  $('prices-panel').dataset.state = 'ready';
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
@@ -1042,12 +1063,16 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
   setPricesBusy(true);
+  showPricesLoading();
   let outcome;
   try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId || context !== researchContext) return;
-  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealAgain('research-prices'); return; }
+  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealPrices(); return; }
+  // No median to hold a place for: the note below says why.
+  $('prices-panel').hidden = true;
+  $('prices-panel').dataset.state = '';
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
@@ -1060,6 +1085,12 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     const listed = renderUpcoming(outcome.lots, term, context);
     if (listed.length) $('announcement').textContent += ` ${upcomingText(listed)}.`;
   }
+}
+
+// The card is the answer and stands above the prices, so prices landing under it bring nothing into view: the collector is reading the coin. Only
+// prices with no card above them (a lookup that failed, or has not answered yet) are the answer to bring into view.
+function revealPrices() {
+  if ($('result').hidden) revealAgain('research-prices');
 }
 
 // Counted so a reference the store is still fetching cannot land in a window that has since been sent a lookup of its own (openFrom below).
@@ -1352,7 +1383,7 @@ $('coinarchives-prices-button').addEventListener('click', async () => {
   if (outcome.status === 'ok') {
     shownCoinArchivesPrices = { context, outcome, currency };
     renderCoinArchivesPrices();
-    revealAgain('research-prices');
+    revealPrices();
   } else showCoinArchivesError(coinArchivesFailure(outcome, currency));
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));

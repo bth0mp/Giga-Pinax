@@ -1975,3 +1975,47 @@ test('the popup frame keeps absolutely placed text inside its scrolling panel', 
   // Without a containing block of its own, a visually hidden line deep in the answer is placed against the page and stretches the document.
   assert.match(css, /\.popup-scroll \{[^}]*position:relative/);
 });
+
+// Loop 1 (P-01): the coin comes before its prices. The card was drawn under the price panel, so prices arriving two seconds after it pushed it off
+// the popup; now the card is first, the median's room is held while acsearch answers, and the answer landing moves nothing the collector is reading.
+test('the card comes before the price panel in the popup', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('id="result"') < html.indexOf('id="research-prices"'));
+});
+
+test('while acsearch answers, the median block holds its place, and a failed answer takes it down', async () => {
+  const answer = deferred();
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: () => answer.promise });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(popup.element('prices-panel').dataset.state, 'loading');
+  assert.equal(popup.element('median-amount').textContent, '—');
+  assert.equal(popup.element('sale-strength').textContent, 'Fetching acsearch…');
+  assert.equal(popup.element('median-line').hidden, false);
+  for (const id of ['copy-summary', 'check-row', 'sale-details']) assert.equal(popup.element(id).hidden, true, id);
+  answer.resolve({ status: 'signed-out' });
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, true);
+  assert.equal(popup.element('prices-note').hidden, false);
+});
+
+test('prices that land under a card on screen do not scroll the popup again', async () => {
+  const timers = [];
+  const answer = deferred();
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: () => answer.promise,
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+  popup.element('result').top = 104;
+  popup.element('research-prices').top = 700;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  answer.resolve(oneSale);
+  await settle();
+  assert.equal(popup.element('prices-panel').dataset.state, 'ready');
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('popup-scroll').scrolledTo, undefined);
+});

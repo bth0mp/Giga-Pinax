@@ -88,6 +88,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .result {margin:0 16px; padding:16px 0 18px; background:transparent; border-bottom:1px solid var(--line);}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}
 .catalogue-code {font-family:var(--font-serif); font-size:16px; line-height:1.3; font-weight:600; letter-spacing:0; color:var(--accent); overflow-wrap:anywhere;}
+/* The coin's identity is one strip: its code with the catalogue that answered beside it, then the ruler, denomination, mint, metal and dates. */
+.type-heading .catalogue-code {display:inline; margin-right:6px;}
+.type-heading .source-badge {margin:0; vertical-align:1px;}
 .type-heading p {font-size:11px; line-height:1.3; color:var(--muted); margin-top:4px;}
 .type-link {margin-left:auto; text-decoration:none; font-size:12px; white-space:nowrap; padding:4px 0 8px 8px;}
 .type-link:hover {text-decoration:underline;}
@@ -110,6 +113,10 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .prices-note a {white-space:nowrap;}
 /* The median sits right under the heading; without prices, the note takes its place. */
 .median-block,.prices-note {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
+/* Both blocks keep the height they will have while acsearch answers, so its answer moves nothing under them. */
+.median-block {min-height:108px;}
+.prices-panel[data-state="loading"] .median-line strong,.prices-panel[data-state="loading"] .sale-strength {color:var(--muted); font-weight:400;}
+.prices-panel[data-state="loading"] .range-block > * {visibility:hidden;}
 .median-line {display:flex; align-items:baseline; gap:8px; margin-top:2px;}
 .median-line strong {font-family:var(--font-serif); font-size:32px; line-height:1.1; letter-spacing:-.01em; font-weight:500; color:var(--ink); font-variant-numeric:lining-nums tabular-nums;}
 #median-currency {font-size:12px; font-weight:600; color:var(--muted);}
@@ -141,7 +148,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 @media (forced-colors:active) {
   .period label:has(:checked) {forced-color-adjust:none; border-color:Highlight; background:Highlight; color:HighlightText; outline-color:CanvasText;}
 }
-.range-block {background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
+.range-block {min-height:72px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
 .range-block strong {display:block; font-size:16px; font-weight:600; letter-spacing:-.01em; margin-top:2px; font-variant-numeric:tabular-nums;}
 .range-all {font-size:11px; line-height:1.4; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
 .range-visual {position:relative; height:22px; width:100px; margin-left:auto; flex-shrink:0;}

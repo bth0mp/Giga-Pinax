@@ -56,6 +56,16 @@
         </details>
         <div id="lot-refs" class="candidates" hidden><p id="lot-refs-label" class="field-hint">Found in this text:</p><ul id="lot-list" class="candidate-list" aria-labelledby="lot-refs-label"></ul></div>
       </form>
+      <section id="result" class="result card" aria-labelledby="result-reference" hidden>
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
+        <details id="sides-details" class="sides-details"><summary><span>Obverse and reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
+          <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
+          <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
+        </dl></details>
+        <section id="specimens" class="specimens" aria-labelledby="specimens-title" hidden><h3 id="specimens-title" class="specimens-title">Specimens</h3><ul id="specimen-list" class="specimen-list"></ul><p id="specimens-credit" class="field-hint">Museum coins of this type, found through Nomisma.org. Photos load from each collection’s own site.</p></section>
+        <button id="companion-save-watchlist" class="companion-save-watchlist" type="button" data-companion-runtime disabled>Save reference to watchlist</button>
+        <p class="field-hint">Saves the reference and type-page link for review. Session acsearch prices stay in this view.</p>
+      </section>
       <section id="research-prices" class="research-prices card" aria-labelledby="research-prices-title" hidden>
         <h2 id="research-prices-title">Auction research</h2>
         <fieldset id="period" class="period source-period"><legend class="sr-only">Sales period for auction sources</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
@@ -107,16 +117,6 @@
             <a id="coinarchives-source-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">CoinArchives results <span aria-hidden="true">↗</span></a>
           </div>
         </section>
-      </section>
-      <section id="result" class="result card" aria-labelledby="result-reference" hidden>
-        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
-        <details id="sides-details" class="sides-details"><summary><span>Obverse and reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
-          <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
-          <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
-        </dl></details>
-        <section id="specimens" class="specimens" aria-labelledby="specimens-title" hidden><h3 id="specimens-title" class="specimens-title">Specimens</h3><ul id="specimen-list" class="specimen-list"></ul><p id="specimens-credit" class="field-hint">Museum coins of this type, found through Nomisma.org. Photos load from each collection’s own site.</p></section>
-        <button id="companion-save-watchlist" class="companion-save-watchlist" type="button" data-companion-runtime disabled>Save reference to watchlist</button>
-        <p class="field-hint">Saves the reference and type-page link for review. Session acsearch prices stay in this view.</p>
       </section>
       <details class="companion-current-lot" open>
         <summary>Current source</summary>
