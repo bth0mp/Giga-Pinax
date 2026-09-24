@@ -879,3 +879,69 @@ export async function lookupType(given, options = {}) {
     timer.done();
   }
 }
+
+// Photographs of real coins of one type, for the card's opt-in specimen strip: at most three pairs, each an obverse and a reverse image, the specimen's
+// own page and the collection that holds it, or [] for anything else. One SPARQL query to Nomisma, which harvests the museums' specimen records; the
+// predicates are the ones Nomisma documents for a physical coin (https://nomisma.org/documentation/contribute/): nmo:hasTypeSeriesItem names the
+// type, nmo:hasCollection the holder, nmo:hasObverse and nmo:hasReverse the sides, and foaf:thumbnail and foaf:depiction each side's images. The type
+// is asked for under http and https alike, since the corpora publish it both ways. Nothing here is cached or stored: the caller draws the answer and
+// forgets it. A failed, slow, oversized or unreadable answer is no specimens, never an error the card has to wait for.
+export async function fetchSpecimens(card, { fetchImpl = fetch, timeoutMs = 8000, signal } = {}) {
+  const TYPE_CORPORA = ['ocre', 'crro', 'pella', 'sco', 'bigr'];
+  // An id is written into the query between angle brackets, so only the characters the corpora's ids use may reach it.
+  if (!TYPE_CORPORA.includes(card?.corpus) || !/^[A-Za-z0-9._~()+-]+$/.test(String(card.id ?? ''))) return [];
+  const path = `numismatics.org/${card.corpus}/id/${card.id}`;
+  const query = [
+    'PREFIX nmo: <http://nomisma.org/ontology#>',
+    'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
+    'PREFIX skos: <http://www.w3.org/2004/02/skos/core#>',
+    'SELECT ?object (SAMPLE(?label) AS ?collection) (SAMPLE(?obverseThumb) AS ?obverseThumbnail) (SAMPLE(?obverseImage) AS ?obverseDepiction)',
+    '  (SAMPLE(?reverseThumb) AS ?reverseThumbnail) (SAMPLE(?reverseImage) AS ?reverseDepiction) WHERE {',
+    `  VALUES ?type { <http://${path}> <https://${path}> }`,
+    '  ?object nmo:hasTypeSeriesItem ?type ; a nmo:NumismaticObject ; nmo:hasCollection ?holder ; nmo:hasObverse ?obverse ; nmo:hasReverse ?reverse .',
+    '  ?holder skos:prefLabel ?label FILTER(langMatches(lang(?label), "en"))',
+    '  OPTIONAL { ?obverse foaf:thumbnail ?obverseThumb } OPTIONAL { ?obverse foaf:depiction ?obverseImage }',
+    '  OPTIONAL { ?reverse foaf:thumbnail ?reverseThumb } OPTIONAL { ?reverse foaf:depiction ?reverseImage }',
+    '  FILTER((BOUND(?obverseThumb) || BOUND(?obverseImage)) && (BOUND(?reverseThumb) || BOUND(?reverseImage)))',
+    '} GROUP BY ?object LIMIT 6',
+  ].join('\n');
+  const url = `https://nomisma.org/query?${new URLSearchParams({ query, output: 'json' })}`;
+  // Only a page or an image the browser may follow as a web address: http(s), whatever else a record holds.
+  const web = (binding) => {
+    try {
+      const value = String(binding?.value ?? '');
+      return ['http:', 'https:'].includes(new URL(value).protocol) ? value : null;
+    } catch { return null; }
+  };
+  // Its own deadline, and the caller's signal too: a card replaced before the answer stops the request rather than waiting it out.
+  const stop = new AbortController();
+  const cancel = () => stop.abort();
+  const timer = setTimeout(cancel, timeoutMs);
+  signal?.addEventListener('abort', cancel);
+  try {
+    const response = await fetchImpl(url, { signal: stop.signal, headers: { Accept: 'application/sparql-results+json' } });
+    if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
+    // Six short rows are a few kilobytes; a reply past this is not one.
+    const bindings = JSON.parse(await boundedText(response, 256 * 1024))?.results?.bindings;
+    if (!Array.isArray(bindings)) return [];
+    const specimens = [];
+    for (const row of bindings) {
+      const specimen = {
+        page: web(row?.object),
+        collection: squash(row?.collection?.value ?? ''),
+        obverse: web(row?.obverseThumbnail) ?? web(row?.obverseDepiction),
+        reverse: web(row?.reverseThumbnail) ?? web(row?.reverseDepiction),
+      };
+      if (Object.values(specimen).some((value) => !value) || specimens.some((kept) => kept.page === specimen.page)) continue;
+      specimens.push(specimen);
+      if (specimens.length === 3) break;
+    }
+    return specimens;
+  } catch (error) {
+    if (!signal?.aborted) void recordFetchFailure('lookup', error);
+    return [];
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
+  }
+}
