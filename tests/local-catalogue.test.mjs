@@ -600,7 +600,7 @@ test('over the bundled catalogue, a mint bracketed after a number opens no coin 
 // A section read from the heading's mint and nothing else never opens a coin: the heading may name a ruler the people table cannot place.
 test('a section taken only from the heading\'s mint is offered, never opened', async () => {
   const local = createLocalCatalogue({ fetchImpl: fixtureFetch(), baseUrl: 'moz-extension://test/data/' });
-  const lot = findReferences('Constantius I. Follis. Londinium. RIC VII 287.');
+  const lot = findReferences('Usurper. Follis. Londinium. RIC VII 287.');
   const offered = await local.lookupType(lotLookup(lot.references[0], lot.rulers));
   assert.equal(offered.status, 'candidates');
   assert.equal(offered.partial, true);

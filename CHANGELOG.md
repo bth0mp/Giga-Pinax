@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - The grade medians read the spellings whole houses grade in, which were dropped as ungraded before: NAC's `Fdc`, the British `GVF`, `GEF`, `NEF`, `NVF` and `nEF`, the German `Stgl.`, `fast Stgl.`, `prfr.`, `prägefrisch` and `sge`, the American `BU`, `aUNC` and `NGC Gem MS`, the Italian `Spl`, the Spanish `S/C` and the English `Fair` (counted under Fine and below). Each is read only where a dealer writes a grade: `BU` in a monogram, `S/C` behind a described reverse and a lower-case "fair" stay unread.
+- A pasted or right-clicked lot reads the ruler its heading names in Latin, German, French, Italian or Spanish: `Traianus`, `Trajano`, `Traiano`, `Nerón`, `Néron`, `Nerone`, `Adriano`, `Hadrien`, `Vespasiano`, `Vespasien`, `Philippus I`, `Valerianus I`, `Elagabal`, `Heliogabalus`, `Faustina II` / `Minor` / `Maior`, `Constantius I`, `Maximinus II`, `Julian II`, `Jovian`, `Constantine the Great`, `Konstantin I` and `Costantino I` among them. A Künker lot headed "Traianus, 98-117" citing `RIC 347` now offers Trajan's two types instead of thirty-four from every volume, and a Spanish "Nerón … Roma. RIC 53" opens Nero's denarius instead of listing the Rome mint's folles. Each spelling names one person Nomisma already knows; "the stone of Elagabal" on a coin of Uranius Antoninus names the god, not a second emperor.
 
 ## [0.34.1] - 2026-09-24
 

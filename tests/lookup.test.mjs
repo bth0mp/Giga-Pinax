@@ -1422,9 +1422,13 @@ test('a section and a lot ruler reach OCRE\'s own spelling through the aliases, 
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Claudius Gothicus'] }, { fetchImpl: feed });
   assert.ok(feed.calls[0].includes(encodeURIComponent('portrait_facet:"Claudius II Gothicus"')), feed.calls[0]);
   // A spelling no English or Latin label carries is asked for exactly as it was written, never resolved to a guess.
+  const unplaced = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
+  await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus III'] }, { fetchImpl: unplaced });
+  assert.ok(unplaced.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus III"')), unplaced.calls[0]);
+  // A dealer's spelling the closed table names (loop N6) is asked for under the name it names, as an alias is.
   const daia = fakeFetch({ 'ocre/apis/search': '<feed></feed>' });
   await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '36', rulers: ['Maximinus II'] }, { fetchImpl: daia });
-  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus II"')), daia.calls[0]);
+  assert.ok(daia.calls[0].includes(encodeURIComponent('authority_facet:"Maximinus Daia"')), daia.calls[0]);
 });
 
 // A mint bracketed after a number with no volume ("Nero. RIC 411 (Rome)") is no ruler's section: the lot's rulers are still asked for, so the one RIC

@@ -183,10 +183,37 @@ for (const person of RIC_PEOPLE) {
 // to nobody else would be unknown, and worse, one it happens to give to somebody else ("Domitianus" is filed only under
 // Domitian II and Domitius Domitianus) opens a stranger's coin as the single answer. Sharing the spelling makes the lookup
 // offer a choice, which is the honest answer; a spelling that is already somebody's own name stays his alone.
+// The same ending in the Romance languages is -iano (Italian and Spanish: Vespasiano, Aureliano) and -ien (French: Vespasien, Aurélien, folded), and
+// Trajan's -jan is -ianus or -janus in Latin and -iano or -jano in Italian and Spanish (Traianus, Trajano). French keeps Trajan.
+const ROMANCE_ENDINGS = Object.freeze({ ian: ['ianus', 'iano', 'ien'], jan: ['ianus', 'janus', 'iano', 'jano'] });
 for (const person of RIC_PEOPLE) {
   const label = rulerKey(person.name);
-  if (/^[a-z]+ian$/.test(label) && !OWN_NAME.has(`${label}us`)) own(`${label}us`, person);
+  const [, stem, ending] = /^([a-z]+)([ij]an)$/.exec(label) ?? [];
+  for (const spelling of ending ? ROMANCE_ENDINGS[ending].map((form) => `${stem}${form}`) : []) {
+    if (!OWN_NAME.has(spelling)) own(spelling, person);
+  }
 }
+
+// The spellings of RIC I–V rulers the European houses head a lot with, in Latin, German, French, Italian and Spanish, that no rule above reaches: a
+// closed table of spelling to the RIC person Nomisma already names, so each is a spelling of that one person and never a new one. None is anybody's
+// own name, alias, section or mint (the catalogue test checks that), a numeral in one names that person only (the pattern a heading reads them with
+// refuses a longer numeral behind it), and each is compared folded, as every alias is ("Nerón" and "Néron" are both "neron").
+export const EXTRA_SPELLINGS = Object.freeze([
+  ['traianus decius', 'trajan_decius'], ['trajanus decius', 'trajan_decius'], ['traiano decio', 'trajan_decius'], ['trajano decio', 'trajan_decius'],
+  ['neron', 'nero'], ['nerone', 'nero'], ['adriano', 'hadrian'],
+  ['philippus i', 'philip_the_arab'], ['philipp i', 'philip_the_arab'], ['philippe ier', 'philip_the_arab'], ['filippo i', 'philip_the_arab'],
+  ['filipo i', 'philip_the_arab'], ['valerianus i', 'valerian'], ['elagabal', 'elagabalus'], ['heliogabalus', 'elagabalus'],
+  ['faustina i', 'faustina_i'], ['faustina maior', 'faustina_i'], ['faustina major', 'faustina_i'], ['faustina senior', 'faustina_i'],
+  ['faustina ii', 'faustina_ii'], ['faustina minor', 'faustina_ii'], ['faustina iunior', 'faustina_ii'], ['faustina junior', 'faustina_ii'],
+  ['constantius i', 'constantius_chlorus'], ['maximinus i', 'maximinus_thrax'], ['maximinus ii', 'maximinus_daia'], ['maximinus daza', 'maximinus_daia'],
+  ['julian ii', 'julian_the_apostate'], ['julianus ii', 'julian_the_apostate'], ['iulianus ii', 'julian_the_apostate'],
+  ['julianus apostata', 'julian_the_apostate'], ['jovian', 'jovianus'],
+  ['constantine the great', 'constantine_i'], ['konstantin i', 'constantine_i'], ['konstantin der grosse', 'constantine_i'],
+  ['konstantin der große', 'constantine_i'], ['constantin ier', 'constantine_i'], ['constantin i', 'constantine_i'],
+  ['costantino i', 'constantine_i'], ['constantino i', 'constantine_i'],
+].map((entry) => Object.freeze(entry)));
+const PERSON_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person]));
+for (const [spelling, id] of EXTRA_SPELLINGS) if (PERSON_BY_ID.has(id)) own(spelling, PERSON_BY_ID.get(id));
 
 // The people each spelling names outright, before any is widened below: a numeral is read against these, never against a widened one.
 const NAMED_PEOPLE = new Map([...PEOPLE_BY_NAME].map(([label, people]) => [label, [...people]]));

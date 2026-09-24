@@ -97,7 +97,7 @@ test('a typed reference ends at its first number: a second one after a comma is 
 
 test('rulers are the RIC persons named before the first reference', () => {
   const rulers = LOTS.map((lot) => findReferences(lot).rulers);
-  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], [], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
+  assert.deepEqual(rulers, [['Titus'], ['Titus'], ['Julia Maesa'], ['Faustina the Elder'], ['Nero'], [], [], [], [], ['Titus'], [], ['Gallienus']]);
   assert.deepEqual(findReferences('Claudius with Nero, as Caesar. RIC 107').rulers, ['Claudius', 'Nero']);
   assert.deepEqual(findReferences('Divus Vespasian. Struck under Titus. RIC 357').rulers, ['Vespasian', 'Titus']);
   // A mint is a RIC section too, but not a person; a name after the first reference is not the lot's ruler.
@@ -238,6 +238,45 @@ test('a regnal numeral, "Magnus" and an "as Augustus" title never make another p
   assert.deepEqual(rulers('Titus, as Augustus, AD 79-81. Denarius. RIC 112.'), ['Titus']);
   assert.deepEqual(rulers('Titus augustus, 79-81. Denarius. RIC 112.'), ['Titus']);
   assert.deepEqual(rulers('Augustus, 27 BC-AD 14. Denarius. RIC 207.'), ['Augustus']);
+});
+
+// Loop N6: the European houses head a lot with the ruler in their own language, and a heading nobody could read left "RIC 347" to every volume's
+// thirty-four types, or sent a Spanish Nero to the Rome mint's folles.
+test('a heading names its ruler in Latin, German, French, Italian or Spanish', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [text, person] of [
+    ['Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. BMC 549; Calicó 1035; Coh. 276; RIC 347; Woytek 571f. Fast Stempelglanz.', 'Trajan'],
+    ['TRAJANUS, 98-117. Denar. RIC 347.', 'Trajan'], ['Traiano (98-117). Aureo, Roma. RIC 347; C 276.', 'Trajan'],
+    ['Trajano. Denario. Roma. RIC 347.', 'Trajan'], ['Nerón. Denario. 65-66 d.C. Roma. RIC 53; RSC 119. Ag 3,42 g. Pátina. EBC-.', 'Nero'],
+    ['Néron (54-68). Denier, 65-66, Rome. RIC.53 - RSC.119.', 'Nero'], ['Nerone (54-68). Denario, Roma, 65-66. RIC 53; C 119.', 'Nero'],
+    ['Adriano. Denario. Roma. RIC 241.', 'Hadrian'], ['Hadrien (117-138). Denier. RIC 241.', 'Hadrian'],
+    ['Vespasiano. Denario. RIC 356.', 'Vespasian'], ['Vespasien (69-79). Denier. RIC 356.', 'Vespasian'],
+    ['Philippus I. Arabs, 244-249. Antoninian. RIC 27b.', 'Philip the Arab'], ['Valerianus I., 253-260. Antoninian. RIC 106.', 'Valerian'],
+    ['Elagabal, 218-222. Denar. RIC 88.', 'Elagabalus'], ['Heliogabalus. Denarius. RIC 88.', 'Elagabalus'],
+    ['Faustina II., 147-176. Denar. RIC 677.', 'Faustina the Younger'],
+    ['Faustina Minor. Denarius. RIC 677.', 'Faustina the Younger'], ['Faustina Maior. Denar. RIC 344.', 'Faustina the Elder'],
+    ['Constantius I., 293-306. Follis. RIC 170a.', 'Constantius Chlorus'], ['Maximinus II. Daia, 305-313. Follis. RIC 845.', 'Maximinus Daia'],
+    ['Julian II. AD 360-363. Siliqua. RIC 212.', 'Julian the Apostate'], ['Jovian. AD 363-364. Solidus. RIC 175.', 'Jovianus'],
+    ['Constantine the Great. Follis. RIC 105.', 'Constantine I'], ['Konstantin I., 306-337. Follis. RIC 105.', 'Constantine I'],
+    ['Costantino I (306-337). Follis. RIC 105.', 'Constantine I'], ['Traianus Decius, 249-251. Antoninian. RIC 21b.', 'Trajan Decius']]) {
+    assert.deepEqual(rulers(text), [person], text);
+  }
+  // A heading the table read already reads as it did, and a spelling with another numeral behind it is someone else.
+  assert.deepEqual(rulers('Faustina II. Denar. RIC 677. Faustina I'), ['Faustina the Younger']);
+  assert.deepEqual(rulers('Constantius II. AE3. RIC 123.'), ['Constantius II']);
+  // No new spelling reads an ordinary word or the start of one: an adjective, the sea, a style, the god of Emesa whose stone the coins show.
+  for (const prose of ['Neronian style. Denarius. RIC 53.', 'Adriatic hoard. Denarius. RIC 241.', 'A jovian eagle. RIC 175.',
+    'Traianeum at Pergamon. RIC 347.', 'Emesa. Aureus. The sacred stone of Elagabal in a quadriga. RIC 2.', 'Emesa. Stein des Elagabal. RIC 2.']) {
+    assert.deepEqual(rulers(prose), [], prose);
+  }
+  assert.deepEqual(rulers('Uranius Antoninus. Aureus, Emesa. The baetyl of Elagabal in a quadriga. RIC 2.'), ['Uranius Antoninus']);
+  // The Künker heading reads the ruler, so the row borrows him rather than every volume's RIC 347.
+  const kunker = findReferences('Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. RIC 347; Woytek 571f.');
+  assert.deepEqual(lotLookup(kunker.references[0], kunker.rulers), { catalogue: 'RIC', number: '347', volume: '', section: '', rulers: ['Trajan'] });
+  // The Spanish Nero no longer falls through to the heading's mint.
+  const aureo = findReferences('Nerón. Denario. 65-66 d.C. Roma. RIC 53; RSC 119.');
+  assert.equal(lotLookup(aureo.references[0], aureo.rulers).section, '');
+  assert.deepEqual(lotLookup(aureo.references[0], aureo.rulers).rulers, ['Nero']);
 });
 
 test('a lot row looks up its parsed reference, with the rulers only on a RIC reference without a section, and says so', () => {
@@ -917,7 +956,8 @@ test('a regnal numeral after a name is read in capitals only, so a lower-case le
 // "Sévère", a Spanish "Juan" and a Latin dative "Iovi" all became rulers, and "Sept. Severus. RIC 16" then opened a Severus II follis. Each of these
 // is prose, a month, a legend or an abbreviation, and none of them named a ruler before the aliases were widened.
 test('a lot\'s ordinary words name no ruler: prose, a month, a legend and an abbreviation stay text', () => {
-  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina Senior, 138-141. AR Denarius. RIC III 344.',
+  // "Diva Faustina Senior" is Faustina the Elder (loop N6); the Portuguese word alone is still nobody.
+  for (const text of ['Sept. Severus. Denarius. RIC 16.', 'Diva Faustina, 138-141. AR Denarius. RIC III 344.',
     'Severe scratches and a flan crack. RIC 1', 'Denarius. Rev: Pietas Augusti. RIC 1', 'Struck August 70. RIC 1', 'Jovi Statori. RIC 1',
     'Marc Antony legionary denarius. RIC 1', 'Juan Carlos collection. RIC 1', 'Mario Ratto, 1962. RIC 1', 'Drusus. RIC 1', 'Maximinus. RIC 1',
   ]) assert.deepEqual(findReferences(text).rulers, [], text);
@@ -1024,14 +1064,18 @@ test('the heading spellings the English and Latin labels really carry resolve, a
     ['Florian', ['Florian']],
     ['Severina', ['Severina']],
     ['Mariniana', ['Mariniana']],
-    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: they name nobody rather than somebody.
-    ['Maximinus I', []],
-    ['Maximinus II', []],
-    ['Constantius I', []],
-    ['Faustina II', []],
-    ['Faustina Junior', []],
-    ['Diva Faustina I', []],
-    ['Julian II', []],
+    // Nomisma's English and Latin labels spell none of these, and a numeral is never invented from the rest: the closed table of dealers' spellings
+    // (catalogues.js EXTRA_SPELLINGS, loop N6) names each one person, and without it they would name nobody rather than somebody.
+    ['Maximinus I', ['Maximinus Thrax']],
+    ['Maximinus II', ['Maximinus Daia']],
+    ['Constantius I', ['Constantius Chlorus']],
+    ['Faustina II', ['Faustina the Younger']],
+    ['Faustina Junior', ['Faustina the Younger']],
+    ['Diva Faustina I', ['Faustina the Elder']],
+    ['Julian II', ['Julian the Apostate']],
+    ['Maximinus III', []],
+    ['Faustina', []],
+    ['Julianus', []],
   ]) assert.deepEqual(rulers(`${heading}. Denarius. RIC 12.`), expected, heading);
 });
 
@@ -1069,9 +1113,12 @@ test('a mint written beside a RIC number with no volume keeps the heading ruler'
 // came from the heading's mint, and the lookup offers what it finds there rather than opening it.
 test('a section taken from the heading\'s mint is marked as such, and a section the lot cites is not', () => {
   const lookup = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers); };
-  for (const text of ['Constantius I. Follis. Trier. RIC VI 1.', 'Julian II. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
+  for (const text of ['Sept. Severus. Follis. Trier. RIC VI 1.', 'Usurper. Siliqua. Arles. RIC VIII 12.', 'Londinium. RIC 12']) {
     assert.equal(lookup(text).headingMint, true, text);
   }
+  // Those two headings of the first rounds now name their rulers (loop N6), and the ruler is asked for instead of the mint.
+  assert.deepEqual(lookup('Constantius I. Follis. Trier. RIC VI 1.').rulers, ['Constantius Chlorus']);
+  assert.deepEqual(lookup('Julian II. Siliqua. Arles. RIC VIII 12.').rulers, ['Julian the Apostate']);
   for (const text of ['Constantine I. Follis. RIC VII Trier 12.', 'Constantine I. Follis. Trier. RIC VII 12.', 'Rome mint. RIC IV 460', 'RIC VII Treveri 12']) {
     assert.equal(lookup(text).headingMint, undefined, text);
   }
