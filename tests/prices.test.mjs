@@ -1456,13 +1456,13 @@ test('a hand-typed "Bop. 24A" still searches the Bopearachchi card', () => {
 });
 
 // 0.34 (I2): the lots acsearch lists that have not been sold yet, as the Upcoming list shows them.
-test('upcomingLots keeps the unpriced lots dated today or later in the collector’s own day, newest first', () => {
+test('upcomingLots keeps the unpriced lots dated today or later in the collector’s own day, soonest first', () => {
   // Noon on 11 September, local time: the collector's day is the 11th wherever the test runs.
   const now = new Date(2026, 8, 11, 12);
   const lots = [lot('*', '10.09.2026', 'yesterday'), lot('*', '11.09.2026 18:00', 'today'), lot('*', '2026-10-12', 'october'),
     lot('', '01.12.2026', 'blank'), lot('250', '12.10.2026', 'priced'), lot('*', 'n/a', 'undated'), lot('*', '12.10.2026', 'october-2'),
     lot('*', '31.02.2027', 'no-such-day')];
-  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['blank', 'october', 'october-2', 'today']);
+  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'october-2', 'blank']);
   assert.deepEqual(upcomingLots([], now), []);
 });
 
@@ -1470,7 +1470,7 @@ test('upcomingText counts the lots and names the first sale day, date only', () 
   const now = new Date(2026, 8, 11, 12);
   const lots = upcomingLots([lot('*', '12.10.2026 14:00', 'a'), lot('*', '2026-09-30', 'b'), lot('*', '01.12.2026', 'c')], now);
   assert.equal(upcomingText(lots), 'Upcoming: 3 lots, first on 2026-09-30');
-  assert.equal(upcomingText(lots.slice(0, 1)), 'Upcoming: 1 lot, first on 2026-12-01');
+  assert.equal(upcomingText(lots.slice(-1)), 'Upcoming: 1 lot, first on 2026-12-01');
   assert.equal(upcomingText([]), '');
   assert.equal(isoDay('28.07.2026 14:00'), '2026-07-28');
   assert.equal(isoDay('n/a'), '');
@@ -1488,7 +1488,7 @@ test('mediansByYear gives a median per year of at least three counted sales, old
     lot('400', '01.01.2024', 'd'), lot('500', '01.02.2024', 'e'),
     lot('90', '01.01.2021', 'f'), lot('110', '01.02.2021', 'g'), lot('130', '01.03.2021', 'h'), lot('150', '01.04.2021', 'i'),
     // Not a counted sale: no price, another currency, no readable date.
-    lot('*', '01.05.2021', 'j'), lot('200 EUR', '01.05.2023', 'k'), lot('1000', 'n/a', 'l')];
+    lot('*', '01.05.2021', 'j'), lot('200 EUR', '01.05.2023', 'k'), lot('1000', 'n/a', 'l'), lot('1000', '', 'l2'), lot('1000', '2023', 'l3')];
   assert.deepEqual(mediansByYear(lots, 'USD'), [{ year: 2021, median: 120, count: 4 }, { year: 2023, median: 200, count: 3 }]);
   assert.deepEqual(mediansByYear(lots.slice(3, 5), 'USD'), []);
   const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;

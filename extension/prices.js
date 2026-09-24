@@ -770,12 +770,12 @@ export function lotsInPeriod(lots, period, now) {
 export const isoDay = (text) => saleDate(text)?.toISOString().slice(0, 10) ?? '';
 
 // The lots acsearch lists that have not been sold yet: no price at all (the same test summarise counts "without a price" by) and a sale day that is
-// the collector's own today or later. A lot sold today already shows its price. Newest first, as the page lists its sales; a tie keeps page order.
+// the collector's own today or later. A lot sold today already shows its price. Soonest first, the next sale at the top; a tie keeps page order.
 export function upcomingLots(lots, now) {
   const today = localDay(now);
   return lots.map((entry, index) => ({ entry, index, date: saleDate(entry.date) }))
     .filter(({ entry, date }) => date !== null && date >= today && !/\d/.test(entry.price))
-    .sort((a, b) => b.date - a.date || a.index - b.index)
+    .sort((a, b) => a.date - b.date || a.index - b.index)
     .map(({ entry }) => entry);
 }
 
@@ -794,7 +794,9 @@ export function mediansByYear(lots, currency) {
   const byYear = new Map();
   for (const entry of lots) {
     const year = saleDate(entry.date)?.getUTCFullYear();
-    if (year !== undefined) byYear.set(year, [...(byYear.get(year) ?? []), entry]);
+    if (year === undefined) continue;
+    if (!byYear.has(year)) byYear.set(year, []);
+    byYear.get(year).push(entry);
   }
   return [...byYear.keys()].sort((a, b) => a - b).flatMap((year) => {
     const summary = summarise(byYear.get(year), currency);

@@ -1638,11 +1638,12 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
   await settle();
   assert.equal(popup.element('upcoming').hidden, false);
   const rows = () => popup.element('upcoming-list').children;
-  // Newest first, and only the lots that cite the reference while the citation filter is on, which it says in the median's own words.
+  // Soonest first, and only the lots that cite the reference while the citation filter is on, which it says in the median's own words.
   assert.equal(rows().length, 2);
-  assert.equal(rows()[0].children[0].children[0], '2099-12-01 · ');
-  assert.equal(rows()[1].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u1');
-  assert.equal(rows()[1].children[0].children[1].href, 'https://www.acsearch.info/search.html?id=u1');
+  assert.equal(rows()[0].children[0].children[0], '2099-10-12 · ');
+  assert.equal(rows()[0].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u1');
+  assert.equal(rows()[0].children[0].children[1].href, 'https://www.acsearch.info/search.html?id=u1');
+  assert.equal(rows()[1].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u3');
   assert.equal(popup.element('upcoming-filtered').textContent, '2 of 3 results cite Price 23');
   assert.equal(popup.element('upcoming-filtered').hidden, false);
   await popup.element('copy-summary').emit('click');
@@ -1664,7 +1665,7 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  const watch = popup.element('upcoming-list').children[1].children[1];
+  const watch = popup.element('upcoming-list').children[0].children[1];
   assert.equal(watch.textContent, 'Watch');
   assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
   popup.dispatched.length = 0;
