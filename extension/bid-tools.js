@@ -244,6 +244,9 @@ export function mountBidCalculator(
   const note = el('p', {
     className: 'bid-calculator-note', textContent: 'The percentage payment fee applies to hammer, premium and shipping. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. Tax is excluded.',
   });
+  // The explanation folds under its own summary, so the figures above it lead.
+  const about = el('details', { className: 'bid-calculator-about' });
+  about.append(el('summary', { textContent: 'How the total is counted' }), note);
   const ladderNote = el('p', { className: 'bid-calculator-ladder', hidden: true });
   const status = el('p', {
     className: 'bid-calculator-status', role: 'status', ariaLive: 'polite',
@@ -262,7 +265,7 @@ export function mountBidCalculator(
   });
   editor.append(editorSummary, presetName, save);
   actions.append(use);
-  root.append(title, fields, fees, output, ladderNote, note, actions, editor, status);
+  root.append(title, fields, fees, output, ladderNote, about, actions, editor, status);
   container.replaceChildren(root);
 
   let result = null;

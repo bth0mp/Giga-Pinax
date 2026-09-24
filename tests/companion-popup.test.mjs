@@ -865,3 +865,19 @@ test('the capture error stands outside the editor, and the status line under the
   assert.ok(tabs < html.indexOf('id="companion-status"') && html.indexOf('id="companion-status"') < html.indexOf('id="companion-panel-research"'));
   assert.equal(markup.getElementById('companion-status').getAttribute('role'), 'status');
 });
+
+// Loop 1 (D-02): the calculator said "Enter an amount and buyer premium." in body text, as loud as a result, and stood a six-line explanation in the
+// way of the figures. The prompt is muted until there is a result, and the explanation folds under its own summary; Fees keeps its accent.
+test('the calculator mutes its prompt and folds its explanation', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+  const root = page.element('companion-bid-calculator').children[0];
+  const about = root.children.find((child) => child.className === 'bid-calculator-about');
+  assert.ok(about, 'the explanation has a fold of its own');
+  assert.equal(about.children[0].textContent, 'How the total is counted');
+  assert.equal(about.children[1].className, 'bid-calculator-note');
+  const css = readFileSync(new URL('../extension/bid-tools.css', import.meta.url), 'utf8');
+  // No result yet is exactly when "Use in bid" is disabled, in every calculator, shown or not.
+  assert.match(css, /\.bid-calculator:has\(\.bid-calculator-actions button:disabled\) \.bid-calculator-output\{[^}]*color:var\(--muted\);font-size:12px/);
+  assert.match(css, /\.bid-calculator-about \.bid-calculator-note\{[^}]*font-size:11px/);
+  assert.match(css, /\.bid-calculator-fees summary[^{]*\{[^}]*color:var\(--accent\)/);
+});
