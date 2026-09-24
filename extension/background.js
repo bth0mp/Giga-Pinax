@@ -1,6 +1,6 @@
 import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './browser-api.js';
 import { COMMAND_TYPES, createCommandWriter } from './store.js';
-import { reconcileScheduler } from './core/reminders.js';
+import { reconcileScheduler, reminderNotice } from './core/reminders.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
@@ -102,6 +102,9 @@ async function refreshBadge() {
   if (state) await showDueBadge(state);
 }
 
+// The collector's zone as the browser reports it when the reminder goes off, so a notification follows them when they travel.
+const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
+
 async function notificationsAllowed(state) {
   if (!state.preferences?.desktopAlertsEnabled || !api.notifications) return false;
   return invokeExtensionMethod(api.permissions.contains, api.permissions, { permissions: ['notifications'] });
@@ -121,17 +124,17 @@ async function deliverOverdue(plan, state) {
     if (recovery.ok) await setAlarm(recovery.value.nextWakeAt);
     let delivered = false;
     try {
-      const first = triggers[0];
-      const when = first.precision === 'timed'
-        ? new Date(first.eventStartsAt).toLocaleString()
-        : `${first.localDate} (${first.timeZone})`;
+      // The latest of the batch is the reminder that is going off now; any before it were overdue with it. The batch is in
+      // trigger order: deriveReminderTriggers sorts by triggerAt and reconcileScheduler keeps that order.
+      const latest = triggers.at(-1);
+      const eventKind = state.auctionEvents.find(({ id }) => id === eventId)?.eventKind;
       const notificationId = await invokeExtensionMethod(api.notifications.create, api.notifications,
         `auction-companion:${eventId}`,
         {
           type: 'basic',
           iconUrl: api.runtime.getURL('icons/icon-128.png'),
-          title: first.eventName,
-          message: `Auction reminder: ${when}`,
+          title: latest.eventName,
+          message: reminderNotice(latest, { eventKind, timeZone: viewerTimeZone() }),
         });
       delivered = notificationId !== false;
     } catch {

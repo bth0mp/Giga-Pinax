@@ -4,6 +4,7 @@
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
 import { costFees, eventTiming, lotCost, projectExposure } from './core/projections.js';
+import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -88,7 +89,7 @@ const formatWith = (locale, options, date, fallback) => {
 export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
   const verb = VERB[String(event.eventKind)] ?? 'Auction';
-  const zone = event.timeZone && event.timeZone !== timeZone ? ` ${event.timeZone}` : '';
+  const zone = event.timeZone && !sameZone(event.timeZone, timeZone) ? ` ${zonePlace(event.timeZone)}` : '';
   const timing = eventTiming(event, now);
   const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
   const day = timed
@@ -292,8 +293,8 @@ export function lotRowAmount(lot) {
 
 /**
  * When a reminder goes off, in the collector's own time - `Tomorrow 08:00 (your time)` - and, when the auction is in
- * another zone, at the auction's wall time too: ` · 14:00 Europe/Zurich`. Amber within the next 24 hours, muted once
- * it has passed.
+ * another zone, at the auction's wall time too, named by its place: ` · 14:00 Zurich`, with the auction's day where it is
+ * not the collector's. Amber within the next 24 hours, muted once it has passed, when the auction's time stays named.
  * @param {string} instant
  * @param {string} eventZone
  * @param {{ now?: string, locale?: string, timeZone?: string }} [view]
@@ -301,14 +302,17 @@ export function lotRowAmount(lot) {
  */
 export function reminderAtLabel(instant, eventZone, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   const at = new Date(instant);
-  const dayOf = (date) => formatWith('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }, date, '');
+  const dayOf = (date, zone = timeZone) => formatWith('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: zone }, date, '');
   const days = (Date.parse(dayOf(at)) - Date.parse(dayOf(new Date(now)))) / 86400000;
   const day = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days === -1 ? 'Yesterday'
     : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone }, at, instant.slice(0, 10));
   const time = (zone) => formatWith(locale, { hour: 'numeric', minute: '2-digit', timeZone: zone }, at, instant.slice(11, 16));
-  const auction = eventZone && eventZone !== timeZone ? ` · ${time(eventZone)} ${eventZone}` : '';
+  // The auction's clock is named by its place, with its own day where that is not the collector's (M3, N14).
+  const auctionDay = eventZone && dayOf(at, eventZone) !== dayOf(at)
+    ? `${formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: eventZone }, at, '')} ` : '';
+  const auction = eventZone && !sameZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${zonePlace(eventZone)}` : '';
   const untilMs = at.getTime() - Date.parse(now);
-  if (untilMs < 0) return { text: `${day} ${time(timeZone)} (your time) · passed`, tone: 'past' };
+  if (untilMs < 0) return { text: `${day} ${time(timeZone)} (your time)${auction} · passed`, tone: 'past' };
   return { text: `${day} ${time(timeZone)} (your time)${auction}`, tone: untilMs < 86400000 ? 'soon' : '' };
 }
 
