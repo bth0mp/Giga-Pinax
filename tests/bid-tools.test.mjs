@@ -117,6 +117,20 @@ test('an increment ladder is typed one tier per line, in the currency the tiers 
   assert.equal(parseIncrementLadder(Array.from({ length: 21 }, (_, index) => `${index * 100}: 5`).join('\n'), 'EUR').ok, false);
 });
 
+// "1,200" is twelve hundred to a collector whose browser groups thousands with a comma, and could be
+// 1.20 to one whose browser writes decimals with it, so the calculator and the ladder box read it
+// with the collector's own locale.
+test('the calculator and the ladder box read a lone thousands group in the collector\'s locale', () => {
+  const input = { mode: 'total', amountText: '1,200', premiumText: '20', currency: 'USD' };
+  assert.equal(buildBidCalculation({ ...input, locale: 'en-US' }).value.hammer.minor, 120000);
+  assert.equal(buildBidCalculation({ ...input, locale: 'de-DE' }).error.code, 'ambiguous-amount');
+  assert.equal(buildBidCalculation({ ...input, amountText: '1.200', currency: 'EUR', locale: 'de-DE' }).value.hammer.minor, 120000);
+  assert.deepEqual(parseIncrementLadder('0: 50\n1,000: 100', 'USD', 'en-US').value.tiers, [{ from: 0, step: 5000 }, { from: 100000, step: 10000 }]);
+  assert.equal(parseIncrementLadder('0: 50\n1,000: 100', 'EUR', 'de-DE').ok, false);
+  assert.deepEqual(parseIncrementLadder('0: 50\n1.000: 100', 'EUR', 'de-DE').value.tiers, [{ from: 0, step: 5000 }, { from: 100000, step: 10000 }]);
+  assert.equal(presetFromFields({ name: 'Leu', premiumText: '20', ladderText: '0: 50\n1.000: 100', ladderCurrency: 'CHF' }, { locale: 'de-DE' }).ok, true);
+});
+
 // The box is filled from stored tiers and read back by the shared money parser, which accepts a
 // point everywhere. A locale's own decimal mark does not survive that trip: ar-EG writes ٫, which
 // the parser refuses, so a ladder written that way could never be saved again.

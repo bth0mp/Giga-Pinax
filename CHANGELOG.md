@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- An amount typed as `1,200` in the calculator, a bid, an outcome or a house's increment tiers is read as twelve hundred where your browser groups thousands with a comma (English locales), and `1.200` where it groups them with a point (German, Spanish, Italian, Dutch). It is still refused where that mark is the browser's decimal mark, since there it could mean 1.20.
+
 ## [0.34.1] - 2026-09-24
 
 ### Changed

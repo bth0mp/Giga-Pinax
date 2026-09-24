@@ -21,8 +21,9 @@ const LADDER_FORMAT = 'write each tier as the amount it starts at, a colon, and 
 
 // One tier per line, `from: step`, in the auction house's own currency. A colon is the separator
 // because every other candidate — comma, point, space, apostrophe — is already a digit separator
-// somewhere the money parser has to accept.
-export function parseIncrementLadder(text, currency) {
+// somewhere the money parser has to accept. A lone `1,000` is read in the collector's locale, as
+// every other amount the collector types is.
+export function parseIncrementLadder(text, currency, locale = 'en-US') {
   const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter((line) => line !== '');
   if (lines.length === 0) return { ok: true, value: null };
   if (!CURRENCIES.includes(currency)) {
@@ -36,8 +37,8 @@ export function parseIncrementLadder(text, currency) {
     const fail = (message) => ({ ok: false, error: { code: 'invalid-ladder', message: `Line ${index + 1}: ${message}` } });
     const parts = line.split(':');
     if (parts.length !== 2) return fail(LADDER_FORMAT);
-    const from = parseMoney(parts[0], currency);
-    const step = parseMoney(parts[1], currency);
+    const from = parseMoney(parts[0], currency, locale);
+    const step = parseMoney(parts[1], currency, locale);
     if (!from.ok) return fail(from.error.message);
     if (!step.ok) return fail(step.error.message);
     tiers.push({ from: from.value.minor, step: step.value.minor });
@@ -66,7 +67,7 @@ export function presetFromFields({ name, premiumText, ladderText, ladderCurrency
   if (!trimmed) return { ok: false, error: { code: 'missing-name', message: 'Enter an auction house name.', field: 'name' } };
   const premium = parsePremiumPercent(premiumText, locale);
   if (!premium.ok) return { ok: false, error: { ...premium.error, field: 'premium' } };
-  const ladder = parseIncrementLadder(ladderText, ladderCurrency);
+  const ladder = parseIncrementLadder(ladderText, ladderCurrency, locale);
   if (!ladder.ok) return { ok: false, error: { field: 'ladder', ...ladder.error } };
   const preset = { name: trimmed, buyerPremiumBps: premium.value };
   if (ladder.value) preset.incrementLadder = ladder.value;

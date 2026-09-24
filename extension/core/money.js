@@ -50,18 +50,38 @@ const ambiguousMessage = (input) =>
 /** @type {(whole: string, fraction: string) => boolean} */
 export const ambiguousGrouping = (whole, fraction) => fraction.length === 3 && whole.length <= 3;
 
+// The thousands separator of the collector's own locale, when it is a comma or a point and that locale
+// writes its decimals with the other one. A tag the browser cannot read gives none.
+/** @type {(locale: string) => string | null} */
+function localeGroup(locale) {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1234567.5);
+    const group = parts.find((part) => part.type === 'group')?.value;
+    const decimal = parts.find((part) => part.type === 'decimal')?.value;
+    return (group === ',' && decimal === '.') || (group === '.' && decimal === ',') ? group : null;
+  } catch {
+    return null;
+  }
+}
+
 // Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
-// `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
+// `1,200` is read with the collector's locale: where a comma groups thousands and a point marks
+// decimals (en-US) it is twelve hundred, since three decimals are never money here; where the comma
+// is the decimal mark (de-DE) it could be 1.20 as well, so it is refused. `1.200` the other way round.
 /**
  * @param {string} input
+ * @param {string} locale
  * @returns {{ whole: string, fraction: string, ambiguous?: false } | { ambiguous: true } | null}
  */
-function splitAmount(input) {
+function splitAmount(input, locale) {
   if (/^\d+$/.test(input)) return { whole: input, fraction: '' };
   const decimal = DECIMAL.exec(input);
   if (decimal) {
     if (decimal[3].length <= 2) return { whole: decimal[1], fraction: decimal[3] };
-    return ambiguousGrouping(decimal[1], decimal[3]) ? { ambiguous: true } : null;
+    if (!ambiguousGrouping(decimal[1], decimal[3])) return null;
+    // A group never follows a lone zero: `0,200` is a decimal typed with a third place, not two hundred.
+    const grouping = decimal[1] !== '0' && decimal[2] === localeGroup(locale);
+    return grouping ? { whole: decimal[1] + decimal[3], fraction: '' } : { ambiguous: true };
   }
   const grouped = GROUPED.exec(input);
   if (!grouped) return null;
@@ -70,21 +90,22 @@ function splitAmount(input) {
   return { whole: lead + groups.split(groupSeparator).join(''), fraction: fraction ?? '' };
 }
 
-// The locale is accepted for call-site symmetry with formatting; parsing never depends on it.
+// Only a lone `1,200` or `1.200` depends on the locale; every other shape reads the same everywhere.
 /**
  * @param {*} text
  * @param {bigint} maximumMinor
  * @param {string} subject
+ * @param {string} locale
  * @returns {Result<number>}
  */
-function parseFixed(text, maximumMinor, subject) {
+function parseFixed(text, maximumMinor, subject, locale) {
   if (typeof text !== 'string') {
     return failure('invalid-format', `${subject} must be entered as text.`);
   }
 
   const input = text.trim();
   if (input.length > 32) return failure('input-too-long', `${subject} input is too long.`);
-  const parts = splitAmount(input);
+  const parts = splitAmount(input, locale);
   if (!parts) {
     return failure(
       'invalid-format',
@@ -133,7 +154,7 @@ export function parseMoney(text, currency, locale = 'en-US') {
   if (!CURRENCY_SET.has(currency)) {
     return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
   }
-  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money');
+  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money', locale);
   if (!parsed.ok) return parsed;
   return { ok: true, value: { currency, minor: parsed.value } };
 }
@@ -144,7 +165,7 @@ export function parseMoney(text, currency, locale = 'en-US') {
  * @returns {Result<number>} basis points
  */
 export function parsePremiumPercent(text, locale = 'en-US') {
-  const parsed = parseFixed(text, 10000n, 'Buyer premium');
+  const parsed = parseFixed(text, 10000n, 'Buyer premium', locale);
   if (!parsed.ok) {
     if (parsed.error.code === 'unsafe-money') {
       return failure('invalid-basis-points', 'Buyer premium must be between 0% and 100%.');

@@ -304,13 +304,41 @@ test('accepts either decimal separator and grouped amounts whatever the locale',
   }
 });
 
-test('refuses a lone separator before three digits and quotes the amount that was typed', () => {
-  for (const text of ['1,200', '1.200', '1.001', '12,345']) {
-    const parsed = parseMoney(text, 'USD', 'en-US');
-    assert.equal(parsed.error.code, 'ambiguous-amount', text);
-    assert.equal(parsed.error.message, `“${text}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`);
+test('a lone separator before three digits is a thousands group where the browser locale groups with it', () => {
+  // Where "," groups thousands and "." is the decimal mark, "1,200" is how the collector writes twelve hundred.
+  for (const locale of ['en-US', 'en-GB', 'en-IN']) {
+    for (const [text, minor] of [['1,200', 120000], ['12,345', 1234500], ['999,000', 99900000]]) {
+      assert.deepEqual(parseMoney(text, 'USD', locale), { ok: true, value: { currency: 'USD', minor } }, `${text} in ${locale}`);
+    }
   }
-  assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'ambiguous-amount');
+  // And where "." groups and "," is the decimal mark, "1.200" is.
+  for (const locale of ['de-DE', 'es-ES', 'it-IT', 'nl-NL']) {
+    assert.deepEqual(parseMoney('1.200', 'EUR', locale), { ok: true, value: { currency: 'EUR', minor: 120000 } }, locale);
+  }
+});
+
+test('refuses a lone separator before three digits where the locale does not group with it, and quotes the amount', () => {
+  const message = (text) => `“${text}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
+  for (const [locale, texts] of [
+    ['en-US', ['1.200', '1.001', '0,200']],
+    // "," is the decimal mark here, so "1,200" could be one point two.
+    ['de-DE', ['1,200', '12,345']],
+    ['fr-FR', ['1,200', '1.200']],
+    ['de-CH', ['1,200', '1.200']],
+    // A tag the browser cannot read gives no grouping to trust.
+    ['not a locale!', ['1,200', '1.200']],
+  ]) {
+    for (const text of texts) {
+      const parsed = parseMoney(text, 'USD', locale);
+      assert.equal(parsed.error?.code, 'ambiguous-amount', `${text} in ${locale}`);
+      assert.equal(parsed.error.message, message(text));
+    }
+  }
+  assert.equal(parsePremiumPercent('1,200', 'de-DE').error.code, 'ambiguous-amount');
+  // Twelve hundred percent is read as the amount it is, and refused as a premium.
+  assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'invalid-basis-points');
+  // Two decimals are a decimal in every locale.
+  assert.deepEqual(parseMoney('1,20', 'USD', 'en-US'), { ok: true, value: { currency: 'USD', minor: 120 } });
 });
 
 test('rejects malformed money with an error that names the accepted forms', () => {
