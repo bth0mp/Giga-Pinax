@@ -70,6 +70,19 @@ HOSTILE = r"""<!DOCTYPE html>
   <img src="/media/css/images/track.gif" width="1" height="1" alt="">
   <img src="/media/images/90010001.jpg" alt="Lot 11" onerror="report()">
   <iframe src="https://ads.example/frame"></iframe>
+  <p class="invisible">Hi Collector&#8203;42 and Collector&shy;42 and Collector&#x2060;42</p>
+  <p style="color: red">Styled</p>
+  <p style="background: image-set('https://tracker.example/i.png' 1x)">Image set</p>
+  <a href="/s/0123456789abcdef0123456789abcdef/r.html">Path token</a>
+  <a href="/u/collector%342/">Encoded name path</a>
+  <a href="/profile/Collector42/">Profile</a>
+  <img src="/media/images/collector42.jpg" alt="Avatar">
+  <a href="/search.html?term=z" ping="https://tracker.example/ping">Pinged</a>
+  <img src="/media/images/90010002.jpg" srcset="https://cdn.example/big.jpg 2x" alt="Lot 210">
+  <div formaction="https://tracker.example/submit">Form action</div>
+  <template><p>template for collector42, secret</p></template>
+  <noscript><img src="https://pixel.example/noscript.gif"></noscript>
+  <p>Write to someone@ex&auml;mple.org or someone%40example.org</p>
   <script type="text/javascript">
     acsearch.initSearchResults = [{"id": 90010001, "title": "Fabricius Numismatics, Auction 4, Lot 11", "description": "Nero. As. RIC 306. Ex Collector42 collection; write to collector42@example.org. Very Fine. <\/script><b>", "image": "https://cdn.example/lot.jpg", "date": "28.07.2026", "price": "1,200 USD", "last": false, "watch": {"user": "collector42"}, "bidder": "collector42"}, {"id": 90010002, "title": "Aurelia Coins, Web Auction 9, Lot 210", "description": "Nero. As. Zitiert als [RIC I, 306]; Erhaltung: ss-vz.", "date": "19.07.2026", "price": "950 USD", "last": true}, "not a row"];
     acsearch.userEmail = 'collector42@example.org';
@@ -109,13 +122,40 @@ class ScrubHostilePageTests(unittest.TestCase):
         self.assertEqual(0, self.code, self.errors)
         self.assertTrue(self.target.exists())
         for line in ("<script>", "<form>", "<input>", "<meta>", "comment", "e-mail", "account name", "account block", "tracking", "query parameter",
-                     "another host", "watch", "bidder", "image"):
+                     "another host", "watch", "bidder", "image", "<template>", "<noscript>", "invisible"):
             self.assertIn(line, self.summary)
 
     def test_the_account_name_and_every_email_address_are_gone(self):
         self.assertNotRegex(self.page, re.compile("collector42", re.I))
         self.assertNotIn("@example.org", self.page)
         self.assertNotIn("mailto:", self.page)
+
+    def test_the_account_name_goes_even_behind_an_invisible_character(self):
+        visible = re.sub("[\u00ad\u200b-\u200f\u2060-\u2064\ufeff]", "", self.page)
+        self.assertNotRegex(visible, re.compile("collector42", re.I))
+        self.assertIn("Hi [collector] and [collector] and [collector]", self.page)
+
+    def test_an_address_with_an_accented_domain_or_an_encoded_at_goes(self):
+        self.assertNotIn("xämple", self.page)
+        self.assertNotIn("%40example", self.page)
+        self.assertIn("Write to [e-mail removed] or [e-mail removed]", self.page)
+
+    def test_styles_and_every_attribute_off_the_list_go(self):
+        for marker in ("style=", "image-set", "ping=", "srcset", "formaction", "tracker.example", "cdn.example"):
+            self.assertNotIn(marker, self.page)
+        self.assertIn(">Styled</p>", self.page)
+        self.assertIn('<img src="https://www.acsearch.info/media/images/90010002.jpg" alt="Lot 210">', self.page)
+        self.assertIn("<div>Form action</div>", self.page)
+
+    def test_templates_and_noscript_go_with_their_contents(self):
+        for marker in ("template", "noscript", "secret", "noscript.gif"):
+            self.assertNotIn(marker, self.page)
+
+    def test_a_path_holding_a_token_or_the_account_loses_its_link(self):
+        for marker in ("0123456789abcdef0123456789abcdef", "collector%342", "/profile/", "Avatar"):
+            self.assertNotIn(marker, self.page)
+        for text in ("<a>Path token</a>", "<a>Encoded name path</a>", "<a>Profile</a>"):
+            self.assertIn(text, self.page)
 
     def test_the_account_block_goes_whole(self):
         self.assertNotIn("Logout", self.page)
@@ -166,7 +206,7 @@ class ScrubHostilePageTests(unittest.TestCase):
         self.assertNotIn("onload", self.page)
         self.assertNotIn("onerror", self.page)
         self.assertNotIn("4f9c2a7e1b3d5f6a8c0e2b4d6f8a0c1e", self.page)
-        self.assertIn('data-page="2"', self.page)
+        self.assertNotIn("data-", self.page)
         self.assertIn('id="search-container"', self.page)
 
     def test_acsearch_links_keep_their_path_and_only_public_parameters(self):
@@ -278,6 +318,76 @@ class FailClosedTests(unittest.TestCase):
                 self.assertEqual(2, module.main([str(source), str(source), "--account", "collector42"]))
             self.assertEqual("<p>page</p>", source.read_text(encoding="utf-8"))
 
+    def test_an_account_name_split_by_markup_fails_and_writes_nothing(self):
+        for page in ("<p>Hello <b>Collec</b>tor42</p>", "<p>Hello Collector<wbr>42</p>", "<p>Hello \uff23ollector\uff14\uff12</p>"):
+            with self.subTest(page=page):
+                code, written, errors = self.run_script(page, "--account", "collector42")
+                self.assertEqual(1, code)
+                self.assertFalse(written)
+                self.assertIn("account name", errors)
+
+    def test_a_token_or_data_url_in_a_row_fails_and_writes_nothing(self):
+        for text in ("Nero. As. 0123456789abcdef0123456789abcdef.", "See data:text/html;base64,PHNjcmlwdD4="):
+            with self.subTest(text=text):
+                code, written, errors = self.run_script(self.results_page(text), "--account", "collector42")
+                self.assertEqual(1, code)
+                self.assertFalse(written)
+
+    def test_the_collectors_own_bid_or_watchlist_fails_and_writes_nothing(self):
+        pages = (self.results_page("Nero. As. Your bid: 500 USD."), "<table><tr><td>bidder no. 4471</td></tr></table>", "<p>Ihr Gebot: 500</p>",
+                 "<p>Merkliste (3)</p>", "<p>Watchlist</p>")
+        for page in pages:
+            with self.subTest(page=page):
+                code, written, errors = self.run_script(page, "--account", "collector42")
+                self.assertEqual(1, code)
+                self.assertFalse(written)
+                self.assertIn("own bid", errors)
+
+    def test_nan_or_infinity_in_the_results_fails_and_writes_nothing(self):
+        for value in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(value=value):
+                page = f'<html><body><script>{MARKER}[{{"id": 1, "title": "A", "price": {value}}}];</script></body></html>'
+                code, written, errors = self.run_script(page, "--account", "collector42")
+                self.assertEqual(1, code)
+                self.assertFalse(written)
+                self.assertIn("results array", errors)
+
+    def test_an_unwritable_target_is_one_line_and_no_file(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "in.html"
+            source.write_text("<p>page</p>", encoding="utf-8")
+            for target in (Path(directory) / "missing" / "out.html", Path(directory) / "folder"):
+                with self.subTest(target=target):
+                    if target.name == "folder":
+                        target.mkdir()
+                    stderr = io.StringIO()
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                        self.assertEqual(1, module.main([str(source), str(target), "--account", "collector42"]))
+                    self.assertTrue(stderr.getvalue().startswith("scrub_acsearch: "), stderr.getvalue())
+                    self.assertNotIn("Traceback", stderr.getvalue())
+            self.assertEqual(["folder", "in.html"], sorted(path.name for path in Path(directory).iterdir()))
+            self.assertEqual([], list((Path(directory) / "folder").iterdir()))
+
+    def test_a_deeply_nested_results_array_is_refused_cleanly(self):
+        code, written, errors = self.run_script(f"<script>{MARKER}{'[' * 100000}{']' * 100000};</script>", "--account", "collector42")
+        self.assertEqual(1, code)
+        self.assertFalse(written)
+        self.assertTrue(errors.startswith("scrub_acsearch: "), errors)
+
+    def test_the_account_name_is_replaced_only_as_a_whole_word_and_lot_text_is_flagged(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "in.html"
+            source.write_text(self.results_page("Otho, AD 69. Denarius. Othonian portrait."), encoding="utf-8")
+            target = Path(directory) / "out.html"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(0, module.main([str(source), str(target), "--account", "Otho"]))
+            page = target.read_text(encoding="utf-8")
+            self.assertIn("[collector], AD 69. Denarius. Othonian portrait.", page)
+            self.assertIn("lot text", stdout.getvalue())
+
     def test_the_denylist_names_each_marker_it_finds(self):
         survivors = load_module().survivors
         self.assertEqual([], survivors('<meta charset="utf-8"><p>Nero. RIC 306.</p><a href="https://www.acsearch.info/search.html?term=x">x</a>', ["collector42"]))
@@ -297,6 +407,25 @@ class FailClosedTests(unittest.TestCase):
             '<a href="https://evil.example/">x</a>': "another host",
             '<img src="https://www.acsearch.info/i.gif?language=0123456789abcdef0123">': "token",
             '<a href="javascript:x()">x</a>': "another host",
+            '<script src="https://www.acsearch.info/x.js"></script>': "<script>",
+            "<template></template>": "<template>",
+            "<noscript></noscript>": "<noscript>",
+            "<p>Hello <b>Collec</b>tor42</p>": "account name",
+            "<p>Collector<wbr>42</p>": "account name",
+            "<p>Collector&#8203;42</p>": "account name",
+            "<p>\uff23ollector\uff14\uff12</p>": "account name",
+            "<p>a@ex\u00e4mple.org</p>": "e-mail",
+            "<p>a%40example.org</p>": "e-mail",
+            '<a href="https://www.acsearch.info/s/0123456789abcdef0123456789abcdef/r.html">x</a>': "token",
+            '<a href="https://www.acsearch.info/u/collector%342/">x</a>': "account name",
+            "<p>0123456789abcdef0123456789abcdef</p>": "token",
+            "<p>data:text/html;base64,PHNjcmlwdD4=</p>": "data:",
+            "<p>Your bid: 500 USD</p>": "own bid",
+            "<p>Bieternummer 4471</p>": "own bid",
+            "<p>Watch list</p>": "own bid",
+            '<p style="color: red">x</p>': "style",
+            '<p data-user-id="8817">x</p>': "data-",
+            f'<script>{MARKER}[{{"id": 1, "description": "Hello Collector\\u200b42"}}];</script>': "account name",
         }
         for html, marker in cases.items():
             with self.subTest(html=html):

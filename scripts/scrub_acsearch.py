@@ -6,13 +6,16 @@
 Kept: the page's element structure and text, and the results array (acsearch.initSearchResults) the extension reads, rebuilt with only the fields
 of a lot: id, title, description, date, price and last. Removed: every <script> (the results array is written back as one plain script of its
 own), <style>, <form> (its children stay, its fields go), <input>, <select>, <textarea>, <button>, frames and embedded objects, every <meta>
-but the charset, comments, the account block around a Logout/Abmelden link, event handlers, session and token attributes, tracking pixels, links
-and images on any host but acsearch.info, and every URL query parameter but a public few. Each --account value and every e-mail address is
-replaced wherever it stands, the results' own text included.
+but the charset, comments, the account block around a Logout/Abmelden link, every attribute off a short list (style and data-* included), event
+handlers, session and token attributes, tracking pixels, links and images on any host but acsearch.info or whose path holds a token or the
+account, and every URL query parameter but a public few. Each --account value (as a whole word) and every e-mail address is replaced wherever it
+stands, the results' own text included, after invisible characters are taken out.
 
 The finished page is then searched for a denylist of markers (an e-mail address, an account name, a Logout block, a session or token parameter,
-a script, a form field, a comment, a link off acsearch.info...). If any survives, the script exits 1 and writes nothing. Standard library only;
-it reads one local file and writes another, and never touches the network.
+the collector's own bid or watchlist, a token or data: URL in the text, a script, a form field, a comment, a link off acsearch.info...), in the
+markup and again in its text with the tags taken out, entities read, compatibility forms folded and invisible characters dropped, so a name split
+by <b> or <wbr> is still found. If any survives, or anything goes wrong, the script exits 1 and writes nothing. Standard library only; it reads
+one local file and writes another, and never touches the network.
 """
 
 from __future__ import annotations
@@ -22,10 +25,13 @@ from collections import Counter
 import html
 from html.parser import HTMLParser
 import json
+import os
 from pathlib import Path
 import re
 import sys
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit
+import tempfile
+import unicodedata
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit
 
 
 ORIGIN = "https://www.acsearch.info"
@@ -50,10 +56,25 @@ DROPPED = frozenset({
 })
 # An element whose opening closes the same kind left open before it, as a browser does ("<li>a<li>b").
 AUTO_CLOSE = {"li": {"li"}, "p": {"p"}, "tr": {"tr", "td", "th"}, "td": {"td", "th"}, "th": {"td", "th"}, "dt": {"dt", "dd"}, "dd": {"dt", "dd"}}
+# Nothing the extension reads is in an attribute (extractLots reads the results array alone), so only these stay, aria-* besides. A data-* or a
+# style attribute is the likeliest place for a per-user number or a tracking URL; allow one here by name only once it is known to be public.
 ATTRIBUTES = frozenset({"class", "id", "title", "alt", "lang", "dir", "colspan", "rowspan", "width", "height", "align", "valign", "role", "scope",
-                        "type", "target", "rel", "datetime", "href", "src", "style"})
+                        "type", "target", "rel", "datetime", "href", "src"})
 
-EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+# An address with an accented domain or a percent-encoded or fullwidth at sign counts too.
+EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\uff20)[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
+# Characters that render as nothing (zero-width space and joiners, word joiner, soft hyphen, BOM...), which can hide a name from a plain search.
+INVISIBLE = re.compile("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufe00-\ufe0f\ufeff]")
+# A run of 20+ base64 characters with a digit and a letter in it, standing alone in text: an id, a token or an encoded blob. Catalogue text almost
+# never writes one without a separator.
+TEXT_TOKEN = re.compile(r"(?<![A-Za-z0-9+/=_-])(?=[A-Za-z0-9+/=_-]*\d)(?=[A-Za-z0-9+/=_-]*[A-Za-z])[A-Za-z0-9+/=_-]{20,}")
+DATA_URL = re.compile(r"\bdata:[\w.+-]*/?[\w.+-]*[;,]", re.I)
+# The collector's own bid, bidder number or watchlist: never public text on a results page. English and German, as acsearch is.
+OWN_BID = re.compile(
+    r"\b(?:your|my)\s+(?:max(?:imum)?\s+)?bids?\b|\b(?:ihr|mein)(?:e)?\s+(?:maximal)?gebote?\b|\bbidder\s*(?:no|nr|number|id)\b"
+    r"|\bbieter[\s-]*(?:nummer|nr)\b|\bwatch[\s-]?list\b|\bmerkliste\b|\bbeobachtungsliste\b",
+    re.I,
+)
 # A value of 20 or more hex or base64 characters: a session id, a token or a signed hash.
 TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 # In an attribute other than a URL, where a class list holds long hyphenated words ("body-has-fixed-title"), a token is such a run with a digit
@@ -134,23 +155,38 @@ class TreeBuilder(HTMLParser):
         self.comments += 1
 
 
+class ScrubError(Exception):
+    """A page the scrubber refuses to go on with; the message is the one line the collector sees."""
+
+
+# The account name as a whole word, whatever its case: "Otho" is not replaced inside "Othonian". Not next to a letter or digit; an underscore or
+# any punctuation ends it.
+def account_pattern(name: str) -> re.Pattern:
+    return re.compile(r"(?<![^\W_])" + re.escape(name) + r"(?![^\W_])", re.I)
+
+
 class Scrubber:
     def __init__(self, accounts: list[str]):
-        self.accounts = [re.compile(re.escape(name), re.I) for name in accounts]
+        self.accounts = [account_pattern(name) for name in accounts]
         self.removed: Counter[str] = Counter()
         self.dropped_fields: Counter[str] = Counter()
         self.account_text: list[str] = []
         self.results_arrays = 0
+        self.in_rows = 0
 
-    def text(self, value: str) -> str:
+    def text(self, value: str, row: bool = False) -> str:
+        value, count = INVISIBLE.subn("", value)
+        self.removed["invisible characters removed"] += count
         value, count = EMAIL.subn(EMAIL_PLACEHOLDER, value)
         self.removed["e-mail addresses replaced"] += count
         for pattern in self.accounts:
             value, count = pattern.subn(ACCOUNT_PLACEHOLDER, value)
             self.removed["account name mentions replaced"] += count
+            self.in_rows += count if row else 0
         return value
 
     def names_account(self, value: str) -> bool:
+        value = INVISIBLE.sub("", value)
         return bool(EMAIL.search(value)) or any(pattern.search(value) for pattern in self.accounts)
 
     # A link on acsearch.info, as the acsearch origin and its path, with only the public parameters whose values hold no token; None for any
@@ -167,6 +203,10 @@ class Scrubber:
         if parts.scheme not in ("http", "https") or not (host == "acsearch.info" or host.endswith(".acsearch.info")):
             return None
         path = parts.path.split(";")[0] or "/"
+        # A path is kept as it is written, so one holding a token or the account (as /profile/NAME/ or percent-encoded) loses the link instead.
+        if path_token(path) or self.names_account(unquote(path)):
+            self.removed["links whose path holds a token or the account removed"] += 1
+            return None
         kept = []
         for key, item in parse_qsl(parts.query, keep_blank_values=True):
             if key.lower() in PUBLIC_PARAMS and not TOKEN.search(item) and not self.names_account(item):
@@ -183,7 +223,7 @@ class Scrubber:
             value = value or ""
             if key.startswith("on"):
                 self.removed["event handler attributes removed"] += 1
-            elif key not in ATTRIBUTES and not key.startswith(("data-", "aria-")):
+            elif key not in ATTRIBUTES and not key.startswith("aria-"):
                 self.removed[f"{key} attributes removed"] += 1
             elif SESSION_WORDS.search(key) or (key not in ("href", "src") and (SESSION_MARKERS.search(value) or ATTRIBUTE_TOKEN.search(value))):
                 self.removed["session or token attributes removed"] += 1
@@ -195,8 +235,6 @@ class Scrubber:
                     self.removed["links to another host or scheme removed"] += 1
                 else:
                     kept.append((key, rewritten))
-            elif key == "style" and re.search(r"url\s*\(|expression|@import", value, re.I):
-                self.removed["style attributes with a URL removed"] += 1
             elif self.names_account(value):
                 self.removed["attributes naming the account removed"] += 1
             else:
@@ -210,11 +248,11 @@ class Scrubber:
         begin = start + len(MARKER)
         begin += len(script[begin:]) - len(script[begin:].lstrip())
         try:
-            rows, _ = json.JSONDecoder().raw_decode(script, begin)
-        except ValueError:
-            return None
+            rows, _ = json.JSONDecoder(parse_constant=refuse_constant).raw_decode(script, begin)
+        except (ValueError, RecursionError) as error:
+            raise ScrubError(f"the results array could not be read as JSON ({type(error).__name__}: {str(error)[:120]})") from None
         if not isinstance(rows, list):
-            return None
+            raise ScrubError("the results array is not a list")
         kept = []
         for row in rows:
             if not isinstance(row, dict):
@@ -223,13 +261,13 @@ class Scrubber:
             clean = {}
             for key, value in row.items():
                 if key in ROW_FIELDS and (value is None or isinstance(value, (str, int, float, bool))):
-                    clean[key] = self.text(value) if isinstance(value, str) else value
+                    clean[key] = self.text(value, row=True) if isinstance(value, str) else value
                 else:
                     self.dropped_fields[key] += 1
             kept.append(clean)
         self.results_arrays += 1
         # "<", ">" and "&" occur in JSON only inside strings; as escapes they can never end the script or open a tag, and JSON.parse reads them back.
-        data = json.dumps(kept, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        data = json.dumps(kept, ensure_ascii=False, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
         return f"<script>{MARKER}{data};</script>"
 
     # The block a Logout/Abmelden link sits in names the collector beside it: the whole navigation bar when it is in one, else its outermost list
@@ -305,17 +343,59 @@ class Scrubber:
         return "".join(out) + "\n"
 
 
+# A path segment holding a token, read unquoted: "/s/0123456789abcdef0123456789abcdef/r.html", never "/media/images/90010001.jpg" as a whole.
+def path_token(path: str) -> bool:
+    return any(ATTRIBUTE_TOKEN.search(segment) for segment in folded(unquote(path)).split("/"))
+
+
+def refuse_constant(name: str):
+    raise ValueError(f"{name} is not JSON")
+
+
+def folded(text: str) -> str:
+    return INVISIBLE.sub("", unicodedata.normalize("NFKC", text))
+
+
+# The page's text as a reader sees it: tags taken out (so "<b>Collec</b>tor42" and "Collector<wbr>42" read whole), entities read, compatibility
+# forms folded (fullwidth letters) and invisible characters dropped; the strings of every results array are added, read as JSON reads them.
+def flat_text(page: str) -> str:
+    strings = []
+    for match in re.finditer(re.escape(MARKER), page):
+        try:
+            rows, _ = json.JSONDecoder(parse_constant=refuse_constant).raw_decode(page, match.end())
+        except (ValueError, RecursionError):
+            continue
+        stack = [rows]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, str):
+                strings.append(item)
+            elif isinstance(item, list):
+                stack.extend(item)
+            elif isinstance(item, dict):
+                stack.extend(item.values())
+    return folded(html.unescape(re.sub(r"<[^>]*>", "", page)) + "\n" + "\n".join(strings))
+
+
 def survivors(page: str, accounts: list[str]) -> list[str]:
     """Every denylisted marker still in a finished page, named; an empty list is a page fit to write."""
     found = []
-    if EMAIL.search(page):
+    flat = flat_text(page)
+    if EMAIL.search(page) or EMAIL.search(flat):
         found.append("an e-mail address")
-    lowered = page.lower()
-    found += [f"the account name {name!r}" for name in accounts if name.lower() in lowered]
-    if LOGOUT.search(page):
+    patterns = [(name, account_pattern(folded(name))) for name in accounts]
+    found += [f"the account name {name!r}" for name, pattern in patterns if pattern.search(page) or pattern.search(flat)]
+    if LOGOUT.search(page) or LOGOUT.search(flat):
         found.append("a Logout/Abmelden account block")
-    if SESSION_MARKERS.search(page):
+    if SESSION_MARKERS.search(page) or SESSION_MARKERS.search(flat):
         found.append("a session or token marker (sid=, session=, token=, csrf, PHPSESSID, a cookie)")
+    if OWN_BID.search(flat):
+        found.append(f"the collector's own bid, bidder number or watchlist ({OWN_BID.search(flat).group(0)!r}); report it so the scrubber learns to "
+                     "remove it")
+    if TEXT_TOKEN.search(flat):
+        found.append(f"a token in the text: {TEXT_TOKEN.search(flat).group(0)[:40]}")
+    if DATA_URL.search(flat) or DATA_URL.search(page):
+        found.append("a data: URL")
     for tag in re.findall(r"<script\b[^>]*>", page, re.I):
         if tag != "<script>":
             found.append("a <script> other than the results array")
@@ -329,12 +409,24 @@ def survivors(page: str, accounts: list[str]) -> list[str]:
         found.append("a comment")
     if re.search(r"<[a-z][^>]*\son[a-z]+\s*=", page, re.I):
         found.append("an event handler attribute")
+    if re.search(r"<[a-z][^>]*\sstyle\s*=", page, re.I):
+        found.append("a style attribute")
+    if re.search(r"<[a-z][^>]*\sdata-[^\s=>]*\s*=", page, re.I):
+        found.append("a data-* attribute")
     for value in re.findall(r"""\b(?:href|src)\s*=\s*["']([^"']*)["']""", page, re.I):
         value = html.unescape(value)
         if value != "#" and not value.startswith(ORIGIN + "/"):
             found.append(f"a link to another host or scheme: {value[:80]}")
-        elif any(TOKEN.search(item) for _, item in parse_qsl(urlsplit(value).query, keep_blank_values=True)):
+            continue
+        parts = urlsplit(value)
+        if path_token(parts.path):
+            found.append(f"a token in a URL path: {value[:80]}")
+        if any(TOKEN.search(item) for _, item in parse_qsl(parts.query, keep_blank_values=True)):
             found.append(f"a token in a URL query: {value[:80]}")
+        decoded = folded(unquote(value))
+        found += [f"the account name {name!r} in a URL" for name, pattern in patterns if pattern.search(decoded)]
+        if EMAIL.search(decoded):
+            found.append("an e-mail address in a URL")
     return list(dict.fromkeys(found))
 
 
@@ -345,6 +437,18 @@ def scrub(source: str, accounts: list[str]) -> tuple[str, Scrubber, int]:
     scrubber = Scrubber(accounts)
     page = scrubber.emit(builder.root, builder.doctype)
     return page, scrubber, builder.comments
+
+
+# Written beside the target and moved into place whole, so a failure part-way leaves no half-written page and an earlier one as it was.
+def write(target: Path, page: str) -> None:
+    handle, temporary = tempfile.mkstemp(prefix=".scrub-", suffix=".tmp", dir=target.parent)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(page)
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -373,7 +477,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"scrub_acsearch: cannot read {args.source}: {error}", file=sys.stderr)
         return 2
 
-    page, scrubber, comments = scrub(source, accounts)
+    try:
+        page, scrubber, comments = scrub(source, accounts)
+    except ScrubError as error:
+        print(f"scrub_acsearch: refusing to write {args.target}: {error}", file=sys.stderr)
+        return 1
+    except Exception as error:  # noqa: BLE001 - any failure is one line and no output, never a half-scrubbed page
+        print(f"scrub_acsearch: refusing to write {args.target}: {type(error).__name__}: {str(error)[:200]}", file=sys.stderr)
+        return 1
     scrubber.removed["comments removed"] += comments
     print(f"Scrubbed {args.source.name}:")
     for reason, count in sorted(scrubber.removed.items()):
@@ -385,6 +496,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  account block removed: {text!r}")
     if not scrubber.results_arrays:
         print("  warning: no results array (acsearch.initSearchResults) was found; the extension reads nothing from this page.")
+    if scrubber.in_rows:
+        print(f"  warning: the account name was replaced {scrubber.in_rows} times in lot text (titles and descriptions); if it is also a word "
+              "dealers write, such as a ruler's name, those lots now read [collector] there.")
 
     found = survivors(page, accounts)
     if found:
@@ -392,7 +506,11 @@ def main(argv: list[str] | None = None) -> int:
         for entry in found:
             print(f"  - {entry}", file=sys.stderr)
         return 1
-    args.target.write_text(page, encoding="utf-8", newline="\n")
+    try:
+        write(args.target, page)
+    except Exception as error:  # noqa: BLE001
+        print(f"scrub_acsearch: could not write {args.target}: {type(error).__name__}: {str(error)[:200]}", file=sys.stderr)
+        return 1
     print(f"Wrote {args.target}. Read it through before committing it: nothing automatic knows every way a page can name you.")
     return 0
 
