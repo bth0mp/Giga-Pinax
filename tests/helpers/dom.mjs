@@ -717,6 +717,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const prompts = [];
   const commands = [];
   const calculatorValues = [];
+  const timers = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
@@ -739,6 +740,9 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
       throw new Error(`No module ${specifier} in this sandbox.`);
     },
     requestAnimationFrame: (callback) => callback(),
+    // Timers wait for the test: `runTimers()` fires the ones set so far, as time passing would.
+    setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
+    clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
     location,
     addEventListener(type, listener) {
       windowListeners.set(type, [...(windowListeners.get(type) ?? []), listener]);
@@ -757,7 +761,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser, calculatorValues,
+    $, document, location, commands, prompts, browser, calculatorValues, timers,
+    runTimers() { for (const timer of timers.splice(0)) timer.callback?.(); },
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
     // What the browser's leave-page prompt would do now: true when the page asks to stay.

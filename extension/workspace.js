@@ -147,11 +147,15 @@ async function initWorkspace() {
   for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
   $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
 
+  const LOADED = 'Local records loaded.';
   const announce = (message, error = false) => {
     $('workspace-status').textContent = message;
     $('workspace-status').classList.toggle('error', error);
     $('announcement').textContent = '';
     requestAnimationFrame(() => { $('announcement').textContent = message; });
+    // Loading is said and then let go, so it is not a standing line above every route; the status line keeps its
+    // height, and a message said since is left alone.
+    if (message === LOADED) setTimeout(() => { if ($('workspace-status').textContent === LOADED) $('workspace-status').textContent = ''; }, 3000);
   };
   // Only the collector's own use of the nav moves the focus there; when the page navigates itself
   // it is on its way to a field, and stealing the focus back would undo that.
@@ -262,7 +266,7 @@ async function initWorkspace() {
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
     beforeRender?.(reply.value);
     const removed = acceptIncoming(reply.value);
-    if (!removed) announce('Local records loaded.');
+    if (!removed) announce(LOADED);
     return { ok: true, value: reply.value, removed };
   };
   const send = async (command, editor, previousAttempt = null) => {
@@ -1073,7 +1077,7 @@ async function initWorkspace() {
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
-      else if (!acceptIncoming(initialized.value)) announce('Local records loaded.');
+      else if (!acceptIncoming(initialized.value)) announce(LOADED);
       await loadRouteDraft();
     } catch (error) {
       console.error(error);

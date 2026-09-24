@@ -781,3 +781,20 @@ test('the saved comparables say plainly what they hold', async () => {
   assert.deepEqual(lines, ['3 comparables · median €180.00 · middle half €150.00–€300.00 · 2024–2026', 'Left out: 1 in another currency.']);
   assert.ok(page.$('evidence-list').textContent.includes('Mar 1, 2024'), 'dates are written in the browser’s language');
 });
+
+// W-08: "Local records loaded." is said, then cleared after a moment, so it is not a permanent line above every route;
+// a message that replaced it in the meantime stays.
+test('the loaded notice clears itself, and a later message is left standing', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(page.status(), 'Local records loaded.');
+  assert.ok(page.timers.some((timer) => timer.ms === 3000));
+  page.runTimers();
+  assert.equal(page.status(), '');
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('notes', 'Toned');
+  await page.saveDetails();
+  assert.equal(page.status(), 'Saved.');
+  page.runTimers();
+  assert.equal(page.status(), 'Saved.', 'only the loaded notice clears itself');
+});
