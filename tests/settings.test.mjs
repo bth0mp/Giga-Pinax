@@ -406,6 +406,8 @@ test('Show specimen photos is off by default, remembered locally when switched o
   assert.equal(toggle.type, 'checkbox');
   assert.equal(toggle.checked, false);
   assert.equal(toggle.closest('label').textContent.trim(), 'Show specimen photos');
+  // The popup never prompts for nomisma.org for photos, so a Firefox collector who withheld it is told why none appear.
+  assert.match(page.element('photos').textContent, /Firefox.*nomisma\.org/);
   toggle.checked = true;
   await page.element('save-settings').click();
   await settle();
