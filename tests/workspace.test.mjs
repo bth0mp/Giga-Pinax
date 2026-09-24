@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand, buildLotSaveCommand, buildLotUndoCommand,
@@ -9,17 +10,18 @@ import {
   selectionAfterSnapshot, submissionContext, WORKSPACE_EDITORS,
 } from '../extension/workspace-editing.js';
 import {
-  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
+  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
-  filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
+  filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
-  outcomeDraftForLot, premiumInputText, reminderControlsForPrecision,
+  lotFieldForPath, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
+import { eventTiming, lotComparables, lotsNeedingOutcome, reminderInstants } from '../extension/core/projections.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -84,7 +86,7 @@ test('unknown writes are resolved from the request ledger and outcome editors pr
   assert.equal(commandWasCommitted({ recentCommands: [{ requestId: 'req-1' }] }, 'req-1'), true);
   assert.equal(commandWasCommitted({ recentCommands: [] }, 'req-1'), false);
   assert.deepEqual(outcomeDraftForLot({ outcome: { status: 'won', hammer: { currency: 'GBP', minor: 1234 }, actualInvoice: { currency: 'EUR', minor: 1600 } } }, 'de-DE'), {
-    status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '',
+    status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: '', acquisitionDate: '',
   });
   assert.equal(moneyInputText({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 'en-US'), '90071992547409.91');
 });
@@ -806,7 +808,7 @@ test('event drafts require explicit precision and supply editable reminder defau
   ]);
 });
 
-test('auction queue classifies closing, research, bid and completed lots and sorts timed before date-only', () => {
+test('auction queue classifies closing, research, bid and completed lots and sorts a date-only day by its day', () => {
   const now = '2026-09-14T12:00:00.000Z';
   const events = [
     { id: 'later', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' },
@@ -822,18 +824,23 @@ test('auction queue classifies closing, research, bid and completed lots and sor
     { id: 'active', title: 'Active', activeBid: { amount: { currency: 'GBP', minor: 100 } }, outcome: { status: 'open' } },
     { id: 'done', title: 'Done', outcome: { status: 'lost' } },
   ];
-  assert.deepEqual(auctionQueueForLots(lots, events, 'closing-soon', now).map(({ lot }) => lot.id), ['soon', 'later']);
+  // N7: a sale day is closing soon from the day before through the day itself, and sorts at its own midnight among
+  // the timed instants rather than after all of them.
+  assert.deepEqual(auctionQueueForLots(lots, events, 'closing-soon', now).map(({ lot }) => lot.id), ['day', 'soon', 'later']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'needs-research', now).map(({ lot }) => lot.id), ['soon', 'planned', 'active']);
-  assert.deepEqual(auctionQueueForLots(lots, events, 'all-open', now).map(({ lot }) => lot.id), ['soon', 'later', 'day', 'unknown', 'planned', 'active']);
+  assert.deepEqual(auctionQueueForLots(lots, events, 'all-open', now).map(({ lot }) => lot.id), ['day', 'soon', 'later', 'unknown', 'planned', 'active']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'planned', now).map(({ lot }) => lot.id), ['planned']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'active', now).map(({ lot }) => lot.id), ['active']);
   assert.deepEqual(auctionQueueForLots(lots, events, 'completed', now).map(({ lot }) => lot.id), ['done']);
 });
 
 test('auction labels distinguish a timed lot deadline from a date-only auction day', () => {
-  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Lot deadline · 2026-09-15 at 12:00 UTC');
-  assert.equal(auctionTimeLabel({ eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }), 'Event starts · 2026-09-15 at 12:00 UTC');
-  assert.equal(auctionTimeLabel({ eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-15', timeZone: 'UTC' }), 'Auction day · 2026-09-15 (date only, UTC)');
+  const view = { locale: 'en-GB', timeZone: 'UTC', now: '2026-09-01T00:00:00.000Z' };
+  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' }, view), 'Closes Tue 15 Sept, 12:00 · in 14 days');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-15T12:00:00.000Z' }, view), 'Starts Tue 15 Sept, 12:00 · in 14 days');
+  assert.equal(auctionTimeLabel({ eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-15', timeZone: 'UTC' }, view), 'Sale day Tue 15 Sept · in 14 days');
+  // A timed record written without its instant still shows the wall time it holds.
+  assert.equal(auctionTimeLabel({ eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-15', localTime: '12:00', timeZone: 'UTC' }, view), 'Closes Tue 15 Sept, 12:00 · in 14 days');
 });
 
 test('workspace detail save replaces optional metadata while preserving calculator cost estimate', () => {
@@ -1040,4 +1047,247 @@ test('the offered auction keeps the page’s instant in the collector’s own zo
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-16T12:00Z', startsAt: '2026-10-15' }, 'UTC').eventKind, 'lot-closes');
   for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30', '2026-10-15T14:00+14:30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
+});
+
+// The workspace's stylesheet, read as rules: `{ media, selector, declarations }` for every rule, with the media query
+// the rule sits in ('' at the top level). The file is written by hand, one rule after another, so this reads it.
+function workspaceCssRules() {
+  const css = readFileSync(new URL('../extension/workspace.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [];
+  const read = (text, media) => {
+    let index = 0;
+    while (index < text.length) {
+      const open = text.indexOf('{', index);
+      if (open === -1) break;
+      const head = text.slice(index, open).trim();
+      let depth = 1; let close = open + 1;
+      while (depth && close < text.length) { if (text[close] === '{') depth += 1; else if (text[close] === '}') depth -= 1; close += 1; }
+      const body = text.slice(open + 1, close - 1);
+      if (head.startsWith('@media')) read(body, head.replace(/\s+/g, ''));
+      else for (const selector of head.split(',')) rules.push({ media, selector: selector.trim(), declarations: body });
+      index = close;
+    }
+  };
+  read(css, '');
+  return rules;
+}
+const cssDeclarations = (selector, media = '') => workspaceCssRules()
+  .filter((rule) => rule.selector === selector && rule.media === media).map((rule) => rule.declarations).join(';');
+
+// W-06: at phone width the nav wraps onto a second line instead of hiding History and Settings off screen.
+test('the workspace nav wraps at phone width, so no route is scrolled out of sight', () => {
+  assert.match(cssDeclarations('.workspace-nav', '@media(max-width:760px)'), /flex-wrap:wrap/);
+});
+
+// W-05: a danger button is red on a transparent face, never red text on the accent's purple (1.46:1).
+test('a danger button draws its red on a transparent face with a red border', () => {
+  const danger = cssDeclarations('button.danger');
+  assert.match(danger, /background:transparent/);
+  assert.match(danger, /border-color:var\(--error\)/);
+  assert.match(danger, /color:var\(--error\)/);
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  for (const id of ['delete-event', 'delete-lot']) assert.ok(markup.getElementById(id).classList.contains('quiet'), id);
+});
+
+// W-01: an auction's time as a collector reads it - the day and time in the browser's language, the auction's zone
+// named only when it is not the collector's own, and how soon: amber within 48 hours, muted once it has passed.
+test('an auction’s time reads as a day, a time and how soon, in the collector’s language', () => {
+  const closes = { eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-01', localTime: '15:00', timeZone: 'Europe/London', startsAt: '2026-10-01T14:00:00.000Z' };
+  const view = { locale: 'en-GB', timeZone: 'Europe/London' };
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 7 days', tone: '' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-30T07:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 31 h', tone: 'soon' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-01T13:20:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 40 min', tone: 'soon' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
+  // The auction's own zone is named when the collector is elsewhere; the time stays the auction's.
+  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 Europe/London');
+  assert.equal(eventWhen(closes, { locale: 'en-US', timeZone: 'Europe/London', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu, Oct 1, 3:00 PM');
+  const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/London' };
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'in 7 days', tone: '' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-30T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'tomorrow', tone: 'soon' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-01T22:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'today', tone: 'soon' });
+  assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'ended', tone: 'past' });
+  const starts = { ...closes, eventKind: 'auction-starts' };
+  assert.deepEqual(eventWhen(starts, { ...view, now: '2026-10-01T16:00:00.000Z' }), { when: 'Starts Thu 1 Oct, 15:00', relative: 'started', tone: 'past' });
+  assert.deepEqual(eventWhen(null, view), { when: 'Time unknown', relative: '', tone: '' });
+  assert.equal(auctionTimeLabel(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), 'Closes Thu 1 Oct, 15:00 · in 7 days');
+});
+
+// An auction event's standing against now, which the queues, the row badges and the popup all read the same way.
+test('an event is soon within 48 hours or from the day before a sale day, and ended once its instant or day is past', () => {
+  const timed = { eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-01', localTime: '15:00', timeZone: 'Europe/London', startsAt: '2026-10-01T14:00:00.000Z' };
+  assert.equal(eventTiming(timed, '2026-09-24T14:00:00.000Z').state, 'upcoming');
+  assert.equal(eventTiming(timed, '2026-09-29T14:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(timed, '2026-10-01T14:00:00.001Z').state, 'ended');
+  // A live sale that has started is still under way on its day, so it is not ended until the day is over.
+  const starts = { ...timed, eventKind: 'auction-starts' };
+  assert.equal(eventTiming(starts, '2026-10-01T20:00:00.000Z').state, 'started');
+  assert.equal(eventTiming(starts, '2026-10-01T23:30:00.000Z').state, 'ended', 'midnight in London has passed');
+  // A sale day is read in its own zone: 23:30 UTC on 30 September is already 1 October in Zurich.
+  const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/Zurich' };
+  assert.equal(eventTiming(day, '2026-09-29T12:00:00.000Z').state, 'upcoming');
+  assert.equal(eventTiming(day, '2026-09-30T12:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(day, '2026-10-01T21:00:00.000Z').state, 'soon');
+  assert.equal(eventTiming(day, '2026-10-01T22:30:00.000Z').state, 'ended');
+  assert.equal(eventTiming(day, '2026-09-30T12:00:00.000Z').sortMs, Date.parse('2026-09-30T22:00:00.000Z'), 'a day sorts from its own midnight');
+  assert.equal(eventTiming(null, '2026-09-30T12:00:00.000Z').state, 'unknown');
+});
+
+// N3: the outcome form opens on the action the collector is about to take - Won, in the bid's currency - and never on
+// a no-op; the placed bid is a hint in the hammer box, never a value; and a won coin's acquisition date is offered.
+test('the outcome form opens an open lot on Won, in its bid’s currency, with the bid only as a hint', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const open = { outcome: { status: 'open' }, activeBid: { amount: eur(130000) }, plannedBid: { amount: { currency: 'GBP', minor: 100 } } };
+  assert.deepEqual(outcomeDraftForLot(open, 'en-US', { defaultCurrency: 'USD', event: { localDate: '2026-10-01' }, today: '2026-10-03' }), {
+    status: 'won', hammer: '', hammerCurrency: 'EUR', invoice: '', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: 'Your bid 1300.00', acquisitionDate: '2026-10-01',
+  });
+  const planned = { outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 50000 } } };
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerCurrency, 'CHF');
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerPlaceholder, '', 'a plan is not a bid');
+  const watched = { outcome: { status: 'open' } };
+  assert.deepEqual(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).hammerCurrency, 'GBP');
+  assert.equal(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).acquisitionDate, '2026-10-03', 'no auction: today');
+  // A settled lot opens on what was recorded.
+  assert.equal(outcomeDraftForLot({ outcome: { status: 'lost', hammer: eur(900) } }, 'en-US', { defaultCurrency: 'USD' }).status, 'lost');
+  assert.equal(outcomeDraftForLot({ outcome: { status: 'passed' } }, 'en-US', { defaultCurrency: 'GBP' }).status, 'passed');
+});
+
+// N4: the bid form shows the bid in force. A lot saved before placing cleared its plan can hold both, and the placed
+// figure is the one that binds.
+test('the bid form reads the placed bid before a plan', () => {
+  const lot = { plannedBid: { amount: { currency: 'EUR', minor: 120000 } }, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } };
+  assert.deepEqual(bidFormValues(lot, 'en-US', 'USD'), { amount: '1300.00', currency: 'EUR', premium: '20' });
+});
+
+// N14: a reminder is shown as the moment it goes off, in the collector's own time, and at the auction's wall time too
+// when the auction is in another zone.
+test('a reminder reads as when it goes off in the collector’s time, and in the auction’s zone when that differs', () => {
+  const view = { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-10-14T12:00:00.000Z' };
+  // 14:00 in Zurich on 16 October is 08:00 in New York.
+  assert.deepEqual(reminderAtLabel('2026-10-15T12:00:00.000Z', 'Europe/Zurich', view), { text: 'Tomorrow 8:00 (your time) · 14:00 Europe/Zurich', tone: '' });
+  assert.deepEqual(reminderAtLabel('2026-10-14T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 14:00 (your time) · 20:00 Europe/Zurich', tone: 'soon' });
+  assert.deepEqual(reminderAtLabel('2026-10-20T18:00:00.000Z', 'America/New_York', view), { text: 'Tue 20 Oct 14:00 (your time)', tone: '' });
+  assert.deepEqual(reminderAtLabel('2026-10-13T18:00:00.000Z', 'America/New_York', view), { text: 'Yesterday 14:00 (your time) · passed', tone: 'past' });
+  const event = { id: 'e', revision: 1, name: 'Leu', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-16', localTime: '14:00', timeZone: 'Europe/Zurich', startsAt: '2026-10-16T12:00:00.000Z',
+    reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }, { id: 'b', kind: 'offset', offsetMinutes: 60 }] };
+  assert.deepEqual([...reminderInstants(event)], [['a', '2026-10-15T12:00:00.000Z'], ['b', '2026-10-16T11:00:00.000Z']]);
+});
+
+// N14 (review Important 3): a new auction takes the zone of the house's last auction only when the house names are the
+// same - the name cut before its sale number, `E-Sale N`, `Auction N` or Roman numeral, compared with case and spacing
+// set aside. A near miss proposes nothing and the auction starts in the collector's own zone.
+test('the zone last used for a house is offered only for the same house name', () => {
+  const at = (id, name, timeZone, month) => ({ id, name, timeZone, updatedAt: `2026-0${month}-01T00:00:00.000Z` });
+  const events = [
+    at('1', 'Leu Web Auction 30', 'Europe/Zurich', 1), at('2', 'Leu Numismatik 31', 'Europe/Berlin', 3),
+    at('3', 'Roma Numismatics E-Sale 130', 'Europe/London', 5), at('4', 'The New York Sale 61', 'America/New_York', 2),
+    at('5', 'Heritage 3110', 'America/Chicago', 2), at('6', 'Spink 24001', 'Europe/London', 2), at('7', 'Numismatik Naumann 140', 'Europe/Vienna', 2),
+  ];
+  assert.deepEqual(rememberedZone(events, 'Leu Web Auction 32'), { timeZone: 'Europe/Zurich', from: 'Leu Web Auction 30' });
+  assert.deepEqual(rememberedZone(events, 'Roma Numismatics Auction XXV'), { timeZone: 'Europe/London', from: 'Roma Numismatics E-Sale 130' });
+  assert.deepEqual(rememberedZone(events, '  roma   NUMISMATICS e-sale 131'), { timeZone: 'Europe/London', from: 'Roma Numismatics E-Sale 130' });
+  assert.deepEqual(rememberedZone(events, 'The New York Sale 62'), { timeZone: 'America/New_York', from: 'The New York Sale 61' });
+  // The review's wrong proposals: another house sharing the first word, or a word too short to name a house.
+  for (const name of ['The Coin Cabinet 12', 'Heritage Europe 78', 'Spink New York 390', 'Numismatik Lanz 170', 'the']) {
+    assert.equal(rememberedZone(events, name), null, name);
+  }
+  assert.equal(rememberedZone(events, 'Nomos 30'), null);
+  assert.equal(rememberedZone(events, ''), null);
+  assert.equal(rememberedZone(events, 'XII'), null, 'a sale number alone names no house');
+  assert.equal(rememberedZone(events, 'Leu Web Auction 33', '1'), null, 'the auction being edited is not its own precedent');
+});
+
+// N7: an open coin whose auction has passed needs its outcome recorded. It gets a queue of its own and is counted for
+// the popup; a coin already settled, or whose auction is still to come or under way, does not.
+test('open coins whose auction has passed are the ones needing an outcome', () => {
+  const now = '2026-09-24T12:00:00.000Z';
+  const events = [
+    { id: 'closed', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-20', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-09-20T12:00:00.000Z' },
+    { id: 'yesterday', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-23', timeZone: 'UTC' },
+    { id: 'today', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-24', timeZone: 'UTC' },
+    { id: 'live', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-24', localTime: '09:00', timeZone: 'UTC', startsAt: '2026-09-24T09:00:00.000Z' },
+  ];
+  const lots = [
+    { id: 'a', auctionEventId: 'closed', outcome: { status: 'open' } },
+    { id: 'b', auctionEventId: 'yesterday', outcome: { status: 'open' } },
+    { id: 'c', auctionEventId: 'today', outcome: { status: 'open' } },
+    { id: 'd', auctionEventId: 'live', outcome: { status: 'open' } },
+    { id: 'e', auctionEventId: 'closed', outcome: { status: 'won' } },
+    { id: 'f', outcome: { status: 'open' } },
+  ];
+  assert.deepEqual(auctionQueueForLots(lots, events, 'needs-outcome', now).map(({ lot }) => lot.id), ['a', 'b']);
+  assert.deepEqual(lotsNeedingOutcome({ lots, auctionEvents: events }, now).map((lot) => lot.id), ['a', 'b']);
+  assert.equal(auctionQueueForLots(lots, events, 'closing-soon', now).some(({ lot }) => ['a', 'b'].includes(lot.id)), false, 'an ended sale is not closing soon');
+});
+
+// W-02: the coin's own saved comparables by currency - exactly its reference, each currency on its own, never pooled
+// or converted - as the Bid tab shows them beside the maximum hammer.
+test('a coin’s saved comparables are counted per currency for its exact reference', () => {
+  const row = (id, queryLabel, currency, minor, auctionDate, inclusion = 'included') => ({
+    id, inclusion, resolved: { priceBasis: 'hammer', hammer: { currency, minor } },
+    observations: [{ id: `${id}-o`, queryId: `q-${queryLabel}`, queryLabel, source: 'manual', auctionDate, priceBasis: 'hammer', amount: { currency, minor } }],
+  });
+  const evidence = [
+    row('a', 'RIC 27b', 'EUR', 15000, '2024-03-01'), row('b', 'ric  27B', 'EUR', 18000, '2025-01-01'), row('c', 'RIC 27b', 'EUR', 30000, '2026-02-01'),
+    row('d', 'RIC 27b', 'USD', 99900, '2026-02-02'), row('e', 'RIC 27', 'EUR', 1, '2026-02-02'), row('f', 'RIC 27b', 'EUR', 5, '2026-02-03', 'excluded'),
+  ];
+  assert.deepEqual(lotComparables(evidence, 'RIC 27b'), [
+    { currency: 'EUR', count: 3, median: { currency: 'EUR', minor: 18000 }, firstYear: 2024, lastYear: 2026 },
+    { currency: 'USD', count: 1, median: null, firstYear: 2026, lastYear: 2026 },
+  ]);
+  assert.deepEqual(lotComparables(evidence, ''), []);
+  assert.deepEqual(lotComparables(evidence, 'RIC 60'), []);
+});
+
+// Review Minor 3: a field the store refuses is named and opened on the form, from the path the store answers with.
+test('a refused record path leads back to the form field that holds it', () => {
+  assert.equal(lotFieldForPath('lots[0].coinDetails.photoUrls[0]'), 'photoUrl1');
+  assert.equal(lotFieldForPath('lot.coinDetails.photoUrls[1]'), 'photoUrl2');
+  assert.equal(lotFieldForPath('lots[3].coinDetails.weightMg'), 'weightGrams');
+  assert.equal(lotFieldForPath('lots[3].auctionContext.lotNumber'), 'auctionLotNumber');
+  assert.equal(lotFieldForPath('lots[3].auctionContext.canonicalUrl'), 'auctionCanonicalUrl');
+  assert.equal(lotFieldForPath('lots[3].lotNumber'), 'lotNumber');
+  assert.equal(lotFieldForPath('lots[3].sourceLinks[1].url'), 'sourceUrl');
+  assert.equal(lotFieldForPath('lots[3].title'), 'title');
+  assert.equal(lotFieldForPath('lots[3].provenanceNotes[0].text'), null);
+  assert.equal(lotFieldForPath(undefined), null);
+});
+
+// Review Important 2: a control scrolled into view never lands under the sticky action bar.
+test('the coin and outcome forms keep a focused control clear of the sticky bar', () => {
+  for (const selector of ['#lot-form input', '#lot-form select', '#lot-form textarea', '#lot-form button', '#outcome-form input', '#outcome-form textarea']) {
+    assert.match(cssDeclarations(selector), /scroll-margin-bottom:72px/, selector);
+  }
+});
+
+// Review Minor 5: once a placed bid is cancelled the form is filled from the cancelled terms, for the collector to
+// save again or change; nothing is written back to the store as a plan.
+test('after a cancellation the bid form offers the cancelled terms, and only then', () => {
+  const cancelled = { bidHistory: [
+    { action: 'planned-revised', amount: { currency: 'EUR', minor: 120000 } },
+    { action: 'placed', amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 },
+    { action: 'externally-cancelled', amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 },
+  ] };
+  assert.deepEqual(bidFormValues(cancelled, 'en-US', 'USD'), { amount: '1300.00', currency: 'EUR', premium: '20' });
+  const clearedSince = { bidHistory: [...cancelled.bidHistory, { action: 'planned-cleared', amount: { currency: 'EUR', minor: 1 } }] };
+  assert.deepEqual(bidFormValues(clearedSince, 'en-US', 'USD'), { amount: '', currency: 'USD', premium: '' });
+  assert.deepEqual(bidFormValues({ bidHistory: [] }, 'en-US', 'GBP'), { amount: '', currency: 'GBP', premium: '' });
+});
+
+// Review Minor 6: the limits come from the store through the page, so the markup carries none of its own to agree by.
+test('the limited text boxes carry no maxlength of their own in the markup', () => {
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  const limited = markup.querySelectorAll('[data-limit]');
+  assert.ok(limited.length >= 9);
+  assert.deepEqual(limited.filter((control) => control.hasAttribute('maxlength')).map((control) => control.name), []);
+});
+
+// Merge with L4: a coin's saved fee estimate names the VAT on the premium and the platform's fee on the hammer.
+test('the comparison names VAT on the premium and the platform fee in a coin’s fees', () => {
+  const estimate = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 1900, platformFeeBps: 300, incrementMinor: 1, minimumBidMinor: 0 };
+  const [row] = comparisonRows([{ id: 'a', title: 'A', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2500 }, costEstimate: estimate }], ['a']);
+  assert.equal(row.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00% · VAT 19.00% on the premium · platform fee 3.00% on the hammer');
+  // 1,000 + 250 premium + 47.50 VAT + 30 platform fee + 15 shipping.
+  assert.equal(row.totalLabel, 'Estimated total EUR 1342.50');
+  const [plain] = comparisonRows([{ id: 'b', title: 'B', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 } }, costEstimate: { ...estimate, premiumVatBps: 0, platformFeeBps: 0 } }], ['b']);
+  assert.equal(plain.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00%');
 });
