@@ -20,18 +20,23 @@ steps below.
 2. Save the page as **Web Page, HTML only** (Ctrl+S). Save it **outside the repository**, for example to your
    Downloads folder: the saved original names you and must never be committed.
 3. Scrub it into this folder, giving your acsearch user name and the e-mail address of the account (each is replaced
-   wherever it appears, then checked for):
+   wherever it appears as a whole word, then checked for):
 
    ```
    python scripts/scrub_acsearch.py path/to/saved/acsearch.html tests/fixtures/acsearch-real/ric-nero-306-usd.html --account YOUR_NAME --account you@example.org
    ```
 
    The script prints what it removed. It exits 1 and writes nothing if anything on its denylist is still in the page
-   (an e-mail address, your name, a Logout/Abmelden block, a session or token parameter, a script, a form field, a
-   comment, a link off acsearch.info); read the message, and do not work around it by editing the original.
+   (an e-mail address, your name — also split by markup such as `<b>` or `<wbr>`, or hidden by an invisible character
+   — a Logout/Abmelden block, a session or token parameter, your own bid, bidder number or watchlist, a token or
+   `data:` URL in the text, a script, a form field, a style or `data-*` attribute, a comment, a link off
+   acsearch.info), or if the page cannot be read or written; read the message, and do not work around it by editing
+   the original. A marker that is really public text is worth an issue, so the scrubber can learn to tell it apart.
 4. Read the summary. `result rows lost their '…' field` names the fields of a lot the page carried besides id, title,
    description, date, price and last. If one of them is what the extension should read, say so in an issue rather
-   than adding it to `ROW_FIELDS` unseen: a signed-in row may carry your own watch state or bid.
+   than adding it to `ROW_FIELDS` unseen: a signed-in row may carry your own watch state or bid. A warning that your
+   name was replaced in lot text means it is also a word dealers write (a ruler's name, say): those lots now read
+   `[collector]` there.
 5. Read the scrubbed file through in a text editor before committing it. Search it for your name, your e-mail, your
    bidder or customer number, your city and anything else that is yours. The denylist cannot know every way a page
    can name you; you do.
