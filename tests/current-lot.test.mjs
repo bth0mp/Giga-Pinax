@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from '../extension/current-lot.js';
+import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, pageClosesAt, pageEstimate } from '../extension/current-lot.js';
 
 // checkVisibility answers the question it was asked: a node a "content-visibility: auto" container has skipped counts as hidden only for a caller that
 // asked about that, as the browser's own method does.
@@ -288,4 +289,114 @@ test('an unlabelled reference is read with its edition mark, and SC is read as S
     const result = injected(page({ nodes: [node(line)] }), { href: 'https://auction.test/lot/1' });
     assert.equal(result.candidates.reference, undefined, line);
   }
+});
+
+// 0.34 (W2a): what the lot page states about its sale in its structured data - the offer's price and currency, when the offer ends and the
+// product's photo - is read for the lot on show only, and kept only in the shapes a draft can hold. A hand-written page, not a copy of any house's.
+const OFFER_PAGE = readFileSync(new URL('./fixtures/lots/offer-with-estimate.jsonld', import.meta.url), 'utf8');
+const draftOf = (capture) => buildResearchDraft(capture, { now: '2026-09-12T12:00:00.000Z', newId: () => 'draft-id' });
+
+test('the lot on show brings its offer price, closing time and photo from the page, and the similar lot brings nothing', () => {
+  const injected = new Function(`return (${collectCurrentLotCandidates.toString()})`)();
+  const capture = injected(page({ jsonLd: [OFFER_PAGE] }), { href: 'https://house.example/sale-9/lot-27' });
+  assert.equal(capture.offerPrice, '1200.00');
+  assert.equal(capture.offerCurrency, 'EUR');
+  assert.equal(capture.closesAt, '2026-10-15T14:00:00+02:00');
+  assert.equal(capture.photoUrl, 'https://images.house.example/sale-9/27-obverse.jpg');
+  const draft = draftOf(capture);
+  assert.deepEqual(draft.estimate, { minor: 120000, currency: 'EUR' });
+  assert.equal(draft.closesAt, '2026-10-15T14:00+02:00');
+  assert.equal(draft.photoUrl, 'https://images.house.example/sale-9/27-obverse.jpg');
+
+  // The second lot's page reads its own offer, a number rather than text, and a photo written as a bare address.
+  const other = draftOf(injected(page({ jsonLd: [OFFER_PAGE] }), { href: 'https://house.example/sale-9/lot-28' }));
+  assert.deepEqual(other.estimate, { minor: 80000, currency: 'EUR' });
+  assert.equal(other.closesAt, '2026-10-15T14:02+02:00');
+  assert.equal(other.photoUrl, 'https://images.house.example/sale-9/28.jpg');
+});
+
+test('a closing time is kept only with the offset the page wrote, and a day stays a day', () => {
+  assert.equal(pageClosesAt('2026-10-15'), '2026-10-15');
+  assert.equal(pageClosesAt('2026-10-15T14:00:00Z'), '2026-10-15T14:00Z');
+  assert.equal(pageClosesAt('2026-10-15T09:30-0500'), '2026-10-15T09:30-05:00');
+  assert.equal(pageClosesAt(' 2026-10-15T14:00+02:00 '), '2026-10-15T14:00+02:00');
+  // A time with no offset names no zone: the day it gives is kept, and no zone is invented for the time.
+  assert.equal(pageClosesAt('2026-10-15T14:00:00'), '2026-10-15');
+  // Seconds a minute cannot hold are not rounded away; the day stays.
+  assert.equal(pageClosesAt('2026-10-15T14:00:30+02:00'), '2026-10-15');
+  // No zone lies further from UTC than fourteen hours.
+  assert.equal(pageClosesAt('2026-10-15T14:00+14:00'), '2026-10-15T14:00+14:00');
+  assert.equal(pageClosesAt('2026-10-15T14:00-14:00'), '2026-10-15T14:00-14:00');
+  for (const bad of ['2026-02-30', '2026-10-15T25:00Z', '2026-10-15T14:00+15:00', '2026-10-15T14:00+14:30', '2026-10-15T14:00-1401', '15.10.2026', 'soon', '', null, 20261015, {}]) {
+    assert.equal(pageClosesAt(bad), '', String(bad));
+  }
+});
+
+test('an estimate is the page’s own figure in its own currency, never rounded or converted', () => {
+  assert.deepEqual(pageEstimate('1200', 'EUR'), { minor: 120000, currency: 'EUR' });
+  assert.deepEqual(pageEstimate(1250.5, 'USD'), { minor: 125050, currency: 'USD' });
+  assert.deepEqual(pageEstimate('500000', 'JPY'), { minor: 500000, currency: 'JPY' });
+  assert.deepEqual(pageEstimate('500000.00', 'JPY'), { minor: 500000, currency: 'JPY' });
+  assert.deepEqual(pageEstimate('950', 'SEK'), { minor: 95000, currency: 'SEK' });
+  // "1.200" could be twelve hundred grouped or one and a fifth: the rule core/money.js reads typed amounts by refuses it, and so does this one,
+  // except for a currency whose three places make it plainly a figure.
+  assert.deepEqual(pageEstimate('1200.000', 'EUR'), { minor: 120000, currency: 'EUR' });
+  assert.deepEqual(pageEstimate('1.200', 'KWD'), { minor: 1200, currency: 'KWD' });
+  // A figure the currency cannot hold is not rounded; a price with no currency, or a currency written any other way, is not an estimate.
+  for (const [price, currency] of [['12.345', 'EUR'], ['1200', ''], ['1200', 'eur'], ['1200', '€'], ['1,200', 'EUR'], ['1.200,00', 'EUR'],
+    ['0', 'EUR'], ['-5', 'EUR'], ['1.200', 'EUR'], ['999.500', 'USD'], ['1e21', 'EUR'], [Number.NaN, 'EUR'], [{}, 'EUR'], ['1200', 'EURO'], ['9'.repeat(20), 'EUR']]) {
+    assert.equal(pageEstimate(price, currency), null, `${price} ${currency}`);
+  }
+});
+
+test('a hostile page cannot put a script address in the photo or an unreadable figure in the draft', () => {
+  const hostile = JSON.stringify({ '@type': 'Product', name: 'Reference: RIC 306', image: ['javascript:alert(1)', { url: 'data:image/png;base64,xx' }],
+    offers: { price: { valueOf: 1 }, priceCurrency: 'EUR', availabilityEnds: 'x'.repeat(5000), validThrough: '2026-99-99' } });
+  const capture = collectCurrentLotCandidates(page({ jsonLd: [hostile] }), { href: 'https://auction.test/27' });
+  const draft = draftOf(capture);
+  assert.equal(draft.photoUrl, undefined);
+  assert.equal(draft.estimate, undefined);
+  assert.equal(draft.closesAt, undefined);
+  // validThrough stands in where availabilityEnds is not a date.
+  const through = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify({ '@type': 'Product', name: 'Reference: RIC 306',
+    offers: { validThrough: '2026-10-15' } })] }), { href: 'https://auction.test/27' }));
+  assert.equal(through.closesAt, '2026-10-15');
+});
+
+// 0.34 review (W2a, Minor 4): what an auction event gives is when the sale starts, and it is kept as that, not as the lot's closing.
+test('an auction event on the page gives its start only when it is the one event there, and the offer’s closing wins', () => {
+  const product = { '@type': 'Product', name: 'Reference: RIC 306' };
+  const one = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'SaleEvent', name: 'Sale 9', startDate: '2026-10-15T10:00+02:00' }])] }),
+    { href: 'https://auction.test/27' }));
+  assert.equal(one.startsAt, '2026-10-15T10:00+02:00');
+  assert.equal(one.closesAt, undefined);
+  const two = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'Event', startDate: '2026-10-15' }, { '@type': 'Event', startDate: '2026-11-20' }])] }),
+    { href: 'https://auction.test/27' }));
+  assert.equal(two.startsAt, undefined);
+  assert.equal(two.closesAt, undefined);
+  const both = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([{ ...product, offers: { availabilityEnds: '2026-10-16' } },
+    { '@type': 'Event', startDate: '2026-10-15' }])] }), { href: 'https://auction.test/27' }));
+  assert.equal(both.closesAt, '2026-10-16');
+  assert.equal(both.startsAt, undefined);
+});
+
+test('a page that could not be read keeps no page values in its draft', () => {
+  const draft = draftOf({ pageTitle: 'Lot', pageUrl: 'about:blank', offerPrice: '1200', offerCurrency: 'EUR', closesAt: '2026-10-15', photoUrl: 'https://x.test/1.jpg', candidates: {} });
+  for (const field of ['estimate', 'closesAt', 'photoUrl']) assert.equal(Object.hasOwn(draft, field), false, field);
+});
+
+// 0.34 (W2a): the provenance the lot page writes, in its structured description or its visible text, read into entries for the workspace to
+// offer - once each, however many places the page repeats it.
+test('the lot’s provenance is read from its description and its text, once each, in the order written', () => {
+  const injected = new Function(`return (${collectCurrentLotCandidates.toString()})`)();
+  const capture = injected(page({ jsonLd: [OFFER_PAGE], nodes: [node("Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's 1991."), node('Ex Hess 1958.')] }),
+    { href: 'https://house.example/sale-9/lot-27' });
+  assert.deepEqual(draftOf(capture).provenance, [
+    { text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' },
+    { text: "Ex Hunt collection, Sotheby's 1991", source: "Hunt collection, Sotheby's", year: 1991 },
+    { text: 'Ex Hess 1958', source: 'Hess', year: 1958 },
+  ]);
+  // A page with no provenance gives none, and a page that could not be read gives none either.
+  assert.equal(Object.hasOwn(draftOf(injected(page({ nodes: [node('Reference: RIC 306')] }), { href: 'https://auction.test/1' })), 'provenance'), false);
+  assert.equal(Object.hasOwn(draftOf({ pageUrl: 'about:blank', rawText: 'Ex Leu 7 (1973).', candidates: {} }), 'provenance'), false);
 });

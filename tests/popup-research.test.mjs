@@ -1669,11 +1669,15 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   await settle();
   const watch = popup.element('upcoming-list').children[0].children[1];
   assert.equal(watch.textContent, 'Watch');
+  // The list says what Watch does, and no longer that the day stays behind.
+  const basis = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.match(basis, /Watch opens the lot in the workspace for you to review and save, with its sale day offered as an auction day\./);
+  assert.doesNotMatch(basis, /add its auction there to be reminded/);
   assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
   popup.dispatched.length = 0;
   await watch.emit('click');
   assert.deepEqual(popup.dispatched.map(({ type, detail }) => ({ type, detail: { ...detail } })), [{ type: 'giga-pinax-watch', detail: {
-    title: 'Roma Numismatics, E-Sale 200, Lot u1', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=u1', saleDate: '2099-10-12' } }]);
+    title: 'Roma Numismatics, E-Sale 200, Lot u1', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=u1', closesAt: '2099-10-12' } }]);
 });
 
 // A search whose only hits are lots not sold yet has no median to show, and those lots are exactly what the collector may want to know about.

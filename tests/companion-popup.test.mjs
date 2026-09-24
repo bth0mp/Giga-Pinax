@@ -593,13 +593,13 @@ test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, wit
   const opened = [];
   const create = globalThis.browser.tabs.create;
   globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
-  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', saleDate: '2099-10-12' });
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
   for (let tick = 0; tick < 20; tick += 1) await settle();
   const saved = commands.filter(({ type }) => type === 'draft.save');
   assert.equal(saved.length, 1);
   assert.equal(saved[0].kind, 'current-lot');
   assert.deepEqual(saved[0].payload, { target: 'watchlist', title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23',
-    pageUrl: 'https://www.acsearch.info/search.html?id=7' });
+    pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
   globalThis.browser.tabs.create = create;
   assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
   assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
@@ -613,7 +613,7 @@ test('a failed Watch hands its reason back to the research half', async () => {
   const handedBack = [];
   const dispatch = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
-  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', saleDate: '2099-10-12' };
+  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', closesAt: '2099-10-12' };
   page.watch(watched);
   for (let tick = 0; tick < 20; tick += 1) await settle();
   assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
@@ -622,4 +622,164 @@ test('a failed Watch hands its reason back to the research half', async () => {
   for (let tick = 0; tick < 20; tick += 1) await settle();
   globalThis.dispatchEvent = dispatch;
   assert.equal(handedBack.length, 1);
+});
+
+// 0.34 (W2a): a capture the page refused is kept in the local diagnostics list as a kind of failure only - no page title, address or text reaches it.
+test('a refused capture is recorded as a capture failure, with nothing of the page in it', async () => {
+  const stored = {};
+  globalThis.browser.storage.local = { get: async (key) => ({ [key]: stored[key] }), set: async (items) => { Object.assign(stored, items); } };
+  try {
+    const page = await loadCompanion({
+      sendMessage: async () => WORKING_SNAPSHOT,
+      tabs: async () => [{ id: 3, url: 'https://auction.example/secret-lot-27', title: 'Secret lot 27' }],
+      script: async () => { throw new Error('Cannot access contents of https://auction.example/secret-lot-27'); },
+    });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    const entries = stored['gigaPinax:diagnostics:v1'];
+    assert.equal(entries?.length, 1);
+    assert.equal(entries[0].area, 'capture');
+    assert.equal(entries[0].code, 'failed');
+    assert.equal(/auction\.example|secret|Lot 27/i.test(JSON.stringify(entries)), false);
+
+    // A capture that works records nothing.
+    page.setTabs(async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }]);
+    answerScript = capturedPage({ reference: { value: 'RIC 306', provenance: 'visible-text' } });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.equal(stored['gigaPinax:diagnostics:v1'].length, 1);
+  } finally {
+    delete globalThis.browser.storage.local;
+  }
+});
+
+// 0.34 (W2a): the page's estimate, closing time and photo go with the captured lot to the workspace draft, in the shapes the draft holds, and come
+// off it with the auction context when the collector clears that.
+test('a captured lot takes the page’s estimate, closing time and photo to its draft, and only in their draft shapes', () => {
+  const payload = buildWatchlistDraftPayload({
+    title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg',
+  });
+  assert.deepEqual(payload, { target: 'watchlist', title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' });
+  assert.equal(buildWatchlistDraftPayload({ title: 'Lot', startsAt: '2026-10-15T10:00:00+02:00' }).startsAt, '2026-10-15T10:00+02:00');
+  const refused = buildWatchlistDraftPayload({
+    title: 'Lot 27', estimate: { minor: 12.5, currency: 'EUR', note: 'x' }, closesAt: '2026-10-15T14:00', photoUrl: 'javascript:alert(1)',
+  });
+  assert.deepEqual(refused, { target: 'watchlist', title: 'Lot 27', closesAt: '2026-10-15' });
+  assert.equal(Object.hasOwn(buildWatchlistDraftPayload({ title: 'Lot', estimate: { minor: 5, currency: 'eur' } }), 'estimate'), false);
+});
+
+test('the capture’s own save carries the page values, and clearing the auction context takes them off', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'structured-data' } },
+      offerPrice: '1200', offerCurrency: 'EUR', closesAt: '2026-10-15T14:00:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().estimate, { minor: 120000, currency: 'EUR' });
+  assert.equal(lastSaved().closesAt, '2026-10-15T14:00+02:00');
+  assert.equal(lastSaved().photoUrl, 'https://images.auction.example/27.jpg');
+
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  for (const field of ['auctionContext', 'estimate', 'closesAt', 'photoUrl']) assert.equal(lastSaved()[field] ?? null, null, field);
+  assert.equal(lastSaved().reference, 'RIC 306');
+});
+
+test('the captured lot’s provenance entries go to its draft and come off with its auction context', async () => {
+  const entries = [{ text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' }];
+  assert.deepEqual(buildWatchlistDraftPayload({ title: 'Lot', provenance: [...entries, { text: '' }, { text: 'Ex Hess', year: 'soon', extra: 1 }] }).provenance,
+    [...entries, { text: 'Ex Hess' }]);
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().provenance, entries);
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  assert.equal(Object.hasOwn(lastSaved(), 'provenance'), false);
+});
+
+// 0.34 (W2a, closing I2's owner decision): the sale day Watch hands over rides on the draft as its closing day, and the workspace that opens the
+// draft offers it as a date-only auction day for the collector to confirm - end to end, from the Watch the research half sends to the auction the
+// workspace saves.
+test('Watch carries the sale day to the workspace, which offers it as a date-only auction day to confirm', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-9' } } : WORKING_SNAPSHOT; },
+  });
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const { payload } = commands.find(({ type }) => type === 'draft.save');
+  assert.equal(payload.closesAt, '2099-10-12');
+
+  const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
+  const background = await createWorkspaceBackground();
+  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload });
+  assert.equal(draft.ok, true, draft.message);
+  const workspace = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
+  assert.ok(workspace.$('lot-page-values').textContent.includes('Add an auction day on 2099-10-12 when saving, from the page (2099-10-12).'));
+  const box = workspace.$('lot-form').elements.pageAuction;
+  assert.equal(box.checked, false);
+  box.checked = true;
+  await workspace.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.eventKind, 'auction-day');
+  assert.equal(event.precision, 'date-only');
+  assert.equal(event.localDate, '2099-10-12');
+  assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
+  assert.equal(background.root().lots[0].auctionEventId, event.id);
+});
+
+// A page can write addresses as long as a draft allows each one; what it states about the lot then gives way, provenance first, so the draft is
+// never refused as too large and the coin's own fields always reach the workspace.
+test('page values give way before a draft outgrows its storage bound, and the collector is told which', async () => {
+  const long = (name) => `https://auction.example/${name}/${'x'.repeat(2000)}`;
+  const provenance = Array.from({ length: 10 }, (_, index) => ({ text: `Ex ${'Leu '.repeat(45)}${index}`.slice(0, 199), source: 'y'.repeat(120), lot: '1'.repeat(20) }));
+  const payload = buildWatchlistDraftPayload({ title: 'Lot', pageUrl: long('page'), auctionContext: { pageUrl: long('page'), canonicalUrl: long('canonical') },
+    photoUrl: long('photo'), closesAt: '2026-10-15', estimate: { minor: 100, currency: 'EUR' }, provenance });
+  assert.ok(new TextEncoder().encode(JSON.stringify(payload)).length <= 10000);
+  assert.equal(Object.hasOwn(payload, 'provenance'), false);
+  assert.equal(payload.closesAt, '2026-10-15');
+  assert.equal(payload.auctionContext.canonicalUrl, long('canonical'));
+
+  // A capture whose page writes such addresses: the draft is saved, and the announcement names what the size bound left off.
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: long('page'), title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: long('page'), canonicalUrl: long('canonical'), photoUrl: long('photo'),
+      candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: Array.from({ length: 10 }, (_, index) => `Ex Leu ${index} ${'collection '.repeat(18)}`).join('. ') } }],
+  });
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  const saved = commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  assert.equal(Object.hasOwn(saved, 'provenance'), false);
+  assert.equal(saved.photoUrl, long('photo'));
+  assert.equal(page.element('companion-status').textContent,
+    'Watchlist details are ready to review. Left off, the draft being at its size bound: provenance.');
+
+  // A draft with room for everything says nothing more.
+  const roomy = await loadCompanion({
+    sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-2' } } : WORKING_SNAPSHOT),
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  await roomy.click('companion-capture-current');
+  await roomy.click('companion-capture-watchlist');
+  assert.equal(roomy.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });

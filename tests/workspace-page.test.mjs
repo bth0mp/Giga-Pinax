@@ -316,3 +316,159 @@ test('the Search route offers the open coin’s reference as the query, never ov
   await page.navigate('#search');
   assert.equal(page.$('research-query').value, '', 'a coin with no reference offers nothing');
 });
+
+// 0.34 (W2a): a lot draft captured from a page brings what the page stated about its sale - a photo link, an estimate, when it closes - each
+// labelled as the page's, for the collector to keep or clear before anything is saved.
+async function backgroundWithPageDraft(payload) {
+  const background = await backgroundWithCoins();
+  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload: { target: 'watchlist', title: 'Captured coin', pageUrl: 'https://house.example/lot/27', ...payload } });
+  assert.equal(draft.ok, true, draft.message);
+  return { background, hash: `#lot-draft=${draft.value.id}` };
+}
+
+test('a lot draft shows the page’s photo, estimate and closing as the page’s, and saves only what the collector kept', async () => {
+  const { background, hash } = await backgroundWithPageDraft({
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.house.example/27.jpg',
+  });
+  const page = await mountWorkspace({ background, hash });
+  const form = page.$('lot-form').elements;
+  assert.equal(page.$('lot-page-values').hidden, false);
+  const shown = page.$('lot-page-values').textContent;
+  for (const phrase of ['from the page', 'EUR 1200.00', 'Photo URL 1', '2026-10-15T14:00+02:00']) assert.ok(shown.includes(phrase), phrase);
+  assert.equal(form.photoUrl1.value, 'https://images.house.example/27.jpg');
+  assert.equal(form.notes.value, 'Estimate from page: EUR 1200.00');
+  assert.equal(form.pageAuction.checked, false, 'the auction is offered, not added');
+
+  // The collector clears the photo and leaves the auction unticked: the estimate line is kept, and no auction is written.
+  await page.typeDetails('photoUrl1', '');
+  await page.saveDetails();
+  const saved = storedLot(background, 'Captured coin');
+  assert.equal(saved.notes, 'Estimate from page: EUR 1200.00');
+  assert.equal(saved.coinDetails, undefined);
+  assert.equal(saved.auctionEventId, undefined);
+  assert.deepEqual(background.root().auctionEvents, []);
+  assert.equal(page.$('lot-page-values').hidden, true, 'the page values go once the coin is saved');
+});
+
+test('ticking the offered auction saves it at the page’s instant and attaches it to the drafted coin', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15T14:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  const box = page.$('lot-form').elements.pageAuction;
+  box.checked = true;
+  await page.$('lot-form').emit('input', { target: box });
+  await page.saveDetails();
+  await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.startsAt, '2026-10-15T12:00:00.000Z');
+  assert.equal(event.precision, 'timed');
+  assert.equal(event.eventKind, 'lot-closes');
+  assert.equal(event.name, 'Captured coin');
+  assert.equal(event.capturedText, 'From the page: 2026-10-15T14:00+02:00');
+  assert.equal(event.capturedFromUrl, 'https://house.example/lot/27');
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, event.id);
+});
+
+test('an auction start the page gives is offered as the auction starting, and saved as one', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ startsAt: '2026-10-15T10:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  assert.match(page.$('lot-page-values').textContent, /Add an auction starting 2026-10-15 \d\d:\d\d \(.+\) when saving, from the page \(2026-10-15T10:00\+02:00\)\./);
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.saveDetails();
+  await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.eventKind, 'auction-starts');
+  assert.equal(event.startsAt, '2026-10-15T08:00:00.000Z');
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, event.id);
+});
+
+test('an auction the collector already chose wins over the one the page offers', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15' });
+  const chosen = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Chosen sale', eventKind: 'auction-day', precision: 'date-only',
+    localDate: '2026-11-01', timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+  const page = await mountWorkspace({ background, hash });
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.typeDetails('auctionEventId', chosen.value.id);
+  await page.saveDetails();
+  await settle();
+  assert.equal(background.root().auctionEvents.length, 1);
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, chosen.value.id);
+});
+
+// 0.34 (W2a): the provenance the page lists is offered as rows of the Sourced provenance editor, with the lot page as each row's source; only the
+// rows the collector ticks are saved.
+test('the page’s provenance is offered as unticked rows, and only a ticked row is saved, sourced to the lot page', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ provenance: [
+    { text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' },
+    { text: "Ex Hunt collection, Sotheby's 1991", source: "Hunt collection, Sotheby's", year: 1991 },
+  ] });
+  const page = await mountWorkspace({ background, hash });
+  const rows = page.$('provenance-editor').querySelectorAll('.provenance-row');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].querySelector('[name="provenanceText"]').value, 'Ex Leu 7 (1973), lot 123');
+  assert.equal(rows[0].querySelector('[name="provenanceSourceUrl"]').value, 'https://house.example/lot/27');
+  assert.ok(rows[0].textContent.includes('From the page: Leu 7, 1973, lot 123'));
+  for (const row of rows) assert.equal(row.querySelector('[name="provenanceKeep"]').checked, false, 'nothing is kept unticked');
+  assert.ok(page.$('lot-page-values').textContent.includes('Provenance from the page: 2 entries under Sourced provenance'));
+
+  rows[1].querySelector('[name="provenanceKeep"]').checked = true;
+  await page.saveDetails();
+  const saved = storedLot(background, 'Captured coin');
+  assert.deepEqual(saved.provenanceNotes.map(({ text, sourceUrl }) => [text, sourceUrl]), [["Ex Hunt collection, Sotheby's 1991", 'https://house.example/lot/27']]);
+  assert.equal(saved.provenanceNotes[0].auctionDate, undefined, 'a year is not a day');
+});
+
+test('a draft whose rows are all left unticked saves no provenance', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ provenance: [{ text: 'Ex Hess 1958', source: 'Hess', year: 1958 }] });
+  const page = await mountWorkspace({ background, hash });
+  await page.saveDetails();
+  assert.deepEqual(storedLot(background, 'Captured coin').provenanceNotes ?? [], []);
+});
+
+// 0.34 review (W2a, Important 1): the offered auction never stands between the collector and the coin. A refused auction write - here a closing
+// that falls in the hour Europe/Zurich lives twice - still saves the coin, and the status says the auction was left off and why.
+test('a refused offered auction still saves the coin and says why the auction was left off', async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = 'Europe/Zurich';
+  try {
+    const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-25T00:30Z' });
+    const page = await mountWorkspace({ background, hash });
+    assert.ok(page.$('lot-page-values').textContent.includes('02:30 (Europe/Zurich)'));
+    page.$('lot-form').elements.pageAuction.checked = true;
+    await page.saveDetails();
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.deepEqual(background.root().auctionEvents, []);
+    const saved = storedLot(background, 'Captured coin');
+    assert.ok(saved, 'the coin is saved');
+    assert.equal(saved.auctionEventId, undefined);
+    assert.equal(page.$('lot-action-status').textContent, 'Coin added to the watchlist. The auction from the page was not added: That local time occurs more than once in this time zone. Add it under Auction reminder.');
+  } finally {
+    if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+  }
+});
+
+// A reply lost on its way back leaves the auction written but unknown to the page. Saving again sends the same request, which the store's ledger
+// answers with the auction it already wrote: one auction, and the coin attached to it.
+test('saving again after a lost auction reply writes one auction and attaches the coin to it', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15T14:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  const deliver = page.browser.runtime.sendMessage;
+  let lost = false;
+  page.browser.runtime.sendMessage = async (message) => {
+    const reply = await deliver(message);
+    if (message.type === 'event.save' && !lost) { lost = true; throw new Error('Could not establish connection. Receiving end does not exist.'); }
+    return reply;
+  };
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.equal(background.root().auctionEvents.length, 1, 'the lost write did land');
+  assert.equal(background.root().lots.length, 0, 'the coin waits while the worker is unreachable');
+  await page.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const events = background.root().auctionEvents;
+  assert.equal(events.length, 1);
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, events[0].id);
+  const sent = page.commands.filter(({ type }) => type === 'event.save').map(({ requestId }) => requestId);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0], sent[1]);
+});

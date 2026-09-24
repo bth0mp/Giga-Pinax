@@ -781,14 +781,13 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
 }
 
 // Watch saves the lot as a watchlist draft through the path Save to watchlist takes (companion-popup.js builds the payload and opens the workspace
-// draft for the collector to confirm): the lot's title, the card's reference and the lot's own acsearch page. The sale day goes with it as a date,
-// never a time. OWNER DECISION (0.34 I2): a current-lot draft has no field for it yet (core/records.js validateDraftPayload), so
-// buildWatchlistDraftPayload leaves it off and the workspace opens no date-only auction event for it; see .superpowers/sdd/improve-0.34/i2-report.md.
+// draft for the collector to confirm): the lot's title, the card's reference and the lot's own acsearch page. The sale day goes with it as the
+// draft's closing day, a date and never a time, and the workspace offers it as a date-only auction day to confirm.
 function watchUpcoming(sale, context) {
   if (context !== researchContext) return;
   $('upcoming-status').hidden = true;
   dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: priceCard(context).label,
-    pageUrl: lotUrl(sale), saleDate: isoDay(sale.date) }) }));
+    pageUrl: lotUrl(sale), closesAt: isoDay(sale.date) }) }));
 }
 
 // A Watch the other half could not save: it says why on its own status line, at the foot of the popup, and hands the reason back to be shown here,
