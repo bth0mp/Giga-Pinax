@@ -1,6 +1,7 @@
 import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './browser-api.js';
 import { createCommandWriter } from './store.js';
 import { reconcileScheduler } from './core/reminders.js';
+import { recordDiagnostic } from './core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = extensionApi();
@@ -52,6 +53,14 @@ let captureFailureTitle = '';
 // capture warning is retired by the next capture that works or by the collector opening a page, while the reminders
 // stay stopped until a reconcile works again. Sharing one flag let a later capture clear a warning nobody had seen.
 let reconcileFailed = false;
+
+// A failure kept in the local diagnostics the collector can copy from Settings: where and what kind, never what the
+// command or the page carried. Recording never throws and is not waited for.
+const noteFailure = (area, code) => { void recordDiagnostic({ page: 'background', area, code }); };
+// A command refused because storage failed or its data was invalid; a conflict or a duplicate is everyday traffic.
+const noteStoreFailure = (reply) => {
+  if (reply && !reply.ok && ['storage', 'validation'].includes(reply.code)) noteFailure('store', reply.code);
+};
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
 // only lasts the ~30 s until the worker idles out, so the flag is read back from the badge the
@@ -149,6 +158,7 @@ async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
   if (!reply.ok) {
     console.error('Giga Pinax: the scheduler reconcile failed.', reply.message);
+    noteFailure('reminders', reply.code);
     await showReconcileFailure();
     return reply;
   }
@@ -167,7 +177,7 @@ async function runReconcileRuntime() {
 
 function reconcileRuntime() {
   const result = reconcileQueue.then(runReconcileRuntime);
-  reconcileQueue = result.catch(() => undefined);
+  reconcileQueue = result.catch(() => noteFailure('reminders', 'failed'));
   return result;
 }
 
@@ -217,13 +227,16 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
   // Only an extension page sends a command, so the collector is looking at their records.
   void clearCaptureFailure();
-  processCommand(message).then(sendResponse, (error) => sendResponse({
-    ok: false,
-    requestId: message?.requestId ?? '',
-    code: 'storage',
-    outcome: 'not-committed',
-    message: error.message || 'The command failed.',
-  }));
+  processCommand(message).then((reply) => { noteStoreFailure(reply); sendResponse(reply); }, (error) => {
+    noteFailure('store', 'storage');
+    sendResponse({
+      ok: false,
+      requestId: message?.requestId ?? '',
+      code: 'storage',
+      outcome: 'not-committed',
+      message: error.message || 'The command failed.',
+    });
+  });
   return true;
 });
 
@@ -292,6 +305,7 @@ async function runMenuAction(info) {
     try {
       await showInWindow(api, popupUrlFor(query));
     } catch {
+      noteFailure('lookup', 'not-opened');
       await showCaptureFailure(LOOKUP_FAILURE_TITLE);
     }
     return;
@@ -303,6 +317,7 @@ async function runMenuAction(info) {
   const requestId = crypto.randomUUID();
   const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
   if (!reply.ok) {
+    noteFailure('capture', reply.code);
     await showCaptureFailure(CAPTURE_FAILURE_TITLE);
     return;
   }
@@ -315,12 +330,16 @@ async function runMenuAction(info) {
   } catch {
     // The draft reached storage: only the window that would have shown it is missing, and telling
     // the collector their capture was lost would send them looking for work they still have.
+    noteFailure('capture', 'not-opened');
     await showCaptureFailure(OPEN_FAILURE_TITLE);
   }
 }
 
 api.contextMenus.onClicked.addListener((info) => {
-  void runMenuAction(info).catch(() => showCaptureFailure(CAPTURE_FAILURE_TITLE));
+  void runMenuAction(info).catch(() => {
+    noteFailure('capture', 'failed');
+    return showCaptureFailure(CAPTURE_FAILURE_TITLE);
+  });
 });
 
 api.alarms.onAlarm.addListener((alarm) => {

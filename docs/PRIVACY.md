@@ -39,6 +39,8 @@ A record that cannot be read is set aside in the same local storage rather than 
 
 You can edit or delete records in Giga Pinax and export or import a JSON backup, or export one table of your records at a time as a CSV file for a spreadsheet. An exported backup or CSV file leaves the browser only when you choose where to save or send it. **Export raw data** writes a rescue file that is a verbatim copy of that storage, including unsaved drafts, their captured page text and recent request ids; treat it as you would the records themselves. Replacing your records with an import, or merging one that would overwrite a record, first downloads a safety copy of your current records to your own device. Removing the extension or clearing its extension data removes local records, subject to the browser and device's own backup behavior.
 
+Giga Pinax also keeps a short diagnostics list in the same extension storage, under a key of its own: the last 50 failures, each with when it happened, which page (research popup, workspace, Settings or background), which part (catalogue lookup, acsearch, CoinArchives, local records, page capture or reminders), what kind of failure and any HTTP status, a byte count where a reply was too large, and the extension version. It never holds a search term, reference, web address, record or page text. It stays on your device and is never sent anywhere; it is not part of a backup or the raw export. **Copy diagnostics** in Settings puts a plain-text copy on your clipboard for you to paste where you choose, and **Clear** empties the list.
+
 Optional desktop notifications contain auction and reminder information you supplied and are created through the browser after you enable notifications.
 
 ## Use and disclosure

@@ -35,6 +35,7 @@ ASSET_PATHS = (
     "companion-preferences.js",
     "core/backup.js",
     "core/csv.js",
+    "core/diagnostics.js",
     "core/evidence.js",
     "core/lot-context.js",
     "core/money.js",

@@ -1,4 +1,5 @@
 import { squash } from './core/validate.js';
+import { recordFetchFailure } from './core/diagnostics.js';
 import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
@@ -584,6 +585,7 @@ export async function lookupById(corpus, id, options = {}) {
     const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
     return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal, citation });
   } catch (error) {
+    void recordFetchFailure('lookup', error);
     return failureOutcome(error);
   } finally {
     timer.done();
@@ -871,6 +873,7 @@ export async function lookupType(given, options = {}) {
     }
     return found;
   } catch (error) {
+    void recordFetchFailure('lookup', error);
     return failureOutcome(error);
   } finally {
     timer.done();
