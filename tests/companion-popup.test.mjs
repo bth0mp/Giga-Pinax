@@ -593,13 +593,13 @@ test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, wit
   const opened = [];
   const create = globalThis.browser.tabs.create;
   globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
-  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', saleDate: '2099-10-12' });
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
   for (let tick = 0; tick < 20; tick += 1) await settle();
   const saved = commands.filter(({ type }) => type === 'draft.save');
   assert.equal(saved.length, 1);
   assert.equal(saved[0].kind, 'current-lot');
   assert.deepEqual(saved[0].payload, { target: 'watchlist', title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23',
-    pageUrl: 'https://www.acsearch.info/search.html?id=7' });
+    pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
   globalThis.browser.tabs.create = create;
   assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
   assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
@@ -613,7 +613,7 @@ test('a failed Watch hands its reason back to the research half', async () => {
   const handedBack = [];
   const dispatch = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
-  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', saleDate: '2099-10-12' };
+  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', closesAt: '2099-10-12' };
   page.watch(watched);
   for (let tick = 0; tick < 20; tick += 1) await settle();
   assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
@@ -708,4 +708,36 @@ test('the captured lot’s provenance entries go to its draft and come off with 
   await page.click('companion-clear-auction-context');
   await page.click('companion-capture-watchlist');
   assert.equal(Object.hasOwn(lastSaved(), 'provenance'), false);
+});
+
+// 0.34 (W2a, closing I2's owner decision): the sale day Watch hands over rides on the draft as its closing day, and the workspace that opens the
+// draft offers it as a date-only auction day for the collector to confirm - end to end, from the Watch the research half sends to the auction the
+// workspace saves.
+test('Watch carries the sale day to the workspace, which offers it as a date-only auction day to confirm', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-9' } } : WORKING_SNAPSHOT; },
+  });
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const { payload } = commands.find(({ type }) => type === 'draft.save');
+  assert.equal(payload.closesAt, '2099-10-12');
+
+  const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
+  const background = await createWorkspaceBackground();
+  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload });
+  assert.equal(draft.ok, true, draft.message);
+  const workspace = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
+  assert.ok(workspace.$('lot-page-values').textContent.includes('Add an auction day on 2099-10-12 when saving, from the page (2099-10-12).'));
+  const box = workspace.$('lot-form').elements.pageAuction;
+  assert.equal(box.checked, false);
+  box.checked = true;
+  await workspace.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.eventKind, 'auction-day');
+  assert.equal(event.precision, 'date-only');
+  assert.equal(event.localDate, '2099-10-12');
+  assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
+  assert.equal(background.root().lots[0].auctionEventId, event.id);
 });
