@@ -94,6 +94,25 @@ test('backups load while optional presets and lot notes round-trip when present'
   assert.equal(restored.value.lots[0].notes, current.lots[0].notes);
 });
 
+// N1 needs no new schema version: a won coin's cost is an optional field of its outcome. A 0.35 backup, whose won
+// coins carry none, imports as it is; a backup with costs round-trips them unchanged.
+test('a won coin’s cost round-trips, and a backup written before costs existed still imports', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.lots.push(lot(uuid(1), { outcome: { status: 'won', hammer: eur(130000), verification: 'personal-unverified', cost: {
+    buyerPremiumBps: 2500, premium: eur(32500), premiumVat: eur(6175), platformFee: eur(0), shipping: eur(1500), paymentFee: eur(0), total: eur(170175),
+  } } }));
+  snapshot.lots.push(lot(uuid(2), { outcome: { status: 'won', hammer: eur(50000), verification: 'personal-unverified' } }));
+  const exported = exportBackup(snapshot, NOW);
+  assert.equal(exported.ok, true);
+  const imported = validateBackup(exported.value);
+  assert.equal(imported.ok, true, imported.error?.message);
+  assert.deepEqual(imported.value.lots[0].outcome.cost, snapshot.lots[0].outcome.cost);
+  assert.equal(Object.hasOwn(imported.value.lots[1].outcome, 'cost'), false, 'an older won coin is not given a cost on import');
+  const replaced = previewImport(createEmptySnapshot(NOW), imported.value, 'replace');
+  assert.equal(replaced.ok, true, replaced.error?.message);
+});
+
 test('backups round-trip optional lot auction metadata', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.lots.push({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector', title: 'Coin', sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,

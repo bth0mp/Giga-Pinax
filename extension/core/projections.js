@@ -2,7 +2,7 @@
 // What the views draw from the records rather than store: the open bids' exposure per currency and
 // event, and the collection's totals with each entry's own saved comparables. Nothing here writes a
 // record, and nothing is converted or added across currencies.
-import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
+import { CURRENCIES, calculateBidCost, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
 import { OWN } from './fields.js';
@@ -38,6 +38,8 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  * @property {number | null} hammerMinor
  * @property {number} invoiceCount
  * @property {number | null} invoiceMinor
+ * @property {number} costCount entries whose worked-out cost is complete
+ * @property {number | null} costMinor
  * @property {number | null} firstYear
  * @property {number | null} lastYear
  */
@@ -46,8 +48,87 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  * @property {Record<string, CollectionTotals>} byCurrency
  * @property {{ entryCount: number, firstYear: number | null, lastYear: number | null }} unpriced
  * @property {Array<{ id: string, lotId: string, title: string, acquisitionDate: string, reference: string,
- *   currency: string | null, comparables: OwnComparables }>} entries
+ *   currency: string | null, comparables: OwnComparables, cost: import('./types.js').WonCost | null }>} entries
  */
+
+/**
+ * What stops a won coin's cost from being worked out: no hammer, no buyer's premium rate on its bid, no fees recorded
+ * for it, or fees recorded in another currency than the hammer's (never converted).
+ * @typedef {'hammer' | 'premium-rate' | 'fees' | 'fee-currency'} CostGap
+ */
+export const COST_GAPS = Object.freeze(['hammer', 'premium-rate', 'fees', 'fee-currency']);
+const COST_PARTS = Object.freeze(['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee']);
+export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'shipping', 'paymentFee']);
+
+// The buyer's premium rate the coin was won on: the bid that was settled as won, else the plan the collector made
+// for it. A rate is the house's term for this lot, so an older settlement still carries the right one.
+function wonPremiumRate(lot) {
+  const settled = [...(lot?.bidHistory ?? [])].reverse().find(({ action }) => action === 'settled-won');
+  if (Number.isInteger(settled?.buyerPremiumBps)) return settled.buyerPremiumBps;
+  return Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? lot.plannedBid.buyerPremiumBps : null;
+}
+
+/**
+ * What a won coin really cost, worked out from what the collector recorded for it and nothing else: the hammer, the
+ * premium at the rate on its bid, and the fees saved with the lot (VAT on the premium, a platform's fee on the hammer,
+ * shipping and the payment fee), all in the hammer's currency. A figure that was never recorded is not estimated: the
+ * cost then keeps what could be worked out and names every gap, and it has no total. A fee sheet saved without VAT or
+ * a platform fee charges none, as the calculator that saved it did. `null` only for a sum too large to hold exactly.
+ * @param {Lot} lot
+ * @param {Money | undefined} hammer
+ * @returns {import('./types.js').WonCost | null}
+ */
+export function deriveWonCost(lot, hammer) {
+  const hasHammer = validateMoney(hammer).ok;
+  const rate = wonPremiumRate(lot);
+  const estimate = lot?.costEstimate;
+  /** @type {CostGap[]} */
+  const missing = [];
+  if (!hasHammer) missing.push('hammer');
+  if (rate === null) missing.push('premium-rate');
+  if (!estimate) missing.push('fees');
+  else if (hasHammer && estimate.currency !== hammer?.currency) missing.push('fee-currency');
+  if (!hasHammer || rate === null) return { missing };
+  const money = /** @type {Money} */ (hammer);
+  const fees = /** @type {import('./types.js').CostEstimate} */ (estimate);
+  if (missing.length) {
+    const premium = calculatePremium(money, rate);
+    return premium.ok ? { buyerPremiumBps: rate, premium: premium.value.premium, missing } : null;
+  }
+  const worked = calculateBidCost(money, rate, {
+    shippingMinor: fees.shippingMinor, paymentFeeBps: fees.paymentFeeBps, paymentFeeMinor: fees.paymentFeeMinor,
+    premiumVatBps: fees.premiumVatBps ?? 0, platformFeeBps: fees.platformFeeBps ?? 0,
+  });
+  if (!worked.ok) return null;
+  const cost = { buyerPremiumBps: rate };
+  for (const part of COST_PARTS) cost[part] = worked.value[part];
+  cost.total = worked.value.total;
+  return cost;
+}
+
+/**
+ * The cost a won coin is shown with: the one stored with its outcome, or for a coin won before costs were stored, the
+ * same working over the same records. Anything but a won coin has none.
+ * @param {Lot | null | undefined} lot
+ * @returns {import('./types.js').WonCost | null}
+ */
+export function lotCost(lot) {
+  if (lot?.outcome?.status !== 'won') return null;
+  if (OWN(lot.outcome, 'cost')) return lot.outcome.cost ?? null;
+  return deriveWonCost(lot, lot.outcome.hammer);
+}
+
+/**
+ * The fees of a worked-out cost as one amount: VAT on the premium, platform fee, shipping and payment fee.
+ * @param {import('./types.js').WonCost | null | undefined} cost
+ * @returns {Money | null}
+ */
+export function costFees(cost) {
+  if (!cost?.total) return null;
+  let minor = 0;
+  for (const part of COST_FEE_PARTS) minor += cost[part]?.minor ?? 0;
+  return { currency: cost.total.currency, minor };
+}
 
 function emptyExposure() {
   return {
@@ -166,7 +247,8 @@ const addMinor = (total, minor) => {
 };
 
 // The collection as the collector recorded it. Per currency: how many entries carry an amount in it,
-// what was knocked down and what was paid, and the years they were acquired in — every figure in the
+// what was knocked down, what each coin really cost where every figure of that was recorded (the cost
+// kept with its lot's won outcome), what was paid, and the years they were acquired in — every figure in the
 // currency it was recorded in, nothing converted and nothing added across currencies. An entry paid
 // in another currency than its hammer counts under both. Per entry: its own saved comparables for
 // the linked coin's reference, in the entry's currency (its hammer's, else its invoice's). These are
@@ -184,13 +266,15 @@ export function projectCollection(snapshot) {
   for (const entry of snapshot?.collectionEntries ?? []) {
     const year = acquisitionYear(entry);
     // Only the amounts validateMoney accepts are left, so each is read as Money.
-    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['invoice', entry.actualInvoice]]
+    const lot = lots.get(entry.lotId);
+    const cost = lotCost(lot);
+    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['cost', cost?.total], ['invoice', entry.actualInvoice]]
       .filter(([, money]) => validateMoney(money).ok));
     const currencies = new Set(amounts.map(([, money]) => money.currency));
     if (!currencies.size) { unpriced.entryCount += 1; spreadYears(unpriced, year); }
     for (const currency of currencies) {
       const totals = byCurrency[currency] ??= {
-        entryCount: 0, hammerCount: 0, hammerMinor: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
+        entryCount: 0, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
       };
       totals.entryCount += 1;
       spreadYears(totals, year);
@@ -201,10 +285,10 @@ export function projectCollection(snapshot) {
       totals[`${kind}Minor`] = addMinor(totals[`${kind}Minor`], money.minor);
     }
     const currency = amounts[0]?.[1].currency ?? null;
-    const reference = String(lots.get(entry.lotId)?.reference ?? '').trim();
+    const reference = String(lot?.reference ?? '').trim();
     entries.push({
       id: entry.id, lotId: entry.lotId, title: entry.title, acquisitionDate: entry.acquisitionDate,
-      reference, currency, comparables: ownComparables(evidence, reference, currency),
+      reference, currency, comparables: ownComparables(evidence, reference, currency), cost,
     });
   }
   /** @type {Record<string, CollectionTotals>} */

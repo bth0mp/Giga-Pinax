@@ -6,7 +6,7 @@ import {
   LIMITS, OWN, arrayResult, auctionContextResult, bpsResult, dateResult, housePresetResult, enumResult, firstFailure, instantResult, integerResult,
   isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
 } from './fields.js';
-import { projectExposure } from './projections.js';
+import { COST_GAPS, deriveWonCost, projectExposure } from './projections.js';
 import { resolveZonedDateTime } from './reminders.js';
 import { failure, isRecursionError, shiftDate, stableUuid, tooDeeplyNested } from './validate.js';
 /**
@@ -211,7 +211,47 @@ function outcomeResult(outcome, path) {
       outcome.verification !== 'personal-unverified') {
     return failure('missing-verification', 'User-entered outcome prices require a verification label.', `${path}.verification`);
   }
+  if (OWN(outcome, 'cost')) return wonCostResult(outcome, `${path}.cost`);
   return { ok: true, value: outcome };
+}
+
+const COST_GAP_SET = new Set(COST_GAPS);
+const COST_MONEY = ['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee'];
+
+// A won coin's cost as the store worked it out (projections.js deriveWonCost): in its hammer's currency, and either
+// complete - every part and a total that is exactly the hammer and those parts - or incomplete, naming what was
+// never recorded and carrying no total. A hand-made file cannot slip a total past its own parts.
+/** @returns {Result<any>} */
+function wonCostResult(outcome, path) {
+  const cost = outcome.cost;
+  const object = objectResult(cost, path); if (!object.ok) return object;
+  if (outcome.status !== 'won') return failure('invalid-cost', 'Only a won outcome carries a cost.', path);
+  /** @type {Array<Result<any>>} */
+  const checks = [bpsResult(cost, 'buyerPremiumBps', path)];
+  for (const key of [...COST_MONEY, 'total']) if (OWN(cost, key)) checks.push(moneyResult(cost[key], `${path}.${key}`));
+  if (OWN(cost, 'missing')) {
+    const gaps = arrayResult(cost.missing, `${path}.missing`, COST_GAPS.length); if (!gaps.ok) return gaps;
+    cost.missing.forEach((gap, index) => checks.push(enumResult(gap, COST_GAP_SET, `${path}.missing[${index}]`)));
+  }
+  const shapes = firstFailure(...checks); if (!shapes.ok) return shapes;
+  for (const key of [...COST_MONEY, 'total']) {
+    if (OWN(cost, key) && cost[key].currency !== outcome.hammer?.currency) {
+      return failure('invalid-cost', 'A cost is kept in its hammer’s currency.', `${path}.${key}`);
+    }
+  }
+  const gapCount = OWN(cost, 'missing') ? new Set(cost.missing).size : 0;
+  if (gapCount !== (cost.missing?.length ?? 0)) return failure('invalid-cost', 'A missing figure is named once.', `${path}.missing`);
+  if (OWN(cost, 'total') === gapCount > 0) {
+    return failure('invalid-cost', 'A cost has a total or names what is missing, never both or neither.', path);
+  }
+  if (!OWN(cost, 'total')) return { ok: true, value: outcome };
+  if (!OWN(cost, 'buyerPremiumBps') || !COST_MONEY.every((key) => OWN(cost, key))) {
+    return failure('invalid-cost', 'A complete cost carries every part.', path);
+  }
+  const parts = COST_MONEY.reduce((sum, key) => sum + BigInt(cost[key].minor), BigInt(outcome.hammer.minor));
+  return parts === BigInt(cost.total.minor)
+    ? { ok: true, value: outcome }
+    : failure('invalid-cost', 'A cost’s total must be its hammer and its parts.', `${path}.total`);
 }
 
 /** @returns {Result<any>} */
@@ -1305,6 +1345,12 @@ export function setOutcome(lot, outcomeDraft, now) {
 
   if (next.bidHistory.length > LIMITS.bidHistory) {
     return failure('collection-limit', 'Bid history limit exceeded.', 'bidHistory');
+  }
+  // Worked out now, from the bid just settled and the fees saved with the lot, and kept: a preset or a fee changed
+  // later never rewrites what a coin cost. A cost the caller sent is never read.
+  if (outcomeDraft.status === 'won') {
+    const cost = deriveWonCost(next, nextOutcome.hammer);
+    if (cost) nextOutcome.cost = cost;
   }
   next.outcomeHistory.push({
     id: derivedUuid(`${lot.id}|${lot.revision}|${now}|outcome|${lot.outcome.status}|${outcomeDraft.status}`),

@@ -21,6 +21,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -1016,20 +1017,22 @@ async function initWorkspace() {
     const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
     table.append(text('caption', 'Your recorded totals by currency'));
     const head = document.createElement('thead'); const headRow = document.createElement('tr');
-    for (const label of ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
+    for (const label of ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
     head.append(headRow);
     const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
-    const total = (currency, minor, count, of) => {
-      if (!count) return 'None recorded';
+    const total = (currency, minor, count, of, none = 'None recorded') => {
+      if (!count) return none;
       const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
       return count < of ? `${amount} (${count} of ${of})` : amount;
     };
     const body = document.createElement('tbody');
     const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
     for (const [currency, totals] of Object.entries(view.byCurrency)) {
-      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount), total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
+      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount),
+        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete'),
+        total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
     }
-    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', years(view.unpriced)]);
+    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', '—', years(view.unpriced)]);
     table.append(head, body); wrap.append(table);
     return wrap;
   }
@@ -1042,19 +1045,41 @@ async function initWorkspace() {
     if (comparables.status === 'too-few') return `Your saved comparables for ${item.reference}: ${comparables.count} in ${comparables.currency}, too few for a median`;
     return `Your saved comparables for ${item.reference}: median ${formatMoney(comparables.median)} from ${comparables.count} in ${comparables.currency}`;
   };
+  // A won coin's Hammer · Premium · Fees · Total, currency code once, then the premium rate and each fee, or what
+  // stopped the total from being worked out.
+  const costLineParts = (line) => {
+    const row = text('div', '', 'money-line'); row.append(text('span', line.currency, 'money-currency'));
+    for (const { label, figure } of line.cells) {
+      const cell = text('span', '', 'money-cell'); cell.append(text('span', label, 'money-label'), document.createTextNode(' '), text('span', figure, 'money-figure'));
+      row.append(cell);
+    }
+    return [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+  };
   function renderHistory() {
     const root = $('history-list'); root.replaceChildren();
-    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) { const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`)); if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`)); if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)} (your recorded total)`)); card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card); }
+    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
+      const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
+      const line = wonCostLine(lot, navigator.language);
+      if (line) card.append(...costLineParts(line));
+      else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
+      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
+      card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card);
+    }
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
     const view = projectCollection(snapshot);
     const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
     if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
     else {
-      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
+      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin missing any of those figures is counted as incomplete, never estimated.', 'field-note collection-note'));
       collection.append(collectionTotalsTable(view));
     }
     for (const entry of snapshot.collectionEntries ?? []) {
       const card = text('article', '', 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
+      const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
+      if (line) card.append(...costLineParts(line));
+      else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
+      if (entry.actualInvoice) card.append(text('p', `Invoice paid ${formatMoney(entry.actualInvoice)}`));
       card.append(text('p', collectionComparablesLabel(viewByEntry.get(entry.id)), 'collection-comparables'));
       if (entry.reviewReason) { const actions = text('div', '', 'actions'); for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } card.append(actions); }
       collection.append(card);

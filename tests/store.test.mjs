@@ -274,6 +274,33 @@ test('correcting a lot back to won answers the collection review the mistake rai
   assert.equal(corrected.value.collectionEntryId, corrected.snapshot.collectionEntries[0].id);
 });
 
+// N1: the store works a won coin's cost out when the outcome is set, from the bid it settles and the fees saved with
+// the lot, and keeps it: a house preset or the lot's fee sheet changed afterwards never rewrites what the coin cost.
+test('a won coin’s real cost is stored with its outcome and outlives later changes to presets and fees', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
+    preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }] },
+  })).snapshot;
+  const saved = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Künker lot', sourceLinks: [] } }));
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, premiumVatBps: 1900 };
+  state = reduce(saved.snapshot, command('bid.place', {
+    lotId: saved.value.id, expectedRevision: 0,
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500 }, costEstimate: fees,
+  })).snapshot;
+  const won = reduce(state, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 1, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 100000 } },
+  }));
+  const cost = won.value.outcome.cost;
+  assert.equal(cost.total.minor, 100000 + 25000 + 4750 + 1500, 'hammer + premium + VAT on the premium + shipping');
+
+  state = reduce(won.snapshot, command('preferences.save', {
+    expectedRevision: 0, preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Künker', buyerPremiumBps: 2750, premiumVatBps: 1900 }] },
+  })).snapshot;
+  const edited = reduce(state, command('lot.save', {
+    expectedRevision: 2, lot: { id: saved.value.id, title: 'Künker lot', sourceLinks: [], costEstimate: { ...fees, shippingMinor: 9900 } },
+  }));
+  assert.deepEqual(edited.value.outcome.cost, cost, 'the cost kept with the outcome is history, not a live reading');
+});
+
 test('event save derives timed UTC instant and reminder IDs in the authority', () => {
   const saved = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,

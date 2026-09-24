@@ -1061,6 +1061,8 @@ test('won and lost settle active bids while preserving planned terms and audit h
     hammer: { currency: 'USD', minor: 9500 },
     actualInvoice: { currency: 'GBP', minor: 8000 },
     verification: 'personal-unverified',
+    // The settled bid's premium rate is known; the lot has no fees saved, so the cost says so.
+    cost: { buyerPremiumBps: 2500, premium: { currency: 'USD', minor: 2375 }, missing: ['fees'] },
   });
   assert.deepEqual(result.value.bidHistory.at(-1), {
     id: result.value.bidHistory.at(-1).id,
@@ -1152,4 +1154,97 @@ test('core/projections.js takes OWN from core/fields.js and declares no copy of 
   const source = readFileSync(new URL('../extension/core/projections.js', import.meta.url), 'utf8');
   assert.match(source, /^import \{[^}]*\bOWN\b[^}]*\} from '\.\/fields\.js';$/m);
   assert.doesNotMatch(source, /^(?:export )?(?:const|let|function) OWN\b/m);
+});
+
+// N1: what a won coin really cost, worked out from what the collector recorded for it and stored
+// with the outcome. Künker's terms: 25 % premium with 19 % VAT on the premium.
+const settledWon = (minor, buyerPremiumBps) => ({
+  id: IDS.history, action: 'settled-won', amount: { currency: 'EUR', minor }, recordedAt: NOW,
+  ...(buyerPremiumBps === undefined ? {} : { buyerPremiumBps }),
+});
+const KUENKER_FEES = Object.freeze({
+  currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0,
+  premiumVatBps: 1900,
+});
+
+test('a won coin carries its real cost: hammer, premium, VAT on the premium and every recorded fee, in one currency', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+    costEstimate: { ...KUENKER_FEES, platformFeeBps: 300 },
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.equal(won.ok, true, won.error?.message);
+  // 1,300.00 + 325.00 premium + 61.75 VAT on it + 39.00 platform fee + 15.00 shipping = 1,740.75.
+  assert.deepEqual(won.value.outcome.cost, {
+    buyerPremiumBps: 2500,
+    premium: { currency: 'EUR', minor: 32500 },
+    premiumVat: { currency: 'EUR', minor: 6175 },
+    platformFee: { currency: 'EUR', minor: 3900 },
+    shipping: { currency: 'EUR', minor: 1500 },
+    paymentFee: { currency: 'EUR', minor: 0 },
+    total: { currency: 'EUR', minor: 174075 },
+  });
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+});
+
+test('a missing figure makes the cost incomplete and says which, never a guess', () => {
+  const noFees = setOutcome(makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(noFees.value.outcome.cost, { buyerPremiumBps: 2500, premium: { currency: 'EUR', minor: 32500 }, missing: ['fees'] });
+
+  const noRate = setOutcome(makeLot(IDS.lotEur, { costEstimate: KUENKER_FEES }),
+    { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(noRate.value.outcome.cost, { missing: ['premium-rate'] });
+
+  const otherCurrency = setOutcome(makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000 },
+    costEstimate: { ...KUENKER_FEES, currency: 'CHF' },
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(otherCurrency.value.outcome.cost,
+    { buyerPremiumBps: 2000, premium: { currency: 'EUR', minor: 26000 }, missing: ['fee-currency'] },
+    'fees recorded in francs are never converted into a euro total');
+
+  const noHammer = setOutcome(makeLot(IDS.lotEur), { status: 'won' }, NOW);
+  assert.deepEqual(noHammer.value.outcome.cost, { missing: ['hammer', 'premium-rate', 'fees'] });
+  for (const result of [noFees, noRate, otherCurrency, noHammer]) {
+    assert.equal(validateSnapshot(snapshotWith(result.value)).ok, true);
+  }
+});
+
+test('a hammer corrected on a won coin is costed again from the bid that won it, and only a won coin has a cost', () => {
+  const lot = makeLot(IDS.lotEur, {
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, verification: 'personal-unverified' },
+    bidHistory: [settledWon(150000, 2000)],
+    costEstimate: { ...KUENKER_FEES, premiumVatBps: undefined },
+  });
+  delete lot.costEstimate.premiumVatBps;
+  const corrected = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 120000 } }, NOW);
+  assert.equal(corrected.value.outcome.cost.total.minor, 120000 + 24000 + 1500);
+  assert.equal(corrected.value.outcome.correctedAt, NOW);
+
+  const lost = setOutcome(corrected.value, { status: 'lost', hammer: { currency: 'EUR', minor: 200000 } }, NOW);
+  assert.equal(Object.hasOwn(lost.value.outcome, 'cost'), false, 'another bidder’s hammer is no cost of the collector’s');
+  const reopened = setOutcome(corrected.value, { status: 'open', bindingActive: false }, NOW);
+  assert.equal(Object.hasOwn(reopened.value.outcome, 'cost'), false);
+  const supplied = setOutcome(makeLot(IDS.lotEur), { status: 'won', hammer: { currency: 'EUR', minor: 1 }, cost: { total: { currency: 'EUR', minor: 1 } } }, NOW);
+  assert.deepEqual(supplied.value.outcome.cost, { missing: ['premium-rate', 'fees'] }, 'the store works the cost out; a caller cannot supply one');
+});
+
+test('a stored cost is held to its outcome: won only, the hammer’s currency, and a total that is its parts', () => {
+  const won = setOutcome(makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500 }, costEstimate: KUENKER_FEES,
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW).value;
+  const broken = (change) => { const lot = structuredClone(won); change(lot.outcome); return validateSnapshot(snapshotWith(lot)); };
+  assert.equal(broken((outcome) => { outcome.cost.total.minor += 1; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost.premium.currency = 'USD'; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost.missing = ['fees']; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { delete outcome.cost.total; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost = { missing: ['guessed'] }; }).error.code, 'invalid-enum');
+  assert.equal(broken((outcome) => { outcome.status = 'lost'; }).error.code, 'invalid-cost');
+  // A coin won before costs were worked out carries none, and still validates.
+  const older = structuredClone(won); delete older.outcome.cost;
+  assert.equal(validateSnapshot(snapshotWith(older)).ok, true);
 });

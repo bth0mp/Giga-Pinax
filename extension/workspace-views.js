@@ -3,7 +3,7 @@
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
-import { eventTiming, projectExposure } from './core/projections.js';
+import { costFees, eventTiming, lotCost, projectExposure } from './core/projections.js';
 import { moneyInputText } from './workspace-forms.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -209,6 +209,51 @@ export function comparisonRows(lots, selectedIds) {
     const actualTotalLabel = terminal && lot.outcome?.actualInvoice ? `Actual invoice ${lot.outcome.actualInvoice.currency} ${moneyInputText(lot.outcome.actualInvoice, 'en-US')}` : '';
     return { ...lot, amountLabel: amount ? `${amountRole} ${amount.currency} ${moneyInputText(amount, 'en-US')}` : terminal ? 'Final hammer not recorded' : 'No saved amount', estimateLabel, totalLabel, actualTotalLabel };
   });
+}
+
+// A figure in the money line: the collector's own grouping and decimal mark, two places, no symbol - the line
+// names its currency once.
+function lineFigure(money, locale) {
+  const whole = BigInt(money.minor) / 100n;
+  const fraction = String(money.minor % 100).padStart(2, '0');
+  let format;
+  try { format = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  catch { format = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  return format.formatToParts(whole).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
+}
+const COST_GAP_WORDS = Object.freeze({
+  hammer: 'no hammer recorded',
+  'premium-rate': 'no buyer’s premium rate on its bid',
+  fees: 'no fees were saved with this coin',
+  'fee-currency': 'its fees were saved in another currency, and are never converted',
+});
+const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
+
+/**
+ * A won coin's money line, as its History card and its collection entry show it: Hammer · Premium · Fees · Total in
+ * the hammer's currency, named once. The cost is the one kept with the outcome (or, for a coin won before costs were
+ * kept, the same working from its records). A total that could not be worked out reads "Incomplete", and the note
+ * says which figure was never recorded; the detail line gives the premium rate and each fee that is not zero.
+ * @param {Lot | null | undefined} lot
+ * @param {string} [locale]
+ * @returns {{ currency: string, cells: Array<{ label: string, figure: string }>, detail: string, note: string } | null}
+ */
+export function wonCostLine(lot, locale = 'en-US') {
+  if (lot?.outcome?.status !== 'won') return null;
+  const cost = lotCost(lot);
+  const hammer = lot.outcome.hammer;
+  const figure = (money) => (money ? lineFigure(money, locale) : '—');
+  const fees = costFees(cost);
+  const cells = [
+    { label: 'Hammer', figure: figure(hammer) }, { label: 'Premium', figure: figure(cost?.premium) },
+    { label: 'Fees', figure: figure(fees) }, { label: 'Total', figure: cost?.total ? figure(cost.total) : 'Incomplete' },
+  ];
+  const rate = Number.isInteger(cost?.buyerPremiumBps) ? `Premium ${Number(/** @type {number} */ (cost?.buyerPremiumBps) / 100)}%` : '';
+  const detail = cost?.total ? [rate, ...FEE_WORDS.filter(([key]) => cost[key]?.minor > 0)
+    .map(([key, words]) => `${words} ${figure(cost[key])}`)].filter(Boolean).join(' · ') : '';
+  const gaps = (cost?.missing ?? []).map((gap) => COST_GAP_WORDS[gap] ?? gap).join('; ');
+  const note = cost?.total ? '' : cost ? `Total incomplete: ${gaps}.` : 'Total not worked out: the amounts are too large to add exactly.';
+  return { currency: hammer?.currency ?? cost?.premium?.currency ?? '', cells, detail, note };
 }
 
 /**

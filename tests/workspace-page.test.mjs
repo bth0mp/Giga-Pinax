@@ -252,10 +252,11 @@ test('the History route totals the collection per currency and shows each entry�
   const collection = page.$('collection-list');
   assert.match(collection.querySelector('.collection-note').textContent, /your own records.*not an appraisal or a valuation.*no amount is converted/i);
   const table = collection.querySelector('#collection-totals');
-  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']);
+  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']);
+  // None of these coins had a bid with a premium rate or fees saved, so no total cost is guessed at.
   assert.deepEqual(table.querySelector('tbody').querySelectorAll('tr').map(cells), [
-    ['USD', '1', '$500.00', 'None recorded', '2023'],
-    ['EUR', '2', '€1,200.00', '€250.00 (1 of 2)', '2019–2021'],
+    ['USD', '1', '$500.00', 'Incomplete', 'None recorded', '2023'],
+    ['EUR', '2', '€1,200.00', 'Incomplete', '€250.00 (1 of 2)', '2019–2021'],
   ]);
   const lines = collection.querySelectorAll('.collection-comparables').map((line) => line.textContent);
   assert.deepEqual(lines, [
@@ -263,6 +264,38 @@ test('the History route totals the collection per currency and shows each entry�
     'No saved comparables for RIC 60 in USD',
     'No saved comparables: the coin has no reference to match',
   ]);
+});
+
+// N1: the History card of a won coin carries its real cost - the premium at the placed bid's rate, VAT on it and the
+// fees saved with the bid - in one money line, and the collection totals it per currency.
+test('a won coin’s History card and the collection totals show what it really cost', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Künker lot 1234', sourceLinks: [] } });
+  const placed = await background.send({
+    type: 'bid.place', lotId: saved.value.id, expectedRevision: 0,
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500 },
+    costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, premiumVatBps: 1900 },
+  });
+  assert.equal(placed.ok, true, placed.message);
+  const won = await background.send({
+    type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 1,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 130000 } },
+    addToCollection: { title: 'Künker lot 1234', acquisitionDate: '2026-09-20', sourceLinks: [] },
+  });
+  assert.equal(won.ok, true, won.message);
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+
+  const card = page.$('history-list').children.find((item) => item.textContent.includes('Künker lot 1234'));
+  const line = card.querySelector('.money-line');
+  assert.deepEqual(line.children.map((cell) => cell.textContent), ['EUR', 'Hammer 1,300.00', 'Premium 325.00', 'Fees 76.75', 'Total 1,701.75']);
+  assert.ok(card.textContent.includes('Premium 25% · VAT on premium 61.75 · shipping 15.00'));
+  const nero = page.$('history-list').children.find((item) => item.textContent.includes('Nero, denarius'));
+  assert.ok(nero.textContent.includes('Total incomplete: no buyer’s premium rate on its bid; no fees were saved with this coin.'));
+  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  assert.deepEqual(eur, ['EUR', '2', '€1,800.00', '€1,701.75 (1 of 2)', 'None recorded', '2023–2026']);
+  const entry = page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes('Künker lot 1234'));
+  assert.equal(entry.querySelector('.money-line').children.at(-1).textContent, 'Total 1,701.75', 'the collection entry carries the same line');
 });
 
 test('the History route says so when there is no collection yet', async () => {
