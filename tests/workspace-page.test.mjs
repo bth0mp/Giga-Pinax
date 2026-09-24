@@ -647,3 +647,37 @@ test('a lot draft opens the sections the page filled', async () => {
   assert.deepEqual(['identity', 'coin', 'provenance'].map((name) => group(name).open), [true, true, true]);
   assert.equal(page.$('lot-dirty').hidden, false, 'a draft is unsaved');
 });
+
+// W-03: the Reminders tab names the attached auction and its time, lists its reminders in words, and offers the
+// standard two when it has none; with no auction it offers to attach one. Passed is explained only when it is off.
+test('the Reminders tab shows the attached auction and offers the standard reminders when it has none', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const tab = page.$('selected-reminders');
+  assert.match(tab.querySelector('.reminder-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM/);
+  assert.ok(tab.textContent.includes('No reminders set.'));
+  const add = page.$('add-standard-reminders');
+  assert.equal(add.textContent, 'Add the standard two (1 day and 1 hour before)');
+  await page.click('add-standard-reminders');
+  const [event] = background.root().auctionEvents;
+  assert.deepEqual(event.reminders.map((reminder) => reminder.offsetMinutes), [1440, 60]);
+  assert.deepEqual(page.$('selected-reminders').querySelectorAll('.reminder-row').map((row) => row.querySelector('.reminder-when').textContent), ['1 day before', '1 hour before']);
+  assert.equal(page.$('add-standard-reminders'), null);
+
+  // Passed is off while a placed bid is active, and only then is the reason shown.
+  assert.equal(page.$('passed-outcome').disabled, true);
+  assert.equal(page.$('passed-help').hidden, false);
+});
+
+test('the Reminders tab of a coin with no auction offers to attach one', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Leu 32', eventKind: 'auction-day', precision: 'date-only', localDate: '2030-10-01', timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  assert.ok(page.$('selected-reminders').textContent.includes('Attach an auction to set reminders.'));
+  assert.equal(page.$('passed-help').hidden, true, 'Passed is available, so nothing explains it away');
+  await page.click('attach-auction');
+  assert.equal(page.$('lot-form').hidden, false, 'the Details tab is shown');
+  assert.equal(page.document.activeElement, page.$('lot-form').elements.auctionEventId);
+});

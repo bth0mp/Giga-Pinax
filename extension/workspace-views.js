@@ -246,6 +246,21 @@ export function lotRowAmount(lot) {
   return lot?.activeBid?.amount ?? lot?.plannedBid?.amount ?? null;
 }
 
+/**
+ * A reminder as the collector set it, in words: `1 day before`, `90 minutes before`, `Previous day at 09:00`.
+ * @param {Record<string, *> | null | undefined} reminder
+ * @returns {string}
+ */
+export function reminderLabel(reminder) {
+  if (reminder?.kind === 'offset') {
+    const minutes = Number(reminder.offsetMinutes);
+    const [count, unit] = minutes % 1440 === 0 ? [minutes / 1440, 'day'] : minutes % 60 === 0 ? [minutes / 60, 'hour'] : [minutes, 'minute'];
+    return `${count} ${unit}${count === 1 ? '' : 's'} before`;
+  }
+  const days = Number(reminder?.daysBefore ?? 0);
+  return `${days === 0 ? 'Auction day' : days === 1 ? 'Previous day' : `${days} days before`} at ${reminder?.localTime ?? ''}`;
+}
+
 export const DETAIL_TABS = Object.freeze(['details', 'bid', 'reminders', 'outcome']);
 /**
  * @param {string} active

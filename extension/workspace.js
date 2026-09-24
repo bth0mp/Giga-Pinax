@@ -18,7 +18,7 @@ import {
 import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen, evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, routeFromHash,
+  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderLabel, routeFromHash,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -620,10 +620,36 @@ async function initWorkspace() {
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
     attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
-    const reminders = $('selected-reminders'); reminders.replaceChildren();
-    if (!event) reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
-    else for (const reminder of event.reminders ?? []) reminders.append(text('p', reminder.kind === 'offset' ? `${reminder.offsetMinutes} minutes before` : `${reminder.daysBefore ? 'Previous day' : 'Auction day'} at ${reminder.localTime}`, 'reminder-row'));
+    renderSelectedReminders(event);
   }
+  // The Reminders tab: the attached auction and its time, then its reminders in words, or the standard two to add;
+  // with no auction, the way to attach one.
+  function renderSelectedReminders(event) {
+    const reminders = $('selected-reminders'); reminders.replaceChildren();
+    if (!event) {
+      reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
+      if ((snapshot.auctionEvents ?? []).length) {
+        const attach = text('button', 'Attach auction', 'quiet'); attach.type = 'button'; attach.id = 'attach-auction';
+        attach.addEventListener('click', () => { showDetailTab('details'); $('lot-form').elements.auctionEventId.focus(); });
+        reminders.append(attach);
+      }
+      return;
+    }
+    reminders.append(eventLine(event, 'reminder-event', 'p'));
+    for (const reminder of event.reminders ?? []) {
+      const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when')); reminders.append(row);
+    }
+    if ((event.reminders ?? []).length) return;
+    reminders.append(text('p', 'No reminders set.', 'field-note'));
+    const standard = createEventDraft(event.precision === 'date-only' ? 'date-only' : 'timed').reminders;
+    const add = text('button', `Add the standard two (${event.precision === 'date-only' ? 'the day before and on the day, at 09:00' : '1 day and 1 hour before'})`, 'quiet');
+    add.type = 'button'; add.id = 'add-standard-reminders'; add.dataset.needsRuntime = ''; add.disabled = !bridge;
+    add.addEventListener('click', () => void send({ type: 'event.save', requestId: requestId(), expectedRevision: event.revision, event: { ...eventDraftOf(event), reminders: standard } }));
+    reminders.append(add);
+  }
+  // An auction as event.save takes it back: the fields the collector confirmed, never the ones the store derives.
+  const eventDraftOf = (event) => Object.fromEntries(['id', 'name', 'eventKind', 'precision', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'reminders', 'capturedText', 'capturedFromUrl']
+    .filter((key) => event[key] !== undefined).map((key) => [key, structuredClone(event[key])]));
   // Typing in the filter only narrows the list: rebuilding the picker, the groups and the open
   // editors on every keystroke moved the focus and re-read records the collector was editing.
   let filterTimer = null;
@@ -875,7 +901,7 @@ async function initWorkspace() {
   const updateOutcomeVisibility = () => {
     const f = $('outcome-form').elements; const lot = editorBases.get('outcome')?.record;
     const settled = ['won', 'lost'].includes(lot?.outcome?.status);
-    $('passed-outcome').disabled = Boolean(lot?.activeBid);
+    $('passed-outcome').disabled = Boolean(lot?.activeBid); $('passed-help').hidden = !$('passed-outcome').disabled;
     $('open-outcome').closest('label').hidden = !lot?.outcome?.status || lot.outcome.status === 'open';
     $('reopen-choice').hidden = !(settled && f.status.value === 'open');
   };
