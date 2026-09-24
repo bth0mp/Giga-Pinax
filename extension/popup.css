@@ -178,7 +178,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-filtered {font-size:11px; color:var(--muted); margin-top:4px;}
 .stat-meta .sale-filtered {margin-top:0;}
 .price-filters {margin-bottom:4px;}
-.denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px;}
+/* A checkbox row reads as a sentence, so it keeps 600 rather than the 650 of a field's name. */
+.denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px; font-weight:600;}
 .denomination-row + .denomination-row {margin-top:6px;}
 /* The field rule above sizes every input at 36px and full width; a checkbox in this row keeps its own size or it fills the row and pushes its label
    off the edge. */

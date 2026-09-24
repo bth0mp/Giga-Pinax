@@ -69,6 +69,22 @@ test('no page stylesheet sizes a control or draws a button kind of its own', () 
   }
 });
 
+// Fix round (review Minors 2 and 3): nothing scrolls sideways at 320. A coin whose title does not fit made the coin list's grid track as wide as
+// the unbroken title, and the calculator's house-name box was 8 px wider than its fold because its right margin sat outside its 100 %.
+test('record lists and the house-name box stay inside their column', () => {
+  const workspace = rules(read('workspace.css'));
+  assert.match(workspace.filter((rule) => rule.selector === '.record-list').map((rule) => rule.body).join(';'), /grid-template-columns:minmax\(0,1fr\)/);
+  const preset = rules(read('bid-tools.css')).find((rule) => rule.selector === '.bid-preset-editor input').body;
+  const right = Number(/margin:\d+px (\d+)px/.exec(preset)?.[1] ?? 0);
+  assert.match(preset, new RegExp(String.raw`width:min\(260px,\s*100%${right ? String.raw`\s*-\s*${right}px` : ''}\)`));
+});
+
+// Fix round (review Minor 4): the layer's labels are 650; the popup's checkbox rows, sentences rather than field names, keep the 600 they had.
+test('the popup’s checkbox labels keep their 600 weight', () => {
+  const popup = rules(read('popup.css'));
+  assert.match(popup.filter((rule) => rule.selector === '.denomination-row').map((rule) => rule.body).join(';'), /font-weight:600/);
+});
+
 test('every class a workspace or Settings button carries is styled by a stylesheet the page loads', () => {
   for (const page of ['workspace.html', 'settings.html']) {
     const html = read(page);
