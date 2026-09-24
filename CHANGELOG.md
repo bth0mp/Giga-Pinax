@@ -15,7 +15,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Changed
 
 - Settings opens on **Bidding**: the default currency and the house premiums, the section used most, come first, then Appearance, Specimen photos, Backup and import, Updates, Local catalogue data and Diagnostics. Each house's increment ladder is folded under a line saying what it holds ("Increment ladder · 3 tiers in EUR") and opens itself when Save finds a problem in it. The bundled catalogues are a table — bundle, types, the day the local files were made, source and licence — with each link named for its bundle, and the longer explanations sit under **How it works**, **What this data is used for** and **What is kept**. From the top of the page, the keyboard now reaches Export backup before the twelve source and licence links rather than after them.
-- An amount typed as `1,200` in the calculator, a bid, an outcome or a house's increment tiers is read as twelve hundred where your browser groups thousands with a comma (English locales), and `1.200` where it groups them with a point (German, Spanish, Italian, Dutch). It is still refused where that mark is the browser's decimal mark, since there it could mean 1.20.
+- An amount typed as `1,200` in the calculator, a bid, an outcome or a house's increment tiers is read as twelve hundred where your browser groups thousands with a comma (English locales), and `1.200` where it groups them with a point (as for Germany, Spain, Italy and the Netherlands; Austrian and Swiss German group with a space or an apostrophe, so there both stay refused). It is still refused where that mark is the browser's decimal mark, since there it could mean 1.20.
 
 ## [0.34.1] - 2026-09-24
 

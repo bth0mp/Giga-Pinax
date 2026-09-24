@@ -379,7 +379,7 @@ test('refuses a lone separator before three digits where the locale does not gro
     ['de-DE', ['1,200', '12,345']],
     ['fr-FR', ['1,200', '1.200']],
     ['de-CH', ['1,200', '1.200']],
-    // A tag the browser cannot read gives no grouping to trust.
+    // A malformed tag, which Intl rejects, gives no grouping to trust.
     ['not a locale!', ['1,200', '1.200']],
   ]) {
     for (const text of texts) {

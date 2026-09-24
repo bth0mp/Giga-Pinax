@@ -56,7 +56,8 @@ const ambiguousMessage = (input) =>
 export const ambiguousGrouping = (whole, fraction) => fraction.length === 3 && whole.length <= 3;
 
 // The thousands separator of the collector's own locale, when it is a comma or a point and that locale
-// writes its decimals with the other one. A tag the browser cannot read gives none.
+// writes its decimals with the other one. A malformed tag, which Intl rejects, gives none; a well-formed
+// tag Intl does not know falls back to its root locale, which groups with a comma.
 /** @type {(locale: string) => string | null} */
 function localeGroup(locale) {
   try {
