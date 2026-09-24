@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import { browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
+import { parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildExposureSections,
   buildGroupReorderCommand,
@@ -54,14 +53,7 @@ import {
   premiumInputText,
 } from '../extension/workspace.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
-import * as money from '../extension/core/money.js';
-import * as evidence from '../extension/core/evidence.js';
-import * as sourceLaunchers from '../extension/source-launchers.js';
-import { projectExposure } from '../extension/core/records.js';
-
-const settle = async (turns = 10) => {
-  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
-};
+import { LIMITS, projectCollection } from '../extension/core/records.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -714,6 +706,130 @@ test('exposure view keeps currency and event totals distinct', () => {
   assert.equal(sections[1].events[0].name, 'Auction A');
 });
 
+// The collection view: the collector's own acquisitions and their own saved comparables, each
+// currency on its own. Nothing is converted, nothing is added across currencies, and no figure here
+// is an appraisal.
+const collectionEntry = (id, lotId, acquisitionDate, amounts = {}) => ({
+  id, lotId, title: `Coin ${id}`, acquisitionDate, sourceLinks: [], revision: 0, ...amounts,
+});
+const eur = (minor) => ({ currency: 'EUR', minor });
+const usd = (minor) => ({ currency: 'USD', minor });
+const comparable = (id, queryLabel, hammer, extra = {}) => ({
+  id, dataClass: 'collector', inclusion: 'included',
+  resolved: { priceBasis: 'hammer', resolution: 'source-agreement', hammer },
+  observations: [{ id: `${id}-seen`, queryId: `query-${queryLabel}`, queryLabel, source: 'manual', auctionHouse: 'House', lotNumber: id, auctionDate: '2025-05-01', priceBasis: 'hammer', amount: hammer }],
+  ...extra,
+});
+
+test('the collection is totalled within each currency, never across them', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC 27b' }, { id: 'lot-b' }, { id: 'lot-c' }, { id: 'lot-d' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000), actualInvoice: eur(125000) }),
+      collectionEntry('b', 'lot-b', '2021-02-03', { hammer: usd(50000), actualInvoice: usd(62000) }),
+      collectionEntry('c', 'lot-c', '2023-11-30', { hammer: eur(20000) }),
+      // Paid in another currency than it was knocked down in: each amount stays in its own.
+      collectionEntry('d', 'lot-d', '2020-07-07', { hammer: eur(30000), actualInvoice: { currency: 'CHF', minor: 40000 } }),
+    ],
+  });
+  assert.deepEqual(Object.keys(collection.byCurrency), ['USD', 'EUR', 'CHF']);
+  assert.deepEqual(collection.byCurrency.EUR, {
+    entryCount: 3, hammerCount: 3, hammerMinor: 150000, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
+  });
+  assert.deepEqual(collection.byCurrency.USD, {
+    entryCount: 1, hammerCount: 1, hammerMinor: 50000, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
+  });
+  assert.deepEqual(collection.byCurrency.CHF, {
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
+  });
+  assert.deepEqual(collection.unpriced, { entryCount: 0, firstYear: null, lastYear: null });
+  assert.deepEqual(collection.entries.map(({ id, currency, reference }) => [id, currency, reference]), [
+    ['a', 'EUR', 'RIC 27b'], ['b', 'USD', ''], ['c', 'EUR', ''], ['d', 'EUR', ''],
+  ]);
+});
+
+test('a collection total too large to hold exactly is withheld rather than rounded', () => {
+  const collection = projectCollection({
+    lots: [],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(Number.MAX_SAFE_INTEGER) }),
+      collectionEntry('b', 'lot-b', '2020-05-01', { hammer: eur(1), actualInvoice: eur(5) }),
+    ],
+  });
+  assert.equal(collection.byCurrency.EUR.hammerMinor, null);
+  assert.equal(collection.byCurrency.EUR.hammerCount, 2);
+  assert.equal(collection.byCurrency.EUR.invoiceMinor, 5);
+});
+
+// The view is projected on every snapshot in every open tab, so it has to stay quick at the store's
+// own limits: a full collection against a full evidence list.
+test('the collection view is projected quickly at the store’s limits', () => {
+  const lots = []; const collectionEntries = []; const evidenceRows = [];
+  for (let index = 0; index < LIMITS.collectionEntries; index += 1) {
+    lots.push({ id: `lot-${index}`, reference: `RIC ${index}` });
+    collectionEntries.push(collectionEntry(`c${index}`, `lot-${index}`, '2020-01-01', { hammer: eur(1000 + index) }));
+  }
+  for (let index = 0; index < LIMITS.evidenceObservations; index += 1) {
+    evidenceRows.push(comparable(`e${index}`, `RIC ${index % (LIMITS.collectionEntries * 2)}`, eur(500 + index)));
+  }
+  const started = performance.now();
+  const collection = projectCollection({ lots, collectionEntries, evidence: evidenceRows });
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 500, `took ${Math.round(elapsed)} ms`);
+  assert.deepEqual(collection.entries[7].comparables, { status: 'median', currency: 'EUR', count: 5, median: eur(4507) });
+});
+
+test('an entry with no hammer is counted without one, and one with no amount at all has no currency', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'Price 23' }, { id: 'lot-b', reference: 'Price 23' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2018-01-01', { actualInvoice: usd(9000) }),
+      collectionEntry('b', 'lot-b', '2024-01-01'),
+    ],
+    evidence: [comparable('e1', 'Price 23', usd(8000))],
+  });
+  assert.deepEqual(collection.byCurrency.USD, {
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
+  });
+  assert.deepEqual(collection.unpriced, { entryCount: 1, firstYear: 2024, lastYear: 2024 });
+  const [invoiced, unpriced] = collection.entries;
+  assert.equal(invoiced.currency, 'USD', 'the invoice gives the entry its currency');
+  assert.deepEqual(invoiced.comparables, { status: 'too-few', currency: 'USD', count: 1, median: null });
+  assert.equal(unpriced.currency, null);
+  assert.deepEqual(unpriced.comparables, { status: 'no-currency', currency: null, count: 0, median: null });
+});
+
+test('an entry with no saved comparables for its reference says so', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC 27b' }, { id: 'lot-b' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000) }),
+      collectionEntry('b', 'lot-b', '2019-05-01', { hammer: eur(100000) }),
+    ],
+    evidence: [comparable('e1', 'RIC 27', eur(1)), comparable('e2', 'RIC 27b Philip', eur(2))],
+  });
+  assert.deepEqual(collection.entries[0].comparables, { status: 'none', currency: 'EUR', count: 0, median: null },
+    'a query that only starts or ends like the reference is not its evidence');
+  assert.deepEqual(collection.entries[1].comparables, { status: 'no-reference', currency: 'EUR', count: 0, median: null });
+});
+
+test('an entry’s comparables are its own reference’s, in its own currency, from included rows only', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC  27b' }],
+    collectionEntries: [collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000) })],
+    evidence: [
+      comparable('e1', 'ric 27b', eur(10000)),
+      comparable('e2', 'RIC 27b', eur(30000)),
+      comparable('e3', 'RIC 27b', eur(20000)),
+      comparable('u1', 'RIC 27b', usd(99999)),
+      comparable('u2', 'RIC 27b', usd(99999)),
+      comparable('x1', 'RIC 27b', eur(999999), { inclusion: 'excluded', exclusionReason: 'collector-excluded' }),
+      comparable('o1', 'RIC 28', eur(1)),
+    ],
+  });
+  assert.deepEqual(collection.entries[0].comparables, { status: 'median', currency: 'EUR', count: 3, median: eur(20000) });
+});
+
 test('event drafts require explicit precision and supply editable reminder defaults', () => {
   const timed = createEventDraft('timed');
   assert.deepEqual(timed.reminders.map((item) => item.offsetMinutes), [1440, 60]);
@@ -902,98 +1018,8 @@ test('every field the details form reads from a coin is written back by the draf
   assert.deepStrictEqual(Object.keys(lotFormValues({})).filter((field) => !filled.has(field)), []);
 });
 
-// Add coin after "Discard unsaved changes" discards the details form too: left marked dirty, it went
-// on asking to discard input that was already gone and held the leave-page prompt up. The handler is
-// wired inside the page, so it is read from source, as the calculator's pending guard is.
-// The workspace page itself, loaded the way tests/settings.test.mjs loads Settings: its markup in the
-// fake DOM, its imports handed in as sandbox globals. With `snapshot` it runs against a bridge that
-// answers from the test; without one it runs as the standalone preview.
-async function mountWorkspace({ snapshot = null, hash = '', reply = () => ({ ok: true, value: {} }), confirmAnswers = [] } = {}) {
-  const document = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
-  const commands = [];
-  const prompts = [];
-  const bridge = {
-    getSnapshot: async () => ({ ok: true, value: structuredClone(snapshot) }),
-    sendCommand: async (command) => { commands.push(structuredClone(command)); return reply(command); },
-    subscribeToSnapshots() {},
-  };
-  const sandbox = {
-    ...money, ...evidence, projectExposure, ...sourceLaunchers,
-    mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
-    ...browserGlobals(document, { confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; } }),
-    ...(snapshot ? { browser: { runtime: { sendMessage() {} } } } : {}),
-    importModule: async (specifier) => {
-      if (snapshot && specifier === './browser-api.js') return bridge;
-      throw new Error(`No module ${specifier} in this sandbox.`);
-    },
-    requestAnimationFrame: (callback) => callback(), location: { hash }, addEventListener() {},
-    Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
-    Error, TypeError, RangeError, structuredClone,
-  };
-  sandbox.window = sandbox;
-  sandbox.globalThis = sandbox;
-  const url = new URL('../extension/workspace.js', import.meta.url);
-  vm.runInContext(pageSource(url), vm.createContext(sandbox), { filename: url.pathname });
-  await settle();
-  const $ = (id) => document.getElementById(id);
-  return {
-    $, commands, prompts,
-    async typeDetails(field, value) { $('lot-form').elements[field].value = value; await $('lot-form').emit('input'); },
-    async saveDetails() { await $('lot-form').emit('submit'); await settle(); },
-  };
-}
-
-const workspaceLot = (id, title) => ({
-  id, revision: 1, dataClass: 'collector', title, sourceLinks: [], bidHistory: [], outcome: { status: 'open' },
-  outcomeHistory: [], createdAt: '2026-09-12T12:00:00.000Z', updatedAt: '2026-09-12T12:00:00.000Z',
-});
-const workspaceSnapshot = (lots = []) => ({
-  revision: 7, lots, auctionEvents: [], alternativeGroups: [], evidence: [], collectionEntries: [], alerts: [],
-  recentCommands: [], preferences: { revision: 1, currency: 'USD' },
-});
-const LOT_DRAFT = { id: 'draft-1', kind: 'current-lot', payload: { target: 'watchlist', title: 'Captured coin', pageUrl: 'https://example.test/lot/1' } };
-const draftReply = (lot) => (command) => {
-  if (command.type === 'draft.get') return { ok: true, value: structuredClone(LOT_DRAFT) };
-  if (command.type === 'lot.save') return { ok: true, value: { ...lot, revision: 2 } };
-  return { ok: true, value: {} };
-};
-
-test('Add coin discards every editor of the coin it leaves, the details form included', async () => {
-  const page = await mountWorkspace();
-  assert.equal(page.$('workspace-status').textContent, 'Standalone preview: durable features are unavailable.');
-  await page.$('new-lot').click();
-  await page.typeDetails('title', 'Half-typed coin');
-  await page.$('new-lot').click();
-  assert.deepEqual(page.prompts, ['Discard unsaved changes and open another coin?']);
-  assert.equal(page.$('lot-form').elements.title.value, '', 'the discarded input is gone from the form');
-  await page.$('new-lot').click();
-  assert.equal(page.prompts.length, 1, 'the empty form is not asked about again');
-});
-
-// A lot draft opened from the research popup is consumed by the save that adds its coin. Once the
-// collector discards it, it belongs to no form, so a later save of another coin leaves it where it is.
-test('a lot draft discarded by Add coin or by opening another coin is not consumed by a later save', async () => {
-  const kept = workspaceLot('lot-1', 'Kept coin');
-  for (const discard of [
-    (page) => page.$('new-lot').click(),
-    (page) => page.$('lot-list').children[0].click(),
-  ]) {
-    const page = await mountWorkspace({ snapshot: workspaceSnapshot([kept]), hash: '#lot-draft=draft-1', reply: draftReply(kept) });
-    assert.equal(page.$('lot-form').elements.title.value, 'Captured coin', 'the draft is in the form');
-    await discard(page);
-    assert.deepEqual(page.prompts, ['Discard unsaved changes and open another coin?']);
-    await page.typeDetails('title', 'Another title');
-    await page.saveDetails();
-    assert.ok(page.commands.some(({ type }) => type === 'lot.save'), 'the details were saved');
-    assert.deepEqual(page.commands.filter(({ type }) => type === 'draft.consume'), []);
-  }
-});
-
-test('the save that adds the drafted coin consumes its draft', async () => {
-  const page = await mountWorkspace({ snapshot: workspaceSnapshot(), hash: '#lot-draft=draft-1', reply: draftReply(workspaceLot('lot-2', 'Captured coin')) });
-  await page.saveDetails();
-  assert.deepEqual(page.commands.filter(({ type }) => type === 'draft.consume').map(({ draftId }) => draftId), ['draft-1']);
-});
+// The page's own behaviour — editors, drafts and the leave-page guard — is driven against the real
+// store in tests/workspace-page.test.mjs.
 
 // A live region around the whole coin pane read out every field the page filled in whenever a coin
 // was opened or followed a save. What the page has to say goes through its two status lines.

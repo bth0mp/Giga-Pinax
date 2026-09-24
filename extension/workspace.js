@@ -1,6 +1,6 @@
 import { computeStatistics } from './core/evidence.js';
 import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { projectExposure } from './core/records.js';
+import { projectCollection, projectExposure } from './core/records.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -673,7 +673,18 @@ async function initWorkspace() {
   const setRoute = (focusLink = false) => {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
+    if (active === 'search') offerSelectedReference();
     if (focusLink) document.querySelector(`[data-route="${active}"]`)?.focus({ preventScroll: true });
+  };
+  // A comparable saved while a coin is open belongs, unless the collector says otherwise, to that
+  // coin's reference: an empty query box is filled with it, in view and editable, and typed text is
+  // never replaced. The History route matches saved comparables by exactly this query text.
+  const offerSelectedReference = () => {
+    const reference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
+    if (!reference || $('research-query').value.trim()) return;
+    $('research-query').value = reference;
+    ensureActiveQuery();
+    renderEvidence();
   };
   document.querySelector('.workspace-nav').addEventListener('click', (event) => { routeChangeFromNav = Boolean(event.target.closest('[data-route]')); });
   addEventListener('hashchange', () => { const fromNav = routeChangeFromNav; routeChangeFromNav = false; setRoute(fromNav); });
@@ -1284,12 +1295,53 @@ async function initWorkspace() {
 
   function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', formatMoney({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${formatMoney({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${formatMoney({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
 
+  // One row per currency, each in its own money: a hammer or invoice total covers the entries that
+  // recorded one, and says how many of the currency's entries that is when it is not all of them.
+  function collectionTotalsTable(view) {
+    const wrap = text('div', '', 'table-scroll');
+    const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
+    table.append(text('caption', 'Your recorded totals by currency'));
+    const head = document.createElement('thead'); const headRow = document.createElement('tr');
+    for (const label of ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
+    head.append(headRow);
+    const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
+    const total = (currency, minor, count, of) => {
+      if (!count) return 'None recorded';
+      const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
+      return count < of ? `${amount} (${count} of ${of})` : amount;
+    };
+    const body = document.createElement('tbody');
+    const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
+    for (const [currency, totals] of Object.entries(view.byCurrency)) {
+      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount), total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
+    }
+    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', years(view.unpriced)]);
+    table.append(head, body); wrap.append(table);
+    return wrap;
+  }
+  // The collector's own evidence for the entry's coin, worded as that and never as a value.
+  const collectionComparablesLabel = (item) => {
+    const comparables = item?.comparables;
+    if (!comparables || comparables.status === 'no-reference') return 'No saved comparables: the coin has no reference to match';
+    if (comparables.status === 'no-currency') return 'No saved comparables: no amount recorded, so no currency to compare in';
+    if (comparables.status === 'none') return `No saved comparables for ${item.reference} in ${comparables.currency}`;
+    if (comparables.status === 'too-few') return `Your saved comparables for ${item.reference}: ${comparables.count} in ${comparables.currency}, too few for a median`;
+    return `Your saved comparables for ${item.reference}: median ${formatMoney(comparables.median)} from ${comparables.count} in ${comparables.currency}`;
+  };
   function renderHistory() {
     const root = $('history-list'); root.replaceChildren();
     for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) { const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`)); if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`)); if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)} (your recorded total)`)); card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card); }
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
+    const view = projectCollection(snapshot);
+    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
+    else {
+      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
+      collection.append(collectionTotalsTable(view));
+    }
     for (const entry of snapshot.collectionEntries ?? []) {
       const card = text('article', '', 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
+      card.append(text('p', collectionComparablesLabel(viewByEntry.get(entry.id)), 'collection-comparables'));
       if (entry.reviewReason) { const actions = text('div', '', 'actions'); for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } card.append(actions); }
       collection.append(card);
     }

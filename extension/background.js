@@ -1,5 +1,5 @@
 import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './browser-api.js';
-import { createCommandWriter } from './store.js';
+import { COMMAND_TYPES, createCommandWriter } from './store.js';
 import { reconcileScheduler } from './core/reminders.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
@@ -13,19 +13,6 @@ const MENU_LOOKUP = 'giga-pinax-lookup';
 const MENU_RESEARCH = 'auction-companion:research-selection';
 const MENU_TRACK = 'auction-companion:track-auction';
 const SCHEDULER_ALARM = 'auction-companion:scheduler';
-const COMMAND_TYPES = new Set([
-  'snapshot.get', 'snapshot.raw',
-  'preferences.migrateIfAbsent', 'preferences.save',
-  'lot.save', 'lot.delete',
-  'group.save', 'group.delete', 'group.reorder',
-  'bid.plan', 'bid.place', 'bid.cancel',
-  'lot.outcome.set', 'collection.review.resolve',
-  'event.save', 'event.delete',
-  'evidence.add', 'evidence.include', 'evidence.resolve',
-  'draft.save', 'draft.get', 'draft.consume',
-  'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import', 'quarantine.restore',
-]);
 // The address this extension's own pages are served from; a sender outside it commands nothing.
 const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([

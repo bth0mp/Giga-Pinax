@@ -22,7 +22,7 @@ Features include:
 - 68,123 type records packaged inside the extension, derived from the American Numismatic Society's OCRE, CRRO, PELLA and SCO data, with the English Nomisma.org name of the concepts they carry, so the type record for a RIC, Crawford, Price or Seleucid Coins reference is resolved and named from inside the package, with no request to numismatics.org or nomisma.org and with the network disabled;
 - public type data from American Numismatic Society projects and Nomisma.org for a reference the package does not hold, and for every Bopearachchi reference;
 - session sale-price research from acsearch, searched as the phrase dealers cite, counting how many results cite the reference and keeping the rest out of the median, with collector-controlled exclusions, an optional denomination filter, medians per dealer grade, and consistent count, range, median and summary calculations;
-- auction identity and duplicate checks, workflow queues, reminders, notes and outcomes;
+- auction identity and duplicate checks, workflow queues, reminders, notes and outcomes, with a collection history that totals recorded hammer and invoice amounts within each currency beside the collector's own saved comparables, never as a valuation;
 - bid totals and affordable-bid calculations with premium, shipping, payment fees and either a collector-entered fixed increment or a collector-entered house increment ladder;
 - provenance, measurements, condition, external photo URL links and two-to-four coin comparison; and
 - browser-local records with explicit JSON backup, a reviewed merge or replace import that copies the current records to disk first, and a raw rescue export.
