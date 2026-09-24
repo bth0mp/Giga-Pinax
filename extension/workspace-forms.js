@@ -93,7 +93,10 @@ export function premiumInputText(buyerPremiumBps) {
  * @returns {{ amount: string, currency: string, premium: string }}
  */
 export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
-  const terms = lot?.plannedBid ?? lot?.activeBid;
+  // The bid in force binds; a plan is only what the form shows before one is placed. Right after a cancellation the
+  // cancelled terms fill the form, for the collector to save again or change; the store keeps no plan for them.
+  const last = lot?.bidHistory?.at(-1);
+  const terms = lot?.activeBid ?? lot?.plannedBid ?? (last?.action === 'externally-cancelled' && last.amount ? last : undefined);
   return {
     amount: moneyInputText(terms?.amount, locale),
     currency: terms?.amount?.currency ?? fallbackCurrency,
@@ -212,6 +215,41 @@ export function offeredEventFromDraft({ closesAt, startsAt, pageUrl } = {}, time
   };
 }
 
+// The house an auction is from: its name cut before the sale's number - a token holding a digit, a Roman numeral, or
+// `E-Sale`, `Auction`, `Auktion` or `Sale` followed by one - with case and spacing set aside. `Roma Numismatics E-Sale
+// 130` and `Roma Numismatics Auction XXV` are both `roma numismatics`; `Heritage Europe 78` is not `Heritage 3110`'s
+// house. Fewer than three characters name no house.
+const ROMAN_NUMERAL = /^(?=[mdclxvi])m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$/i;
+const SALE_WORD = /^(?:e-?sale|e-?auction|auction|auktion|sale)$/i;
+const bare = (token) => token.replace(/[.,:;]+$/, '');
+const saleNumber = (token) => /\d/.test(token) || ROMAN_NUMERAL.test(bare(token));
+const houseKey = (name) => {
+  const tokens = String(name ?? '').normalize('NFKC').trim().split(/\s+/).filter(Boolean);
+  const kept = [];
+  for (const [index, token] of tokens.entries()) {
+    if (saleNumber(token) || (SALE_WORD.test(bare(token)) && saleNumber(tokens[index + 1] ?? ''))) break;
+    kept.push(token);
+  }
+  const key = kept.join(' ').toLocaleLowerCase('en-US').replace(/[\s,.:;–-]+$/, '');
+  return key.length >= 3 ? key : '';
+};
+// The time zone the collector gave the same house's most recently saved auction, offered for its next one: the saved
+// auctions are what remembers it, so nothing new is stored. Only the same house name proposes a zone; any other name,
+// however alike, leaves the collector's own zone.
+/**
+ * @param {Array<{ id?: string, name?: string, timeZone?: string, updatedAt?: string }> | null | undefined} events
+ * @param {*} name
+ * @param {string | null} [excludeId]
+ * @returns {{ timeZone: string, from: string } | null}
+ */
+export function rememberedZone(events, name, excludeId = null) {
+  const key = houseKey(name);
+  if (!key) return null;
+  const match = (events ?? []).filter((event) => event.id !== excludeId && event.timeZone && houseKey(event.name) === key)
+    .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))[0];
+  return match ? { timeZone: String(match.timeZone), from: String(match.name) } : null;
+}
+
 /**
  * @param {'timed' | 'date-only'} [precision]
  * @returns {{ precision: 'timed' | 'date-only', reminders: Array<Record<string, *>> }}
@@ -262,19 +300,29 @@ export function moneyInputText(money, locale = 'en-US') {
   return `${money.minor < 0 ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
 }
 
+// The outcome form opens on the action the collector is about to take: an open lot on Won, in the currency of the bid
+// in force (else the plan's, else the default), and a settled lot on what was recorded. The placed bid is offered as
+// the hammer box's hint only, never as its value, and a won coin's acquisition day is the attached auction's, else
+// today.
 /**
  * @param {Lot | null | undefined} lot
  * @param {string} [locale]
+ * @param {{ defaultCurrency?: string, event?: { localDate?: string } | null, today?: string }} [context]
  * @returns {Record<string, string>}
  */
-export function outcomeDraftForLot(lot, locale = 'en-US') {
+export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'USD', event = null, today = '' } = {}) {
+  const settled = Boolean(lot?.outcome?.status && lot.outcome.status !== 'open');
+  const bidCurrency = lot?.activeBid?.amount?.currency ?? lot?.plannedBid?.amount?.currency ?? defaultCurrency;
+  const hammerCurrency = lot?.outcome?.hammer?.currency ?? bidCurrency;
   return {
-    status: lot?.outcome?.status ?? 'won',
+    status: settled ? String(lot?.outcome?.status) : 'won',
     hammer: moneyInputText(lot?.outcome?.hammer, locale),
-    hammerCurrency: lot?.outcome?.hammer?.currency ?? 'USD',
+    hammerCurrency,
     invoice: moneyInputText(lot?.outcome?.actualInvoice, locale),
-    invoiceCurrency: lot?.outcome?.actualInvoice?.currency ?? 'USD',
+    invoiceCurrency: lot?.outcome?.actualInvoice?.currency ?? hammerCurrency,
     bindingActive: '',
+    hammerPlaceholder: !settled && lot?.activeBid?.amount ? `Your bid ${moneyInputText(lot.activeBid.amount, locale)}` : '',
+    acquisitionDate: lot?.collectionEntryId ? '' : event?.localDate ?? today,
   };
 }
 
@@ -318,4 +366,26 @@ export function reminderControlsForPrecision(reminders, precision) {
   }
   const [first, second] = (reminders ?? []).filter((item) => item.kind === 'offset');
   return { firstEnabled: Boolean(first), firstValue: first?.offsetMinutes ?? 1440, secondEnabled: Boolean(second), secondValue: second?.offsetMinutes ?? 60 };
+}
+
+// Where a record path the store refuses (`lots[0].coinDetails.photoUrls[0]`) lives in the details form, so the page can
+// open its section and name it. Null for a part of the record the form holds elsewhere or not at all.
+/** @type {Array<[RegExp, (match: RegExpExecArray) => string]>} */
+const LOT_FIELD_PATHS = [
+  [/\.coinDetails\.photoUrls\[(\d)\]$/, (match) => `photoUrl${Number(match[1]) + 1}`],
+  [/\.coinDetails\.weightMg$/, () => 'weightGrams'], [/\.coinDetails\.diameterHundredthsMm$/, () => 'diameterMm'], [/\.coinDetails\.condition$/, () => 'condition'],
+  [/\.auctionContext\.pageUrl$/, () => 'auctionPageUrl'], [/\.auctionContext\.canonicalUrl$/, () => 'auctionCanonicalUrl'], [/\.auctionContext\.house$/, () => 'auctionHouse'],
+  [/\.auctionContext\.saleId$/, () => 'auctionSaleId'], [/\.auctionContext\.lotNumber$/, () => 'auctionLotNumber'],
+  [/\.sourceLinks\[\d+\](?:\.url)?$/, () => 'sourceUrl'], [/^[^.]*\.(title|reference|lotNumber|notes)$/, (match) => match[1]],
+];
+/**
+ * @param {*} path
+ * @returns {string | null}
+ */
+export function lotFieldForPath(path) {
+  for (const [pattern, field] of LOT_FIELD_PATHS) {
+    const match = pattern.exec(String(path ?? ''));
+    if (match) return field(match);
+  }
+  return null;
 }

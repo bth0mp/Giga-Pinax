@@ -145,16 +145,29 @@ test('keeps group order compact and records planned, placed, revised, and cancel
     lotId: first.value.id,
     expectedRevision: 4,
   }));
-  const cleared = reduce(cancelled.snapshot, command('bid.plan', {
-    lotId: first.value.id,
-    expectedRevision: 5,
-    plannedBid: null,
-  }));
-  const lot = cleared.value;
+  const lot = cancelled.value;
   assert.equal('activeBid' in lot, false);
+  // Placing the bid settles the plan: it is kept in the history, not as a second figure beside the bid.
+  assert.equal('plannedBid' in lot, false);
   assert.deepEqual(lot.bidHistory.map(({ action }) => action), [
-    'planned-revised', 'placed', 'active-revised', 'externally-cancelled', 'planned-cleared',
+    'planned-revised', 'planned-cleared', 'placed', 'active-revised', 'externally-cancelled',
   ]);
+});
+
+// N4: a placed bid replaces the plan it carried out. The plan stays in the bid history as a cleared plan with its own
+// amount and premium, and the lot no longer shows the planned figure beside the one in force.
+test('placing a bid clears the plan into the bid history', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Plan lot', sourceLinks: [] } }));
+  const planned = reduce(created.snapshot, command('bid.plan', { lotId: created.value.id, expectedRevision: 0, plannedBid: { amount: { currency: 'EUR', minor: 120000 }, buyerPremiumBps: 2000 } }));
+  const placed = reduce(planned.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 1, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } }));
+  assert.equal('plannedBid' in placed.value, false);
+  assert.deepEqual(placed.value.activeBid.amount, { currency: 'EUR', minor: 130000 });
+  assert.deepEqual(placed.value.bidHistory.map(({ action, amount, buyerPremiumBps }) => [action, amount.minor, buyerPremiumBps]), [
+    ['planned-revised', 120000, 2000], ['planned-cleared', 120000, 2000], ['placed', 130000, 2000],
+  ]);
+  // With no plan to clear, placing records only the placement.
+  const direct = reduce(created.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 0, activeBid: { amount: { currency: 'EUR', minor: 5000 } } }));
+  assert.deepEqual(direct.value.bidHistory.map(({ action }) => action), ['placed']);
 });
 
 test('moving a lot between groups revises both groups so stale source reorders conflict', () => {
@@ -2216,4 +2229,49 @@ test('a version one backup document imports through the writer, replacing or mer
   assert.equal(folded.value.preferences.currency, 'CHF');
   for (const key of RESEARCH_FORM_KEYS) assert.equal(key in folded.value.preferences, false, key);
   assert.deepEqual(folded.value.lots, V1_ROOT.lots);
+});
+
+// N7: a reminder that passed while the browser was closed is missed. The collector sees it and acknowledges it like a
+// due one, and it stays acknowledged through the next reconcile; a missed reminder cannot be snoozed.
+test('a missed alert can be acknowledged and stays so, but not snoozed', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Past sale', eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+      reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const [missed] = state.alerts;
+  assert.equal(missed.status, 'missed');
+  const snoozed = applyCommand(state, command('alert.snooze', { triggerIds: [missed.triggerId], snoozedUntil: LATER }), context());
+  assert.equal(snoozed.error.code, 'validation');
+  state = reduce(state, command('alert.ack', { triggerIds: [missed.triggerId] })).snapshot;
+  assert.equal(state.alerts[0].status, 'acknowledged');
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  assert.equal(state.alerts[0].status, 'acknowledged');
+  const pastSale = reduce(reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event: {
+    name: 'Past sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+    reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }] } })).snapshot, command('scheduler.reconcile')).snapshot;
+  const all = reduce(pastSale, command('alert.markAllRead'));
+  assert.equal(all.snapshot.alerts[0].status, 'acknowledged', 'mark all read takes missed alerts too');
+});
+
+// Review Minor 1: a second tab acknowledging an alert the first has just acknowledged is satisfied, not refused; an id
+// that names no alert is still refused.
+test('acknowledging an alert already acknowledged succeeds without a second change', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event: {
+    name: 'Past sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '10:00', timeZone: 'UTC',
+    reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }] } })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  const [alert] = state.alerts;
+  state = reduce(state, command('alert.ack', { triggerIds: [alert.triggerId] })).snapshot;
+  const again = reduce(state, command('alert.ack', { triggerIds: [alert.triggerId] }));
+  assert.equal(again.value.changed, 0);
+  assert.equal(again.snapshot.alerts[0].revision, state.alerts[0].revision, 'nothing was written twice');
+  const unknown = applyCommand(state, command('alert.ack', { triggerIds: [alert.triggerId, 'no-such-alert'] }), context());
+  assert.equal(unknown.error.code, 'validation');
+  const snooze = applyCommand(state, command('alert.snooze', { triggerIds: [alert.triggerId], snoozedUntil: LATER }), context());
+  assert.equal(snooze.error.code, 'validation', 'an acknowledged alert is not snoozed back');
 });

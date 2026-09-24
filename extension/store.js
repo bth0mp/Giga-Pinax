@@ -279,6 +279,11 @@ function mutation(snapshot, command, context) {
         }
       } else if (command.type === 'bid.place') {
         const action = lot.activeBid ? 'active-revised' : 'placed';
+        // The placed bid carries the plan out: the plan is kept in the history, not beside the bid in force.
+        if (lot.plannedBid) {
+          appendBidHistory(lot, 'planned-cleared', lot.plannedBid, context);
+          delete lot.plannedBid;
+        }
         lot.activeBid = { ...clone(command.activeBid), placedAt: now };
         appendBidHistory(lot, action, command.activeBid, context);
       } else {
@@ -509,9 +514,14 @@ function mutation(snapshot, command, context) {
     case 'alert.markAllRead': {
       const ids = command.type === 'alert.markAllRead' ? null : new Set(command.triggerIds ?? []);
       let changed = 0;
+      // A second view acknowledging what the first already has is satisfied, not refused; nothing is written twice.
+      let satisfied = 0;
       for (const alert of next.alerts) {
         if (ids && !ids.has(alert.triggerId)) continue;
-        if (!['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)) continue;
+        if (ids && command.type === 'alert.ack' && alert.status === 'acknowledged') { satisfied += 1; continue; }
+        // A missed reminder is acknowledged like a due one, but snoozing it would bring back a moment already past.
+        const actionable = command.type === 'alert.snooze' ? ['due', 'claimed', 'delivered', 'snoozed'] : ['due', 'claimed', 'delivered', 'snoozed', 'missed'];
+        if (!actionable.includes(alert.status)) continue;
         if (command.type === 'alert.snooze') {
           alert.status = 'snoozed';
           alert.snoozedUntil = command.snoozedUntil;
@@ -523,7 +533,7 @@ function mutation(snapshot, command, context) {
         alert.updatedAt = now;
         changed += 1;
       }
-      if (ids && changed !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
+      if (ids && changed + satisfied !== ids.size) return fail('validation', 'One or more alert IDs are not actionable.', 'triggerIds');
       value = { changed };
       break;
     }
@@ -863,7 +873,8 @@ export function createCommandWriter(storageArea, context) {
         error: clone(applied.error),
       };
       const code = ['conflict', 'unsupported'].includes(applied.error.code) ? applied.error.code : 'validation';
-      return errorReply(command, code, 'not-committed', applied.error.message);
+      // A refused value carries the path of the field it was read from, so a page can point at the field.
+      return { ...errorReply(command, code, 'not-committed', applied.error.message), ...(code === 'validation' ? { error: clone(applied.error) } : {}) };
     }
     if (!applied.value.mutated) {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: applied.value.value };

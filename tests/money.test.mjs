@@ -31,9 +31,63 @@ test('calculates full bid cost with half-up percentage fees', () => {
     shippingMinor: 1000, paymentFeeBps: 300, paymentFeeMinor: 20,
   }), { ok: true, value: {
     hammer: { currency: 'GBP', minor: 10000 }, premium: { currency: 'GBP', minor: 2250 },
+    premiumVat: { currency: 'GBP', minor: 0 }, platformFee: { currency: 'GBP', minor: 0 },
     hammerPlusPremium: { currency: 'GBP', minor: 12250 }, shipping: { currency: 'GBP', minor: 1000 },
     paymentFee: { currency: 'GBP', minor: 418 }, total: { currency: 'GBP', minor: 13668 },
   }});
+});
+
+// Künker: 25 % premium and 19 % German VAT on that premium, which is 29.75 % on the hammer, not 25 %.
+// A live platform adds its own fee on the hammer alone. The percentage payment fee then applies to
+// everything the invoice carries, these two included.
+test('VAT on the premium and a platform fee on the hammer join the cost before the payment fee', () => {
+  const hammer = { currency: 'CHF', minor: 100000 };
+  assert.equal(calculateBidCost(hammer, 2500, { premiumVatBps: 1900 }).value.total.minor, 129750,
+    'CHF 1,000 at 25 % + 19 % VAT on the premium costs CHF 1,297.50');
+  assert.deepEqual(calculateBidCost(hammer, 2500, {
+    premiumVatBps: 1900, platformFeeBps: 300, shippingMinor: 2000, paymentFeeBps: 200,
+  }), { ok: true, value: {
+    hammer, premium: { currency: 'CHF', minor: 25000 }, premiumVat: { currency: 'CHF', minor: 4750 },
+    platformFee: { currency: 'CHF', minor: 3000 }, hammerPlusPremium: { currency: 'CHF', minor: 125000 },
+    shipping: { currency: 'CHF', minor: 2000 }, paymentFee: { currency: 'CHF', minor: 2695 },
+    total: { currency: 'CHF', minor: 137445 },
+  }});
+  // The VAT is worked out on the premium as invoiced, half up: 20 % of £0.05 is £0.01.
+  assert.equal(calculateBidCost({ currency: 'GBP', minor: 25 }, 2000, { premiumVatBps: 2000 }).value.premiumVat.minor, 1);
+  for (const key of ['premiumVatBps', 'platformFeeBps']) {
+    for (const bad of [-1, 10001, 1.5, '19', null]) {
+      assert.equal(calculateBidCost(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
+      assert.equal(calculateAffordableBid(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
+    }
+  }
+});
+
+// The one direction a budget answer must never err in is too high.
+test('the affordable hammer counts VAT on the premium and the platform fee, so it is never too high', () => {
+  const budget = { currency: 'CHF', minor: 129750 };
+  assert.equal(calculateAffordableBid(budget, 2500, { premiumVatBps: 1900 }).value.hammer.minor, 100000);
+  assert.equal(calculateAffordableBid(budget, 2500).value.hammer.minor, 103800, 'without the VAT the answer was CHF 38 too high');
+  let seed = 20260924;
+  const next = (bound) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % bound;
+  };
+  for (let index = 0; index < 300; index += 1) {
+    const money = { currency: 'EUR', minor: next(2_000_000) };
+    const buyerPremiumBps = next(3001);
+    const options = {
+      premiumVatBps: next(2600), platformFeeBps: next(500), shippingMinor: next(5000), paymentFeeBps: next(400),
+      incrementMinor: 1 + next(2000), minimumBidMinor: next(20000),
+    };
+    const result = calculateAffordableBid(money, buyerPremiumBps, options);
+    if (!result.ok) {
+      assert.equal(result.error.code, 'no-affordable-bid', `index ${index}`);
+      continue;
+    }
+    assert.ok(result.value.total.minor <= money.minor, `index ${index} within budget`);
+    const above = calculateBidCost({ currency: 'EUR', minor: result.value.hammer.minor + options.incrementMinor }, buyerPremiumBps, options);
+    assert.ok(above.value.total.minor > money.minor, `index ${index} maximal`);
+  }
 });
 
 test('finds the highest affordable hammer on the configured bid grid', () => {
@@ -304,13 +358,41 @@ test('accepts either decimal separator and grouped amounts whatever the locale',
   }
 });
 
-test('refuses a lone separator before three digits and quotes the amount that was typed', () => {
-  for (const text of ['1,200', '1.200', '1.001', '12,345']) {
-    const parsed = parseMoney(text, 'USD', 'en-US');
-    assert.equal(parsed.error.code, 'ambiguous-amount', text);
-    assert.equal(parsed.error.message, `“${text}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`);
+test('a lone separator before three digits is a thousands group where the browser locale groups with it', () => {
+  // Where "," groups thousands and "." is the decimal mark, "1,200" is how the collector writes twelve hundred.
+  for (const locale of ['en-US', 'en-GB', 'en-IN']) {
+    for (const [text, minor] of [['1,200', 120000], ['12,345', 1234500], ['999,000', 99900000]]) {
+      assert.deepEqual(parseMoney(text, 'USD', locale), { ok: true, value: { currency: 'USD', minor } }, `${text} in ${locale}`);
+    }
   }
-  assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'ambiguous-amount');
+  // And where "." groups and "," is the decimal mark, "1.200" is.
+  for (const locale of ['de-DE', 'es-ES', 'it-IT', 'nl-NL']) {
+    assert.deepEqual(parseMoney('1.200', 'EUR', locale), { ok: true, value: { currency: 'EUR', minor: 120000 } }, locale);
+  }
+});
+
+test('refuses a lone separator before three digits where the locale does not group with it, and quotes the amount', () => {
+  const message = (text) => `“${text}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
+  for (const [locale, texts] of [
+    ['en-US', ['1.200', '1.001', '0,200']],
+    // "," is the decimal mark here, so "1,200" could be one point two.
+    ['de-DE', ['1,200', '12,345']],
+    ['fr-FR', ['1,200', '1.200']],
+    ['de-CH', ['1,200', '1.200']],
+    // A malformed tag, which Intl rejects, gives no grouping to trust.
+    ['not a locale!', ['1,200', '1.200']],
+  ]) {
+    for (const text of texts) {
+      const parsed = parseMoney(text, 'USD', locale);
+      assert.equal(parsed.error?.code, 'ambiguous-amount', `${text} in ${locale}`);
+      assert.equal(parsed.error.message, message(text));
+    }
+  }
+  assert.equal(parsePremiumPercent('1,200', 'de-DE').error.code, 'ambiguous-amount');
+  // Twelve hundred percent is read as the amount it is, and refused as a premium.
+  assert.equal(parsePremiumPercent('1,200', 'en-US').error.code, 'invalid-basis-points');
+  // Two decimals are a decimal in every locale.
+  assert.deepEqual(parseMoney('1,20', 'USD', 'en-US'), { ok: true, value: { currency: 'USD', minor: 120 } });
 });
 
 test('rejects malformed money with an error that names the accepted forms', () => {
