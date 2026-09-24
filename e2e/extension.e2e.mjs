@@ -9,6 +9,9 @@
 //   step 17  Amounts in a browser set to Arabic (Settings part only): a house premium of 22.5 reads back as `22.50`, in
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
+// and the popup's frame, which only a real layout shows: its header and tabs stay put through a lot lookup after a list
+// of types, the card stays where it is when acsearch answers after it, and Ctrl+K and the skip link reach the Reference box.
+//
 // The rest of that list needs a signed-in acsearch session, a real auction page, a second browser or a person's eye.
 //
 // The browser runs with the unpacked dist/brave/ (build it first: python scripts/build.py brave) in a fresh profile. No
