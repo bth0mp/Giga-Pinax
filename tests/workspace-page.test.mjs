@@ -215,3 +215,60 @@ test('the save that adds the drafted coin consumes its draft', async () => {
   assert.deepEqual(background.root().drafts, []);
   assert.ok(storedLot(background, 'Captured coin'));
 });
+
+// The History route's collection view, from records written through the store as the workspace
+// writes them: an outcome saved as won with "Add a won coin to collection history", and comparables
+// saved by hand under the coin's reference.
+async function wonCoin(background, { title, reference, hammer, actualInvoice, acquisitionDate }) {
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title, sourceLinks: [], ...(reference ? { reference } : {}) } });
+  const won = await background.send({
+    type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: saved.value.revision,
+    outcome: { status: 'won', hammer, ...(actualInvoice ? { actualInvoice } : {}) },
+    addToCollection: { title, acquisitionDate, sourceLinks: [] },
+  });
+  assert.equal(won.ok, true, won.message);
+}
+async function savedComparable(background, queryLabel, lotNumber, amount) {
+  const reply = await background.send({ type: 'evidence.add', observation: {
+    queryId: `00000000-0000-4000-9000-${String(lotNumber).padStart(12, '0')}`, queryLabel, source: 'manual',
+    auctionHouse: 'Test House', auctionDate: '2025-03-01', lotNumber: String(lotNumber), priceBasis: 'hammer', amount,
+  } });
+  assert.equal(reply.ok, true, reply.message);
+}
+const cells = (row) => row.querySelectorAll('th, td').map((cell) => cell.textContent);
+
+test('the History route totals the collection per currency and shows each entry’s own saved comparables', async () => {
+  const background = await createWorkspaceBackground();
+  await wonCoin(background, { title: 'Philip I, antoninianus', reference: 'RIC 27b', hammer: { currency: 'EUR', minor: 20000 }, actualInvoice: { currency: 'EUR', minor: 25000 }, acquisitionDate: '2019-04-01' });
+  await wonCoin(background, { title: 'Nero, denarius', reference: 'RIC 60', hammer: { currency: 'USD', minor: 50000 }, acquisitionDate: '2023-06-15' });
+  await wonCoin(background, { title: 'Athens, owl', hammer: { currency: 'EUR', minor: 100000 }, acquisitionDate: '2021-01-20' });
+  await savedComparable(background, 'RIC 27b', 1, { currency: 'EUR', minor: 15000 });
+  await savedComparable(background, 'RIC 27b', 2, { currency: 'EUR', minor: 18000 });
+  await savedComparable(background, 'RIC 27b', 3, { currency: 'EUR', minor: 30000 });
+  await savedComparable(background, 'RIC 27b', 4, { currency: 'USD', minor: 99900 });
+  const page = await mountWorkspace({ background, hash: '#history' });
+
+  assert.equal(page.$('route-history').hidden, false);
+  const collection = page.$('collection-list');
+  assert.match(collection.querySelector('.collection-note').textContent, /your own records.*not an appraisal or a valuation.*no amount is converted/i);
+  const table = collection.querySelector('#collection-totals');
+  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']);
+  assert.deepEqual(table.querySelector('tbody').querySelectorAll('tr').map(cells), [
+    ['USD', '1', '$500.00', 'None recorded', '2023'],
+    ['EUR', '2', '€1,200.00', '€250.00 (1 of 2)', '2019–2021'],
+  ]);
+  const lines = collection.querySelectorAll('.collection-comparables').map((line) => line.textContent);
+  assert.deepEqual(lines, [
+    'Your saved comparables for RIC 27b: median €180.00 from 3 in EUR',
+    'No saved comparables for RIC 60 in USD',
+    'No saved comparables: the coin has no reference to match',
+  ]);
+});
+
+test('the History route says so when there is no collection yet', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Watched only', sourceLinks: [] } });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  assert.equal(page.$('collection-totals'), null);
+  assert.ok(page.$('collection-list').textContent.includes('No collection entries yet.'));
+});

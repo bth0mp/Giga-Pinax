@@ -190,3 +190,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* two choices, **RIC VI Lugdunum 15** and **RIC V Diocletian 15**, and neither opened on its own. Then
     `Probus. Antoninianus. RIC 40 (Ticinum).`
     *Expected:* **RIC V Probus 40** is offered, and Constantine's RIC VII Ticinum 40 appears nowhere.
+
+23. **The collection table fits its panel.** With at least one won coin added to collection history, open the
+    workspace's **History** tab, first in a wide window and then narrowed to phone width.
+    *Expected:* the per-currency table reads whole — its columns scroll inside the panel rather than pushing the page
+    sideways — and the note above it says the figures are your own records and saved comparables, not an appraisal or a
+    valuation. Each entry names its saved comparables or says it has none.

@@ -53,6 +53,7 @@ import {
   premiumInputText,
 } from '../extension/workspace.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
+import { projectCollection } from '../extension/core/records.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -703,6 +704,112 @@ test('exposure view keeps currency and event totals distinct', () => {
   assert.equal(sections[1].knownHammerPlusBpMinor, 1200);
   assert.equal(sections[1].unknownPremiumCount, 1);
   assert.equal(sections[1].events[0].name, 'Auction A');
+});
+
+// The collection view: the collector's own acquisitions and their own saved comparables, each
+// currency on its own. Nothing is converted, nothing is added across currencies, and no figure here
+// is an appraisal.
+const collectionEntry = (id, lotId, acquisitionDate, amounts = {}) => ({
+  id, lotId, title: `Coin ${id}`, acquisitionDate, sourceLinks: [], revision: 0, ...amounts,
+});
+const eur = (minor) => ({ currency: 'EUR', minor });
+const usd = (minor) => ({ currency: 'USD', minor });
+const comparable = (id, queryLabel, hammer, extra = {}) => ({
+  id, dataClass: 'collector', inclusion: 'included',
+  resolved: { priceBasis: 'hammer', resolution: 'source-agreement', hammer },
+  observations: [{ id: `${id}-seen`, queryId: `query-${queryLabel}`, queryLabel, source: 'manual', auctionHouse: 'House', lotNumber: id, auctionDate: '2025-05-01', priceBasis: 'hammer', amount: hammer }],
+  ...extra,
+});
+
+test('the collection is totalled within each currency, never across them', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC 27b' }, { id: 'lot-b' }, { id: 'lot-c' }, { id: 'lot-d' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000), actualInvoice: eur(125000) }),
+      collectionEntry('b', 'lot-b', '2021-02-03', { hammer: usd(50000), actualInvoice: usd(62000) }),
+      collectionEntry('c', 'lot-c', '2023-11-30', { hammer: eur(20000) }),
+      // Paid in another currency than it was knocked down in: each amount stays in its own.
+      collectionEntry('d', 'lot-d', '2020-07-07', { hammer: eur(30000), actualInvoice: { currency: 'CHF', minor: 40000 } }),
+    ],
+  });
+  assert.deepEqual(Object.keys(collection.byCurrency), ['USD', 'EUR', 'CHF']);
+  assert.deepEqual(collection.byCurrency.EUR, {
+    entryCount: 3, hammerCount: 3, hammerMinor: 150000, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
+  });
+  assert.deepEqual(collection.byCurrency.USD, {
+    entryCount: 1, hammerCount: 1, hammerMinor: 50000, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
+  });
+  assert.deepEqual(collection.byCurrency.CHF, {
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
+  });
+  assert.deepEqual(collection.unpriced, { entryCount: 0, firstYear: null, lastYear: null });
+  assert.deepEqual(collection.entries.map(({ id, currency, reference }) => [id, currency, reference]), [
+    ['a', 'EUR', 'RIC 27b'], ['b', 'USD', ''], ['c', 'EUR', ''], ['d', 'EUR', ''],
+  ]);
+});
+
+test('a collection total too large to hold exactly is withheld rather than rounded', () => {
+  const collection = projectCollection({
+    lots: [],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(Number.MAX_SAFE_INTEGER) }),
+      collectionEntry('b', 'lot-b', '2020-05-01', { hammer: eur(1), actualInvoice: eur(5) }),
+    ],
+  });
+  assert.equal(collection.byCurrency.EUR.hammerMinor, null);
+  assert.equal(collection.byCurrency.EUR.hammerCount, 2);
+  assert.equal(collection.byCurrency.EUR.invoiceMinor, 5);
+});
+
+test('an entry with no hammer is counted without one, and one with no amount at all has no currency', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'Price 23' }, { id: 'lot-b', reference: 'Price 23' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2018-01-01', { actualInvoice: usd(9000) }),
+      collectionEntry('b', 'lot-b', '2024-01-01'),
+    ],
+    evidence: [comparable('e1', 'Price 23', usd(8000))],
+  });
+  assert.deepEqual(collection.byCurrency.USD, {
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
+  });
+  assert.deepEqual(collection.unpriced, { entryCount: 1, firstYear: 2024, lastYear: 2024 });
+  const [invoiced, unpriced] = collection.entries;
+  assert.equal(invoiced.currency, 'USD', 'the invoice gives the entry its currency');
+  assert.deepEqual(invoiced.comparables, { status: 'too-few', currency: 'USD', count: 1, median: null });
+  assert.equal(unpriced.currency, null);
+  assert.deepEqual(unpriced.comparables, { status: 'no-currency', currency: null, count: 0, median: null });
+});
+
+test('an entry with no saved comparables for its reference says so', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC 27b' }, { id: 'lot-b' }],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000) }),
+      collectionEntry('b', 'lot-b', '2019-05-01', { hammer: eur(100000) }),
+    ],
+    evidence: [comparable('e1', 'RIC 27', eur(1)), comparable('e2', 'RIC 27b Philip', eur(2))],
+  });
+  assert.deepEqual(collection.entries[0].comparables, { status: 'none', currency: 'EUR', count: 0, median: null },
+    'a query that only starts or ends like the reference is not its evidence');
+  assert.deepEqual(collection.entries[1].comparables, { status: 'no-reference', currency: 'EUR', count: 0, median: null });
+});
+
+test('an entry’s comparables are its own reference’s, in its own currency, from included rows only', () => {
+  const collection = projectCollection({
+    lots: [{ id: 'lot-a', reference: 'RIC  27b' }],
+    collectionEntries: [collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000) })],
+    evidence: [
+      comparable('e1', 'ric 27b', eur(10000)),
+      comparable('e2', 'RIC 27b', eur(30000)),
+      comparable('e3', 'RIC 27b', eur(20000)),
+      comparable('u1', 'RIC 27b', usd(99999)),
+      comparable('u2', 'RIC 27b', usd(99999)),
+      comparable('x1', 'RIC 27b', eur(999999), { inclusion: 'excluded', exclusionReason: 'collector-excluded' }),
+      comparable('o1', 'RIC 28', eur(1)),
+    ],
+  });
+  assert.deepEqual(collection.entries[0].comparables, { status: 'median', currency: 'EUR', count: 3, median: eur(20000) });
 });
 
 test('event drafts require explicit precision and supply editable reminder defaults', () => {
