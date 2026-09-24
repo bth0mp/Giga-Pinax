@@ -360,6 +360,29 @@ test('pasted text that is not house presets changes no row and says why', async 
   assert.equal(page.element('paste-presets-text').value, '[{"name":"Roma","buyerPremiumBps":20000}]', 'the text stays to be corrected');
 });
 
+// A list of houses reads as a list: each ladder is folded under a line saying what it holds, and it
+// opens itself when Save has something to say about it.
+test('each ladder is folded under a line that says what it holds, and opens on its own error', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [
+    { name: 'Leu', buyerPremiumBps: 2000, incrementLadder: { currency: 'CHF', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 10000 }] } },
+    { name: 'Roma', buyerPremiumBps: 2000 },
+  ] }) }) });
+  const [leu, roma] = page.document.querySelectorAll('.premium-row');
+  const folded = (row) => row.querySelector('.premium-ladder-details');
+  assert.equal(folded(leu).querySelector('summary').textContent, 'Increment ladder · 2 tiers in CHF');
+  assert.equal(folded(roma).querySelector('summary').textContent, 'Increment ladder · none');
+  assert.equal(folded(leu).open, false);
+  assert.ok(folded(leu).querySelector('.premium-ladder'), 'the tiers box is inside the fold');
+  const tiers = roma.querySelector('.premium-ladder');
+  tiers.value = '5: 5';
+  await tiers.emit('input');
+  assert.equal(folded(roma).querySelector('summary').textContent, 'Increment ladder · 1 tier in USD');
+  await page.element('save-settings').click();
+  assert.equal(folded(roma).open, true);
+  assert.equal(page.document.activeElement, tiers);
+  assert.deepEqual(page.commands, []);
+});
+
 test('removing a row takes it out of the next save', async () => {
   const page = await openSettings({
     snapshot: snapshotWith({
@@ -1194,13 +1217,23 @@ test('the bundled-data panel names every corpus the package carries, and only th
   assert.deepEqual(Object.keys(LOCAL_CORPORA).sort(), bundled);
   const page = await openSettings({ catalogueMetadata: async (corpus) => corpusMetadata(corpus) });
 
-  // One row per corpus, each built from that corpus's own metadata rather than from a sentence written here.
+  // One table row per corpus, each built from that corpus's own metadata rather than from a sentence written here:
+  // the bundle, its type counts and what it leaves out, the day its local files were made, and its source and licence.
   const rows = page.element('catalogue-list').children;
-  assert.deepEqual(rows.map((row) => row.querySelector('strong').textContent),
-    Object.keys(LOCAL_CORPORA).map((corpus) => `${LOCAL_CORPORA[corpus].label}: `));
+  assert.deepEqual(rows.map((row) => row.querySelector('th').textContent), Object.keys(LOCAL_CORPORA).map((corpus) => LOCAL_CORPORA[corpus].label));
+  const count = (value) => new Intl.NumberFormat('en-GB').format(value);
   for (const [index, corpus] of Object.keys(LOCAL_CORPORA).entries()) {
-    assert.ok(rows[index].textContent.includes(catalogueMetadataText(corpusMetadata(corpus))), corpus);
-    assert.deepEqual(rows[index].querySelectorAll('a').map((link) => link.textContent), ['Source', 'Licence'], corpus);
+    const metadata = corpusMetadata(corpus);
+    const [types, files, links] = rows[index].querySelectorAll('td');
+    assert.equal(types.querySelector('span').textContent, `${count(metadata.activeRecordCount)} active of ${count(metadata.recordCount)}`, corpus);
+    assert.equal(types.querySelector('small')?.textContent,
+      metadata.excluded ? `Leaving out ${count(metadata.excluded.count)}: ${metadata.excluded.reason}.` : undefined, corpus);
+    assert.equal(files.querySelector('span').textContent, new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+      .format(new Date(`${metadata.generatedOn}T00:00:00Z`)), corpus);
+    assert.deepEqual(links.querySelectorAll('a').map((link) => link.textContent), ['Source', 'Licence'], corpus);
+    // Each link says whose source and licence it is, since every row has one of each.
+    assert.deepEqual(links.querySelectorAll('a').map((link) => link.getAttribute('aria-label')),
+      [`${LOCAL_CORPORA[corpus].label} source`, `${LOCAL_CORPORA[corpus].label} licence`], corpus);
   }
 
   // The sentence beside the rows says which references are answered locally and which still go online. Bopearachchi
@@ -1228,7 +1261,7 @@ test('a corpus whose files cannot be read keeps its row and says so', async () =
   const rows = page.element('catalogue-list').children;
   assert.equal(rows.length, Object.keys(LOCAL_CORPORA).length);
   for (const row of rows) {
-    assert.ok(row.textContent.includes('Local catalogue unavailable.'), row.textContent);
+    assert.equal(row.querySelectorAll('td').at(-1).textContent, 'Local catalogue unavailable.');
     assert.deepEqual(row.querySelectorAll('a'), []);
   }
 });

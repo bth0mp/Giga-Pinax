@@ -10,7 +10,7 @@ import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePr
 import * as bridge from './browser-api.js';
 import { cacheDefaultCurrency, initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
-import { LOCAL_CORPORA, catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
+import { LOCAL_CORPORA, defaultLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 let preferencesSnapshot;
@@ -194,6 +194,21 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
     'Optional. One tier per line: the amount the tier starts at, a colon, then the step from there. Copy the tiers from this house’s published terms — Giga Pinax ships no house’s ladder.');
   currencyField.classList.add('premium-ladder-field');
   ladderField.classList.add('premium-ladder-field');
+  // The ladder is folded under a line that says what it holds, so a list of houses reads as a list and
+  // the tiers open when they are wanted.
+  const ladderDetails = document.createElement('details');
+  ladderDetails.className = 'premium-ladder-details';
+  const ladderSummary = document.createElement('summary');
+  const summarize = () => {
+    const count = ladder.value.split('\n').filter((line) => line.trim() !== '').length;
+    ladderSummary.textContent = count
+      ? `Increment ladder · ${count} ${count === 1 ? 'tier' : 'tiers'} in ${currency.value}`
+      : 'Increment ladder · none';
+  };
+  summarize();
+  ladder.addEventListener('input', summarize);
+  currency.addEventListener('change', summarize);
+  ladderDetails.append(ladderSummary, currencyField, ladderField);
   const vatField = premiumField('VAT on premium %', vat,
     'Optional. VAT the house adds to its premium only.');
   const platformField = premiumField('Platform fee % on hammer', platform,
@@ -202,7 +217,7 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   const charges = document.createElement('div');
   charges.className = 'premium-charges';
   charges.append(vatField, platformField);
-  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, charges, currencyField, ladderField);
+  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, charges, ladderDetails);
   return row;
 }
 
@@ -324,6 +339,9 @@ function collectPresets() {
     // The message belongs beside the field it is about, and that alert is the one announcement:
     // the same sentence in the page status line would be read out a second time.
     const control = row.querySelector(`.${PRESET_FIELD_CLASS[field.error.field]}`);
+    // A field folded away is opened, so the message and the focus land where they can be seen.
+    const folded = control.closest('details');
+    if (folded) folded.open = true;
     control.closest('.premium-field').querySelector('.premium-error').textContent = field.error.message;
     control.setAttribute('aria-invalid', 'true');
     control.focus();
@@ -369,22 +387,56 @@ async function exportRaw() {
   download(file.text, file.name);
 }
 
-// One line per bundled corpus, each with the counts and the date its own metadata carries, its source and its licence.
-// A corpus whose files cannot be read says so on its own line rather than removing the corpus from the list.
+// One table row per bundled corpus: its counts and what it leaves out, the day its own metadata says
+// its local files were made, its source and its licence. A corpus whose files cannot be read keeps its
+// row and says so, rather than dropping out of the list.
 function catalogueRow(corpus, metadata) {
-  const row = document.createElement('li');
-  const name = document.createElement('strong');
-  name.textContent = `${LOCAL_CORPORA[corpus].label}: `;
-  row.append(name, document.createTextNode(catalogueMetadataText(metadata)));
-  for (const [url, text] of [[metadata?.sourceUrl, 'Source'], [metadata?.licenseUrl, 'Licence']]) {
+  const row = document.createElement('tr');
+  const name = document.createElement('th');
+  name.setAttribute('scope', 'row');
+  name.textContent = LOCAL_CORPORA[corpus].label;
+  row.append(name);
+  const cell = (text, note = '') => {
+    const td = document.createElement('td');
+    const main = document.createElement('span');
+    main.textContent = text;
+    td.append(main);
+    if (note) {
+      const small = document.createElement('small');
+      small.textContent = note;
+      td.append(small);
+    }
+    row.append(td);
+    return td;
+  };
+  const usable = Number.isInteger(metadata?.recordCount) && Number.isInteger(metadata?.activeRecordCount);
+  if (!usable) {
+    const td = cell('');
+    td.setAttribute('colspan', '3');
+    td.textContent = 'Local catalogue unavailable.';
+    return row;
+  }
+  const count = (value) => new Intl.NumberFormat('en-GB').format(value);
+  const left = Number.isInteger(metadata.excluded?.count) && typeof metadata.excluded.reason === 'string'
+    ? `Leaving out ${count(metadata.excluded.count)}: ${metadata.excluded.reason}.` : '';
+  cell(`${count(metadata.activeRecordCount)} active of ${count(metadata.recordCount)}`, left);
+  const generated = typeof metadata.generatedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(metadata.generatedOn)
+    ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${metadata.generatedOn}T00:00:00Z`))
+    : 'Date unknown';
+  cell(generated, metadata.publicationDate ? `Source published ${metadata.publicationDate}` : '');
+  const links = document.createElement('td');
+  links.className = 'catalogue-links';
+  for (const [url, text] of [[metadata.sourceUrl, 'Source'], [metadata.licenseUrl, 'Licence']]) {
     if (!/^https:\/\//.test(String(url))) continue;
     const link = document.createElement('a');
     link.href = url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.textContent = text;
-    row.append(document.createTextNode(' '), link, document.createTextNode('.'));
+    link.setAttribute('aria-label', `${LOCAL_CORPORA[corpus].label} ${text.toLowerCase()}`);
+    links.append(link);
   }
+  row.append(links);
   return row;
 }
 
