@@ -1317,3 +1317,17 @@ test('the provenance reader reads German, Italian, Spanish and French provenance
   assert.deepEqual(readProvenance('Vorzügliches Exemplar mit feiner Tönung. RIC 347.'), []);
   assert.deepEqual(readProvenance('Nero. Denar aus der Zeit um 65. RIC 53.'), []);
 });
+
+// Loop N9 review (Important 1): a provenance sentence the new markers open and an initial keeps running ("Sammlung Dr. W. R.") swallowed the
+// references after it, and the lot offered nothing. A full stop with a catalogue key behind it ends the sentence, initial or not.
+test('a provenance sentence ends at the full stop a catalogue key follows, even behind an initial', () => {
+  for (const [text, expected] of [['Aus Sammlung H. W. RIC 53.', ['RIC 53']], ['Exemplar der Sammlung Dr. W. R. RIC 53.', ['RIC 53']],
+    ['Provenienz: Slg. Dr. H. RIC 53.', ['RIC 53']], ['Ex Slg. Dr. X. RIC 53.', ['RIC 53']], ['Nero. Denar. Erworben bei M. RIC 53.', ['RIC 53']],
+    ['Nero. Denar. Aus Slg. X. RIC 53. Cohen 17.', ['RIC 53', 'Cohen 17']], ['Ex Dr. Sear collection. Price 3949.', ['Price 3949']]]) {
+    assert.deepEqual(texts(text), expected, text);
+  }
+  assert.deepEqual(readProvenance('Aus Sammlung H. W. RIC 53.'), [{ text: 'Aus Sammlung H. W', source: 'Sammlung H. W' }]);
+  // The initial still keeps a sentence whole where no key follows it.
+  assert.deepEqual(readProvenance('Ex Dr. Sear collection, 1975.').map(({ text }) => text), ['Ex Dr. Sear collection, 1975']);
+  assert.deepEqual(readProvenance('Aus Sammlung Dr. W. R. Erworben 1998.').map(({ text }) => text), ['Aus Sammlung Dr. W. R', 'Erworben 1998']);
+});

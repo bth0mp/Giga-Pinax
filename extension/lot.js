@@ -107,7 +107,11 @@ const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MA
 // is written with before its month and year ("25. Mai 1973"), whose tail would be left behind as a reference.
 // The German abbreviations a provenance is written with are no end either: "Slg." (Sammlung), "Smlg.", "Auk." (Auktion), "Kat.", "Abb.", "Taf.",
 // "Lot." and "Los.".
-const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
+// A full stop with a catalogue citation behind it ends the sentence whatever stands before it: a collection anonymised by its initials ("Aus
+// Sammlung Dr. W. R. RIC 53.") would otherwise run on and take the references with it. The key must be followed by its number, so "Dr. Sear
+// collection" is still the collector's name.
+const CITED_NEXT = String.raw`\.(?=\s(?:RIC|R\.I\.C|RRC|Crawford|Craw|Cr|Price|Pr|SC|Bopearachchi|Bop|CPE|Newell|Cohen|Coh|BMCRE|BMCRR|BMC|RSC|RPC|RCV|Sear|SNG|HGC|Calicó|Calico|Woytek)\.?(?:\s?(?:vol\.?\s?)?[IVX]+[.,²]?)?[\s.,:#-]*\d)`;
+const PROVENANCE_END = new RegExp(String.raw`${CITED_NEXT}|` + /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u.source, 'u');
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
