@@ -1,6 +1,6 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
-import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
@@ -21,6 +21,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -1012,24 +1013,27 @@ async function initWorkspace() {
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
   function collectionTotalsTable(view) {
-    const wrap = text('div', '', 'table-scroll');
+    // A region the keyboard can scroll too, since its last columns sit past the side panel's edge.
+    const wrap = text('div', '', 'table-scroll'); wrap.setAttribute('tabindex', '0'); wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Recorded totals by currency');
     const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
     table.append(text('caption', 'Your recorded totals by currency'));
     const head = document.createElement('thead'); const headRow = document.createElement('tr');
-    for (const label of ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
+    for (const label of ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
     head.append(headRow);
     const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
-    const total = (currency, minor, count, of) => {
-      if (!count) return 'None recorded';
+    const total = (currency, minor, count, of, none = 'None recorded') => {
+      if (!count) return none;
       const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
       return count < of ? `${amount} (${count} of ${of})` : amount;
     };
     const body = document.createElement('tbody');
     const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
     for (const [currency, totals] of Object.entries(view.byCurrency)) {
-      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount), total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
+      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount),
+        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete'),
+        total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
     }
-    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', years(view.unpriced)]);
+    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', '—', years(view.unpriced)]);
     table.append(head, body); wrap.append(table);
     return wrap;
   }
@@ -1042,23 +1046,151 @@ async function initWorkspace() {
     if (comparables.status === 'too-few') return `Your saved comparables for ${item.reference}: ${comparables.count} in ${comparables.currency}, too few for a median`;
     return `Your saved comparables for ${item.reference}: median ${formatMoney(comparables.median)} from ${comparables.count} in ${comparables.currency}`;
   };
+  // A won coin's Hammer · Premium · Fees · Total, currency code once, then the premium rate and each fee, or what
+  // stopped the total from being worked out.
+  const costLineParts = (line) => {
+    const row = text('div', '', 'money-line'); row.append(text('span', line.currency, 'money-currency'));
+    for (const { label, figure } of line.cells) {
+      const cell = text('span', '', 'money-cell'); cell.append(text('span', label, 'money-label'), document.createTextNode(' '), text('span', figure, 'money-figure'));
+      row.append(cell);
+    }
+    return [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+  };
+  // The one collection entry being corrected in place, what it read when the form opened, and what has been typed
+  // since: kept here, so a redraw of the route while the form is open never loses the typing.
+  let editingEntry = null;
+  const entryFormValues = (entry) => ({
+    acquisitionDate: entry.acquisitionDate ?? '', invoice: moneyInputText(entry.actualInvoice),
+    invoiceCurrency: entry.actualInvoice?.currency ?? entry.hammer?.currency ?? snapshot.preferences?.currency ?? 'USD', notes: entry.notes ?? '',
+  });
+  // Each entry's Edit entry button as last drawn, so the keyboard can be handed back to it when its form closes.
+  const entryEditButtons = new Map();
+  const entryFormTyped = (editing) => Object.keys(editing.values).some((key) => editing.values[key] !== editing.baseline[key]);
+  const openEntryForm = (entry) => {
+    // Typing in another entry's form is not dropped without asking, as a coin's details are not.
+    if (editingEntry && editingEntry.id !== entry.id && entryFormTyped(editingEntry)) {
+      const open = (snapshot.collectionEntries ?? []).find(({ id }) => id === editingEntry?.id);
+      if (!confirm(`Discard your changes to “${open?.title ?? 'the entry being edited'}”?`)) return;
+    }
+    editingEntry = { id: entry.id, revision: entry.revision, baseline: entryFormValues(entry), values: entryFormValues(entry), error: '' };
+    renderHistory();
+    $('entry-edit-form')?.elements.acquisitionDate?.focus();
+  };
+  const closeEntryForm = () => {
+    const id = editingEntry?.id; editingEntry = null; renderHistory();
+    entryEditButtons.get(id)?.focus();
+  };
+  // Only what the collector changed is sent: a field left as it opened stays one the outcome can still correct.
+  async function saveEntryForm() {
+    const editing = editingEntry; if (!editing) return;
+    const { values, baseline } = editing;
+    const refuse = (message) => { editing.error = message; renderHistory(); };
+    if (!values.acquisitionDate) return refuse('Enter the acquisition date.');
+    const changes = {};
+    if (values.acquisitionDate !== baseline.acquisitionDate) changes.acquisitionDate = values.acquisitionDate;
+    if (values.invoice.trim() !== baseline.invoice || (values.invoice.trim() && values.invoiceCurrency !== baseline.invoiceCurrency)) {
+      if (!values.invoice.trim()) changes.actualInvoice = null;
+      else {
+        const money = parseMoney(values.invoice, values.invoiceCurrency, navigator.language);
+        if (!money.ok) return refuse(money.error.message);
+        changes.actualInvoice = money.value;
+      }
+    }
+    if (values.notes !== baseline.notes) changes.notes = values.notes.trim() ? values.notes : null;
+    if (!Object.keys(changes).length) { closeEntryForm(); return announce('Nothing was changed.'); }
+    const reply = await send({ type: 'collection.update', requestId: requestId(), collectionEntryId: editing.id, expectedRevision: editing.revision, entry: changes });
+    if (editingEntry !== editing) return;
+    if (reply?.ok) { closeEntryForm(); return announce('Collection entry saved.'); }
+    const current = (snapshot.collectionEntries ?? []).find(({ id }) => id === editing.id);
+    if (reply?.code === 'conflict' && current) {
+      // What is stored now becomes the basis. What the collector typed is kept for them to check and save again; every
+      // field they left as it opened takes the stored figure, so the other tab's change is never sent back as theirs.
+      const fresh = entryFormValues(current);
+      for (const key of Object.keys(fresh)) if (editing.values[key] === editing.baseline[key]) editing.values[key] = fresh[key];
+      editing.revision = current.revision; editing.baseline = fresh;
+      return refuse('This entry changed while you were editing it. Check the figures and save again.');
+    }
+    if (reply && !reply.ok) refuse(reply.message ?? 'The entry could not be saved.');
+  }
+  function entryEditForm() {
+    const editing = /** @type {*} */ (editingEntry);
+    const form = text('form', '', 'entry-edit compact-form'); form.id = 'entry-edit-form'; form.noValidate = true;
+    const field = (label, control) => { const wrap = text('label', label); wrap.append(control); return wrap; };
+    const input = (name, type = 'text') => { const control = document.createElement('input'); control.name = name; control.type = type; control.value = editing.values[name]; return control; };
+    const date = input('acquisitionDate', 'date'); date.required = true;
+    const invoice = input('invoice'); invoice.inputMode = 'decimal';
+    const currency = document.createElement('select'); currency.name = 'invoiceCurrency';
+    for (const code of CURRENCIES) { const option = text('option', code); option.value = code; currency.append(option); }
+    currency.value = editing.values.invoiceCurrency;
+    const notes = document.createElement('textarea'); notes.name = 'notes'; notes.maxLength = LIMITS.notes; notes.value = editing.values.notes;
+    const pair = text('div', '', 'field-pair'); pair.append(field('Invoice paid', invoice), field('Currency', currency));
+    const error = text('p', editing.error, 'field-note error'); error.setAttribute('role', 'alert'); error.hidden = !editing.error;
+    const actions = text('div', '', 'form-actions');
+    const save = text('button', 'Save entry'); save.type = 'submit';
+    const cancel = text('button', 'Cancel', 'quiet'); cancel.type = 'button'; cancel.addEventListener('click', closeEntryForm);
+    actions.append(save, cancel);
+    const keep = (event) => { const name = event.target?.name; if (name && Object.hasOwn(editing.values, name)) editing.values[name] = event.target.value; };
+    form.addEventListener('input', keep); form.addEventListener('change', keep);
+    form.addEventListener('submit', (event) => { event.preventDefault(); return saveEntryForm(); });
+    form.append(field('Acquisition date', date), pair, field('Notes', notes),
+      text('p', 'What you correct here is kept if the outcome is corrected later. The hammer and total cost always follow the outcome.', 'field-note'),
+      error, actions);
+    return form;
+  }
+  // The invoice on the entry, and when the collector corrected it there, whose figure it is.
+  // An invoice the collector cleared there still says what the outcome records, since no outcome correction brings it back.
+  const entryInvoiceLine = (entry, lot) => {
+    const corrected = entry.editedFields?.includes('actualInvoice');
+    const recorded = lot?.outcome?.actualInvoice;
+    if (!entry.actualInvoice) return corrected && recorded ? `Invoice paid: none (your correction; the outcome records ${formatMoney(recorded)})` : null;
+    let line = `Invoice paid ${formatMoney(entry.actualInvoice)}`;
+    if (corrected) {
+      const differs = recorded && (recorded.currency !== entry.actualInvoice.currency || recorded.minor !== entry.actualInvoice.minor);
+      line += differs ? ` (your correction; the outcome records ${formatMoney(recorded)})` : ' (your correction)';
+    }
+    return line;
+  };
   function renderHistory() {
-    const root = $('history-list'); root.replaceChildren();
-    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) { const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`)); if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`)); if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)} (your recorded total)`)); card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card); }
+    // A redraw while a field of the entry form has the keyboard gives it back to that field.
+    const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
+    const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
+    const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
+    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
+      const line = wonCostLine(lot, navigator.language);
+      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
+      if (line) card.append(...costLineParts(line));
+      else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
+      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
+      card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card);
+    }
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
     const view = projectCollection(snapshot);
     const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
     if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
     else {
-      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
+      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin missing any of those figures is counted as incomplete, never estimated.', 'field-note collection-note'));
       collection.append(collectionTotalsTable(view));
     }
     for (const entry of snapshot.collectionEntries ?? []) {
-      const card = text('article', '', 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
+      const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
+      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
+      if (line) card.append(...costLineParts(line));
+      else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
+      const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));
+      if (invoiceLine) card.append(text('p', invoiceLine));
+      if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
       card.append(text('p', collectionComparablesLabel(viewByEntry.get(entry.id)), 'collection-comparables'));
-      if (entry.reviewReason) { const actions = text('div', '', 'actions'); for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } card.append(actions); }
+      const actions = text('div', '', 'actions');
+      if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
+      if (editingEntry?.id === entry.id) card.append(entryEditForm());
+      else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
+      if (actions.children.length) card.append(actions);
       collection.append(card);
     }
+    if (editingEntry && !(snapshot.collectionEntries ?? []).some(({ id }) => id === editingEntry?.id)) editingEntry = null;
+    if (focusedField) $('entry-edit-form')?.elements[focusedField]?.focus?.();
+    else if (focusedEdit) entryEditButtons.get(focusedEdit)?.focus();
   }
   // The re-open question and the "Still open" choice belong to a settled lot only: on an open lot both are no-ops.
   const updateOutcomeVisibility = () => {

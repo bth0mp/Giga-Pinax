@@ -6,7 +6,7 @@ import {
   LIMITS, OWN, arrayResult, auctionContextResult, bpsResult, dateResult, housePresetResult, enumResult, firstFailure, instantResult, integerResult,
   isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
 } from './fields.js';
-import { projectExposure } from './projections.js';
+import { COST_GAPS, deriveWonCost, projectExposure } from './projections.js';
 import { resolveZonedDateTime } from './reminders.js';
 import { failure, isRecursionError, shiftDate, stableUuid, tooDeeplyNested } from './validate.js';
 /**
@@ -211,7 +211,47 @@ function outcomeResult(outcome, path) {
       outcome.verification !== 'personal-unverified') {
     return failure('missing-verification', 'User-entered outcome prices require a verification label.', `${path}.verification`);
   }
+  if (OWN(outcome, 'cost')) return wonCostResult(outcome, `${path}.cost`);
   return { ok: true, value: outcome };
+}
+
+const COST_GAP_SET = new Set(COST_GAPS);
+const COST_MONEY = ['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee'];
+
+// A won coin's cost as the store worked it out (projections.js deriveWonCost): in its hammer's currency, and either
+// complete - every part and a total that is exactly the hammer and those parts - or incomplete, naming what was
+// never recorded and carrying no total. A hand-made file cannot slip a total past its own parts.
+/** @returns {Result<any>} */
+function wonCostResult(outcome, path) {
+  const cost = outcome.cost;
+  const object = objectResult(cost, path); if (!object.ok) return object;
+  if (outcome.status !== 'won') return failure('invalid-cost', 'Only a won outcome carries a cost.', path);
+  /** @type {Array<Result<any>>} */
+  const checks = [bpsResult(cost, 'buyerPremiumBps', path)];
+  for (const key of [...COST_MONEY, 'total']) if (OWN(cost, key)) checks.push(moneyResult(cost[key], `${path}.${key}`));
+  if (OWN(cost, 'missing')) {
+    const gaps = arrayResult(cost.missing, `${path}.missing`, COST_GAPS.length); if (!gaps.ok) return gaps;
+    cost.missing.forEach((gap, index) => checks.push(enumResult(gap, COST_GAP_SET, `${path}.missing[${index}]`)));
+  }
+  const shapes = firstFailure(...checks); if (!shapes.ok) return shapes;
+  for (const key of [...COST_MONEY, 'total']) {
+    if (OWN(cost, key) && cost[key].currency !== outcome.hammer?.currency) {
+      return failure('invalid-cost', 'A cost is kept in its hammer’s currency.', `${path}.${key}`);
+    }
+  }
+  const gapCount = OWN(cost, 'missing') ? new Set(cost.missing).size : 0;
+  if (gapCount !== (cost.missing?.length ?? 0)) return failure('invalid-cost', 'A missing figure is named once.', `${path}.missing`);
+  if (OWN(cost, 'total') === gapCount > 0) {
+    return failure('invalid-cost', 'A cost has a total or names what is missing, never both or neither.', path);
+  }
+  if (!OWN(cost, 'total')) return { ok: true, value: outcome };
+  if (!OWN(cost, 'buyerPremiumBps') || !COST_MONEY.every((key) => OWN(cost, key))) {
+    return failure('invalid-cost', 'A complete cost carries every part.', path);
+  }
+  const parts = COST_MONEY.reduce((sum, key) => sum + BigInt(cost[key].minor), BigInt(outcome.hammer.minor));
+  return parts === BigInt(cost.total.minor)
+    ? { ok: true, value: outcome }
+    : failure('invalid-cost', 'A cost’s total must be its hammer and its parts.', `${path}.total`);
 }
 
 /** @returns {Result<any>} */
@@ -452,7 +492,63 @@ function collectionEntryResult(entry, path) {
       `${path}.reviewReason`,
     ));
   }
+  if (OWN(entry, 'editedFields')) checks.push(editedFieldsResult(entry.editedFields, `${path}.editedFields`));
   return firstFailure(...checks);
+}
+
+// The fields the collector corrected on the entry itself, which an outcome correction then leaves alone: a closed
+// list, each named once.
+/** @type {ReadonlyArray<'acquisitionDate' | 'actualInvoice' | 'notes'>} */
+export const ENTRY_EDITABLE_FIELDS = Object.freeze(['acquisitionDate', 'actualInvoice', 'notes']);
+const ENTRY_EDITABLE_SET = new Set(ENTRY_EDITABLE_FIELDS);
+// Two amounts that are the same whatever order their keys were written in; absent is absent.
+const sameMoney = (left, right) => (left && right
+  ? left.currency === right.currency && left.minor === right.minor : !left && !right);
+
+/**
+ * A collection entry brought in step with its lot's won outcome: the hammer is the outcome's always, and the invoice
+ * too unless the collector corrected it on the entry, where theirs wins. An entry whose lot is not won is left as it
+ * is (a review decides it). The one rule the store, a merged backup and a load all follow.
+ * @param {Record<string, any>} entry changed in place
+ * @param {Lot | null | undefined} lot
+ * @returns {boolean} whether anything changed
+ */
+export function followOutcome(entry, lot) {
+  if (lot?.outcome?.status !== 'won') return false;
+  let changed = false;
+  for (const field of /** @type {const} */ (['hammer', 'actualInvoice'])) {
+    if (field === 'actualInvoice' && entry.editedFields?.includes(field)) continue;
+    const recorded = lot.outcome[field];
+    if (sameMoney(entry[field], recorded)) continue;
+    if (recorded) entry[field] = { currency: recorded.currency, minor: recorded.minor };
+    else delete entry[field];
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Every entry of a root brought in step with its won lot, in place, with no revision or write time changed: an entry
+ * left behind by an outcome corrected before 0.36 reads as its lot does from the first load, and the next write keeps
+ * it so. A read of an already consistent root changes nothing.
+ * @param {{ lots: Lot[], collectionEntries: CollectionEntry[] }} root
+ * @returns {number} how many entries followed
+ */
+export function healCollectionEntries(root) {
+  const lots = new Map(root.lots.map((lot) => [lot.id, lot]));
+  let healed = 0;
+  for (const entry of root.collectionEntries) if (followOutcome(entry, lots.get(entry.lotId))) healed += 1;
+  return healed;
+}
+
+/** @returns {Result<any>} */
+function editedFieldsResult(fields, path) {
+  const array = arrayResult(fields, path, ENTRY_EDITABLE_FIELDS.length); if (!array.ok) return array;
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = enumResult(fields[index], ENTRY_EDITABLE_SET, `${path}[${index}]`); if (!field.ok) return field;
+    if (fields.indexOf(fields[index]) !== index) return failure('duplicate-field', 'A corrected field is named once.', `${path}[${index}]`);
+  }
+  return { ok: true, value: fields };
 }
 
 /** @returns {Result<SaleEvidence>} */
@@ -1305,6 +1401,12 @@ export function setOutcome(lot, outcomeDraft, now) {
 
   if (next.bidHistory.length > LIMITS.bidHistory) {
     return failure('collection-limit', 'Bid history limit exceeded.', 'bidHistory');
+  }
+  // Worked out now, from the bid just settled and the fees saved with the lot, and kept: a preset or a fee changed
+  // later never rewrites what a coin cost. A cost the caller sent is never read.
+  if (outcomeDraft.status === 'won') {
+    const cost = deriveWonCost(next, nextOutcome.hammer);
+    if (cost) nextOutcome.cost = cost;
   }
   next.outcomeHistory.push({
     id: derivedUuid(`${lot.id}|${lot.revision}|${now}|outcome|${lot.outcome.status}|${outcomeDraft.status}`),

@@ -12,7 +12,7 @@ import {
 import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
-  filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash,
+  filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash, wonCostLine,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
@@ -702,13 +702,13 @@ test('the collection is totalled within each currency, never across them', () =>
   });
   assert.deepEqual(Object.keys(collection.byCurrency), ['USD', 'EUR', 'CHF']);
   assert.deepEqual(collection.byCurrency.EUR, {
-    entryCount: 3, hammerCount: 3, hammerMinor: 150000, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
+    entryCount: 3, hammerCount: 3, hammerMinor: 150000, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
   });
   assert.deepEqual(collection.byCurrency.USD, {
-    entryCount: 1, hammerCount: 1, hammerMinor: 50000, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
+    entryCount: 1, hammerCount: 1, hammerMinor: 50000, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
   });
   assert.deepEqual(collection.byCurrency.CHF, {
-    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
   });
   assert.deepEqual(collection.unpriced, { entryCount: 0, firstYear: null, lastYear: null });
   assert.deepEqual(collection.entries.map(({ id, currency, reference }) => [id, currency, reference]), [
@@ -757,7 +757,7 @@ test('an entry with no hammer is counted without one, and one with no amount at 
     evidence: [comparable('e1', 'Price 23', usd(8000))],
   });
   assert.deepEqual(collection.byCurrency.USD, {
-    entryCount: 1, hammerCount: 0, hammerMinor: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
   });
   assert.deepEqual(collection.unpriced, { entryCount: 1, firstYear: 2024, lastYear: 2024 });
   const [invoiced, unpriced] = collection.entries;
@@ -1300,4 +1300,64 @@ test('the comparison names VAT on the premium and the platform fee in a coin’s
   assert.equal(row.totalLabel, 'Estimated total EUR 1342.50');
   const [plain] = comparisonRows([{ id: 'b', title: 'B', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 } }, costEstimate: { ...estimate, premiumVatBps: 0, platformFeeBps: 0 } }], ['b']);
   assert.equal(plain.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00%');
+});
+
+// N1: the collection totals what each won coin really cost, per currency, from the cost stored with its outcome; a
+// coin whose cost is incomplete is counted as that and never totalled with a guess.
+test('the collection totals each won coin’s worked-out cost per currency and counts the incomplete ones apart', () => {
+  const cost = (minor) => ({
+    buyerPremiumBps: 2000, premium: eur(0), premiumVat: eur(0), platformFee: eur(0), shipping: eur(0), paymentFee: eur(0), total: eur(minor),
+  });
+  const won = (id, outcome, extra = {}) => ({ id, outcome: { status: 'won', verification: 'personal-unverified', ...outcome }, bidHistory: [], ...extra });
+  const collection = projectCollection({
+    lots: [
+      won('lot-a', { hammer: eur(100000), cost: cost(125000) }),
+      won('lot-b', { hammer: eur(40000), cost: { buyerPremiumBps: 2000, premium: eur(8000), missing: ['fees'] } }),
+      // Won before costs were stored: worked out the same way from the records it has.
+      won('lot-c', { hammer: eur(10000) }, { plannedBid: { amount: eur(10000), buyerPremiumBps: 2000 },
+        costEstimate: { currency: 'EUR', shippingMinor: 1000, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }),
+      { id: 'lot-d', outcome: { status: 'lost' }, bidHistory: [] },
+    ],
+    collectionEntries: [
+      collectionEntry('a', 'lot-a', '2019-05-01', { hammer: eur(100000) }),
+      collectionEntry('b', 'lot-b', '2020-05-01', { hammer: eur(40000) }),
+      collectionEntry('c', 'lot-c', '2021-05-01', { hammer: eur(10000) }),
+      collectionEntry('d', 'lot-d', '2022-05-01', { hammer: eur(5000), reviewReason: 'source-lot-no-longer-won' }),
+    ],
+  });
+  assert.equal(collection.byCurrency.EUR.entryCount, 4);
+  assert.equal(collection.byCurrency.EUR.costCount, 2, 'two coins have a complete cost');
+  assert.equal(collection.byCurrency.EUR.costMinor, 125000 + 13000);
+  assert.deepEqual(collection.entries.map(({ id, cost: entryCost }) => [id, entryCost?.total?.minor ?? null, entryCost?.missing ?? null]), [
+    ['a', 125000, null], ['b', null, ['fees']], ['c', 13000, null], ['d', null, null],
+  ]);
+});
+
+// N1: a won coin's one money line - Hammer · Premium · Fees · Total, currency code once - and the words for a total
+// that could not be worked out.
+test('a won coin’s money line reads Hammer · Premium · Fees · Total in one currency, with its fees spelled out', () => {
+  const lot = { outcome: { status: 'won', hammer: eur(130000), cost: {
+    buyerPremiumBps: 2500, premium: eur(32500), premiumVat: eur(6175), platformFee: eur(0), shipping: eur(1500), paymentFee: eur(0), total: eur(170175),
+  } } };
+  const line = wonCostLine(lot, 'en-US');
+  assert.equal(line.currency, 'EUR');
+  assert.deepEqual(line.cells, [
+    { label: 'Hammer', figure: '1,300.00' }, { label: 'Premium', figure: '325.00' },
+    { label: 'Fees', figure: '76.75' }, { label: 'Total', figure: '1,701.75' },
+  ]);
+  assert.equal(line.detail, 'Premium 25% · VAT on premium 61.75 · shipping 15.00');
+  assert.equal(line.note, '');
+  assert.equal(wonCostLine(lot, 'de-DE').cells[3].figure, '1.701,75', 'figures follow the collector’s locale');
+  assert.equal(wonCostLine({ outcome: { status: 'lost', hammer: eur(1) } }), null, 'only a won coin has a cost line');
+});
+
+test('an incomplete cost shows what it has, never a total, and says what is missing', () => {
+  const line = wonCostLine({ outcome: { status: 'won', hammer: usd(50000), cost: { buyerPremiumBps: 2000, premium: usd(10000), missing: ['fees'] } } });
+  assert.deepEqual(line.cells.map(({ figure }) => figure), ['500.00', '100.00', '—', 'Incomplete']);
+  assert.equal(line.note, 'Total incomplete: no fees were saved with this coin.');
+  const bare = wonCostLine({ outcome: { status: 'won' }, bidHistory: [] });
+  assert.deepEqual(bare.cells.map(({ figure }) => figure), ['—', '—', '—', 'Incomplete']);
+  assert.equal(bare.note, 'Total incomplete: no hammer recorded; no buyer’s premium rate on its bid; no fees were saved with this coin.');
+  const foreign = wonCostLine({ outcome: { status: 'won', hammer: usd(1), cost: { buyerPremiumBps: 0, premium: usd(0), missing: ['fee-currency'] } } });
+  assert.equal(foreign.note, 'Total incomplete: its fees were saved in another currency, and are never converted.');
 });

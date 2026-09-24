@@ -6,6 +6,11 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- A won coin's **real cost** is worked out when its outcome is saved and kept with it: the hammer, the buyer's premium at the rate on the bid it was won on, VAT on that premium, a platform's fee on the hammer, and the shipping and payment fee saved with the bid, all in the hammer's currency. Its **History** card and its collection entry show one money line — **Hammer · Premium · Fees · Total**, the currency named once — with the premium rate and each fee spelled out beneath it, the collection table gains a **Total cost** column per currency, and the CSV exports carry `premium`, `fees`, `total_cost` and `total_cost_currency`. A figure that was never recorded is never estimated: the total then reads **Incomplete** and says which one is missing (no premium rate on the bid, no fees saved with the coin, fees saved in another currency), and the CSV names it in `total_cost_missing`. A house preset or a fee changed later never rewrites the cost of a coin won from this version on; a coin won before it has no stored cost and is costed from its records as they stand, so its total follows a later edit to its fees until its outcome is saved again. The invoice you typed stays as you typed it. Backups need no new version: older ones import unchanged, and 0.35.0 opens a backup that carries costs.
+- **Edit entry** on a collection entry in **History** corrects its acquisition date, invoice paid and notes in place; the entry now shows its notes. Only what you change is saved, and what you correct there is yours: a later correction of the coin's outcome leaves it alone.
+
 ### Changed
 
 - A desktop reminder names your time first, then the auction's own. A timed auction reads `Closes Fri 16 Oct, 8:00 your time — 14:00 Zurich`; a sale day with no time reads `Sale day Fri 2 Oct — Thu 1 Oct 10:00 your time, 9:00 London`. Your day is named where it is not the sale day, the auction's where it is not yours. The auction's time and place are named only when its time zone is not yours; two names of one zone (`UTC` and `Etc/UTC`) count as one, and a zone with no place reads as its offset (`GMT-5`). The text stays within about 90 characters, so a banner that cuts it keeps your time. It used to print your local time with no label, or only the date and the zone's id.
@@ -18,6 +23,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - Placeholder text in dark mode was the browser's grey at about 3.5:1 against its field; it is now the muted ink (7.2:1). An excluded sale under **Inspect sales** was faded until its date read 2.5:1; it keeps full contrast and its amount is struck through instead. The sales-period pills have the same visible edge as the Recent chips.
+- A collection entry follows a corrected outcome. Correcting a won coin's hammer or invoice under **Outcome** used to leave the old figures in the collection and its totals; the entry now takes the new hammer always, and the new invoice unless you corrected the invoice on the entry itself, in which case the entry says so beside it ("your correction; the outcome records €625.00"). Its notes and acquisition date are never touched by an outcome. An entry left behind by a correction made before this version, or by a merged backup that corrected the coin while this install's entry was kept, follows the coin too, from the first time the records are opened, so the collection's Hammer total and CSV agree with the coin's own line. An invoice you cleared on the entry says what the outcome records beside it.
 
 ## [0.35.0] - 2026-09-24
 

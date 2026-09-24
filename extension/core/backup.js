@@ -1,6 +1,6 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, foldQuarantine, isRestorableCollection, migrateSnapshot, quarantineEntryId,
+  LIMITS, SCHEMA_VERSION, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot, quarantineEntryId,
   unusableRevisions, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
@@ -300,14 +300,18 @@ function repairCollectionPairs(snapshot, conflicts, entryReviews) {
     claimed.add(entry.id);
     // The entry follows its lot, so a merge that settles the lot away from won raises the review
     // and one that corrects it back to won withdraws it, exactly as `lot.outcome.set` does.
+    let changed = false;
     if (entryReviews.has(lot.id) && entry.reviewReason !== entryReviews.get(lot.id)) {
       const reason = entryReviews.get(lot.id);
       if (reason) entry.reviewReason = reason;
       else delete entry.reviewReason;
-      // The review is a change to the entry, so a holder of the old row is asked again. The write
-      // time stays: a preview has no clock, and this install's row is the later one either way.
-      entry.revision += 1;
+      changed = true;
     }
+    // And a won lot's hammer and invoice follow into the entry, whichever row won the merge (records.js followOutcome).
+    if (followOutcome(entry, lot)) changed = true;
+    // Either is a change to the entry, so a holder of the old row is asked again. The write
+    // time stays: a preview has no clock, and this install's row is the later one either way.
+    if (changed) entry.revision += 1;
   }
   snapshot.collectionEntries = snapshot.collectionEntries.filter((entry) => {
     if (claimed.has(entry.id)) return true;

@@ -5,11 +5,14 @@
 // survives. A title copied from an auction page is untrusted, and a spreadsheet runs a cell that opens with `=`, `+`,
 // `-` or `@` (after any leading whitespace, and in full width too) as a formula, so such a cell is written with a leading
 // apostrophe: the spreadsheet shows the text and runs nothing. Money is a plain decimal with a `.` and its currency in
-// a column of its own - never formatted for a locale, and never added up, because the records hold four currencies
-// and no rate between them. Dates and instants are written as the ISO text the records keep. Each file opens with a
+// a column of its own - never formatted for a locale, and never added up across records, because the records hold
+// four currencies and no rate between them. The one total written is a won coin's own cost (hammer, premium, fees),
+// which the store worked out in its hammer's currency; where a figure was never recorded it is blank, and the
+// `total_cost_missing` column names what is missing. Dates and instants are written as the ISO text the records keep. Each file opens with a
 // byte order mark, which is what makes Excel read the file as UTF-8 rather than mangle an accented title.
 
 import { FRACTION_DIGITS as MINOR_DIGITS } from './money.js';
+import { costFees, lotCost } from './projections.js';
 /**
  * @typedef {import('./types.js').Money} Money
  * @typedef {import('./types.js').Snapshot} Snapshot
@@ -62,6 +65,15 @@ function csvText(columns, records) {
   return `${BOM}${lines.join('\r\n')}\r\n`;
 }
 
+// A won coin's worked-out cost, read from its lot: the total and its currency when every figure was recorded,
+// else what was missing, by the names the store keeps them under.
+/** @type {Array<[string, (lot: *) => string]>} */
+const COST_COLUMNS = [
+  ['total_cost', (lot) => decimalAmount(lotCost(lot)?.total)],
+  ['total_cost_currency', (lot) => currencyOf(lotCost(lot)?.total)],
+  ['total_cost_missing', (lot) => (Array.isArray(lotCost(lot)?.missing) ? lotCost(lot)?.missing?.join(' ') : '')],
+];
+
 const LOT_COLUMNS = [
   ['lot_id', ({ lot }) => lot.id],
   ['title', ({ lot }) => lot.title],
@@ -87,24 +99,28 @@ const LOT_COLUMNS = [
   ['hammer_currency', ({ lot }) => currencyOf(lot.outcome?.hammer)],
   ['invoice', ({ lot }) => decimalAmount(lot.outcome?.actualInvoice)],
   ['invoice_currency', ({ lot }) => currencyOf(lot.outcome?.actualInvoice)],
+  ['premium', ({ lot }) => decimalAmount(lotCost(lot)?.premium)],
+  ['fees', ({ lot }) => decimalAmount(costFees(lotCost(lot)))],
+  ...COST_COLUMNS.map(([name, read]) => [name, ({ lot }) => read(lot)]),
   ['notes', ({ lot }) => lot.notes],
   ['created_at', ({ lot }) => lot.createdAt],
   ['updated_at', ({ lot }) => lot.updatedAt],
 ];
 
 const COLLECTION_COLUMNS = [
-  ['entry_id', (entry) => entry.id],
-  ['lot_id', (entry) => entry.lotId],
-  ['title', (entry) => entry.title],
-  ['acquisition_date', (entry) => entry.acquisitionDate],
-  ['hammer', (entry) => decimalAmount(entry.hammer)],
-  ['hammer_currency', (entry) => currencyOf(entry.hammer)],
-  ['invoice', (entry) => decimalAmount(entry.actualInvoice)],
-  ['invoice_currency', (entry) => currencyOf(entry.actualInvoice)],
-  ['notes', (entry) => entry.notes],
-  ['source_urls', (entry) => (Array.isArray(entry.sourceLinks) ? entry.sourceLinks.map((link) => link?.url).filter(Boolean).join(' ') : '')],
-  ['created_at', (entry) => entry.createdAt],
-  ['updated_at', (entry) => entry.updatedAt],
+  ['entry_id', ({ entry }) => entry.id],
+  ['lot_id', ({ entry }) => entry.lotId],
+  ['title', ({ entry }) => entry.title],
+  ['acquisition_date', ({ entry }) => entry.acquisitionDate],
+  ['hammer', ({ entry }) => decimalAmount(entry.hammer)],
+  ['hammer_currency', ({ entry }) => currencyOf(entry.hammer)],
+  ['invoice', ({ entry }) => decimalAmount(entry.actualInvoice)],
+  ['invoice_currency', ({ entry }) => currencyOf(entry.actualInvoice)],
+  ...COST_COLUMNS.map(([name, read]) => [name, ({ lot }) => read(lot)]),
+  ['notes', ({ entry }) => entry.notes],
+  ['source_urls', ({ entry }) => (Array.isArray(entry.sourceLinks) ? entry.sourceLinks.map((link) => link?.url).filter(Boolean).join(' ') : '')],
+  ['created_at', ({ entry }) => entry.createdAt],
+  ['updated_at', ({ entry }) => entry.updatedAt],
 ];
 
 const BID_COLUMNS = [
@@ -142,10 +158,11 @@ export const CSV_TABLES = Object.freeze([
 export function csvFiles(snapshot) {
   const lots = list(snapshot?.lots);
   const events = new Map(list(snapshot?.auctionEvents).map((event) => [event.id, event]));
+  const lotsById = new Map(lots.map((lot) => [lot.id, lot]));
   const history = (key) => lots.flatMap((lot) => list(lot[key]).map((item) => ({ lot, item })));
   return {
     lots: csvText(LOT_COLUMNS, lots.map((lot) => ({ lot, event: events.get(lot.auctionEventId) }))),
-    collection: csvText(COLLECTION_COLUMNS, list(snapshot?.collectionEntries)),
+    collection: csvText(COLLECTION_COLUMNS, list(snapshot?.collectionEntries).map((entry) => ({ entry, lot: lotsById.get(entry.lotId) }))),
     bids: csvText(BID_COLUMNS, history('bidHistory')),
     outcomes: csvText(OUTCOME_COLUMNS, history('outcomeHistory')),
   };
