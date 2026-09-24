@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, kmNumber, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, searchablePart, sgNumber } from './lookup.js';
 import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase } from './lot.js';
@@ -350,6 +350,16 @@ const citationKeys = (reference) => {
   const keys = catalogueOf(reference?.catalogue)?.citationKeys ?? null;
   return keys && reference.catalogue === 'Bop' ? [...keys, 'Bop'] : keys;
 };
+// Crawford writes a moneyer's issue and its type with a slash ("344/1a"); some German houses write a hyphen there. A hyphen is read as the slash only
+// where it cannot be a range: in front of a lettered type ("344-1a"), or of one a shortened range would count down to ("385-4" would be 385 to 384).
+// "44-5" and "344-5" are how a dealer shortens 44–45 and 344–345, which may be two types, so they keep citing nothing.
+const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
+function numberPattern(catalogue, number) {
+  const [, issue, type, letter] = (catalogue === 'RRC' && CRAWFORD.exec(number)) || [];
+  if (!issue) return eitherCase(number);
+  const shortened = Number(`${issue.slice(0, Math.max(0, issue.length - type.length))}${type}`);
+  return `${eitherCase(issue)}${letter || shortened <= Number(issue) ? '[/-]' : '\\/'}${eitherCase(`${type}${letter}`)}`;
+}
 const citationNumber = ({ catalogue, number }) => {
   if (catalogue === 'RIC') return /^\S*/.exec(squash(number))[0];
   if (catalogue === 'Bop') return bopSeries(number);
@@ -395,7 +405,12 @@ function volumeParts(volume) {
 
 // Only RIC carries a volume, and only its own: a card on volume I is not cited by "RIC II 306", while a card without a volume takes any numeral.
 // A ".1", "-1" or "/1" glued to the numeral is that volume's part and nothing else — the guard behind the part makes it impossible to leave one
-// unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1.
+// unread and answer with its digit, which is how "RIC IV.1 266" came to cite a card on RIC IV type 1. A volume RIC does not publish in parts has no
+// part to leave unread, so there a full stop is only the separator CGB writes ("RIC.I.53"); a hyphen or a slash still is not.
+// A volume published in parts may be written in Arabic figures with its part ("RIC 2.1 356"), and only with it: "RIC 2 306" is as likely to be the
+// second edition of volume I spaced out as volume II.
+const ROMAN_NUMERALS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
+const publishedInParts = (numeral) => ['1', '2', '3'].some((part) => realVolumePart(numeral, part));
 function between({ catalogue, volume }) {
   // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
   if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
@@ -405,8 +420,11 @@ function between({ catalogue, volume }) {
   const part = partPattern(volumeParts(text));
   // The volume may be introduced as one ("RIC vol. I 306"), and volume I written as a digit ("RIC 1 306"). Only I: "RIC 2 306" is as likely to be the
   // second edition of volume I spaced out as volume II.
-  const written = numeral === 'I' ? '(?:I|1)' : numeral ? escaped(numeral) : NUMERAL;
-  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}(?![-/.]\\d)${SEP})?${RULERS}`;
+  const figure = ROMAN_NUMERALS.indexOf(numeral) + 1;
+  const written = numeral === 'I' ? '(?:I|1)' : numeral && publishedInParts(numeral) ? `(?:${escaped(numeral)}|${figure}(?=[-/.]\\d))`
+    : numeral ? escaped(numeral) : NUMERAL;
+  const guard = numeral && !publishedInParts(numeral) ? '(?![-/]\\d)' : '(?![-/.]\\d)';
+  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}${guard}${SEP})?${RULERS}`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -430,7 +448,7 @@ export function citesReference(description, reference) {
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${eitherCase(number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
+    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
   return new RegExp(pattern, 'u').test(text);
 }
 

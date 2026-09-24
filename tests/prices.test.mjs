@@ -1576,3 +1576,28 @@ test('a lot dated after today is never counted as a sale, whatever its price fie
   const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
   assert.ok(summaryText(card, summary, 'USD', 'Price 23').split('\n').includes('2 future-dated lots not counted'));
 });
+
+// Loop N20: three spellings of a citation the filter did not know, each written by a whole house: some German houses put a hyphen where Crawford
+// writes the slash ("Crawford 344-1a"), a volume published in parts is written in Arabic figures ("RIC 2.1 356"), and CGB separates key, volume and
+// number with full stops ("RIC.I.53").
+test('citesReference reads a hyphen for Crawford’s slash, an Arabic volume with its part, and full stops between key, volume and number', () => {
+  const titurius = { catalogue: 'RRC', number: '344/1a' };
+  for (const cited of ['Crawford 344-1a', 'Cr. 344-1a', 'RRC 344-1a.', 'Crawford 344/1a']) assert.equal(citesReference(cited, titurius), true, cited);
+  // A hyphen is the slash only where it cannot be a range: a lettered sub-number, or a sub-number a range would count down to.
+  assert.equal(citesReference('Crawford 385-4', { catalogue: 'RRC', number: '385/4' }), true);
+  // "44-5" and "344-5" are the way a dealer shortens 44–45 and 344–345: they may be two types, so neither cites 44/5 or 344/5.
+  assert.equal(citesReference('Crawford 44-5', { catalogue: 'RRC', number: '44/5' }), false);
+  assert.equal(citesReference('Crawford 344-5', { catalogue: 'RRC', number: '344/5' }), false);
+  for (const other of ['Crawford 344-1b', 'Crawford 344-1', 'Crawford 344-10a', 'Crawford 3441a', 'Crawford 344-1a,5 g']) {
+    assert.equal(citesReference(other, titurius), false, other);
+  }
+  const vespasian = { catalogue: 'RIC', number: '356', volume: 'II, Part 1 (2nd edition)', section: 'Vespasian' };
+  for (const cited of ['RIC 2.1 356', 'RIC 2-1 356', 'RIC 2/1 356', 'RIC II.1 356']) assert.equal(citesReference(cited, vespasian), true, cited);
+  // The figure stands for the volume only with its part: "RIC 2 356" may be the second edition of volume I spaced out, and part 3 is another book.
+  for (const other of ['RIC 2 356', 'RIC 2.3 356', 'RIC 3.1 356', 'RIC 2.1 3561', 'RIC 2.1 356 g']) assert.equal(citesReference(other, vespasian), false, other);
+  const nero = { catalogue: 'RIC', number: '53', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['RIC.I.53', 'RIC. I. 53', 'RIC.53', 'C.119 - RIC.I.53 - BMC/RE.74']) assert.equal(citesReference(cited, nero), true, cited);
+  for (const other of ['RIC.I.530', 'RIC.I.5.3', 'RIC.II.53', 'RIC.I.53a']) assert.equal(citesReference(other, nero), false, other);
+  // A volume RIC publishes in parts keeps its guard: the figure glued behind the numeral is the part, never the type.
+  assert.equal(citesReference('RIC.IV.1 266', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+});
