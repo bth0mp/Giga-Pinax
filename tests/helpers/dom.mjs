@@ -526,7 +526,7 @@ export function pageSource(url) {
 // than being imported here, where they would reach Node's globals instead of the page's. These are
 // they, by file name beside the pages. Anything else a page imports is handed in as sandbox globals,
 // as it always was.
-export const PAGE_MODULES = new Set([]);
+export const PAGE_MODULES = new Set(['workspace-forms.js']);
 
 // The top-level names a script declares, read the way these files are written: every top-level
 // declaration starts at the left margin.
