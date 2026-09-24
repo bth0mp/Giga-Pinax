@@ -1280,3 +1280,14 @@ test('the limited text boxes carry no maxlength of their own in the markup', () 
   assert.ok(limited.length >= 9);
   assert.deepEqual(limited.filter((control) => control.hasAttribute('maxlength')).map((control) => control.name), []);
 });
+
+// Merge with L4: a coin's saved fee estimate names the VAT on the premium and the platform's fee on the hammer.
+test('the comparison names VAT on the premium and the platform fee in a coin’s fees', () => {
+  const estimate = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 1900, platformFeeBps: 300, incrementMinor: 1, minimumBidMinor: 0 };
+  const [row] = comparisonRows([{ id: 'a', title: 'A', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2500 }, costEstimate: estimate }], ['a']);
+  assert.equal(row.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00% · VAT 19.00% on the premium · platform fee 3.00% on the hammer');
+  // 1,000 + 250 premium + 47.50 VAT + 30 platform fee + 15 shipping.
+  assert.equal(row.totalLabel, 'Estimated total EUR 1342.50');
+  const [plain] = comparisonRows([{ id: 'b', title: 'B', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 } }, costEstimate: { ...estimate, premiumVatBps: 0, platformFeeBps: 0 } }], ['b']);
+  assert.equal(plain.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00%');
+});
