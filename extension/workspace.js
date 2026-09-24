@@ -1,6 +1,6 @@
 import { computeStatistics } from './core/evidence.js';
 import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { projectCollection, projectExposure } from './core/records.js';
+import { projectCollection, projectExposure } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';

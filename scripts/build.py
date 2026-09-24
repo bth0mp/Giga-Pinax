@@ -39,6 +39,7 @@ ASSET_PATHS = (
     "core/evidence.js",
     "core/lot-context.js",
     "core/money.js",
+    "core/projections.js",
     "core/records.js",
     "core/reminders.js",
     "core/validate.js",
