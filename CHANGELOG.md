@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- For contributors: `scripts/scrub_acsearch.py` turns an acsearch results page saved from your own signed-in session into a test fixture you can review and commit — it keeps the lots and removes your name, e-mail, scripts, form fields, session tokens and links off acsearch, and writes nothing if any of them survives — and the test suite checks the price parser against any such page in `tests/fixtures/acsearch-real/` (see the README there).
+
 ## [0.33.0] - 2026-09-24
 
 ### Added
