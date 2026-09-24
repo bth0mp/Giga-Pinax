@@ -497,7 +497,7 @@ const BARE_FINE = { Fine: FINE, Fair: FINE };
 // (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash.
 const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
   BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF',
-  BU: MINT, 'Gem MS': MINT, Stgl: MINT, prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
+  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
 // "prägefrisch" is the Austrian trade's Stempelglanz, written in lower case mid-sentence as "vorzüglich" is.
@@ -570,7 +570,8 @@ const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|drit
 const SIDE_OPENS = new RegExp(String.raw`(?<![\p{L}\d])${SIDE}\.?\s+$`, 'iu');
 const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
-const LABEL = /(?:Erhaltung|Grade|Condition)\s*:?\s*$/i;
+// A Spanish house labels it "Conservación".
+const LABEL = /(?:Erhaltung|Grade|Condition|Conservaci[oó]n)\s*:?\s*$/i;
 // Two grades a range separator joins are one statement, read as the lower of the two.
 const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
 // So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
@@ -599,8 +600,13 @@ const DESCRIBED = /(?<![\p{L}\d])\p{Ll}\p{L}*\.\s*$/u;
 // The Spanish spelling with its slash is the same mark, and a legend is split across the field the same way ("S/C").
 const SENATE = new Set(['SC', 'S/C']);
 const CITATION_ASIDE = /^\s[-–(]/;
-const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
-  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before));
+// Áureo & Calicó close a lot with the weight or a remark and then the grade ("27,23 g. S/C.", "Brillo original. S/C."): a sentence ending in a
+// measurement, or in one of a closed list of Spanish remark words, describes no type, so the Spanish spelling with its slash opens there. "SC" keeps
+// the senate's rule, since a Roman bronze's weight is followed by its reverse as often.
+const SPANISH_CLOSE = /(?:\d\s?(?:g|gr|mm)|(?<!\p{L})(?:original|bella|bello|pátina|patina|brillo|rara|escasa|atractiva))\.\s*$/iu;
+const senateFree = (token, start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
+  || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && (!DESCRIBED.test(before) || (token === 'S/C' && SPANISH_CLOSE.test(before))))
+  || quals !== '' || joined || LABEL.test(before));
 // A grade quoted from an earlier sale is the provenance's, not this lot's: "(where described as "Good VF")", "there graded VF", "catalogued as VF".
 // It is no statement at all, so it can neither be the last one nor join a range, and the grade a range separator joins to it is the provenance's
 // too ("there described as VF/EF"). "NGC graded AU" is the slab's own grade and stays.
@@ -669,7 +675,7 @@ export function gradeOf(description) {
     else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
-      && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(start, before, quals, ranged || sided, tail));
+      && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
     else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;

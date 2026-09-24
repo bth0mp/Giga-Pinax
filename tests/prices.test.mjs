@@ -1315,6 +1315,18 @@ test('gradeOf reads the house spellings of NAC, Baldwin’s, Künker, Rauch, Her
     'Splendido esemplare.', 'Gemma incisa. Pubblicato.', 'Gem of a portrait.', 'fdc', 'gvf', 'Stglanz', 'prägefrischer Glanz']) {
     assert.equal(gradeOf(prose), null, prose);
   }
+  // Loop N5 review: Áureo & Calicó write S/C behind the weight or a closing remark, a German grade sentence opens "Prfr.", Heritage writes "Gem BU",
+  // and a Spanish lot labels its grade "Conservación:". A remark outside the closed list, or a described reverse, still leaves S/C the senate's.
+  for (const [text, bucket] of [['Felipe II. 1589. Sevilla. B. 8 reales. (Cal. 690). 27,23 g. S/C.', 'AU/Mint State'],
+    ['Felipe II. 8 reales. 27,23 g. S/C.', 'AU/Mint State'], ['Felipe II. 8 reales. Brillo original. S/C.', 'AU/Mint State'],
+    ['Felipe II. 8 reales. Muy bella. S/C.', 'AU/Mint State'], ['Felipe II. 8 reales. Bonita pátina. S/C.', 'AU/Mint State'],
+    ['Nero. Denar. Prfr.', 'AU/Mint State'], ['Morgan Dollar. Gem BU.', 'AU/Mint State'], ['Conservación: S/C', 'AU/Mint State'],
+    ['Conservación: EBC', 'EF']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  for (const prose of ['Rev.: Roma sentada. S/C.', 'Rev. Victory standing. 10,85 g. Rev. S/C.', 'Felipe II. 8 reales. Victoria alada. S/C.', 'Gem BUlk lot']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
   // A new spelling joins the others exactly as the old ones do: the grade still counted is the dealer's last statement, and a labelled one wins.
   assert.equal(gradeOf('Ex Fair collection. GVF.'), 'VF');
   assert.equal(gradeOf('Erhaltung: Stgl. Notes: vz for the type'), 'AU/Mint State');
