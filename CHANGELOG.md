@@ -23,6 +23,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- For contributors: `popup.js`, `workspace.js`, `core/records.js` and `store.js` are split by responsibility into smaller modules beside them, with no change to what any of them does, and `core/`, the store and the new modules carry JSDoc types that CI checks with TypeScript (no build step; nothing is emitted or shipped differently).
 - The workspace's editor checks — attaching an auction while coin details are unsaved, typing in the auction form while it saves, **reload committed data**, a coin removed in another tab, the leave-page guard and **Add coin** after discarding — now run as automated tests of the page against the real record store, and have left the manual release checklist.
 - A RIC lookup answered from the bundled catalogue builds only the few dozen index entries its number reaches, where it used to rebuild all 52,254 on every lookup, and every later lookup in the same window reuses them and the titles it has already read, so a second RIC lookup takes a fraction of the time it did. Crawford, Price and Seleucid Coins lookups build their index once per window instead of once per lookup. The answers are unchanged.
 
