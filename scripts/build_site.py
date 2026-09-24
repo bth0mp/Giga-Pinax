@@ -117,10 +117,13 @@ def write_update_manifest(xpi: Path, output: Path) -> dict:
 # The Markdown docs/PRIVACY.md is written in, and nothing more: headings of three levels, paragraphs, flat "- " lists,
 # `code`, **bold** and [text](https://...) links. Anything else is refused rather than shown in some other shape, so the
 # published policy can only ever say what the document says.
-REFUSED_LINE = re.compile(r"^(?:\s+\S|\||>|\d+[.)]\s|[*+]\s|```|~~~|<|#{4,}|#[^# ])")
+# A rule or a setext underline (---, ===, ***, ___) would come out as paragraph text, so it is refused too.
+REFUSED_LINE = re.compile(r"^(?:\s+\S|\||>|\d+[.)]\s|[*+]\s|```|~~~|<|#{4,}|#[^# ]|(?:-{3,}|={3,}|\*{3,}|_{3,})[ \t]*$)")
 HEADING = re.compile(r"^(#{1,3}) (\S.*)$")
 INLINE = re.compile(r"`([^`\n]+)`|\*\*([^*\n]+?)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)")
-REFUSED_PLAIN = re.compile(r"[`*_\[\]<]")
+# In plain text: marks of emphasis and code, brackets, raw HTML, an entity (& would be escaped into visible "&amp;") and
+# an image (!).
+REFUSED_PLAIN = re.compile(r"[`*_\[\]<&!]")
 
 
 def plain_html(text: str) -> str:
@@ -143,6 +146,9 @@ def inline_html(text: str) -> str:
             # A relative link would point into the site rather than the repository, and any other scheme is refused.
             if not url.startswith("https://"):
                 raise ValueError(f"only https links are published: {url!r}")
+            # A bracket in the address ends it early in this reading, and the rest would show as text.
+            if "(" in url:
+                raise ValueError(f"a link address with a bracket is refused: {url!r}")
             parts.append(f'<a href="{html.escape(url, quote=True)}">{inline_html(label)}</a>')
         position = match.end()
     parts.append(plain_html(text[position:]))
@@ -160,6 +166,8 @@ def markdown_to_html(markdown: str) -> str:
         if heading:
             if len(lines) != 1:
                 raise ValueError(f"a heading stands alone in its block: {block!r}")
+            if heading.group(2).rstrip().endswith("#"):
+                raise ValueError(f"a closed heading would keep its trailing marks: {lines[0]!r}")
             level = len(heading.group(1))
             out.append(f"<h{level}>{inline_html(heading.group(2))}</h{level}>")
         elif all(line.startswith("- ") for line in lines):
@@ -190,10 +198,7 @@ PAGE_HEAD = """<!doctype html>
 </head>
 <body>
 <header>
-<a href="index.html"><img src="icon.png" alt="Giga Pinax home"></a>
-<div>
-<p><a href="index.html">Giga Pinax</a></p>
-</div>
+<a class="home" href="index.html"><img src="icon.png" alt=""><span>Giga Pinax</span></a>
 </header>
 <main>
 """

@@ -45,6 +45,7 @@ header {
 }
 
 header img { width: 64px; height: 64px; flex: none; }
+header .home { display: flex; align-items: center; gap: 1rem; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 600; }
 header p { margin: 0.2rem 0 0; color: var(--muted); }
 
 h1, h2, h3 {

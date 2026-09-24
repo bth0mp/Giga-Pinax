@@ -179,6 +179,11 @@ class SiteTests(unittest.TestCase):
                     self.assertNotRegex(match.group(1), r"^(?:[a-z]+:|//)", match.group(0))
                 for match in re.finditer(r'<a\b[^>]*\bhref="([^"]*)"', page):
                     self.assertRegex(match.group(1), r"^(?:https://|[a-z-]+\.html$)", match.group(0))
+        # One link home in the generated page's header, not an icon link and a text link beside it.
+        privacy = (output / "privacy.html").read_text(encoding="utf-8")
+        header = privacy[privacy.index("<header>"):privacy.index("</header>")]
+        self.assertEqual(1, header.count('href="index.html"'))
+        self.assertIn('<img src="icon.png" alt="">', header)
         index = (output / "index.html").read_text(encoding="utf-8")
         self.assertIn('href="privacy.html"', index)
         self.assertIn("https://github.com/bth0mp/Giga-Pinax/releases/latest", index)
@@ -224,9 +229,9 @@ class PolicyMarkdownTests(unittest.TestCase):
         site = load_site_script()
         self.assertEqual(
             '<h1>Title</h1>\n<p>One <strong>bold</strong> line <code>a &lt; b</code>\nwith a '
-            '<a href="https://example.com/x">link &amp; text</a>.</p>\n'
+            '<a href="https://example.com/x">link text</a>.</p>\n'
             '<ul>\n<li>First <code>x</code></li>\n<li>Second</li>\n</ul>\n<h2>Next</h2>\n',
-            site.markdown_to_html("# Title\n\nOne **bold** line `a < b`\nwith a [link & text](https://example.com/x).\n\n"
+            site.markdown_to_html("# Title\n\nOne **bold** line `a < b`\nwith a [link text](https://example.com/x).\n\n"
                                   "- First `x`\n- Second\n\n## Next\n"),
         )
 
@@ -246,6 +251,15 @@ class PolicyMarkdownTests(unittest.TestCase):
             "An unclosed `code span.\n",
             "#### A fourth-level heading\n",
             "  - an indented item\n",
+            # Shapes that would otherwise come out as something else, not as a refusal.
+            "Above\n\n---\n\nBelow\n",
+            "Title\n===\n",
+            "Title\n---\n",
+            "***\n",
+            "## Closed heading ##\n",
+            "An image ![alt](https://example.com/a.png).\n",
+            "Written &amp; escaped.\n",
+            "A [link](https://example.com/a(b)) with a bracket.\n",
         ):
             with self.subTest(markdown=markdown), self.assertRaises(ValueError):
                 site.markdown_to_html(markdown)
