@@ -1263,19 +1263,24 @@ async function initWorkspace() {
     const previous = basis.id ? structuredClone(basis.record) : null;
     const submittedSelection = { ...selection }; const submittedInteractionGeneration = lotInteractionGeneration;
     // The auction the page's closing offers is written only when the collector ticked it and chose no auction of their own, and only once:
-    // a coin save that fails after it keeps the auction it made for the next try.
+    // a coin save that fails after it keeps the auction it made for the next try, and one request stands for the offer, so a save repeated after
+    // a lost reply is answered from the store's ledger with the auction already written. The auction never stands between the collector and the
+    // coin: one the store refuses is left off, the coin is saved, and the status says so. Only an unreachable worker, which cannot save the coin
+    // either, stops here, with the retry banner standing.
     const offer = pageOffer;
-    const offeredEvent = offer && !offer.eventId && !lot.auctionEventId && f.pageAuction?.checked
-      ? offeredEventFromDraft(offer, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
-    if (offer?.eventId && !lot.auctionEventId && f.pageAuction?.checked) lot.auctionEventId = offer.eventId;
+    const wanted = Boolean(offer && f.pageAuction?.checked && !lot.auctionEventId);
+    if (wanted && offer.eventId) lot.auctionEventId = offer.eventId;
+    const offeredEvent = wanted && !offer.eventId ? offeredEventFromDraft(offer, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
+    if (offeredEvent) offer.requestId ??= requestId();
     const savedEvent = offeredEvent
-      ? send({ type: 'event.save', requestId: requestId(), expectedRevision: null, event: { ...offeredEvent, name: lot.title.slice(0, 300) } })
+      ? send({ type: 'event.save', requestId: offer.requestId, expectedRevision: null, event: { ...offeredEvent, name: lot.title.slice(0, 300) } })
       : Promise.resolve(null);
+    let auctionProblem = '';
     void savedEvent.then((eventReply) => {
       if (offeredEvent) {
-        if (!eventReply?.ok || !eventReply.value?.id) return null;
-        offer.eventId = eventReply.value.id;
-        lot.auctionEventId = eventReply.value.id;
+        if (eventReply?.ok && eventReply.value?.id) { offer.eventId = eventReply.value.id; lot.auctionEventId = eventReply.value.id; }
+        else if (!eventReply || eventReply.code === 'unreachable') return null;
+        else auctionProblem = String(eventReply.message || 'The auction could not be saved').replace(/\.?$/, '.');
       }
       return send(buildLotSaveCommand(lot, basis.revision), 'lot');
     }).then((reply) => {
@@ -1286,7 +1291,8 @@ async function initWorkspace() {
         if (!reply.editorPreserved && !interactionChanged && selection.selectedLotId === reply.value.id) {
           lastLotUndo = followup.offerUndo ? { previous, saved: structuredClone(reply.value) } : null;
           $('undo-lot').hidden = !lastLotUndo;
-          $('lot-action-status').textContent = previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.'; renderLots();
+          $('lot-action-status').textContent = (previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.')
+            + (auctionProblem ? ` The auction from the page was not added: ${auctionProblem} Add it under Auction reminder.` : ''); renderLots();
         }
       }
       const draftId = draftToConsumeAfterLotSave(reply, lotDraftId);

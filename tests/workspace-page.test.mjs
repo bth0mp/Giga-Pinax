@@ -410,3 +410,52 @@ test('a draft whose rows are all left unticked saves no provenance', async () =>
   await page.saveDetails();
   assert.deepEqual(storedLot(background, 'Captured coin').provenanceNotes ?? [], []);
 });
+
+// 0.34 review (W2a, Important 1): the offered auction never stands between the collector and the coin. A refused auction write - here a closing
+// that falls in the hour Europe/Zurich lives twice - still saves the coin, and the status says the auction was left off and why.
+test('a refused offered auction still saves the coin and says why the auction was left off', async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = 'Europe/Zurich';
+  try {
+    const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-25T00:30Z' });
+    const page = await mountWorkspace({ background, hash });
+    assert.ok(page.$('lot-page-values').textContent.includes('02:30 (Europe/Zurich)'));
+    page.$('lot-form').elements.pageAuction.checked = true;
+    await page.saveDetails();
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.deepEqual(background.root().auctionEvents, []);
+    const saved = storedLot(background, 'Captured coin');
+    assert.ok(saved, 'the coin is saved');
+    assert.equal(saved.auctionEventId, undefined);
+    assert.equal(page.$('lot-action-status').textContent, 'Coin added to the watchlist. The auction from the page was not added: That local time occurs more than once in this time zone. Add it under Auction reminder.');
+  } finally {
+    if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+  }
+});
+
+// A reply lost on its way back leaves the auction written but unknown to the page. Saving again sends the same request, which the store's ledger
+// answers with the auction it already wrote: one auction, and the coin attached to it.
+test('saving again after a lost auction reply writes one auction and attaches the coin to it', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15T14:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  const deliver = page.browser.runtime.sendMessage;
+  let lost = false;
+  page.browser.runtime.sendMessage = async (message) => {
+    const reply = await deliver(message);
+    if (message.type === 'event.save' && !lost) { lost = true; throw new Error('Could not establish connection. Receiving end does not exist.'); }
+    return reply;
+  };
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.equal(background.root().auctionEvents.length, 1, 'the lost write did land');
+  assert.equal(background.root().lots.length, 0, 'the coin waits while the worker is unreachable');
+  await page.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const events = background.root().auctionEvents;
+  assert.equal(events.length, 1);
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, events[0].id);
+  const sent = page.commands.filter(({ type }) => type === 'event.save').map(({ requestId }) => requestId);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[0], sent[1]);
+});
