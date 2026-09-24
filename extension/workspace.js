@@ -1,4 +1,5 @@
 import { computeStatistics } from './core/evidence.js';
+import { LIMITS } from './core/fields.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotsNeedingOutcome, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
@@ -130,6 +131,19 @@ async function initWorkspace() {
     $('provenance-editor').append(row);
   };
   mountSourcesMenu($('source-menu'));
+  // Each text box holds what the store accepts for its field (core/fields.js), and says how much room is left once
+  // nine tenths of it is used, so a long pasted title is shortened in the box rather than refused at save.
+  const limited = document.querySelectorAll('[data-limit]');
+  for (const control of limited) control.maxLength = LIMITS[control.dataset.limit];
+  const updateCount = (control) => {
+    const limit = LIMITS[control.dataset.limit]; const left = limit - String(control.value).length;
+    let count = control.parentElement.querySelector('.char-count');
+    if (left > limit / 10) { if (count) count.hidden = true; return; }
+    if (!count) { count = text('span', '', 'char-count'); control.after(count); }
+    count.textContent = `${left} character${left === 1 ? '' : 's'} left`; count.hidden = false;
+  };
+  const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };
+  for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
   $('open-settings').addEventListener('click', () => void openSettings());
   const detailPanels = {
@@ -589,7 +603,7 @@ async function initWorkspace() {
     for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
     clearPageValues();
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
-    openFilledGroups(lot.id);
+    openFilledGroups(lot.id); refreshCounts($('lot-form'));
   }
   // The folded sections of the details form open themselves when they hold a value. For the coin already shown, a
   // section the collector opened stays open when the form follows committed data; another coin starts afresh.

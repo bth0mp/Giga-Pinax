@@ -709,9 +709,10 @@ function loadBridge(browser) {
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
 export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, projections, sourceLaunchers] = await Promise.all([
+  const [money, evidence, projections, sourceLaunchers, fields] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
+    import('../../extension/core/fields.js'),
   ]);
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
@@ -723,7 +724,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const bridge = browser ? loadBridge(browser) : null;
   const location = { hash };
   const sandbox = {
-    ...money, ...evidence, ...projections, ...sourceLaunchers,
+    ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},

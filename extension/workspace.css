@@ -19,3 +19,4 @@ label{display:block;margin:0 0 12px;font-size:12px;font-weight:650}input,select,
 .reminder-selects{margin:4px 0 6px}.reminder-selects label{display:block;margin:0;font-weight:650}.reminder-selects select,.reminder-selects input{width:100%;min-height:39px;margin-top:5px}.event-summary{margin-top:10px;font-size:12px;color:var(--ink)}
 #workspace-status{min-height:36px}
 .detail-pills{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}.alert-missed{border-left:3px solid var(--error)}
+.char-count{display:block;margin-top:4px;color:var(--warning);font-size:11px;font-weight:400}
