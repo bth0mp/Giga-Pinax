@@ -19,7 +19,8 @@ structured data to the public domain under
 - **SHA-256:** not recorded. The file carries its own provenance instead: `endpoint`, `query`,
   `retrievedOn`, `license`, `licenseUrl`, `requestCount`, `requestedCount` and `labelledCount`.
 - **Licence:** `CC-BY-3.0`, recorded in the file's `license` and `licenseUrl` fields.
-- **Written by:** `python scripts/import_rdf.py --fetch-labels --retrieved-on YYYY-MM-DD`.
+- **Written by:** `python scripts/import_rdf.py --fetch-labels --retrieved-on YYYY-MM-DD`, and by the
+  monthly refresh (`--refresh`), which rewrites it only when Nomisma's answer differs.
 - **Generates:** `extension/data/nomisma-labels.json`, through
   `python scripts/import_rdf.py --write-labels`. `extension/data/NOTICE.txt` attributes it.
 
