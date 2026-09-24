@@ -66,7 +66,7 @@ CoinArchives public prices load only when you select **Get CoinArchives prices**
 
 ## Developer build
 
-End users do not need Python. From the repository root, `python scripts/build.py` creates unpacked `dist/brave/` and `dist/firefox/` directories, versioned Brave, Chrome and Firefox ZIPs, and stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases — every release asset in one command. Build one unpacked target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
+End users do not need Python. From the repository root, `python scripts/build.py` creates unpacked `dist/brave/` and `dist/firefox/` directories, versioned Brave, Chrome and Firefox ZIPs, and stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases — every ZIP a release carries, in one command; the signed Firefox XPI and its `firefox-updates.json` come from the release workflow. Build one unpacked target with `python scripts/build.py brave` or `python scripts/build.py firefox`.
 
 A GitHub release includes five ZIP assets: versioned Brave, Chrome and Firefox packages plus both stable aliases. The versioned Chrome package is a byte-identical copy of the versioned Brave package. Once Mozilla signing is set up, a release also carries the signed `giga-pinax-firefox-x.y.z.xpi` and the `firefox-updates.json` the project site publishes for it. Every release body must include brief browser installation and update instructions. See [RELEASING.md](RELEASING.md).
 

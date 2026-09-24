@@ -9,7 +9,8 @@ through this list once on the built package before publishing the release, and a
 release that only a browser can show. Every step says what should happen; anything else is a finding.
 
 Use a browser profile whose Giga Pinax records you can afford to lose, or select **Settings → Export backup** first:
-steps 9, 10 and 15 replace or edit the stored records.
+steps 9, 10, 15, 16 and 17 replace or edit the stored records, and steps 1, 12 and 24 change
+your saved settings.
 
 ## Load the unpacked build
 
