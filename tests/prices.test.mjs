@@ -1614,4 +1614,18 @@ test('citesReference reads a hyphen for Crawford’s slash, an Arabic volume wit
   for (const other of ['RIC.I.530', 'RIC.I.5.3', 'RIC.II.53', 'RIC.I.53a']) assert.equal(citesReference(other, nero), false, other);
   // A volume RIC publishes in parts keeps its guard: the figure glued behind the numeral is the part, never the type.
   assert.equal(citesReference('RIC.IV.1 266', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  // Loop N20 review: the full stops reach a volume published in parts too. A part is one figure, so two or more behind the stop are the number.
+  const trajan = { catalogue: 'RIC', number: '53', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC.II.53', 'RIC.II.1.53', 'C.119 - RIC.II.53 - BMC 74']) assert.equal(citesReference(cited, trajan), true, cited);
+  assert.equal(citesReference('RIC.II.1.53', { ...trajan, volume: 'II, Part 1 (2nd edition)' }), true);
+  assert.equal(citesReference('RIC.IV.1.266', { catalogue: 'RIC', number: '266', volume: 'IV' }), true);
+  for (const other of ['RIC.II.3.53', 'RIC.II.530', 'RIC.II.5']) assert.equal(citesReference(other, { ...trajan, volume: 'II, Part 1 (2nd edition)' }), false, other);
+  // "RIC.VI.1 53" and "RIC VII.1 53" read as "RIC II.1 356" does: the figure glued behind the numeral is a part, the last number the type. So the
+  // row cites VI 53, as it did before the full stop was a separator, and never VI 1.
+  for (const [cited, number, volume] of [['RIC.VI.1 53', '1', 'VI'], ['RIC VII.1 53', '1', 'VII'], ['RIC I.5 53', '5', 'I (2nd edition)']]) {
+    assert.equal(citesReference(cited, { catalogue: 'RIC', number, volume }), false, `${cited} as ${volume} ${number}`);
+  }
+  for (const [cited, volume] of [['RIC.VI.1 53', 'VI'], ['RIC VI.1 53', 'VI'], ['RIC VII.1 53', 'VII'], ['RIC I.5 53', 'I (2nd edition)']]) {
+    assert.equal(citesReference(cited, { catalogue: 'RIC', number: '53', volume }), true, `${cited} as ${volume} 53`);
+  }
 });

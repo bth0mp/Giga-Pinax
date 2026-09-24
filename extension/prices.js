@@ -423,7 +423,11 @@ function between({ catalogue, volume }) {
   const figure = ROMAN_NUMERALS.indexOf(numeral) + 1;
   const written = numeral === 'I' ? '(?:I|1)' : numeral && publishedInParts(numeral) ? `(?:${escaped(numeral)}|${figure}(?=[-/.]\\d))`
     : numeral ? escaped(numeral) : NUMERAL;
-  const guard = numeral && !publishedInParts(numeral) ? '(?![-/]\\d)' : '(?![-/.]\\d)';
+  // A part is one figure, so a full stop with two or more behind it is only the separator ("RIC.II.53", "RIC.II.1.53"). On a volume without parts a
+  // figure glued behind the numeral with another number after it ("RIC VI.1 53") is read as a volume published in parts is read: the figure is the
+  // part and the last number the type, as before, so it cites VI 53 and never VI 1.
+  const parted = !numeral || publishedInParts(numeral);
+  const guard = parted ? String.raw`(?![-/]\d|\.\d(?!\d))` : String.raw`(?![-/]\d|\.\d+\s+\d)`;
   return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}${guard}${SEP})?${RULERS}`;
 }
 
