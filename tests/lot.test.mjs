@@ -506,6 +506,26 @@ test('a group lot listing several numbers under one key gives a row that can be 
   assert.equal(defaultTerm(found.reference), '"SNG von Aulock 5960, 5961, 5962, 5963, 5964"');
 });
 
+// Loop N8: CNG cites the co-authored Pre-Kushana Coins in Pakistan beside Bopearachchi's own book, and CGB and Elsen put "Série" before the number.
+// The first is another book and only its prices are searched; the second is the Bop number with no king.
+test('a Bopearachchi citation with a co-author is prices only, and the French series word is no king', () => {
+  const lot = findReferences('BAKTRIA, Greco-Baktrian Kingdom. Eukratides I Megas. Circa 170-145 BC. AR Tetradrachm (33mm, 16.95 g, 12h). '
+    + 'Bopearachchi 6C; Bopearachchi & Rahman 268; SNG ANS 464-5; HGC 12, 131. EF, lightly toned.');
+  assert.deepEqual(lot.references.map((found) => [found.text, found.reference.catalogue, found.reference.section ?? '']), [
+    ['Bopearachchi 6C', 'Bop', ''], ['Bopearachchi & Rahman 268', 'Other', ''], ['SNG ANS 464-5', 'Other', ''], ['HGC 12, 131', 'Other', '']]);
+  assert.equal(lotLabel(lot.references[1], lot.rulers), 'Bopearachchi & Rahman 268 · prices only');
+  assert.equal(defaultTerm(lot.references[1].reference), '"Bopearachchi & Rahman 268"');
+  for (const text of ['Bopearachchi and Rahman 268.', 'Bopearachchi-Rahman 268.']) {
+    assert.equal(only(text).reference.catalogue, 'Other', text);
+    assert.equal(only(text).typed, false, text);
+  }
+  const french = only('Royaume de Bactriane. Eucratide Ier (v. 171-145). Tétradrachme. Bopearachchi Série 6C. Superbe.');
+  assert.deepEqual(french.reference, { catalogue: 'Bop', number: '6C', volume: '', section: '' });
+  assert.equal(defaultTerm(french.reference), '("Bopearachchi 6C" "Bop 6C" "Bopearachchi Série 6C")');
+  // A Bop number with its king still reads as it did.
+  assert.deepEqual(only('Euthydemos II. Bopearachchi 1C.').reference, { catalogue: 'Bop', number: '1C', volume: '', section: '' });
+});
+
 test('a publication year after a key is no type number when the clause says it is a book', () => {
   // A typed catalogue whose numbers never reach the year: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits.
   assert.deepEqual(texts('See Crawford 1974, p. 745, for the chronology. Crawford 443/1; Sydenham 1006.'), ['Crawford 443/1', 'Sydenham 1006']);

@@ -833,6 +833,28 @@ test('Bop references parse from one box with or without a king, and build a BIGR
   assert.deepEqual(buildQuery(parseReference('Euthydemus I, Bop 24A')), { corpus: 'bigr', query: 'Bopearachchi Euthydemus I 24A', king: 'Euthydemus I', series: '24A' });
 });
 
+// Loop N8: CGB and Elsen put the French word for series between the key and the number ("Bopearachchi Série 6C"), which read as the king "Série";
+// and the co-authored Pre-Kushana Coins in Pakistan ("Bopearachchi & Rahman 268") read as Bop 268 of the king "& Rahman", searched on BIGR and
+// acsearch under that name. The series word is no king, and a co-author makes it another book: prices only.
+test('the French series word is read past, and Bopearachchi with a co-author is another book', () => {
+  const bop = (section, number) => ({ catalogue: 'Bop', number, volume: '', section });
+  for (const [text, expected] of [['Bopearachchi Série 6C', bop('', '6C')], ['Bopearachchi série 6C', bop('', '6C')], ['Bop. Serie 6C', bop('', '6C')],
+    ['Bopearachchi Series 6C', bop('', '6C')], ['Bopearachchi Série Euthydemus I 24A', bop('Euthydemus I', '24A')]]) {
+    assert.deepEqual(parseReference(text), expected, text);
+  }
+  // The co-authored book is its own citation, searched for its prices as the dealer wrote it.
+  for (const text of ['Bopearachchi & Rahman 268', 'Bopearachchi and Rahman 268', 'Bopearachchi-Rahman 268', 'Bop & Rahman 268']) {
+    assert.deepEqual(parseReference(text), { catalogue: 'Other', number: text, volume: '', section: '' }, text);
+  }
+  // A king never starts with the ampersand or the joining word, whichever side of the key he is written on.
+  for (const text of ['& Rahman Bop 268', 'and Rahman, Bop 268']) assert.notEqual(parseReference(text)?.catalogue, 'Bop', text);
+  // Nothing else changes: a king, a key glued to its number by a hyphen, and a real king who happens to start like the joining word.
+  assert.deepEqual(parseReference('Bop-9C'), bop('', '9C'));
+  assert.deepEqual(parseReference('Bopearachchi Euthydemus I 24A'), bop('Euthydemus I', '24A'));
+  assert.deepEqual(parseReference('Bop Andragoras 1'), bop('Andragoras', '1'));
+  assert.deepEqual(parseReference('Bopearachchi Antimachus I 1A'), bop('Antimachus I', '1A'));
+});
+
 test('bopCitation reads the Bopearachchi idno from a NUDS record and fails closed; seriesOf and kingOf split citation and title', () => {
   assert.equal(bopCitation(fixture('bigr-euthydemus-i-13-1.xml')), 'Euthydème I 24A');
   assert.equal(bopCitation(fixture('bigr-euthydemus-i-13.xml')), 'Euthydème I 24');

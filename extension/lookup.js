@@ -77,8 +77,15 @@ export const bopSeries = (number) => referenceNumber('Bop', number).toUpperCase(
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // "Bop Euthydemus I 24A", "Bopearachchi 9C", "Bop-9C" (prefix first, king optional) or "Euthydemus I Bop. 24A", "Euthydemus I, Bop 24A" (king first).
 // The king starts with a non-digit and holds no digit; the series is the last token and starts with a digit. "Bop" must end the word, so "Bopearachi 9C" fails.
+// A French dealer writes the word for series between the key and the number ("Bopearachchi Série 6C"), which is no king. Nor is anything a king that
+// starts with the "&" or "and" a co-author is joined by: "Bopearachchi & Rahman 268" cites Pre-Kushana Coins in Pakistan, another book (below).
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
-const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:([^\d\s][^\d]*?)\s+)?|([^\d\s][^\d]*?)\s*,?\s*${BOP}[\s-]*)(\d\S*)$`, 'i');
+const SERIES_WORD = String.raw`(?:S[ée]rie|Series)\s+`;
+const KING = String.raw`(?!&|and\s)([^\d\s][^\d]*?)`;
+const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:${SERIES_WORD})?(?:${KING}\s+)?|${KING}\s*,?\s*${BOP}[\s-]*(?:${SERIES_WORD})?)(\d\S*)$`, 'i');
+// Bopearachchi with a co-author joined on ("& Rahman", "and Rahman", "-Rahman") is another book with no type data here: an Other reference, its own
+// citation searched for its prices, never a Bop type of the king "& Rahman". Read case-sensitively, since the co-author's name has its capital.
+const BOP_COAUTHORED = /^(?:Bopearachchi|Bop\.?)(?:\s*&\s*|\s+and\s+|-)\p{Lu}\p{L}+/u;
 // RIC, optional "vol.", volume I–X or 1–10 (not followed by a letter or digit, so "XI" fails), optional part (".3", "/3", ",3", ", Part 3", " part 3",
 // or in Roman numerals after the word, ", part I"), optional second-edition marker, then the ruler or mint section if any (starting with a non-digit,
 // so "RIC I 2 Nero 306" fails) and finally the last token starting with a digit, with an optional parenthetical. The number is separated as the section is, by spaces or by a
@@ -173,7 +180,8 @@ export function parseReference(text, clean = true) {
     const type = readType(part.replace(/[–—]/g, '-'), clean);
     if (type) return type;
   }
-  const supported = SUPPORTED.test(value) || parts.some((part) => /\d/.test(part) && NAMED.test(part));
+  // A part that is Bopearachchi's co-authored book names no supported catalogue, however it begins.
+  const supported = (SUPPORTED.test(value) && !BOP_COAUTHORED.test(value)) || parts.some((part) => /\d/.test(part) && NAMED.test(part) && !BOP_COAUTHORED.test(part));
   return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
@@ -246,7 +254,7 @@ function readClean(value) {
     const number = referencePattern && value.match(referencePattern)?.[1];
     if (number) return { catalogue, number, volume: '', section: '' };
   }
-  const bop = value.match(BOP_REFERENCE);
+  const bop = BOP_COAUTHORED.test(value) ? null : value.match(BOP_REFERENCE);
   if (bop) return { catalogue: 'Bop', number: bop[3], volume: '', section: squash(bop[1] ?? bop[2] ?? '') };
   const ric = value.match(RIC_REFERENCE);
   if (ric) {
