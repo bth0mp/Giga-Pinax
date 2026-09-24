@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -268,7 +268,10 @@ test('fetchPrices stops reading a reply past its byte bound', async () => {
 
 test('fetchPrices sends credentials to acsearch and classifies outcomes', { timeout: 5000 }, async () => {
   const signedOut = fakeFetch(fixture('acsearch-search-nero-306.html'));
-  assert.deepEqual(await fetchPrices({ term: 'Nero 306', currency: 'USD' }, { fetchImpl: signedOut }), { status: 'signed-out' });
+  // The page's lots come back with every outcome that has any, so the lots not sold yet can still be listed as upcoming.
+  const hidden = await fetchPrices({ term: 'Nero 306', currency: 'USD' }, { fetchImpl: signedOut });
+  assert.equal(hidden.status, 'signed-out');
+  assert.equal(hidden.lots.length, 5);
   assert.equal(signedOut.calls.length, 1);
   assert.equal(signedOut.calls[0].init.cache, 'no-store');
   assert.equal(signedOut.calls[0].url, 'https://www.acsearch.info/search.html?term=Nero+306&category=1&currency=usd&order=1');
@@ -286,9 +289,9 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.equal(many.summary.priced.length, 100);
   assert.equal(many.summary.capped, true);
   assert.equal(many.lots.length, 100);
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q', examples: ['200 EUR', '300 EUR'] });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('200 EUR'), lot('300 EUR')])) }), { status: 'unpriced', term: 'q', examples: ['200 EUR', '300 EUR'], lots: [lot('200 EUR'), lot('300 EUR')].map((entry) => ({ ...entry, grade: null })) });
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q', lots: [lot(''), lot('-')].map((entry) => ({ ...entry, grade: null })) });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'network' });
   // Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
@@ -349,8 +352,9 @@ test('summarise lists up to five raw prices it could not count, skipping blanks,
 
 test('fetchPrices quotes unrecognised prices only when there are some', async () => {
   const page = (lots) => `<script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script>`;
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('1.200,- €'), lot('')])) }), { status: 'unpriced', term: 'q', examples: ['1.200,- €'] });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q' });
+  const bare = ({ lots, ...outcome }) => outcome;
+  assert.deepEqual(bare(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot('1.200,- €'), lot('')])) })), { status: 'unpriced', term: 'q', examples: ['1.200,- €'] });
+  assert.deepEqual(bare(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) })), { status: 'unpriced', term: 'q' });
 });
 
 test('summaryText produces a shareable plain-text summary', () => {
@@ -1449,4 +1453,62 @@ test('a hand-typed "Bop. 24A" still searches the Bopearachchi card', () => {
   const bop = { catalogue: 'Bop', number: '24A', section: 'Euthydemus I', volume: '' };
   assert.equal(searchesReference('Bop. 24A', bop), true);
   assert.equal(searchesReference('Bop. 24B', bop), false);
+});
+
+// 0.34 (I2): the lots acsearch lists that have not been sold yet, as the Upcoming list shows them.
+test('upcomingLots keeps the unpriced lots dated today or later in the collector’s own day, soonest first', () => {
+  // Noon on 11 September, local time: the collector's day is the 11th wherever the test runs.
+  const now = new Date(2026, 8, 11, 12);
+  const lots = [lot('*', '10.09.2026', 'yesterday'), lot('*', '11.09.2026 18:00', 'today'), lot('*', '2026-10-12', 'october'),
+    lot('', '01.12.2026', 'blank'), lot('250', '12.10.2026', 'priced'), lot('*', 'n/a', 'undated'), lot('*', '12.10.2026', 'october-2'),
+    lot('*', '31.02.2027', 'no-such-day')];
+  assert.deepEqual(upcomingLots(lots, now).map((entry) => entry.id), ['today', 'october', 'october-2', 'blank']);
+  assert.deepEqual(upcomingLots([], now), []);
+});
+
+test('upcomingText counts the lots and names the first sale day, date only', () => {
+  const now = new Date(2026, 8, 11, 12);
+  const lots = upcomingLots([lot('*', '12.10.2026 14:00', 'a'), lot('*', '2026-09-30', 'b'), lot('*', '01.12.2026', 'c')], now);
+  assert.equal(upcomingText(lots), 'Upcoming: 3 lots, first on 2026-09-30');
+  assert.equal(upcomingText(lots.slice(-1)), 'Upcoming: 1 lot, first on 2026-12-01');
+  assert.equal(upcomingText([]), '');
+  assert.equal(isoDay('28.07.2026 14:00'), '2026-07-28');
+  assert.equal(isoDay('n/a'), '');
+});
+
+test('summaryText adds the upcoming lots', () => {
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  const summary = summarise([lot('100', '01.01.2023', 'a')], 'USD');
+  const upcoming = upcomingLots([lot('*', '12.10.2026', 'u1'), lot('*', '01.11.2026', 'u2')], new Date(2026, 8, 11, 12));
+  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming }).split('\n')[2], 'Upcoming: 2 lots, first on 2026-10-12');
+  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming: [] }).split('\n').length, 3);
+});
+test('mediansByYear gives a median per year of at least three counted sales, oldest first', () => {
+  const lots = [lot('100', '01.01.2023', 'a'), lot('200', '2023-06-01', 'b'), lot('300', '31.12.2023', 'c'),
+    lot('400', '01.01.2024', 'd'), lot('500', '01.02.2024', 'e'),
+    lot('90', '01.01.2021', 'f'), lot('110', '01.02.2021', 'g'), lot('130', '01.03.2021', 'h'), lot('150', '01.04.2021', 'i'),
+    // Not a counted sale: no price, another currency, no readable date.
+    lot('*', '01.05.2021', 'j'), lot('200 EUR', '01.05.2023', 'k'), lot('1000', 'n/a', 'l'), lot('1000', '', 'l2'), lot('1000', '2023', 'l3')];
+  assert.deepEqual(mediansByYear(lots, 'USD'), [{ year: 2021, median: 120, count: 4 }, { year: 2023, median: 200, count: 3 }]);
+  assert.deepEqual(mediansByYear(lots.slice(3, 5), 'USD'), []);
+  const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
+  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021: median $120 (4)');
+  assert.equal(yearsSentence(mediansByYear(lots, 'USD'), usd), 'Median by year: 2021, $120 from 4 sales; 2023, $200 from 3 sales.');
+  assert.equal(yearsSentence([], usd), '');
+});
+
+test('summaryText adds the medians by year and the upcoming lots', () => {
+  const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
+  const lots = [lot('100', '01.01.2023', 'a'), lot('200', '01.02.2023', 'b'), lot('300', '01.03.2023', 'c')];
+  const summary = summarise(lots, 'USD');
+  const upcoming = upcomingLots([lot('*', '12.10.2026', 'u1'), lot('*', '01.11.2026', 'u2')], new Date(2026, 8, 11, 12));
+  const text = summaryText(card, summary, 'USD', 'Price 23', { years: mediansByYear(lots, 'USD'), upcoming });
+  assert.equal(text, [
+    'Price 23',
+    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 3 recorded sales matching “Price 23” · 2023',
+    '2023: median $200 (3)',
+    'Upcoming: 2 lots, first on 2026-10-12',
+    'https://numismatics.org/pella/id/price.23',
+  ].join('\n'));
+  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { years: [], upcoming: [] }).split('\n').length, 3);
 });

@@ -12,6 +12,7 @@ import * as lot from '../extension/lot.js';
 import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
+import { parseHtml } from './helpers/dom.mjs';
 
 // No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
 // that was Node's: 33 lookups went to numismatics.org, kept the file waiting seconds for their sockets, and made what a test saw depend on the site.
@@ -92,6 +93,8 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     getElementById: element,
     querySelector: (selector) => selector === '.popup-scroll' ? element('popup-scroll') : null,
     createElement: () => new TestElement(),
+    // The by-year strip is drawn in SVG: each node records the namespace and tag it was made with, and its attributes as properties.
+    createElementNS: (namespace, tag) => Object.assign(new TestElement(), { namespace, tag }),
   };
   if (focusedId) document.activeElement = element(focusedId);
   // The extension's own session area, as both browsers answer it: a promise, and a store that outlives the popup document a permission prompt closed.
@@ -140,7 +143,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     clearTimeout() {},
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
     // with the card still on screen at the time, so what the other half would have seen is what this records.
-    dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent }); return true; },
+    dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent, detail: event?.detail }); return true; },
     console,
   };
   sandbox.globalThis = sandbox;
@@ -148,7 +151,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard, stored, dispatched };
+  return { element, document, window, writes, clipboard, stored, dispatched };
 }
 
 const oneSale = {
@@ -1614,4 +1617,214 @@ test('a RIC mint written with no volume fetches no prices until a type is chosen
   await settle();
   assert.deepEqual(fetched, []);
   assert.equal(popup.element('median-amount').textContent, '');
+});
+
+// 0.34 (I2): the lots on the fetched page that have not been sold yet. Far-future days, so the tests hold whatever day they run on.
+const upcomingSale = (id, date, description) => ({ id, title: `Roma Numismatics, E-Sale 200, Lot ${id}`, date, price: '*', description });
+const withUpcoming = {
+  status: 'ok',
+  lots: [citingSale('s1', '100', 'Macedon, Alexander III. Tetradrachm. Price 23. Very Fine.'),
+    upcomingSale('u1', '12.10.2099 14:00', 'Macedon, Alexander III. Tetradrachm. Price 23. EF.'),
+    upcomingSale('u2', '01.11.2099', 'Macedon, Alexander III. Tetradrachm. Price 3014. EF.'),
+    upcomingSale('u3', '01.12.2099', 'Macedon, Alexander III. Tetradrachm. Price 23. VF.'),
+    // Past and unsold: not coming up.
+    upcomingSale('old', '01.01.2024', 'Macedon, Alexander III. Tetradrachm. Price 23. VF.')],
+};
+
+test('upcoming lots are listed under the acsearch panel, filtered as the median is, and copied', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('upcoming').hidden, false);
+  const rows = () => popup.element('upcoming-list').children;
+  // Soonest first, and only the lots that cite the reference while the citation filter is on, which it says in the median's own words.
+  assert.equal(rows().length, 2);
+  assert.equal(rows()[0].children[0].children[0], '2099-10-12 · ');
+  assert.equal(rows()[0].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u1');
+  assert.equal(rows()[0].children[0].children[1].href, 'https://www.acsearch.info/search.html?id=u1');
+  assert.equal(rows()[1].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u3');
+  assert.equal(popup.element('upcoming-filtered').textContent, '2 of 3 results cite Price 23');
+  assert.equal(popup.element('upcoming-filtered').hidden, false);
+  await popup.element('copy-summary').emit('click');
+  assert.ok(popup.clipboard[0].split('\n').includes('Upcoming: 2 lots, first on 2099-10-12'));
+  // The one toggle governs the list too.
+  popup.element('citing-filter').checked = false;
+  await popup.element('citing-filter').emit('change');
+  assert.equal(rows().length, 3);
+  assert.equal(popup.element('upcoming-filtered').hidden, true);
+  // A new reference takes the list away with the panel.
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('upcoming').hidden, true);
+  assert.equal(rows().length, 0);
+});
+
+test('Watch hands an upcoming lot to the watchlist half with its acsearch page and its sale day, date only', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const watch = popup.element('upcoming-list').children[0].children[1];
+  assert.equal(watch.textContent, 'Watch');
+  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
+  popup.dispatched.length = 0;
+  await watch.emit('click');
+  assert.deepEqual(popup.dispatched.map(({ type, detail }) => ({ type, detail: { ...detail } })), [{ type: 'giga-pinax-watch', detail: {
+    title: 'Roma Numismatics, E-Sale 200, Lot u1', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=u1', saleDate: '2099-10-12' } }]);
+});
+
+// A search whose only hits are lots not sold yet has no median to show, and those lots are exactly what the collector may want to know about.
+test('a page without a counted price still lists its upcoming lots', async () => {
+  const lots = withUpcoming.lots.slice(1);
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, true);
+  assert.equal(popup.element('prices-note').hidden, false);
+  assert.equal(popup.element('upcoming').hidden, false);
+  assert.equal(popup.element('upcoming-list').children.length, 2);
+  // The toggle stands for the list as it does for a median.
+  assert.equal(popup.element('citing-row').hidden, false);
+  assert.match(popup.element('announcement').textContent, /Upcoming: 2 lots, first on 2099-10-12\.$/);
+  popup.element('citing-filter').checked = false;
+  await popup.element('citing-filter').emit('change');
+  assert.equal(popup.element('upcoming-list').children.length, 3);
+});
+
+
+// 0.34 (I2): the Upcoming list and the by-year strip are new elements; the page looks every element up by id, and one missing from the markup throws
+// only when the panel is drawn. Every id the page names is in the page, and the new list starts hidden.
+test('every element the popup looks up by id is in its markup', () => {
+  const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
+  const markup = parseHtml(read('popup.html'));
+  const ids = [...new Set([...read('popup.js').matchAll(/\$\('([\w-]+)'\)/g)].map((match) => match[1]))];
+  assert.ok(ids.includes('upcoming-list'));
+  assert.deepEqual(ids.filter((id) => !markup.getElementById(id)), []);
+  assert.equal(markup.getElementById('upcoming').hidden, true);
+});
+const saleIn = (id, price, date) => ({ ...citingSale(id, price, 'Macedon, Alexander III. Tetradrachm. Price 23. Very Fine.'), date });
+const byYear = { status: 'ok', lots: [saleIn('a', '100', '01.01.2023'), saleIn('b', '200', '01.02.2023'), saleIn('c', '300', '01.03.2023'),
+  saleIn('d', '400', '01.01.2024'), saleIn('e', '500', '01.02.2024'), saleIn('f', '600', '01.03.2024'), saleIn('g', '900', '01.01.2025')] };
+
+test('the median by year is drawn under the range from the counted sales, with its lines for screen readers and the copy', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => byYear });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('year-medians').hidden, false);
+  // 0.34 review (M1): the strip keeps its natural size, 48px a year, and the figure scrolls sideways rather than shrinking its labels.
+  assert.equal(popup.element('year-strip').style.width, '96px');
+  assert.equal(popup.element('year-strip').style.height, '74px');
+  assert.equal(popup.element('year-strip')['aria-label'], 'Median by year: 2023, $200 from 3 sales; 2024, $500 from 3 sales.');
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+  // One bar per year, and under it the year and the count; every node is SVG.
+  const nodes = popup.element('year-strip').children;
+  assert.ok(nodes.every((node) => node.namespace === 'http://www.w3.org/2000/svg'));
+  assert.equal(nodes.filter((node) => node.tag === 'rect').length, 2);
+  const texts = nodes.filter((node) => node.tag === 'text').map((node) => node.textContent);
+  for (const text of ['2023', '2024', '3 sales']) assert.ok(texts.includes(text), text);
+  await popup.element('copy-summary').emit('click');
+  assert.match(popup.clipboard[0], /\n2023: median \$200 \(3\)\n2024: median \$500 \(3\)/);
+  // A sale left out by hand leaves 2024 on two: the year goes.
+  await popup.element('sale-list').children[3].children[2].emit('click');
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)']);
+});
+
+test('the CoinArchives panel draws its own median by year, never pooled with acsearch', async () => {
+  const publicLot = (id, amount, date) => ({ id, title: `Auction, Lot ${id}`, description: 'Alexander III. Tetradrachm. Price 23.', date, price: `USD ${amount}`, amount,
+    currency: 'USD', url: `https://www.coinarchives.com/a/lotviewer.php?LotID=${id}`, source: 'coinarchives' });
+  const selectedLots = [publicLot('p1', 150, '2025-02-01'), publicLot('p2', 250, '2025-03-01'), publicLot('p3', 350, '2025-04-01')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => byYear,
+    coinArchivesFetch: async () => ({ ...coinArchivesSale, lots: selectedLots, selectedLots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(popup.element('coinarchives-year-medians').hidden, false);
+  assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025: median $250 (3)']);
+  assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
+});
+
+// The toggles stand for the rows on show: clearing the Upcoming list takes them down with it, as it does after a re-fetch that finds nothing and after
+// Get prices with an emptied term, which clears the panel once and asks nothing.
+test('clearing the Upcoming list takes the toggles down with it', async () => {
+  const replies = [{ status: 'unpriced', term: '"Price 23"', lots: withUpcoming.lots.slice(1) }, { status: 'empty', term: '"Price 23"' }];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => replies.shift() ?? { status: 'empty', term: 'x' } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('citing-row').hidden, false);
+  popup.element('price-term').value = '';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('upcoming').hidden, true);
+  assert.equal(popup.element('citing-row').hidden, true);
+  assert.equal(popup.element('price-filters').hidden, true);
+});
+
+// 0.34 review (I2): a page with no counted price and no lot still to come has nothing for the toggles to govern, so none is offered, as in 0.33.
+test('a page with no counted price and nothing coming up offers no price toggles', async () => {
+  const lots = [upcomingSale('p1', '01.01.2024', 'Macedon. Tetradrachm. Price 23. VF.'), upcomingSale('p2', '01.02.2024', 'Macedon. Tetradrachm. Price 3014. VF.')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-note').hidden, false);
+  assert.equal(popup.element('upcoming').hidden, true);
+  assert.equal(popup.element('citing-row').hidden, true);
+  assert.equal(popup.element('price-filters').hidden, true);
+});
+
+// 0.34 review (M1): many years would shrink a strip fitted to the column until its labels could not be read; it scrolls instead, and a keyboard can
+// reach the scroll region, which is named by its caption.
+test('the by-year figures scroll sideways at their natural width, reachable by keyboard', () => {
+  const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
+  const markup = parseHtml(read('popup.html'));
+  for (const prefix of ['', 'coinarchives-']) {
+    const figure = markup.getElementById(`${prefix}year-medians`);
+    assert.equal(figure.getAttribute('tabindex'), '0', prefix);
+    const caption = markup.getElementById(figure.getAttribute('aria-labelledby'));
+    assert.equal(caption?.textContent, 'Median by year', prefix);
+  }
+  const css = read('popup.css');
+  assert.match(css, /\.year-medians \{[^}]*overflow-x:auto/);
+  assert.doesNotMatch(/\.year-strip \{[^}]*\}/.exec(css)[0], /width:100%/);
+});
+
+// 0.34 review (M4): a title is page text of any length; the row, its button's name and the draft all take the draft's own 200 characters.
+test('an upcoming lot’s title is shown, spoken and handed over bounded', async () => {
+  const long = `Roma ${'x'.repeat(5000)}`;
+  const lots = [{ ...upcomingSale('u9', '12.10.2099', 'Macedon. Tetradrachm. Price 23. EF.'), title: long }];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [row] = popup.element('upcoming-list').children;
+  assert.equal(row.children[0].children[1].textContent, long.slice(0, 200));
+  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on 2099-10-12`);
+  popup.dispatched.length = 0;
+  await row.children[1].emit('click');
+  assert.equal(popup.dispatched[0].detail.title, long.slice(0, 200));
+});
+
+// 0.34 review (M5): the other half of the page says a failed Watch on its own status line, at the foot of the popup; the collector is looking at the
+// list, so the reason is written beside it too, and goes with the next Watch or the next result.
+test('a failed Watch is said beside the Upcoming list', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('upcoming-status').hidden, true);
+  await popup.window.emit('giga-pinax-watch-failed', { detail: { message: 'Extension storage is unavailable.' } });
+  assert.equal(popup.element('upcoming-status').textContent, 'Extension storage is unavailable.');
+  assert.equal(popup.element('upcoming-status').hidden, false);
+  await popup.element('upcoming-list').children[0].children[1].emit('click');
+  assert.equal(popup.element('upcoming-status').hidden, true);
+  await popup.window.emit('giga-pinax-watch-failed', { detail: { message: 'Draft store is full.' } });
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('upcoming-status').hidden, true);
 });

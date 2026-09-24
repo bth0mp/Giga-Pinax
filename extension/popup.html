@@ -67,6 +67,7 @@
           <h3 class="price-source-title">acsearch</h3>
           <div class="median-block"><p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="sale-strength" class="sale-strength"></p><p id="cited-count" class="sale-filtered" hidden></p><p id="sale-trend" class="sale-trend" hidden></p><p id="last-sale" class="last-sale" hidden></p><p id="sale-period" class="sale-period"></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><strong id="range-amount"></strong><p id="range-all" class="range-all"></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
+          <figure id="year-medians" class="year-medians" tabindex="0" aria-labelledby="year-medians-title" hidden><figcaption id="year-medians-title" class="metric-label">Median by year</figcaption><svg id="year-strip" class="year-strip" role="img" aria-label="" xmlns="http://www.w3.org/2000/svg"></svg><ul id="year-lines" class="sr-only"></ul><p class="price-basis">Years with at least 3 counted sales, from the sales on the fetched page: acsearch returns the 100 most recent.</p></figure>
           <ul id="grade-medians" class="grade-medians" hidden></ul>
           <p id="ungraded-count" class="sale-filtered" hidden></p>
           <div id="check-row" class="check-row"><label for="check-amount">Check a price</label><input id="check-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 500"></div>
@@ -76,6 +77,13 @@
           <button id="copy-summary" class="text-button copy-button" type="button">Copy summary</button>
         </section>
         <p id="prices-note" class="prices-note" hidden><span id="prices-note-text"></span> <a id="signin-link" href="https://www.acsearch.info/login.html" target="_blank" rel="noopener noreferrer" hidden>Sign in <span aria-hidden="true">↗</span></a></p>
+        <section id="upcoming" class="upcoming" aria-labelledby="upcoming-title" hidden>
+          <h3 id="upcoming-title" class="price-source-title">Upcoming on acsearch</h3>
+          <p id="upcoming-filtered" class="sale-filtered" hidden></p>
+          <p id="upcoming-status" class="form-error" hidden></p>
+          <ol id="upcoming-list" class="sale-list"></ol>
+          <p class="price-basis">Lots on the fetched page not sold yet, by sale date. Watch opens the lot in the workspace for you to review and save; add its auction there to be reminded.</p>
+        </section>
         <form id="prices-form" class="prices">
           <label for="price-term">acsearch search</label>
           <div class="search-row"><input id="price-term" name="term" required maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="prices-error prices-note"><button id="prices-button" class="primary-button" type="submit"><span id="prices-label">Get prices</span></button></div>
@@ -91,6 +99,7 @@
             <p class="metric-label">Recorded hammer median</p><p id="coinarchives-median-line" class="coinarchives-median-line"><strong id="coinarchives-median"></strong><span id="coinarchives-median-currency"></span></p>
             <p id="coinarchives-sample" class="sale-strength"></p>
             <p id="coinarchives-cited" class="sale-filtered" hidden></p>
+            <figure id="coinarchives-year-medians" class="year-medians" tabindex="0" aria-labelledby="coinarchives-year-medians-title" hidden><figcaption id="coinarchives-year-medians-title" class="metric-label">Median by year</figcaption><svg id="coinarchives-year-strip" class="year-strip" role="img" aria-label="" xmlns="http://www.w3.org/2000/svg"></svg><ul id="coinarchives-year-lines" class="sr-only"></ul><p class="price-basis">Years with at least 3 counted sales, from the results on the fetched page: CoinArchives returns the first 100.</p></figure>
             <p id="coinarchives-counts" class="price-note"></p>
             <p id="coinarchives-coverage" class="price-basis">Coverage: auctions added in the past 6 months; first 100 results.</p>
             <p class="price-basis">Basis: public CoinArchives hammer prices; buyer’s premium, tax and shipping excluded. No currency conversion.</p>
