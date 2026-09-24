@@ -60,9 +60,14 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     shows hammer prices. Look up `Price 23` and select **Get prices**.
     *Expected:* the panel gives its query and a line of the form "N of M results cite Price 23"; the median is taken
     from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
-    automated fixtures for this page are synthetic, so this is the only check that the signed-in page is read correctly.
+    automated fixtures for this page are synthetic, so unless a scrubbed real page has been added to
+    `tests/fixtures/acsearch-real/`, this is the only check that the signed-in page is read correctly.
     Open the same search on acsearch itself and compare two of the listed prices, date and hammer, with the rows under
     **Inspect sales**: the figures the median rests on must be the ones acsearch shows, in the same currency.
+    To give the automated suite a real page, save that acsearch results page (**Web Page, HTML only**, outside the
+    repository) and scrub it with `python scripts/scrub_acsearch.py SAVED.html tests/fixtures/acsearch-real/NAME.html
+    --account YOUR_NAME --account YOUR_EMAIL`; [the folder's README](../tests/fixtures/acsearch-real/README.md) says how
+    to review it before committing it.
     Under **Inspect sales**, include by hand one row that does not cite Price 23.
     *Expected:* the line now reads "N of M results cite Price 23; K of M counted", with K one more than N: the row you
     included is counted, and never counted as a citation. **Copy summary** says the same.
