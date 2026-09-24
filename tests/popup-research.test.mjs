@@ -2155,3 +2155,13 @@ test('before the first lookup, example chips look up on a click, and they go onc
   // Every example is a reference the box reads.
   for (const example of chips.map((chip) => chip.textContent)) assert.ok(lookup.parseReference(example), example);
 });
+
+// Loop 1 (P-03): the footer's credit took two lines and dropped the arrow of "acsearch ↗" under the word at every width. The credit is short (the full
+// list is in Settings → Local catalogue data) and the link never breaks.
+test('the footer is one line: a short credit and an unbroken acsearch link', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const footer = html.slice(html.indexOf('<footer class="popup-footer">'), html.indexOf('</footer>'));
+  assert.match(footer, /<span>Type data: ANS · Nomisma \(ODbL, CC BY\)<\/span>/);
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.popup-footer a \{[^}]*white-space:nowrap/);
+});

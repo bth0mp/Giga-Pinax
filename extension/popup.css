@@ -245,7 +245,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .coinarchives-median-line strong {font-family:var(--font-serif); font-size:26px; line-height:1; font-weight:700; color:var(--ink);}
 #coinarchives-median-currency {font-size:12px; color:var(--muted);}
 .popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
-.popup-footer a {text-decoration:none; padding:4px 0;}
+.popup-footer a {text-decoration:none; padding:4px 0; white-space:nowrap;}
 .popup-footer a:hover {text-decoration:underline;}
 .lookup-prompt,.storage-note {font-size:12px; line-height:1.5; padding:12px 16px; color:var(--muted);}
 .storage-note {color:var(--error);}
