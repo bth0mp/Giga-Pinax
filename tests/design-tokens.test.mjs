@@ -163,3 +163,12 @@ test('the popup header’s text actions never wrap', () => {
   const header = rules(read('popup.css')).find((rule) => rule.selector === '.header-action,.header-actions summary');
   assert.match(header.body, /white-space:nowrap/);
 });
+
+// Fix round, found at 320: the phone rule that pulls the sticky Save bar out to the coin panel's 16 px edges came before the base rule's 22 px, so
+// the base won and the bar stuck 6 px out of the panel on each side (clipped, but a sideways overflow). The phone rule now comes after it.
+test('at phone width the sticky action bar spans the coin panel and no further', () => {
+  const bars = rules(read('workspace.css')).filter((rule) => rule.selector === '.action-bar');
+  const base = bars.findIndex((rule) => /position:sticky/.test(rule.body));
+  const phone = bars.findIndex((rule) => /margin-right:-16px/.test(rule.body));
+  assert.ok(base >= 0 && phone > base, `phone rule ${phone}, base rule ${base}`);
+});
