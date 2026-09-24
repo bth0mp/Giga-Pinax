@@ -12,7 +12,7 @@ import * as lot from '../extension/lot.js';
 import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
-import { parseHtml } from './helpers/dom.mjs';
+import { parseHtml, runPage } from './helpers/dom.mjs';
 
 // No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
 // that was Node's: 33 lookups went to numismatics.org, kept the file waiting seconds for their sockets, and made what a test saw depend on the site.
@@ -150,9 +150,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   };
   sandbox.globalThis = sandbox;
 
-  const popupPath = new URL('../extension/popup.js', import.meta.url);
-  const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
-  vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
+  runPage(vm.createContext(sandbox), new URL('../extension/popup.js', import.meta.url));
   return { element, document, window, writes, clipboard, stored, dispatched };
 }
 
@@ -1705,7 +1703,10 @@ test('a page without a counted price still lists its upcoming lots', async () =>
 test('every element the popup looks up by id is in its markup', () => {
   const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
   const markup = parseHtml(read('popup.html'));
-  const ids = [...new Set([...read('popup.js').matchAll(/\$\('([\w-]+)'\)/g)].map((match) => match[1]))];
+  // The page and the modules it was split into (popup-*.js), which look elements up for it.
+  const modules = [...read('popup.js').matchAll(/from '\.\/(popup-[\w-]+\.js)';/g)].map((match) => match[1]);
+  const code = ['popup.js', ...modules].map(read).join('\n');
+  const ids = [...new Set([...code.matchAll(/\$\('([\w-]+)'\)/g)].map((match) => match[1]))];
   assert.ok(ids.includes('upcoming-list'));
   assert.deepEqual(ids.filter((id) => !markup.getElementById(id)), []);
   assert.equal(markup.getElementById('upcoming').hidden, true);

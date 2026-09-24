@@ -1,5 +1,11 @@
+// @ts-check
 import { stripTracking } from './validate.js';
+/** @typedef {import('./types.js').Lot} Lot */
 
+/**
+ * @param {*} value
+ * @returns {string | null}
+ */
 export function normalizeAuctionUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return null;
   try {
@@ -29,6 +35,13 @@ function identityUrls(lot) {
   return new Set(urls.map(normalizeAuctionUrl).filter(Boolean));
 }
 
+/**
+ * The saved lot the candidate is the same auction lot as, by its page or its house, sale and lot number.
+ * @param {*} lots
+ * @param {*} candidate
+ * @param {string} [excludeId]
+ * @returns {Lot | null}
+ */
 export function findDuplicateLot(lots, candidate, excludeId) {
   if (!Array.isArray(lots) || !candidate || typeof candidate !== 'object') return null;
   const candidateUrls = identityUrls(candidate);
