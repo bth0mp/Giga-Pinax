@@ -138,10 +138,11 @@ const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
 const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|proviene(?: d[a-z']*)?)\b\.? ?:? ?/i;
 // The lot, after the word a house writes for it: "lot", German "Los", Italian "lotto", Spanish "lote". A "no.", "Nr." or "n°" is the lot only in a
 // clause of its own after a comma ("Zürich 2000, Nr. 12"), and only where no lot word is written, since "Auction no. 45" is the sale's number.
-const PROVENANCE_LOT = /,? ?\b(?:lots?|los|lotto|lote)\b\.? ?(?:no\.? ?|nr\.? ?|n° ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
-const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n°) ?(\d{1,6}[a-z]?)(?![\da-z])/i;
+const PROVENANCE_LOT = /,? ?\b(?:lots?|los|lotto|lote)\b\.? ?(?:no\.? ?|nr\.? ?|n\.?[°º] ?|n\. ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+// "n°" is written with the degree sign or with the ordinal indicator the Spanish and French keyboards type ("nº", "n.º"), and Italian writes "n.".
+const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n\.?[°º]|n\.) ?(\d{1,6}[a-z]?)(?![\da-z])/i;
 // A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
-const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n°|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
 // The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
 // "24 avril").
 const PROVENANCE_DATE = new RegExp(String.raw`(?:\b\d{1,2}(?:st|nd|rd|th|er)?\.? (?:de )?)?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März`
@@ -191,7 +192,7 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ')).slice(0, 120);
+  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ',')).slice(0, 120);
   if (/\p{L}/u.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];

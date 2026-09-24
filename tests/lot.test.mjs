@@ -1347,6 +1347,15 @@ test('a provenance sentence ends at the full stop a catalogue key follows, even 
     assert.deepEqual(texts(text), expected, text);
   }
   assert.deepEqual(readProvenance('Aus Sammlung H. W. RIC 53.'), [{ text: 'Aus Sammlung H. W', source: 'Sammlung H. W' }]);
+  // Loop N9 review: the ordinal indicator the Spanish and French keyboards type (nº, n.º), the Italian "n." and "lotto n.", and no space left
+  // before a comma where the year came out.
+  for (const [text, lot] of [['Ex Áureo 300, 7 marzo 2018, nº 1234.', '1234'], ['Ex Áureo 300, 2018, n.º 1234.', '1234'],
+    ['Ex asta Varesi 60, 2012, n. 45.', '45'], ['Ex asta Varesi 60, 2012, lotto n. 45.', '45'], ['Provient de la vente X, 1985, lot nº 12.', '12']]) {
+    assert.equal(readProvenance(text)[0].lot, lot, text);
+  }
+  assert.deepEqual(readProvenance('Ex Auktion Hirsch, München 1998, Nr. 5.'), [
+    { text: 'Ex Auktion Hirsch, München 1998, Nr. 5', source: 'Auktion Hirsch, München', year: 1998, lot: '5' }]);
+  assert.equal(readProvenance('Ex Auktion Hirsch, München 1998, Wien.')[0].source, 'Auktion Hirsch, München, Wien');
   // The initial still keeps a sentence whole where no key follows it.
   assert.deepEqual(readProvenance('Ex Dr. Sear collection, 1975.').map(({ text }) => text), ['Ex Dr. Sear collection, 1975']);
   assert.deepEqual(readProvenance('Aus Sammlung Dr. W. R. Erworben 1998.').map(({ text }) => text), ['Aus Sammlung Dr. W. R', 'Erworben 1998']);
