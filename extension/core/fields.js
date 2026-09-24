@@ -1,7 +1,7 @@
 // @ts-check
 // The bounds every record is held to, and the field validators every record shape and draft is built
 // from. Each validator answers { ok: true, value } or the failure that names the path it failed at.
-import { validateMoney } from './money.js';
+import { validateIncrementLadder, validateMoney } from './money.js';
 import { ISO_DATE, UUID, dateParts, failure, isIsoInstant } from './validate.js';
 /**
  * @typedef {import('./types.js').Money} Money
@@ -240,7 +240,28 @@ function auctionContextResult(value, path) {
   );
 }
 
+// One saved house preset: its name, its premium, and what it may carry beside it - the VAT it adds to
+// that premium, a platform's fee on the hammer and the increment ladder copied from its terms. Each of
+// those is optional, so a preset saved before it existed needs no migration step of its own. Settings
+// reads house presets pasted from another browser with the same rule.
+/**
+ * @param {*} preset
+ * @param {string} path
+ * @returns {Result<any>}
+ */
+function housePresetResult(preset, path) {
+  const object = objectResult(preset, path); if (!object.ok) return object;
+  return firstFailure(
+    stringResult(preset.name, `${path}.name`, LIMITS.shortText),
+    integerResult(preset.buyerPremiumBps, `${path}.buyerPremiumBps`, { maximum: 10000 }),
+    bpsResult(preset, 'premiumVatBps', path), bpsResult(preset, 'platformFeeBps', path),
+    OWN(preset, 'incrementLadder')
+      ? validateIncrementLadder(preset.incrementLadder, `${path}.incrementLadder`)
+      : { ok: true, value: undefined },
+  );
+}
+
 export {
-  OWN, arrayResult, auctionContextResult, bpsResult, dateResult, enumResult, firstFailure, instantResult, integerResult,
+  OWN, arrayResult, auctionContextResult, bpsResult, housePresetResult, dateResult, enumResult, firstFailure, instantResult, integerResult,
   isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
 };

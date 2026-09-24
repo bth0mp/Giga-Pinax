@@ -23,7 +23,7 @@ Features include:
 - public type data from American Numismatic Society projects and Nomisma.org for a reference the package does not hold, and for every Bopearachchi reference;
 - session sale-price research from acsearch, searched as the phrase dealers cite, counting how many results cite the reference and keeping the rest out of the median, with collector-controlled exclusions, an optional denomination filter, medians per dealer grade, and consistent count, range, median and summary calculations;
 - auction identity and duplicate checks, workflow queues, reminders, notes and outcomes, with a collection history that totals recorded hammer and invoice amounts within each currency beside the collector's own saved comparables, never as a valuation;
-- bid totals and affordable-bid calculations with premium, shipping, payment fees and either a collector-entered fixed increment or a collector-entered house increment ladder;
+- bid totals and affordable-bid calculations with premium, VAT on the premium, a platform fee on the hammer, shipping, payment fees and either a collector-entered fixed increment or a collector-entered house increment ladder;
 - provenance, measurements, condition, external photo URL links and two-to-four coin comparison;
 - browser-local records with explicit JSON backup, a reviewed merge or replace import that copies the current records to disk first, a raw rescue export, and a formula-safe CSV export of one table at a time; and
 - a local diagnostics list of recent failures, with no search terms, references, addresses or record text, that stays on the device until you copy it.

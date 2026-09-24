@@ -11,11 +11,14 @@ import { failure } from './validate.js';
  * @typedef {import('./types.js').Result<T>} Result
  */
 /**
- * The fees a cost is worked out with; each defaults to zero.
+ * The fees a cost is worked out with; each defaults to zero. VAT on the premium is charged on the
+ * premium alone (Künker, Roma, Leu), a platform fee on the hammer alone (biddr, NumisBids, Sixbid).
  * @typedef {object} BidCostOptions
  * @property {number} [shippingMinor]
  * @property {number} [paymentFeeBps]
  * @property {number} [paymentFeeMinor]
+ * @property {number} [premiumVatBps]
+ * @property {number} [platformFeeBps]
  */
 /**
  * The fees, and the grid a bid must sit on: a fixed increment from the minimum bid, or a house ladder.
@@ -25,6 +28,8 @@ import { failure } from './validate.js';
  * @typedef {object} BidCost
  * @property {Money} hammer
  * @property {Money} premium
+ * @property {Money} premiumVat
+ * @property {Money} platformFee
  * @property {Money} hammerPlusPremium
  * @property {Money} shipping
  * @property {Money} paymentFee
@@ -50,18 +55,39 @@ const ambiguousMessage = (input) =>
 /** @type {(whole: string, fraction: string) => boolean} */
 export const ambiguousGrouping = (whole, fraction) => fraction.length === 3 && whole.length <= 3;
 
+// The thousands separator of the collector's own locale, when it is a comma or a point and that locale
+// writes its decimals with the other one. A malformed tag, which Intl rejects, gives none; a well-formed
+// tag Intl does not know falls back to its root locale, which groups with a comma.
+/** @type {(locale: string) => string | null} */
+function localeGroup(locale) {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1234567.5);
+    const group = parts.find((part) => part.type === 'group')?.value;
+    const decimal = parts.find((part) => part.type === 'decimal')?.value;
+    return (group === ',' && decimal === '.') || (group === '.' && decimal === ',') ? group : null;
+  } catch {
+    return null;
+  }
+}
+
 // Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
-// `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
+// `1,200` is read with the collector's locale: where a comma groups thousands and a point marks
+// decimals (en-US) it is twelve hundred, since three decimals are never money here; where the comma
+// is the decimal mark (de-DE) it could be 1.20 as well, so it is refused. `1.200` the other way round.
 /**
  * @param {string} input
+ * @param {string} locale
  * @returns {{ whole: string, fraction: string, ambiguous?: false } | { ambiguous: true } | null}
  */
-function splitAmount(input) {
+function splitAmount(input, locale) {
   if (/^\d+$/.test(input)) return { whole: input, fraction: '' };
   const decimal = DECIMAL.exec(input);
   if (decimal) {
     if (decimal[3].length <= 2) return { whole: decimal[1], fraction: decimal[3] };
-    return ambiguousGrouping(decimal[1], decimal[3]) ? { ambiguous: true } : null;
+    if (!ambiguousGrouping(decimal[1], decimal[3])) return null;
+    // A group never follows a lone zero: `0,200` is a decimal typed with a third place, not two hundred.
+    const grouping = decimal[1] !== '0' && decimal[2] === localeGroup(locale);
+    return grouping ? { whole: decimal[1] + decimal[3], fraction: '' } : { ambiguous: true };
   }
   const grouped = GROUPED.exec(input);
   if (!grouped) return null;
@@ -70,21 +96,22 @@ function splitAmount(input) {
   return { whole: lead + groups.split(groupSeparator).join(''), fraction: fraction ?? '' };
 }
 
-// The locale is accepted for call-site symmetry with formatting; parsing never depends on it.
+// Only a lone `1,200` or `1.200` depends on the locale; every other shape reads the same everywhere.
 /**
  * @param {*} text
  * @param {bigint} maximumMinor
  * @param {string} subject
+ * @param {string} locale
  * @returns {Result<number>}
  */
-function parseFixed(text, maximumMinor, subject) {
+function parseFixed(text, maximumMinor, subject, locale) {
   if (typeof text !== 'string') {
     return failure('invalid-format', `${subject} must be entered as text.`);
   }
 
   const input = text.trim();
   if (input.length > 32) return failure('input-too-long', `${subject} input is too long.`);
-  const parts = splitAmount(input);
+  const parts = splitAmount(input, locale);
   if (!parts) {
     return failure(
       'invalid-format',
@@ -133,9 +160,27 @@ export function parseMoney(text, currency, locale = 'en-US') {
   if (!CURRENCY_SET.has(currency)) {
     return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
   }
-  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money');
+  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money', locale);
   if (!parsed.ok) return parsed;
   return { ok: true, value: { currency, minor: parsed.value } };
+}
+
+// A percentage typed as text, as basis points; the subject names the field in its errors.
+/**
+ * @param {string} text
+ * @param {string} [locale]
+ * @param {string} [subject]
+ * @returns {Result<number>} basis points
+ */
+export function parsePercent(text, locale = 'en-US', subject = 'Percentage') {
+  const parsed = parseFixed(text, 10000n, subject, locale);
+  if (!parsed.ok) {
+    if (parsed.error.code === 'unsafe-money') {
+      return failure('invalid-basis-points', `${subject} must be between 0% and 100%.`);
+    }
+    return parsed;
+  }
+  return { ok: true, value: parsed.value };
 }
 
 /**
@@ -144,14 +189,7 @@ export function parseMoney(text, currency, locale = 'en-US') {
  * @returns {Result<number>} basis points
  */
 export function parsePremiumPercent(text, locale = 'en-US') {
-  const parsed = parseFixed(text, 10000n, 'Buyer premium');
-  if (!parsed.ok) {
-    if (parsed.error.code === 'unsafe-money') {
-      return failure('invalid-basis-points', 'Buyer premium must be between 0% and 100%.');
-    }
-    return parsed;
-  }
-  return { ok: true, value: parsed.value };
+  return parsePercent(text, locale, 'Buyer premium');
 }
 
 /**
@@ -344,6 +382,23 @@ function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE
   return { ok: true, value };
 }
 
+const FEE_DEFAULTS = Object.freeze({ shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 0, platformFeeBps: 0 });
+
+// Every fee a cost is worked out with: amounts are non-negative, percentages from 0 through 100 %.
+/**
+ * @param {Record<string, any>} values
+ * @returns {Result<any>}
+ */
+function feeOptions(values) {
+  for (const key of ['shippingMinor', 'paymentFeeMinor']) {
+    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
+  }
+  for (const key of ['paymentFeeBps', 'premiumVatBps', 'platformFeeBps']) {
+    const valid = optionInteger(values[key], key, { maximum: 10000 }); if (!valid.ok) return valid;
+  }
+  return { ok: true, value: values };
+}
+
 /**
  * @param {Money} hammer
  * @param {*} buyerPremiumBps checked here: an integer from 0 through 10,000
@@ -355,22 +410,22 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
   if (!checked.ok) return checked;
   const premium = calculatePremium(hammer, buyerPremiumBps);
   if (!premium.ok) return premium;
-  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, ...options };
-  for (const key of ['shippingMinor', 'paymentFeeMinor']) {
-    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
-  }
-  const feeBps = optionInteger(values.paymentFeeBps, 'paymentFeeBps', { maximum: 10000 });
-  if (!feeBps.ok) return feeBps;
-  const base = BigInt(premium.value.hammerPlusPremium.minor) + BigInt(values.shippingMinor);
-  const percentageFee = (base * BigInt(values.paymentFeeBps) + 5000n) / 10000n;
-  const paymentFee = percentageFee + BigInt(values.paymentFeeMinor);
+  const values = { ...FEE_DEFAULTS, ...options };
+  const valid = feeOptions(values); if (!valid.ok) return valid;
+  // Each share is rounded half up on its own, as an invoice rounds each line: the VAT on the premium
+  // as the house invoices it, the platform's fee on the hammer.
+  const share = (minor, bps) => (minor * BigInt(bps) + 5000n) / 10000n;
+  const premiumVat = share(BigInt(premium.value.premium.minor), values.premiumVatBps);
+  const platformFee = share(BigInt(hammer.minor), values.platformFeeBps);
+  const base = BigInt(premium.value.hammerPlusPremium.minor) + premiumVat + platformFee + BigInt(values.shippingMinor);
+  const paymentFee = share(base, values.paymentFeeBps) + BigInt(values.paymentFeeMinor);
   const total = base + paymentFee;
   if ([base, paymentFee, total].some((value) => value > MAX_SAFE_BIGINT)) {
     return failure('unsafe-money', 'Bid cost calculation is outside the supported integer range.');
   }
   const money = (minor) => ({ currency: hammer.currency, minor: Number(minor) });
   return { ok: true, value: {
-    hammer: { ...hammer }, premium: premium.value.premium,
+    hammer: { ...hammer }, premium: premium.value.premium, premiumVat: money(premiumVat), platformFee: money(platformFee),
     hammerPlusPremium: premium.value.hammerPlusPremium,
     shipping: money(BigInt(values.shippingMinor)), paymentFee: money(paymentFee), total: money(total),
   }};
@@ -384,14 +439,10 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
  */
 export function calculateAffordableBid(budget, buyerPremiumBps, options = {}) {
   const checked = validateMoney(budget); if (!checked.ok) return checked;
-  const values = { shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, ...options };
-  for (const key of ['shippingMinor', 'paymentFeeMinor', 'minimumBidMinor']) {
-    const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
-  }
-  // Read as [key, bounds] pairs: a literal list of mixed pairs is otherwise typed as a list of either.
-  for (const [key, config] of /** @type {Array<[string, { positive?: boolean, maximum?: number }]>} */ ([['paymentFeeBps', { maximum: 10000 }], ['incrementMinor', { positive: true }]])) {
-    const valid = optionInteger(values[key], key, config); if (!valid.ok) return valid;
-  }
+  const values = { ...FEE_DEFAULTS, incrementMinor: 1, minimumBidMinor: 0, ...options };
+  const fees = feeOptions(values); if (!fees.ok) return fees;
+  const minimum = optionInteger(values.minimumBidMinor, 'minimumBidMinor'); if (!minimum.ok) return minimum;
+  const increment = optionInteger(values.incrementMinor, 'incrementMinor', { positive: true }); if (!increment.ok) return increment;
   // A house ladder replaces the fixed grid; without one the fixed increment is a single tier
   // anchored at the minimum bid, which is the grid this calculator has always used.
   const tiers = values.ladder === undefined

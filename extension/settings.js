@@ -6,11 +6,11 @@ import {
 import { CSV_TABLES, csvFiles } from './core/csv.js';
 import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
 import { CURRENCIES } from './core/money.js';
-import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
+import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePresets, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { cacheDefaultCurrency, initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
-import { LOCAL_CORPORA, catalogueMetadataText, defaultLocalCatalogue } from './local-catalogue.js';
+import { LOCAL_CORPORA, defaultLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
 let preferencesSnapshot;
@@ -142,6 +142,19 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   bps.inputMode = 'decimal';
   bps.placeholder = 'e.g. 22.50';
   bps.value = formatMinorInput(item.buyerPremiumBps, navigator.language);
+  // What the house charges on top of its premium: VAT on the premium alone, and a live-bidding
+  // platform's fee on the hammer alone. Blank is none, and a blank field is not stored.
+  const charge = (className, bpsValue) => {
+    const input = document.createElement('input');
+    input.className = className;
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.placeholder = 'None';
+    input.value = formatMinorInput(bpsValue, navigator.language);
+    return input;
+  };
+  const vat = charge('premium-vat', item.premiumVatBps);
+  const platform = charge('premium-platform', item.platformFeeBps);
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'quiet';
@@ -181,12 +194,35 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
     'Optional. One tier per line: the amount the tier starts at, a colon, then the step from there. Copy the tiers from this house’s published terms — Giga Pinax ships no house’s ladder.');
   currencyField.classList.add('premium-ladder-field');
   ladderField.classList.add('premium-ladder-field');
-  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, currencyField, ladderField);
+  // The ladder is folded under a line that says what it holds, so a list of houses reads as a list and
+  // the tiers open when they are wanted.
+  const ladderDetails = document.createElement('details');
+  ladderDetails.className = 'premium-ladder-details';
+  const ladderSummary = document.createElement('summary');
+  const summarize = () => {
+    const count = ladder.value.split('\n').filter((line) => line.trim() !== '').length;
+    ladderSummary.textContent = count
+      ? `Increment ladder · ${count} ${count === 1 ? 'tier' : 'tiers'} in ${currency.value}`
+      : 'Increment ladder · none';
+  };
+  summarize();
+  ladder.addEventListener('input', summarize);
+  currency.addEventListener('change', summarize);
+  ladderDetails.append(ladderSummary, currencyField, ladderField);
+  const vatField = premiumField('VAT on premium %', vat,
+    'Optional. VAT the house adds to its premium only.');
+  const platformField = premiumField('Platform fee % on hammer', platform,
+    'Optional. A live-bidding platform’s fee.');
+  // The two charges sit side by side on a line of their own, under the premium they belong with.
+  const charges = document.createElement('div');
+  charges.className = 'premium-charges';
+  charges.append(vatField, platformField);
+  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, charges, ladderDetails);
   return row;
 }
 
 const PRESET_FIELD_CLASS = {
-  name: 'premium-name', premium: 'premium-value', ladder: 'premium-ladder',
+  name: 'premium-name', premium: 'premium-value', premiumVat: 'premium-vat', platformFee: 'premium-platform', ladder: 'premium-ladder',
   ladderCurrency: 'premium-ladder-currency',
 };
 
@@ -291,6 +327,8 @@ function collectPresets() {
     const field = presetFromFields({
       name: row.querySelector('.premium-name').value,
       premiumText: row.querySelector('.premium-value').value,
+      premiumVatText: row.querySelector('.premium-vat').value,
+      platformFeeText: row.querySelector('.premium-platform').value,
       ladderText: row.querySelector('.premium-ladder').value,
       ladderCurrency: row.querySelector('.premium-ladder-currency').value,
     }, { locale: navigator.language });
@@ -301,6 +339,9 @@ function collectPresets() {
     // The message belongs beside the field it is about, and that alert is the one announcement:
     // the same sentence in the page status line would be read out a second time.
     const control = row.querySelector(`.${PRESET_FIELD_CLASS[field.error.field]}`);
+    // A field folded away is opened, so the message and the focus land where they can be seen.
+    const folded = control.closest('details');
+    if (folded) folded.open = true;
     control.closest('.premium-field').querySelector('.premium-error').textContent = field.error.message;
     control.setAttribute('aria-invalid', 'true');
     control.focus();
@@ -346,22 +387,56 @@ async function exportRaw() {
   download(file.text, file.name);
 }
 
-// One line per bundled corpus, each with the counts and the date its own metadata carries, its source and its licence.
-// A corpus whose files cannot be read says so on its own line rather than removing the corpus from the list.
+// One table row per bundled corpus: its counts and what it leaves out, the day its own metadata says
+// its local files were made, its source and its licence. A corpus whose files cannot be read keeps its
+// row and says so, rather than dropping out of the list.
 function catalogueRow(corpus, metadata) {
-  const row = document.createElement('li');
-  const name = document.createElement('strong');
-  name.textContent = `${LOCAL_CORPORA[corpus].label}: `;
-  row.append(name, document.createTextNode(catalogueMetadataText(metadata)));
-  for (const [url, text] of [[metadata?.sourceUrl, 'Source'], [metadata?.licenseUrl, 'Licence']]) {
+  const row = document.createElement('tr');
+  const name = document.createElement('th');
+  name.setAttribute('scope', 'row');
+  name.textContent = LOCAL_CORPORA[corpus].label;
+  row.append(name);
+  const cell = (text, note = '') => {
+    const td = document.createElement('td');
+    const main = document.createElement('span');
+    main.textContent = text;
+    td.append(main);
+    if (note) {
+      const small = document.createElement('small');
+      small.textContent = note;
+      td.append(small);
+    }
+    row.append(td);
+    return td;
+  };
+  const usable = Number.isInteger(metadata?.recordCount) && Number.isInteger(metadata?.activeRecordCount);
+  if (!usable) {
+    const td = cell('');
+    td.setAttribute('colspan', '3');
+    td.textContent = 'Local catalogue unavailable.';
+    return row;
+  }
+  const count = (value) => new Intl.NumberFormat('en-GB').format(value);
+  const left = Number.isInteger(metadata.excluded?.count) && typeof metadata.excluded.reason === 'string'
+    ? `Leaving out ${count(metadata.excluded.count)}: ${metadata.excluded.reason}.` : '';
+  cell(`${count(metadata.activeRecordCount)} active of ${count(metadata.recordCount)}`, left);
+  const generated = typeof metadata.generatedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(metadata.generatedOn)
+    ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${metadata.generatedOn}T00:00:00Z`))
+    : 'Date unknown';
+  cell(generated, metadata.publicationDate ? `Source published ${metadata.publicationDate}` : '');
+  const links = document.createElement('td');
+  links.className = 'catalogue-links';
+  for (const [url, text] of [[metadata.sourceUrl, 'Source'], [metadata.licenseUrl, 'Licence']]) {
     if (!/^https:\/\//.test(String(url))) continue;
     const link = document.createElement('a');
     link.href = url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     link.textContent = text;
-    row.append(document.createTextNode(' '), link, document.createTextNode('.'));
+    link.setAttribute('aria-label', `${LOCAL_CORPORA[corpus].label} ${text.toLowerCase()}`);
+    links.append(link);
   }
+  row.append(links);
   return row;
 }
 
@@ -372,6 +447,61 @@ async function loadCatalogueInfo() {
 }
 
 $('add-premium').addEventListener('click', () => $('premium-list').append(premiumRow()));
+
+// What Copy and Add pasted houses answer is said on the line under the paste button: the share fold is
+// at the top of the page, and the page status at its foot is out of sight from there.
+function shareStatus(message, error = false) {
+  $('paste-status').textContent = message;
+  $('paste-status').dataset.error = String(error);
+}
+
+// The rows as they stand, read with the rule Save uses, so what is copied is what would be saved.
+$('copy-presets').addEventListener('click', async () => {
+  shareStatus('');
+  const presets = collectPresets();
+  // A row that cannot be read has already said so beside its own field.
+  if (!presets.ok) return;
+  if (presets.value.length === 0) {
+    shareStatus('There are no house presets to copy.', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(housePresetsText(presets.value));
+    const count = presets.value.length;
+    shareStatus(`${count} house ${count === 1 ? 'preset' : 'presets'} copied. Paste them into Settings in another browser.`);
+  } catch {
+    shareStatus('The house presets could not be copied. Click Copy house presets again with this page in front.', true);
+  }
+});
+
+const nameKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+
+// Pasted houses become rows like any other: a house already listed under the same name is redrawn with
+// the pasted terms, the rest are added, and Save settings is still what keeps them.
+$('paste-presets').addEventListener('click', () => {
+  const parsed = parseHousePresets($('paste-presets-text').value);
+  if (!parsed.ok) {
+    shareStatus(parsed.error.message, true);
+    return;
+  }
+  let added = 0;
+  let updated = 0;
+  for (const preset of parsed.value) {
+    const existing = [...document.querySelectorAll('.premium-row')]
+      .find((row) => nameKey(row.querySelector('.premium-name').value) === nameKey(preset.name));
+    if (existing) {
+      existing.after(premiumRow(preset));
+      existing.remove();
+      updated += 1;
+    } else {
+      $('premium-list').append(premiumRow(preset));
+      added += 1;
+    }
+  }
+  $('paste-presets-text').value = '';
+  const parts = [added ? `${added} ${added === 1 ? 'house' : 'houses'} added` : '', updated ? `${updated} updated` : ''].filter(Boolean);
+  shareStatus(`${parts.join(' and ')}. Review them, then Save settings.`.replace(/^./, (first) => first.toUpperCase()));
+});
 
 $('save-settings').addEventListener('click', async () => {
   const button = $('save-settings');
