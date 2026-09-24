@@ -14,6 +14,7 @@ import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapsho
 import { GIGA_PREFERENCES_KEY } from '../extension/companion-preferences.js';
 import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
 import { browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
+import { skip } from './helpers/bundle.mjs';
 
 const NOW = '2026-09-12T12:00:00.000Z';
 const LATER = '2026-09-13T12:00:00.000Z';
@@ -1231,7 +1232,8 @@ const dataRoot = new URL('../extension/data/', import.meta.url);
 const bundledCorpora = () => readdirSync(dataRoot).filter((name) => !name.includes('.')).sort();
 const corpusMetadata = (corpus) => JSON.parse(readFileSync(new URL(`${corpus}/metadata.json`, dataRoot), 'utf8'));
 
-test('the bundled-data panel names every corpus the package carries, and only those', async () => {
+// These two read the bundle itself, so they skip where extension/data is not checked out.
+test('the bundled-data panel names every corpus the package carries, and only those', { skip }, async () => {
   const bundled = bundledCorpora();
   assert.deepEqual(Object.keys(LOCAL_CORPORA).sort(), bundled);
   const page = await openSettings({ catalogueMetadata: async (corpus) => corpusMetadata(corpus) });
@@ -1285,7 +1287,7 @@ test('a corpus whose files cannot be read keeps its row and says so', async () =
   }
 });
 
-test('each panel row reports the counts and the date its own corpus metadata carries', () => {
+test('each panel row reports the counts and the date its own corpus metadata carries', { skip }, () => {
   for (const corpus of bundledCorpora()) {
     const metadata = corpusMetadata(corpus);
     const line = catalogueMetadataText(metadata);
