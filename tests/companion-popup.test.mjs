@@ -744,7 +744,7 @@ test('Watch carries the sale day to the workspace, which offers it as a date-onl
 
 // A page can write addresses as long as a draft allows each one; what it states about the lot then gives way, provenance first, so the draft is
 // never refused as too large and the coin's own fields always reach the workspace.
-test('page values give way before a draft outgrows its storage bound', () => {
+test('page values give way before a draft outgrows its storage bound, and the collector is told which', async () => {
   const long = (name) => `https://auction.example/${name}/${'x'.repeat(2000)}`;
   const provenance = Array.from({ length: 10 }, (_, index) => ({ text: `Ex ${'Leu '.repeat(45)}${index}`.slice(0, 199), source: 'y'.repeat(120), lot: '1'.repeat(20) }));
   const payload = buildWatchlistDraftPayload({ title: 'Lot', pageUrl: long('page'), auctionContext: { pageUrl: long('page'), canonicalUrl: long('canonical') },
@@ -753,4 +753,32 @@ test('page values give way before a draft outgrows its storage bound', () => {
   assert.equal(Object.hasOwn(payload, 'provenance'), false);
   assert.equal(payload.closesAt, '2026-10-15');
   assert.equal(payload.auctionContext.canonicalUrl, long('canonical'));
+
+  // A capture whose page writes such addresses: the draft is saved, and the announcement names what the size bound left off.
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: long('page'), title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: long('page'), canonicalUrl: long('canonical'), photoUrl: long('photo'),
+      candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: Array.from({ length: 10 }, (_, index) => `Ex Leu ${index} ${'collection '.repeat(18)}`).join('. ') } }],
+  });
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  const saved = commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  assert.equal(Object.hasOwn(saved, 'provenance'), false);
+  assert.equal(saved.photoUrl, long('photo'));
+  assert.equal(page.element('companion-status').textContent,
+    'Watchlist details are ready to review. Left off, the draft being at its size bound: provenance.');
+
+  // A draft with room for everything says nothing more.
+  const roomy = await loadCompanion({
+    sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-2' } } : WORKING_SNAPSHOT),
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  await roomy.click('companion-capture-current');
+  await roomy.click('companion-capture-watchlist');
+  assert.equal(roomy.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });

@@ -96,6 +96,11 @@ export function buildWatchlistDraftPayload(input) {
 // The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.
 const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'photoUrl', 'provenance']);
 const withoutPageValues = (draft) => Object.fromEntries(Object.entries(draft).filter(([key]) => !PAGE_VALUES.includes(key)));
+// The page values a capture held that its draft payload had no room for, in the words the collector reads them in.
+const PAGE_VALUE_NAMES = Object.freeze({ estimate: 'estimate', closesAt: 'closing time', photoUrl: 'photo link', provenance: 'provenance' });
+export function pageValuesLeftOff(draft, payload) {
+  return PAGE_VALUES.filter((field) => draft?.[field] && !Object.hasOwn(payload ?? {}, field)).map((field) => PAGE_VALUE_NAMES[field]);
+}
 
 export function clearAuctionContextFromPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
@@ -346,7 +351,7 @@ async function initCompanionPopup() {
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let draftSavePending = false;
-  const saveWatchlistDraft = async (payload) => {
+  const saveWatchlistDraft = async (payload, leftOff = []) => {
     if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
     if (draftSavePending) return;
     draftSavePending = true;
@@ -355,7 +360,8 @@ async function initCompanionPopup() {
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
       if (!saved.ok) { announce(saved.message, true); return saved; }
-      announce('Watchlist details are ready to review.');
+      // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
+      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.');
     } finally {
       draftSavePending = false;
       $('companion-save-watchlist').disabled = !canSave(safeCard);
@@ -473,7 +479,8 @@ async function initCompanionPopup() {
   $('companion-capture-watchlist').addEventListener('click', () => {
     const draft = reviewedCapture();
     if (!draft) return;
-    void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
+    const payload = watchlistPayloadFromCapture(draft);
+    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload));
   });
   // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
   // stopped being about that page.
