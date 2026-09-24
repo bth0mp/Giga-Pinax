@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """The project's public site and Firefox's update manifest.
 
+`site` builds the static site into dist/site (or --output-dir): the hand-written site/index.html and site/style.css,
+privacy.html generated from docs/PRIVACY.md, the packaged icon, and firefox/updates.json - the latest release's update
+manifest when --updates names it, or one that offers nothing. The Pages workflow runs it on the latest release's tag.
+
 `update-manifest` writes the update manifest Firefox reads for a signed, self-distributed build: one entry naming the
 release's XPI asset and its SHA-256. The release workflow runs it on the XPI Mozilla has just signed.
 
@@ -10,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import re
 import sys
@@ -109,9 +114,143 @@ def write_update_manifest(xpi: Path, output: Path) -> dict:
     return document
 
 
+# The Markdown docs/PRIVACY.md is written in, and nothing more: headings of three levels, paragraphs, flat "- " lists,
+# `code`, **bold** and [text](https://...) links. Anything else is refused rather than shown in some other shape, so the
+# published policy can only ever say what the document says.
+REFUSED_LINE = re.compile(r"^(?:\s+\S|\||>|\d+[.)]\s|[*+]\s|```|~~~|<|#{4,}|#[^# ])")
+HEADING = re.compile(r"^(#{1,3}) (\S.*)$")
+INLINE = re.compile(r"`([^`\n]+)`|\*\*([^*\n]+?)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)")
+REFUSED_PLAIN = re.compile(r"[`*_\[\]<]")
+
+
+def plain_html(text: str) -> str:
+    if REFUSED_PLAIN.search(text):
+        raise ValueError(f"unsupported Markdown in {text!r}")
+    return html.escape(text, quote=False)
+
+
+def inline_html(text: str) -> str:
+    parts = []
+    position = 0
+    for match in INLINE.finditer(text):
+        parts.append(plain_html(text[position:match.start()]))
+        code, bold, label, url = match.groups()
+        if code is not None:
+            parts.append(f"<code>{html.escape(code, quote=False)}</code>")
+        elif bold is not None:
+            parts.append(f"<strong>{inline_html(bold)}</strong>")
+        else:
+            # A relative link would point into the site rather than the repository, and any other scheme is refused.
+            if not url.startswith("https://"):
+                raise ValueError(f"only https links are published: {url!r}")
+            parts.append(f'<a href="{html.escape(url, quote=True)}">{inline_html(label)}</a>')
+        position = match.end()
+    parts.append(plain_html(text[position:]))
+    return "".join(parts)
+
+
+def markdown_to_html(markdown: str) -> str:
+    out = []
+    for block in re.split(r"\n[ \t]*\n", markdown.strip("\n")):
+        lines = block.split("\n")
+        for line in lines:
+            if REFUSED_LINE.match(line):
+                raise ValueError(f"unsupported Markdown line: {line!r}")
+        heading = HEADING.match(lines[0])
+        if heading:
+            if len(lines) != 1:
+                raise ValueError(f"a heading stands alone in its block: {block!r}")
+            level = len(heading.group(1))
+            out.append(f"<h{level}>{inline_html(heading.group(2))}</h{level}>")
+        elif all(line.startswith("- ") for line in lines):
+            out.append("<ul>")
+            out.extend(f"<li>{inline_html(line[2:])}</li>" for line in lines)
+            out.append("</ul>")
+        elif any(line.startswith(("- ", "#")) for line in lines):
+            raise ValueError(f"a list or heading mixed into a paragraph: {block!r}")
+        else:
+            out.append(f"<p>{inline_html(chr(10).join(lines))}</p>")
+    return "\n".join(out) + "\n"
+
+
+SITE_ROOT = PROJECT_ROOT / "site"
+PRIVACY_SOURCE = PROJECT_ROOT / "docs" / "PRIVACY.md"
+ICON_SOURCE = PROJECT_ROOT / "extension" / "icons" / "icon-128.png"
+SITE_FILES = ("index.html", "privacy.html", "style.css", "icon.png", UPDATES_PATH)
+PAGE_HEAD = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>{title}</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<a href="index.html"><img src="icon.png" alt="Giga Pinax home"></a>
+<div>
+<p><a href="index.html">Giga Pinax</a></p>
+</div>
+</header>
+<main>
+"""
+PAGE_FOOT = """</main>
+<footer>
+<p>{note}</p>
+</footer>
+</body>
+</html>
+"""
+
+
+def privacy_page(version: str) -> str:
+    body = markdown_to_html(PRIVACY_SOURCE.read_text(encoding="utf-8"))
+    source = f"https://github.com/bth0mp/Giga-Pinax/blob/v{html.escape(version)}/docs/PRIVACY.md"
+    note = f'This page is <a href="{source}">docs/PRIVACY.md</a> of release {html.escape(version)}, published as it stands.'
+    return PAGE_HEAD.format(title="Privacy policy - Giga Pinax") + body + PAGE_FOOT.format(note=note)
+
+
+def site_contents(updates: Path | None) -> dict[str, bytes]:
+    """Every file of the site, built in memory so a refusal writes nothing."""
+    if updates is None:
+        update_document = empty_update_manifest()
+    else:
+        update_document = check_update_manifest(json.loads(updates.read_text(encoding="utf-8")))
+    return {
+        "index.html": (SITE_ROOT / "index.html").read_bytes(),
+        "privacy.html": privacy_page(firefox_manifest()["version"]).encode("utf-8"),
+        "style.css": (SITE_ROOT / "style.css").read_bytes(),
+        "icon.png": ICON_SOURCE.read_bytes(),
+        UPDATES_PATH: json.dumps(update_document, indent=2).encode("utf-8") + b"\n",
+    }
+
+
+def write_site(output: Path, updates: Path | None) -> list[Path]:
+    contents = site_contents(updates)
+    if output.exists():
+        # Built again in place, or refused: a directory holding anything this script does not write is not the site's.
+        present = {path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file()}
+        folders = {path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_dir()}
+        if not present <= set(SITE_FILES) or not folders <= {"firefox"}:
+            raise ValueError(f"{output} holds files that are not the site's; choose an empty or new directory")
+    written = []
+    for name, payload in contents.items():
+        destination = output / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        written.append(destination)
+    return written
+
+
 def parse_args(arguments: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
+    site = commands.add_parser("site", help="build the static site")
+    site.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "dist" / "site", help="default: dist/site")
+    site.add_argument("--updates", type=Path, help="the latest release's firefox-updates.json, if it has one")
     updates = commands.add_parser("update-manifest", help="write Firefox's update manifest for a signed XPI")
     updates.add_argument("--xpi", type=Path, required=True, help="the XPI Mozilla signed")
     updates.add_argument("--output", type=Path, required=True, help="where to write the update manifest")
@@ -123,6 +262,8 @@ def main(arguments: list[str] | None = None) -> int:
     try:
         if options.command == "update-manifest":
             write_update_manifest(options.xpi, options.output)
+        elif options.command == "site":
+            write_site(options.output_dir, options.updates)
     except (OSError, ValueError, KeyError, AttributeError, zipfile.BadZipFile) as error:
         print(f"build_site: {error}", file=sys.stderr)
         return 1

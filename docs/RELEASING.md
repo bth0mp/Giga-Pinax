@@ -24,6 +24,12 @@ Release assets must include three versioned browser packages (for example, `giga
 
 For store releases, also verify the listing, privacy answers, reviewer notes and assets under [store](store/README.md) against the exact package. Keep the stable Firefox ID `giga-pinax@local.invalid`; Mozilla recommends a stable unique ID and does not require that the ID be a deliverable mailbox. Do not describe an unsigned GitHub ZIP as permanently installable in Firefox, and do not claim signing or publication until the relevant dashboard confirms it.
 
+## Publishing the site
+
+The project site at `https://bth0mp.github.io/Giga-Pinax/` carries an index page (what Giga Pinax is, how to install it in each browser, links to the latest release and the changelog), the privacy policy the stores ask for at `https://bth0mp.github.io/Giga-Pinax/privacy.html`, and `firefox/updates.json` for signed Firefox installs. It has no framework, scripts, web fonts, cookies or analytics. The index and its stylesheet are hand-written in `site/`; `privacy.html` is generated from `docs/PRIVACY.md` by `python scripts/build_site.py site`, which accepts only the plain Markdown that document is written in and refuses anything it could render wrongly, so the page always says what the document says. Run that command to see the site locally in `dist/site/`.
+
+The **Pages** workflow (`pages.yml`) builds the site from the tag of the latest published release, with that release's `firefox-updates.json` when it has one (an update manifest that offers nothing otherwise), and deploys it. It runs whenever a release is published, and by hand from the **Actions** tab. Until the owner turns Pages on it does nothing but say so: in **Settings → Pages**, set **Source** to **GitHub Actions**, then run the workflow once. The first release it can publish is the first one whose tag carries `site/` and `scripts/build_site.py` (0.34.0); on an older latest release its build fails and says why. A change to `site/` or to the privacy policy reaches the site with the next published release; the policy on the site is therefore always the one the latest release was shipped with.
+
 ## Signing the Firefox package
 
 A signed build installs permanently in Firefox and updates itself. Mozilla signs it on the **unlisted** channel of addons.mozilla.org (AMO): the add-on is not listed on AMO, which only signs it, and it is distributed from the GitHub release. Nothing is signed until the owner does the following once:

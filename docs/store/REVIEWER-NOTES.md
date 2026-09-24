@@ -15,3 +15,5 @@ Records, settings and manual comparable evidence use browser-local extension sto
 The shipped JavaScript is readable and unminified, and the packaged type data is plain JSON under ODbL 1.0 with its own `NOTICE.txt` and `metadata.json` naming the source, licence and conversion. `scripts/build.py` uses only the Python standard library to copy the allowlisted extension files and the browser-specific manifest into deterministic ZIPs; it performs no transpilation, bundling or minification. From the repository root run `python scripts/build.py`. Development-only icon rendering uses Pillow through `python scripts/make_icons.py`; Pillow and store artwork tools are not packaged.
 
 The Firefox package retains the stable ID `giga-pinax@local.invalid`. The code is MIT licensed; bundled catalogue data keeps its ODbL 1.0 and CC BY 3.0 terms.
+
+The privacy policy is published at https://bth0mp.github.io/Giga-Pinax/privacy.html, generated from `docs/PRIVACY.md` of the latest published release; the same text is in the package's source repository.

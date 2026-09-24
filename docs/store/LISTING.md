@@ -37,7 +37,9 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 
 **Support URL:** https://github.com/bth0mp/Giga-Pinax/issues
 
-**Privacy policy:** publish `docs/PRIVACY.md` at a durable public HTTPS URL and enter that URL before submission.
+**Privacy policy:** https://bth0mp.github.io/Giga-Pinax/privacy.html — `docs/PRIVACY.md` of the latest published release, generated and published by the Pages workflow (see [RELEASING.md](../RELEASING.md#publishing-the-site)). The URL answers only once the owner has turned GitHub Pages on and a release carrying the site (0.34.0 or later) has been published; open it and compare it with `docs/PRIVACY.md` of the submitted version before entering it.
+
+**Homepage:** https://bth0mp.github.io/Giga-Pinax/ (same condition), or the repository https://github.com/bth0mp/Giga-Pinax.
 
 ## Chrome Web Store privacy and permissions
 

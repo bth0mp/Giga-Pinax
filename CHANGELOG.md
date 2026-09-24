@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Added
 
 - A release can carry a Firefox package signed by Mozilla, `giga-pinax-firefox-x.y.z.xpi`, beside the ZIPs: it installs permanently from the release page, and Firefox keeps it up to date by itself from the project's update manifest at `bth0mp.github.io/Giga-Pinax/firefox/updates.json`. Settings hides its **Updates** card for a signed install, and keeps it for the same package loaded temporarily through `about:debugging`. The release workflow signs only once the repository holds the owner's addons.mozilla.org API credentials; until then releases carry the ZIPs alone.
+- A small project site, `https://bth0mp.github.io/Giga-Pinax/`, with install steps for each browser, a link to the latest release and the changelog, and the privacy policy the stores ask for at `privacy.html`, generated from `docs/PRIVACY.md` of the latest published release. It has no scripts, web fonts, cookies or analytics, and goes live once the owner turns GitHub Pages on.
 
 ## [0.33.0] - 2026-09-24
 
