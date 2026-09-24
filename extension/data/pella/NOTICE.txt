@@ -4,7 +4,7 @@ Derived from PELLA, Coinage of Alexander the Great, American Numismatic
 Society.
 Source: https://numismatics.org/pella/
 Data documentation: https://numismatics.org/pella/apis
-Source export: pella.rdf, retrieved 17 September 2026
+Source export: pella.rdf, retrieved 24 September 2026
 
 The source type database and this derived database are available under the
 Open Database License (ODbL) 1.0:

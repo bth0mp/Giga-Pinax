@@ -14,7 +14,7 @@ structured data to the public domain under
 
 - **Source endpoint:** `https://nomisma.org/query` (Nomisma's public SPARQL endpoint), read in
   batches of 320 identifiers; the query text is recorded in the file's own `query` field.
-- **Retrieved:** 2026-09-24 (the file's `retrievedOn` field), in six requests for the 1,623
+- **Retrieved:** 2026-09-24 (the file's `retrievedOn` field), in six requests for the 1,622
   concepts the six bundled corpora name.
 - **SHA-256:** not recorded. The file carries its own provenance instead: `endpoint`, `query`,
   `retrievedOn`, `license`, `licenseUrl`, `requestCount`, `requestedCount` and `labelledCount`.

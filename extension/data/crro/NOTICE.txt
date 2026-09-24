@@ -4,7 +4,7 @@ Derived from Coinage of the Roman Republic Online (CRRO), American Numismatic
 Society.
 Source: https://numismatics.org/crro/
 Data documentation: https://numismatics.org/crro/apis
-Source export: crro.rdf, retrieved 17 September 2026
+Source export: crro.rdf, retrieved 24 September 2026
 
 The source type database and this derived database are available under the
 Open Database License (ODbL) 1.0:

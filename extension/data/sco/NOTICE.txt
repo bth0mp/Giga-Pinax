@@ -3,7 +3,7 @@ Bundled SCO reference data
 Derived from Seleucid Coins Online (SCO), American Numismatic Society.
 Source: https://numismatics.org/sco/
 Data documentation: https://numismatics.org/sco/apis
-Source export: sco.rdf, retrieved 17 September 2026
+Source export: sco.rdf, retrieved 24 September 2026
 
 The source type database and this derived database are available under the
 Open Database License (ODbL) 1.0:
