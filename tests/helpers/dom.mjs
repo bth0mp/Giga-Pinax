@@ -510,11 +510,13 @@ export function parseHtmlFile(url) {
 // A page's source with its import statements taken out, ready for a sandbox that is handed the same
 // names as globals - the way tests/popup-research.test.mjs loads extension/popup.js. A dynamic
 // import() becomes a call to the sandbox's `importModule`, since vm cannot import without a flag;
-// a sandbox that has none fails it the way a page without the module would.
+// a sandbox that has none fails it the way a page without the module would. An export list naming
+// the module's own declarations (`export { a, b };`, no `from`) declares and runs nothing, so it goes.
 export function pageSource(url) {
   return readFileSync(url, 'utf8')
     .replace(/^import\b[\s\S]*?';\r?\n/gm, '')
     .replace(/\bimport\((?=['"])/g, 'importModule(')
+    .replace(/^export\s*\{[^}]*\};[ \t]*\r?\n/gm, '')
     .replace(/^export\s+(?=(?:default\s+|async\s+)?(?:function|const|let|var|class)\b)/gm, '');
 }
 

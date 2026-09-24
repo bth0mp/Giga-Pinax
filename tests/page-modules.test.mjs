@@ -34,10 +34,20 @@ test('a name two of a page\'s modules both declare is refused, not replaced', ()
   assert.throws(() => runPage(vm.createContext({}), file('page.js'), new Set(['part.js'])), /label is declared by both/);
 });
 
+test('an export list at a module\'s foot is only a list: its names run as the module declared them', () => {
+  const file = pageFiles({
+    'page.js': "import { part } from './part.js';\nlog.push(part());\n",
+    'part.js': "function part() { return 'part'; }\n\nexport {\n  part,\n};\n",
+  });
+  const log = [];
+  runPage(vm.createContext({ log }), file('page.js'), new Set(['part.js']));
+  assert.deepEqual(log, ['part']);
+});
+
 test('an import or export form a sandbox script cannot run is refused', () => {
   const file = pageFiles({
     'page.js': "import { part } from './part.js';\n",
-    'part.js': "const part = () => 1;\nexport { part };\n",
+    'part.js': "export { part } from './base.js';\n",
   });
-  assert.throws(() => runPage(vm.createContext({}), file('page.js'), new Set(['part.js'])), /keeps "export \{ part \};"/);
+  assert.throws(() => runPage(vm.createContext({}), file('page.js'), new Set(['part.js'])), /keeps "export \{ part \} from '\.\/base\.js';"/);
 });
