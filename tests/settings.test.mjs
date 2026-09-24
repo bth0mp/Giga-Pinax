@@ -427,6 +427,9 @@ test('with site data blocked, specimen photos cannot be switched on and the page
   await page.element('save-settings').click();
   await settle();
   assert.equal(page.status(), 'Settings saved. This browser profile blocks site data, so specimen photos can’t be switched on.');
+  // The box says what the popup will do: the switch applies nothing it could not store, so it is unticked, and the page holds nothing unsaved.
+  assert.equal(page.element('specimen-photos').checked, false);
+  page.element('specimen-photos').checked = true;
   page.element('theme').value = 'dark';
   await page.element('save-settings').click();
   await settle();

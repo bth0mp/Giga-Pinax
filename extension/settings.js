@@ -405,6 +405,8 @@ $('save-settings').addEventListener('click', async () => {
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
     const photosKept = rememberSpecimenPhotos(specimenPhotos);
+    // A switch that could not be stored applies nothing, so the box is unticked to say so rather than left showing a setting that is not in force.
+    if (!photosKept) $('specimen-photos').checked = false;
     renderedForm = formState();
     const lost = [
       themeKept ? '' : 'the theme applies to this page only and can’t be remembered',
