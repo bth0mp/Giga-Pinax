@@ -370,6 +370,7 @@ export function reminderControlsForPrecision(reminders, precision) {
 
 // Where a record path the store refuses (`lots[0].coinDetails.photoUrls[0]`) lives in the details form, so the page can
 // open its section and name it. Null for a part of the record the form holds elsewhere or not at all.
+/** @type {Array<[RegExp, (match: RegExpExecArray) => string]>} */
 const LOT_FIELD_PATHS = [
   [/\.coinDetails\.photoUrls\[(\d)\]$/, (match) => `photoUrl${Number(match[1]) + 1}`],
   [/\.coinDetails\.weightMg$/, () => 'weightGrams'], [/\.coinDetails\.diameterHundredthsMm$/, () => 'diameterMm'], [/\.coinDetails\.condition$/, () => 'condition'],
