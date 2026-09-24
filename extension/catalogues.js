@@ -202,7 +202,8 @@ export const EXTRA_SPELLINGS = Object.freeze([
   ['traianus decius', 'trajan_decius'], ['trajanus decius', 'trajan_decius'], ['traiano decio', 'trajan_decius'], ['trajano decio', 'trajan_decius'],
   ['neron', 'nero'], ['nerone', 'nero'], ['adriano', 'hadrian'],
   ['philippus i', 'philip_the_arab'], ['philipp i', 'philip_the_arab'], ['philippe ier', 'philip_the_arab'], ['filippo i', 'philip_the_arab'],
-  ['filipo i', 'philip_the_arab'], ['valerianus i', 'valerian'], ['elagabal', 'elagabalus'], ['heliogabalus', 'elagabalus'],
+  ['filipo i', 'philip_the_arab'], ['philipp ii', 'philippus_ii'], ['philippe ii', 'philippus_ii'], ['filippo ii', 'philippus_ii'],
+  ['filipo ii', 'philippus_ii'], ['valerianus i', 'valerian'], ['valerianus ii', 'valerian_ii'], ['elagabal', 'elagabalus'], ['heliogabalus', 'elagabalus'],
   ['faustina i', 'faustina_i'], ['faustina maior', 'faustina_i'], ['faustina major', 'faustina_i'], ['faustina senior', 'faustina_i'],
   ['faustina ii', 'faustina_ii'], ['faustina minor', 'faustina_ii'], ['faustina iunior', 'faustina_ii'], ['faustina junior', 'faustina_ii'],
   ['constantius i', 'constantius_chlorus'], ['maximinus i', 'maximinus_thrax'], ['maximinus ii', 'maximinus_daia'], ['maximinus daza', 'maximinus_daia'],
@@ -210,7 +211,8 @@ export const EXTRA_SPELLINGS = Object.freeze([
   ['julianus apostata', 'julian_the_apostate'], ['jovian', 'jovianus'],
   ['constantine the great', 'constantine_i'], ['konstantin i', 'constantine_i'], ['konstantin der grosse', 'constantine_i'],
   ['konstantin der große', 'constantine_i'], ['constantin ier', 'constantine_i'], ['constantin i', 'constantine_i'],
-  ['costantino i', 'constantine_i'], ['constantino i', 'constantine_i'],
+  ['costantino i', 'constantine_i'], ['constantino i', 'constantine_i'], ['konstantin ii', 'constantine_ii'], ['constantin ii', 'constantine_ii'],
+  ['costantino ii', 'constantine_ii'], ['constantino ii', 'constantine_ii'],
 ].map((entry) => Object.freeze(entry)));
 const PERSON_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person]));
 for (const [spelling, id] of EXTRA_SPELLINGS) if (PERSON_BY_ID.has(id)) own(spelling, PERSON_BY_ID.get(id));

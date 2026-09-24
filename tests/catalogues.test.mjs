@@ -240,7 +240,8 @@ test('the Latin, German, French, Italian and Spanish spellings of the RIC I–V 
   // A numeral the spelling does not carry is someone else, as it always was: the second Faustina is not the first, nor Maximinus II the first.
   assert.deepEqual(ricPeople('Faustina III'), []);
   assert.deepEqual(ricPeople('Constantius III').map((person) => person.id), ['constantius_iii']);
-  assert.deepEqual(ricPeople('Costantino II'), []);
+  assert.deepEqual(ricPeople('Costantino II').map((person) => person.id), ['constantine_ii']);
+  assert.deepEqual(ricPeople('Costantino III'), []);
 });
 
 // Nomisma titles a mint concept by its modern name and keeps the ancient one beside it, so RIC's Latin section is reachable by the name on the map.

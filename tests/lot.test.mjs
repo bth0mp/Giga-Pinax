@@ -271,6 +271,25 @@ test('a heading names its ruler in Latin, German, French, Italian or Spanish', (
     assert.deepEqual(rulers(prose), [], prose);
   }
   assert.deepEqual(rulers('Uranius Antoninus. Aureus, Emesa. The baetyl of Elagabal in a quadriga. RIC 2.'), ['Uranius Antoninus']);
+  // Loop N6 review: the god in three more phrasings, with a word between the noun and the god's name.
+  for (const god of ['Uranius Antoninus. Aureus. Sol Elagabal. RIC 2.', 'Uranius Antoninus. Aureus. Der heilige Stein des Gottes Elagabal. RIC 2.',
+    'Uranius Antoninus. Áureo. Piedra sagrada de Elagabal. RIC 2.']) {
+    assert.deepEqual(rulers(god), ['Uranius Antoninus'], god);
+  }
+  // "Elagabal in quadriga" stays the emperor: he rides one on his own coins as often as the stone does.
+  assert.deepEqual(rulers('Elagabal in Quadriga. Aureus. RIC 2.'), ['Elagabalus']);
+  // A joint heading in German, French, Italian or Spanish reads both people, as its English form does.
+  for (const [text, people] of [['Philipp I. und Philipp II. Antoninian. RIC 1.', ['Philip the Arab', 'Philip II']],
+    ['Philippe Ier et Philippe II. RIC 1.', ['Philip the Arab', 'Philip II']], ['Filippo I e Filippo II. RIC 1.', ['Philip the Arab', 'Philip II']],
+    ['Konstantin I. für Konstantin II. Follis. RIC 1.', ['Constantine I', 'Constantine II']],
+    ['Costantino I per Costantino II. RIC 1.', ['Constantine I', 'Constantine II']],
+    ['Valerianus I. für Valerianus II. Antoninian. RIC 1.', ['Valerian', 'Valerian II']]]) {
+    assert.deepEqual(rulers(text), people, text);
+  }
+  // "Jovian" is also an English adjective: at the start of a sentence, before a lower-case noun, it is the adjective.
+  assert.deepEqual(rulers('Jovian eagle. RIC 175.'), []);
+  assert.deepEqual(rulers('Jovian, 363-364. AE3. RIC 175.'), ['Jovianus']);
+  assert.deepEqual(rulers('Jovian AV Solidus. RIC 175.'), ['Jovianus']);
   // The Künker heading reads the ruler, so the row borrows him rather than every volume's RIC 347.
   const kunker = findReferences('Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. RIC 347; Woytek 571f.');
   assert.deepEqual(lotLookup(kunker.references[0], kunker.rulers), { catalogue: 'RIC', number: '347', volume: '', section: '', rulers: ['Trajan'] });

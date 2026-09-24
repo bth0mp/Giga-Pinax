@@ -315,8 +315,11 @@ for (const name of sectionPeople) {
 }
 // A dealer's own spelling (EXTRA_SPELLINGS) is read with the capital a name is written with, in any case after it ("Jovian", "JOVIAN"), so the
 // adjective a sentence writes in lower case ("a jovian eagle") is never a ruler. Nomisma's labels and RIC's sections are read in any case, as always.
+// "Jovian" is also an English adjective, so before a lower-case word ("Jovian eagle") it is that adjective, even where it opens a sentence.
 const EXTRA = new Set(EXTRA_SPELLINGS.map(([label]) => label));
-const namePattern = (label) => (EXTRA.has(label) && !fromSection.has(label) ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}` : anyCase(label));
+const ADJECTIVES = new Set(['jovian']);
+const namePattern = (label) => (EXTRA.has(label) && !fromSection.has(label)
+  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}` : anyCase(label));
 const RULERS = Object.freeze([...labelGroups.entries()]
   .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${namePattern(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
   .sort((a, b) => b[1].length - a[1].length));
@@ -346,8 +349,10 @@ function headingMint(text) {
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
 // a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
 // Elagabal is also the god of Emesa, whose sacred stone the coins of Elagabalus and of Uranius Antoninus show: "the stone of Elagabal", "Stein des
-// Elagabal", "la pierre d'Élagabal" name the god, and the man they would name is then someone else's coin.
-const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|dieu|dio|dios|temple|tempel|tempio|templo)\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
+// Elagabal", "la pierre d'Élagabal", "Sol Elagabal", "Stein des Gottes Elagabal", "Piedra sagrada de Elagabal" name the god, and the man they would
+// name is then someone else's coin. One word may stand between the noun and its preposition ("sacred", "sagrada"). "Elagabal in quadriga" is left
+// the emperor's: he rides one on his own coins as often as the stone does.
+const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|gottes|dieu|dio|dios|deus|sol|temple|tempel|tempio|templo)(?:\s+[a-z]+)?\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:(?:god|gott|gottes|dieu|dio|dios|deus)\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
 function rulersIn(text) {
   let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
