@@ -1270,10 +1270,50 @@ test('hostile provenance text stays linear: long runs, nested brackets and no ye
 // its end - so the entry is offered whole, and the references after it are still read.
 test('a provenance sentence runs past a dated day and a "no." to its real end', () => {
   assert.deepEqual(readProvenance('Ex Leu 7, 25. Mai 1973, Los 123.'), [{ text: 'Ex Leu 7, 25. Mai 1973, Los 123', source: 'Leu 7', year: 1973, lot: '123' }]);
-  assert.deepEqual(readProvenance('Ex Leu 7, no. 1973.'), [{ text: 'Ex Leu 7, no. 1973', source: 'Leu 7, no. 1973' }]);
+  // "no." after the sale's own clause is its lot (loop N9), and never a year.
+  assert.deepEqual(readProvenance('Ex Leu 7, no. 1973.'), [{ text: 'Ex Leu 7, no. 1973', source: 'Leu 7', lot: '1973' }]);
   assert.deepEqual(readProvenance('Ex Hess, Nr. 12. Ex Leu 4, 3. Dez. 1990.').map(({ text }) => text), ['Ex Hess, Nr. 12', 'Ex Leu 4, 3. Dez. 1990']);
   assert.deepEqual(texts('Ex Leu 7, 25. Mai 1973, Los 123. RIC 972; Cohen 17.'), ['RIC 972', 'Cohen 17']);
   assert.deepEqual(texts('Ex Leu 7, no. 1973. RIC 972.'), ['RIC 972']);
   // A number closing a sentence before a word that is no month still ends it.
   assert.deepEqual(texts('Ex CNG 105, lot 12. Marble-like patina. RIC 972.'), ['RIC 972']);
+});
+
+// Loop N9: half the European market writes provenance in German, Italian, Spanish or French, and the reader cut "Ex Slg." at its full stop, took no
+// lot from "Nr. 1234", no year from "Zürich 2000," and did not see "Exemplar der Auktion", "Aus Sammlung", "Erworben", "Provenienz:", "lotto",
+// "lote", "n°" or "Provient de" at all.
+test('the provenance reader reads German, Italian, Spanish and French provenance', () => {
+  for (const [text, entries] of [
+    ['Ex Slg. Dr. X, erworben 1988 bei Lanz.', [{ text: 'Ex Slg. Dr. X, erworben 1988 bei Lanz', source: 'Slg. Dr. X, erworben bei Lanz', year: 1988 }]],
+    ['Ex Lanz 145, 5. Januar 2009, Nr. 1234.', [{ text: 'Ex Lanz 145, 5. Januar 2009, Nr. 1234', source: 'Lanz 145', year: 2009, lot: '1234' }]],
+    ['Ex Auktion Leu 79, Zürich 2000, Nr. 12.', [{ text: 'Ex Auktion Leu 79, Zürich 2000, Nr. 12', source: 'Auktion Leu 79, Zürich', year: 2000, lot: '12' }]],
+    ['Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234.',
+      [{ text: 'Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234', source: 'Auktion NAC 78, Zürich', year: 2014, lot: '1234' }]],
+    ['Aus Sammlung Dr. X. Erworben 1998 bei Münzen und Medaillen AG Basel.', [
+      { text: 'Aus Sammlung Dr. X', source: 'Sammlung Dr. X' },
+      { text: 'Erworben 1998 bei Münzen und Medaillen AG Basel', source: 'Erworben bei Münzen und Medaillen AG Basel', year: 1998 }]],
+    ['Provenienz: Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456.',
+      [{ text: 'Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456', source: 'Sammlung X, Auktion Gorny & Mosch 250', year: 2017, lot: '456' }]],
+    ['Ex asta Nomisma 50, 2014, lotto 123.', [{ text: 'Ex asta Nomisma 50, 2014, lotto 123', source: 'asta Nomisma 50', year: 2014, lot: '123' }]],
+    ['Proviene da asta Varesi 60, 12 maggio 2012, lotto 45.',
+      [{ text: 'Proviene da asta Varesi 60, 12 maggio 2012, lotto 45', source: 'asta Varesi 60', year: 2012, lot: '45' }]],
+    ['Provient de la vente Vinchon, 24 avril 1985, n° 123.',
+      [{ text: 'Provient de la vente Vinchon, 24 avril 1985, n° 123', source: 'la vente Vinchon', year: 1985, lot: '123' }]],
+    ['Ex Áureo & Calicó 300, 7 marzo 2018, lote 1234.',
+      [{ text: 'Ex Áureo & Calicó 300, 7 marzo 2018, lote 1234', source: 'Áureo & Calicó 300', year: 2018, lot: '1234' }]],
+    ['Ex Áureo & Calicó 300, 7 de marzo de 2018, lote 1234.',
+      [{ text: 'Ex Áureo & Calicó 300, 7 de marzo de 2018, lote 1234', source: 'Áureo & Calicó 300', year: 2018, lot: '1234' }]],
+  ]) assert.deepEqual(readProvenance(text), entries, text);
+  // A Künker lot's references are read and its provenance sentences stay out of them, the collection one as much as the auction one.
+  const kunker = 'Traianus, 98-117. Aureus. RIC 347; Woytek 571f. Fast Stempelglanz. Exemplar der Sammlung Dr. X. Ex Auktion Leu 79, Zürich 2000, Nr. 12.';
+  assert.deepEqual(texts(kunker), ['RIC 347', 'Woytek 571f']);
+  assert.deepEqual(readProvenance(kunker).map(({ text }) => text), ['Exemplar der Sammlung Dr. X', 'Ex Auktion Leu 79, Zürich 2000, Nr. 12']);
+  // A sale number is never the lot, the lot word the dealer wrote wins over a "no." before it, and a year still needs four digits of its own.
+  assert.deepEqual(readProvenance('Ex Leu Auction no. 45, lot 12.'), [{ text: 'Ex Leu Auction no. 45, lot 12', source: 'Leu Auction no. 45', lot: '12' }]);
+  assert.deepEqual(readProvenance('Ex Leu 7, 1973,5.'), [{ text: 'Ex Leu 7, 1973,5', source: 'Leu 7, 1973,5' }]);
+  // "Nr." with no comma before it is the sale's number, not the lot.
+  assert.deepEqual(readProvenance('Ex Künker Auktion Nr. 145.'), [{ text: 'Ex Künker Auktion Nr. 145', source: 'Künker Auktion Nr. 145' }]);
+  // Ordinary words are no marker: "aus" inside a sentence, "Erworben" in the middle of one, and "Exemplar" without "der".
+  assert.deepEqual(readProvenance('Vorzügliches Exemplar mit feiner Tönung. RIC 347.'), []);
+  assert.deepEqual(readProvenance('Nero. Denar aus der Zeit um 65. RIC 53.'), []);
 });

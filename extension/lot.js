@@ -97,12 +97,17 @@ const BODY = /^(?:\s*(?:[^\s()]+|\([^()]*\))){0,1}(?:\s+(?:[^\s()]+|\([^()]*\)))
 const WORDS = /^(?:\s*[^\s\d()]+){0,3}\s*$/u;
 // A weight, size, die axis or date after the references ("3.21g", "8 h", "AD 69-79") is not a number that carries one on.
 const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\.)\s/i;
-const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)((?:Ex|From|Provenance)\b)/;
+// The German, Italian, Spanish and French houses open one with their own words ("Exemplar der Auktion …", "Aus Sammlung …", "Erworben 1998 bei …",
+// "Provenienz: …", "Provient de la vente …", "Proviene da asta …"), each at the start of its sentence and with its capital, as "Ex" is.
+const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Ex|From`;
+const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MARKERS})\b)`);
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
 // Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975.", "no. 1973", "Nr. 12"), nor at the one a day
 // is written with before its month and year ("25. Mai 1973"), whose tail would be left behind as a reference.
-const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
+// The German abbreviations a provenance is written with are no end either: "Slg." (Sammlung), "Smlg.", "Auk." (Auktion), "Kat.", "Abb.", "Taf.",
+// "Lot." and "Los.".
+const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
@@ -123,11 +128,24 @@ const PROVENANCE_READ = 6000;
 const PROVENANCE_ENTRIES = 10;
 const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
-const PROVENANCE_LABEL = /^provenance ?:? ?/i;
-const PROVENANCE_MARKER = /^(?:ex|from)\b\.? ?:? ?/i;
-const PROVENANCE_LOT = /,? ?\b(?:lots?|los)\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
-const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
-const PROVENANCE_DATE = /(?:\b\d{1,2}(?:st|nd|rd|th)?\.? )?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?)\.? (?:\d{1,2}(?:st|nd|rd|th)?,? )?$|\b\d{1,2}[./]\d{1,2}[./]$/i;
+const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
+// The words that only introduce the owner: "Ex", "From", "Exemplar der", "Aus (der)", "Provient de", "Proviene da". "Erworben" is kept, since
+// "Erworben bei Lanz" says how the coin came, as "privately purchased from" does.
+const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|proviene(?: d[a-z']*)?)\b\.? ?:? ?/i;
+// The lot, after the word a house writes for it: "lot", German "Los", Italian "lotto", Spanish "lote". A "no.", "Nr." or "n°" is the lot only in a
+// clause of its own after a comma ("Zürich 2000, Nr. 12"), and only where no lot word is written, since "Auction no. 45" is the sale's number.
+const PROVENANCE_LOT = /,? ?\b(?:lots?|los|lotto|lote)\b\.? ?(?:no\.? ?|nr\.? ?|n° ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n°) ?(\d{1,6}[a-z]?)(?![\da-z])/i;
+// A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n°|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
+// The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
+// "24 avril").
+const PROVENANCE_DATE = new RegExp(String.raw`(?:\b\d{1,2}(?:st|nd|rd|th|er)?\.? (?:de )?)?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März`
+  + String.raw`|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?`
+  + String.raw`|enero|febrero|marzo|abril|mayo|junio|julio|agosto|sep?tiembre|octubre|noviembre|diciembre`
+  + String.raw`|gennaio|febbraio|aprile|maggio|giugno|luglio|settembre|ottobre|novembre|dicembre`
+  + String.raw`|janvier|f[ée]vrier|mars|avril|juin|juillet|ao[uû]t|septembre|octobre|d[ée]cembre)\.? (?:de )?(?:\d{1,2}(?:st|nd|rd|th)?,? )?$`
+  + String.raw`|\b\d{1,2}[./]\d{1,2}[./]$`, 'i');
 const TRIMMED = new Set([' ', ',', '.', ';', ':', '-', '–', '\n']);
 const trimEnds = (value) => {
   let start = 0, end = value.length;
@@ -155,7 +173,7 @@ function provenanceEntry(piece) {
   let working = trimEnds(text.replace(PROVENANCE_MARKER, ''));
   if (!/[\p{L}\d]/u.test(working)) return null;
   const entry = { text: text.slice(0, 300) };
-  const lot = PROVENANCE_LOT.exec(working);
+  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
@@ -169,18 +187,21 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/, ?(?=,)/g, '')).slice(0, 120);
+  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ')).slice(0, 120);
   if (/\p{L}/u.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];
   return entry;
 }
 
+// Where one sentence holds several owners: a ";", a comma before another "ex", and a full stop before another marker that the sentence ran past at an
+// initial ("Aus Sammlung Dr. X. Erworben 1998 bei …").
+const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
 export function readProvenance(text) {
   if (typeof text !== 'string') return [];
   const entries = [];
   for (const sentence of provenanceSentences(text)) {
-    for (const piece of sentence.split(/;|,(?= ?ex )/i)) {
+    for (const piece of sentence.split(PROVENANCE_PIECES)) {
       if (entries.length >= PROVENANCE_ENTRIES) return entries;
       const entry = provenanceEntry(piece);
       if (entry) entries.push(entry);
