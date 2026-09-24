@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
-import { COIN_REMOVED_NOTICE } from '../extension/workspace.js';
+import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 
 async function backgroundWithCoins(...titles) {
   const background = await createWorkspaceBackground();

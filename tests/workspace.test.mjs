@@ -7,7 +7,7 @@ import {
   draftToConsumeAfterLotSave, editorCompletion, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup,
   planCommit, removedCoinNotice, removedHereAfterDeleteReply, sameEditorIdentity, sameEventReturnContext,
   selectionAfterSnapshot, submissionContext, WORKSPACE_EDITORS,
-} from '../extension/workspace.js';
+} from '../extension/workspace-editing.js';
 import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
