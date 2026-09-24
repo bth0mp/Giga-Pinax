@@ -6,6 +6,16 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- One look across the popup, the side panel, the workspace, Settings and the calculator. Buttons come in four kinds — filled for the main action, an accent outline for the everyday ones, a plain outline for the lesser ones and red on a clear face for removing — and every button, text box and list is the same height (38 px) and corner; labels are one size and weight, a typed value is no longer bold, and every fold (Refine reference, Fees and bid increments, Auction identity, How it works…) ends in the same small chevron. Section headings and each panel's main figure follow one scale: CoinArchives' median is now drawn like acsearch's.
+- **Compare coins** in the workspace is a short box of one-line choices with the chosen coins outlined, instead of a second full copy of the coin list.
+- Settings' section headings match the workspace's, its paragraphs are one size, and its everyday actions (Add house, Export CSV, Preview import, Copy diagnostics…) are outlined buttons.
+
+### Fixed
+
+- Placeholder text in dark mode was the browser's grey at about 3.5:1 against its field; it is now the muted ink (7.2:1). An excluded sale under **Inspect sales** was faded until its date read 2.5:1; it keeps full contrast and its amount is struck through instead. The sales-period pills have the same visible edge as the Recent chips.
+
 ## [0.35.0] - 2026-09-24
 
 ### Added
