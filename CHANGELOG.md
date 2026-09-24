@@ -6,6 +6,11 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+- A desktop reminder names the auction's own time and yours. A timed auction reads `Closes Fri 16 Oct, 14:00 (Zurich) — 8:00 your time`; a sale day with no time reads `Sale day Fri 2 Oct (London) — reminder for 9:00 London, 10:00 your time`, with your own day added where it is not the auction's. The auction's place is named only when its time zone is not yours. It used to print your local time with no label, or only the date and the zone's id.
+- Each reminder in a coin's **Reminders** tab names the auction's zone by its place (`14:00 Zurich`, not `Europe/Zurich`), adds the auction's day where it is not yours, and keeps the auction's time once the reminder has passed.
+- Nothing moves when a reminder goes off: a sale day's reminders still go off at their time in the auction's time zone (9:00 in London is 10:00 in Berlin), and every reminder saved by 0.35.0 keeps its time.
+
 ## [0.35.0] - 2026-09-24
 
 ### Added
