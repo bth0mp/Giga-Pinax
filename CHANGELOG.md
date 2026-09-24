@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- The workspace's editor checks — attaching an auction while coin details are unsaved, typing in the auction form while it saves, **reload committed data**, a coin removed in another tab, the leave-page guard and **Add coin** after discarding — now run as automated tests of the page against the real record store, and have left the manual release checklist.
+
 ## [0.33.0] - 2026-09-24
 
 ### Added
