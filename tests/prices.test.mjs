@@ -1364,7 +1364,9 @@ test('gradeMedians reports only a bucket resting on at least three counted sales
     graded('900', 'Extremely Fine', 'e'), graded('1100', 'EF', 'f')];
   assert.deepEqual(gradeMedians(lots, 'USD'), [{ bucket: 'VF', median: 200, count: 3 }]);
   assert.deepEqual(gradeMedians([], 'USD'), []);
-  assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF: median $180 (9)');
+  // Loop P-09: the figure between the bucket and its count, one separator throughout, the count as sales.
+  assert.equal(gradeText({ bucket: 'VF', median: 180, count: 9 }, usd), 'VF · $180 · 9 sales');
+  assert.equal(gradeText({ bucket: 'AU/Mint State', median: 1200, count: 1 }, usd), 'AU/Mint State · $1,200 · 1 sale');
   // What the buckets leave unsaid: a row the dealer graded nothing at all.
   const plain = lot('400', '01.01.2024', 'g', 'Nero. As. RIC 306.');
   assert.equal(ungradedText([...lots, plain]), '1 of 7 results carry no grade');
@@ -1413,8 +1415,8 @@ test('summaryText carries what the filters left out and the median of each grade
     ungraded: '27 of 39 results carry no grade' };
   assert.deepEqual(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"', extras).split('\n').slice(2), [
     '39 of 55 results cite Price 23',
-    'VF: median $180 (9)',
-    'EF: median $400 (3)',
+    'VF · $180 · 9 sales',
+    'EF · $400 · 3 sales',
     '27 of 39 results carry no grade',
   ]);
 });
@@ -1523,7 +1525,7 @@ test('mediansByYear gives a median per year of at least three counted sales, old
   assert.deepEqual(mediansByYear(lots, 'USD'), [{ year: 2021, median: 120, count: 4 }, { year: 2023, median: 200, count: 3 }]);
   assert.deepEqual(mediansByYear(lots.slice(3, 5), 'USD'), []);
   const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format;
-  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021: median $120 (4)');
+  assert.equal(yearText({ year: 2021, median: 120, count: 4 }, usd), '2021 · $120 · 4 sales');
   assert.equal(yearsSentence(mediansByYear(lots, 'USD'), usd), 'Median by year: 2021, $120 from 4 sales; 2023, $200 from 3 sales.');
   assert.equal(yearsSentence([], usd), '');
 });
@@ -1537,7 +1539,7 @@ test('summaryText adds the medians by year and the upcoming lots', () => {
   assert.equal(text, [
     'Price 23',
     'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 3 recorded sales matching “Price 23” · 2023',
-    '2023: median $200 (3)',
+    '2023 · $200 · 3 sales',
     'Upcoming: 2 lots, first on 2026-10-12',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));

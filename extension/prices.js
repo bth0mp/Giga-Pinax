@@ -714,7 +714,9 @@ export function gradeMedians(lots, currency, now = new Date()) {
     return summary.count >= GRADE_MIN ? [{ bucket, median: summary.median, count: summary.count }] : [];
   });
 }
-export const gradeText = ({ bucket, median, count }, format) => `${bucket}: median ${format(median)} (${count})`;
+// One line per bucket or year, as the ledger reads it: the label, the median, the sales it rests on, one separator throughout ("VF · $260 · 3 sales").
+const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
+export const gradeText = ({ bucket, median, count }, format) => `${bucket} · ${format(median)} · ${sales(count)}`;
 
 // How much of the counted sample the buckets say nothing about: a bucket of three beside a median of forty is a thin reading unless the panel says
 // how many rows carry no grade a dealer wrote. Nothing to say when every row is graded.
@@ -844,7 +846,7 @@ export function mediansByYear(lots, currency, now = new Date()) {
     return summary.count >= YEAR_MIN ? [{ year, median: summary.median, count: summary.count }] : [];
   });
 }
-export const yearText = ({ year, median, count }, format) => `${year}: median ${format(median)} (${count})`;
+export const yearText = ({ year, median, count }, format) => `${year} · ${format(median)} · ${sales(count)}`;
 // The strip's accessible name: one sentence, year by year.
 export const yearsSentence = (years, format) => (years.length
   ? `Median by year: ${years.map(({ year, median, count }) => `${year}, ${format(median)} from ${count} ${count === 1 ? 'sale' : 'sales'}`).join('; ')}.` : '');
