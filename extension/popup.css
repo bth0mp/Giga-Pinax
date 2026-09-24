@@ -116,23 +116,38 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .specimen-link {font-size:11px; line-height:1.3; overflow-wrap:anywhere;}
 .legend {font-family:var(--font-mono); font-size:11px; letter-spacing:.03em; color:var(--accent); overflow-wrap:anywhere;}
 .metric-label {font-size:12px; color:var(--muted);}
-.prices {margin-top:16px; padding-top:12px; border-top:1px solid var(--line);}
+/* The acsearch search itself, folded under "Change search" with the term it ran beside it; a note or an error that needs Get prices opens it. */
+.price-search {margin-top:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
+.price-search summary {list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; min-height:40px; font-size:12px; font-weight:600; color:var(--accent);}
+.price-search summary::-webkit-details-marker {display:none;}
+.price-search-term {flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-mono); font-size:11px; font-weight:400; color:var(--muted); text-align:right;}
+.price-search[open] .chevron {transform:rotate(180deg);}
+.prices {padding:2px 0 12px;}
 .prices-note {font-size:12px; line-height:1.5; color:var(--muted);}
 .prices-note a {white-space:nowrap;}
+/* A provider's heading: its name, its results link at the right like Type, and the one gold rule under it. */
+.provider-heading {display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:14px; padding-bottom:6px; border-bottom:1px solid var(--gold-line);}
+.provider-link {font-size:12px; text-decoration:none; white-space:nowrap;}
+.provider-link:hover {text-decoration:underline;}
 /* The median sits right under the heading; without prices, the note takes its place. */
-.median-block,.prices-note {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
+.median-block,.prices-note {margin-top:10px;}
+/* One stat block: the figure, then one line of sales, years and the last sale, and one line of what the filters left out and how many matched. */
+.stat-meta {font-size:12px; line-height:1.45; margin-top:4px; font-variant-numeric:tabular-nums;}
+.stat-meta > :not([hidden]) ~ :not([hidden])::before {content:" · "; color:var(--muted); font-weight:400;}
+.stat-meta .sale-filtered,.stat-meta .sale-period {font-size:11px; color:var(--muted);}
 /* Both blocks keep the height they will have while acsearch answers, so its answer moves nothing under them. */
-.median-block {min-height:108px;}
+.median-block {min-height:98px;}
 .prices-panel[data-state="loading"] .median-line strong,.prices-panel[data-state="loading"] .sale-strength {color:var(--muted); font-weight:400;}
+.prices-panel[data-state="loading"] .range-block {border-style:dashed; background:transparent;}
 .prices-panel[data-state="loading"] .range-block > * {visibility:hidden;}
 .median-line {display:flex; align-items:baseline; gap:8px; margin-top:2px;}
 .median-line strong {font-family:var(--font-serif); font-size:32px; line-height:1.1; letter-spacing:-.01em; font-weight:500; color:var(--ink); font-variant-numeric:lining-nums tabular-nums;}
 #median-currency {font-size:12px; font-weight:600; color:var(--muted);}
-.sale-strength {font-size:12px; font-weight:600; margin-top:4px;}
-.sale-period {font-size:11px; color:var(--muted); margin-top:6px;}
+.sale-strength {font-size:12px; font-weight:600;}
 /* What the filters left out, under the median, and the two filter toggles, which stack when a card offers both. The toggles stand above both
    providers' panels, since one state governs both and either panel may be the only one fetched. */
 .sale-filtered {font-size:11px; color:var(--muted); margin-top:4px;}
+.stat-meta .sale-filtered {margin-top:0;}
 .price-filters {margin-bottom:4px;}
 .denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px;}
 .denomination-row + .denomination-row {margin-top:6px;}
@@ -156,9 +171,10 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 @media (forced-colors:active) {
   .period label:has(:checked) {forced-color-adjust:none; border-color:Highlight; background:Highlight; color:HighlightText; outline-color:CanvasText;}
 }
-.range-block {min-height:72px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
-.range-block strong {display:block; font-size:16px; font-weight:600; letter-spacing:-.01em; margin-top:2px; font-variant-numeric:tabular-nums;}
-.range-all {font-size:11px; line-height:1.4; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
+.range-block {min-height:64px; background:var(--bg); border:1px solid var(--line); border-radius:10px; margin-top:12px; padding:10px 12px; display:flex; align-items:center; gap:12px;}
+.range-line {display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px; margin-top:2px;}
+.range-block strong {font-size:16px; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums;}
+.range-all {font-size:11px; line-height:1.4; color:var(--muted); font-variant-numeric:tabular-nums;}
 .range-visual {position:relative; height:22px; width:100px; margin-left:auto; flex-shrink:0;}
 .range-whisker {position:absolute; top:10px; left:0; right:0; border-top:1px solid var(--muted);}
 .range-whisker::before,.range-whisker::after {content:""; position:absolute; height:9px; border-left:1px solid var(--muted); top:-5px;}
@@ -191,35 +207,36 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .year-medians {margin:12px 0 0; overflow-x:auto;}
 .year-strip {display:block; margin-top:4px; overflow:visible;}
 .year-bar {fill:var(--accent);}
-.year-strip text {fill:var(--muted); font-size:9px; font-variant-numeric:tabular-nums;}
+.year-strip text {fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums;}
 .year-strip .year-median {fill:var(--ink);}
 .year-strip .year-label {font-weight:600;}
 /* The lots on the fetched page not sold yet, under the acsearch panel: the sale list's rows, each with Watch in place of Exclude. */
-.upcoming {margin-top:12px; padding-top:12px; border-top:1px solid var(--gold-line);}
+.upcoming {margin-top:12px; padding-top:12px; border-top:1px solid var(--line);}
 .upcoming .sale-list {margin-top:6px;}
 .price-note {font-size:11px; line-height:1.5; color:var(--muted); margin-top:8px;}
 .price-basis {font-size:11px; line-height:1.5; color:var(--muted); margin-top:5px;}
 .copy-button {padding:8px 0 0;}
-/* The two outside searches share a row when both labels fit (the right-click window); in the 400px popup they stack. */
-.search-links {margin-top:12px; display:flex; flex-wrap:wrap; gap:8px;}
-.search-links a {flex:0 1 auto; white-space:nowrap; font-size:12px;}
+/* The panel's single basis line closes it. */
+.copy-button + .price-basis {margin-top:8px;}
 .research-prices {padding:16px;}
-.research-prices h2 {font-size:14px; margin:0 0 4px;}
-.source-period {margin-top:10px;}
+/* The section's name and the sales period share a row while both fit, and the pills wrap under it when they do not. */
+.research-heading {display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px;}
+.research-prices h2 {font-size:14px; margin:0;}
+.research-heading .period {margin:0;}
 .price-source-title,.coinarchives-prices h3 {font-size:13px; margin:0;}
-.coinarchives-prices {margin-top:16px; padding-top:14px; border-top:1px solid var(--gold-line);}
-.coinarchives-heading {display:flex; align-items:center; justify-content:space-between; gap:12px;}
-.coinarchives-heading .field-hint {margin:2px 0 0;}
+.coinarchives-prices {margin-top:16px;}
+.coinarchives-prices .provider-heading {margin-top:0;}
+.coinarchives-heading {display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px;}
+.coinarchives-heading .field-hint {margin:0;}
+#coinarchives-prices-panel {margin-top:12px;}
 .coinarchives-heading button {flex:0 0 auto;}
 .secondary-button {min-height:34px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--accent); font-size:11px; font-weight:650;}
 .secondary-button[disabled] {opacity:.6; cursor:progress;}
 /* "Check online" sits under the lookup error it answers. */
 .online-fallback {margin-top:6px;}
-.price-query {font-size:11px; color:var(--muted); margin:12px 0 8px; overflow-wrap:anywhere;}
 .coinarchives-median-line {display:flex; align-items:baseline; gap:5px; margin:2px 0;}
 .coinarchives-median-line strong {font-family:var(--font-serif); font-size:26px; line-height:1; font-weight:700; color:var(--ink);}
 #coinarchives-median-currency {font-size:12px; color:var(--muted);}
-#coinarchives-source-link {display:inline-block; margin-top:10px; font-size:12px;}
 .popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
 .popup-footer a {text-decoration:none; padding:4px 0;}
 .popup-footer a:hover {text-decoration:underline;}

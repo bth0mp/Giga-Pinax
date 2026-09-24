@@ -443,13 +443,15 @@ test('CoinArchives prices require a dedicated click and render a separate public
   assert.equal(calls, 1);
   assert.equal(popup.element('coinarchives-prices-panel').hidden, false);
   assert.match(popup.element('coinarchives-median').textContent, /150/);
-  assert.match(popup.element('coinarchives-sample').textContent, /1 recorded sale.*2025/);
+  assert.match(popup.element('coinarchives-sample').textContent, /1 sale · 1 Feb 2025/);
   assert.match(popup.element('coinarchives-coverage').textContent, /added in the past 6 months.*first 100 results/i);
   assert.match(popup.element('coinarchives-counts').textContent, /Other currencies not converted: 1 EUR.*1 unpriced.*1 upcoming/);
   assert.equal(popup.element('prices-panel').hidden, false);
   popup.element('price-term').value = 'edited only for acsearch';
   await popup.element('price-term').emit('input');
-  assert.equal(popup.element('coinarchives-query').textContent, 'Query: Price 23');
+  // The public search follows the card, never the acsearch term, and its basis line names the search it ran.
+  assert.match(popup.element('coinarchives-coverage').textContent, /CoinArchives public results for Price 23:/);
+  assert.equal(popup.element('coinarchives-link').href, coinArchivesSale.url);
 });
 
 test('CoinArchives refresh does not reset acsearch exclusions', async () => {
@@ -886,8 +888,8 @@ test('the page’s cap is reported even when the filters drop most of it', async
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.match(popup.element('price-note').textContent, /Only the 100 most recent sales are counted\./);
-  assert.match(popup.element('sale-period').textContent, /^Out of 100\+ matches for/);
+  assert.match(popup.element('price-note').textContent, /acsearch returns the 100 most recent sales/);
+  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch/);
 });
 
 // Reset undoes the collector's own decisions only, so it is offered as the way back only where it would bring a sale back.
@@ -1343,13 +1345,14 @@ test('a profile whose bridge never answers keeps the chosen currency across sess
 });
 
 // The default term is already an exact phrase in acsearch's own quotes; wrapping it in curly quotes again read as “"Price 23"”.
-test('a quoted search term is not quoted a second time in the matches line', async () => {
+// Loop 1 (P-04): the term is no longer repeated in the matches line; it is shown once, beside Change search, exactly as it is written.
+test('a quoted search term is shown as written beside Change search, not quoted a second time', async () => {
   const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.match(popup.element('sale-period').textContent, /matches for "Price 23"$/);
-  assert.doesNotMatch(popup.element('sale-period').textContent, /[“”]/);
+  assert.equal(popup.element('price-search-term').textContent, '"Price 23"');
+  assert.doesNotMatch(popup.element('sale-period').textContent, /Price 23|[“”]/);
 });
 
 // A RIC term with a ruler in front of it opens on the ruler's name, so it was wrapped after all and the line read
@@ -1359,9 +1362,7 @@ test('a term that carries its own quotes or brackets is not wrapped in a second 
   popup.element('quick-reference').value = 'RIC I Nero 306';
   await popup.element('reference-form').emit('submit');
   await settle();
-  const line = popup.element('sale-period').textContent;
-  assert.match(line, /matches for Nero \("RIC 306" "RIC I 306" "RIC I, 306"\)$/);
-  assert.doesNotMatch(line, /[“”]/);
+  assert.equal(popup.element('price-search-term').textContent, 'Nero ("RIC 306" "RIC I 306" "RIC I, 306")');
 });
 
 // 0.33 review (R1): a bare RIC number names a type in every volume, and "RIC 237" priced all of them — a median across Caracalla's denarii,
@@ -1532,9 +1533,9 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.match(popup.element('sale-period').textContent, /^Out of 100\+ matches for/);
+  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch$/);
   await popup.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(popup.element('sale-period').textContent, /^Out of 50 matches from the last 5 years for/);
+  assert.match(popup.element('sale-period').textContent, /^50 matches on acsearch$/);
   // A full page every lot of which falls inside the period may be followed by more of them.
   const recent = lots.map((entry, index) => ({ ...entry, date: daysAgo(30 + index) }));
   const again = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: recent }) });
@@ -1542,7 +1543,7 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   await again.element('reference-form').emit('submit');
   await settle();
   await again.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(again.element('sale-period').textContent, /^Out of 100\+ matches from the last 5 years for/);
+  assert.match(again.element('sale-period').textContent, /^100\+ matches on acsearch$/);
 });
 
 // 0.33 review (P10): "Check online" carried a class no stylesheet the popup loads defines, so it drew as the browser's bare default button.
@@ -2078,4 +2079,51 @@ test('a card arriving after its prices is what stays in view', async () => {
   await settle();
   for (const run of timers.splice(0)) run();
   assert.deepEqual(popup.element('popup-scroll').scrolledTo?.map(({ top }) => top), [320]);
+});
+
+// Loop 1 (P-04): the panel said everything twice. Its lines are one stat block (sales, years and the last sale on one line; what the filters left out
+// and how many matches on the next), one basis line at its foot, and the search folded under Change search until something needs Get prices.
+test('the acsearch panel reads as one stat block with one basis line', async () => {
+  const lots = [citingSale('a', '220', 'Macedon. Tetradrachm. Price 23. VF'), { ...citingSale('b', '300', 'Macedon. Tetradrachm. Price 23. VF'), date: '01.06.2025' },
+    citingSale('c', '380', 'Macedon. Tetradrachm. Price 23. VF'), citingSale('d', '999', 'Macedon. Tetradrachm. Price 3014. VF')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('sale-strength').textContent, '3 sales · 2025');
+  const last = popup.element('last-sale').children;
+  assert.equal(last[0], 'last $300 on ');
+  assert.equal(last[1].textContent, '1 Jun 2025');
+  assert.equal(popup.element('cited-count').textContent, '3 of 4 results cite Price 23');
+  assert.equal(popup.element('sale-period').textContent, '4 matches on acsearch');
+  assert.equal(popup.element('range-all').textContent, 'all $220–$380');
+  assert.equal(popup.element('price-note').textContent, 'Hammer only, no premium, tax or shipping · by year: years with at least 3 counted sales');
+  assert.equal(popup.element('price-search').open, false);
+});
+
+test('a note or an error that needs Get prices opens Change search', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'signed-out' }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-note').hidden, false);
+  assert.equal(popup.element('price-search').open, true);
+  const ungranted = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => false, priceFetch: async () => oneSale });
+  ungranted.element('quick-reference').value = 'Price 23';
+  await ungranted.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(ungranted.element('price-search').open, true);
+});
+
+test('each provider names its results link in its own heading, and the year strip keeps no footnote of its own', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  for (const [heading, link] of [['acsearch</h3>', 'acsearch-link'], ['CoinArchives</h3>', 'coinarchives-link']]) {
+    const row = html.slice(html.lastIndexOf('<div class="provider-heading">', html.indexOf(heading)), html.indexOf('</div>', html.indexOf(heading)));
+    assert.match(row, new RegExp(`id="${link}"`), link);
+  }
+  assert.doesNotMatch(html, /class="search-links"|coinarchives-source-link|coinarchives-query/);
+  const markup = parseHtml(html);
+  for (const id of ['year-medians', 'coinarchives-year-medians']) assert.equal(markup.getElementById(id).querySelectorAll('.price-basis').length, 0, id);
+  const search = html.slice(html.indexOf('<details id="price-search"'), html.indexOf('</details>', html.indexOf('<details id="price-search"')));
+  assert.match(search, /<form id="prices-form"/);
 });

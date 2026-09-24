@@ -184,7 +184,7 @@ function setPricesBusy(busy) {
 // While acsearch answers, the median block is drawn with its label, a dash and what is happening, and the range block keeps its room: the panel has
 // its final height before the prices are in it, so their arrival moves nothing below the card. Nothing of a previous answer is shown in it.
 const LOADING_HIDDEN = ['cited-count', 'sale-trend', 'last-sale', 'sale-period', 'year-medians', 'grade-medians', 'ungraded-count', 'check-row',
-  'check-result', 'sale-details', 'copy-summary'];
+  'check-result', 'sale-details', 'copy-summary', 'price-note'];
 function showPricesLoading() {
   $('prices-panel').dataset.state = 'loading';
   $('median-amount').textContent = '—';
@@ -247,6 +247,16 @@ function clearPrices(options) {
   clearCoinArchivesPrices(options);
 }
 
+// A basis line's parts, those that apply, as one line.
+const basisLine = (...parts) => parts.filter(Boolean).join(' · ');
+// Said once, in the basis line, wherever a strip of medians by year is drawn.
+const YEARS_BASIS = 'by year: years with at least 3 counted sales';
+// A sale's day as acsearch dates it ("01.06.2028"), written out ("1 Jun 2028"); a date that does not read is shown as it came.
+const saleDay = (text) => {
+  const day = isoDay(text);
+  return day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`)) : String(text ?? '');
+};
+
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
   requestId += 1;
@@ -297,6 +307,8 @@ function setBusy(busy) {
 const cardFallbackTerm = () => researchContext?.label ?? '';
 
 function updateAcsearchLink() {
+  // The term searched is shown folded, beside "Change search", exactly as it is written: the panel's lines no longer repeat it.
+  $('price-search-term').textContent = $('price-term').value.trim();
   const term = $('price-term').value.trim() || cardFallbackTerm();
   // The category follows the reference on the card, not the edited term: a Krause reference searches modern coins.
   $('acsearch-link').href = term ? buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(researchContext?.reference) }) : ACSEARCH_HOME;
@@ -324,6 +336,8 @@ function initialisePriceResearch(reference, identity = null) {
   researchContext = Object.freeze({ reference: Object.freeze({ ...reference }), label: buildQuery(reference).query, identity, term: chosen,
     currency: $('currency').value, priceTicket: priceRequestId });
   $('price-term').value = chosen;
+  // The search runs by itself, so its form starts folded; a note or an error that needs Get prices opens it.
+  $('price-search').open = false;
   updateAcsearchLink();
   updateCoinArchivesLink();
   $('research-prices').hidden = false;
@@ -702,7 +716,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-details').hidden = !visibility.curation;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  const years = summary.earliest === null ? '' : ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const counts = priceCuration.counts(periodLots);
   // Nothing counted: either the period holds no sale with a price, or every sale in it is excluded. Reset undoes only the collector's own decisions,
   // so it is offered as the way back only where it would leave a sale counted.
@@ -710,7 +724,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const none = periodLots.length === 0 ? noPeriodSales
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
-  $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
+  $('sale-strength').textContent = empty ? none : `${sales(count)}${years}`;
   const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('cited-count').textContent = filters.join(' · ');
   $('cited-count').hidden = filters.length === 0;
@@ -721,11 +735,12 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('last-sale').hidden = !last;
   if (last) {
     // The name keeps the date it shows, so a screen reader or voice control still finds it.
-    const link = lotLink(last, last.date);
-    link.setAttribute('aria-label', `Last sale ${last.date} on acsearch, opens a new tab`);
-    $('last-sale').replaceChildren('Last sale ', link, ` · ${money.format(last.amount)}`);
+    const link = lotLink(last, saleDay(last.date));
+    link.setAttribute('aria-label', `Last sale ${saleDay(last.date)} on acsearch, opens a new tab`);
+    $('last-sale').replaceChildren(`last ${money.format(last.amount)} on `, link);
   }
-  // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" and the note below say how much acsearch held.
+  // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" says how much acsearch held. The query is not
+  // repeated here: it is shown beside Change search, where it can be edited.
   // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const drawnFrom = summarise(lotsInPeriod(lots, period.value, now), currency);
   const { total, unpriced } = drawnFrom;
@@ -733,16 +748,17 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
   // is proves the page reaches back past the period, so every sale of the period is already on it.
   const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
-  let drawn = `Out of ${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${quotedTerm(term)}`;
+  let drawn = `${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'} on acsearch`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
   $('sale-period').hidden = false;
+  $('price-note').hidden = false;
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
-  $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
+  $('range-all').textContent = count === 1 ? '1 sale' : `all ${money.format(summary.min)}–${money.format(summary.max)}`;
   const span = summary.max - summary.min;
   const percent = (value) => rangePercent(summary, value);
   $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
@@ -791,10 +807,10 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   }));
   focusSaleId = null;
   if (restore) restore.focus();
-  // About the page, whatever the period and whatever the filters left: it holds only the 100 most recent lots.
-  $('price-note').textContent = pageSummary.capped
-    ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
-    : 'Hammer prices exclude buyer’s fees, tax and shipping.';
+  // The panel's one basis line, at its foot: what the figures are, how much of acsearch the page holds (only the 100 most recent lots), and which years
+  // the strip draws.
+  $('price-note').textContent = basisLine('Hammer only, no premium, tax or shipping', pageSummary.capped && 'acsearch returns the 100 most recent sales',
+    byYear.length > 0 && YEARS_BASIS);
   const upcoming = renderUpcoming(lots, term, context, card);
   shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, years: byYear, upcoming } };
   renderPriceFilters();
@@ -840,21 +856,22 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const median = summary.count ? money.format(summary.median) : '—';
   for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
-  $('coinarchives-query').textContent = `Query: ${outcome.term}`;
   $('coinarchives-median').textContent = summary.count ? median : '';
   $('coinarchives-median-line').hidden = summary.count === 0;
   $('coinarchives-median-currency').textContent = summary.count && !median.includes(currency) ? currency : '';
   const dates = used.map(({ date }) => date).sort();
   const formatDate = (date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
-  const dateSpan = dates.length ? `, ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
-  $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}${dateSpan}`
-    : `${period.label}: No recorded sales in this period.`;
-  $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
+  const dateSpan = dates.length ? ` · ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
+  $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${sales(summary.count)}${dateSpan}` : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
   const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
-  renderYears('coinarchives-', mediansByYear(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency), money.format);
+  const byYear = mediansByYear(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
+  renderYears('coinarchives-', byYear, money.format);
+  // The public panel's one basis line, with the search it ran: CoinArchives takes one spelling of the citation, and nothing else shows it.
+  $('coinarchives-coverage').textContent = basisLine('Hammer only, no premium, tax or shipping, no currency conversion',
+    `CoinArchives public results for ${outcome.term}: auctions added in the past 6 months, first 100 results`, byYear.length > 0 && YEARS_BASIS);
   const counts = coinArchivesCuration.counts(periodLots);
   $('coinarchives-curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('coinarchives-sale-count').textContent = String(summary.count);
@@ -888,7 +905,8 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   }));
   focusSaleId = null;
   if (restore) restore.focus();
-  $('coinarchives-source-link').href = outcome.url;
+  // The heading's results link opens the very search these prices came from.
+  $('coinarchives-link').href = outcome.url;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-panel').hidden = false;
   shownCoinArchivesPrices = { context, outcome, currency, summary, searched, denomination };
@@ -927,6 +945,7 @@ function showCheck() {
 }
 
 function showPricesNote(message, withSignIn) {
+  $('price-search').open = true;
   $('prices-note-text').textContent = message;
   $('signin-link').hidden = !withSignIn;
   $('prices-note').hidden = false;
@@ -934,6 +953,7 @@ function showPricesNote(message, withSignIn) {
 }
 
 function showPricesError(message) {
+  $('price-search').open = true;
   $('prices-error').textContent = message;
   $('prices-error').hidden = false;
 }
