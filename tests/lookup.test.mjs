@@ -846,6 +846,9 @@ test('the French series word is read past, and Bopearachchi with a co-author is 
   for (const text of ['Bopearachchi & Rahman 268', 'Bopearachchi and Rahman 268', 'Bopearachchi-Rahman 268', 'Bop & Rahman 268']) {
     assert.deepEqual(parseReference(text), { catalogue: 'Other', number: text, volume: '', section: '' }, text);
   }
+  // Loop N8 review: typed with an en dash, as a word processor writes the hyphen, it is the same book; the plural "Séries" is no king either.
+  assert.deepEqual(parseReference('Bopearachchi–Rahman 268'), { catalogue: 'Other', number: 'Bopearachchi–Rahman 268', volume: '', section: '' });
+  assert.deepEqual(parseReference('Bopearachchi Séries 6C'), bop('', '6C'));
   // A king never starts with the ampersand or the joining word, whichever side of the key he is written on.
   for (const text of ['& Rahman Bop 268', 'and Rahman, Bop 268']) assert.notEqual(parseReference(text)?.catalogue, 'Bop', text);
   // Nothing else changes: a king, a key glued to its number by a hyphen, and a real king who happens to start like the joining word.

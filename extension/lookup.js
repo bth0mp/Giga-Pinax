@@ -80,7 +80,8 @@ const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 // A French dealer writes the word for series between the key and the number ("Bopearachchi Série 6C"), which is no king. Nor is anything a king that
 // starts with the "&" or "and" a co-author is joined by: "Bopearachchi & Rahman 268" cites Pre-Kushana Coins in Pakistan, another book (below).
 const BOP = String.raw`(?:Bopearachchi|Bop\.?)(?![a-z])`;
-const SERIES_WORD = String.raw`(?:S[ée]rie|Series)\s+`;
+// "Séries" too, the plural a dealer writes over a run of them.
+const SERIES_WORD = String.raw`S[ée]ries?\s+`;
 const KING = String.raw`(?!&|and\s)([^\d\s][^\d]*?)`;
 const BOP_REFERENCE = new RegExp(String.raw`^(?:${BOP}[\s-]*(?:${SERIES_WORD})?(?:${KING}\s+)?|${KING}\s*,?\s*${BOP}[\s-]*(?:${SERIES_WORD})?)(\d\S*)$`, 'i');
 // Bopearachchi with a co-author joined on ("& Rahman", "and Rahman", "-Rahman") is another book with no type data here: an Other reference, its own
@@ -180,8 +181,10 @@ export function parseReference(text, clean = true) {
     const type = readType(part.replace(/[–—]/g, '-'), clean);
     if (type) return type;
   }
-  // A part that is Bopearachchi's co-authored book names no supported catalogue, however it begins.
-  const supported = (SUPPORTED.test(value) && !BOP_COAUTHORED.test(value)) || parts.some((part) => /\d/.test(part) && NAMED.test(part) && !BOP_COAUTHORED.test(part));
+  // A part that is Bopearachchi's co-authored book names no supported catalogue, however it begins, and with whatever dash it is joined: the type
+  // rules above read an en dash as the hyphen, so this does too.
+  const coauthored = (text) => BOP_COAUTHORED.test(text.replace(/[–—]/g, '-'));
+  const supported = (SUPPORTED.test(value) && !coauthored(value)) || parts.some((part) => /\d/.test(part) && NAMED.test(part) && !coauthored(part));
   return parts.some(searchablePart) && !supported ? { catalogue: 'Other', number: otherNumber(value, parts), volume: '', section: '' } : null;
 }
 
