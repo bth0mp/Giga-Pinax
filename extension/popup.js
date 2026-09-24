@@ -708,7 +708,9 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     return row;
   }));
   $('upcoming').hidden = upcoming.length === 0;
-  shownUpcoming = { context, lots, term, searched, denomination };
+  // The toggles stand for rows on show: a page with no lot still to come gives them nothing to govern. Any future row keeps them, even one the filter
+  // hides, so the collector can switch the filter off to see it.
+  shownUpcoming = upcoming.length ? { context, lots, term, searched, denomination } : null;
   renderPriceFilters();
   return listed;
 }

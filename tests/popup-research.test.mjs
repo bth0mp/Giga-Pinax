@@ -1761,3 +1761,16 @@ test('clearing the Upcoming list takes the toggles down with it', async () => {
   assert.equal(popup.element('citing-row').hidden, true);
   assert.equal(popup.element('price-filters').hidden, true);
 });
+
+// 0.34 review (I2): a page with no counted price and no lot still to come has nothing for the toggles to govern, so none is offered, as in 0.33.
+test('a page with no counted price and nothing coming up offers no price toggles', async () => {
+  const lots = [upcomingSale('p1', '01.01.2024', 'Macedon. Tetradrachm. Price 23. VF.'), upcomingSale('p2', '01.02.2024', 'Macedon. Tetradrachm. Price 3014. VF.')];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-note').hidden, false);
+  assert.equal(popup.element('upcoming').hidden, true);
+  assert.equal(popup.element('citing-row').hidden, true);
+  assert.equal(popup.element('price-filters').hidden, true);
+});
