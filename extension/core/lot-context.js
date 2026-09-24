@@ -35,8 +35,12 @@ function identityUrls(lot) {
   return new Set(urls.map(normalizeAuctionUrl).filter(Boolean));
 }
 
+// The page a lot names as its canonical one. It identifies the lot against another lot's page, never against another canonical address alone: a
+// catalogue that names its sale page canonical for every lot would otherwise make all of them one lot.
+const canonicalOf = (lot) => normalizeAuctionUrl(lot?.auctionContext?.canonicalUrl);
+
 /**
- * The saved lot the candidate is the same auction lot as, by its page or its house, sale and lot number.
+ * The saved lot the candidate is the same auction lot as, by its page (or the page the other names canonical) or its house, sale and lot number.
  * @param {*} lots
  * @param {*} candidate
  * @param {string} [excludeId]
@@ -45,6 +49,7 @@ function identityUrls(lot) {
 export function findDuplicateLot(lots, candidate, excludeId) {
   if (!Array.isArray(lots) || !candidate || typeof candidate !== 'object') return null;
   const candidateUrls = identityUrls(candidate);
+  const candidateCanonical = canonicalOf(candidate);
   const candidateTuple = tuple(candidate.auctionContext);
   for (const lot of lots) {
     if (!lot || lot.id === excludeId) continue;
@@ -52,7 +57,10 @@ export function findDuplicateLot(lots, candidate, excludeId) {
     // Two complete but different house, sale and lot identities are two lots, whatever page a
     // single-page catalogue serves them from.
     if (candidateTuple && lotTuple && lotTuple !== candidateTuple) continue;
-    if ([...identityUrls(lot)].some((url) => candidateUrls.has(url))) return lot;
+    const urls = identityUrls(lot);
+    const canonical = canonicalOf(lot);
+    if ([...urls].some((url) => candidateUrls.has(url)) || (candidateCanonical && urls.has(candidateCanonical))
+      || (canonical && candidateUrls.has(canonical))) return lot;
     if (candidateTuple && lotTuple === candidateTuple) return lot;
   }
   return null;
