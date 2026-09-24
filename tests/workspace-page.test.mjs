@@ -681,3 +681,45 @@ test('the Reminders tab of a coin with no auction offers to attach one', async (
   assert.equal(page.$('lot-form').hidden, false, 'the Details tab is shown');
   assert.equal(page.document.activeElement, page.$('lot-form').elements.auctionEventId);
 });
+
+// H-01: the auction form asks in words. The time zone is a list starting on the collector's own zone, with "Other…"
+// for a name the list lacks; the reminders are two choices, a custom number of minutes only when asked for; and the
+// line under Save says what will be saved, where a confirm dialog used to ask.
+test('the auction form offers a time zone list, reminder choices and a summary instead of a confirm dialog', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  await page.click('new-event');
+  const f = page.$('event-form').elements;
+  assert.equal(page.$('event-form').querySelector('h3').textContent, 'Auction');
+  assert.equal(f.timeZoneChoice.value, own, 'the collector’s own zone to start with');
+  assert.equal(f.timeZone.value, own);
+  assert.equal(page.$('time-zone-other').hidden, true);
+  assert.ok(f.timeZoneChoice.options.some((option) => option.value === 'Europe/Zurich'));
+  assert.equal(f.timeZoneChoice.options.at(-1).value, 'other');
+  assert.deepEqual([f.reminderFirst.value, f.reminderSecond.value], ['1440', '60']);
+  assert.deepEqual(f.reminderFirst.options.map((option) => option.textContent), ['No reminder', '1 day before', '1 hour before', '30 minutes before', 'Custom…']);
+  assert.equal(page.$('reminder-first-custom').hidden, true);
+
+  await page.type('event-form', 'name', 'Leu Web Auction 32');
+  await page.type('event-form', 'localDate', '2030-10-15');
+  await page.type('event-form', 'localTime', '14:00');
+  f.timeZoneChoice.value = 'Europe/Zurich';
+  await page.$('event-form').emit('change', { target: f.timeZoneChoice });
+  f.reminderSecond.value = 'custom';
+  await page.$('event-form').emit('change', { target: f.reminderSecond });
+  assert.equal(page.$('reminder-second-custom').hidden, false);
+  await page.type('event-form', 'reminderSecondMinutes', '90');
+  assert.equal(page.$('event-summary').textContent, 'Saves “Leu Web Auction 32”: auction starting Tue, Oct 15, 2030, 2:00 PM Europe/Zurich, with reminders 1 day and 90 minutes before.');
+  await page.submit('event-form');
+  assert.deepEqual(page.prompts, [], 'no confirm dialog');
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.timeZone, 'Europe/Zurich');
+  assert.deepEqual(event.reminders.map((reminder) => reminder.offsetMinutes), [1440, 90]);
+
+  // A zone the list does not hold is kept, under Other….
+  await page.click('new-event');
+  f.timeZoneChoice.value = 'other';
+  await page.$('event-form').emit('change', { target: f.timeZoneChoice });
+  assert.equal(page.$('time-zone-other').hidden, false);
+});

@@ -18,7 +18,7 @@ import {
 import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen, evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderLabel, routeFromHash,
+  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderLabel, routeFromHash, viewerTimeZone,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -789,40 +789,96 @@ async function initWorkspace() {
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
-  const openEventEditor = (event) => { eventReturnLot = null; $('event-form').hidden = false; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; updatePrecision(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  const openEventEditor = (event) => { eventReturnLot = null; $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
-    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    $('delete-event').hidden = !event.id;
+    setEventZone(event.timeZone ?? viewerTimeZone());
     f.precision.value = event.precision ?? 'timed';
     setReminderControls(f.precision.value, reminderControlsForPrecision(event.reminders ?? [], f.precision.value));
     lastEventPrecision = f.precision.value;
-    updatePrecision();
+    updatePrecision(); updateEventSummary();
   };
+  // The time zone is picked from the browser's list; a name the list lacks is kept and shown under "Other…".
+  const zoneChoices = (() => { let zones = []; try { zones = Intl.supportedValuesOf('timeZone'); } catch { /* no list: Other… only */ } return [...new Set([...zones, 'UTC', viewerTimeZone()])].sort(); })();
+  $('event-form').elements.timeZoneChoice.replaceChildren(...zoneChoices.map((zone) => { const option = text('option', zone.replaceAll('_', ' ')); option.value = zone; return option; }), (() => { const option = text('option', 'Other…'); option.value = 'other'; return option; })());
+  function setEventZone(zone) {
+    const f = $('event-form').elements; const listed = zoneChoices.includes(zone);
+    f.timeZone.value = zone; f.timeZoneChoice.value = listed ? zone : 'other'; $('time-zone-other').hidden = listed;
+  }
+  // Two reminder choices for a timed auction, a custom number of minutes only when asked for.
+  const PRESET_OFFSETS = ['1440', '60', '30'];
+  const reminderChoice = (enabled, minutes) => !enabled ? 'off' : PRESET_OFFSETS.includes(String(minutes)) ? String(minutes) : 'custom';
+  function syncReminderChoices() {
+    const f = $('event-form').elements;
+    $('reminder-first-custom').hidden = f.reminderFirst.value !== 'custom';
+    $('reminder-second-custom').hidden = f.reminderSecond.value !== 'custom';
+  }
   const setReminderControls = (precision, controls) => {
     const f = $('event-form').elements;
     if (precision === 'date-only') {
       f.reminderDayBefore.checked = controls.firstEnabled; f.reminderDayBeforeTime.value = controls.firstValue;
       f.reminderDayOf.checked = controls.secondEnabled; f.reminderDayOfTime.value = controls.secondValue;
     } else {
-      f.reminder24h.checked = controls.firstEnabled; f.reminder24hValue.value = String(controls.firstValue);
-      f.reminder1h.checked = controls.secondEnabled; f.reminder1hValue.value = String(controls.secondValue);
+      f.reminderFirst.value = reminderChoice(controls.firstEnabled, controls.firstValue); f.reminderFirstMinutes.value = String(controls.firstValue);
+      f.reminderSecond.value = reminderChoice(controls.secondEnabled, controls.secondValue); f.reminderSecondMinutes.value = String(controls.secondValue);
+      syncReminderChoices();
     }
   };
-  const updatePrecision = () => { const dateOnly = $('event-form').elements.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; $('event-form').elements.localTime.required = !dateOnly; $('event-form').elements.reminder24h.parentElement.hidden = dateOnly; $('event-form').elements.reminder1h.parentElement.hidden = dateOnly; $('event-form').elements.reminderDayBefore.parentElement.hidden = !dateOnly; $('event-form').elements.reminderDayOf.parentElement.hidden = !dateOnly; };
+  // The timed reminders as the form holds them: on or off, and the minutes before; null while a custom count is no count.
+  const timedReminderControls = () => {
+    const f = $('event-form').elements;
+    const read = (choice, custom) => (choice === 'custom' ? Number(custom) : Number(choice));
+    const controls = { firstEnabled: f.reminderFirst.value !== 'off', firstValue: read(f.reminderFirst.value, f.reminderFirstMinutes.value), secondEnabled: f.reminderSecond.value !== 'off', secondValue: read(f.reminderSecond.value, f.reminderSecondMinutes.value) };
+    const valid = (enabled, value) => !enabled || (Number.isInteger(value) && value >= 1);
+    return valid(controls.firstEnabled, controls.firstValue) && valid(controls.secondEnabled, controls.secondValue) ? controls : null;
+  };
+  const updatePrecision = () => { const f = $('event-form').elements; const dateOnly = f.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; f.localTime.required = !dateOnly; $('timed-reminders').hidden = dateOnly; f.reminderDayBefore.parentElement.hidden = !dateOnly; f.reminderDayOf.parentElement.hidden = !dateOnly; $('date-only-reminder-note').hidden = !dateOnly; };
+  // What Save auction will write, in words, where a confirm dialog used to ask.
+  function updateEventSummary() {
+    const f = $('event-form').elements;
+    const dateOnly = f.precision.value === 'date-only';
+    const kind = ({ 'auction-starts': 'auction starting', 'lot-closes': 'lot closing', 'auction-day': 'auction day' })[f.eventKind.value] ?? 'auction';
+    const format = (options, date, fallback) => { try { return new Intl.DateTimeFormat(navigator.language, { ...options, timeZone: 'UTC' }).format(date); } catch { return fallback; } };
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value) ? format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value) : 'no date yet';
+    const time = dateOnly ? ', date only' : /^\d{2}:\d{2}$/.test(f.localTime.value) ? `, ${format({ hour: 'numeric', minute: '2-digit' }, new Date(`1970-01-01T${f.localTime.value}:00Z`), f.localTime.value)}` : '';
+    let reminders;
+    if (dateOnly) {
+      const parts = [f.reminderDayBefore.checked ? `the day before at ${f.reminderDayBeforeTime.value}` : '', f.reminderDayOf.checked ? `on the day at ${f.reminderDayOfTime.value}` : ''].filter(Boolean);
+      reminders = parts.length ? `reminders ${parts.join(' and ')}` : 'no reminders';
+    } else {
+      const controls = timedReminderControls();
+      const parts = controls ? [[controls.firstEnabled, controls.firstValue], [controls.secondEnabled, controls.secondValue]].filter(([enabled]) => enabled).map(([, minutes]) => reminderLabel({ kind: 'offset', offsetMinutes: minutes }).replace(/ before$/, '')) : [];
+      reminders = !controls ? 'a custom reminder still to fill in' : parts.length ? `reminders ${parts.join(' and ')} before` : 'no reminders';
+    }
+    $('event-summary').textContent = `Saves “${f.name.value.trim() || 'this auction'}”: ${kind} ${day}${time} ${f.timeZone.value.trim() || '(no time zone)'}, with ${reminders}.`;
+  }
+  $('event-form').addEventListener('input', updateEventSummary);
   $('event-form').addEventListener('change', (event) => {
-    if (event.target.name !== 'precision') return;
-    const precision = event.target.value;
-    if (precision !== lastEventPrecision) setReminderControls(precision, reminderControlsForPrecision(createEventDraft(precision).reminders, precision));
-    lastEventPrecision = precision;
-    updatePrecision();
+    const f = $('event-form').elements;
+    if (event.target === f.timeZoneChoice) {
+      const other = f.timeZoneChoice.value === 'other';
+      $('time-zone-other').hidden = !other;
+      if (other) f.timeZone.focus(); else f.timeZone.value = f.timeZoneChoice.value;
+    }
+    if (event.target === f.reminderFirst || event.target === f.reminderSecond) syncReminderChoices();
+    if (event.target.name === 'precision') {
+      const precision = event.target.value;
+      if (precision !== lastEventPrecision) setReminderControls(precision, reminderControlsForPrecision(createEventDraft(precision).reminders, precision));
+      lastEventPrecision = precision;
+      updatePrecision();
+    }
+    updateEventSummary();
   }); updatePrecision();
   $('event-form').hidden = true;
-  $('event-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('event') ?? { id: null, revision: null }; const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, f.precision.value === 'date-only'
-    ? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value }
-    : { firstEnabled: f.reminder24h.checked, firstValue: Number(f.reminder24hValue.value), secondEnabled: f.reminder1h.checked, secondValue: Number(f.reminder1hValue.value) });
-    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; if (!confirm(`Save ${eventDraft.name} on ${eventDraft.localDate}${eventDraft.localTime ? ` at ${eventDraft.localTime}` : ' as date only'} in ${eventDraft.timeZone}?`)) return; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
+  $('event-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('event') ?? { id: null, revision: null };
+    const timed = f.precision.value === 'date-only' ? null : timedReminderControls();
+    if (f.precision.value !== 'date-only' && !timed) return announce('Enter the minutes before for a custom reminder: a whole number from 1.', true);
+    const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, timed ?? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value });
+    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
       if (!reply?.ok) return;
       if (eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
       const decision = eventAttachDecision({
@@ -926,7 +982,7 @@ async function initWorkspace() {
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
     if (editor === 'lot') clearPageValues();
-    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
+    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
   }
   async function loadRouteDraft() {
