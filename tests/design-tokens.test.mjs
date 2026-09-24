@@ -156,3 +156,10 @@ test('Settings uses the shared scale and button kinds', () => {
   assert.match(html, /<button class="secondary" type="submit">Preview import<\/button>/);
   assert.match(html, /<button id="clear-diagnostics" class="quiet"/);
 });
+
+// Fix round: the shared chevron is wider than the ⌄ glyph the popup drew, and at 320 it wrapped under "Sources"; the header's text actions stay
+// on one line.
+test('the popup header’s text actions never wrap', () => {
+  const header = rules(read('popup.css')).find((rule) => rule.selector === '.header-action,.header-actions summary');
+  assert.match(header.body, /white-space:nowrap/);
+});
