@@ -1714,6 +1714,9 @@ test('the median by year is drawn under the range from the counted sales, with i
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('year-medians').hidden, false);
+  // 0.34 review (M1): the strip keeps its natural size, 48px a year, and the figure scrolls sideways rather than shrinking its labels.
+  assert.equal(popup.element('year-strip').style.width, '96px');
+  assert.equal(popup.element('year-strip').style.height, '74px');
   assert.equal(popup.element('year-strip')['aria-label'], 'Median by year: 2023, $200 from 3 sales; 2024, $500 from 3 sales.');
   assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
   // One bar per year, and under it the year and the count; every node is SVG.
@@ -1773,4 +1776,36 @@ test('a page with no counted price and nothing coming up offers no price toggles
   assert.equal(popup.element('upcoming').hidden, true);
   assert.equal(popup.element('citing-row').hidden, true);
   assert.equal(popup.element('price-filters').hidden, true);
+});
+
+// 0.34 review (M1): many years would shrink a strip fitted to the column until its labels could not be read; it scrolls instead, and a keyboard can
+// reach the scroll region, which is named by its caption.
+test('the by-year figures scroll sideways at their natural width, reachable by keyboard', () => {
+  const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
+  const markup = parseHtml(read('popup.html'));
+  for (const prefix of ['', 'coinarchives-']) {
+    const figure = markup.getElementById(`${prefix}year-medians`);
+    assert.equal(figure.getAttribute('tabindex'), '0', prefix);
+    const caption = markup.getElementById(figure.getAttribute('aria-labelledby'));
+    assert.equal(caption?.textContent, 'Median by year', prefix);
+  }
+  const css = read('popup.css');
+  assert.match(css, /\.year-medians \{[^}]*overflow-x:auto/);
+  assert.doesNotMatch(/\.year-strip \{[^}]*\}/.exec(css)[0], /width:100%/);
+});
+
+// 0.34 review (M4): a title is page text of any length; the row, its button's name and the draft all take the draft's own 200 characters.
+test('an upcoming lot’s title is shown, spoken and handed over bounded', async () => {
+  const long = `Roma ${'x'.repeat(5000)}`;
+  const lots = [{ ...upcomingSale('u9', '12.10.2099', 'Macedon. Tetradrachm. Price 23. EF.'), title: long }];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [row] = popup.element('upcoming-list').children;
+  assert.equal(row.children[0].children[1].textContent, long.slice(0, 200));
+  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on 2099-10-12`);
+  popup.dispatched.length = 0;
+  await row.children[1].emit('click');
+  assert.equal(popup.dispatched[0].detail.title, long.slice(0, 200));
 });

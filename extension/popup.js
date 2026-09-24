@@ -627,6 +627,8 @@ const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
 // Where an amount falls on the lowest–highest line, in percent; a single price has no span and sits in the middle.
 const rangePercent = (summary, value) => (summary.max > summary.min ? ((value - summary.min) / (summary.max - summary.min)) * 100 : 50);
 
+// A lot's title as the Upcoming list shows, speaks and hands it over: page text of any length, taken to the 200 characters a watchlist draft keeps.
+const lotTitle = (sale) => String(sale.title || `Lot ${sale.id}`).trim().replace(/\s+/g, ' ').slice(0, 200);
 // A link to one lot on acsearch, in a new tab.
 const lotUrl = (sale) => `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
 function lotLink(sale, text) {
@@ -696,7 +698,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     const row = document.createElement('li');
     const label = document.createElement('span');
     const day = isoDay(sale.date);
-    const title = sale.title || `Lot ${sale.id}`;
+    const title = lotTitle(sale);
     label.append(`${day} · `, lotLink(sale, title));
     const watch = document.createElement('button');
     watch.type = 'button';
@@ -721,7 +723,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
 // buildWatchlistDraftPayload leaves it off and the workspace opens no date-only auction event for it; see .superpowers/sdd/improve-0.34/i2-report.md.
 function watchUpcoming(sale, context) {
   if (context !== researchContext) return;
-  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: sale.title || `Lot ${sale.id}`, reference: priceCard(context).label,
+  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: priceCard(context).label,
     pageUrl: lotUrl(sale), saleDate: isoDay(sale.date) }) }));
 }
 
@@ -900,7 +902,8 @@ function renderYears(prefix, years, format) {
   const top = Math.max(0, ...years.map(({ median }) => median));
   strip.setAttribute('viewBox', `0 0 ${Math.max(1, years.length) * YEAR_COLUMN} ${YEAR_BAR + 38}`);
   strip.setAttribute('aria-label', yearsSentence(years, format));
-  strip.style.maxWidth = `${years.length * YEAR_COLUMN}px`;
+  strip.style.width = `${years.length * YEAR_COLUMN}px`;
+  strip.style.height = `${YEAR_BAR + 38}px`;
   strip.replaceChildren(...years.flatMap(({ year, median, count }, index) => {
     const middle = index * YEAR_COLUMN + YEAR_COLUMN / 2;
     const height = Math.max(2, Math.round((YEAR_BAR * median) / top));
