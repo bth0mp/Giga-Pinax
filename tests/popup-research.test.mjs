@@ -2343,3 +2343,15 @@ test('the example chips go once a lookup has answered or the box holds text', as
   await popup.element('quick-reference').emit('input');
   assert.equal(popup.element('first-run').hidden, true);
 });
+
+// Fix round 2 (with L2's futureText): a lot dated after today with a price in its field is never counted as a sale. The coverage line names it as
+// such, in the words Copy summary uses, instead of lumping it with prices that could not be read.
+test('the coverage line names future-dated lots apart from uncounted prices', async () => {
+  const lots = [citingSale('a', '220', 'Macedon. Tetradrachm. Price 23. VF'), citingSale('b', '300', 'Macedon. Tetradrachm. Price 23. VF'),
+    { ...citingSale('c', '380', 'Macedon. Tetradrachm. Price 23. VF'), date: '01.06.2099' }];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('sale-period').textContent, '3 matches on acsearch · 1 future-dated lot not counted');
+});

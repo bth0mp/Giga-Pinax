@@ -33,10 +33,13 @@ const FIXTURE = new URL('../tests/fixtures/acsearch-search-nero-306.html', impor
 
 // The fixture is a signed-out page, whose hammer prices read "*". Here every lot is given one, so the panel draws a
 // median and the filters above it; the lots, descriptions and citations are the fixture's own.
-// scale multiplies every price, for a panel drawn with the long amounts a gold coin fetches.
+// scale multiplies every price, for a panel drawn with the long amounts a gold coin fetches. A lot dated after today keeps
+// its "*", as acsearch lists a lot still to be sold: priced, it would be a future-dated row the panel names apart.
 function pricedAcsearchPage(scale = 1) {
   let price = 180;
-  return readFileSync(FIXTURE, 'utf8').replace(/"price": "\*"/g, () => `"price": "${(price += 40) * scale}"`);
+  const today = new Date().toISOString().slice(0, 10);
+  return readFileSync(FIXTURE, 'utf8').replace(/"date": "(\d\d)\.(\d\d)\.(\d{4})", "price": "\*"/g, (whole, day, month, year) => (
+    `${year}-${month}-${day}` > today ? whole : `"date": "${day}.${month}.${year}", "price": "${(price += 40) * scale}"`));
 }
 
 // A Price 23 page as the re-review's probe wrote it: ten results, eight citing Price 23 (two of them drachms), one Philip II stater that cites

@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
@@ -828,12 +828,16 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const drawnFrom = summarise(lotsInPeriod(lots, period.value, now), currency);
   const { total, unpriced } = drawnFrom;
-  const skipped = total - drawnFrom.count - unpriced;
+  // A lot dated after today is no sale whatever its price field holds: it is named apart (L2's futureText, the words Copy summary uses), not lumped
+  // with prices that could not be read.
+  const future = drawnFrom.future ?? 0;
+  const skipped = total - drawnFrom.count - unpriced - future;
   // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
   // is proves the page reaches back past the period, so every sale of the period is already on it.
   const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
   let drawn = `${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'} on acsearch`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
+  if (future) drawn += ` · ${futureText(drawnFrom)}`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
   // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip.
