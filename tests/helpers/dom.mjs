@@ -714,6 +714,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
     import('../../extension/core/fields.js'),
   ]);
+  const { zonePlace } = await import('../../extension/core/reminders.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
@@ -726,6 +727,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const location = { hash };
   const sandbox = {
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
+    zonePlace,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},

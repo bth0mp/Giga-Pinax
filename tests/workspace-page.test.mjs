@@ -754,7 +754,7 @@ test('each reminder in the Reminders tab says when it goes off in the collector�
   await page.openCoin('Nero, denarius');
   const [row] = page.$('selected-reminders').querySelectorAll('.reminder-row');
   assert.equal(row.querySelector('.reminder-when').textContent, '1 day before');
-  assert.match(row.querySelector('.reminder-at').textContent, /^\S.* \(your time\)( · 2:00 PM Asia\/Tokyo)?$/);
+  assert.match(row.querySelector('.reminder-at').textContent, /^\S.* \(your time\)( · (.+ )?2:00 PM Tokyo)?$/);
 });
 
 // W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle
