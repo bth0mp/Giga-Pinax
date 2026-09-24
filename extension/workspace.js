@@ -1138,8 +1138,8 @@ async function initWorkspace() {
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const root = $('history-list'); root.replaceChildren();
     for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
-      const card = text('article', '', 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
       const line = wonCostLine(lot, navigator.language);
+      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
       if (line) card.append(...costLineParts(line));
       else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
@@ -1155,8 +1155,8 @@ async function initWorkspace() {
       collection.append(collectionTotalsTable(view));
     }
     for (const entry of snapshot.collectionEntries ?? []) {
-      const card = text('article', '', 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
       const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
+      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
       if (line) card.append(...costLineParts(line));
       else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
       const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));
