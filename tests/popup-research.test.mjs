@@ -12,7 +12,7 @@ import * as lot from '../extension/lot.js';
 import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
-import { parseHtml } from './helpers/dom.mjs';
+import { parseHtml, runPage } from './helpers/dom.mjs';
 
 // No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
 // that was Node's: 33 lookups went to numismatics.org, kept the file waiting seconds for their sockets, and made what a test saw depend on the site.
@@ -150,9 +150,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   };
   sandbox.globalThis = sandbox;
 
-  const popupPath = new URL('../extension/popup.js', import.meta.url);
-  const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
-  vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
+  runPage(vm.createContext(sandbox), new URL('../extension/popup.js', import.meta.url));
   return { element, document, window, writes, clipboard, stored, dispatched };
 }
 

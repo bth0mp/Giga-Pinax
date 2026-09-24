@@ -518,6 +518,54 @@ export function pageSource(url) {
     .replace(/^export\s+(?=(?:default\s+|async\s+)?(?:function|const|let|var|class)\b)/gm, '');
 }
 
+// --- A page and the modules it was split into ---------------------------------------------------
+//
+// A page split into several modules is still one page: the modules it was split into touch its
+// document, its storage and its state the way its own code does, so they run with it in its sandbox,
+// in the order a browser evaluates them (each one's own page modules first, in import order), rather
+// than being imported here, where they would reach Node's globals instead of the page's. These are
+// they, by file name beside the pages. Anything else a page imports is handed in as sandbox globals,
+// as it always was.
+export const PAGE_MODULES = new Set([]);
+
+// The top-level names a script declares, read the way these files are written: every top-level
+// declaration starts at the left margin.
+function topLevelNames(source) {
+  const names = [];
+  for (const [, name] of source.matchAll(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)/gm)) names.push(name);
+  for (const [, name] of source.matchAll(/^(?:export\s+)?(?:const|let|var|class)\s+([\w$]+)/gm)) names.push(name);
+  for (const [, list] of source.matchAll(/^(?:export\s+)?(?:const|let|var)\s*\{([^}]*)\}/gm)) {
+    names.push(...list.split(',').map((part) => part.split(':').at(-1).trim()).filter(Boolean));
+  }
+  return names;
+}
+
+// Runs a page in a sandbox with its own modules before it. What a sandbox of scripts cannot do the
+// way the browser's modules do is refused rather than approximated: an import or export form
+// pageSource leaves behind, and one name declared by two of them - a module's names are its own in
+// a browser, while here a second function of the same name would quietly replace the first.
+export function runPage(context, url, modules = PAGE_MODULES) {
+  const declared = new Map();
+  const ran = new Set();
+  const run = (fileUrl) => {
+    if (ran.has(fileUrl.href)) return;
+    ran.add(fileUrl.href);
+    const text = readFileSync(fileUrl, 'utf8');
+    for (const [, specifier] of text.matchAll(/^import\b[^;]*?from\s+'(\.\/[\w.-]+)';/gm)) {
+      if (modules.has(specifier.slice(2))) run(new URL(specifier, fileUrl));
+    }
+    const source = pageSource(fileUrl);
+    const leftover = /^(?:import|export)\b.*$/m.exec(source);
+    if (leftover) throw new Error(`${fileUrl.pathname} keeps "${leftover[0]}", which a sandbox script cannot run.`);
+    for (const name of topLevelNames(source)) {
+      if (declared.has(name)) throw new Error(`${name} is declared by both ${declared.get(name)} and ${fileUrl.pathname}.`);
+      declared.set(name, fileUrl.pathname);
+    }
+    vm.runInContext(source, context, { filename: fileUrl.pathname });
+  };
+  run(url);
+}
+
 // A browser's own globals, as far as a page loaded here uses them.
 export function browserGlobals(document, { localStorage, confirm = () => true, downloads = [], language = 'en-US' } = {}) {
   return {
@@ -694,8 +742,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
-  const url = new URL('../../extension/workspace.js', import.meta.url);
-  vm.runInContext(pageSource(url), vm.createContext(sandbox), { filename: url.pathname });
+  runPage(vm.createContext(sandbox), new URL('../../extension/workspace.js', import.meta.url));
   await settle();
   const $ = (id) => document.getElementById(id);
   const type = async (form, field, value) => {
