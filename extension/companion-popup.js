@@ -331,14 +331,14 @@ async function initCompanionPopup() {
   });
   let draftSavePending = false;
   const saveWatchlistDraft = async (payload) => {
-    if (!bridge || storageUnavailable || !payload) return announce(STORAGE_UNAVAILABLE, true);
+    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
     if (draftSavePending) return;
     draftSavePending = true;
     $('companion-save-watchlist').disabled = true;
     $('companion-capture-watchlist').disabled = true;
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
-      if (!saved.ok) return announce(saved.message, true);
+      if (!saved.ok) { announce(saved.message, true); return saved; }
       announce('Watchlist details are ready to review.');
     } finally {
       draftSavePending = false;
@@ -349,8 +349,11 @@ async function initCompanionPopup() {
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
   // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
-  // lot is acsearch's, not the page captured here.
-  addEventListener('giga-pinax-watch', (event) => void saveWatchlistDraft(buildWatchlistDraftPayload(event.detail)));
+  // lot is acsearch's, not the page captured here. A failure is handed back too, to be said beside the list Watch was pressed in.
+  addEventListener('giga-pinax-watch', async (event) => {
+    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail));
+    if (saved?.ok === false) dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
+  });
 
   const reviewedCapture = () => {
     if (!captureDraft) return null;

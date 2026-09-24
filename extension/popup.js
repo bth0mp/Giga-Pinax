@@ -287,6 +287,7 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   $('prices-panel').hidden = true;
   $('upcoming').hidden = true;
   $('upcoming-list').replaceChildren();
+  $('upcoming-status').hidden = true;
   // A new result starts with Inspect sales folded; a period redraw leaves it as it was.
   $('sale-details').open = false;
   // A new lookup or currency starts the price check empty.
@@ -723,9 +724,17 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
 // buildWatchlistDraftPayload leaves it off and the workspace opens no date-only auction event for it; see .superpowers/sdd/improve-0.34/i2-report.md.
 function watchUpcoming(sale, context) {
   if (context !== researchContext) return;
+  $('upcoming-status').hidden = true;
   dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: priceCard(context).label,
     pageUrl: lotUrl(sale), saleDate: isoDay(sale.date) }) }));
 }
+
+// A Watch the other half could not save: it says why on its own status line, at the foot of the popup, and hands the reason back to be shown here,
+// beside the list the collector pressed Watch in. The live region has already spoken it, so this line is only seen.
+window.addEventListener('giga-pinax-watch-failed', (event) => {
+  $('upcoming-status').textContent = String(event.detail?.message ?? '');
+  $('upcoming-status').hidden = $('upcoming').hidden || !$('upcoming-status').textContent;
+});
 
 // The two toggles stand above both providers' panels: one state governs both medians, and either panel may be the only one a collector fetched — the
 // public CoinArchives search is the whole of the signed-out path. Each is offered while a panel on show has rows it applies to.

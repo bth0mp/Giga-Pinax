@@ -151,7 +151,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   const popupPath = new URL('../extension/popup.js', import.meta.url);
   const source = readFileSync(popupPath, 'utf8').replace(/^import .*?;\r?\n/gm, '');
   vm.runInNewContext(source, sandbox, { filename: popupPath.pathname });
-  return { element, document, writes, clipboard, stored, dispatched };
+  return { element, document, window, writes, clipboard, stored, dispatched };
 }
 
 const oneSale = {
@@ -1808,4 +1808,23 @@ test('an upcoming lot’s title is shown, spoken and handed over bounded', async
   popup.dispatched.length = 0;
   await row.children[1].emit('click');
   assert.equal(popup.dispatched[0].detail.title, long.slice(0, 200));
+});
+
+// 0.34 review (M5): the other half of the page says a failed Watch on its own status line, at the foot of the popup; the collector is looking at the
+// list, so the reason is written beside it too, and goes with the next Watch or the next result.
+test('a failed Watch is said beside the Upcoming list', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('upcoming-status').hidden, true);
+  await popup.window.emit('giga-pinax-watch-failed', { detail: { message: 'Extension storage is unavailable.' } });
+  assert.equal(popup.element('upcoming-status').textContent, 'Extension storage is unavailable.');
+  assert.equal(popup.element('upcoming-status').hidden, false);
+  await popup.element('upcoming-list').children[0].children[1].emit('click');
+  assert.equal(popup.element('upcoming-status').hidden, true);
+  await popup.window.emit('giga-pinax-watch-failed', { detail: { message: 'Draft store is full.' } });
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('upcoming-status').hidden, true);
 });

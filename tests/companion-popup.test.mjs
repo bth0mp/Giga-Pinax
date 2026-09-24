@@ -604,3 +604,22 @@ test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, wit
   assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
   assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });
+
+// 0.34 review (M5): a Watch that could not be saved is said on this half's status line and handed back to the research half, where the collector
+// pressed it; a Watch that worked hands nothing back.
+test('a failed Watch hands its reason back to the research half', async () => {
+  const replies = [{ ok: false, outcome: 'rejected', message: 'Draft store is full.' }, { ok: true, value: { id: 'draft-8' } }];
+  const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? replies.shift() : WORKING_SNAPSHOT) });
+  const handedBack = [];
+  const dispatch = globalThis.dispatchEvent;
+  globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
+  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', saleDate: '2099-10-12' };
+  page.watch(watched);
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
+  assert.equal(page.element('companion-status').textContent, 'Draft store is full.');
+  page.watch(watched);
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  globalThis.dispatchEvent = dispatch;
+  assert.equal(handedBack.length, 1);
+});
