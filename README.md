@@ -59,10 +59,11 @@ The runtime has no dependencies, no bundler and no build step: plain ES modules 
 node --test tests/*.test.mjs
 python -m unittest discover -s tests -p "test_*.py"
 python scripts/build.py
-npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors --self-hosted
+npm ci --prefix tools/web-ext
+tools/web-ext/node_modules/.bin/web-ext lint --source-dir dist/firefox --warnings-as-errors --self-hosted
 ```
 
-`python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext` is used only to validate the Firefox package. Publishing is described in the [release guide](docs/RELEASING.md).
+`python scripts/build.py` copies an explicit allowlist into deterministic packages and writes every release asset: unpacked `dist/brave/` and `dist/firefox/`, the versioned Brave, Chrome and Firefox ZIPs, and the stable `giga-pinax-brave.zip` and `giga-pinax-firefox.zip` aliases the update buttons resolve. The Chrome ZIP is a byte-identical copy of the Brave one. `python scripts/make_icons.py` reproduces the icon PNGs and needs Pillow; `web-ext`, pinned with its whole dependency tree in `tools/web-ext/`, validates the Firefox package and, in the release workflow, signs it. Publishing is described in the [release guide](docs/RELEASING.md).
 
 ## Data attribution
 

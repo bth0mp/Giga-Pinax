@@ -59,8 +59,11 @@ jobs:
           python -c 'import json, sys; sys.exit(0 if json.load(open("manifests/firefox.json"))["browser_specific_settings"]["gecko"].get("update_url") else "manifests/firefox.json names no update_url at this tag")'
       - name: Build the Firefox package
         run: python scripts/build.py firefox
+      # web-ext and its whole dependency tree are pinned, with integrity hashes, in tools/web-ext/package-lock.json.
+      - name: Install the pinned web-ext
+        run: npm ci --prefix tools/web-ext --no-audit --no-fund
       - name: Lint the Firefox package
-        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors --self-hosted
+        run: tools/web-ext/node_modules/.bin/web-ext lint --source-dir dist/firefox --warnings-as-errors --self-hosted
       - name: Record the checksum of the Firefox ZIP
         id: sum
         env:
@@ -72,11 +75,40 @@ jobs:
           path: dist/giga-pinax-firefox-${{ steps.tag.outputs.version }}.zip
           if-no-files-found: error
 
-  # The same signing as the release workflow's sign job. It can only read the repository, and the credentials reach the
-  # one step that signs.
-  sign:
+  # Mozilla signs a version once, so everything that could refuse the result afterwards is checked before it: the release
+  # must carry the very Firefox ZIP this tag builds, and no signed package yet. Drafts are listed only to a token that
+  # can push, hence the write scope; this job runs nothing but gh and sha256sum, and no repository code.
+  verify:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check the release carries the Firefox ZIP this tag builds, and no signed package yet
+        env:
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          ZIP_SUM: ${{ needs.build.outputs.zip_sum }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          existing="$(gh release view "$TAG" --json assets -q '.assets[].name')"
+          for name in "giga-pinax-firefox-$VERSION.xpi" firefox-updates.json; do
+            if printf '%s\n' "$existing" | grep -Fxq "$name"; then
+              echo "release $TAG already carries $name; nothing is signed" >&2
+              exit 1
+            fi
+          done
+          gh release download "$TAG" --pattern "giga-pinax-firefox-$VERSION.zip" --dir release
+          echo "$ZIP_SUM  release/giga-pinax-firefox-$VERSION.zip" | sha256sum --check --strict
+
+  # The same signing as the release workflow's sign job. It can only read the repository, the credentials reach the one
+  # step that signs, and the web-ext it runs was installed from the lockfile before them. The environment amo-signing is
+  # where the owner can require a person's approval (an environment nobody has configured changes nothing).
+  sign:
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    environment: amo-signing
     permissions:
       contents: read
     outputs:
@@ -84,12 +116,12 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
+      # Only whether both exist reaches this step, as a boolean the expression computes; neither value does.
       - name: Check for the AMO credentials
         env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          PRESENT: ${{ secrets.AMO_JWT_ISSUER != '' && secrets.AMO_JWT_SECRET != '' }}
         run: |
-          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+          if [ "$PRESENT" != 'true' ]; then
             echo 'The repository has no AMO_JWT_ISSUER and AMO_JWT_SECRET secrets; nothing can be signed.' >&2
             exit 1
           fi
@@ -103,6 +135,9 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
+      # Installed before any step holds a credential; the signing step runs this binary and fetches nothing.
+      - name: Install the pinned web-ext
+        run: npm ci --prefix tools/web-ext --no-audit --no-fund
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: firefox
@@ -113,7 +148,8 @@ jobs:
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: npx --yes web-ext@10.6.0 sign --source-dir firefox --channel unlisted --artifacts-dir web-ext-artifacts
+        # --no-config-discovery: no web-ext config file in the checkout or the home directory can reconfigure it.
+        run: tools/web-ext/node_modules/.bin/web-ext sign --no-config-discovery --source-dir firefox --channel unlisted --artifacts-dir web-ext-artifacts
       - name: Name the signed package and write its update manifest
         run: |
           set -- web-ext-artifacts/*.xpi
@@ -142,10 +178,10 @@ jobs:
           if-no-files-found: error
 
   # Attaches the signed XPI and its update manifest to the tag's release, draft or published, once the checksums prove
-  # they are the sign job's and the release's own Firefox ZIP proves to be the one that was signed. It only ever adds:
-  # an asset of the same name already on the release is never replaced. No checkout, no npm and no repository code.
+  # they are the sign job's and the release's own Firefox ZIP is still the one that was signed. It only ever adds: an
+  # asset of the same name already on the release is never replaced. No checkout, no npm and no repository code.
   attach:
-    needs: [build, sign]
+    needs: [build, verify, sign]
     runs-on: ubuntu-latest
     permissions:
       contents: write
