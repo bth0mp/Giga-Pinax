@@ -70,6 +70,7 @@ function loadSettings({
   snapshotReply = { ok: true, value: snapshot },
   diagnosticsStored = {},
   clipboard: givenClipboard = null,
+  getSelf = null,
 } = {}) {
   const copied = [];
   const clipboard = givenClipboard ?? { writeText: async (text) => { copied.push(text); } };
@@ -118,7 +119,7 @@ function loadSettings({
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
     navigator: { language, clipboard },
-    browser: { runtime: { getManifest: () => manifest } },
+    browser: { runtime: { getManifest: () => manifest }, ...(getSelf ? { management: { getSelf } } : {}) },
     // The diagnostics buffer lives in extension storage; the page reads and clears it through the real module.
     readDiagnostics: () => diagnostics.readDiagnostics({ storage: diagnosticsStorage }),
     clearDiagnostics: () => diagnostics.clearDiagnostics({ storage: diagnosticsStorage }),
@@ -967,6 +968,27 @@ test('the Updates card is hidden for a store install and shown for one that upda
   const firefox = await openSettings({ manifest: { version: '0.32.1', browser_specific_settings: { gecko: {} } } });
   assert.equal(firefox.element('updates-browser').textContent, 'Firefox');
   assert.match(firefox.element('updates-download').getAttribute('href'), /giga-pinax-firefox\.zip$/);
+});
+
+// A signed Firefox build names its own update manifest, and Firefox keeps an installed XPI up to date from it; the
+// same build loaded as a temporary add-on is never updated, and the browser says which it is.
+test('the Updates card is hidden for a signed Firefox install and shown for the same build loaded temporarily', async () => {
+  const manifest = {
+    version: '0.34.0',
+    browser_specific_settings: { gecko: { id: 'giga-pinax@local.invalid', update_url: 'https://bth0mp.github.io/Giga-Pinax/firefox/updates.json' } },
+  };
+  const signed = await openSettings({ manifest, getSelf: async () => ({ installType: 'normal' }) });
+  assert.equal(signed.element('updates').hidden, true);
+
+  const temporary = await openSettings({ manifest, getSelf: async () => ({ installType: 'development' }) });
+  assert.equal(temporary.element('updates').hidden, false);
+  assert.equal(temporary.element('updates-browser').textContent, 'Firefox');
+
+  // A browser that cannot say keeps the card: an update the collector would otherwise miss is what is at stake.
+  const unknown = await openSettings({ manifest, getSelf: async () => { throw new Error('no management API'); } });
+  assert.equal(unknown.element('updates').hidden, false);
+  const missing = await openSettings({ manifest });
+  assert.equal(missing.element('updates').hidden, false);
 });
 
 // --- the bundled-data panel ------------------------------------------------------------------------

@@ -35,6 +35,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "giga-pinax@local.invalid",
+      "update_url": "https://bth0mp.github.io/Giga-Pinax/firefox/updates.json",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [

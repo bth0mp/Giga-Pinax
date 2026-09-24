@@ -29,6 +29,8 @@ These providers receive the request and ordinary connection data such as an IP a
 
 CoinArchives price research is requested separately from acsearch. It sends the CoinArchives query shown in Research, calculates a separate median from readable public hammer prices in the selected original currency, and keeps those rows in memory for the current research session. It does not download coin images or follow additional result pages. CoinArchives Pro, RPC Online and external source links open only when you choose them. Giga Pinax does not receive CoinArchives credentials or import paid CoinArchives data. A GitHub request occurs when you choose a release or update download; the extension does not poll GitHub in the background.
 
+In Firefox, updates are Firefox's own business, not Giga Pinax's. The Firefox package names an update manifest, `https://bth0mp.github.io/Giga-Pinax/firefox/updates.json`, which Firefox may request periodically as it does for every add-on that names one; for a signed install it then downloads a newer signed version from the GitHub release. These are ordinary requests to GitHub, carrying connection data such as your IP address and nothing from your records. A temporary install is never updated from it.
+
 When you open saved-coin comparison, Giga Pinax may load the external photo URL links you entered. Those photo servers can use HTTP or HTTPS and receive an ordinary image request, including connection data such as your IP address. Images are lazy-loaded with no referrer. Photo servers are not contacted when you import, list or edit a coin, and a failed image shows an unavailable-image fallback.
 
 ## Storage, retention and deletion

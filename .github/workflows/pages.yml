@@ -1,0 +1,121 @@
+name: Pages
+
+# Publishes the project site - site/, the privacy policy generated from docs/PRIVACY.md, and the update manifest a
+# signed Firefox install reads - to https://bth0mp.github.io/Giga-Pinax/, always from the latest published release, so
+# the policy and the update offer describe what collectors can download. It runs when a release is published, or by
+# hand from the Actions tab. It does nothing until the owner turns GitHub Pages on with the source "GitHub Actions"
+# (Settings > Pages): the first job looks, and stops with a notice otherwise.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Nothing is granted by default: each job names the one scope it needs.
+permissions: {}
+
+# One deployment at a time, and a newer one waits for the one in progress rather than cancelling it half-way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+# Actions are pinned to full commit SHAs (the release in the trailing comment); .github/dependabot.yml proposes updates.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: read
+    outputs:
+      enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      # Only GitHub's answer that the repository has no Pages site (HTTP 404) means "not turned on"; any other failure of
+      # the call (a missing permission, an outage) fails the run rather than passing for that answer.
+      - name: Check that Pages publishes from GitHub Actions
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if build_type="$(gh api "repos/$GH_REPO/pages" --jq .build_type 2> pages-error.txt)"; then
+            if [ "$build_type" = 'workflow' ]; then
+              echo 'enabled=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'enabled=false' >> "$GITHUB_OUTPUT"
+              echo "::notice::GitHub Pages publishes from a branch ($build_type), not from GitHub Actions, so nothing is published. See docs/RELEASING.md."
+            fi
+          elif grep -q 'HTTP 404' pages-error.txt; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::GitHub Pages is not turned on, so nothing is published. See docs/RELEASING.md.'
+          else
+            cat pages-error.txt >&2
+            echo 'Could not ask GitHub whether Pages is turned on.' >&2
+            exit 1
+          fi
+
+  # Builds the site from the latest release's tag with the release's own update manifest. Read-only.
+  build:
+    needs: check
+    if: needs.check.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    # The token is in the environment of the two gh steps only, never of the step that runs repository code.
+    steps:
+      - name: Find the latest published release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="$(gh release view --json tagName -q .tagName)"
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "the latest release is not a release tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Fetch the release's Firefox update manifest, if it has one
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" --json assets -q '.assets[].name' | grep -Fxq firefox-updates.json; then
+            gh release download "$TAG" --pattern firefox-updates.json --dir release
+          else
+            echo "::notice::Release $TAG carries no signed Firefox package, so the site offers Firefox no update."
+          fi
+      # The script refuses an update manifest that names another add-on, or a link that is not this project's own
+      # release asset for the version it offers.
+      - name: Build the site
+        run: |
+          if [ -f release/firefox-updates.json ]; then
+            python scripts/build_site.py site --output-dir _site --updates release/firefox-updates.json
+          else
+            python scripts/build_site.py site --output-dir _site
+          fi
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: _site
+
+  # The only job that can write, and it runs nothing but the deployment action.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the site
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

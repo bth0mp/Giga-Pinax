@@ -1,6 +1,9 @@
 # Store publication pack
 
-This directory contains prepared copy and reproducible artwork for Chrome Web Store and Firefox Add-ons. It describes the current release; check it against the exact package before every submission. It does not record a submission, signature or publication. Both publisher dashboards were signed out when this pack was prepared.
+This directory contains prepared copy and reproducible artwork for Chrome Web Store and Firefox Add-ons. It describes the current release; check it against the exact package before every submission. It does not record a submission, signature or publication. Both publisher dashboards were signed out when this pack was prepared, and no Mozilla signing has happened yet: the release workflow signs the Firefox package on AMO's unlisted channel only once the owner adds the AMO API credentials (see [RELEASING.md](../RELEASING.md#signing-the-firefox-package)).
+
+- The privacy policy URL is https://bth0mp.github.io/Giga-Pinax/privacy.html, published by the Pages workflow from the latest release once the owner turns GitHub Pages on.
+- [ACSEARCH-PERMISSION.md](ACSEARCH-PERMISSION.md) sets out, for the owner to decide, making `www.acsearch.info` an optional host permission.
 
 - [LISTING.md](LISTING.md): shared and store-specific listing copy, permission explanations and privacy declarations.
 - [REVIEWER-NOTES.md](REVIEWER-NOTES.md): functional review steps and build facts.
