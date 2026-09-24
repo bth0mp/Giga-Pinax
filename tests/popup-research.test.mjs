@@ -74,7 +74,8 @@ class TestElement {
 
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
-  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map() }) {
+  session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
+  specimenFetch = lookup.fetchSpecimens }) {
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
@@ -124,6 +125,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     fetchPrices: priceFetch,
     fetchCoinArchivesPrices: coinArchivesFetch,
     lookupType: lookupTypeImpl,
+    fetchSpecimens: specimenFetch,
     browser,
     document,
     window,
@@ -138,7 +140,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
     CustomEvent: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
-    URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set,
+    URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set, AbortController,
     setTimeout: () => 0,
     clearTimeout() {},
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
@@ -1827,4 +1829,118 @@ test('a failed Watch is said beside the Upcoming list', async () => {
   popup.element('quick-reference').value = 'Price 24';
   await popup.element('quick-reference').emit('input');
   assert.equal(popup.element('upcoming-status').hidden, true);
+});
+
+// --- Show specimen photos --------------------------------------------------------------------------------------------------------------------------
+
+// Nomisma's answer for RIC I² Nero 306, as tests/specimens.test.mjs reads it: six photographed specimens.
+const specimenAnswer = () => readFileSync(new URL('./fixtures/nomisma-specimens-nero-306.json', import.meta.url), 'utf8');
+const neroCard = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', denomination: 'As', obverse: {}, reverse: {} };
+const SPECIMENS_ON = () => new Map([['giga-pinax-specimen-photos-v1', 'on']]);
+// The real query function over a fetch that counts what it is asked and answers with the fixture, or with what a test hands it.
+function specimenNetwork(text = specimenAnswer()) {
+  const requests = [];
+  const fetchImpl = async (url) => { requests.push(url); return { ok: true, status: 200, headers: new Map(), text: async () => text }; };
+  return { requests, specimenFetch: (card, options) => lookup.fetchSpecimens(card, { ...options, fetchImpl }) };
+}
+async function lookUpNero(options) {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { ...neroCard, source: 'local' } }), ...options });
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  return popup;
+}
+const images = (item) => item.children[0].children;
+
+test('with Show specimen photos off, a card makes no specimen request at all', async () => {
+  const network = specimenNetwork();
+  const popup = await lookUpNero({ specimenFetch: network.specimenFetch });
+  assert.equal(popup.element('result').hidden, false);
+  assert.equal(popup.element('specimens').hidden, true);
+  assert.equal(network.requests.length, 0);
+});
+
+test('switched on, one query per card draws at most three specimen pairs, each captioned and linked, with no javascript: image', async () => {
+  const data = JSON.parse(specimenAnswer());
+  // The first specimen's obverse offers nothing a browser should load, so that specimen is left out, never drawn half-empty.
+  data.results.bindings[0].obverseThumbnail.value = 'javascript:alert(1)';
+  data.results.bindings[0].obverseDepiction.value = 'javascript:alert(1)';
+  const network = specimenNetwork(JSON.stringify(data));
+  const stored = SPECIMENS_ON();
+  const popup = await lookUpNero({ stored, specimenFetch: network.specimenFetch });
+  assert.equal(network.requests.length, 1);
+  assert.ok(network.requests[0].startsWith('https://nomisma.org/query?'));
+  assert.equal(popup.element('specimens').hidden, false);
+  const items = popup.element('specimen-list').children;
+  assert.equal(items.length, 3);
+  for (const item of items) {
+    const [obverse, reverse] = images(item);
+    for (const image of [obverse, reverse]) {
+      assert.match(image.src, /^https?:\/\//);
+      assert.equal(image.loading, 'lazy');
+      assert.equal(image.referrerpolicy, 'no-referrer');
+    }
+    assert.match(obverse.alt, /^Obverse, /);
+    assert.match(reverse.alt, /^Reverse, /);
+    const link = item.children[1];
+    assert.match(link.href, /^https?:\/\//);
+    assert.equal(link.target, '_blank');
+    assert.equal(link.rel, 'noopener noreferrer');
+  }
+  assert.deepEqual(items.map((item) => item.children[1].textContent),
+    ['Bibliothèque nationale de France', 'Oldenburg Municipal Museum', 'Münzkabinett der Universität Göttingen']);
+  assert.ok(!items.some((item) => images(item).some((image) => image.src.startsWith('javascript:'))));
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('specimens').hidden, true, 'the strip starts hidden');
+  assert.match(markup.getElementById('specimens-credit').textContent, /Nomisma\.org/);
+  // Nothing about the photos is kept: no stored key holds an image or a specimen page, and Copy summary never names them.
+  await popup.element('copy-summary').emit('click');
+  assert.ok(popup.clipboard[0].includes('Nero 306'));
+  for (const text of [...stored.values(), popup.clipboard[0]]) assert.ok(!/gallica|kenom|collectionimages|specimen/i.test(text), text);
+});
+
+test('a slow specimen query never delays the card, and a late answer for a card no longer shown is dropped', async () => {
+  let answer;
+  const asked = [];
+  const signals = [];
+  const specimenFetch = (card, options) => { asked.push(card.id); signals.push(options?.signal); return new Promise((resolve) => { answer = resolve; }); };
+  let lookups = 0;
+  const popup = await lookUpNero({ stored: SPECIMENS_ON(), specimenFetch,
+    lookupTypeImpl: async () => ((lookups += 1) === 1 ? { status: 'ok', card: { ...neroCard } } : { status: 'none', corpus: 'ocre', query: 'RIC 1' }) });
+  assert.equal(asked.length, 1);
+  assert.equal(popup.element('result').hidden, false, 'the card is on screen while the query waits');
+  assert.equal(popup.element('result-reference').textContent, neroCard.label);
+  assert.equal(popup.element('specimens').hidden, true);
+  assert.equal(signals[0]?.aborted, false, 'the query carries a signal of its own');
+  // The collector looks up something else before Nomisma answers, and that lookup finds nothing.
+  // Clearing the card cancels its query too, rather than leaving it running for the rest of its deadline.
+  popup.element('quick-reference').value = 'RIC 1';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(signals[0].aborted, true);
+  answer([{ page: 'https://example.org/coin', collection: 'Example Museum', obverse: 'https://example.org/o.jpg', reverse: 'https://example.org/r.jpg' }]);
+  await settle(); await settle();
+  assert.equal(popup.element('specimens').hidden, true);
+  assert.equal(popup.element('specimen-list').children.length, 0);
+  assert.equal(asked.length, 1);
+});
+
+test('no specimen request for candidates, for a card with no type, or without access to nomisma.org', async () => {
+  const candidates = specimenNetwork();
+  const listed = await lookUpNero({ stored: SPECIMENS_ON(), specimenFetch: candidates.specimenFetch,
+    lookupTypeImpl: async () => ({ status: 'candidates', corpus: 'ocre', partial: true, candidates: [{ id: 'a', title: 'RIC I Nero 306' }, { id: 'b', title: 'RIC II Titus 306' }] }) });
+  assert.equal(listed.element('candidates').hidden, false);
+  assert.equal(candidates.requests.length, 0);
+
+  const other = specimenNetwork();
+  await lookUpNero({ stored: SPECIMENS_ON(), specimenFetch: other.specimenFetch,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'BCD Boiotia 174b', corpus: 'other', label: 'BCD Boiotia 174b', obverse: {}, reverse: {} } }) });
+  assert.equal(other.requests.length, 0);
+
+  const refused = specimenNetwork();
+  const popup = await lookUpNero({ stored: SPECIMENS_ON(), specimenFetch: refused.specimenFetch,
+    permissionContains: async ({ origins }) => !origins.includes('https://nomisma.org/*') });
+  assert.equal(popup.element('result').hidden, false);
+  assert.equal(refused.requests.length, 0);
 });

@@ -210,7 +210,7 @@ test('diagnostics live under their own key, outside the records, backups and the
 // --- the failure paths that record ----------------------------------------------------------------
 
 test('each provider fetch that fails records its area and kind, and answers exactly as before', async (t) => {
-  const { lookupById, lookupType, parseReference } = await import('../extension/lookup.js');
+  const { fetchSpecimens, lookupById, lookupType, parseReference } = await import('../extension/lookup.js');
   const { fetchPrices, ACSEARCH_MAX_BYTES } = await import('../extension/prices.js');
   const { fetchCoinArchivesPrices } = await import('../extension/coinarchives-prices.js');
   const storage = fakeStorage();
@@ -235,6 +235,9 @@ test('each provider fetch that fails records its area and kind, and answers exac
   assert.deepEqual(await last(), { page: 'popup', area: 'lookup', code: 'http', status: 503, version: '0.34.0' });
   assert.deepEqual(await lookupType(parseReference('RRC 44/5'), { fetchImpl: refused('TypeError') }), { status: 'network' });
   assert.deepEqual(await last(), { page: 'popup', area: 'lookup', code: 'network', version: '0.34.0' });
+  // A specimen-photo query is its own part, never filed as a catalogue lookup.
+  assert.deepEqual(await fetchSpecimens({ id: 'ric.1(2).ner.306', corpus: 'ocre' }, { fetchImpl: status(504) }), []);
+  assert.deepEqual(await last(), { page: 'popup', area: 'specimens', code: 'http', status: 504, version: '0.34.0' });
 
   assert.deepEqual(await fetchPrices({ term: 'secret', currency: 'USD' }, { fetchImpl: status(403) }), { status: 'network' });
   assert.deepEqual(await last(), { page: 'popup', area: 'acsearch', code: 'http', status: 403, version: '0.34.0' });

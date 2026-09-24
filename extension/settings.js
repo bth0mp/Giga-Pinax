@@ -27,6 +27,9 @@ let behindStore = false;
 const BEHIND_STORE_NOTE = 'Note what you typed, then reload this page to see the imported settings.';
 
 const THEME_KEY = 'giga-pinax-theme-v1';
+// Show specimen photos, kept beside the theme and read by the popup from the same local storage: 'on', or absent for off. It is never a stored
+// preference, so no backup carries it, and storage the browser refuses or clears leaves it off.
+const SPECIMEN_PHOTOS_KEY = 'giga-pinax-specimen-photos-v1';
 
 // A browser profile that blocks site data makes reading localStorage itself throw. What it holds -
 // the theme and the popup's currency cache - is a convenience: the settings live in extension
@@ -48,6 +51,23 @@ function rememberTheme(theme) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function storedSpecimenPhotos() {
+  try { return siteStorage()?.getItem(SPECIMEN_PHOTOS_KEY) === 'on'; } catch { return false; }
+}
+
+// Whether the switch now stands as asked: off always does, since nothing stored is also off.
+function rememberSpecimenPhotos(on) {
+  try {
+    const storage = siteStorage();
+    if (!storage) return !on;
+    if (on) storage.setItem(SPECIMEN_PHOTOS_KEY, 'on');
+    else storage.removeItem(SPECIMEN_PHOTOS_KEY);
+    return true;
+  } catch {
+    return !on;
   }
 }
 
@@ -225,6 +245,7 @@ function renderDataHealth(entries) {
 function render() {
   $('currency').value = preferencesSnapshot.preferences.currency;
   $('theme').value = storedTheme();
+  $('specimen-photos').checked = storedSpecimenPhotos();
   $('premium-list').replaceChildren(
     ...(preferencesSnapshot.preferences.housePremiumPresets ?? []).map(premiumRow),
   );
@@ -235,6 +256,7 @@ function formState() {
   return JSON.stringify({
     currency: $('currency').value,
     theme: $('theme').value,
+    specimenPhotos: $('specimen-photos').checked,
     rows: [...document.querySelectorAll('.premium-row')]
       .map((row) => [...row.querySelectorAll('input, select, textarea')].map((control) => control.value)),
   });
@@ -362,6 +384,7 @@ $('save-settings').addEventListener('click', async () => {
       return;
     }
     const theme = $('theme').value;
+    const specimenPhotos = $('specimen-photos').checked;
     const reply = await bridge.sendCommand({
       type: 'preferences.save',
       requestId: bridge.newRequestId(),
@@ -381,10 +404,15 @@ $('save-settings').addEventListener('click', async () => {
     const themeKept = rememberTheme(theme) || !theme;
     if (theme) document.documentElement.dataset.theme = theme;
     else delete document.documentElement.dataset.theme;
+    const photosKept = rememberSpecimenPhotos(specimenPhotos);
+    // A switch that could not be stored applies nothing, so the box is unticked to say so rather than left showing a setting that is not in force.
+    if (!photosKept) $('specimen-photos').checked = false;
     renderedForm = formState();
-    status(themeKept
-      ? 'Settings saved.'
-      : 'Settings saved. This browser profile blocks site data, so the theme applies to this page only and can’t be remembered.');
+    const lost = [
+      themeKept ? '' : 'the theme applies to this page only and can’t be remembered',
+      photosKept ? '' : 'specimen photos can’t be switched on',
+    ].filter(Boolean).join(', and ');
+    status(lost ? `Settings saved. This browser profile blocks site data, so ${lost}.` : 'Settings saved.');
   } catch (error) {
     status(error.message || 'Could not save settings.', true);
   } finally {
