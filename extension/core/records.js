@@ -1,9 +1,9 @@
 // @ts-check
-import { CURRENCIES, validateIncrementLadder } from './money.js';
+import { CURRENCIES } from './money.js';
 import { validateDraftPayload } from './drafts.js';
 import { validateSaleEvidence } from './evidence.js';
 import {
-  LIMITS, OWN, arrayResult, auctionContextResult, bpsResult, dateResult, enumResult, firstFailure, instantResult, integerResult,
+  LIMITS, OWN, arrayResult, auctionContextResult, bpsResult, dateResult, housePresetResult, enumResult, firstFailure, instantResult, integerResult,
   isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
 } from './fields.js';
 import { projectExposure } from './projections.js';
@@ -142,6 +142,7 @@ function costEstimateResult(value, path) {
     integerResult(value.paymentFeeMinor, `${path}.paymentFeeMinor`),
     integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
     integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
+    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path),
   );
 }
 
@@ -495,17 +496,7 @@ function preferencesResult(preferences, path) {
   for (let index = 0; index < preferences.housePremiumPresets.length; index += 1) {
     const preset = preferences.housePremiumPresets[index];
     const presetPath = `${path}.housePremiumPresets[${index}]`;
-    const object = objectResult(preset, presetPath);
-    if (!object.ok) return object;
-    const valid = firstFailure(
-      stringResult(preset.name, `${presetPath}.name`, LIMITS.shortText),
-      integerResult(preset.buyerPremiumBps, `${presetPath}.buyerPremiumBps`, { maximum: 10000 }),
-      // The ladder is optional: a preset saved before this version simply has no such key, which is
-      // why the stored shape needs no migration step of its own.
-      OWN(preset, 'incrementLadder')
-        ? validateIncrementLadder(preset.incrementLadder, `${presetPath}.incrementLadder`)
-        : { ok: true, value: undefined },
-    );
+    const valid = housePresetResult(preset, presetPath);
     if (!valid.ok) return valid;
     const normalized = preset.name.trim().toLocaleLowerCase();
     if (names.has(normalized)) return failure('duplicate-name', 'House premium names must be unique.', `${presetPath}.name`);

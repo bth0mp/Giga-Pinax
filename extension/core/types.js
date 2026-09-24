@@ -108,6 +108,8 @@
  * @property {number} paymentFeeMinor
  * @property {number} incrementMinor
  * @property {number} minimumBidMinor
+ * @property {number} [premiumVatBps] VAT charged on the buyer's premium alone
+ * @property {number} [platformFeeBps] a live-bidding platform's fee on the hammer alone
  */
 
 /**
@@ -375,6 +377,8 @@
  * @typedef {object} HousePremiumPreset
  * @property {string} name
  * @property {number} buyerPremiumBps
+ * @property {number} [premiumVatBps]
+ * @property {number} [platformFeeBps]
  * @property {IncrementLadder} [incrementLadder]
  */
 

@@ -6,6 +6,17 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- The bid calculator takes **VAT on premium %** and **Platform fee % on hammer** under **Fees and bid increments**. VAT is charged on the premium alone, as European houses invoice it (Künker's 25 % premium plus 19 % VAT on it is 29.75 % on the hammer, so a CHF 1,000 hammer costs CHF 1,297.50, not CHF 1,250), and a live-bidding platform's fee on the hammer alone; the percentage payment fee then applies to both. The answer names them ("Premium CHF 250.00 + VAT CHF 47.50"), the maximum hammer from a budget counts them, so it is no longer too high for such a house, and both are saved with a bid's cost estimate. A house preset in **Settings** carries them beside its premium, choosing the house fills them, and **Save these terms for a house** in the calculator stores the premium, VAT and platform fee as they stand there — a field left blank takes that charge off the house — and says what it saved. Both are optional: presets, estimates and backups written before them read and import unchanged. Every amount stays in the hammer's currency.
+- With a house's increment ladder in use, the calculator says which tier the bid stands on, as "The hammer, €1,100.00, is on the €1,000–€2,000 tier, steps of €100", so the step in force no longer means opening Settings.
+- **Copy or paste house presets** under House premiums in Settings. Copy puts the houses as they stand in the rows on the clipboard as readable JSON; pasted text is read with the same rules a saved preset is held to, refused whole with the house and field at fault when one cannot be read, and anything a preset does not hold is left behind. Pasted houses become rows to review, a house of the same name is updated, and nothing is kept until **Save settings**. The clipboard is only written, never read: you paste into the box yourself.
+
+### Changed
+
+- Settings opens on **Bidding**: the default currency and the house premiums, the section used most, come first, then Appearance, Specimen photos, Backup and import, Updates, Local catalogue data and Diagnostics. Each house's increment ladder is folded under a line saying what it holds ("Increment ladder · 3 tiers in EUR") and opens itself when Save finds a problem in it. The bundled catalogues are a table — bundle, types, the day the local files were made, source and licence — with each link named for its bundle, and the longer explanations sit under **How it works**, **What this data is used for** and **What is kept**. From the top of the page, the keyboard now reaches Export backup before the twelve source and licence links rather than after them.
+- An amount typed as `1,200` in the calculator, a bid, an outcome or a house's increment tiers is read as twelve hundred where your browser groups thousands with a comma (English locales), and `1.200` where it groups them with a point (as for Germany, Spain, Italy and the Netherlands; Austrian and Swiss German group with a space or an apostrophe, so there both stay refused). It is still refused where that mark is the browser's decimal mark, since there it could mean 1.20.
+
 ## [0.34.1] - 2026-09-24
 
 ### Changed
