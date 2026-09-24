@@ -124,7 +124,8 @@ async function deliverOverdue(plan, state) {
     if (recovery.ok) await setAlarm(recovery.value.nextWakeAt);
     let delivered = false;
     try {
-      // The latest of the batch is the reminder that is going off now; any before it were overdue with it.
+      // The latest of the batch is the reminder that is going off now; any before it were overdue with it. The batch is in
+      // trigger order: deriveReminderTriggers sorts by triggerAt and reconcileScheduler keeps that order.
       const latest = triggers.at(-1);
       const eventKind = state.auctionEvents.find(({ id }) => id === eventId)?.eventKind;
       const notificationId = await invokeExtensionMethod(api.notifications.create, api.notifications,

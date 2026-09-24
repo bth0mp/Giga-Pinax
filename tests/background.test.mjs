@@ -251,6 +251,36 @@ test('a date-only reminder’s notification names the sale day, your clock, and 
   if (viewer !== zone) assert.match(shown.message, /your time, .*Kathmandu$/);
 });
 
+// Review Minor 4: reminders that went off together - the browser was closed through the day before and is opened on the
+// sale day - make one notification, and it speaks for the latest of them, the one going off now.
+test('overdue reminders delivered together are worded for the latest of them', async () => {
+  const zone = 'Asia/Kathmandu';
+  const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const now = Date.now();
+  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+  const before = notifications.length;
+  const event = await send({
+    type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
+    event: {
+      name: 'Kathmandu, both reminders due', eventKind: 'auction-day', precision: 'date-only',
+      localDate: localDateAtInstant(zone, now), timeZone: zone, reminderScope: 'standalone',
+      reminders: [{ kind: 'wall-time', daysBefore: 1, localTime }, { kind: 'wall-time', daysBefore: 0, localTime }],
+    },
+  });
+  assert.equal(event.ok, true, event.message);
+  const shown = notifications.slice(before).filter(({ id }) => id === `auction-companion:${event.value.id}`);
+  assert.equal(shown.length, 1, 'one notification for the auction');
+  const state = await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  const alerts = state.value.alerts.filter(({ eventId }) => eventId === event.value.id).sort((a, b) => a.triggerAt.localeCompare(b.triggerAt));
+  assert.equal(alerts.length, 2);
+  const words = (alert) => reminderNotice({
+    id: alert.triggerId, eventId: event.value.id, eventRevision: 0, reminderId: alert.reminderId, triggerAt: alert.triggerAt,
+    eventName: 'Kathmandu, both reminders due', precision: 'date-only', localDate: event.value.localDate, timeZone: zone,
+  }, { eventKind: 'auction-day', timeZone: viewer });
+  assert.notEqual(words(alerts[0]), words(alerts[1]));
+  assert.equal(shown[0].message, words(alerts[1]), 'the sale day’s own reminder, not the day before’s');
+});
+
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {
   let index = 0;
   for (const result of [false, new Error('notification failed')]) {
