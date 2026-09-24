@@ -6,6 +6,7 @@ import {
   reconcileScheduler,
   reminderNotice,
   resolveZonedDateTime,
+  sameZone,
   zonePlace,
 } from '../extension/core/reminders.js';
 import { STORAGE_KEY, createCommandWriter } from '../extension/store.js';
@@ -155,6 +156,22 @@ test('a time zone is named by its place', () => {
   assert.equal(zonePlace('Etc/GMT-2'), 'Etc/GMT-2');
   assert.equal(zonePlace(''), '');
   assert.equal(zonePlace(undefined), '');
+});
+
+// Review Minor 1: two names of one zone are the same zone, so an Etc/UTC auction is not "another zone" to a UTC browser.
+test('two names of one time zone are the same zone', () => {
+  assert.equal(sameZone('UTC', 'Etc/UTC'), true);
+  assert.equal(sameZone('Etc/GMT', 'UTC'), true);
+  assert.equal(sameZone('Europe/London', 'Europe/London'), true);
+  assert.equal(sameZone('Europe/London', 'Europe/Dublin'), false);
+  // A name no browser knows is compared as it is written.
+  assert.equal(sameZone('Mars/Olympus', 'Mars/Olympus'), true);
+  assert.equal(sameZone('Mars/Olympus', 'UTC'), false);
+  const trigger = {
+    id: 'x', eventId, eventRevision: 0, reminderId: reminderA, triggerAt: '2026-10-02T09:00:00.000Z', eventName: 'Nomos 30',
+    precision: /** @type {const} */ ('date-only'), localDate: '2026-10-02', timeZone: 'Etc/UTC',
+  };
+  assert.doesNotMatch(reminderNotice(trigger, { eventKind: 'auction-day', timeZone: 'UTC', locale: 'en-GB' }), /UTC/);
 });
 
 // N14 (lead's decision): a date-only sale day is a calendar day in the auction's zone and its reminders still go off at

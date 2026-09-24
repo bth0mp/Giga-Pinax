@@ -4,7 +4,7 @@
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
 import { eventTiming, projectExposure } from './core/projections.js';
-import { zonePlace } from './core/reminders.js';
+import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -265,7 +265,7 @@ export function reminderAtLabel(instant, eventZone, { now = new Date().toISOStri
   // The auction's clock is named by its place, with its own day where that is not the collector's (M3, N14).
   const auctionDay = eventZone && dayOf(at, eventZone) !== dayOf(at)
     ? `${formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: eventZone }, at, '')} ` : '';
-  const auction = eventZone && eventZone !== timeZone ? ` · ${auctionDay}${time(eventZone)} ${zonePlace(eventZone)}` : '';
+  const auction = eventZone && !sameZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${zonePlace(eventZone)}` : '';
   const untilMs = at.getTime() - Date.parse(now);
   if (untilMs < 0) return { text: `${day} ${time(timeZone)} (your time)${auction} · passed`, tone: 'past' };
   return { text: `${day} ${time(timeZone)} (your time)${auction}`, tone: untilMs < 86400000 ? 'soon' : '' };

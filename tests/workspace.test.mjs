@@ -1171,6 +1171,8 @@ test('a reminder reads as when it goes off in the collector’s time, and in the
   // collector's: 22:00 in New York is already 04:00 the next morning in Zurich.
   assert.deepEqual(reminderAtLabel('2026-10-13T18:00:00.000Z', 'Europe/Zurich', view), { text: 'Yesterday 14:00 (your time) · 20:00 Zurich · passed', tone: 'past' });
   assert.deepEqual(reminderAtLabel('2026-10-15T02:00:00.000Z', 'Europe/Zurich', view), { text: 'Today 22:00 (your time) · Thu 15 Oct 4:00 Zurich', tone: 'soon' });
+  // Review Minor 1: two names of one zone are one zone, and the auction's clock is not repeated.
+  assert.deepEqual(reminderAtLabel('2026-10-20T18:00:00.000Z', 'Etc/UTC', { ...view, timeZone: 'UTC' }), { text: 'Tue 20 Oct 18:00 (your time)', tone: '' });
   const event = { id: 'e', revision: 1, name: 'Leu', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-16', localTime: '14:00', timeZone: 'Europe/Zurich', startsAt: '2026-10-16T12:00:00.000Z',
     reminders: [{ id: 'a', kind: 'offset', offsetMinutes: 1440 }, { id: 'b', kind: 'offset', offsetMinutes: 60 }] };
   assert.deepEqual([...reminderInstants(event)], [['a', '2026-10-15T12:00:00.000Z'], ['b', '2026-10-16T11:00:00.000Z']]);

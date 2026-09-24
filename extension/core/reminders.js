@@ -187,6 +187,22 @@ export function zonePlace(timeZone) {
   return zone.slice(zone.lastIndexOf('/') + 1).replaceAll('_', ' ');
 }
 
+// The name a browser resolves a zone to (Etc/UTC and UTC are both UTC), or the name as written where it knows none.
+function resolvedZone(timeZone) {
+  try { return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone; } catch { return String(timeZone ?? ''); }
+}
+
+/**
+ * Whether two zone names are one zone as the browser knows them: `UTC` and `Etc/UTC` are, `Europe/London` and
+ * `Europe/Dublin` are not. A name the browser does not know is compared as it is written.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+export function sameZone(left, right) {
+  return left === right || resolvedZone(left) === resolvedZone(right);
+}
+
 const NOTICE_VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
 
 // A date or a time in the collector's language, or the ISO text the record holds where the language or zone cannot be used.
@@ -212,7 +228,7 @@ function dateIn(timeZone, instant) {
 export function reminderNotice(trigger, { eventKind, timeZone: viewerZone, locale }) {
   const zone = trigger.timeZone;
   const verb = NOTICE_VERB[String(eventKind)] ?? 'Auction';
-  const same = zone === viewerZone;
+  const same = sameZone(zone, viewerZone);
   const place = zonePlace(zone);
   // The collector's side of one instant, with their day named where it is not the auction's.
   const yours = (instant) => {
