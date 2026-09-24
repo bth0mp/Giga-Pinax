@@ -17,7 +17,8 @@ import {
 } from './workspace-editing.js';
 import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
-  comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen, evidenceRowsForQuery,
+  comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
+  evidenceRowsForQuery,
   filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
 } from './workspace-views.js';
 
@@ -75,6 +76,12 @@ async function initWorkspace() {
     line.append(document.createTextNode(withName ? `${event.name} · ${when}` : when));
     if (relative) { line.append(document.createTextNode(' · ')); line.append(text('span', relative, `when-relative${tone ? ` when-${tone}` : ''}`)); }
     return line;
+  };
+  // A record's ISO day, or the day of an instant, as the browser's language writes it.
+  const dayText = (iso) => {
+    const day = String(iso ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return String(iso ?? '');
+    try { return new Intl.DateTimeFormat(navigator.language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`)); } catch { return day; }
   };
   const statusPill = (lot) => { const pill = text('span', lotStatusLabel(lot), 'status-pill'); pill.dataset.tone = lotStatusTone(lot); return pill; };
   // What a lot draft's page stated about its sale, offered until the drafted coin is saved or the form is left: the closing, and the auction
@@ -397,43 +404,32 @@ async function initWorkspace() {
 
   const selectedSources = () => [...document.querySelectorAll('[name="evidence-source"]:checked')].map((item) => item.value);
   function renderEvidence() {
-    const queryIds = [...new Set((snapshot.evidence ?? []).flatMap((row) => (row.observations ?? []).map((item) => item.queryId)).filter(Boolean))];
-    const queryLabels = new Map();
-    for (const observation of (snapshot.evidence ?? []).flatMap((row) => row.observations ?? [])) if (observation.queryLabel) queryLabels.set(observation.queryId, observation.queryLabel);
-    if (!queryIds.includes(activeQuery.id)) queryIds.unshift(activeQuery.id);
+    const options = comparableSetOptions(snapshot.evidence, activeQuery);
     const querySelect = $('evidence-query');
-    querySelect.replaceChildren(...queryIds.map((id) => {
-      const option = text('option', id === activeQuery.id ? `Current query · ${activeQuery.text || 'untitled'}` : queryLabels.has(id) ? `${queryLabels.get(id)} · ${id.slice(0, 8)}` : `Saved set · ${id}`);
-      option.value = id; return option;
-    }));
-    if (!queryIds.includes(selectedQueryId)) selectedQueryId = activeQuery.id;
+    querySelect.replaceChildren(...options.map(({ id, label }) => { const option = text('option', label); option.value = id; return option; }));
+    if (!options.some(({ id }) => id === selectedQueryId)) selectedQueryId = activeQuery.id;
     querySelect.value = selectedQueryId;
     const evidenceRows = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId);
     const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources() };
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
-    if (stats.validationError) output.append(text('p', stats.validationError.message));
+    if (stats.validationError && evidenceRows.length) output.append(text('p', stats.validationError.message));
     else {
-      output.append(text('strong', `${stats.count} included`));
-      output.append(text('span', stats.median ? `Median ${formatMoney(stats.median)}` : 'No headline median'));
-      output.append(text('span', stats.lowerQuartile ? `Middle 50% ${formatMoney(stats.lowerQuartile)}–${formatMoney(stats.upperQuartile)}` : 'Middle 50% unavailable'));
-      output.append(text('span', stats.presentation.label));
-      output.append(text('span', `Hammer · ${filters.fromDate} to ${filters.toDate}`));
-      const available = stats.coverage.availableSources.length ? stats.coverage.availableSources.join(', ') : 'none';
-      const unavailable = stats.coverage.unavailableSources.length ? ` · unavailable: ${stats.coverage.unavailableSources.join(', ')}` : '';
-      const exclusions = Object.entries(stats.coverage.exclusionCounts).map(([reason, count]) => `${reason} ${count}`).join(', ');
-      output.append(text('span', `Coverage: ${available}${unavailable}${exclusions ? ` · excluded: ${exclusions}` : ''}`));
+      const { headline, leftOut } = comparableSummary(evidenceRows, stats, formatMoney);
+      output.append(text('p', headline, 'metric-headline'));
+      if (leftOut) output.append(text('p', leftOut, 'field-note'));
     }
     const list = $('evidence-list'); list.replaceChildren();
     const effectiveExclusions = new Map(stats.excluded.map((item) => [item.id, item.reason]));
     for (const row of evidenceRows) {
       const card = text('article', '', 'record');
-      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : `Observation ${row.id}`));
+      const first = row.observations?.[0];
+      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : first ? `${first.auctionHouse}${first.houseSaleId ? `, ${first.houseSaleId}` : ''}, lot ${first.lotNumber}` : `Observation ${row.id}`));
       card.append(text('p', `${row.inclusion}${row.exclusionReason ? `: ${row.exclusionReason}` : ''}${row.conflictFields?.length ? ` · conflicts: ${row.conflictFields.join(', ')}` : ''}`));
       for (const observation of row.observations ?? []) {
         const amount = observation.amount ? formatMoney(observation.amount) : 'No amount';
-        card.append(text('p', `${observation.source} · ${observation.auctionDate} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${observation.retrievedAt}` : ''}`));
+        card.append(text('p', `${observation.source} · ${dayText(observation.auctionDate)} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${dayText(observation.retrievedAt)}` : ''}`));
         card.append(text('p', `Query ${observation.queryLabel ?? observation.queryId}`));
         if (observation.sourceUrl) {
           const link = text('a', 'Open source claim'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link);
@@ -465,6 +461,10 @@ async function initWorkspace() {
       const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
       activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
       if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
+      // A set is shown in the currency most of its sales were knocked down in; the others stay out, never converted.
+      const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
+      const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
+      if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
     }
     renderEvidence();
   });

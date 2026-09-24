@@ -56,17 +56,20 @@ export class FakeText {
   }
 }
 
-// One simple selector — `#id`, `.class`, `tag`, `[attr]`, `[attr="value"]` or `*`, in any
+// One simple selector — `#id`, `.class`, `tag`, `[attr]`, `[attr="value"]`, `:checked` or `*`, in any
 // combination — matched against one element. No combinators: no page here selects across a
 // relationship, and a selector that quietly matched the wrong thing would be worse than none, so
 // one that asks for a relationship is refused rather than approximated.
 function matchesSimple(element, selector) {
   const trimmed = selector.trim();
   if (/[\s>+~]/.test(trimmed)) throw new Error(`The fake DOM matches simple selectors only: ${selector}`);
-  const tokens = trimmed.match(/\*|#[\w-]+|\.[\w-]+|\[[^\]]+\]|[\w-]+/g);
+  const tokens = trimmed.match(/\*|#[\w-]+|\.[\w-]+|\[[^\]]+\]|:[\w-]+|[\w-]+/g);
   if (!tokens || !tokens.length) return false;
   return tokens.every((token) => {
     if (token === '*') return true;
+    // The one state a page selects by: a checked box or radio.
+    if (token === ':checked') return Boolean(element.checked);
+    if (token[0] === ':') throw new Error(`The fake DOM matches no ${token} state: ${selector}`);
     if (token[0] === '#') return element.id === token.slice(1);
     if (token[0] === '.') return element.classList.contains(token.slice(1));
     if (token[0] === '[') {

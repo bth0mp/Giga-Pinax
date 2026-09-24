@@ -756,3 +756,28 @@ test('each reminder in the Reminders tab says when it goes off in the collector�
   assert.equal(row.querySelector('.reminder-when').textContent, '1 day before');
   assert.match(row.querySelector('.reminder-at').textContent, /^\S.* \(your time\)( · 2:00 PM Asia\/Tokyo)?$/);
 });
+
+// W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle
+// half … · years" when there are; the set list names each reference with how many it holds.
+test('the saved comparables say plainly what they hold', async () => {
+  const background = await createWorkspaceBackground();
+  const empty = await mountWorkspace({ background, hash: '#search' });
+  assert.equal(empty.$('statistics-output').textContent, 'No saved comparables yet. Add a sale you found under Add a comparable manually.');
+  const queryId = '00000000-0000-4000-9000-000000000099';
+  for (const [lotNumber, minor, auctionDate] of [[1, 15000, '2024-03-01'], [2, 18000, '2025-05-10'], [3, 30000, '2026-02-11'], [4, 99900, '2026-02-12']]) {
+    const reply = await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'RIC 27b', source: 'manual', auctionHouse: 'Test House', auctionDate,
+      lotNumber: String(lotNumber), priceBasis: 'hammer', amount: { currency: lotNumber === 4 ? 'USD' : 'EUR', minor } } });
+    assert.equal(reply.ok, true, reply.message);
+  }
+  const page = await mountWorkspace({ background, hash: '#search' });
+  const select = page.$('evidence-query');
+  assert.deepEqual(select.options.map((option) => option.textContent), ['New comparable set', 'RIC 27b (4)']);
+  select.value = queryId;
+  await page.$('evidence-filters').emit('input', { target: select });
+  assert.equal(page.$('evidence-currency').value, 'EUR', 'a set is shown in the currency most of its sales are in');
+  page.$('evidence-to').value = '2026-12-31';
+  await page.$('evidence-filters').emit('input', { target: page.$('evidence-currency') });
+  const lines = page.$('statistics-output').children.map((line) => line.textContent);
+  assert.deepEqual(lines, ['3 comparables · median €180.00 · middle half €150.00–€300.00 · 2024–2026', 'Left out: 1 in another currency.']);
+  assert.ok(page.$('evidence-list').textContent.includes('Mar 1, 2024'), 'dates are written in the browser’s language');
+});

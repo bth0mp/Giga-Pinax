@@ -326,3 +326,55 @@ export function evidenceRowsForQuery(rows, queryId) {
   if (!queryId) return [];
   return (rows ?? []).filter((row) => row.observations?.some((observation) => observation.queryId === queryId));
 }
+
+// Why a saved comparable was left out of the figures, in the collector's words.
+const LEFT_OUT = {
+  currency: 'in another currency', date: 'outside the dates', 'source-filter': 'from a source not ticked', estimate: 'an estimate, not a hammer',
+  unsold: 'unsold', 'missing-price': 'with no price', conflict: 'with records that disagree', 'not-comparable': 'not a hammer price', 'invalid-evidence': 'unreadable',
+};
+/**
+ * What a set of saved comparables adds up to, in plain words: how many count, their median and middle half once there
+ * are three, and the years they span; then what was left out and why. With nothing saved, one sentence says so.
+ * @param {Evidence[]} rows the set's saved rows
+ * @param {*} stats what computeStatistics answered for them
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {{ headline: string, leftOut: string }}
+ */
+export function comparableSummary(rows, stats, format) {
+  if (!rows.length) return { headline: 'No saved comparables yet. Add a sale you found under Add a comparable manually.', leftOut: '' };
+  const parts = Object.entries(stats.coverage?.exclusionCounts ?? {}).map(([reason, count]) => `${count} ${LEFT_OUT[reason] ?? reason}`);
+  const leftOut = parts.length ? `Left out: ${parts.join(', ')}.` : '';
+  if (!stats.count) return { headline: `None of the ${rows.length} saved comparable${rows.length === 1 ? '' : 's'} in this set counts with these filters.`, leftOut };
+  const included = new Set(stats.includedIds);
+  const years = rows.filter((row) => included.has(row.id)).flatMap((row) => row.observations ?? [])
+    .map((item) => Number(String(item.auctionDate).slice(0, 4))).filter(Number.isFinite);
+  const span = !years.length ? '' : Math.min(...years) === Math.max(...years) ? String(years[0]) : `${Math.min(...years)}–${Math.max(...years)}`;
+  const figures = stats.median && stats.lowerQuartile && stats.upperQuartile
+    ? [`median ${format(stats.median)}`, `middle half ${format(stats.lowerQuartile)}–${format(stats.upperQuartile)}`] : ['a median needs 3'];
+  return { headline: [`${stats.count} comparable${stats.count === 1 ? '' : 's'}`, ...figures, span].filter(Boolean).join(' · '), leftOut };
+}
+
+/**
+ * The comparable sets the Search route offers, each named by its reference with how many rows it holds; a set whose
+ * reference repeats another's is numbered.
+ * @param {Evidence[] | null | undefined} evidence
+ * @param {{ id: string, text: string }} active the set the query box stands for
+ * @returns {Array<{ id: string, label: string }>}
+ */
+export function comparableSetOptions(evidence, active) {
+  const counts = new Map(); const labels = new Map();
+  for (const row of evidence ?? []) {
+    for (const id of new Set((row.observations ?? []).map((item) => item.queryId).filter(Boolean))) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const item of row.observations ?? []) if (item.queryLabel && item.queryId) labels.set(item.queryId, item.queryLabel);
+  }
+  const ids = [...counts.keys()];
+  if (!ids.includes(active.id)) ids.unshift(active.id);
+  const seen = new Map();
+  return ids.map((id) => {
+    const name = labels.get(id) ?? (id === active.id ? active.text : '');
+    const count = counts.get(id) ?? 0;
+    if (!name) return { id, label: id === active.id && !count ? 'New comparable set' : `Unnamed set (${count})` };
+    const repeat = (seen.get(name) ?? 0) + 1; seen.set(name, repeat);
+    return { id, label: `${name}${repeat > 1 ? ` · set ${repeat}` : ''}${count ? ` (${count})` : ''}` };
+  });
+}
