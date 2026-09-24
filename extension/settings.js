@@ -6,7 +6,7 @@ import {
 import { CSV_TABLES, csvFiles } from './core/csv.js';
 import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
 import { CURRENCIES } from './core/money.js';
-import { formatIncrementLadder, formatMinorInput, presetFromFields } from './bid-tools.js';
+import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePresets, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { cacheDefaultCurrency, initializeCompanionPreferences } from './companion-preferences.js';
 import './updates.js';
@@ -395,6 +395,55 @@ async function loadCatalogueInfo() {
 }
 
 $('add-premium').addEventListener('click', () => $('premium-list').append(premiumRow()));
+
+// The rows as they stand, read with the rule Save uses, so what is copied is what would be saved.
+$('copy-presets').addEventListener('click', async () => {
+  const presets = collectPresets();
+  if (!presets.ok) {
+    status('');
+    return;
+  }
+  if (presets.value.length === 0) {
+    status('There are no house presets to copy.', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(housePresetsText(presets.value));
+    const count = presets.value.length;
+    status(`${count} house ${count === 1 ? 'preset' : 'presets'} copied. Paste them into Settings in another browser.`);
+  } catch {
+    status('The house presets could not be copied. Click Copy house presets again with this page in front.', true);
+  }
+});
+
+const nameKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+
+// Pasted houses become rows like any other: a house already listed under the same name is redrawn with
+// the pasted terms, the rest are added, and Save settings is still what keeps them.
+$('paste-presets').addEventListener('click', () => {
+  const parsed = parseHousePresets($('paste-presets-text').value);
+  if (!parsed.ok) {
+    status(parsed.error.message, true);
+    return;
+  }
+  let added = 0;
+  let updated = 0;
+  for (const preset of parsed.value) {
+    const existing = [...document.querySelectorAll('.premium-row')]
+      .find((row) => nameKey(row.querySelector('.premium-name').value) === nameKey(preset.name));
+    if (existing) {
+      existing.after(premiumRow(preset));
+      existing.remove();
+      updated += 1;
+    } else {
+      $('premium-list').append(premiumRow(preset));
+      added += 1;
+    }
+  }
+  $('paste-presets-text').value = '';
+  const parts = [added ? `${added} ${added === 1 ? 'house' : 'houses'} added` : '', updated ? `${updated} updated` : ''].filter(Boolean);
+  status(`${parts.join(' and ')}. Review them, then Save settings.`.replace(/^./, (first) => first.toUpperCase()));
+});
 
 $('save-settings').addEventListener('click', async () => {
   const button = $('save-settings');

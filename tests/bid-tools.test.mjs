@@ -6,7 +6,7 @@ import * as money from '../extension/core/money.js';
 import { FakeDocument, browserGlobals, pageSource } from './helpers/dom.mjs';
 import {
   buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
-  formatMinorInput, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
+  formatMinorInput, housePresetsText, ladderTierText, parseHousePresets, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
 } from '../extension/bid-tools.js';
 
 test('calculator includes shipping and percentage plus fixed payment fees', () => {
@@ -417,4 +417,66 @@ test('saving a house from the calculator saves the VAT and platform fee typed th
   await calculator.save.click();
   assert.equal(calculator.commands.length, 1, 'a VAT that cannot be read saves nothing');
   assert.match(calculator.status.textContent, /^VAT on premium /);
+});
+
+// Which step of the house's schedule a bid stands on, said in the house's own money, so the collector
+// does not have to open Settings to see that €1,033 sits on the €1,000 tier of €100 steps.
+test('the ladder note names the tier a hammer stands on and its step', () => {
+  const tiers = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }, { from: 100000, step: 10000 }, { from: 200000, step: 25000 }];
+  assert.equal(ladderTierText(tiers, 103300, 'EUR', 'en-US'), 'on the €1,000–€2,000 tier, steps of €100');
+  assert.equal(ladderTierText(tiers, 100000, 'EUR', 'en-US'), 'on the €1,000–€2,000 tier, steps of €100', 'a tier starts at its own from');
+  assert.equal(ladderTierText(tiers, 999, 'EUR', 'en-US'), 'on the €0–€100 tier, steps of €5');
+  assert.equal(ladderTierText(tiers, 900000, 'EUR', 'en-US'), 'on the tier from €2,000, steps of €250', 'the top tier has no end');
+  assert.equal(ladderTierText([{ from: 0, step: 250 }, { from: 5050, step: 550 }], 6000, 'GBP', 'en-GB'), 'on the tier from £50.50, steps of £5.50');
+  assert.equal(ladderTierText(tiers, 103300, 'EUR', 'de-DE'), 'on the 1.000 €–2.000 € tier, steps of 100 €');
+  assert.equal(ladderTierText(null, 100, 'EUR', 'en-US'), '');
+  assert.equal(ladderTierText(tiers, -1, 'EUR', 'en-US'), '');
+});
+
+test('the calculator says which tier of the chosen house the hammer is on', async () => {
+  const leu = { name: 'Leu', buyerPremiumBps: 2000, incrementLadder: { currency: 'CHF', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 10000 }, { from: 200000, step: 20000 }] } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'CHF', housePremiumPresets: [leu] } } } });
+  calculator.field('Currency').value = 'CHF';
+  const preset = calculator.field('House preset');
+  preset.value = 'leu';
+  await preset.emit('change');
+  const ladderNote = calculator.container.querySelector('.bid-calculator-ladder');
+  assert.equal(ladderNote.textContent, 'Leu: 3 increment tiers you entered in Settings. Bids follow those tiers, not the fixed increment.');
+  const hammer = calculator.field('Hammer price');
+  hammer.value = '1033';
+  await hammer.emit('input');
+  assert.equal(ladderNote.textContent, 'Leu: 3 increment tiers you entered in Settings. The next valid bid, CHF\u00a01,100.00, is on the CHF\u00a01,000–CHF\u00a02,000 tier, steps of CHF\u00a0100.');
+  hammer.value = '1100';
+  await hammer.emit('input');
+  assert.match(ladderNote.textContent, /The hammer, CHF.1,100\.00, is on the CHF.1,000–CHF.2,000 tier, steps of CHF.100\.$/);
+});
+
+// House terms travel between collectors as text: JSON a person can read, validated on the way in as
+// strictly as the store validates a saved preset, and stripped of anything a preset does not hold.
+test('house presets are copied as readable JSON and read back unchanged', () => {
+  const presets = [
+    { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 100000, step: 5000 }] } },
+    { name: 'Heritage', buyerPremiumBps: 2000, platformFeeBps: 300 },
+  ];
+  const text = housePresetsText(presets);
+  assert.equal(JSON.parse(text).format, 'giga-pinax-house-presets');
+  assert.deepEqual(parseHousePresets(text), { ok: true, value: presets });
+  // The presets list of a backup's preferences pastes as well.
+  assert.deepEqual(parseHousePresets(JSON.stringify(presets)).value, presets);
+  // Keys a preset does not hold are left behind.
+  assert.deepEqual(parseHousePresets(JSON.stringify([{ name: 'Roma', buyerPremiumBps: 2000, note: '<img src=x>', revision: 9 }])).value, [{ name: 'Roma', buyerPremiumBps: 2000 }]);
+});
+
+test('pasted house presets are refused whole, with the house and field at fault', () => {
+  const refuse = (value) => parseHousePresets(typeof value === 'string' ? value : JSON.stringify(value));
+  assert.equal(refuse('not json').error.message, 'The pasted text is not house presets copied from Giga Pinax.');
+  assert.equal(refuse({ format: 'something-else', presets: [] }).error.message, 'The pasted text is not house presets copied from Giga Pinax.');
+  assert.equal(refuse([]).error.message, 'The pasted text holds no house presets.');
+  assert.match(refuse([{ name: 'Roma', buyerPremiumBps: 20000 }]).error.message, /^House 1 \(Roma\): /);
+  assert.match(refuse([{ name: 'Roma', buyerPremiumBps: 2000 }, { name: 'Leu', buyerPremiumBps: 2000, premiumVatBps: -1 }]).error.message, /^House 2 \(Leu\): /);
+  assert.match(refuse([{ name: 'Roma', buyerPremiumBps: 2000, incrementLadder: { currency: 'EUR', tiers: [{ from: 5, step: 1 }] } }]).error.message, /^House 1 \(Roma\): /);
+  assert.match(refuse([{ name: '', buyerPremiumBps: 2000 }]).error.message, /^House 1: /);
+  assert.equal(refuse([{ name: 'Roma', buyerPremiumBps: 2000 }, { name: ' roma ', buyerPremiumBps: 2100 }]).error.message, 'The pasted text names Roma twice.');
+  assert.match(refuse(Array.from({ length: 51 }, (_, index) => ({ name: `House ${index}`, buyerPremiumBps: 0 }))).error.message, /at most 50/);
+  assert.equal(refuse('x'.repeat(200001)).error.message, 'The pasted text is too long to be house presets.');
 });

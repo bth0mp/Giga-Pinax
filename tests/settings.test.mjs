@@ -307,6 +307,59 @@ test('a saved preset with VAT and a platform fee is drawn back and saves unchang
   }
 });
 
+test('Copy house presets puts the houses as they stand in the rows on the clipboard', async () => {
+  const saved = [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }];
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: saved }) }) });
+  await page.element('add-premium').click();
+  const added = page.document.querySelectorAll('.premium-row')[1];
+  added.querySelector('.premium-name').value = 'Roma';
+  added.querySelector('.premium-value').value = '20';
+  await page.element('copy-presets').click();
+  await settle();
+  assert.deepEqual(bidTools.parseHousePresets(page.copied[0]).value, [...saved, { name: 'Roma', buyerPremiumBps: 2000 }]);
+  assert.equal(page.status(), '2 house presets copied. Paste them into Settings in another browser.');
+  assert.deepEqual(page.commands, [], 'copying saves nothing');
+});
+
+test('Copy house presets refuses a row it cannot read, beside that row', async () => {
+  const page = await openSettings();
+  await page.element('add-premium').click();
+  const row = page.document.querySelector('.premium-row');
+  row.querySelector('.premium-name').value = 'Roma';
+  row.querySelector('.premium-value').value = 'twenty';
+  await page.element('copy-presets').click();
+  await settle();
+  assert.deepEqual(page.copied, []);
+  assert.equal(row.querySelector('.premium-value').getAttribute('aria-invalid'), 'true');
+});
+
+test('pasted house presets become rows to review, update a house of the same name, and save nothing by themselves', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  page.element('paste-presets-text').value = bidTools.housePresetsText([
+    { name: 'roma', buyerPremiumBps: 2400 },
+    { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }] } },
+  ]);
+  await page.element('paste-presets').click();
+  const rows = page.document.querySelectorAll('.premium-row');
+  assert.deepEqual(rows.map((row) => row.querySelector('.premium-name').value), ['roma', 'Künker']);
+  assert.deepEqual(rows.map((row) => row.querySelector('.premium-value').value), ['24.00', '25.00']);
+  assert.equal(rows[1].querySelector('.premium-vat').value, '19.00');
+  assert.equal(rows[1].querySelector('.premium-ladder-currency').value, 'EUR');
+  assert.equal(page.status(), '1 house added and 1 updated. Review them, then Save settings.');
+  assert.equal(page.element('paste-presets-text').value, '');
+  assert.deepEqual(page.commands, []);
+});
+
+test('pasted text that is not house presets changes no row and says why', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  page.element('paste-presets-text').value = '[{"name":"Roma","buyerPremiumBps":20000}]';
+  await page.element('paste-presets').click();
+  assert.equal(page.document.querySelector('.premium-value').value, '20.00');
+  assert.match(page.status(), /^House 1 \(Roma\): /);
+  assert.equal(page.statusIsError(), 'true');
+  assert.equal(page.element('paste-presets-text').value, '[{"name":"Roma","buyerPremiumBps":20000}]', 'the text stays to be corrected');
+});
+
 test('removing a row takes it out of the next save', async () => {
   const page = await openSettings({
     snapshot: snapshotWith({

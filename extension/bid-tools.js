@@ -2,6 +2,7 @@ import {
   CURRENCIES, MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney,
   nextBidOnLadder, parseMoney, parsePercent, parsePremiumPercent, validateIncrementLadder,
 } from './core/money.js';
+import { housePresetResult } from './core/fields.js';
 import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './browser-api.js';
 
 const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
@@ -102,6 +103,78 @@ function ladderForCurrency(ladder, currency) {
     tiers: null,
     notice: `This house’s increments are in ${ladder.currency}; the calculator is set to ${currency}, so the fixed increment is used.`,
   };
+}
+
+// House presets as text a collector can hand to another browser or another collector: readable JSON
+// that says what it is. Only the keys a preset holds are written.
+const PRESETS_FORMAT = 'giga-pinax-house-presets';
+const PRESET_KEYS = ['name', 'buyerPremiumBps', 'premiumVatBps', 'platformFeeBps', 'incrementLadder'];
+const MAX_PRESETS = 50;
+const MAX_PRESETS_TEXT = 200000;
+const presetCopy = (preset) => Object.fromEntries(PRESET_KEYS
+  .filter((key) => Object.hasOwn(preset, key))
+  .map((key) => [key, key === 'incrementLadder'
+    ? { currency: preset.incrementLadder.currency, tiers: preset.incrementLadder.tiers.map(({ from, step }) => ({ from, step })) }
+    : preset[key]]));
+
+export function housePresetsText(presets) {
+  return JSON.stringify({ format: PRESETS_FORMAT, version: 1, presets: (presets ?? []).map(presetCopy) }, null, 2);
+}
+
+const PRESET_FIELD_NAMES = {
+  name: 'name', buyerPremiumBps: 'premium', premiumVatBps: 'VAT on premium',
+  platformFeeBps: 'platform fee', incrementLadder: 'increment tiers',
+};
+
+// Text pasted into Settings, read as house presets or refused whole: each preset is held to the rule
+// a saved one is, and anything else it carries is left behind. Also takes the bare presets list of a
+// backup's preferences.
+export function parseHousePresets(text) {
+  const refuse = (message) => ({ ok: false, error: { code: 'invalid-presets', message } });
+  const source = String(text ?? '');
+  if (source.length > MAX_PRESETS_TEXT) return refuse('The pasted text is too long to be house presets.');
+  let value;
+  try { value = JSON.parse(source); } catch { value = undefined; }
+  const presets = Array.isArray(value) ? value : value?.format === PRESETS_FORMAT ? value.presets : undefined;
+  if (!Array.isArray(presets)) return refuse('The pasted text is not house presets copied from Giga Pinax.');
+  if (presets.length === 0) return refuse('The pasted text holds no house presets.');
+  if (presets.length > MAX_PRESETS) return refuse(`The pasted text holds ${presets.length} houses; Settings keeps at most ${MAX_PRESETS}.`);
+  const names = new Map();
+  const result = [];
+  for (const [index, preset] of presets.entries()) {
+    const valid = housePresetResult(preset, 'preset');
+    if (!valid.ok) {
+      const name = typeof preset?.name === 'string' && preset.name.trim() ? ` (${preset.name.trim().slice(0, 120)})` : '';
+      const key = String(valid.error.path ?? '').split(/[.[]/)[1];
+      const field = PRESET_FIELD_NAMES[key] ?? 'entry';
+      return refuse(`House ${index + 1}${name}: its ${field} cannot be read. ${valid.error.message}`);
+    }
+    const key = presetKey(preset.name);
+    if (names.has(key)) return refuse(`The pasted text names ${names.get(key)} twice.`);
+    names.set(key, preset.name.trim());
+    result.push(presetCopy(preset));
+  }
+  return { ok: true, value: result };
+}
+
+// An amount on a house's schedule, in whole units when it is a whole amount, as schedules are printed.
+function tierMoney(minor, currency, locale) {
+  if (minor % 100 !== 0) return formatMoney({ currency, minor }, locale);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
+    .format(BigInt(minor) / 100n);
+}
+
+// The tier of a house's ladder a bid stands on, and its step: "on the €1,000–€2,000 tier, steps of
+// €100". The top tier has no end. Nothing when there is no ladder or no bid to place on it.
+export function ladderTierText(tiers, minor, currency, locale = 'en-US') {
+  if (!Array.isArray(tiers) || tiers.length === 0 || !Number.isSafeInteger(minor) || minor < 0) return '';
+  let index = 0;
+  while (index + 1 < tiers.length && tiers[index + 1].from <= minor) index += 1;
+  const { from, step } = tiers[index];
+  const money = (value) => tierMoney(value, currency, locale);
+  const next = tiers[index + 1];
+  const range = next ? `the ${money(from)}–${money(next.from)} tier` : `the tier from ${money(from)}`;
+  return `on ${range}, steps of ${money(step)}`;
 }
 
 // The calculator's own preset editor knows the premium, and the VAT on it and the platform fee when
@@ -327,13 +400,24 @@ export function mountBidCalculator(
   };
   // The fixed increment field stays editable while a ladder is in use — it is still what a lot's
   // saved cost estimate carries — so the note says which of the two the bid is standing on.
-  const renderLadder = () => {
+  // With a hammer worked out, the note says which tier the bid stands on: the hammer's own when it is
+  // on the ladder, else the next valid bid's, since that is the bid the house would take.
+  const renderLadder = (calculated = null) => {
     ladderNote.hidden = !ladder;
     if (!ladder) return;
     const applied = ladderForCurrency(ladder.record, currencyControl.value);
     const count = ladder.record.tiers.length;
-    ladderNote.textContent = applied.notice
-      || `${ladder.name}: ${count} increment ${count === 1 ? 'tier' : 'tiers'} you entered in Settings. Bids follow those tiers, not the fixed increment.`;
+    const tiers = `${ladder.name}: ${count} increment ${count === 1 ? 'tier' : 'tiers'} you entered in Settings.`;
+    if (applied.notice) {
+      ladderNote.textContent = applied.notice;
+    } else if (calculated) {
+      const locale = language();
+      const onGrid = calculated.nextValidBid.minor === calculated.value.hammer.minor;
+      const bid = onGrid ? calculated.value.hammer : calculated.nextValidBid;
+      ladderNote.textContent = `${tiers} ${onGrid ? 'The hammer' : 'The next valid bid'}, ${formatMoney(bid, locale)}, is ${ladderTierText(applied.tiers, bid.minor, bid.currency, locale)}.`;
+    } else {
+      ladderNote.textContent = `${tiers} Bids follow those tiers, not the fixed increment.`;
+    }
   };
   const selectedPreset = () => (preset.value === ''
     ? null
@@ -373,6 +457,7 @@ export function mountBidCalculator(
     }
     const hammer = calculated.value.hammer;
     const locale = language();
+    renderLadder(calculated);
     const next = calculated.nextValidBid.minor === hammer.minor
       ? '' : ` · Next valid bid ${formatMoney(calculated.nextValidBid, locale)}`;
     // VAT and a platform fee are named only when entered, so a house without them reads as before.
