@@ -108,9 +108,16 @@ const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MA
 // The German abbreviations a provenance is written with are no end either: "Slg." (Sammlung), "Smlg.", "Auk." (Auktion), "Kat.", "Abb.", "Taf.",
 // "Lot." and "Los.".
 // A full stop with a catalogue citation behind it ends the sentence whatever stands before it: a collection anonymised by its initials ("Aus
-// Sammlung Dr. W. R. RIC 53.") would otherwise run on and take the references with it. The key must be followed by its number, so "Dr. Sear
-// collection" is still the collector's name.
-const CITED_NEXT = String.raw`\.(?=\s(?:RIC|R\.I\.C|RRC|Crawford|Craw|Cr|Price|Pr|SC|Bopearachchi|Bop|CPE|Newell|Cohen|Coh|BMCRE|BMCRR|BMC|RSC|RPC|RCV|Sear|SNG|HGC|Calicó|Calico|Woytek)\.?(?:\s?(?:vol\.?\s?)?[IVX]+[.,²]?)?[\s.,:#-]*\d)`;
+// Sammlung Dr. W. R. RIC 53.") would otherwise run on and take the references with it. The citation is any key the reader knows, then what may
+// stand between a key and its number — an edition mark, a volume with its part, up to four capitalised or bracketed words (a ruler, a mint, a
+// section, a corpus's own words: "RIC VII (Trier) 12", "SNG Cop 123", "Bop Euthydemus I 24A") — then the number, which may carry Price's P or L. A
+// "cf." in front of the key is the citation's own, so the sentence ends before it and the row keeps its mark. The key must be followed by its number,
+// so "Dr. Sear collection" is still the collector's name; and only a typed catalogue's number may look like a year ("Price 1985"), since behind any
+// other key a year is a date ("Ex Slg. Dr. W. Müller 1985, Nr. 12."). The single letters C and S are left out: they are initials here.
+const TYPED_NEXT = String.raw`RIC|R\.I\.C|RRC|Crawford|Craw|Cr|Price|Pr|SC|Seleucid Coins|Bopearachchi|Bop|CPE|Newell`;
+const BETWEEN = String.raw`\.?[²³]?(?:[\s.,:#-]*(?:vol\.?\s?)?[IVX]+(?:\s?[./-]\s?\d|,?\s*part\s*\d)?[²³]?,?)?(?:\s+(?:\p{Lu}[\p{L}'’]*\.?|\([^()]{1,40}\)),?){0,4}[\s.,:#-]*[PL]?`;
+const OTHER_NEXT = KEYS.filter((key) => key.length > 1).join('|');
+const CITED_NEXT = String.raw`\.(?=\s(?:[Cc]f\.?\s)?(?:(?:${TYPED_NEXT})${BETWEEN}\d|(?:${OTHER_NEXT})${BETWEEN}(?!(?:1[5-9]|20)\d\d(?!\d))\d))`;
 const PROVENANCE_END = new RegExp(String.raw`${CITED_NEXT}|` + /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u.source, 'u');
 const withoutProvenance = (text) => {
   let out = text;

@@ -1347,6 +1347,27 @@ test('a provenance sentence ends at the full stop a catalogue key follows, even 
     assert.deepEqual(texts(text), expected, text);
   }
   assert.deepEqual(readProvenance('Aus Sammlung H. W. RIC 53.'), [{ text: 'Aus Sammlung H. W', source: 'Sammlung H. W' }]);
+  // Loop N9 re-review: whatever may stand between a key and its number ends the sentence too — a volume, its part or edition, a ruler or mint, a
+  // bracketed section, Price's P or L, a Bop king — and any catalogue key the reader knows, not only the typed ones.
+  for (const [text, expected] of [['Aus Sammlung H. W. RIC I Nero 53.', ['RIC I Nero 53']], ['Aus Sammlung H. W. RIC I² Nero 53.', ['RIC I² Nero 53']],
+    ['Aus Sammlung H. W. RIC II Hadrian 241.', ['RIC II Hadrian 241']], ['Aus Sammlung H. W. RIC VII Trier 12.', ['RIC VII Trier 12']],
+    ['Aus Sammlung H. W. RIC VII (Trier) 12.', ['RIC VII (Trier) 12']], ['Aus Sammlung H. W. RIC IV Caracalla 266.', ['RIC IV Caracalla 266']],
+    ['Aus Sammlung H. W. RIC² 12.', ['RIC² 12']], ['Aus Sammlung H. W. RIC IV.1 266.', ['RIC IV.1 266']],
+    ['Aus Sammlung H. W. Price P12.', ['Price P12']], ['Aus Sammlung H. W. Bop Euthydemus I 24A.', ['Bop Euthydemus I 24A']],
+    ['Aus Sammlung H. W. SNG Cop 123.', ['SNG Cop 123']], ['Aus Sammlung H. W. SNG ANS 464.', ['SNG ANS 464']],
+    ['Aus Sammlung H. W. MIR 36, 123.', ['MIR 36, 123']], ['Aus Sammlung H. W. Göbl 123.', ['Göbl 123']],
+    ['Aus Sammlung H. W. Kampmann 12.3.', ['Kampmann 12.3']], ['Aus Sammlung H. W. Price 3949.', ['Price 3949']]]) {
+    assert.deepEqual(texts(text), expected, text);
+  }
+  // A "cf." before the key belongs to the citation: the sentence ends in front of it and the row keeps its mark.
+  const compared = only('Aus Sammlung H. W. Cf. RIC 53.');
+  assert.deepEqual([compared.text, compared.cf], ['RIC 53', true]);
+  // A capitalised word with a number is no citation unless it is a key, and a key's bare year is a year: these stay in the provenance.
+  for (const text of ['Ex Slg. Dr. W. Müller 1985, Nr. 12.', 'Ex Slg. Dr. W. Hess 12, Nr. 5.', 'Aus Sammlung H. W. Leu 79, 2000.',
+    'Ex Dr. A. Weber 1920, lot 3.', 'Aus Sammlung Dr. W. R. Zürich 2000, Nr. 12.']) {
+    assert.deepEqual(texts(text), [], text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
   // Loop N9 review: the ordinal indicator the Spanish and French keyboards type (nº, n.º), the Italian "n." and "lotto n.", and no space left
   // before a comma where the year came out.
   for (const [text, lot] of [['Ex Áureo 300, 7 marzo 2018, nº 1234.', '1234'], ['Ex Áureo 300, 2018, n.º 1234.', '1234'],
