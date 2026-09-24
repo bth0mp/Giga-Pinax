@@ -15,6 +15,9 @@ const GROUPED = /^(\d{1,3})((['\u2019 \u00a0\u202f,.])\d{3}(?:\3\d{3})*)(?:([.,]
 const ambiguousMessage = (input) =>
   `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
 
+// `1,200` or `1.200`: three digits after a separator, behind at most three, read as well as a thousands group as three decimal places.
+export const ambiguousGrouping = (whole, fraction) => fraction.length === 3 && whole.length <= 3;
+
 // Returns the digits of an unambiguous amount, or null when the text cannot be read at all.
 // `1,200` is neither: only the collector knows whether that is 1200 or 1.20, so it is refused.
 function splitAmount(input) {
@@ -22,7 +25,7 @@ function splitAmount(input) {
   const decimal = DECIMAL.exec(input);
   if (decimal) {
     if (decimal[3].length <= 2) return { whole: decimal[1], fraction: decimal[3] };
-    return decimal[3].length === 3 && decimal[1].length <= 3 ? { ambiguous: true } : null;
+    return ambiguousGrouping(decimal[1], decimal[3]) ? { ambiguous: true } : null;
   }
   const grouped = GROUPED.exec(input);
   if (!grouped) return null;

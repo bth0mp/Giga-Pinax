@@ -335,9 +335,13 @@ test('an estimate is the page’s own figure in its own currency, never rounded 
   assert.deepEqual(pageEstimate('500000', 'JPY'), { minor: 500000, currency: 'JPY' });
   assert.deepEqual(pageEstimate('500000.00', 'JPY'), { minor: 500000, currency: 'JPY' });
   assert.deepEqual(pageEstimate('950', 'SEK'), { minor: 95000, currency: 'SEK' });
+  // "1.200" could be twelve hundred grouped or one and a fifth: the rule core/money.js reads typed amounts by refuses it, and so does this one,
+  // except for a currency whose three places make it plainly a figure.
+  assert.deepEqual(pageEstimate('1200.000', 'EUR'), { minor: 120000, currency: 'EUR' });
+  assert.deepEqual(pageEstimate('1.200', 'KWD'), { minor: 1200, currency: 'KWD' });
   // A figure the currency cannot hold is not rounded; a price with no currency, or a currency written any other way, is not an estimate.
   for (const [price, currency] of [['12.345', 'EUR'], ['1200', ''], ['1200', 'eur'], ['1200', '€'], ['1,200', 'EUR'], ['1.200,00', 'EUR'],
-    ['0', 'EUR'], ['-5', 'EUR'], ['1e21', 'EUR'], [Number.NaN, 'EUR'], [{}, 'EUR'], ['1200', 'EURO'], ['9'.repeat(20), 'EUR']]) {
+    ['0', 'EUR'], ['-5', 'EUR'], ['1.200', 'EUR'], ['999.500', 'USD'], ['1e21', 'EUR'], [Number.NaN, 'EUR'], [{}, 'EUR'], ['1200', 'EURO'], ['9'.repeat(20), 'EUR']]) {
     assert.equal(pageEstimate(price, currency), null, `${price} ${currency}`);
   }
 });
