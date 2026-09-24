@@ -38,12 +38,20 @@ h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:
 .panel-mode .popup {height:100vh; max-height:none;}
 .panel-mode .popup-scroll {flex-grow:1;}
 .panel-mode #open-panel {display:none;}
-.reference-form {padding:12px 16px; border-bottom:1px solid var(--line);}
+/* The row with the Reference box and Look up stays at the top of the panel while the answer scrolls under it, so a second lookup never starts with
+   scrolling back up. Its label and hint scroll away: the form and its first row lay their pieces straight into the panel, which is what lets the row
+   stick to the panel rather than to the form around it. */
+.reference-form,.quick-row {display:contents;}
+.quick-row > label {margin:12px 16px 0;}
+.quick-search {position:sticky; top:0; z-index:3; padding:6px 16px 8px; background:var(--bg);}
+.popup-scroll.scrolled .quick-search {box-shadow:0 1px 0 var(--line);}
+.quick-row > .field-hint {margin:0 16px;}
+.quick-row > .lookup-prompt {padding:0; margin:0 16px 4px; color:var(--ink);}
+.reference-body {padding:0 16px 12px; border-bottom:1px solid var(--line);}
 label {display:block; font-size:12px; font-weight:600; margin-bottom:6px;}
 select,input {width:100%; height:36px; border:1px solid var(--field); border-radius:8px; background:var(--card); color:var(--ink); padding:0 10px; min-width:0; font-size:13px;}
 select:hover,input:hover {border-color:var(--accent);}
 select:focus-visible,input:focus-visible {border-color:var(--accent); outline-offset:1px;}
-.quick-row {margin-bottom:12px;}
 .quick-row input {font-family:var(--font-mono); font-weight:600;}
 /* Look up now shares this row, so the box keeps the smaller size: as much of the placeholder's four shapes as the narrower field can show. */
 .quick-row .search-row input {font-size:13px;}
@@ -219,7 +227,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .storage-note {color:var(--error);}
 .sr-only {position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
 @media (max-width:359px) {
-  .popup-header,.reference-form,.recent,.popup-footer,.lookup-prompt,.storage-note {padding-left:12px; padding-right:12px;}
+  .popup-header,.quick-search,.reference-body,.recent,.popup-footer,.storage-note {padding-left:12px; padding-right:12px;}
+  .quick-row > label,.quick-row > .field-hint,.quick-row > .lookup-prompt {margin-left:12px; margin-right:12px;}
   .result {margin-left:12px; margin-right:12px; padding:12px;}
   .primary-button {padding:0 10px;}
   .range-visual {width:70px;}

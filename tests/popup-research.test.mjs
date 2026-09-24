@@ -30,6 +30,7 @@ const deferred = () => {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 class TestElement {
+  static panelScroll = 0;
   constructor(id = '') {
     this.id = id;
     this.value = '';
@@ -63,10 +64,18 @@ class TestElement {
   setAttribute(name, value) { this[name] = String(value); }
   removeAttribute(name) { delete this[name]; }
   toggleAttribute(name, force) { this[name] = force; }
-  getBoundingClientRect() { return { top: this.top ?? 0, bottom: (this.top ?? 0) + (this.height ?? 0), height: this.height ?? 0 }; }
+  // A box given a top by a test sits in the scrolling panel and moves up as the panel scrolls; the panel and the row pinned to its top stay put.
+  getBoundingClientRect() {
+    const top = (this.top ?? 0) - (['popup-scroll', 'quick-search'].includes(this.id) ? 0 : TestElement.panelScroll);
+    return { top, bottom: top + (this.height ?? 0), height: this.height ?? 0 };
+  }
   // Recorded, so a test can show the popup never scrolls with it: it scrolls every ancestor, the document included.
   scrollIntoView() { this.scrolledIntoView = (this.scrolledIntoView ?? 0) + 1; }
-  scrollTo(options) { this.scrolledTo = [...(this.scrolledTo ?? []), options]; this.scrollTop = options.top; }
+  scrollTo(options) {
+    this.scrolledTo = [...(this.scrolledTo ?? []), options];
+    this.scrollTop = options.top;
+    if (this.id === 'popup-scroll') TestElement.panelScroll = options.top;
+  }
   focus() { this.focused = (this.focused ?? 0) + 1; }
   reportValidity() { return true; }
   setSelectionRange() {}
@@ -79,6 +88,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
   specimenFetch = lookup.fetchSpecimens, timers = null }) {
   const elements = new Map();
+  TestElement.panelScroll = 0;
   const element = (id) => {
     if (!elements.has(id)) elements.set(id, new TestElement(id));
     return elements.get(id);
@@ -2018,4 +2028,54 @@ test('prices that land under a card on screen do not scroll the popup again', as
   assert.equal(popup.element('prices-panel').dataset.state, 'ready');
   for (const run of timers.splice(0)) run();
   assert.equal(popup.element('popup-scroll').scrolledTo, undefined);
+});
+
+// Loop 1 (P-08): every lookup scrolled the Reference box out of view, so a second lookup began by scrolling back up. The row with the box and Look up
+// stays at the top of the panel, the answer is brought up to just under it, and the "Reference changed" prompt sits beside the box.
+test('the Reference box stays in view: the answer is brought up under it, not over it', async () => {
+  const timers = [];
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+  popup.element('quick-search').height = 56;
+  popup.element('result').top = 420;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('popup-scroll').scrolledTo?.[0]?.top, 264);
+});
+
+test('the row holding the Reference box is sticky, and the lookup prompt sits under it', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const markup = parseHtml(html);
+  const row = markup.getElementById('quick-search');
+  assert.ok(row, 'the sticky row has an id reveal() can measure');
+  assert.equal(markup.getElementById('quick-reference').parentNode, row);
+  const form = html.slice(html.indexOf('<form id="reference-form"'), html.indexOf('</form>'));
+  assert.match(form, /id="lookup-prompt"/);
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.quick-search \{[^}]*position:sticky; top:0/);
+});
+
+// Prices that come in before the card are brought into view, but the card arriving after them is the answer: the passes still waiting for the prices
+// must not scroll past it.
+test('a card arriving after its prices is what stays in view', async () => {
+  const timers = [];
+  const lookedUp = deferred();
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: () => lookedUp.promise });
+  Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+  popup.element('research-prices').top = 700;
+  popup.element('result').top = 420;
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').dataset.state, 'ready');
+  lookedUp.resolve({ status: 'ok', card });
+  await settle();
+  for (const run of timers.splice(0)) run();
+  assert.deepEqual(popup.element('popup-scroll').scrolledTo?.map(({ top }) => top), [320]);
 });

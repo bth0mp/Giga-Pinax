@@ -15,22 +15,36 @@ const $ = (id) => document.getElementById(id);
 const scroller = /** @type {HTMLElement} */ (document.querySelector('.popup-scroll'));
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let restingScroll = 0;
+// A scroll of our own still under way, and where it is going: a newer answer may take it over, since he has not moved the panel himself.
+let ownScroll = false;
+let ownTarget = 0;
 /** @type {() => void} */
-const markScroll = () => { restingScroll = scroller.scrollTop; };
+const markScroll = () => { ownScroll = false; restingScroll = scroller.scrollTop; };
 // The card grows after it is shown - Recent renders under it, then the prices panel arrives a second later - and until it does there may be nothing to
 // scroll at all, so the answer is revealed again as it settles. Timers, not requestAnimationFrame: a popup whose window is not being painted never runs
 // an animation frame, and the answer must still be where he can see it when he looks.
+// The latest answer is the one brought into view: prices that came in before the card leave passes waiting, and those must not scroll past the card.
+let revealing = 0;
 /** @type {(id: string) => void} */
-const revealAgain = (id) => { for (const wait of [0, 60, 400]) setTimeout(() => reveal(id), wait); };
+const revealAgain = (id) => {
+  const ticket = ++revealing;
+  for (const wait of [0, 60, 400]) setTimeout(() => { if (ticket === revealing) reveal(id); }, wait);
+};
 // His own scrolling wins: the panel having moved since the lookup began means he moved it. Errors never scroll - they belong beside the box he typed in.
 function reveal(id) {
-  const view = scroller.getBoundingClientRect();
+  // The top of the panel is taken by the row with the Reference box, which stays there (popup.css), so the answer is brought up to just under it.
+  const top = scroller.getBoundingClientRect().top + $('quick-search').getBoundingClientRect().height;
   const box = $(id).getBoundingClientRect();
-  // Nothing to do once the answer starts at the top of the panel, which is also what stops the later passes from fighting the first.
-  if (scroller.scrollTop !== restingScroll || box.top <= view.top + 8) return;
+  const target = scroller.scrollTop + box.top - top;
+  if (!ownScroll && scroller.scrollTop !== restingScroll) return;
+  // Nothing to do once the answer starts at the top of the panel, which is also what stops the later passes from fighting the first; a scroll of
+  // our own already going there is left to finish, and one going elsewhere is turned towards this answer.
+  if (ownScroll ? Math.abs(target - ownTarget) <= 8 : box.top <= top + 8) return;
+  ownScroll = true;
+  ownTarget = target;
   // The panel alone is scrolled. scrollIntoView scrolls every ancestor, and a lot's answer can make the document taller than the popup for a moment:
   // the document then scrolled too, taking the header and tabs off the top where no wheel could bring them back.
-  scroller.scrollTo({ top: scroller.scrollTop + box.top - view.top, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
+  scroller.scrollTo({ top: target, behavior: reducedMotion.matches ? 'auto' : 'smooth' });
   // Where the panel now rests is where we put it, or the next pass reads our own scroll as his and never moves.
   scroller.addEventListener('scrollend', markScroll, { once: true });
   setTimeout(markScroll, 700);
@@ -48,6 +62,9 @@ function ricChanged(message) {
 }
 /** @type {() => void} */
 const clearRicNote = () => { $('ric-note').textContent = ''; };
+
+// Once the panel has moved, the row that stays at its top draws a line under it, so the answer reads as passing beneath it.
+scroller.addEventListener('scroll', () => { scroller.classList.toggle('scrolled', scroller.scrollTop > 0); }, { passive: true });
 
 // Light or dark: the popup follows the system scheme until the header button is used. That choice is stored under its own key as a bare
 // 'light' or 'dark' (theme.js applies it before the first paint; restoreTheme validates it here too, so anything else falls back to the system).

@@ -8,6 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- The Reference box and **Look up** stay at the top of the research panel while the answer scrolls under them, so a second lookup no longer starts with scrolling back up, and “Reference changed” shows right under the box.
 - The popup shows the coin before its prices. The type card now comes first and the auction research under it; while acsearch answers, the median's place is held with “Fetching acsearch…”, so prices arriving a moment later no longer push the card off the popup.
 
 ### Fixed

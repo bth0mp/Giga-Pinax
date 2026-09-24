@@ -35,7 +35,13 @@
     <section id="companion-panel-research" class="companion-tab-panel" role="tabpanel" aria-labelledby="companion-tab-research">
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
-        <div class="quick-row"><label for="quick-reference">Reference</label><div class="search-row"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div><p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p></div>
+        <div class="quick-row">
+          <label for="quick-reference">Reference</label>
+          <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
+          <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
+          <p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p>
+        </div>
+        <div class="reference-body">
         <p id="form-error" class="form-error" role="alert" hidden></p><button id="online-fallback" class="secondary-button online-fallback" type="button" hidden>Check online</button>
         <details id="refine-reference" class="refine-reference">
           <summary id="refine-summary">Refine reference</summary>
@@ -55,6 +61,7 @@
           <div id="candidates" class="candidates" hidden><p id="candidates-label" class="field-hint">Choose a matching type:</p><ul id="candidate-list" class="candidate-list" aria-labelledby="candidates-label"></ul></div>
         </details>
         <div id="lot-refs" class="candidates" hidden><p id="lot-refs-label" class="field-hint">Found in this text:</p><ul id="lot-list" class="candidate-list" aria-labelledby="lot-refs-label"></ul></div>
+        </div>
       </form>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
@@ -134,7 +141,6 @@
         </div>
       </details>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
-      <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
     </div>
