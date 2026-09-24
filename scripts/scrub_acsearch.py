@@ -5,11 +5,11 @@
 
 Kept: the page's element structure and text, and the results array (acsearch.initSearchResults) the extension reads, rebuilt with only the fields
 of a lot: id, title, description, date, price and last. Removed: every <script> (the results array is written back as one plain script of its
-own), <style>, <form> (its children stay, its fields go), <input>, <select>, <textarea>, <button>, frames and embedded objects, every <meta>
-but the charset, comments, the account block around a Logout/Abmelden link, every attribute off a short list (style and data-* included), event
-handlers, session and token attributes, tracking pixels, links and images on any host but acsearch.info or whose path holds a token or the
-account, and every URL query parameter but a public few. Each --account value (as a whole word) and every e-mail address is replaced wherever it
-stands, the results' own text included, after invisible characters are taken out.
+own), <style>, <form> (its children stay, its fields go), <input>, <select>, <textarea>, <button>, frames and embedded objects, every <meta> but
+the charset, comments, the account block around a Logout/Abmelden link, links to the collector's own area (watchlist, favourites), every attribute
+off a short list (style and data-* included), event handlers, session and token attributes, tracking pixels, links and images on any host but
+acsearch.info or whose path holds a token or the account, and every URL query parameter but a public few. Each --account value (as a whole word)
+and every e-mail address is replaced wherever it stands, the results' own text included, after invisible characters are taken out.
 
 The finished page is then searched for a denylist of markers (an e-mail address, an account name, a Logout block, a session or token parameter,
 the collector's own bid or watchlist, a token or data: URL in the text, a script, a form field, a comment, a link off acsearch.info...), in the
@@ -65,16 +65,22 @@ ATTRIBUTES = frozenset({"class", "id", "title", "alt", "lang", "dir", "colspan",
 EMAIL = re.compile(r"[\w.%+-]+(?:@|%40|\uff20)[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
 # Characters that render as nothing (zero-width space and joiners, word joiner, soft hyphen, BOM...), which can hide a name from a plain search.
 INVISIBLE = re.compile("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufe00-\ufe0f\ufeff]")
-# A run of 20+ base64 characters with a digit and a letter in it, standing alone in text: an id, a token or an encoded blob. Catalogue text almost
-# never writes one without a separator.
-TEXT_TOKEN = re.compile(r"(?<![A-Za-z0-9+/=_-])(?=[A-Za-z0-9+/=_-]*\d)(?=[A-Za-z0-9+/=_-]*[A-Za-z])[A-Za-z0-9+/=_-]{20,}")
+# A run of 20+ base64 characters standing alone in text. It is a token (an id, hex, base64, a JWT segment, a UUID) when a piece of it between
+# hyphens or underscores, of 6 or more characters, mixes letters and digits; "Numismatik-Naumann-Auktion-64-Los-123" is a dealer's reference.
+TEXT_RUN = re.compile(r"(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/=_-]{20,}(?![A-Za-z0-9+/=_-])")
+MIXED = re.compile(r"(?=[^\d]*\d)(?=[^A-Za-z]*[A-Za-z])")
 DATA_URL = re.compile(r"\bdata:[\w.+-]*/?[\w.+-]*[;,]", re.I)
 # The collector's own bid, bidder number or watchlist: never public text on a results page. English and German, as acsearch is.
 OWN_BID = re.compile(
-    r"\b(?:your|my)\s+(?:max(?:imum)?\s+)?bids?\b|\b(?:ihr|mein)(?:e)?\s+(?:maximal)?gebote?\b|\bbidder\s*(?:no|nr|number|id)\b"
-    r"|\bbieter[\s-]*(?:nummer|nr)\b|\bwatch[\s-]?list\b|\bmerkliste\b|\bbeobachtungsliste\b",
+    r"\b(?:your|my)\s+(?:(?:current|highest|max(?:imum)?)\s+)?bids?\b|\b(?:ihr|mein)e?s?\s+(?:aktuelles\s+)?(?:höchst|maximal)?gebote?\b"
+    r"|\bhighest\s+bidder\b|\bbidder\s*(?:no|nr|number|id)\b|\bbieter[\s-]*(?:nummer|nr)\b"
+    r"|\bkundennummer\b|\bkunden[\s-]*nr\b|\bcustomer\s*(?:no|nr|number|id)\b"
+    r"|\bwatch[\s-]?list\b|\bmerkliste\b|\bbeobachtungsliste\b",
     re.I,
 )
+# A link to the collector's own area of the site, which a signed-in page carries in its menus: removed whole, as the account block is. The words
+# anywhere else (a count, a row) are still refused by OWN_BID.
+OWN_AREA = re.compile(r"watch[\s_-]?list|merkliste|beobachtungsliste|favou?rites?|my[\s_-]*acsearch", re.I)
 # A value of 20 or more hex or base64 characters: a session id, a token or a signed hash.
 TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
 # In an attribute other than a URL, where a class list holds long hyphenated words ("body-has-fixed-title"), a token is such a run with a digit
@@ -326,6 +332,9 @@ class Scrubber:
             if tag in DROPPED:
                 self.removed[f"<{tag}> elements removed"] += 1
                 continue
+            if tag == "a" and own_area_link(node):
+                self.removed["own-area links removed (watchlist, favourites)"] += 1
+                continue
             if tag == "form":
                 self.removed["<form> elements unwrapped"] += 1
                 stack.extend((child, False) for child in reversed(node.children))
@@ -356,9 +365,30 @@ def folded(text: str) -> str:
     return INVISIBLE.sub("", unicodedata.normalize("NFKC", text))
 
 
-# The page's text as a reader sees it: tags taken out (so "<b>Collec</b>tor42" and "Collector<wbr>42" read whole), entities read, compatibility
-# forms folded (fullwidth letters) and invisible characters dropped; the strings of every results array are added, read as JSON reads them.
-def flat_text(page: str) -> str:
+def own_area_link(node: Element) -> bool:
+    try:
+        path = unquote(urlsplit(node.attr("href")).path)
+    except ValueError:
+        path = ""
+    return bool(OWN_AREA.fullmatch(node.text()) or OWN_AREA.search(path))
+
+
+def token_runs(text: str) -> tuple[list[str], list[str]]:
+    """The 20+ character runs in text that are tokens, and those that only look like one (a hyphenated reference), for a warning."""
+    tokens, lookalikes = [], []
+    for run in TEXT_RUN.findall(text):
+        if any(len(piece) >= 6 and MIXED.match(piece) for piece in re.split(r"[-_]", run)):
+            tokens.append(run)
+        elif MIXED.match(run):
+            lookalikes.append(run)
+    return tokens, lookalikes
+
+
+# The page's text as a reader sees it, two ways: `joined` takes tags out ("<b>Collec</b>tor42" and "Collector<wbr>42" read whole) and `spaced`
+# puts a space for each (so adjacent cells stay words of their own). Entities are read, compatibility forms folded (fullwidth letters) and
+# invisible characters dropped; the strings of every results array are added, read as JSON reads them and then as HTML, since a dealer's
+# description carries markup and character references too.
+def text_views(page: str) -> tuple[str, str]:
     strings = []
     for match in re.finditer(re.escape(MARKER), page):
         try:
@@ -374,27 +404,35 @@ def flat_text(page: str) -> str:
                 stack.extend(item)
             elif isinstance(item, dict):
                 stack.extend(item.values())
-    return folded(html.unescape(re.sub(r"<[^>]*>", "", page)) + "\n" + "\n".join(strings))
+
+    def view(separator: str) -> str:
+        strip = lambda text: re.sub(r"<[^>]*>", separator, text)  # noqa: E731
+        return folded("\n".join([html.unescape(strip(page))] + [strip(html.unescape(strip(text))) for text in strings]))
+
+    return view(""), view(" ")
 
 
 def survivors(page: str, accounts: list[str]) -> list[str]:
     """Every denylisted marker still in a finished page, named; an empty list is a page fit to write."""
     found = []
-    flat = flat_text(page)
-    if EMAIL.search(page) or EMAIL.search(flat):
+    joined, spaced = text_views(page)
+    if EMAIL.search(page) or EMAIL.search(joined):
         found.append("an e-mail address")
-    patterns = [(name, account_pattern(folded(name))) for name in accounts]
-    found += [f"the account name {name!r}" for name, pattern in patterns if pattern.search(page) or pattern.search(flat)]
-    if LOGOUT.search(page) or LOGOUT.search(flat):
+    # The name anywhere, even inside a longer word: a refusal over "Othonian" is the cheap side of missing a name split by a tag.
+    lowered = (page.casefold(), joined.casefold())
+    names = [(name, folded(name).casefold()) for name in accounts]
+    found += [f"the account name {name!r}" for name, key in names if any(key in text for text in lowered)]
+    if LOGOUT.search(page) or LOGOUT.search(spaced):
         found.append("a Logout/Abmelden account block")
-    if SESSION_MARKERS.search(page) or SESSION_MARKERS.search(flat):
+    if SESSION_MARKERS.search(page) or SESSION_MARKERS.search(spaced):
         found.append("a session or token marker (sid=, session=, token=, csrf, PHPSESSID, a cookie)")
-    if OWN_BID.search(flat):
-        found.append(f"the collector's own bid, bidder number or watchlist ({OWN_BID.search(flat).group(0)!r}); report it so the scrubber learns to "
-                     "remove it")
-    if TEXT_TOKEN.search(flat):
-        found.append(f"a token in the text: {TEXT_TOKEN.search(flat).group(0)[:40]}")
-    if DATA_URL.search(flat) or DATA_URL.search(page):
+    if OWN_BID.search(spaced):
+        found.append(f"the collector's own bid, bidder number or watchlist ({OWN_BID.search(spaced).group(0)!r}); report it so the scrubber learns "
+                     "to remove it")
+    tokens, _ = token_runs(spaced)
+    if tokens:
+        found.append(f"a token in the text: {tokens[0][:40]}")
+    if DATA_URL.search(spaced) or DATA_URL.search(page):
         found.append("a data: URL")
     for tag in re.findall(r"<script\b[^>]*>", page, re.I):
         if tag != "<script>":
@@ -424,7 +462,7 @@ def survivors(page: str, accounts: list[str]) -> list[str]:
         if any(TOKEN.search(item) for _, item in parse_qsl(parts.query, keep_blank_values=True)):
             found.append(f"a token in a URL query: {value[:80]}")
         decoded = folded(unquote(value))
-        found += [f"the account name {name!r} in a URL" for name, pattern in patterns if pattern.search(decoded)]
+        found += [f"the account name {name!r} in a URL" for name, key in names if key in decoded.casefold()]
         if EMAIL.search(decoded):
             found.append("an e-mail address in a URL")
     return list(dict.fromkeys(found))
@@ -496,6 +534,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  account block removed: {text!r}")
     if not scrubber.results_arrays:
         print("  warning: no results array (acsearch.initSearchResults) was found; the extension reads nothing from this page.")
+    for run in token_runs(text_views(page)[1])[1][:5]:
+        print(f"  warning: {run[:60]!r} looks like a token but reads as a hyphenated reference; check it is public text.")
     if scrubber.in_rows:
         print(f"  warning: the account name was replaced {scrubber.in_rows} times in lot text (titles and descriptions); if it is also a word "
               "dealers write, such as a ruler's name, those lots now read [collector] there.")

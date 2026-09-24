@@ -319,7 +319,12 @@ class FailClosedTests(unittest.TestCase):
             self.assertEqual("<p>page</p>", source.read_text(encoding="utf-8"))
 
     def test_an_account_name_split_by_markup_fails_and_writes_nothing(self):
-        for page in ("<p>Hello <b>Collec</b>tor42</p>", "<p>Hello Collector<wbr>42</p>", "<p>Hello \uff23ollector\uff14\uff12</p>"):
+        split = ("<p>Hello <b>Collec</b>tor42</p>", "<p>Hello Collector<wbr>42</p>", "<p>Hello \uff23ollector\uff14\uff12</p>")
+        # With a tag straight after the name, no whitespace: the page's text must not run the name into the next element's.
+        followed = tuple(f"{page}<script>{MARKER}[];</script>" for page in split)
+        # Markup and character references inside a lot's own strings, as dealers' descriptions carry them.
+        rows = (self.results_page("Ex Collec<b></b>tor42 collection."), self.results_page("Ex &#67;ollector42 collection."))
+        for page in split + followed + rows:
             with self.subTest(page=page):
                 code, written, errors = self.run_script(page, "--account", "collector42")
                 self.assertEqual(1, code)
@@ -335,7 +340,9 @@ class FailClosedTests(unittest.TestCase):
 
     def test_the_collectors_own_bid_or_watchlist_fails_and_writes_nothing(self):
         pages = (self.results_page("Nero. As. Your bid: 500 USD."), "<table><tr><td>bidder no. 4471</td></tr></table>", "<p>Ihr Gebot: 500</p>",
-                 "<p>Merkliste (3)</p>", "<p>Watchlist</p>")
+                 "<p>Merkliste (3)</p>", "<p>Watchlist</p>", "<p>Mein H\u00f6chstgebot: 500 EUR</p>", "<p>Your current bid: 500 USD</p>",
+                 "<p>Highest bidder: you (no. 4471)</p>", "<p>Kundennummer 4471</p>", "<p>Customer no. 4471</p>",
+                 "<ul><li>Watchlist</li><li>Search</li></ul>")
         for page in pages:
             with self.subTest(page=page):
                 code, written, errors = self.run_script(page, "--account", "collector42")
@@ -379,14 +386,45 @@ class FailClosedTests(unittest.TestCase):
         module = load_module()
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "in.html"
-            source.write_text(self.results_page("Otho, AD 69. Denarius. Othonian portrait."), encoding="utf-8")
+            source.write_text(self.results_page("Otho, AD 69. Denarius. Rome."), encoding="utf-8")
             target = Path(directory) / "out.html"
             stdout = io.StringIO()
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(0, module.main([str(source), str(target), "--account", "Otho"]))
             page = target.read_text(encoding="utf-8")
-            self.assertIn("[collector], AD 69. Denarius. Othonian portrait.", page)
+            self.assertIn("[collector], AD 69. Denarius. Rome.", page)
             self.assertIn("lot text", stdout.getvalue())
+
+    def test_the_account_name_inside_a_longer_word_is_left_but_refused(self):
+        # Replaced only as a whole word, so "Othonian" stays; but the check reads the name anywhere, so the page is refused rather than guessed at.
+        code, written, errors = self.run_script(self.results_page("Otho, AD 69. Othonian portrait."), "--account", "Otho")
+        self.assertEqual(1, code)
+        self.assertFalse(written)
+        self.assertIn("account name", errors)
+
+    def test_a_minified_page_with_ordinary_hyphenated_text_is_written(self):
+        rows = json.dumps([{"id": 90010001, "title": "Numismatik Naumann, Auction 64, Lot 123", "date": "01.02.2026", "price": "120 EUR",
+                            "description": "Nero. As. RIC 306. Ex Numismatik-Naumann-Auktion-64-Los-123; Sammlung_Dr_Busso_Peus_1988_Los_12."}])
+        page = ('<html><body><nav><ul><li><a href="/watchlist.html">Watchlist</a></li><li><a href="/merkliste.html">Merkliste (3)</a></li>'
+                '<li><a href="/search.html">Search</a></li></ul></nav><ul><li>2026</li><li>Fabricius</li><li>Numismatics</li></ul>'
+                '<table><tr><td>90010001</td><td>Numismatica</td><td>Ars</td></tr></table>'
+                f'<p>Results</p><script>{MARKER}{rows};</script></body></html>')
+        module = load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "in.html"
+            source.write_text(page, encoding="utf-8")
+            target = Path(directory) / "out.html"
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = module.main([str(source), str(target), "--account", "collector42"])
+            self.assertEqual(0, code, stderr.getvalue())
+            written = target.read_text(encoding="utf-8")
+        self.assertNotIn("Watchlist", written)
+        self.assertNotIn("Merkliste", written)
+        self.assertIn('<a href="https://www.acsearch.info/search.html">Search</a>', written)
+        self.assertIn("<td>90010001</td><td>Numismatica</td><td>Ars</td>", written)
+        self.assertIn("Numismatik-Naumann-Auktion-64-Los-123", written)
+        self.assertIn("own-area links removed", stdout.getvalue())
 
     def test_the_denylist_names_each_marker_it_finds(self):
         survivors = load_module().survivors
@@ -419,6 +457,8 @@ class FailClosedTests(unittest.TestCase):
             '<a href="https://www.acsearch.info/s/0123456789abcdef0123456789abcdef/r.html">x</a>': "token",
             '<a href="https://www.acsearch.info/u/collector%342/">x</a>': "account name",
             "<p>0123456789abcdef0123456789abcdef</p>": "token",
+            "<p>550e8400-e29b-41d4-a716-446655440000</p>": "token",
+            "<p>eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0</p>": "token",
             "<p>data:text/html;base64,PHNjcmlwdD4=</p>": "data:",
             "<p>Your bid: 500 USD</p>": "own bid",
             "<p>Bieternummer 4471</p>": "own bid",

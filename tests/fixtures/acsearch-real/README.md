@@ -26,9 +26,9 @@ steps below.
    python scripts/scrub_acsearch.py path/to/saved/acsearch.html tests/fixtures/acsearch-real/ric-nero-306-usd.html --account YOUR_NAME --account you@example.org
    ```
 
-   The script prints what it removed. It exits 1 and writes nothing if anything on its denylist is still in the page
-   (an e-mail address, your name — also split by markup such as `<b>` or `<wbr>`, or hidden by an invisible character
-   — a Logout/Abmelden block, a session or token parameter, your own bid, bidder number or watchlist, a token or
+   The script prints what it removed, including any watchlist or favourites links in the page's menus. It exits 1 and writes nothing if anything on its denylist is still in the page
+   (an e-mail address, your name — also split by markup such as `<b>` or `<wbr>`, hidden by an invisible character,
+   or inside a longer word — a Logout/Abmelden block, a session or token parameter, your own bid, bidder number or watchlist, a token or
    `data:` URL in the text, a script, a form field, a style or `data-*` attribute, a comment, a link off
    acsearch.info), or if the page cannot be read or written; read the message, and do not work around it by editing
    the original. A marker that is really public text is worth an issue, so the scrubber can learn to tell it apart.
@@ -36,7 +36,8 @@ steps below.
    description, date, price and last. If one of them is what the extension should read, say so in an issue rather
    than adding it to `ROW_FIELDS` unseen: a signed-in row may carry your own watch state or bid. A warning that your
    name was replaced in lot text means it is also a word dealers write (a ruler's name, say): those lots now read
-   `[collector]` there.
+   `[collector]` there; a name inside a longer word (`Otho` in `Othonian`) is not replaced but refuses the page. A
+   warning that a run "looks like a token but reads as a hyphenated reference" names text worth a second look.
 5. Read the scrubbed file through in a text editor before committing it. Search it for your name, your e-mail, your
    bidder or customer number, your city and anything else that is yours. The denylist cannot know every way a page
    can name you; you do.
