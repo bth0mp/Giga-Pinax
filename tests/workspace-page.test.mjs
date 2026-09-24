@@ -600,3 +600,50 @@ test('the inline calculator follows a bid saved for the coin it shows', async ()
   assert.equal(after?.amount, '1300.00');
   assert.equal(after?.premium, '20.00');
 });
+
+// W-04: the details form keeps the five fields a lot page asks for open - title, reference, auction page, notes and
+// auction - and folds the rest into sections that open themselves only when they hold something. Save, Undo and
+// Remove sit in an action bar that stays in view and says when there are unsaved changes; the Outcome tab has one too.
+test('the details form folds its optional sections until they hold a value, and its action bar shows unsaved changes', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan, sestertius', sourceLinks: [], coinDetails: { photoUrls: [], weightMg: 25400 },
+    provenanceNotes: [{ id: '00000000-0000-4000-9000-000000000001', text: 'Ex Leu 7', sourceUrl: 'https://leu.example/7', recordedAt: '2026-01-01T00:00:00.000Z' }] } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const form = page.$('lot-form');
+  for (const field of ['title', 'reference', 'auctionPageUrl', 'notes', 'auctionEventId']) assert.equal(form.elements[field].closest('details'), null, `${field} is always open`);
+  const group = (name) => form.querySelector(`[data-group="${name}"]`);
+  for (const field of ['auctionCanonicalUrl', 'auctionHouse', 'sourceUrl']) assert.equal(form.elements[field].closest('details'), group('identity'), field);
+  assert.equal(form.elements.weightGrams.closest('details'), group('coin'));
+  assert.equal(page.$('provenance-editor').closest('details'), group('provenance'));
+
+  await page.openCoin('Nero, denarius');
+  assert.deepEqual(['identity', 'coin', 'provenance'].map((name) => group(name).open), [false, false, false], 'nothing to show, all folded');
+  await page.openCoin('Trajan, sestertius');
+  assert.deepEqual(['identity', 'coin', 'provenance'].map((name) => group(name).open), [false, true, true], 'the sections holding values open');
+
+  const bar = form.querySelector('.action-bar');
+  assert.ok(bar.querySelector('button[type="submit"]'), 'Save details is in the bar');
+  assert.equal(page.$('undo-lot').closest('.action-bar'), bar);
+  assert.equal(page.$('delete-lot').closest('.action-bar'), bar);
+  assert.equal(page.$('lot-dirty').hidden, true);
+  await page.typeDetails('notes', 'Toned');
+  assert.equal(page.$('lot-dirty').hidden, false);
+  assert.equal(page.$('lot-dirty').textContent, 'Unsaved changes');
+  await page.saveDetails();
+  assert.equal(page.$('lot-dirty').hidden, true);
+
+  const outcomeBar = page.$('outcome-form').querySelector('.action-bar');
+  assert.ok(outcomeBar.querySelector('button[type="submit"]'));
+  assert.equal(page.$('outcome-dirty').hidden, true);
+  await page.type('outcome-form', 'hammer', '100');
+  assert.equal(page.$('outcome-dirty').hidden, false);
+});
+
+test('a lot draft opens the sections the page filled', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ photoUrl: 'https://images.house.example/27.jpg', provenance: [{ text: 'Ex Hess 1958', source: 'Hess', year: 1958 }],
+    auctionContext: { pageUrl: 'https://house.example/lot/27', house: 'House', saleId: '5', lotNumber: '27' } });
+  const page = await mountWorkspace({ background, hash });
+  const group = (name) => page.$('lot-form').querySelector(`[data-group="${name}"]`);
+  assert.deepEqual(['identity', 'coin', 'provenance'].map((name) => group(name).open), [true, true, true]);
+  assert.equal(page.$('lot-dirty').hidden, false, 'a draft is unsaved');
+});

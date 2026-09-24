@@ -243,6 +243,7 @@ async function initWorkspace() {
     for (const editor of plan.repopulate) populateEditor(editor);
     for (const [editor, previousRecord] of merges) mergeRebasedEditor(editor, previousRecord, incoming);
     if (plan.conflicts) showConflictNote(conflictNoteMessage(plan.conflicts));
+    updateDirtyMarks();
   };
   // `beforeRender` applies the commit that produced this snapshot, so the page renders the editors
   // as the commit left them rather than as they were when the save started.
@@ -342,6 +343,7 @@ async function initWorkspace() {
     if (editor === 'lot') lotInteractionGeneration += 1;
     dirtyEditors.add(editor);
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
+    updateDirtyMarks();
   }));
   // Unsaved input lives only in this tab, so the browser's own prompt is the last thing between a
   // half-finished entry and a reload.
@@ -356,6 +358,7 @@ async function initWorkspace() {
     const conflicted = editorsWithChangedBasis(snapshot, dirtyEditors, editorBases, savesInFlight);
     if (conflicted.includes('lot')) lotInteractionGeneration += 1;
     for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); }
+    updateDirtyMarks();
     void refresh();
     $('conflict-note').hidden = true;
   });
@@ -571,7 +574,7 @@ async function initWorkspace() {
     showDetailTab('details');
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
-    renderLots();
+    renderLots(); updateDirtyMarks();
     if (focus) $('selected-title').focus?.();
   }
   function populateLotForm(lot) {
@@ -579,7 +582,21 @@ async function initWorkspace() {
     for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
     clearPageValues();
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
+    openFilledGroups(lot.id);
   }
+  // The folded sections of the details form open themselves when they hold a value. For the coin already shown, a
+  // section the collector opened stays open when the form follows committed data; another coin starts afresh.
+  let groupsShownFor;
+  function openFilledGroups(recordId = null) {
+    const fresh = recordId === null || recordId !== groupsShownFor;
+    groupsShownFor = recordId;
+    for (const group of $('lot-form').querySelectorAll('details')) {
+      const filled = [...group.querySelectorAll('input, textarea, select')].some((control) => !['checkbox', 'radio', 'hidden'].includes(control.type) && String(control.value).trim())
+        || Boolean(group.querySelector('.provenance-row'));
+      group.open = fresh ? filled : group.open || filled;
+    }
+  }
+  const updateDirtyMarks = () => { $('lot-dirty').hidden = !dirtyEditors.has('lot'); $('outcome-dirty').hidden = !dirtyEditors.has('outcome'); };
   function renderSelectedLot() {
     const lot = (snapshot.lots ?? []).find((item) => item.id === selection.selectedLotId);
     $('coin-empty').hidden = Boolean(lot) || selection.mode === 'detail'; $('coin-editor').hidden = !lot && selection.mode !== 'detail';
@@ -643,7 +660,7 @@ async function initWorkspace() {
     $('comparison-dialog').showModal();
   });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
-  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
   $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
@@ -926,6 +943,7 @@ async function initWorkspace() {
       for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
+      openFilledGroups(); updateDirtyMarks();
       form.elements.title.focus();
       announce('Reference draft loaded. Review the lot details, then save to add it to the watchlist.');
     } else {
@@ -945,7 +963,7 @@ async function initWorkspace() {
       populateEditor(editor);
     }
   }
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); }
+  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
   setRoute();
   if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {

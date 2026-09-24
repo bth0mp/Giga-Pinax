@@ -8,6 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- A coin's **Details** in the workspace keep open only what a lot page asks for — title, reference, auction page, notes and auction — and fold **Auction identity and links** (with the general source URL), **Coin details** and **Sourced provenance** into sections that open by themselves when they hold something, or when a captured page filled them. **Save details**, **Undo last edit** and **Remove coin** sit in a bar that stays at the bottom of the window and says **Unsaved changes** while there are any; **Save outcome** under **Outcome** does the same.
 - A coin in the workspace list reads its reference and amount on one line, its title under them, then when its auction closes or starts in your browser's language and how soon — `Closes Thu 1 Oct, 15:00 · in 7 days`, amber from 48 hours before and muted once past — and its status as a coloured pill with the auction's name beside it. The auction's own time zone is named only when it is not yours. The coin's attached auction and the **Auctions** list say the time the same way.
 
 ### Fixed
