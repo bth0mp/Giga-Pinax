@@ -397,6 +397,42 @@ test('with site data blocked the page still loads and saves, and says the theme 
   assert.equal(page.statusIsError(), 'false');
 });
 
+// Specimen photos load from museum servers, so they are the collector's choice, off until he makes it. The switch lives beside the theme, in the
+// local storage the popup shares, and is never part of the stored preferences a backup carries.
+test('Show specimen photos is off by default, remembered locally when switched on, and forgotten when off', async () => {
+  const stored = new Map();
+  const page = await openSettings({ stored, reply: () => ({ ok: true, value: preferences({ revision: 4 }) }) });
+  const toggle = page.element('specimen-photos');
+  assert.equal(toggle.type, 'checkbox');
+  assert.equal(toggle.checked, false);
+  assert.equal(toggle.closest('label').textContent.trim(), 'Show specimen photos');
+  toggle.checked = true;
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(stored.get('giga-pinax-specimen-photos-v1'), 'on');
+  assert.equal(page.status(), 'Settings saved.');
+  assert.equal('specimenPhotos' in page.commands.at(-1).preferences, false, 'the switch is no stored preference');
+
+  const reopened = await openSettings({ stored, reply: () => ({ ok: true, value: preferences({ revision: 5 }) }) });
+  assert.equal(reopened.element('specimen-photos').checked, true);
+  reopened.element('specimen-photos').checked = false;
+  await reopened.element('save-settings').click();
+  await settle();
+  assert.equal(stored.has('giga-pinax-specimen-photos-v1'), false);
+});
+
+test('with site data blocked, specimen photos cannot be switched on and the page says so', async () => {
+  const page = await openSettings({ siteDataBlocked: true, reply: () => ({ ok: true, value: preferences({ revision: 4 }) }) });
+  page.element('specimen-photos').checked = true;
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.status(), 'Settings saved. This browser profile blocks site data, so specimen photos can’t be switched on.');
+  page.element('theme').value = 'dark';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.status(), 'Settings saved. This browser profile blocks site data, so the theme applies to this page only and can’t be remembered, and specimen photos can’t be switched on.');
+});
+
 // --- import: preview, then confirm ---------------------------------------------------------------
 
 async function preview(page, documentText, mode = 'merge') {
