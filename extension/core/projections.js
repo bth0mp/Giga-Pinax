@@ -61,11 +61,15 @@ const COST_PARTS = Object.freeze(['premium', 'premiumVat', 'platformFee', 'shipp
 export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'shipping', 'paymentFee']);
 
 // The buyer's premium rate the coin was won on: the bid that was settled as won, else the plan the collector made
-// for it. A rate is the house's term for this lot, so an older settlement still carries the right one.
+// for it. A plan revised after the last win - a coin re-opened and planned again - is newer than that win, so its
+// rate is the one the coin is won on now.
 function wonPremiumRate(lot) {
-  const settled = [...(lot?.bidHistory ?? [])].reverse().find(({ action }) => action === 'settled-won');
-  if (Number.isInteger(settled?.buyerPremiumBps)) return settled.buyerPremiumBps;
-  return Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? lot.plannedBid.buyerPremiumBps : null;
+  const history = lot?.bidHistory ?? [];
+  const lastIndex = (action) => history.findLastIndex((entry) => entry.action === action);
+  const settled = history[lastIndex('settled-won')];
+  const plan = Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? lot.plannedBid.buyerPremiumBps : null;
+  if (plan !== null && lastIndex('planned-revised') > lastIndex('settled-won')) return plan;
+  return Number.isInteger(settled?.buyerPremiumBps) ? settled.buyerPremiumBps : plan;
 }
 
 /**

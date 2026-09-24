@@ -11,6 +11,7 @@ import {
   quarantineEntryId,
   quarantineInvalidRecords,
   restartUnusableRevisions,
+  followOutcome,
   setOutcome,
   unusableRevisions,
   validateDraftPayload,
@@ -1262,4 +1263,44 @@ test('a collection entry’s corrected fields are named from a closed list, each
   assert.equal(root(['hammer']).error.code, 'invalid-enum');
   assert.equal(root(['notes', 'notes']).error.code, 'duplicate-field');
   assert.equal(root('notes').error.code, 'collection-limit');
+});
+
+// Fix round, Important 2: one rule for an entry following its won lot, used by the store, a merge and the load.
+test('followOutcome carries a won lot\u2019s hammer and invoice to its entry, except an invoice the collector corrected', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const lot = makeLot(IDS.lotEur, { outcome: { status: 'won', hammer: eur(131000), actualInvoice: eur(160000), verification: 'personal-unverified' } });
+  const entry = { hammer: eur(130000), actualInvoice: eur(159000) };
+  assert.equal(followOutcome(entry, lot), true);
+  assert.deepEqual(entry, { hammer: eur(131000), actualInvoice: eur(160000) });
+  assert.equal(followOutcome(entry, lot), false, 'an entry already in step is left alone');
+  const corrected = { hammer: eur(130000), actualInvoice: eur(1), editedFields: ['actualInvoice'] };
+  assert.equal(followOutcome(corrected, lot), true);
+  assert.deepEqual(corrected.actualInvoice, eur(1));
+  assert.deepEqual(corrected.hammer, eur(131000));
+  const cleared = { hammer: eur(131000), editedFields: ['actualInvoice'] };
+  assert.equal(followOutcome(cleared, lot), false, 'an invoice the collector cleared stays cleared');
+  const lost = { hammer: eur(130000) };
+  assert.equal(followOutcome(lost, { ...lot, outcome: { status: 'lost', hammer: eur(9), verification: 'personal-unverified' } }), false);
+  assert.deepEqual(lost.hammer, eur(130000));
+  const noHammer = { hammer: eur(130000) };
+  assert.equal(followOutcome(noHammer, { ...lot, outcome: { status: 'won' } }), true);
+  assert.equal(Object.hasOwn(noHammer, 'hammer'), false);
+});
+
+// Fix round, Minor 3: after a re-open, a plan revised later than the last win is the rate the coin is won on again.
+test('a coin re-opened, planned again and won again is costed at the newest rate', () => {
+  const lot = makeLot(IDS.lotEur, {
+    outcome: { status: 'open' },
+    plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000 },
+    bidHistory: [
+      { id: '55555555-5555-4555-8555-000000000001', action: 'settled-won', amount: { currency: 'EUR', minor: 90000 }, buyerPremiumBps: 2500, recordedAt: NOW },
+      { id: '55555555-5555-4555-8555-000000000002', action: 'reopened-inactive', amount: { currency: 'EUR', minor: 90000 }, buyerPremiumBps: 2500, recordedAt: NOW },
+      { id: '55555555-5555-4555-8555-000000000003', action: 'planned-revised', amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000, recordedAt: NOW },
+    ],
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  // Without a later plan, the settled bid's rate stands even when an older plan is still saved.
+  const settledLast = { ...lot, bidHistory: [lot.bidHistory[2], lot.bidHistory[0], lot.bidHistory[1]] };
+  assert.equal(setOutcome(settledLast, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW).value.outcome.cost.buyerPremiumBps, 2500);
 });

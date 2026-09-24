@@ -1,6 +1,7 @@
 // @ts-check
 import {
-  ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, migrateSnapshot, quarantineEntryId,
+  ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, healCollectionEntries,
+  migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
@@ -345,14 +346,7 @@ function mutation(snapshot, command, context) {
       }
       // A corrected won outcome carries its hammer and invoice to the entry. The hammer is the outcome's alone; an
       // invoice the collector corrected on the entry itself is theirs, and wins over the outcome's.
-      if (reviewed && value.outcome.status === 'won') {
-        for (const field of ['hammer', 'actualInvoice']) {
-          if ((field === 'actualInvoice' && reviewed.editedFields?.includes(field)) || sameValue(reviewed[field], value.outcome[field])) continue;
-          if (value.outcome[field]) reviewed[field] = clone(value.outcome[field]);
-          else delete reviewed[field];
-          entryChanged = true;
-        }
-      }
+      if (reviewed && followOutcome(reviewed, value)) entryChanged = true;
       if (reviewed && entryChanged) {
         reviewed.revision += 1;
         reviewed.updatedAt = now;
@@ -902,6 +896,10 @@ export function createCommandWriter(storageArea, context) {
       if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
       stored = rescued.value;
     }
+
+    // An entry left behind by an outcome corrected before 0.36 follows its won lot from this read on; nothing is
+    // written for it here, and the next write keeps it. A consistent root is left exactly as it is.
+    healCollectionEntries(stored);
 
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };

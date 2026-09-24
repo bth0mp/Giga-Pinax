@@ -1127,3 +1127,25 @@ test('settings set aside whole are named with their house presets and how to kee
   assert.equal(quarantineSummaryText([none]), 'Your settings could not be read and were set aside. They held no house presets.');
   assert.deepEqual(quarantineLines([none]), ['settings with no house presets: invalid-ladder (2026-09-12)']);
 });
+
+// Fix round, Important 2: a merge that takes a corrected won lot while the local entry row wins on its write time
+// still brings the entry's hammer and invoice in step with that lot.
+test('a merge that corrects a won lot carries its hammer to the local entry that wins', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const local = createEmptySnapshot(NOW);
+  local.lots.push(lot(uuid(1), { outcome: { status: 'won', hammer: eur(130000), verification: 'personal-unverified' }, collectionEntryId: uuid(2) }));
+  local.collectionEntries.push(wonEntry(uuid(2), uuid(1), { hammer: eur(130000), notes: 'mine' }));
+  const other = structuredClone(local);
+  other.lots[0].outcome = { status: 'won', hammer: eur(131000), actualInvoice: eur(160000), verification: 'personal-unverified', correctedAt: LATER };
+  other.lots[0].updatedAt = LATER;
+  other.lots[0].revision = 1;
+  const incoming = validateBackup(exportBackup(other, LATEST).value);
+  assert.equal(incoming.ok, true, incoming.error?.message);
+  const merged = previewImport(local, incoming.value, 'merge', { now: LATEST });
+  assert.equal(merged.ok, true, merged.error?.message);
+  const [entry] = merged.value.snapshot.collectionEntries;
+  assert.deepEqual(entry.hammer, eur(131000));
+  assert.deepEqual(entry.actualInvoice, eur(160000));
+  assert.equal(entry.notes, 'mine');
+  assert.equal(entry.revision, 1, 'a holder of the old row is asked again');
+});

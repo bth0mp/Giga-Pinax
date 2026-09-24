@@ -501,6 +501,46 @@ function collectionEntryResult(entry, path) {
 /** @type {ReadonlyArray<'acquisitionDate' | 'actualInvoice' | 'notes'>} */
 export const ENTRY_EDITABLE_FIELDS = Object.freeze(['acquisitionDate', 'actualInvoice', 'notes']);
 const ENTRY_EDITABLE_SET = new Set(ENTRY_EDITABLE_FIELDS);
+// Two amounts that are the same whatever order their keys were written in; absent is absent.
+const sameMoney = (left, right) => (left && right
+  ? left.currency === right.currency && left.minor === right.minor : !left && !right);
+
+/**
+ * A collection entry brought in step with its lot's won outcome: the hammer is the outcome's always, and the invoice
+ * too unless the collector corrected it on the entry, where theirs wins. An entry whose lot is not won is left as it
+ * is (a review decides it). The one rule the store, a merged backup and a load all follow.
+ * @param {Record<string, any>} entry changed in place
+ * @param {Lot | null | undefined} lot
+ * @returns {boolean} whether anything changed
+ */
+export function followOutcome(entry, lot) {
+  if (lot?.outcome?.status !== 'won') return false;
+  let changed = false;
+  for (const field of /** @type {const} */ (['hammer', 'actualInvoice'])) {
+    if (field === 'actualInvoice' && entry.editedFields?.includes(field)) continue;
+    const recorded = lot.outcome[field];
+    if (sameMoney(entry[field], recorded)) continue;
+    if (recorded) entry[field] = { currency: recorded.currency, minor: recorded.minor };
+    else delete entry[field];
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Every entry of a root brought in step with its won lot, in place, with no revision or write time changed: an entry
+ * left behind by an outcome corrected before 0.36 reads as its lot does from the first load, and the next write keeps
+ * it so. A read of an already consistent root changes nothing.
+ * @param {{ lots: Lot[], collectionEntries: CollectionEntry[] }} root
+ * @returns {number} how many entries followed
+ */
+export function healCollectionEntries(root) {
+  const lots = new Map(root.lots.map((lot) => [lot.id, lot]));
+  let healed = 0;
+  for (const entry of root.collectionEntries) if (followOutcome(entry, lots.get(entry.lotId))) healed += 1;
+  return healed;
+}
+
 /** @returns {Result<any>} */
 function editedFieldsResult(fields, path) {
   const array = arrayResult(fields, path, ENTRY_EDITABLE_FIELDS.length); if (!array.ok) return array;

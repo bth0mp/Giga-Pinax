@@ -2401,3 +2401,25 @@ test('acknowledging an alert already acknowledged succeeds without a second chan
   const snooze = applyCommand(state, command('alert.snooze', { triggerIds: [alert.triggerId], snoozedUntil: LATER }), context());
   assert.equal(snooze.error.code, 'validation', 'an acknowledged alert is not snoozed back');
 });
+
+// Fix round, Important 2: an entry left behind by a correction made under 0.35 is brought in step when the store is
+// read, and the next write keeps it so.
+test('an entry that drifted from its corrected won lot before 0.36 follows it on load', async () => {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] } }));
+  const won = reduce(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 130000 } },
+    addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-12', sourceLinks: [] },
+  }));
+  const drifted = structuredClone(won.snapshot);
+  // What 0.35 wrote for a corrected hammer: the lot moved, its entry did not, and no cost was kept.
+  drifted.lots[0].outcome = { status: 'won', hammer: { currency: 'EUR', minor: 131000 }, actualInvoice: { currency: 'EUR', minor: 160000 }, verification: 'personal-unverified', correctedAt: NOW };
+  const storage = memoryStorage(drifted);
+  const writer = createCommandWriter(storage, context());
+  const read = await writer.commitCommand(command('snapshot.get'));
+  assert.deepEqual(read.value.collectionEntries[0].hammer, { currency: 'EUR', minor: 131000 });
+  assert.deepEqual(read.value.collectionEntries[0].actualInvoice, { currency: 'EUR', minor: 160000 });
+  assert.equal(read.value.collectionEntries[0].revision, 0, 'a read changes no revision');
+  const other = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'Another coin', sourceLinks: [] } }));
+  assert.equal(other.ok, true, other.message);
+  assert.deepEqual(storage.read().collectionEntries[0].hammer, { currency: 'EUR', minor: 131000 }, 'the next write persists it');
+});
