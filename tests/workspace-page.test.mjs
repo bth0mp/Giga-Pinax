@@ -6,6 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
+import { STORAGE_KEY } from '../extension/store.js';
+import { exportBackup } from '../extension/core/backup.js';
+import { csvFiles } from '../extension/core/csv.js';
 
 async function backgroundWithCoins(...titles) {
   const background = await createWorkspaceBackground();
@@ -1061,4 +1064,138 @@ test('a focused control under the sticky bar is scrolled clear of it', async () 
   tall.getBoundingClientRect = () => ({ top: 60, bottom: 900 });
   await form.emit('focusin', { target: tall });
   assert.deepEqual(page.scrolls.at(-1), [0, 44], 'a box taller than the room keeps its top in the window');
+});
+
+// --- Fix round -------------------------------------------------------------------------------------
+
+const editButton = (page, title) => entryCard(page, title).querySelectorAll('button').find((button) => button.textContent === 'Edit entry');
+async function wonNero(background, extra = {}) {
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15', ...extra });
+}
+async function openSettledCoin(page, title) {
+  page.$('lot-queue').value = 'all-coins';
+  await page.$('lot-queue').emit('change');
+  await page.openCoin(title);
+}
+
+// Important 1: a save refused because another tab changed the entry keeps what was typed, and takes every field the
+// collector did not touch from the entry as it now stands - never sending the old figure back as their correction.
+test('a second save after another tab corrected the outcome neither reverts the invoice nor claims it as the collector\u2019s', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const first = await mountWorkspace({ background, hash: '#history' });
+  const second = await mountWorkspace({ background, hash: '#watchlist' });
+  await editButton(first, 'Nero, denarius').click(); await settle();
+  await first.type('entry-edit-form', 'notes', 'Tray 4');
+
+  await openSettledCoin(second, 'Nero, denarius');
+  await second.type('outcome-form', 'invoice', '630');
+  await second.submit('outcome-form');
+  assert.deepEqual(background.root().collectionEntries[0].actualInvoice, { currency: 'EUR', minor: 63000 }, 'the entry followed the other tab');
+  await settle();
+
+  await first.submit('entry-edit-form');
+  assert.match(first.$('entry-edit-form').querySelector('.error').textContent, /changed while you were editing/);
+  assert.equal(first.$('entry-edit-form').elements.invoice.value, '630.00', 'the untouched invoice now reads as stored');
+  assert.equal(first.$('entry-edit-form').elements.notes.value, 'Tray 4', 'what was typed is kept');
+  await first.submit('entry-edit-form');
+  const [stored] = background.root().collectionEntries;
+  assert.deepEqual(stored.actualInvoice, { currency: 'EUR', minor: 63000 });
+  assert.equal(stored.notes, 'Tray 4');
+  assert.deepEqual(stored.editedFields, ['notes']);
+});
+
+// Important 2: one hammer on the page and in the file, whether the entry drifted under 0.35 or through a merge.
+function hammersShown(page, title) {
+  const line = entryCard(page, title).querySelector('.money-line');
+  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  return { card: line.children[1].textContent, table: eur[2] };
+}
+test('an entry left behind by a correction made under 0.35 shows its lot\u2019s one hammer on the card, in the totals and in the CSV', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const root = background.root();
+  root.lots[0].outcome = { ...root.lots[0].outcome, hammer: { currency: 'EUR', minor: 51000 }, correctedAt: '2026-09-12T12:00:00.000Z' };
+  delete root.lots[0].outcome.cost;
+  // As 0.35 left it in storage before this version was installed: written, and heard of, before the page opens.
+  await background.storage.set({ [STORAGE_KEY]: root });
+  await settle();
+  const page = await mountWorkspace({ background, hash: '#history' });
+  assert.deepEqual(hammersShown(page, 'Nero, denarius'), { card: 'Hammer 510.00', table: '€510.00' });
+  const read = await background.send({ type: 'snapshot.get' });
+  assert.match(csvFiles(read.value).collection, /"510\.00","EUR"/);
+  assert.doesNotMatch(csvFiles(read.value).collection, /"500\.00"/);
+});
+
+test('a merge that corrects a won lot while the local entry row wins shows one hammer everywhere', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const other = background.root();
+  other.lots[0].outcome = { ...other.lots[0].outcome, hammer: { currency: 'EUR', minor: 51000 } };
+  delete other.lots[0].outcome.cost;
+  other.lots[0].updatedAt = '2026-09-13T12:00:00.000Z';
+  other.lots[0].revision += 1;
+  const imported = await background.send({
+    type: 'backup.import', mode: 'merge', expectedRevision: background.root().revision,
+    document: exportBackup(other, '2026-09-13T12:00:00.000Z').value,
+  });
+  assert.equal(imported.ok, true, imported.message);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  assert.deepEqual(hammersShown(page, 'Nero, denarius'), { card: 'Hammer 510.00', table: '€510.00' });
+  assert.match(csvFiles(background.root()).collection, /"510\.00","EUR"/);
+});
+
+// Minor 5: an invoice the collector cleared on the entry still says what the outcome records.
+test('an invoice cleared on the entry says what the outcome records', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'invoice', '');
+  await page.submit('entry-edit-form');
+  assert.equal(Object.hasOwn(background.root().collectionEntries[0], 'actualInvoice'), false);
+  assert.ok(entryCard(page, 'Nero, denarius').textContent.includes('Invoice paid: none (your correction; the outcome records \u20ac625.00)'));
+});
+
+// Minor 6: typing only the invoice sends only the invoice.
+test('an entry form that changes only the invoice sends no notes and no date', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'invoice', '640');
+  await page.submit('entry-edit-form');
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'collection.update').map(({ entry }) => entry),
+    [{ actualInvoice: { currency: 'EUR', minor: 64000 } }]);
+  assert.deepEqual(background.root().collectionEntries[0].editedFields, ['actualInvoice']);
+});
+
+// Minor 7: the keyboard goes back to the entry's Edit entry after Cancel or Save, and typed text is not dropped by
+// opening another entry's form without asking.
+test('focus returns to Edit entry, and opening another entry asks before dropping typed text', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  await wonCoin(background, { title: 'Trajan, sestertius', hammer: { currency: 'EUR', minor: 20000 }, acquisitionDate: '2024-01-10' });
+  const page = await mountWorkspace({ background, hash: '#history', confirmAnswers: [false, true] });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  const cancel = page.$('entry-edit-form').querySelectorAll('button').find((button) => button.textContent === 'Cancel');
+  await cancel.click(); await settle();
+  assert.ok(page.document.activeElement === editButton(page, 'Nero, denarius'), 'Cancel gives the keyboard back to Edit entry');
+
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'notes', 'Half typed');
+  await editButton(page, 'Trajan, sestertius').click(); await settle();
+  assert.deepEqual(page.prompts, ['Discard your changes to \u201cNero, denarius\u201d?']);
+  assert.equal(page.$('entry-edit-form').elements.notes.value, 'Half typed', 'refused: the typing stays');
+  assert.ok(entryCard(page, 'Nero, denarius').querySelector('#entry-edit-form'));
+  await editButton(page, 'Trajan, sestertius').click(); await settle();
+  assert.ok(entryCard(page, 'Trajan, sestertius').querySelector('#entry-edit-form'), 'accepted: the other entry opens');
+
+  await page.type('entry-edit-form', 'notes', 'Cabinet 2');
+  await page.submit('entry-edit-form');
+  assert.ok(page.document.activeElement === editButton(page, 'Trajan, sestertius'), 'Save gives the keyboard back to Edit entry');
+  // And it stays there when another view's write draws the route again.
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Unrelated coin', sourceLinks: [] } });
+  await settle();
+  assert.ok(page.document.activeElement === editButton(page, 'Trajan, sestertius'), 'a redraw keeps the keyboard on Edit entry');
 });

@@ -1013,7 +1013,8 @@ async function initWorkspace() {
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
   function collectionTotalsTable(view) {
-    const wrap = text('div', '', 'table-scroll');
+    // A region the keyboard can scroll too, since its last columns sit past the side panel's edge.
+    const wrap = text('div', '', 'table-scroll'); wrap.setAttribute('tabindex', '0'); wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Recorded totals by currency');
     const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
     table.append(text('caption', 'Your recorded totals by currency'));
     const head = document.createElement('thead'); const headRow = document.createElement('tr');
@@ -1062,12 +1063,23 @@ async function initWorkspace() {
     acquisitionDate: entry.acquisitionDate ?? '', invoice: moneyInputText(entry.actualInvoice),
     invoiceCurrency: entry.actualInvoice?.currency ?? entry.hammer?.currency ?? snapshot.preferences?.currency ?? 'USD', notes: entry.notes ?? '',
   });
+  // Each entry's Edit entry button as last drawn, so the keyboard can be handed back to it when its form closes.
+  const entryEditButtons = new Map();
+  const entryFormTyped = (editing) => Object.keys(editing.values).some((key) => editing.values[key] !== editing.baseline[key]);
   const openEntryForm = (entry) => {
+    // Typing in another entry's form is not dropped without asking, as a coin's details are not.
+    if (editingEntry && editingEntry.id !== entry.id && entryFormTyped(editingEntry)) {
+      const open = (snapshot.collectionEntries ?? []).find(({ id }) => id === editingEntry?.id);
+      if (!confirm(`Discard your changes to “${open?.title ?? 'the entry being edited'}”?`)) return;
+    }
     editingEntry = { id: entry.id, revision: entry.revision, baseline: entryFormValues(entry), values: entryFormValues(entry), error: '' };
     renderHistory();
     $('entry-edit-form')?.elements.acquisitionDate?.focus();
   };
-  const closeEntryForm = () => { editingEntry = null; renderHistory(); };
+  const closeEntryForm = () => {
+    const id = editingEntry?.id; editingEntry = null; renderHistory();
+    entryEditButtons.get(id)?.focus();
+  };
   // Only what the collector changed is sent: a field left as it opened stays one the outcome can still correct.
   async function saveEntryForm() {
     const editing = editingEntry; if (!editing) return;
@@ -1091,8 +1103,11 @@ async function initWorkspace() {
     if (reply?.ok) { closeEntryForm(); return announce('Collection entry saved.'); }
     const current = (snapshot.collectionEntries ?? []).find(({ id }) => id === editing.id);
     if (reply?.code === 'conflict' && current) {
-      // What is stored now becomes the basis, and what was typed is kept for the collector to check and save again.
-      editing.revision = current.revision; editing.baseline = entryFormValues(current);
+      // What is stored now becomes the basis. What the collector typed is kept for them to check and save again; every
+      // field they left as it opened takes the stored figure, so the other tab's change is never sent back as theirs.
+      const fresh = entryFormValues(current);
+      for (const key of Object.keys(fresh)) if (editing.values[key] === editing.baseline[key]) editing.values[key] = fresh[key];
+      editing.revision = current.revision; editing.baseline = fresh;
       return refuse('This entry changed while you were editing it. Check the figures and save again.');
     }
     if (reply && !reply.ok) refuse(reply.message ?? 'The entry could not be saved.');
@@ -1123,11 +1138,13 @@ async function initWorkspace() {
     return form;
   }
   // The invoice on the entry, and when the collector corrected it there, whose figure it is.
+  // An invoice the collector cleared there still says what the outcome records, since no outcome correction brings it back.
   const entryInvoiceLine = (entry, lot) => {
-    if (!entry.actualInvoice) return null;
+    const corrected = entry.editedFields?.includes('actualInvoice');
+    const recorded = lot?.outcome?.actualInvoice;
+    if (!entry.actualInvoice) return corrected && recorded ? `Invoice paid: none (your correction; the outcome records ${formatMoney(recorded)})` : null;
     let line = `Invoice paid ${formatMoney(entry.actualInvoice)}`;
-    if (entry.editedFields?.includes('actualInvoice')) {
-      const recorded = lot?.outcome?.actualInvoice;
+    if (corrected) {
       const differs = recorded && (recorded.currency !== entry.actualInvoice.currency || recorded.minor !== entry.actualInvoice.minor);
       line += differs ? ` (your correction; the outcome records ${formatMoney(recorded)})` : ' (your correction)';
     }
@@ -1136,7 +1153,8 @@ async function initWorkspace() {
   function renderHistory() {
     // A redraw while a field of the entry form has the keyboard gives it back to that field.
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
-    const root = $('history-list'); root.replaceChildren();
+    const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
+    const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
     for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
@@ -1166,12 +1184,13 @@ async function initWorkspace() {
       const actions = text('div', '', 'actions');
       if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
       if (editingEntry?.id === entry.id) card.append(entryEditForm());
-      else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); }
+      else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
       if (actions.children.length) card.append(actions);
       collection.append(card);
     }
     if (editingEntry && !(snapshot.collectionEntries ?? []).some(({ id }) => id === editingEntry?.id)) editingEntry = null;
     if (focusedField) $('entry-edit-form')?.elements[focusedField]?.focus?.();
+    else if (focusedEdit) entryEditButtons.get(focusedEdit)?.focus();
   }
   // The re-open question and the "Still open" choice belong to a settled lot only: on an open lot both are no-ops.
   const updateOutcomeVisibility = () => {
