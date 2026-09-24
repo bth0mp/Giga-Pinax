@@ -877,3 +877,20 @@ test('the Bid tab shows the coin’s saved comparables beside the maximum hammer
   assert.equal(page.$('research-query').value, 'RIC I² 306');
   assert.equal(page.$('evidence-query').value, queryId, 'the set already saved for the reference is the one shown');
 });
+
+// Review Important 1: a value the browser refuses inside a folded section opens that section and names the field, where
+// Save used to do nothing at all.
+test('an invalid value in a folded section opens it and names the field', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const form = page.$('lot-form');
+  const photo = form.elements.photoUrl1;
+  assert.equal(photo.closest('details').open, false);
+  await form.emit('invalid', { target: photo });
+  assert.equal(photo.closest('details').open, true);
+  assert.equal(page.$('lot-action-status').textContent, 'Check Photo URL 1 under Coin details: the value is not valid.');
+  const outcome = page.$('outcome-form');
+  await outcome.emit('invalid', { target: outcome.elements.acquisitionDate });
+  assert.equal(page.$('workspace-status').textContent, 'Check Acquisition date: the value is not valid.');
+});

@@ -143,6 +143,21 @@ async function initWorkspace() {
     count.textContent = `${left} character${left === 1 ? '' : 's'} left`; count.hidden = false;
   };
   const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };
+  // A control's own label, without the hints and counts beside it, and the folded section it sits in.
+  const fieldLabel = (control) => [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
+  const sectionOf = (control) => control?.closest('details');
+  const where = (control) => { const section = sectionOf(control); return section ? `${fieldLabel(control)} under ${section.querySelector('summary')?.textContent ?? 'its section'}` : fieldLabel(control); };
+  // A value the browser refuses stops the submit before the page hears of it. The first refused control of a submit
+  // opens its folded section, so the browser can show it, and is named, where Save used to do nothing at all.
+  let invalidNamed = false;
+  const nameInvalid = (report) => (event) => {
+    const section = sectionOf(event.target); if (section) section.open = true;
+    if (invalidNamed) return;
+    invalidNamed = true; queueMicrotask(() => { invalidNamed = false; });
+    report(`Check ${where(event.target)}: ${event.target?.validationMessage || 'the value is not valid.'}`);
+  };
+  $('lot-form').addEventListener('invalid', nameInvalid((message) => { $('lot-action-status').textContent = message; $('lot-action-status').classList.add('error'); }), true);
+  $('outcome-form').addEventListener('invalid', nameInvalid((message) => announce(message, true)), true);
   for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
   $('open-settings').addEventListener('click', () => void openSettings());
