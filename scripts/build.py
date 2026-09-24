@@ -69,6 +69,7 @@ ASSET_PATHS = (
     "source-launchers.js",
     "source-menu.js",
     "store.js",
+    "store-builders.js",
     "workspace.css",
     "workspace.html",
     "workspace.js",
