@@ -721,7 +721,10 @@ async function initWorkspace() {
     const terms = lot?.activeBid ?? lot?.plannedBid;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
-    bidCalculator?.setValues({ lotId: lot?.id ?? null, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
+    // The calculator refills only for another coin or for saved terms that changed (it compares this key), so what the
+    // collector typed in it survives every other re-render, and a bid just saved is followed.
+    const termsKey = lot ? [lot.id, f.currency.value, terms?.amount?.minor ?? '', terms?.buyerPremiumBps ?? '', JSON.stringify(calculatorCostEstimate)].join('|') : null;
+    bidCalculator?.setValues({ lotId: termsKey, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
   }
   const loadBidEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);

@@ -570,3 +570,33 @@ test('the Bid tab shows the placed bid, and a settled lot’s is closed with the
   assert.equal(page.$('bid-settled').hidden, false);
   assert.equal(page.$('bid-settled').textContent, 'Settled — re-open the lot under Outcome to change bids.');
 });
+
+// N15: the inline calculator follows the bid just saved. It keeps what the collector typed in it for as long as the
+// coin's saved terms stay the same, and takes the new terms once a save changes them.
+test('the inline calculator follows a bid saved for the coin it shows', async () => {
+  const { calculatorInputsForLot } = await import('../extension/bid-tools.js');
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  let loaded;
+  const applied = () => page.calculatorValues.splice(0).map((values) => {
+    const inputs = calculatorInputsForLot(values, { loadedLotId: loaded });
+    if (inputs) loaded = values.lotId;
+    return inputs;
+  }).filter(Boolean);
+  assert.equal(applied().length, 1, 'opening the coin fills the calculator once');
+
+  await page.typeDetails('notes', 'Toned');
+  await page.saveDetails();
+  assert.deepEqual(applied(), [], 'a details save leaves what was typed in the calculator alone');
+
+  await page.type('bid-form', 'amount', '1300');
+  await page.type('bid-form', 'currency', 'EUR');
+  await page.type('bid-form', 'premium', '20');
+  await page.submit('bid-form', { value: 'place' });
+  assert.deepEqual(storedLot(background, 'Nero, denarius').activeBid.amount, { currency: 'EUR', minor: 130000 });
+  const [after] = applied().slice(-1);
+  assert.equal(after?.currency, 'EUR');
+  assert.equal(after?.amount, '1300.00');
+  assert.equal(after?.premium, '20.00');
+});

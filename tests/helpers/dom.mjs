@@ -713,6 +713,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
+  const calculatorValues = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
@@ -720,7 +721,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const sandbox = {
     ...money, ...evidence, ...projections, ...sourceLaunchers,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
-    mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
+    // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
+    mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
     ...browserGlobals(document, {
       language,
       confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; },
@@ -752,7 +754,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser,
+    $, document, location, commands, prompts, browser, calculatorValues,
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
     // What the browser's leave-page prompt would do now: true when the page asks to stay.
