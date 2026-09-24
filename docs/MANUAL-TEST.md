@@ -201,3 +201,12 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* the per-currency table reads whole — its columns scroll inside the panel rather than pushing the page
     sideways — and the note above it says the figures are your own records and saved comparables, not an appraisal or a
     valuation. Each entry names its saved comparables or says it has none.
+
+24. **Specimen photos load only when switched on, with no referrer.** In **Settings**, tick **Show specimen photos** and
+    select **Save settings**. Open the popup, open its developer tools on the **Network** panel, and look up
+    `RIC I² Nero 306`.
+    *Expected:* the card appears at once, then a **Specimens** strip shows three obverse and reverse pairs, each captioned
+    with the collection that holds it and linked to that specimen's page. Nomisma.org gets one `query` request, and no
+    image request carries a `Referer` header. Untick the switch, save, and look up the same reference again.
+    *Expected:* no request to `nomisma.org/query` and no photo. In Firefox, repeat with the switch on after withholding
+    nomisma.org access in `about:addons`. *Expected:* the card shows and no photos appear.
