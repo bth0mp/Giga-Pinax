@@ -2,7 +2,7 @@
 // Source:
 //   endpoint: "https://nomisma.org/apis/getRdf"
 //   snapshotSha256: "0619ff8f2bd3d1c6fc58d08a3cc77a5dce443631fad2cb81f42375198675253e"
-//   generatedOn: "2026-09-18"
+//   generatedOn: "2026-09-24"
 //   license: "CC-BY-3.0"
 //   licenseUrl: "https://creativecommons.org/licenses/by/3.0/"
 //   mintAliasSources: ["https://nomisma.org/apis/getRdf", "https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"]
