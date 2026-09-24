@@ -623,3 +623,32 @@ test('a failed Watch hands its reason back to the research half', async () => {
   globalThis.dispatchEvent = dispatch;
   assert.equal(handedBack.length, 1);
 });
+
+// 0.34 (W2a): a capture the page refused is kept in the local diagnostics list as a kind of failure only - no page title, address or text reaches it.
+test('a refused capture is recorded as a capture failure, with nothing of the page in it', async () => {
+  const stored = {};
+  globalThis.browser.storage.local = { get: async (key) => ({ [key]: stored[key] }), set: async (items) => { Object.assign(stored, items); } };
+  try {
+    const page = await loadCompanion({
+      sendMessage: async () => WORKING_SNAPSHOT,
+      tabs: async () => [{ id: 3, url: 'https://auction.example/secret-lot-27', title: 'Secret lot 27' }],
+      script: async () => { throw new Error('Cannot access contents of https://auction.example/secret-lot-27'); },
+    });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    const entries = stored['gigaPinax:diagnostics:v1'];
+    assert.equal(entries?.length, 1);
+    assert.equal(entries[0].area, 'capture');
+    assert.equal(entries[0].code, 'failed');
+    assert.equal(/auction\.example|secret|Lot 27/i.test(JSON.stringify(entries)), false);
+
+    // A capture that works records nothing.
+    page.setTabs(async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }]);
+    answerScript = capturedPage({ reference: { value: 'RIC 306', provenance: 'visible-text' } });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.equal(stored['gigaPinax:diagnostics:v1'].length, 1);
+  } finally {
+    delete globalThis.browser.storage.local;
+  }
+});

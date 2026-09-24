@@ -3,6 +3,7 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
+import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
 import { mountBidCalculator } from './bid-tools.js';
@@ -424,6 +425,8 @@ async function initCompanionPopup() {
       else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
+      // The kind of failure only: the page's address, title and text stay out of the local diagnostics list.
+      void recordDiagnostic({ area: 'capture', code: 'failed' });
       captureDraft = null;
       // The page nothing could be read from is now the page being looked at: the last one's context is no longer shown in the editor, so it must not
       // travel with the next coin saved from this page either.
