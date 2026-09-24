@@ -111,7 +111,7 @@ export function projectExposure(snapshot) {
 // A reference and a saved query are the same only when they read the same once spacing and case
 // are set aside: a query that merely starts like the reference (`RIC 27` for `RIC 27b`) is another
 // coin, and one median must never take in another coin's sales.
-const normalReference = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+export const normalReference = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 
 // Saved rows by each of their observations' normalised query labels, built once per projection:
 // the view is drawn on every snapshot, and scanning every row for every entry did not scale.

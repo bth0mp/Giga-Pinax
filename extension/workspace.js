@@ -1,7 +1,7 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { lotComparables, lotsNeedingOutcome, projectCollection, reminderInstants } from './core/projections.js';
+import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -834,7 +834,7 @@ async function initWorkspace() {
     const add = text('button', 'Add comparable', 'quiet'); add.type = 'button'; add.id = 'bid-add-comparable';
     add.addEventListener('click', () => {
       // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
-      const saved = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => String(item.queryLabel ?? '').trim() === reference);
+      const saved = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryLabel && normalReference(item.queryLabel) === normalReference(reference));
       $('research-query').value = reference;
       activeQuery = saved ? { id: saved.queryId, text: reference } : { id: requestId(), text: reference };
       selectedQueryId = activeQuery.id;

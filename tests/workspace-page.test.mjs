@@ -908,3 +908,15 @@ test('a value the store refuses opens its section and names the field', async ()
   assert.equal(form.elements.photoUrl1.closest('details').open, true);
   assert.equal(page.document.activeElement, form.elements.photoUrl1);
 });
+
+// Review Minor 2: Add comparable finds the saved set by the same reading the strip counts it by.
+test('Add comparable opens the set saved under the reference however it was spelled', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const queryId = '00000000-0000-4000-9000-000000000066';
+  await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'ric  i² 306', source: 'manual', auctionHouse: 'CNG', auctionDate: '2024-03-01',
+    lotNumber: '1', priceBasis: 'hammer', amount: { currency: 'GBP', minor: 50000 } } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('bid-add-comparable');
+  assert.equal(page.$('evidence-query').value, queryId);
+});
