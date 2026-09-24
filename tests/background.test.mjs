@@ -223,7 +223,7 @@ test('enabling desktop alerts reconciles and delivers an already-due reminder', 
 
 // N14: the notification names the auction's own clock and the collector's, and the auction's place wherever its zone is
 // not the collector's. Kathmandu keeps no summer time, so the wall time just gone there always exists exactly once.
-test('a date-only reminder’s notification names the sale day, its place and both clocks', async () => {
+test('a date-only reminder’s notification names the sale day, your clock, and the auction’s clock and place', async () => {
   const zone = 'Asia/Kathmandu';
   const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const now = Date.now();
@@ -247,8 +247,8 @@ test('a date-only reminder’s notification names the sale day, its place and bo
     id: alert.triggerId, eventId: event.value.id, eventRevision: 0, reminderId: alert.reminderId, triggerAt: alert.triggerAt,
     eventName: 'Kathmandu sale day', precision: 'date-only', localDate: event.value.localDate, timeZone: zone,
   }, { eventKind: 'auction-day', timeZone: viewer }));
-  assert.match(shown.message, /^Sale day .* — reminder for .*your time$/);
-  if (viewer !== zone) assert.match(shown.message, /\(Kathmandu\) — reminder for .* Kathmandu, .*your time$/);
+  assert.match(shown.message, /^Sale day .* — .*your time/);
+  if (viewer !== zone) assert.match(shown.message, /your time, .*Kathmandu$/);
 });
 
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {
