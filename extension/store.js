@@ -1,6 +1,7 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, migrateSnapshot, quarantineEntryId,
+  ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, healCollectionEntries,
+  migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
@@ -43,7 +44,7 @@ export const COMMAND_TYPES = new Set([
   'lot.save', 'lot.delete',
   'group.save', 'group.delete', 'group.reorder',
   'bid.plan', 'bid.place', 'bid.cancel',
-  'lot.outcome.set', 'collection.review.resolve',
+  'lot.outcome.set', 'collection.review.resolve', 'collection.update',
   'event.save', 'event.delete',
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
@@ -64,6 +65,13 @@ const OVER_THE_BOUND = new Map([
 ]);
 // What any other command says when its own result, before any reminder it schedules, does not fit.
 const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
+
+// Two amounts, or two texts, that are the same whatever order an amount's keys were written in; absent is null.
+function sameValue(left, right) {
+  if (left === undefined || left === null || right === undefined || right === null) return (left ?? null) === (right ?? null);
+  if (typeof left === 'object' && typeof right === 'object') return left.currency === right.currency && left.minor === right.minor;
+  return left === right;
+}
 
 /**
  * @param {Snapshot} snapshot
@@ -329,13 +337,47 @@ function mutation(snapshot, command, context) {
       }
       const reviewed = value.collectionEntryId
         ? next.collectionEntries.find(({ id }) => id === value.collectionEntryId) : undefined;
+      let entryChanged = false;
       if (reviewed && value.collectionReviewReason !== reviewed.reviewReason) {
         // The entry follows its lot, so a correction back to won withdraws the review as well.
         if (value.collectionReviewReason) reviewed.reviewReason = value.collectionReviewReason;
         else delete reviewed.reviewReason;
+        entryChanged = true;
+      }
+      // A corrected won outcome carries its hammer and invoice to the entry. The hammer is the outcome's alone; an
+      // invoice the collector corrected on the entry itself is theirs, and wins over the outcome's.
+      if (reviewed && followOutcome(reviewed, value)) entryChanged = true;
+      if (reviewed && entryChanged) {
         reviewed.revision += 1;
         reviewed.updatedAt = now;
       }
+      break;
+    }
+    case 'collection.update': {
+      const found = findRecord(next.collectionEntries, command.collectionEntryId, command.expectedRevision, 'collectionEntry');
+      if (!found.ok) return found;
+      const changes = command.entry;
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+        return fail('validation', 'Collection entry changes are required.', 'entry');
+      }
+      const other = Object.keys(changes).find((key) => !(/** @type {ReadonlyArray<string>} */ (ENTRY_EDITABLE_FIELDS)).includes(key));
+      if (other) return fail('validation', 'Only the acquisition date, invoice paid and notes of a collection entry can be changed.', `entry.${other}`);
+      if (own(changes, 'acquisitionDate') && changes.acquisitionDate === null) {
+        return fail('validation', 'A collection entry keeps its acquisition date.', 'entry.acquisitionDate');
+      }
+      const entry = found.value.record;
+      const changed = ENTRY_EDITABLE_FIELDS.filter((field) => own(changes, field) && !sameValue(entry[field], changes[field]));
+      // Sent back as it stands, nothing is a correction and nothing is written.
+      if (!changed.length) return ok({ snapshot, value: snapshot.collectionEntries[found.value.index], mutated: false });
+      for (const field of changed) {
+        if (changes[field] === null) delete entry[field];
+        else entry[field] = clone(changes[field]);
+      }
+      const edited = new Set([...(entry.editedFields ?? []), ...changed]);
+      entry.editedFields = ENTRY_EDITABLE_FIELDS.filter((field) => edited.has(field));
+      entry.revision += 1;
+      entry.updatedAt = now;
+      value = entry;
       break;
     }
     case 'collection.review.resolve': {
@@ -854,6 +896,10 @@ export function createCommandWriter(storageArea, context) {
       if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
       stored = rescued.value;
     }
+
+    // An entry left behind by an outcome corrected before 0.36 follows its won lot from this read on; nothing is
+    // written for it here, and the next write keeps it. A consistent root is left exactly as it is.
+    healCollectionEntries(stored);
 
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };

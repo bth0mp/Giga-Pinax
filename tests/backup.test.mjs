@@ -94,6 +94,38 @@ test('backups load while optional presets and lot notes round-trip when present'
   assert.equal(restored.value.lots[0].notes, current.lots[0].notes);
 });
 
+// N1 needs no new schema version: a won coin's cost is an optional field of its outcome. A 0.35 backup, whose won
+// coins carry none, imports as it is; a backup with costs round-trips them unchanged.
+test('a won coin’s cost round-trips, and a backup written before costs existed still imports', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.lots.push(lot(uuid(1), { outcome: { status: 'won', hammer: eur(130000), verification: 'personal-unverified', cost: {
+    buyerPremiumBps: 2500, premium: eur(32500), premiumVat: eur(6175), platformFee: eur(0), shipping: eur(1500), paymentFee: eur(0), total: eur(170175),
+  } } }));
+  snapshot.lots.push(lot(uuid(2), { outcome: { status: 'won', hammer: eur(50000), verification: 'personal-unverified' } }));
+  const exported = exportBackup(snapshot, NOW);
+  assert.equal(exported.ok, true);
+  const imported = validateBackup(exported.value);
+  assert.equal(imported.ok, true, imported.error?.message);
+  assert.deepEqual(imported.value.lots[0].outcome.cost, snapshot.lots[0].outcome.cost);
+  assert.equal(Object.hasOwn(imported.value.lots[1].outcome, 'cost'), false, 'an older won coin is not given a cost on import');
+  const replaced = previewImport(createEmptySnapshot(NOW), imported.value, 'replace');
+  assert.equal(replaced.ok, true, replaced.error?.message);
+});
+
+// N12: which fields the collector corrected on a collection entry is an optional list, so it round-trips and a backup
+// without it imports as before.
+test('a collection entry’s own corrections round-trip in a backup', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.lots.push(lot(uuid(1), { outcome: { status: 'won' }, collectionEntryId: uuid(2) }));
+  snapshot.collectionEntries.push(wonEntry(uuid(2), uuid(1), { notes: 'Cabinet 3', editedFields: ['notes'] }));
+  const restored = validateBackup(exportBackup(snapshot, NOW).value);
+  assert.equal(restored.ok, true, restored.error?.message);
+  assert.deepEqual(restored.value.collectionEntries[0].editedFields, ['notes']);
+  delete snapshot.collectionEntries[0].editedFields;
+  assert.equal(validateBackup(exportBackup(snapshot, NOW).value).ok, true);
+});
+
 test('backups round-trip optional lot auction metadata', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.lots.push({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector', title: 'Coin', sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,
@@ -1094,4 +1126,26 @@ test('settings set aside whole are named with their house presets and how to kee
   const none = { ...settings, record: 'not an object' };
   assert.equal(quarantineSummaryText([none]), 'Your settings could not be read and were set aside. They held no house presets.');
   assert.deepEqual(quarantineLines([none]), ['settings with no house presets: invalid-ladder (2026-09-12)']);
+});
+
+// Fix round, Important 2: a merge that takes a corrected won lot while the local entry row wins on its write time
+// still brings the entry's hammer and invoice in step with that lot.
+test('a merge that corrects a won lot carries its hammer to the local entry that wins', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const local = createEmptySnapshot(NOW);
+  local.lots.push(lot(uuid(1), { outcome: { status: 'won', hammer: eur(130000), verification: 'personal-unverified' }, collectionEntryId: uuid(2) }));
+  local.collectionEntries.push(wonEntry(uuid(2), uuid(1), { hammer: eur(130000), notes: 'mine' }));
+  const other = structuredClone(local);
+  other.lots[0].outcome = { status: 'won', hammer: eur(131000), actualInvoice: eur(160000), verification: 'personal-unverified', correctedAt: LATER };
+  other.lots[0].updatedAt = LATER;
+  other.lots[0].revision = 1;
+  const incoming = validateBackup(exportBackup(other, LATEST).value);
+  assert.equal(incoming.ok, true, incoming.error?.message);
+  const merged = previewImport(local, incoming.value, 'merge', { now: LATEST });
+  assert.equal(merged.ok, true, merged.error?.message);
+  const [entry] = merged.value.snapshot.collectionEntries;
+  assert.deepEqual(entry.hammer, eur(131000));
+  assert.deepEqual(entry.actualInvoice, eur(160000));
+  assert.equal(entry.notes, 'mine');
+  assert.equal(entry.revision, 1, 'a holder of the old row is asked again');
 });

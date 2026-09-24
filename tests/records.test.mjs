@@ -11,6 +11,7 @@ import {
   quarantineEntryId,
   quarantineInvalidRecords,
   restartUnusableRevisions,
+  followOutcome,
   setOutcome,
   unusableRevisions,
   validateDraftPayload,
@@ -1061,6 +1062,8 @@ test('won and lost settle active bids while preserving planned terms and audit h
     hammer: { currency: 'USD', minor: 9500 },
     actualInvoice: { currency: 'GBP', minor: 8000 },
     verification: 'personal-unverified',
+    // The settled bid's premium rate is known; the lot has no fees saved, so the cost says so.
+    cost: { buyerPremiumBps: 2500, premium: { currency: 'USD', minor: 2375 }, missing: ['fees'] },
   });
   assert.deepEqual(result.value.bidHistory.at(-1), {
     id: result.value.bidHistory.at(-1).id,
@@ -1152,4 +1155,152 @@ test('core/projections.js takes OWN from core/fields.js and declares no copy of 
   const source = readFileSync(new URL('../extension/core/projections.js', import.meta.url), 'utf8');
   assert.match(source, /^import \{[^}]*\bOWN\b[^}]*\} from '\.\/fields\.js';$/m);
   assert.doesNotMatch(source, /^(?:export )?(?:const|let|function) OWN\b/m);
+});
+
+// N1: what a won coin really cost, worked out from what the collector recorded for it and stored
+// with the outcome. Künker's terms: 25 % premium with 19 % VAT on the premium.
+const settledWon = (minor, buyerPremiumBps) => ({
+  id: IDS.history, action: 'settled-won', amount: { currency: 'EUR', minor }, recordedAt: NOW,
+  ...(buyerPremiumBps === undefined ? {} : { buyerPremiumBps }),
+});
+const KUENKER_FEES = Object.freeze({
+  currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0,
+  premiumVatBps: 1900,
+});
+
+test('a won coin carries its real cost: hammer, premium, VAT on the premium and every recorded fee, in one currency', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+    costEstimate: { ...KUENKER_FEES, platformFeeBps: 300 },
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.equal(won.ok, true, won.error?.message);
+  // 1,300.00 + 325.00 premium + 61.75 VAT on it + 39.00 platform fee + 15.00 shipping = 1,740.75.
+  assert.deepEqual(won.value.outcome.cost, {
+    buyerPremiumBps: 2500,
+    premium: { currency: 'EUR', minor: 32500 },
+    premiumVat: { currency: 'EUR', minor: 6175 },
+    platformFee: { currency: 'EUR', minor: 3900 },
+    shipping: { currency: 'EUR', minor: 1500 },
+    paymentFee: { currency: 'EUR', minor: 0 },
+    total: { currency: 'EUR', minor: 174075 },
+  });
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+});
+
+test('a missing figure makes the cost incomplete and says which, never a guess', () => {
+  const noFees = setOutcome(makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(noFees.value.outcome.cost, { buyerPremiumBps: 2500, premium: { currency: 'EUR', minor: 32500 }, missing: ['fees'] });
+
+  const noRate = setOutcome(makeLot(IDS.lotEur, { costEstimate: KUENKER_FEES }),
+    { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(noRate.value.outcome.cost, { missing: ['premium-rate'] });
+
+  const otherCurrency = setOutcome(makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000 },
+    costEstimate: { ...KUENKER_FEES, currency: 'CHF' },
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW);
+  assert.deepEqual(otherCurrency.value.outcome.cost,
+    { buyerPremiumBps: 2000, premium: { currency: 'EUR', minor: 26000 }, missing: ['fee-currency'] },
+    'fees recorded in francs are never converted into a euro total');
+
+  const noHammer = setOutcome(makeLot(IDS.lotEur), { status: 'won' }, NOW);
+  assert.deepEqual(noHammer.value.outcome.cost, { missing: ['hammer', 'premium-rate', 'fees'] });
+  for (const result of [noFees, noRate, otherCurrency, noHammer]) {
+    assert.equal(validateSnapshot(snapshotWith(result.value)).ok, true);
+  }
+});
+
+test('a hammer corrected on a won coin is costed again from the bid that won it, and only a won coin has a cost', () => {
+  const lot = makeLot(IDS.lotEur, {
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, verification: 'personal-unverified' },
+    bidHistory: [settledWon(150000, 2000)],
+    costEstimate: { ...KUENKER_FEES, premiumVatBps: undefined },
+  });
+  delete lot.costEstimate.premiumVatBps;
+  const corrected = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 120000 } }, NOW);
+  assert.equal(corrected.value.outcome.cost.total.minor, 120000 + 24000 + 1500);
+  assert.equal(corrected.value.outcome.correctedAt, NOW);
+
+  const lost = setOutcome(corrected.value, { status: 'lost', hammer: { currency: 'EUR', minor: 200000 } }, NOW);
+  assert.equal(Object.hasOwn(lost.value.outcome, 'cost'), false, 'another bidder’s hammer is no cost of the collector’s');
+  const reopened = setOutcome(corrected.value, { status: 'open', bindingActive: false }, NOW);
+  assert.equal(Object.hasOwn(reopened.value.outcome, 'cost'), false);
+  const supplied = setOutcome(makeLot(IDS.lotEur), { status: 'won', hammer: { currency: 'EUR', minor: 1 }, cost: { total: { currency: 'EUR', minor: 1 } } }, NOW);
+  assert.deepEqual(supplied.value.outcome.cost, { missing: ['premium-rate', 'fees'] }, 'the store works the cost out; a caller cannot supply one');
+});
+
+test('a stored cost is held to its outcome: won only, the hammer’s currency, and a total that is its parts', () => {
+  const won = setOutcome(makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500 }, costEstimate: KUENKER_FEES,
+  }), { status: 'won', hammer: { currency: 'EUR', minor: 130000 } }, NOW).value;
+  const broken = (change) => { const lot = structuredClone(won); change(lot.outcome); return validateSnapshot(snapshotWith(lot)); };
+  assert.equal(broken((outcome) => { outcome.cost.total.minor += 1; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost.premium.currency = 'USD'; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost.missing = ['fees']; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { delete outcome.cost.total; }).error.code, 'invalid-cost');
+  assert.equal(broken((outcome) => { outcome.cost = { missing: ['guessed'] }; }).error.code, 'invalid-enum');
+  assert.equal(broken((outcome) => { outcome.status = 'lost'; }).error.code, 'invalid-cost');
+  // A coin won before costs were worked out carries none, and still validates.
+  const older = structuredClone(won); delete older.outcome.cost;
+  assert.equal(validateSnapshot(snapshotWith(older)).ok, true);
+});
+
+// N12: an entry says which of its fields the collector corrected on it, from a closed list, each once.
+test('a collection entry’s corrected fields are named from a closed list, each once', () => {
+  const lot = makeLot(IDS.lotEur, { outcome: { status: 'won' }, collectionEntryId: IDS.collection });
+  const entry = (editedFields) => ({
+    id: IDS.collection, revision: 0, dataClass: 'collector', lotId: IDS.lotEur, title: 'Coin', acquisitionDate: '2026-09-12',
+    sourceLinks: [], createdAt: NOW, updatedAt: NOW, ...(editedFields ? { editedFields } : {}),
+  });
+  const root = (editedFields) => { const snapshot = snapshotWith(lot); snapshot.collectionEntries.push(entry(editedFields)); return validateSnapshot(snapshot); };
+  assert.equal(root(undefined).ok, true, 'an entry written before corrections existed');
+  assert.equal(root(['acquisitionDate', 'actualInvoice', 'notes']).ok, true);
+  assert.equal(root(['hammer']).error.code, 'invalid-enum');
+  assert.equal(root(['notes', 'notes']).error.code, 'duplicate-field');
+  assert.equal(root('notes').error.code, 'collection-limit');
+});
+
+// Fix round, Important 2: one rule for an entry following its won lot, used by the store, a merge and the load.
+test('followOutcome carries a won lot\u2019s hammer and invoice to its entry, except an invoice the collector corrected', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const lot = makeLot(IDS.lotEur, { outcome: { status: 'won', hammer: eur(131000), actualInvoice: eur(160000), verification: 'personal-unverified' } });
+  const entry = { hammer: eur(130000), actualInvoice: eur(159000) };
+  assert.equal(followOutcome(entry, lot), true);
+  assert.deepEqual(entry, { hammer: eur(131000), actualInvoice: eur(160000) });
+  assert.equal(followOutcome(entry, lot), false, 'an entry already in step is left alone');
+  const corrected = { hammer: eur(130000), actualInvoice: eur(1), editedFields: ['actualInvoice'] };
+  assert.equal(followOutcome(corrected, lot), true);
+  assert.deepEqual(corrected.actualInvoice, eur(1));
+  assert.deepEqual(corrected.hammer, eur(131000));
+  const cleared = { hammer: eur(131000), editedFields: ['actualInvoice'] };
+  assert.equal(followOutcome(cleared, lot), false, 'an invoice the collector cleared stays cleared');
+  const lost = { hammer: eur(130000) };
+  assert.equal(followOutcome(lost, { ...lot, outcome: { status: 'lost', hammer: eur(9), verification: 'personal-unverified' } }), false);
+  assert.deepEqual(lost.hammer, eur(130000));
+  const noHammer = { hammer: eur(130000) };
+  assert.equal(followOutcome(noHammer, { ...lot, outcome: { status: 'won' } }), true);
+  assert.equal(Object.hasOwn(noHammer, 'hammer'), false);
+});
+
+// Fix round, Minor 3: after a re-open, a plan revised later than the last win is the rate the coin is won on again.
+test('a coin re-opened, planned again and won again is costed at the newest rate', () => {
+  const lot = makeLot(IDS.lotEur, {
+    outcome: { status: 'open' },
+    plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000 },
+    bidHistory: [
+      { id: '55555555-5555-4555-8555-000000000001', action: 'settled-won', amount: { currency: 'EUR', minor: 90000 }, buyerPremiumBps: 2500, recordedAt: NOW },
+      { id: '55555555-5555-4555-8555-000000000002', action: 'reopened-inactive', amount: { currency: 'EUR', minor: 90000 }, buyerPremiumBps: 2500, recordedAt: NOW },
+      { id: '55555555-5555-4555-8555-000000000003', action: 'planned-revised', amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000, recordedAt: NOW },
+    ],
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  // Without a later plan, the settled bid's rate stands even when an older plan is still saved.
+  const settledLast = { ...lot, bidHistory: [lot.bidHistory[2], lot.bidHistory[0], lot.bidHistory[1]] };
+  assert.equal(setOutcome(settledLast, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW).value.outcome.cost.buyerPremiumBps, 2500);
 });

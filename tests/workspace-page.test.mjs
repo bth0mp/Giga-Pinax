@@ -6,6 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
+import { STORAGE_KEY } from '../extension/store.js';
+import { exportBackup } from '../extension/core/backup.js';
+import { csvFiles } from '../extension/core/csv.js';
 
 async function backgroundWithCoins(...titles) {
   const background = await createWorkspaceBackground();
@@ -252,10 +255,11 @@ test('the History route totals the collection per currency and shows each entry�
   const collection = page.$('collection-list');
   assert.match(collection.querySelector('.collection-note').textContent, /your own records.*not an appraisal or a valuation.*no amount is converted/i);
   const table = collection.querySelector('#collection-totals');
-  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Invoice paid', 'Acquired']);
+  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']);
+  // None of these coins had a bid with a premium rate or fees saved, so no total cost is guessed at.
   assert.deepEqual(table.querySelector('tbody').querySelectorAll('tr').map(cells), [
-    ['USD', '1', '$500.00', 'None recorded', '2023'],
-    ['EUR', '2', '€1,200.00', '€250.00 (1 of 2)', '2019–2021'],
+    ['USD', '1', '$500.00', 'Incomplete', 'None recorded', '2023'],
+    ['EUR', '2', '€1,200.00', 'Incomplete', '€250.00 (1 of 2)', '2019–2021'],
   ]);
   const lines = collection.querySelectorAll('.collection-comparables').map((line) => line.textContent);
   assert.deepEqual(lines, [
@@ -263,6 +267,97 @@ test('the History route totals the collection per currency and shows each entry�
     'No saved comparables for RIC 60 in USD',
     'No saved comparables: the coin has no reference to match',
   ]);
+});
+
+// N1: the History card of a won coin carries its real cost - the premium at the placed bid's rate, VAT on it and the
+// fees saved with the bid - in one money line, and the collection totals it per currency.
+test('a won coin’s History card and the collection totals show what it really cost', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Künker lot 1234', sourceLinks: [] } });
+  const placed = await background.send({
+    type: 'bid.place', lotId: saved.value.id, expectedRevision: 0,
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500 },
+    costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, premiumVatBps: 1900 },
+  });
+  assert.equal(placed.ok, true, placed.message);
+  const won = await background.send({
+    type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 1,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 130000 } },
+    addToCollection: { title: 'Künker lot 1234', acquisitionDate: '2026-09-20', sourceLinks: [] },
+  });
+  assert.equal(won.ok, true, won.message);
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+
+  const card = page.$('history-list').children.find((item) => item.textContent.includes('Künker lot 1234'));
+  const line = card.querySelector('.money-line');
+  assert.deepEqual(line.children.map((cell) => cell.textContent), ['EUR', 'Hammer 1,300.00', 'Premium 325.00', 'Fees 76.75', 'Total 1,701.75']);
+  assert.ok(card.textContent.includes('Premium 25% · VAT on premium 61.75 · shipping 15.00'));
+  const nero = page.$('history-list').children.find((item) => item.textContent.includes('Nero, denarius'));
+  assert.ok(nero.textContent.includes('Total incomplete: no buyer’s premium rate on its bid; no fees were saved with this coin.'));
+  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  assert.deepEqual(eur, ['EUR', '2', '€1,800.00', '€1,701.75 (1 of 2)', 'None recorded', '2023–2026']);
+  const entry = page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes('Künker lot 1234'));
+  assert.equal(entry.querySelector('.money-line').children.at(-1).textContent, 'Total 1,701.75', 'the collection entry carries the same line');
+});
+
+// N12: a collection entry is corrected in place on the History route - acquisition date, invoice paid, notes - and
+// only what the collector changed is sent, so a later outcome correction still reaches everything else.
+const entryCard = (page, title) => page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes(title));
+test('a collection entry is corrected in place, and says the invoice is the collector’s own figure', async () => {
+  const background = await createWorkspaceBackground();
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const edit = entryCard(page, 'Nero, denarius').querySelectorAll('button').find((button) => button.textContent === 'Edit entry');
+  await edit.click();
+  const form = page.$('entry-edit-form');
+  assert.equal(form.elements.acquisitionDate.value, '2023-06-15');
+  assert.equal(form.elements.invoice.value, '625.00');
+  assert.equal(form.elements.invoiceCurrency.value, 'EUR');
+  await page.type('entry-edit-form', 'acquisitionDate', '2023-06-20');
+  await page.type('entry-edit-form', 'invoice', '640');
+  // Another view writes while the form is open: the page is drawn again, and what was typed stays.
+  const other = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Unrelated coin', sourceLinks: [] } });
+  assert.equal(other.ok, true);
+  await settle();
+  assert.equal(page.$('entry-edit-form').elements.invoice.value, '640', 'typing survives a redraw');
+  await page.type('entry-edit-form', 'notes', 'Tray 4, envelope from the sale');
+  await page.submit('entry-edit-form');
+
+  const [stored] = background.root().collectionEntries;
+  assert.equal(stored.acquisitionDate, '2023-06-20');
+  assert.deepEqual(stored.actualInvoice, { currency: 'EUR', minor: 64000 });
+  assert.equal(stored.notes, 'Tray 4, envelope from the sale');
+  assert.deepEqual(stored.editedFields, ['acquisitionDate', 'actualInvoice', 'notes']);
+  assert.equal(page.$('entry-edit-form'), null, 'the form closes once saved');
+  const card = entryCard(page, 'Nero, denarius');
+  assert.ok(card.textContent.includes('Invoice paid €640.00 (your correction; the outcome records €625.00)'));
+  assert.ok(card.textContent.includes('Tray 4, envelope from the sale'));
+  assert.ok(card.textContent.includes('Nero, denarius · 2023-06-20'));
+});
+
+test('an entry form sends only what changed, refuses a bad amount beside the field, and Cancel keeps the entry', async () => {
+  const background = await createWorkspaceBackground();
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const open = () => entryCard(page, 'Nero, denarius').querySelectorAll('button').find((button) => button.textContent === 'Edit entry').click();
+  await open(); await settle();
+  await page.type('entry-edit-form', 'invoice', '6,40,0');
+  await page.submit('entry-edit-form');
+  const error = page.$('entry-edit-form').querySelector('.error');
+  assert.equal(error.hidden, false);
+  assert.match(error.textContent, /digits with at most two decimal places/);
+  const cancel = page.$('entry-edit-form').querySelectorAll('button').find((button) => button.textContent === 'Cancel');
+  await cancel.click(); await settle();
+  assert.equal(page.$('entry-edit-form'), null);
+  assert.equal(background.root().collectionEntries[0].revision, 0, 'nothing was written');
+
+  await open(); await settle();
+  await page.type('entry-edit-form', 'notes', 'Only the notes');
+  await page.submit('entry-edit-form');
+  const sent = page.commands.filter(({ type }) => type === 'collection.update');
+  assert.deepEqual(sent.map(({ entry }) => entry), [{ notes: 'Only the notes' }]);
+  assert.deepEqual(background.root().collectionEntries[0].editedFields, ['notes']);
 });
 
 test('the History route says so when there is no collection yet', async () => {
@@ -969,4 +1064,138 @@ test('a focused control under the sticky bar is scrolled clear of it', async () 
   tall.getBoundingClientRect = () => ({ top: 60, bottom: 900 });
   await form.emit('focusin', { target: tall });
   assert.deepEqual(page.scrolls.at(-1), [0, 44], 'a box taller than the room keeps its top in the window');
+});
+
+// --- Fix round -------------------------------------------------------------------------------------
+
+const editButton = (page, title) => entryCard(page, title).querySelectorAll('button').find((button) => button.textContent === 'Edit entry');
+async function wonNero(background, extra = {}) {
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15', ...extra });
+}
+async function openSettledCoin(page, title) {
+  page.$('lot-queue').value = 'all-coins';
+  await page.$('lot-queue').emit('change');
+  await page.openCoin(title);
+}
+
+// Important 1: a save refused because another tab changed the entry keeps what was typed, and takes every field the
+// collector did not touch from the entry as it now stands - never sending the old figure back as their correction.
+test('a second save after another tab corrected the outcome neither reverts the invoice nor claims it as the collector\u2019s', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const first = await mountWorkspace({ background, hash: '#history' });
+  const second = await mountWorkspace({ background, hash: '#watchlist' });
+  await editButton(first, 'Nero, denarius').click(); await settle();
+  await first.type('entry-edit-form', 'notes', 'Tray 4');
+
+  await openSettledCoin(second, 'Nero, denarius');
+  await second.type('outcome-form', 'invoice', '630');
+  await second.submit('outcome-form');
+  assert.deepEqual(background.root().collectionEntries[0].actualInvoice, { currency: 'EUR', minor: 63000 }, 'the entry followed the other tab');
+  await settle();
+
+  await first.submit('entry-edit-form');
+  assert.match(first.$('entry-edit-form').querySelector('.error').textContent, /changed while you were editing/);
+  assert.equal(first.$('entry-edit-form').elements.invoice.value, '630.00', 'the untouched invoice now reads as stored');
+  assert.equal(first.$('entry-edit-form').elements.notes.value, 'Tray 4', 'what was typed is kept');
+  await first.submit('entry-edit-form');
+  const [stored] = background.root().collectionEntries;
+  assert.deepEqual(stored.actualInvoice, { currency: 'EUR', minor: 63000 });
+  assert.equal(stored.notes, 'Tray 4');
+  assert.deepEqual(stored.editedFields, ['notes']);
+});
+
+// Important 2: one hammer on the page and in the file, whether the entry drifted under 0.35 or through a merge.
+function hammersShown(page, title) {
+  const line = entryCard(page, title).querySelector('.money-line');
+  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  return { card: line.children[1].textContent, table: eur[2] };
+}
+test('an entry left behind by a correction made under 0.35 shows its lot\u2019s one hammer on the card, in the totals and in the CSV', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const root = background.root();
+  root.lots[0].outcome = { ...root.lots[0].outcome, hammer: { currency: 'EUR', minor: 51000 }, correctedAt: '2026-09-12T12:00:00.000Z' };
+  delete root.lots[0].outcome.cost;
+  // As 0.35 left it in storage before this version was installed: written, and heard of, before the page opens.
+  await background.storage.set({ [STORAGE_KEY]: root });
+  await settle();
+  const page = await mountWorkspace({ background, hash: '#history' });
+  assert.deepEqual(hammersShown(page, 'Nero, denarius'), { card: 'Hammer 510.00', table: '€510.00' });
+  const read = await background.send({ type: 'snapshot.get' });
+  assert.match(csvFiles(read.value).collection, /"510\.00","EUR"/);
+  assert.doesNotMatch(csvFiles(read.value).collection, /"500\.00"/);
+});
+
+test('a merge that corrects a won lot while the local entry row wins shows one hammer everywhere', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const other = background.root();
+  other.lots[0].outcome = { ...other.lots[0].outcome, hammer: { currency: 'EUR', minor: 51000 } };
+  delete other.lots[0].outcome.cost;
+  other.lots[0].updatedAt = '2026-09-13T12:00:00.000Z';
+  other.lots[0].revision += 1;
+  const imported = await background.send({
+    type: 'backup.import', mode: 'merge', expectedRevision: background.root().revision,
+    document: exportBackup(other, '2026-09-13T12:00:00.000Z').value,
+  });
+  assert.equal(imported.ok, true, imported.message);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  assert.deepEqual(hammersShown(page, 'Nero, denarius'), { card: 'Hammer 510.00', table: '€510.00' });
+  assert.match(csvFiles(background.root()).collection, /"510\.00","EUR"/);
+});
+
+// Minor 5: an invoice the collector cleared on the entry still says what the outcome records.
+test('an invoice cleared on the entry says what the outcome records', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'invoice', '');
+  await page.submit('entry-edit-form');
+  assert.equal(Object.hasOwn(background.root().collectionEntries[0], 'actualInvoice'), false);
+  assert.ok(entryCard(page, 'Nero, denarius').textContent.includes('Invoice paid: none (your correction; the outcome records \u20ac625.00)'));
+});
+
+// Minor 6: typing only the invoice sends only the invoice.
+test('an entry form that changes only the invoice sends no notes and no date', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'invoice', '640');
+  await page.submit('entry-edit-form');
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'collection.update').map(({ entry }) => entry),
+    [{ actualInvoice: { currency: 'EUR', minor: 64000 } }]);
+  assert.deepEqual(background.root().collectionEntries[0].editedFields, ['actualInvoice']);
+});
+
+// Minor 7: the keyboard goes back to the entry's Edit entry after Cancel or Save, and typed text is not dropped by
+// opening another entry's form without asking.
+test('focus returns to Edit entry, and opening another entry asks before dropping typed text', async () => {
+  const background = await createWorkspaceBackground();
+  await wonNero(background);
+  await wonCoin(background, { title: 'Trajan, sestertius', hammer: { currency: 'EUR', minor: 20000 }, acquisitionDate: '2024-01-10' });
+  const page = await mountWorkspace({ background, hash: '#history', confirmAnswers: [false, true] });
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  const cancel = page.$('entry-edit-form').querySelectorAll('button').find((button) => button.textContent === 'Cancel');
+  await cancel.click(); await settle();
+  assert.ok(page.document.activeElement === editButton(page, 'Nero, denarius'), 'Cancel gives the keyboard back to Edit entry');
+
+  await editButton(page, 'Nero, denarius').click(); await settle();
+  await page.type('entry-edit-form', 'notes', 'Half typed');
+  await editButton(page, 'Trajan, sestertius').click(); await settle();
+  assert.deepEqual(page.prompts, ['Discard your changes to \u201cNero, denarius\u201d?']);
+  assert.equal(page.$('entry-edit-form').elements.notes.value, 'Half typed', 'refused: the typing stays');
+  assert.ok(entryCard(page, 'Nero, denarius').querySelector('#entry-edit-form'));
+  await editButton(page, 'Trajan, sestertius').click(); await settle();
+  assert.ok(entryCard(page, 'Trajan, sestertius').querySelector('#entry-edit-form'), 'accepted: the other entry opens');
+
+  await page.type('entry-edit-form', 'notes', 'Cabinet 2');
+  await page.submit('entry-edit-form');
+  assert.ok(page.document.activeElement === editButton(page, 'Trajan, sestertius'), 'Save gives the keyboard back to Edit entry');
+  // And it stays there when another view's write draws the route again.
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Unrelated coin', sourceLinks: [] } });
+  await settle();
+  assert.ok(page.document.activeElement === editButton(page, 'Trajan, sestertius'), 'a redraw keeps the keyboard on Edit entry');
 });

@@ -138,14 +138,31 @@
 /** @typedef {'open' | 'won' | 'lost' | 'passed'} OutcomeStatus */
 
 /**
+ * What a won coin really cost, worked out by the store when the outcome was recorded (projections.js
+ * deriveWonCost) and kept with it, so a later change to a house preset or a fee never rewrites it. Every
+ * amount is in the hammer's currency. A complete cost has every part and its total; an incomplete one
+ * keeps what could be worked out, names each figure that was never recorded, and has no total.
+ * @typedef {object} WonCost
+ * @property {number} [buyerPremiumBps] the rate on the bid the coin was won on
+ * @property {Money} [premium]
+ * @property {Money} [premiumVat]
+ * @property {Money} [platformFee]
+ * @property {Money} [shipping]
+ * @property {Money} [paymentFee]
+ * @property {Money} [total] hammer + premium + VAT on it + platform fee + shipping + payment fee
+ * @property {Array<'hammer' | 'premium-rate' | 'fees' | 'fee-currency'>} [missing]
+ */
+
+/**
  * How a lot ended, as the collector recorded it. Prices here are the collector's own and are labelled
- * unverified.
+ * unverified. Only a won outcome carries a cost; one won before 0.36 carries none.
  * @typedef {object} Outcome
  * @property {OutcomeStatus} status
  * @property {Money} [hammer]
  * @property {Money} [actualInvoice]
  * @property {string} [correctedAt]
  * @property {'personal-unverified'} [verification]
+ * @property {WonCost} [cost]
  */
 
 /**
@@ -212,7 +229,9 @@
 /** @typedef {RecordBase & { name: string }} AlternativeGroup */
 
 /**
- * A coin the collector won and keeps, linked both ways to the lot it came from.
+ * A coin the collector won and keeps, linked both ways to the lot it came from. Its hammer follows the lot's won
+ * outcome, and so does its invoice unless the collector corrected that on the entry: `editedFields` names what the
+ * collector corrected here (`collection.update`), and those keep the collector's figure over an outcome correction.
  * @typedef {RecordBase & {
  *   lotId: string,
  *   title: string,
@@ -222,6 +241,7 @@
  *   hammer?: Money,
  *   actualInvoice?: Money,
  *   reviewReason?: 'source-lot-no-longer-won',
+ *   editedFields?: Array<'acquisitionDate' | 'actualInvoice' | 'notes'>,
  * }} CollectionEntry
  */
 

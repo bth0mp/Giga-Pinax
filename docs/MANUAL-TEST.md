@@ -226,3 +226,27 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* the **Newell Demetrius Poliorcetes, no. 45** card, marked **Local AGCO catalogue**, reading
     Demetrius I Poliorcetes · Hemidrachm · Tarsus · Silver · 298–295 BC. Settings → **Local catalogue data** lists PCO
     and AGCO rows. Turn the network back on.
+
+28. **What a won coin really cost.** In the workspace, add a coin, and on its **Bid** tab open the calculator: premium
+    `25`, **VAT on premium %** `19`, shipping `15`. Record a placed bid of `1500` EUR with **Use in bid** and save it.
+    On **Outcome**, record **Won** with a hammer of `1300` EUR, tick **Add a won coin to collection history** and save.
+    Open **History**.
+    *Expected:* the coin's card reads `EUR  Hammer 1,300.00 · Premium 325.00 · Fees 76.75 · Total 1,701.75` on one
+    line, figures right-aligned, with "Premium 25% · VAT on premium 61.75 · shipping 15.00" under it; the collection
+    entry shows the same line, and the table's **Total cost** for EUR is €1,701.75. In **Settings**, change the house's
+    premium; back on History nothing has moved. Win a second coin with no bid recorded.
+    *Expected:* its total reads **Incomplete**, the line under it says no premium rate is on its bid and no fees were
+    saved, and the table shows `€1,701.75 (1 of 2)`. **Export CSV** of the lots and check `total_cost` is `1701.75` for
+    the first and blank, with `total_cost_missing` `premium-rate fees`, for the second. At phone width the money line
+    folds to two columns and never pushes the page sideways.
+
+29. **A collection entry you correct, and one that follows the outcome.** With two won coins in collection history,
+    select **Edit entry** on the first, change its acquisition date, its invoice paid to `1710` and its notes, and
+    select **Save entry**.
+    *Expected:* the form closes and the entry reads the new date and notes, and "Invoice paid €1,710.00 (your
+    correction; the outcome records …)". Open that coin's **Outcome**, change its hammer to `1310` and its invoice to
+    `1720`, and save. *Expected:* on History the entry's money line shows the new hammer and total cost, and its
+    invoice paid is still €1,710.00. Correct the second coin's hammer and invoice under **Outcome** without editing its
+    entry. *Expected:* its entry and the collection totals show the new figures. Open **Edit entry**, type in a field,
+    and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
+    typed.

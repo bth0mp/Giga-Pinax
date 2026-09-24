@@ -154,9 +154,10 @@ test('collection, bids and outcomes tables each write one row per record', () =>
 test('money is a plain decimal with its currency beside it, never formatted and never summed', () => {
   const files = csvFiles(fullSnapshot());
   for (const text of Object.values(files)) {
-    // No currency symbol, no grouping separator, no total of any kind.
+    // No currency symbol, no grouping separator, and no total across records: the one total is each won coin's own
+    // cost, in its hammer's currency, in a column of its own.
     assert.doesNotMatch(text, /[$€£]|CHF\s?\d|\d,\d{3}/);
-    assert.doesNotMatch(text, /total/i);
+    assert.doesNotMatch(text.replace(/"total_cost(?:_currency|_missing)?"/g, ''), /total/i);
   }
   assert.equal(decimalAmount({ currency: 'USD', minor: 5 }), '0.05');
   assert.equal(decimalAmount({ currency: 'USD', minor: 0 }), '0.00');
@@ -231,4 +232,34 @@ test('an empty store still writes a header row for every table', () => {
     assert.ok(header.length > 3, key);
     assert.equal(rows.length, 0, key);
   }
+});
+
+// N1: a won coin's real cost - hammer, premium, fees and their total in the hammer's currency - with the figures a
+// cost could not be worked out without named instead of a guessed total.
+test('the lots and collection tables carry each won coin’s worked-out cost, or what it is missing', () => {
+  const snapshot = fullSnapshot();
+  const chf = (minor) => ({ currency: 'CHF', minor });
+  const athens = snapshot.lots[1];
+  athens.outcome.cost = {
+    buyerPremiumBps: 2000, premium: chf(24000), premiumVat: chf(1944), platformFee: chf(0), shipping: chf(1500), paymentFee: chf(161),
+    total: chf(147605),
+  };
+  snapshot.lots.push(lot(uuid(4), {
+    title: 'Trajan, aureus',
+    outcome: { status: 'won', hammer: chf(500000), verification: 'personal-unverified', cost: { buyerPremiumBps: 2000, premium: chf(100000), missing: ['fees'] } },
+  }));
+  const lots = table(csvFiles(snapshot).lots);
+  assert.deepEqual(['premium', 'fees', 'total_cost', 'total_cost_currency', 'total_cost_missing'].map((key) => lots[1][key]),
+    ['240.00', '36.05', '1476.05', 'CHF', '']);
+  assert.deepEqual(['premium', 'fees', 'total_cost', 'total_cost_currency', 'total_cost_missing'].map((key) => lots[3][key]),
+    ['1000.00', '', '', '', 'fees']);
+  assert.deepEqual(['premium', 'total_cost', 'total_cost_missing'].map((key) => lots[0][key]), ['', '', ''], 'an open lot has no cost');
+  const [entry] = table(csvFiles(snapshot).collection);
+  assert.deepEqual([entry.total_cost, entry.total_cost_currency, entry.total_cost_missing], ['1476.05', 'CHF', '']);
+});
+
+test('a coin won before costs were stored is costed from its own records, and says what it lacks', () => {
+  const [, athens] = table(csvFiles(fullSnapshot()).lots);
+  assert.equal(athens.total_cost, '');
+  assert.equal(athens.total_cost_missing, 'premium-rate fees');
 });
