@@ -180,6 +180,31 @@ test('prices arriving after the card leave the card where it is', async () => {
   }
 });
 
+// Loop 1 (K-01): Ctrl+K brings the keyboard back to the Reference box from another tab, and the header's first stop is
+// the skip link that does the same.
+test('Ctrl+K and the skip link take the keyboard to the Reference box', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await page.locator('#companion-tab-calculator').click();
+    await page.keyboard.press('Control+K');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'quick-reference');
+    assert.equal(await page.locator('#companion-panel-research').isVisible(), true);
+    await page.locator('#companion-tab-watchlist').click();
+    // Nothing comes before the skip link: one stop back from the header's first button lands on it.
+    await page.locator('#open-panel').focus();
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'skip-to-research');
+    assert.equal(await page.locator('#skip-to-research').isVisible(), true);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'quick-reference');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('step 17: in Arabic, a house premium reads back as 22.50 and saves again untouched', async () => {
   const browser = await launch({ locale: 'ar-EG' });
   try {

@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- **Ctrl+K** (**⌘K** on a Mac), or **/** when you are not typing in a field, takes the keyboard back to the popup's Reference box from any tab, with its text selected. A **Skip to research** link, shown when the keyboard reaches it, is the popup's first stop and does the same.
+
 ### Changed
 
 - The Reference box and **Look up** stay at the top of the research panel while the answer scrolls under them, so a second lookup no longer starts with scrolling back up, and “Reference changed” shows right under the box.

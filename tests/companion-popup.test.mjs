@@ -20,7 +20,9 @@ globalThis.browser = {
 };
 const lookupListeners = [];
 const watchListeners = [];
+const keyListeners = [];
 globalThis.addEventListener = (type, listener) => {
+  if (type === 'keydown') keyListeners.push(listener);
   if (type === 'giga-pinax-card') cardListeners.push(listener);
   if (type === 'giga-pinax-lookup-received') lookupListeners.push(listener);
   if (type === 'giga-pinax-watch') watchListeners.push(listener);
@@ -122,6 +124,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
+  keyListeners.length = 0;
   lookupListeners.length = 0;
   watchListeners.length = 0;
   started = element;
@@ -135,6 +138,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
     card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
     lookupReceived: () => lookupListeners[0]?.({ type: 'giga-pinax-lookup-received' }),
     watch: (detail) => watchListeners[0]?.({ type: 'giga-pinax-watch', detail }),
+    key: (event) => { const sent = { preventDefault() { sent.prevented = true; }, ...event }; keyListeners[0]?.(sent); return sent; },
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
@@ -880,4 +884,37 @@ test('the calculator mutes its prompt and folds its explanation', async () => {
   assert.match(css, /\.bid-calculator:has\(\.bid-calculator-actions button:disabled\) \.bid-calculator-output\{[^}]*color:var\(--muted\);font-size:12px/);
   assert.match(css, /\.bid-calculator-about \.bid-calculator-note\{[^}]*font-size:11px/);
   assert.match(css, /\.bid-calculator-fees summary[^{]*\{[^}]*color:var\(--accent\)/);
+});
+
+// Loop 1 (K-01): after a lookup the header was thirty stops from the Reference box, and nothing brought the box back from the Calculator or Watchlist.
+// A skip link leads the header, and Ctrl+K (⌘K on a Mac), or "/" outside a text field, takes the keyboard back to the box on the Research tab.
+test('Ctrl+K, "/" and the skip link bring the Reference box back from any tab', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const header = markup.querySelector('.popup-header');
+  const first = header.querySelectorAll('a, button, summary, input')[0];
+  assert.equal(first.getAttribute('id'), 'skip-to-research');
+  assert.equal(first.textContent, 'Skip to research');
+  assert.equal(markup.getElementById('quick-reference').getAttribute('aria-keyshortcuts'), 'Control+K Meta+K');
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+  const box = page.element('quick-reference');
+  let selected = 0;
+  box.select = () => { selected += 1; };
+  await page.click('companion-tab-calculator');
+  assert.equal(page.element('companion-panel-research').hidden, true);
+  const chord = page.key({ key: 'k', ctrlKey: true, target: page.element('companion-bid-calculator') });
+  assert.equal(chord.prevented, true);
+  assert.equal(page.element('companion-panel-research').hidden, false);
+  assert.equal(page.element('companion-tab-research')['aria-selected'], 'true');
+  assert.equal(box.focused, true);
+  assert.equal(selected, 1);
+  // "/" typed into a field is the character, not the shortcut.
+  const typed = page.key({ key: '/', target: { tagName: 'INPUT' } });
+  assert.equal(typed.prevented, undefined);
+  const slash = page.key({ key: '/', target: { tagName: 'BODY' } });
+  assert.equal(slash.prevented, true);
+  box.focused = false;
+  await page.click('companion-tab-watchlist');
+  await page.element('skip-to-research').emit('click');
+  assert.equal(page.element('companion-panel-research').hidden, false);
+  assert.equal(box.focused, true);
 });

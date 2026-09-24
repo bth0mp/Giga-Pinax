@@ -17,6 +17,7 @@
 <body>
   <main class="popup">
     <header class="popup-header">
+      <a id="skip-to-research" class="skip-link" href="#quick-reference">Skip to research</a>
       <img class="brand-icon" src="icons/icon-48.png" width="32" height="32" alt="">
       <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
       <div class="header-actions">
@@ -38,7 +39,7 @@
       <form id="reference-form" class="reference-form" novalidate>
         <div class="quick-row">
           <label for="quick-reference">Reference</label>
-          <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Reference or pasted lot text" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
+          <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus aria-keyshortcuts="Control+K Meta+K" placeholder="Reference or pasted lot text" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
           <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices from acsearch follow the lookup.</p></div>
         </div>

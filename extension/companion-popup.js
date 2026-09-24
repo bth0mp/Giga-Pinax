@@ -311,6 +311,22 @@ async function initCompanionPopup() {
     }
     if (focus) $(`companion-tab-${name}`).focus();
   };
+  // The Reference box, from anywhere in the popup: the skip link that leads the header, Ctrl+K (⌘K on a Mac) on any tab, or "/" when the keyboard
+  // is not in a text field. The box's text is selected, so typing replaces it.
+  const toReference = () => {
+    activate('research');
+    $('quick-reference').focus();
+    $('quick-reference').select?.();
+  };
+  $('skip-to-research')?.addEventListener('click', (event) => { event.preventDefault(); toReference(); });
+  addEventListener('keydown', (event) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName ?? '') || event.target?.isContentEditable === true;
+    const chord = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k';
+    const slash = event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (!chord && !slash) return;
+    event.preventDefault();
+    toReference();
+  });
   for (const name of TABS) {
     $(`companion-tab-${name}`).addEventListener('click', () => activate(name));
     $(`companion-tab-${name}`).addEventListener('keydown', (event) => {
