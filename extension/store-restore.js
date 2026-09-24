@@ -1,13 +1,30 @@
+// @ts-check
 // Putting back what a repair set aside: a record from the quarantine bin, with the partner it is
 // linked to, and the links the repair had to clear.
 import { validateQuarantinedRecord } from './core/records.js';
 import { clone, own } from './core/validate.js';
 import { fail, ok } from './store-builders.js';
+/**
+ * @typedef {import('./core/types.js').Snapshot} Snapshot
+ * @typedef {import('./core/types.js').QuarantineEntry} QuarantineEntry
+ * @typedef {import('./core/types.js').ClearedReference} ClearedReference
+ */
+/**
+ * @template T
+ * @typedef {import('./core/types.js').Result<T>} Result
+ */
+/** @typedef {{ collection: string, id: string, field: string }} ReferenceSite */
 
 // A link the repair had to clear goes back only where nothing has taken its place: a field the
 // collector has filled since is their own later work, and is left exactly as it is and named in the
 // reply, as is one whose record is no longer there to carry it. The changes are handed back with an
 // undo, because a link can be one the rest of the root has no room for any more.
+/**
+ * @param {Snapshot} snapshot changed in place
+ * @param {ClearedReference[]} references
+ * @param {string} now
+ * @returns {{ restored: ReferenceSite[], kept: ReferenceSite[], undo: () => void }}
+ */
 function restoreClearedReferences(snapshot, references, now) {
   const restored = [];
   const kept = [];
@@ -58,6 +75,12 @@ const PAIRED_COLLECTIONS = new Map([
 // The record this one is linked to and the root does not hold, or null where it needs nothing that
 // is not already there. A partner that is there but names another record is no pairing this command
 // can settle: the ordinary validation refusal says so in the validator's own words.
+/**
+ * @param {Snapshot} snapshot
+ * @param {string} collection
+ * @param {*} record
+ * @returns {{ self: string, field: string, collection: string, label: string, id: string } | null}
+ */
 function missingPartner(snapshot, collection, record) {
   const pair = PAIRED_COLLECTIONS.get(collection);
   if (!pair || typeof record[pair.field] !== 'string') return null;
@@ -69,6 +92,11 @@ function missingPartner(snapshot, collection, record) {
 // Everything the store can judge about one entry before anything is written: it holds a record,
 // today's validator accepts that record, its collection is one a record can go back to, and nothing
 // with its ID is saved there already.
+/**
+ * @param {Snapshot} snapshot
+ * @param {QuarantineEntry} entry
+ * @returns {Result<{ home: any[], record: * }>}
+ */
 function readyToRestore(snapshot, entry) {
   if (entry.record === null || entry.record === undefined) {
     return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');

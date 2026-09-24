@@ -1,3 +1,4 @@
+// @ts-check
 import {
   LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
@@ -14,6 +15,24 @@ import {
 } from './store-builders.js';
 import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
 import { reconcileIntoSnapshot } from './store-schedule.js';
+/**
+ * @typedef {import('./core/types.js').Snapshot} Snapshot
+ * @typedef {import('./core/types.js').Command} Command
+ * @typedef {import('./core/types.js').CommandContext} CommandContext
+ * @typedef {import('./core/types.js').CommandResult} CommandResult
+ * @typedef {import('./core/types.js').CommandFailure} CommandFailure
+ * @typedef {import('./core/types.js').CommandSuccess} CommandSuccess
+ * @typedef {import('./core/types.js').StorageArea} StorageArea
+ */
+/**
+ * @template T
+ * @typedef {import('./core/types.js').Result<T>} Result
+ */
+/**
+ * A command applied to a copy of the root: the root it leaves, the value it answers with, the reply the
+ * ledger keeps, and whether it wrote anything at all.
+ * @typedef {{ snapshot: Snapshot, value: *, reply?: CommandSuccess, mutated: boolean }} Applied
+ */
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
@@ -46,6 +65,11 @@ const OVER_THE_BOUND = new Map([
 // What any other command says when its own result, before any reminder it schedules, does not fit.
 const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {boolean} [commandHeadroom]
+ * @returns {number}
+ */
 function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   const reserved = clone(snapshot);
   for (const alert of reserved.alerts) {
@@ -58,6 +82,12 @@ function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   return new TextEncoder().encode(JSON.stringify(reserved)).length + (commandHeadroom ? LIMITS.commandReplyBytes : 0);
 }
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {Command} command
+ * @param {CommandContext} context
+ * @returns {Result<Applied>}
+ */
 function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
@@ -71,14 +101,15 @@ function mutation(snapshot, command, context) {
       if (snapshot.preferences !== null) return ok({ snapshot, value: snapshot.preferences, mutated: false });
       const preferences = preferenceFields(command.preferences);
       if (!preferences) return fail('validation', 'Preferences are required.', 'preferences');
-      next.preferences = {
+      // Held to its shape with the rest of the root before anything is written.
+      next.preferences = /** @type {import('./core/types.js').Preferences} */ ({
         schemaVersion: SCHEMA_VERSION,
         revision: 0,
         ...clone(preferences),
         desktopAlertsEnabled: false,
         createdAt: now,
         updatedAt: now,
-      };
+      });
       value = next.preferences;
       break;
     }
@@ -177,7 +208,8 @@ function mutation(snapshot, command, context) {
       if (!Array.isArray(command.orderedLotIds) || new Set(command.orderedLotIds).size !== command.orderedLotIds.length) {
         return fail('validation', 'Group order must contain unique lot IDs.', 'orderedLotIds');
       }
-      const selected = command.orderedLotIds.map((id) => next.lots.find((lot) => lot.id === id));
+      // An ID naming no lot is refused on the next line, so what is left is lots.
+      const selected = /** @type {import('./core/types.js').Lot[]} */ (command.orderedLotIds.map((id) => next.lots.find((lot) => lot.id === id)));
       if (selected.some((lot) => !lot)) return fail('validation', 'Group order contains an unknown lot.', 'orderedLotIds');
       const sourceGroupIds = new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean));
       const affectedLots = new Set([
@@ -201,7 +233,7 @@ function mutation(snapshot, command, context) {
           return fail('conflict', 'An affected lot changed in another view.', 'expectedLotRevisions');
         }
       }
-      const oldGroups = new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean));
+      const oldGroups = /** @type {Set<string>} */ (new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean)));
       for (const lot of next.lots) {
         if (lot.alternativeGroupId === command.groupId && !command.orderedLotIds.includes(lot.id)) {
           delete lot.alternativeGroupId;
@@ -451,7 +483,7 @@ function mutation(snapshot, command, context) {
     case 'draft.save': {
       const payload = validateDraftPayload(command.kind, command.payload);
       if (!payload.ok) return fail('validation', payload.error.message, payload.error.path);
-      value = {
+      value = /** @type {import('./core/types.js').Draft} */ ({
         id: getId(context),
         revision: 0,
         dataClass: 'collector',
@@ -460,7 +492,7 @@ function mutation(snapshot, command, context) {
         createdAt: now,
         updatedAt: now,
         expiresAt: new Date(Date.parse(now) + 30 * 60 * 1000).toISOString(),
-      };
+      });
       next.drafts.push(value);
       next.drafts.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
       next.drafts = next.drafts.slice(-20);
@@ -662,6 +694,7 @@ function mutation(snapshot, command, context) {
 
   next.revision = snapshot.revision + 1;
   next.updatedAt = now;
+  /** @type {CommandSuccess} */
   const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
   next.recentCommands.push({
     requestId: command.requestId,
@@ -714,6 +747,12 @@ function mutation(snapshot, command, context) {
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {Command} command
+ * @param {CommandContext} context
+ * @returns {Result<Applied>}
+ */
 export function applyCommand(snapshot, command, context) {
   if (!command || typeof command !== 'object' || typeof command.type !== 'string') {
     return fail('validation', 'Command type is required.', 'type');
@@ -731,6 +770,13 @@ export function applyCommand(snapshot, command, context) {
   return mutation(snapshot, command, context);
 }
 
+/**
+ * @param {*} command
+ * @param {string} code
+ * @param {'not-committed' | 'unknown'} outcome
+ * @param {string} message
+ * @returns {CommandFailure}
+ */
 function errorReply(command, code, outcome, message) {
   return {
     ok: false,
@@ -741,6 +787,12 @@ function errorReply(command, code, outcome, message) {
   };
 }
 
+/**
+ * The one writer of the root: commands are applied one at a time, in the order they arrive.
+ * @param {StorageArea} storageArea
+ * @param {CommandContext} context
+ * @returns {{ commitCommand: (command: *) => Promise<CommandResult> }}
+ */
 export function createCommandWriter(storageArea, context) {
   let queue = Promise.resolve();
 

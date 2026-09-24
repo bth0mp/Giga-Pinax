@@ -1,12 +1,23 @@
+// @ts-check
 // The store's side of the reminders: after a command changes an auction or a lot, the alerts are
 // brought into line with the triggers the open lots' events derive, and the next wake is planned.
 import { deriveReminderTriggers, reconcileScheduler } from './core/reminders.js';
 import { baseRecord, getNow } from './store-builders.js';
+/**
+ * @typedef {import('./core/types.js').Snapshot} Snapshot
+ * @typedef {import('./core/types.js').Alert} Alert
+ * @typedef {import('./core/types.js').CommandContext} CommandContext
+ * @typedef {import('./core/types.js').SchedulePlan} SchedulePlan
+ */
 
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
 
+/**
+ * @param {Alert[]} alerts
+ * @returns {Alert[]}
+ */
 function adoptTriggerIds(alerts) {
   // Alerts written before 0.32 embed the event revision in their trigger ID, so an edited event
   // recreated every alert as pending. Rebuild the current identity from the alert's own fields
@@ -23,6 +34,13 @@ function adoptTriggerIds(alerts) {
   return [...byTrigger.values()];
 }
 
+/**
+ * Brings the alerts and the scheduler of a root being written into line with its events; the root is
+ * changed in place and the plan it was reconciled to is returned.
+ * @param {Snapshot} next
+ * @param {CommandContext} context
+ * @returns {SchedulePlan}
+ */
 function reconcileIntoSnapshot(next, context) {
   const now = getNow(context);
   const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
@@ -49,7 +67,8 @@ function reconcileIntoSnapshot(next, context) {
     let status = alert.status;
     if (missed.has(alert.triggerId)) status = 'missed';
     else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
-      (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
+      // A claimed alert carries its claim time (records.js alertResult).
+      (status === 'claimed' && Date.parse(/** @type {string} */ (alert.claimedAt)) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
     // The event revision is copied onto the alert for display, so a surviving alert refreshes it.
     const eventRevision = triggersById.get(alert.triggerId)?.eventRevision ?? alert.eventRevision;
     if (status === alert.status && eventRevision === alert.eventRevision) continue;
