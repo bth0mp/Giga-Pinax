@@ -229,6 +229,14 @@ test('the Latin, German, French, Italian and Spanish spellings of the RIC I–V 
     assert.deepEqual(ricPeople(spelling).map((person) => person.id), [id], spelling);
     assert.deepEqual(volumesOf(spelling), [], spelling);
   }
+  // The Romance endings of every -ian name name that one person too, and none of them is a section or a mint (Trajan's are above).
+  for (const person of RIC_PEOPLE.filter(({ name }) => /^[A-Z][a-z]+ian$/.test(name))) {
+    const stem = fold(person.name).replace(/ian$/, '');
+    for (const spelling of [`${stem}iano`, `${stem}ien`]) {
+      assert.deepEqual(ricPeople(spelling).map(({ id }) => id), [person.id], spelling);
+      assert.ok(!sections.has(spelling) && !ricMintSection(spelling), spelling);
+    }
+  }
   // A numeral the spelling does not carry is someone else, as it always was: the second Faustina is not the first, nor Maximinus II the first.
   assert.deepEqual(ricPeople('Faustina III'), []);
   assert.deepEqual(ricPeople('Constantius III').map((person) => person.id), ['constantius_iii']);
