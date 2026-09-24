@@ -1,3 +1,4 @@
+// @ts-check
 // The popup's access to the sites it reads (popup.js): whether an origin is granted, asking for it
 // inside the collector's own gesture, and the Reference box kept across the prompt that can close the
 // popup in Firefox.
@@ -8,17 +9,28 @@ const api = globalThis.browser ?? globalThis.chrome;
 
 // Origins this popup has already seen granted: permissions.request opens no prompt for them, so nothing it does can close the popup.
 const grantedOrigins = new Set();
+/**
+ * @param {string[]} origins
+ * @param {boolean} allowed
+ * @returns {boolean}
+ */
 function noteGranted(origins, allowed) {
   if (allowed) for (const origin of origins) grantedOrigins.add(origin);
   return allowed;
 }
 
+/**
+ * Whether the origins are granted, asking nothing; true on a plain page with no permissions API.
+ * @param {string[]} origins
+ * @returns {Promise<boolean>}
+ */
 async function hasHostAccess(origins) {
   if (!api?.permissions?.contains) return true;
   try { return noteGranted(origins, (await api.permissions.contains({ origins })) === true); } catch { return false; }
 }
 
 // Checks without prompting; true on a plain page with no permissions API, false if the check fails.
+/** @returns {Promise<boolean>} */
 async function hasAcsearchAccess() {
   if (!api?.permissions?.contains) return true;
   try { return noteGranted([ACSEARCH_ORIGIN], (await api.permissions.contains({ origins: [ACSEARCH_ORIGIN] })) === true); }
@@ -29,6 +41,7 @@ async function hasAcsearchAccess() {
 // Reference box is kept in the extension's own session area, which outlives that document; the popup's sessionStorage dies with it, which is the case
 // this exists for. ponytail: where storage.session is missing, nothing is kept - no other store survives the closing popup.
 const PENDING_KEY = 'giga-pinax-pending-reference-v1';
+/** @type {() => { get: (key: string) => Promise<*>, set: (items: object) => Promise<*>, remove: (key: string) => Promise<*> } | null} */
 const sessionArea = () => api?.storage?.session ?? null;
 function rememberPendingReference() {
   // Never awaited: permissions.request must stay the first await after the user gesture, or the browser no longer treats it as one.
@@ -43,6 +56,11 @@ function forgetPendingReference() {
 // Called synchronously from a submit handler so the request keeps the user gesture; resolves true without a prompt when access is already granted.
 // remember is for the two flows a closed popup costs something: a reference typed into the box and looked up. The price buttons and the online fallback
 // ask about a reference that is already on the card, so they keep none - keeping one there wrote it back after the lookup had forgotten it.
+/**
+ * @param {string[]} origins
+ * @param {{ remember?: boolean }} [options]
+ * @returns {Promise<boolean>}
+ */
 function requestHostAccess(origins, { remember = false } = {}) {
   if (!api?.permissions?.request) return Promise.resolve(true);
   // Only a prompt can close the popup, and only an origin this popup has not seen granted opens one.

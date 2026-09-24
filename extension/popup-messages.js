@@ -1,3 +1,4 @@
+// @ts-check
 // The popup's fixed words (popup.js): what it says when a lookup, a price search or a copy cannot go
 // ahead, and the site addresses it falls back to.
 import { catalogueForCorpus } from './catalogues.js';
@@ -25,10 +26,18 @@ const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “R
 const PRICES_WAIT_MESSAGE = 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
+// @ts-expect-error -- catalogueForCorpus answers a union in which Other has no corpusName, or null for no corpus; the
+// optional chain reads undefined for both and the ternary only reads the name again when there is one.
 const onlineMessage = (corpus) => `This type was not available in the local ${catalogueForCorpus(corpus)?.corpusName ? `${catalogueForCorpus(corpus).corpusName} ` : ''}catalogue. `
   + 'Check online to search numismatics.org.';
 
 // A bare RIC number starts no auction search of its own (namesOneType), so where there is none below, the message says what would start one.
+/**
+ * @param {{ status: string, httpStatus?: number }} outcome
+ * @param {boolean} hasFallback
+ * @param {boolean} [bareRic]
+ * @returns {string}
+ */
 function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
   const searches = hasFallback ? ' You can still search auction results below.' : bareRic ? ` ${BARE_RIC_HINT}` : '';
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
@@ -36,6 +45,11 @@ function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
   return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
 }
 
+/**
+ * @param {*} outcome
+ * @param {string} currency
+ * @returns {string}
+ */
 function coinArchivesFailure(outcome, currency) {
   if (outcome.status === 'empty') return `CoinArchives returned no public results for “${outcome.term}”.`;
   if (outcome.status === 'closest') return `CoinArchives showed a different closest search instead of “${outcome.term}”. Open the results to review it.`;

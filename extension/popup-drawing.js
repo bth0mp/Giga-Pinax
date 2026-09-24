@@ -1,11 +1,30 @@
+// @ts-check
 // Pieces of the popup's panels (popup.js) drawn from their arguments alone, holding none of a
 // lookup's state: a specimen, a sale's link, the filter lines, the median by year and the CoinArchives
 // counts.
 import { yearText, yearsSentence } from './prices.js';
 import { $ } from './popup-shell.js';
+/**
+ * A sale as a price panel draws it: the provider's row, read by prices.js.
+ * @typedef {{ id: string, title?: string, date?: string, description?: string, [field: string]: * }} Sale
+ */
+/**
+ * What the filters are, and what a row must pass for each.
+ * @typedef {object} FilterState
+ * @property {string} name
+ * @property {string} [denomination]
+ * @property {boolean} [citing]
+ * @property {boolean} [uncited]
+ * @property {boolean} [unsearched]
+ * @property {{ citing: (sale: Sale) => boolean, denomination: (sale: Sale) => boolean }} passes
+ */
 
 // One specimen: its two sides and, under them, the collection that holds it as a link to the specimen's own page. Every address is http(s),
 // checked by fetchSpecimens; the attributes that keep the referrer back and defer the load are set before the source, so the first request obeys them.
+/**
+ * @param {{ page: string, collection: string, obverse: string, reverse: string }} specimen
+ * @returns {HTMLLIElement}
+ */
 function specimenItem({ page, collection, obverse, reverse }) {
   const item = document.createElement('li');
   const pair = document.createElement('div');
@@ -31,14 +50,23 @@ function specimenItem({ page, collection, obverse, reverse }) {
   return item;
 }
 
+/** @type {(count: number) => string} */
 const sales = (count) => `${count} ${count === 1 ? 'sale' : 'sales'}`;
 // Where an amount falls on the lowest–highest line, in percent; a single price has no span and sits in the middle.
+/** @type {(summary: { min: number, max: number }, value: number) => number} */
 const rangePercent = (summary, value) => (summary.max > summary.min ? ((value - summary.min) / (summary.max - summary.min)) * 100 : 50);
 
 // A lot's title as the Upcoming list shows, speaks and hands it over: page text of any length, taken to the 200 characters a watchlist draft keeps.
+/** @type {(sale: Sale) => string} */
 const lotTitle = (sale) => String(sale.title || `Lot ${sale.id}`).trim().replace(/\s+/g, ' ').slice(0, 200);
 // A link to one lot on acsearch, in a new tab.
+/** @type {(sale: Sale) => string} */
 const lotUrl = (sale) => `https://www.acsearch.info/search.html?id=${encodeURIComponent(sale.id)}`;
+/**
+ * @param {Sale} sale
+ * @param {string} text
+ * @returns {HTMLAnchorElement}
+ */
 function lotLink(sale, text) {
   const link = document.createElement('a');
   link.href = lotUrl(sale);
@@ -54,6 +82,12 @@ function lotLink(sale, text) {
 // on follows ("1 of 3 results cite Price 23; 2 of 3 counted"). The line stays while any row fails the filter, counted by hand or not. A page that
 // names the reference nowhere is counted whole instead, and says so.
 // A search term edited to look for something else switches the citation filter off; that is said too, or the median would change without a word.
+/**
+ * @param {Sale[]} periodLots
+ * @param {{ reasonFor: (sale: Sale) => string | null }} curation
+ * @param {FilterState} filters
+ * @returns {string[]}
+ */
 function filterLines(periodLots, curation, { name, denomination, citing, uncited, unsearched, passes }) {
   const total = periodLots.length;
   const all = `all ${total} ${total === 1 ? 'result is' : 'results are'} counted`;
@@ -73,6 +107,7 @@ function filterLines(periodLots, curation, { name, denomination, citing, uncited
 }
 
 // The filter lines as a screen reader hears them, each its own sentence.
+/** @type {(filters: string[]) => string} */
 const spokenFilters = (filters) => filters.map((line) => (line.endsWith('.') ? line : `${line}.`)).join(' ');
 
 // A median per year as a strip of bars, the year and the number of sales under each and the median above it, drawn in SVG from the panel's own
@@ -81,6 +116,12 @@ const spokenFilters = (filters) => filters.map((line) => (line.endsWith('.') ? l
 const SVG = 'http://www.w3.org/2000/svg';
 const YEAR_COLUMN = 48;
 const YEAR_BAR = 36;
+/**
+ * @param {string} prefix
+ * @param {Array<{ year: number, median: number, count: number }>} years
+ * @param {(amount: number) => string} format
+ * @returns {void}
+ */
 function renderYears(prefix, years, format) {
   const strip = $(`${prefix}year-strip`);
   const node = (tag, attributes, text = '') => {
@@ -110,6 +151,7 @@ function renderYears(prefix, years, format) {
   $(`${prefix}year-medians`).hidden = years.length === 0;
 }
 
+/** @type {(outcome: *, currency: string) => string} */
 const coinArchivesCounts = (outcome, currency) => {
   const otherCurrencies = Object.entries(outcome.availableCurrencyCounts ?? {}).filter(([code]) => code !== currency)
     .map(([code, count]) => `${count} ${code}`).join(', ');
