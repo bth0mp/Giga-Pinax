@@ -193,7 +193,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
    focusable and clickable, and its focus ring is drawn on the pill. The fieldset places its hidden legend: placed by the page instead, the
    legend stays where the fieldset sat before scrolling and stretches the page into a second scrollbar. */
 .period {position:relative; display:flex; flex-wrap:wrap; gap:6px; min-width:0; margin:0 0 10px; padding:0; border:0;}
-.period label {position:relative; margin:0; border:1px solid var(--line); border-radius:var(--radius-pill); background:var(--soft); color:var(--ink); font-size:var(--text-meta); font-weight:400; padding:5px 12px; white-space:nowrap;}
+/* The period pills are chips like Recent: their edge is the muted ink, so an unchosen one still reads as a control (--line was 1.3:1). */
+.period label {position:relative; margin:0; border:1px solid var(--muted); border-radius:var(--radius-pill); background:var(--soft); color:var(--ink); font-size:var(--text-meta); font-weight:400; padding:5px 12px; white-space:nowrap;}
 .period label:hover {border-color:var(--accent); color:var(--accent);}
 .period label:has(:checked) {border-color:var(--accent); background:var(--accent); color:var(--on-accent);}
 .period label:has(:focus-visible) {outline:3px solid var(--focus); outline-offset:2px;}
@@ -232,7 +233,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-list li span {color:var(--muted); min-width:0; overflow-wrap:anywhere;}
 .sale-list li strong {font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;}
 .curation-controls {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;color:var(--muted);font-size:11px;}
-.sale-list li.excluded {opacity:.62;}
+/* An excluded sale keeps its text at full contrast (faded to .62 its date read 2.5:1): its amount is struck through and muted instead. */
+.sale-list li.excluded strong {color:var(--muted); font-weight:400; text-decoration:line-through;}
 .sale-toggle {flex:0 0 auto;font-size:11px;}
 /* A median per year: a strip of bars under the range, the median above each bar and the year and the sales under it. The strip keeps its natural
    width, 48px a year, and the figure scrolls sideways past the column (it takes the keyboard for that) rather than shrinking the labels. */

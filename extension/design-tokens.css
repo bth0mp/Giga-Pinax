@@ -7,6 +7,8 @@
 :root{--text-meta:11px;--text-body:12px;--text-input:13px;--text-h4:14px;--text-h3:16px;--text-h2:21px;--text-figure:32px;--label-weight:650;--label-gap:6px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--control-h:38px;--control-h-sm:32px;--control-pad:12px;--radius:6px;--radius-panel:8px;--radius-pill:999px;--focus-width:3px;--focus-offset:2px}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:var(--focus-width) solid var(--focus);outline-offset:var(--focus-offset)}
+/* The browser's own placeholder grey is 3.4:1 on a dark field; the muted ink is 5.5:1 light and 7.2:1 dark. */
+::placeholder{color:var(--muted);opacity:1}
 
 /* Labels: one style, 12 px at 650; each page places it 6 px above its control. */
 label{font-size:var(--text-body);font-weight:var(--label-weight)}

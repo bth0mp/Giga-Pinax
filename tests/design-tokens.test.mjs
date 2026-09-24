@@ -52,6 +52,7 @@ test('the layer defines the scale, the control size and the four button kinds on
   assert.match(kind('.secondary'), /border-color:var\(--accent\);background:var\(--card\);color:var\(--accent\)/);
   assert.match(kind('.quiet'), /border-color:var\(--border\);background:transparent;color:var\(--ink\)/);
   assert.match(kind('.danger'), /border-color:var\(--error\);background:transparent;color:var\(--error\)/);
+  assert.match(css, /::placeholder\{color:var\(--muted\);opacity:1\}/);
 });
 
 // A control's height, corner or kind drawn by a page is what made four systems; the pages keep layout only.
@@ -75,6 +76,13 @@ test('every class a workspace or Settings button carries is styled by a styleshe
     const classes = new Set([...html.matchAll(/<button\b[^>]*\bclass="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/)));
     assert.deepEqual([...classes].filter((name) => !new RegExp(String.raw`\.${name}(?![\w-])`).test(sheets)), [], page);
   }
+});
+
+// Faded text is faded contrast: an excluded sale at .62 opacity read 2.5:1. It keeps full contrast and says so by striking its amount.
+test('an excluded sale is marked without fading its text', () => {
+  const popup = rules(read('popup.css'));
+  for (const { selector, body } of popup.filter((rule) => /excluded/.test(rule.selector))) assert.doesNotMatch(body, /opacity/, selector);
+  assert.ok(popup.some(({ selector, body }) => /li\.excluded strong/.test(selector) && /line-through/.test(body)));
 });
 
 // The colours handed out for text, read from the tokens themselves: 4.5:1 for text on every surface, 3:1 for a field's edge.
