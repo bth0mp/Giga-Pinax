@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-24
+
 ### Added
 
 - The per-grade medians read Spanish and Dutch grades: `BC`, `MBC`, `EBC` and `SC` (with `casi`), and `ZF`, `PR`, `zeer fraai` and `prachtig` (`fraai` only as half of a range, `Fraai / zeer fraai`, as `schön` is read). A Dutch grade per side, `Vz. ZF, Kz. PR`, counts as the lower of the two, as `Av. ss, Rs. vz` does. Each is read only where it stands as a grade, as the other marks are, so a Seleucid Coins citation (`SC 379.1`, or `SC –` for a type the book lacks) and a date such as `44 BC` are not taken for one, and `PR` on a slab (a proof) is left ungraded. The senate's `SC` on a Roman bronze is not read as a grade where it stands inside the description (`Rev. SC, legend around.`, `Minerva standing right; SC.`) or opens the sentence after one that ends in a lower-case word (`Rev. Spes advancing left. SC.`); for the same reason a Spanish `SC` in that place (`Pátina verde. SC.`) is left ungraded rather than guessed.
@@ -308,6 +310,7 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
 [Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.32.0...HEAD
+[0.33.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.33.0
 [0.32.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.32.1
 [0.32.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.32.0
 [0.31.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.31.1
