@@ -223,11 +223,12 @@ function dateIn(timeZone, instant) {
 }
 
 /**
- * The words of a reminder's desktop notification. A timed auction is named at its own wall time and, where its zone is
- * not the collector's, with its place and the collector's time: `Closes Fri 16 Oct, 14:00 (Zurich) — 8:00 your time`.
- * A date-only sale day is a calendar day in the auction's zone and its reminder goes off at a wall time there, so both
- * clocks are named for the reminder: `Sale day Thu 1 Oct (London) — reminder for 9:00 London, 10:00 your time`. The
- * collector's day is added wherever it is not the auction's. Nothing here moves when a reminder goes off.
+ * The words of a reminder's desktop notification, the collector's clock first so a banner that cuts the text keeps it.
+ * A timed auction: `Closes Fri 16 Oct, 8:00 your time — 14:00 Zurich`. A date-only sale day is a calendar day in the
+ * auction's zone and its reminder goes off at a wall time there: `Sale day Fri 2 Oct — Thu 1 Oct 10:00 your time,
+ * 9:00 London`. Your day is named where it is not the sale day (or, for a timed auction, always), the auction's where it
+ * is not yours; the auction's clock and place only where its zone is not yours and the browser can read it. Nothing
+ * here moves when a reminder goes off.
  * @param {ReminderTrigger} trigger
  * @param {{ eventKind?: string, timeZone: string, locale?: string }} view the auction's kind, and the collector's zone and language
  * @returns {string}
@@ -235,24 +236,25 @@ function dateIn(timeZone, instant) {
 export function reminderNotice(trigger, { eventKind, timeZone: viewerZone, locale }) {
   const zone = trigger.timeZone;
   const verb = NOTICE_VERB[String(eventKind)] ?? 'Auction';
-  const same = sameZone(zone, viewerZone);
-  const place = zonePlace(zone);
-  // The collector's side of one instant, with their day named where it is not the auction's.
-  const yours = (instant) => {
-    const day = dateIn(viewerZone, instant) === dateIn(zone, instant) ? '' : `${dayIn(locale, viewerZone, instant, '')} `;
-    return `${day}${timeIn(locale, viewerZone, instant, '')} your time`;
+  // The auction's side of one instant: its day where that is not the collector's, its time and its place.
+  const theirs = (instant) => {
+    if (sameZone(zone, viewerZone)) return '';
+    const time = timeIn(locale, zone, instant, '');
+    if (!time) return '';
+    const day = dateIn(zone, instant) === dateIn(viewerZone, instant) ? '' : `${dayIn(locale, zone, instant, '')} `;
+    return `${day}${time} ${zonePlace(zone)}`;
   };
+  const yourTime = (instant) => `${timeIn(locale, viewerZone, instant, String(instant).slice(11, 16))} your time`;
   if (trigger.precision === 'timed' && Number.isFinite(Date.parse(String(trigger.eventStartsAt)))) {
     const starts = /** @type {string} */ (trigger.eventStartsAt);
-    const head = `${verb} ${dayIn(locale, zone, starts, trigger.localDate)}, ${timeIn(locale, zone, starts, starts.slice(11, 16))}`;
-    return same ? `${head} your time` : `${head} (${place}) — ${yours(starts)}`;
+    const there = theirs(starts);
+    return `${verb} ${dayIn(locale, viewerZone, starts, trigger.localDate)}, ${yourTime(starts)}${there ? ` — ${there}` : ''}`;
   }
   const saleDay = dayIn(locale, 'UTC', `${trigger.localDate}T12:00:00Z`, trigger.localDate);
   const at = trigger.triggerAt;
-  const reminderDay = dateIn(zone, at) === trigger.localDate ? '' : `${dayIn(locale, zone, at, at.slice(0, 10))} `;
-  const there = `${reminderDay}${timeIn(locale, zone, at, at.slice(11, 16))}`;
-  return same ? `${verb} ${saleDay} — reminder for ${there} your time`
-    : `${verb} ${saleDay} (${place}) — reminder for ${there} ${place}, ${yours(at)}`;
+  const yourDay = dateIn(viewerZone, at) === trigger.localDate ? '' : `${dayIn(locale, viewerZone, at, at.slice(0, 10))} `;
+  const there = theirs(at);
+  return `${verb} ${saleDay} — ${yourDay}${yourTime(at)}${there ? `, ${there}` : ''}`;
 }
 
 /**

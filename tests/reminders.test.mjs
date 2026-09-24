@@ -179,9 +179,11 @@ test('two names of one time zone are the same zone', () => {
 });
 
 // N14 (lead's decision): a date-only sale day is a calendar day in the auction's zone and its reminders still go off at
-// their wall time there, so the notification names the sale day and the auction's place, and the reminder's time on the
-// auction's clock and on the collector's. The zone is named only when it is not the collector's own.
-test('a date-only reminder’s notification names the sale day, the auction’s place and both clocks', () => {
+// their wall time there, so the notification names the sale day and the reminder's time on the collector's clock and on
+// the auction's, with its place. Review Minor 3: the collector's clock comes first, so a banner that cuts the text keeps
+// it. A day is named where it is not the sale day (yours) or not your day (the auction's). The zone is named only when
+// it is not the collector's own.
+test('a date-only reminder’s notification names the sale day, your clock, then the auction’s clock and place', () => {
   const trigger = (triggerAt) => ({
     id: 'x', eventId, eventRevision: 0, reminderId: reminderA, triggerAt, eventName: 'Nomos 30',
     precision: /** @type {const} */ ('date-only'), localDate: '2026-10-02', timeZone: 'Europe/London',
@@ -189,30 +191,63 @@ test('a date-only reminder’s notification names the sale day, the auction’s 
   const onTheDay = trigger('2026-10-02T08:00:00.000Z');
   const dayBefore = trigger('2026-10-01T08:00:00.000Z');
   const view = (timeZone) => ({ eventKind: 'auction-day', timeZone, locale: 'en-GB' });
-  assert.equal(reminderNotice(onTheDay, view('Europe/Berlin')), 'Sale day Fri 2 Oct (London) — reminder for 9:00 London, 10:00 your time');
-  assert.equal(reminderNotice(dayBefore, view('Europe/Berlin')), 'Sale day Fri 2 Oct (London) — reminder for Thu 1 Oct 9:00 London, 10:00 your time');
-  // 09:00 in London on the sale day is still the evening before in Honolulu, and the collector's day is named.
-  assert.equal(reminderNotice(onTheDay, view('Pacific/Honolulu')), 'Sale day Fri 2 Oct (London) — reminder for 9:00 London, Thu 1 Oct 22:00 your time');
-  assert.equal(reminderNotice(onTheDay, view('Europe/London')), 'Sale day Fri 2 Oct — reminder for 9:00 your time');
-  assert.equal(reminderNotice(dayBefore, view('Europe/London')), 'Sale day Fri 2 Oct — reminder for Thu 1 Oct 9:00 your time');
+  assert.equal(reminderNotice(onTheDay, view('Europe/Berlin')), 'Sale day Fri 2 Oct — 10:00 your time, 9:00 London');
+  assert.equal(reminderNotice(dayBefore, view('Europe/Berlin')), 'Sale day Fri 2 Oct — Thu 1 Oct 10:00 your time, 9:00 London');
+  // 09:00 in London on the sale day is still the evening before in Honolulu: both days are named.
+  assert.equal(reminderNotice(onTheDay, view('Pacific/Honolulu')), 'Sale day Fri 2 Oct — Thu 1 Oct 22:00 your time, Fri 2 Oct 9:00 London');
+  // 23:30 in London the evening before is already the sale day's morning in Sydney.
+  assert.equal(reminderNotice(trigger('2026-10-01T22:30:00.000Z'), view('Australia/Sydney')), 'Sale day Fri 2 Oct — 8:30 your time, Thu 1 Oct 23:30 London');
+  assert.equal(reminderNotice(onTheDay, view('Europe/London')), 'Sale day Fri 2 Oct — 9:00 your time');
+  assert.equal(reminderNotice(dayBefore, view('Europe/London')), 'Sale day Fri 2 Oct — Thu 1 Oct 9:00 your time');
 });
 
-test('a timed reminder’s notification names the auction’s time and place and the collector’s time', () => {
+test('a timed reminder’s notification names the auction’s time on your clock, then on its own with its place', () => {
   const trigger = {
     id: 'x', eventId, eventRevision: 0, reminderId: reminderA, triggerAt: '2026-10-16T11:00:00.000Z', eventName: 'Leu Web Auction 32',
     precision: /** @type {const} */ ('timed'), eventStartsAt: '2026-10-16T12:00:00.000Z', localDate: '2026-10-16', timeZone: 'Europe/Zurich',
   };
   const view = (timeZone, eventKind = 'lot-closes') => ({ eventKind, timeZone, locale: 'en-GB' });
-  assert.equal(reminderNotice(trigger, view('America/New_York')), 'Closes Fri 16 Oct, 14:00 (Zurich) — 8:00 your time');
-  assert.equal(reminderNotice(trigger, view('Pacific/Auckland')), 'Closes Fri 16 Oct, 14:00 (Zurich) — Sat 17 Oct 1:00 your time');
+  assert.equal(reminderNotice(trigger, view('America/New_York')), 'Closes Fri 16 Oct, 8:00 your time — 14:00 Zurich');
+  assert.equal(reminderNotice(trigger, view('Pacific/Auckland')), 'Closes Sat 17 Oct, 1:00 your time — Fri 16 Oct 14:00 Zurich');
   assert.equal(reminderNotice(trigger, view('Europe/Zurich', 'auction-starts')), 'Starts Fri 16 Oct, 14:00 your time');
-  // An event whose kind is not known reads as an auction, and a zone no browser knows never throws.
+  // An event whose kind is not known reads as an auction, and a zone no browser knows never throws or names a clock it
+  // cannot read.
   assert.equal(reminderNotice(trigger, { timeZone: 'Europe/Zurich', locale: 'en-GB' }), 'Auction Fri 16 Oct, 14:00 your time');
-  const unknownZone = reminderNotice({ ...trigger, timeZone: 'Mars/Olympus' }, view('Europe/Zurich'));
-  assert.match(unknownZone, /^Closes 2026-10-16/);
+  assert.equal(reminderNotice({ ...trigger, timeZone: 'Mars/Olympus' }, view('Europe/Zurich')), 'Closes Fri 16 Oct, 14:00 your time');
   // The collector's language decides how a date and a time are written.
   assert.equal(reminderNotice(trigger, { eventKind: 'lot-closes', timeZone: 'America/New_York', locale: 'en-US' }),
-    'Closes Fri, Oct 16, 2:00 PM (Zurich) — 8:00 AM your time');
+    'Closes Fri, Oct 16, 8:00 AM your time — 2:00 PM Zurich');
+});
+
+// Review Minor 3: a macOS banner shows about two lines, some 90 characters. In en-US, for the zones with the longest place
+// names and collectors on either side of the date line, every notice stays within 90 characters and your clock within
+// the first 60.
+test('a reminder’s notification stays short enough for a banner, with your clock near the start', () => {
+  const places = Intl.supportedValuesOf('timeZone').filter((zone) => zone.includes('/') && !zone.startsWith('Etc/'))
+    .sort((left, right) => zonePlace(right).length - zonePlace(left).length || left.localeCompare(right)).slice(0, 6);
+  const viewers = ['Pacific/Honolulu', 'America/New_York', 'Europe/London', 'Asia/Tokyo', 'Pacific/Kiritimati'];
+  let longest = '';
+  for (const timeZone of [...places, 'America/Argentina/Buenos_Aires']) {
+    const events = [{
+      id: eventId, revision: 0, name: 'Sale', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-09-30', timeZone,
+      reminders: ['00:30', '12:30', '23:30'].flatMap((localTime, index) => [0, 1, 2].map((daysBefore) => (
+        { id: `${index}${daysBefore}`, kind: 'wall-time', daysBefore, localTime }))),
+    }, ...['00:30', '12:30', '23:30'].map((localTime) => {
+      const resolved = resolveZonedDateTime({ localDate: '2026-09-30', localTime, timeZone, disambiguation: 'reject' });
+      return { id: eventId, revision: 0, name: 'Lot', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-30', localTime, timeZone,
+        startsAt: resolved.ok ? resolved.value.startsAt : '', reminders: [{ id: 'r', kind: 'offset', offsetMinutes: 60 }] };
+    }).filter(({ startsAt }) => startsAt)];
+    for (const event of events) {
+      for (const trigger of deriveReminderTriggers(/** @type {*} */ ([event]))) {
+        for (const viewer of viewers) {
+          const notice = reminderNotice(trigger, { eventKind: event.eventKind, timeZone: viewer, locale: 'en-US' });
+          assert.ok(notice.indexOf('your time') + 'your time'.length <= 60, notice);
+          if (notice.length > longest.length) longest = notice;
+        }
+      }
+    }
+  }
+  assert.ok(longest.length <= 90, `${longest.length}: ${longest}`);
 });
 
 // N14: the reminders a 0.35.0 store holds keep their instants. A date-only reminder at 09:00 still goes off at 09:00 in
