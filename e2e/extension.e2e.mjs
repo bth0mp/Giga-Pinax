@@ -2,11 +2,11 @@
 // which the repository's own suites do without. Each check is one step of docs/MANUAL-TEST.md that a browser can show
 // offline:
 //
-//   step 21  The filter switches: "Only results citing …" draws as a normal checkbox with its label beside it, in the
+//   step 18  The filter switches: "Only results citing …" draws as a normal checkbox with its label beside it, in the
 //            toolbar popup's width and in the side panel's.
-//   step 22  A bare RIC number shows no median: `RIC 237` offers types to choose from, and no price search, median or
+//   step 19  A bare RIC number shows no median: `RIC 237` offers types to choose from, and no price search, median or
 //            Get prices appears until one is chosen.
-//   step 20  Amounts in a browser set to Arabic (Settings part only): a house premium of 22.5 reads back as `22.50`, in
+//   step 17  Amounts in a browser set to Arabic (Settings part only): a house premium of 22.5 reads back as `22.50`, in
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
 // The rest of that list needs a signed-in acsearch session, a real auction page, a second browser or a person's eye.
@@ -78,7 +78,7 @@ async function lookUp(page, reference) {
   await page.locator('#quick-reference').press('Enter');
 }
 
-test('step 21: the citing filter is a normal checkbox with its label beside it, in the popup and the side panel', async () => {
+test('step 18: the citing filter is a normal checkbox with its label beside it, in the popup and the side panel', async () => {
   const browser = await launch();
   try {
     for (const [path, width] of [['popup.html', 400], ['popup.html?panel=1', 360]]) {
@@ -110,7 +110,7 @@ test('step 21: the citing filter is a normal checkbox with its label beside it, 
   }
 });
 
-test('step 22: a bare RIC number offers types and shows no median until one is chosen', async () => {
+test('step 19: a bare RIC number offers types and shows no median until one is chosen', async () => {
   const browser = await launch();
   try {
     const page = await browser.context.newPage();
@@ -128,7 +128,7 @@ test('step 22: a bare RIC number offers types and shows no median until one is c
   }
 });
 
-test('step 20: in Arabic, a house premium reads back as 22.50 and saves again untouched', async () => {
+test('step 17: in Arabic, a house premium reads back as 22.50 and saves again untouched', async () => {
   const browser = await launch({ locale: 'ar-EG' });
   try {
     const page = await browser.context.newPage();
