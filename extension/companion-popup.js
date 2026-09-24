@@ -62,6 +62,8 @@ export function applyPreferredCurrency(select, preferred) {
   return true;
 }
 
+const DRAFT_BUDGET = 9500;
+
 export function buildWatchlistDraftPayload(input) {
   const payload = { target: 'watchlist' };
   const title = bounded(input?.title, 200);
@@ -80,8 +82,15 @@ export function buildWatchlistDraftPayload(input) {
       if (value) payload.auctionContext[field] = value;
     }
   }
-  // What the captured page states about its lot, for the workspace to offer: an estimate, when it closes, a photo link, its provenance.
-  return { ...payload, ...draftPageValues(input) };
+  // What the captured page states about its lot, for the workspace to offer: an estimate, when it closes, a photo link, its provenance. A page
+  // can write every address as long as a draft allows, so these give way, provenance first, before the draft outgrows the store's bound
+  // (LIMITS.draftPayloadBytes in core/records.js) and is refused with the coin's own fields in it.
+  const full = { ...payload, ...draftPageValues(input) };
+  for (const field of ['provenance', 'photoUrl', 'estimate', 'closesAt']) {
+    if (new TextEncoder().encode(JSON.stringify(full)).length <= DRAFT_BUDGET) break;
+    delete full[field];
+  }
+  return full;
 }
 
 // The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.

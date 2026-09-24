@@ -741,3 +741,16 @@ test('Watch carries the sale day to the workspace, which offers it as a date-onl
   assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
   assert.equal(background.root().lots[0].auctionEventId, event.id);
 });
+
+// A page can write addresses as long as a draft allows each one; what it states about the lot then gives way, provenance first, so the draft is
+// never refused as too large and the coin's own fields always reach the workspace.
+test('page values give way before a draft outgrows its storage bound', () => {
+  const long = (name) => `https://auction.example/${name}/${'x'.repeat(2000)}`;
+  const provenance = Array.from({ length: 10 }, (_, index) => ({ text: `Ex ${'Leu '.repeat(45)}${index}`.slice(0, 199), source: 'y'.repeat(120), lot: '1'.repeat(20) }));
+  const payload = buildWatchlistDraftPayload({ title: 'Lot', pageUrl: long('page'), auctionContext: { pageUrl: long('page'), canonicalUrl: long('canonical') },
+    photoUrl: long('photo'), closesAt: '2026-10-15', estimate: { minor: 100, currency: 'EUR' }, provenance });
+  assert.ok(new TextEncoder().encode(JSON.stringify(payload)).length <= 10000);
+  assert.equal(Object.hasOwn(payload, 'provenance'), false);
+  assert.equal(payload.closesAt, '2026-10-15');
+  assert.equal(payload.auctionContext.canonicalUrl, long('canonical'));
+});
