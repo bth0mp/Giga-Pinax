@@ -1072,3 +1072,13 @@ const cssDeclarations = (selector, media = '') => workspaceCssRules()
 test('the workspace nav wraps at phone width, so no route is scrolled out of sight', () => {
   assert.match(cssDeclarations('.workspace-nav', '@media(max-width:760px)'), /flex-wrap:wrap/);
 });
+
+// W-05: a danger button is red on a transparent face, never red text on the accent's purple (1.46:1).
+test('a danger button draws its red on a transparent face with a red border', () => {
+  const danger = cssDeclarations('button.danger');
+  assert.match(danger, /background:transparent/);
+  assert.match(danger, /border-color:var\(--error\)/);
+  assert.match(danger, /color:var\(--error\)/);
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  for (const id of ['delete-event', 'delete-lot']) assert.ok(markup.getElementById(id).classList.contains('quiet'), id);
+});

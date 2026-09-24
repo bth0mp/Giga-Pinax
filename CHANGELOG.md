@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - At phone width the workspace's navigation wraps onto a second line, so **History** and **Settings** are no longer cut off at the right edge with no sign that they are there.
+- **Remove event** in the workspace's auction form was red text on a purple button, which was hard to read; it is now a red outline button like **Remove coin**.
 
 ## [0.34.1] - 2026-09-24
 
