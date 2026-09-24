@@ -175,6 +175,64 @@ function earliest(current, candidate) {
 }
 
 /**
+ * A time zone as a collector names it: the place in its IANA name (`Europe/London` is `London`, `America/New_York`
+ * is `New York`). UTC is `UTC`; any other zone with no place (`Etc/GMT-2`) keeps its id.
+ * @param {*} timeZone
+ * @returns {string}
+ */
+export function zonePlace(timeZone) {
+  const zone = String(timeZone ?? '');
+  if (/^(?:Etc\/)?(?:UTC|UCT|GMT|Zulu|Universal)$/.test(zone)) return 'UTC';
+  if (!zone.includes('/') || zone.startsWith('Etc/')) return zone;
+  return zone.slice(zone.lastIndexOf('/') + 1).replaceAll('_', ' ');
+}
+
+const NOTICE_VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
+
+// A date or a time in the collector's language, or the ISO text the record holds where the language or zone cannot be used.
+function formatIn(locale, timeZone, options, instant, fallback) {
+  try { return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(new Date(instant)); } catch { return fallback; }
+}
+const dayIn = (locale, timeZone, instant, fallback) => formatIn(locale, timeZone, { weekday: 'short', day: 'numeric', month: 'short' }, instant, fallback);
+const timeIn = (locale, timeZone, instant, fallback) => formatIn(locale, timeZone, { hour: 'numeric', minute: '2-digit' }, instant, fallback);
+function dateIn(timeZone, instant) {
+  try { return localDateAtInstant(timeZone, instant); } catch { return String(instant).slice(0, 10); }
+}
+
+/**
+ * The words of a reminder's desktop notification. A timed auction is named at its own wall time and, where its zone is
+ * not the collector's, with its place and the collector's time: `Closes Fri 16 Oct, 14:00 (Zurich) — 8:00 your time`.
+ * A date-only sale day is a calendar day in the auction's zone and its reminder goes off at a wall time there, so both
+ * clocks are named for the reminder: `Sale day Thu 1 Oct (London) — reminder for 9:00 London, 10:00 your time`. The
+ * collector's day is added wherever it is not the auction's. Nothing here moves when a reminder goes off.
+ * @param {ReminderTrigger} trigger
+ * @param {{ eventKind?: string, timeZone: string, locale?: string }} view the auction's kind, and the collector's zone and language
+ * @returns {string}
+ */
+export function reminderNotice(trigger, { eventKind, timeZone: viewerZone, locale }) {
+  const zone = trigger.timeZone;
+  const verb = NOTICE_VERB[String(eventKind)] ?? 'Auction';
+  const same = zone === viewerZone;
+  const place = zonePlace(zone);
+  // The collector's side of one instant, with their day named where it is not the auction's.
+  const yours = (instant) => {
+    const day = dateIn(viewerZone, instant) === dateIn(zone, instant) ? '' : `${dayIn(locale, viewerZone, instant, '')} `;
+    return `${day}${timeIn(locale, viewerZone, instant, '')} your time`;
+  };
+  if (trigger.precision === 'timed' && Number.isFinite(Date.parse(String(trigger.eventStartsAt)))) {
+    const starts = /** @type {string} */ (trigger.eventStartsAt);
+    const head = `${verb} ${dayIn(locale, zone, starts, trigger.localDate)}, ${timeIn(locale, zone, starts, starts.slice(11, 16))}`;
+    return same ? `${head} your time` : `${head} (${place}) — ${yours(starts)}`;
+  }
+  const saleDay = dayIn(locale, 'UTC', `${trigger.localDate}T12:00:00Z`, trigger.localDate);
+  const at = trigger.triggerAt;
+  const reminderDay = dateIn(zone, at) === trigger.localDate ? '' : `${dayIn(locale, zone, at, at.slice(0, 10))} `;
+  const there = `${reminderDay}${timeIn(locale, zone, at, at.slice(11, 16))}`;
+  return same ? `${verb} ${saleDay} — reminder for ${there} your time`
+    : `${verb} ${saleDay} (${place}) — reminder for ${there} ${place}, ${yours(at)}`;
+}
+
+/**
  * @param {AuctionEvent[]} events
  * @param {{ alerts?: Alert[] } | null | undefined} schedulerState
  * @param {string} now
