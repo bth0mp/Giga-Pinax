@@ -248,7 +248,58 @@ export function lotDraftToEditor(payload) {
     sourceUrl: bounded(payload?.pageUrl, 2048),
   };
   if (payload?.auctionContext?.pageUrl) result.auctionContext = structuredClone(payload.auctionContext);
+  // What the page stated about its sale, each for the collector to keep or clear before the coin is saved.
+  const photoUrl = bounded(payload?.photoUrl, 2048);
+  if (/^https?:\/\//i.test(photoUrl)) result.photoUrl = photoUrl;
+  const estimateNote = estimateNoteText(payload?.estimate);
+  if (estimateNote) result.estimateNote = estimateNote;
+  if (closesAtParts(payload?.closesAt)) result.closesAt = payload.closesAt;
   return result;
+}
+
+// The lot has no estimate field of its own, so the page's figure is kept as a line of its notes, in the page's currency and that currency's own
+// places, as written: nothing is converted.
+export function estimateNoteText(estimate) {
+  if (!Number.isSafeInteger(estimate?.minor) || estimate.minor <= 0 || typeof estimate.currency !== 'string' || !/^[A-Z]{3}$/.test(estimate.currency)) return '';
+  let places;
+  try { places = new Intl.NumberFormat('en', { style: 'currency', currency: estimate.currency }).resolvedOptions().maximumFractionDigits; }
+  catch { return ''; }
+  const digits = String(estimate.minor).padStart(places + 1, '0');
+  const figure = places ? `${digits.slice(0, -places)}.${digits.slice(-places)}` : digits;
+  return `Estimate from page: ${estimate.currency} ${figure}`;
+}
+
+// A closing as a draft holds it (core/records.js validateDraftPayload): a day, or a day and time with the offset the page wrote.
+const CLOSES_AT = /^(\d{4})-(\d{2})-(\d{2})(?:T((?:[01]\d|2[0-3]):[0-5]\d)(Z|[+-](?:0\d|1[0-4]):[0-5]\d))?$/;
+function closesAtParts(value) {
+  const match = typeof value === 'string' ? CLOSES_AT.exec(value) : null;
+  if (!match) return null;
+  const [, year, month, day, time] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 || date.getUTCDate() !== Number(day)) return null;
+  return { localDate: `${year}-${month}-${day}`, timed: Boolean(time) };
+}
+
+// The auction a draft offers for its closing, in the collector's own time zone. A time the page gave with its offset is the same instant written
+// in that zone, so no zone is ever guessed for the page; a day stays a date-only auction day. The collector names and confirms it on save.
+export function offeredEventFromDraft({ closesAt, pageUrl } = {}, timeZone) {
+  const parts = closesAtParts(closesAt);
+  if (!parts) return null;
+  const precision = parts.timed ? 'timed' : 'date-only';
+  const event = { eventKind: parts.timed ? 'lot-closes' : 'auction-day', precision, localDate: parts.localDate, timeZone };
+  try { new Intl.DateTimeFormat('en', { timeZone }).format(0); }
+  catch { return null; }
+  if (parts.timed) {
+    const local = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', numberingSystem: 'latn',
+    }).formatToParts(new Date(Date.parse(closesAt))).map(({ type, value }) => [type, value]));
+    event.localDate = `${local.year}-${local.month}-${local.day}`;
+    event.localTime = `${local.hour}:${local.minute}`;
+  }
+  return {
+    ...event, reminderScope: 'linked-lots', reminders: createEventDraft(precision).reminders,
+    capturedText: `From the page: ${closesAt}`, ...(typeof pageUrl === 'string' && /^https?:\/\//i.test(pageUrl) ? { capturedFromUrl: pageUrl } : {}),
+  };
 }
 
 export function draftToConsumeAfterLotSave(reply, draftId) {
@@ -628,6 +679,26 @@ async function initWorkspace() {
     node.textContent = value;
     if (className) node.className = className;
     return node;
+  };
+  // What a lot draft's page stated about its sale, offered until the drafted coin is saved or the form is left: the closing, and the auction
+  // written for it once the collector has ticked it.
+  let pageOffer = null;
+  const clearPageValues = () => { pageOffer = null; $('lot-page-values').replaceChildren(); $('lot-page-values').hidden = true; };
+  const showPageValues = (values, pageUrl) => {
+    const root = $('lot-page-values');
+    root.replaceChildren(text('p', 'Filled in from the page you captured. Check each before saving; nothing here is saved until you save the coin.', 'field-note'));
+    if (values.estimateNote) root.append(text('p', `Estimate from the page: ${values.estimateNote.replace(/^Estimate from page: /, '')}, the price its offer states. It is written as a line of Notes; clear that line to leave it out.`, 'field-note'));
+    if (values.photoUrl) root.append(text('p', 'Photo link from the page, in Photo URL 1. Clear it to leave it out.', 'field-note'));
+    const offered = values.closesAt ? offeredEventFromDraft({ closesAt: values.closesAt, pageUrl }, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
+    if (offered) {
+      pageOffer = { closesAt: values.closesAt, pageUrl, eventId: null };
+      const label = document.createElement('label');
+      const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'pageAuction';
+      const when = offered.precision === 'timed' ? `closing ${offered.localDate} ${offered.localTime} (${offered.timeZone})` : `day on ${offered.localDate}`;
+      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${values.closesAt}). An auction you choose under Auction reminder is used instead.`));
+      root.append(label);
+    }
+    root.hidden = root.children.length < 2;
   };
   const provenanceValues = () => [...$('provenance-editor').querySelectorAll('.provenance-row')].map((row) => ({
     id: row.dataset.id || requestId(),
@@ -1099,6 +1170,7 @@ async function initWorkspace() {
   function populateLotForm(lot) {
     const f = $('lot-form').elements;
     for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
+    clearPageValues();
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
   }
   function renderSelectedLot() {
@@ -1172,7 +1244,24 @@ async function initWorkspace() {
     catch (error) { return announce(error.message, true); }
     const previous = basis.id ? structuredClone(basis.record) : null;
     const submittedSelection = { ...selection }; const submittedInteractionGeneration = lotInteractionGeneration;
-    void send(buildLotSaveCommand(lot, basis.revision), 'lot').then((reply) => {
+    // The auction the page's closing offers is written only when the collector ticked it and chose no auction of their own, and only once:
+    // a coin save that fails after it keeps the auction it made for the next try.
+    const offer = pageOffer;
+    const offeredEvent = offer && !offer.eventId && !lot.auctionEventId && f.pageAuction?.checked
+      ? offeredEventFromDraft(offer, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
+    if (offer?.eventId && !lot.auctionEventId && f.pageAuction?.checked) lot.auctionEventId = offer.eventId;
+    const savedEvent = offeredEvent
+      ? send({ type: 'event.save', requestId: requestId(), expectedRevision: null, event: { ...offeredEvent, name: lot.title.slice(0, 300) } })
+      : Promise.resolve(null);
+    void savedEvent.then((eventReply) => {
+      if (offeredEvent) {
+        if (!eventReply?.ok || !eventReply.value?.id) return null;
+        offer.eventId = eventReply.value.id;
+        lot.auctionEventId = eventReply.value.id;
+      }
+      return send(buildLotSaveCommand(lot, basis.revision), 'lot');
+    }).then((reply) => {
+      if (!reply) return;
       if (reply?.ok && reply.value?.id) {
         const interactionChanged = submittedInteractionGeneration !== lotInteractionGeneration;
         const followup = lotSaveFollowup(selection, submittedSelection, reply.value, reply.editorPreserved, Boolean(previous), interactionChanged); selection = followup.selection;
@@ -1364,6 +1453,7 @@ async function initWorkspace() {
     if (!form) return;
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
+    if (editor === 'lot') clearPageValues();
     if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
   }
@@ -1399,7 +1489,11 @@ async function initWorkspace() {
       form.elements.auctionHouse.value = values.auctionContext?.house ?? '';
       form.elements.auctionSaleId.value = values.auctionContext?.saleId ?? '';
       form.elements.auctionLotNumber.value = values.auctionContext?.lotNumber ?? '';
+      if (values.photoUrl) form.elements.photoUrl1.value = values.photoUrl;
+      if (values.estimateNote) form.elements.notes.value = values.estimateNote;
       $('provenance-editor').replaceChildren();
+      clearPageValues();
+      showPageValues(values, values.auctionContext?.pageUrl || values.sourceUrl);
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
       form.elements.title.focus();

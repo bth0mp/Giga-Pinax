@@ -652,3 +652,40 @@ test('a refused capture is recorded as a capture failure, with nothing of the pa
     delete globalThis.browser.storage.local;
   }
 });
+
+// 0.34 (W2a): the page's estimate, closing time and photo go with the captured lot to the workspace draft, in the shapes the draft holds, and come
+// off it with the auction context when the collector clears that.
+test('a captured lot takes the page’s estimate, closing time and photo to its draft, and only in their draft shapes', () => {
+  const payload = buildWatchlistDraftPayload({
+    title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg',
+  });
+  assert.deepEqual(payload, { target: 'watchlist', title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' });
+  const refused = buildWatchlistDraftPayload({
+    title: 'Lot 27', estimate: { minor: 12.5, currency: 'EUR', note: 'x' }, closesAt: '2026-10-15T14:00', photoUrl: 'javascript:alert(1)',
+  });
+  assert.deepEqual(refused, { target: 'watchlist', title: 'Lot 27', closesAt: '2026-10-15' });
+  assert.equal(Object.hasOwn(buildWatchlistDraftPayload({ title: 'Lot', estimate: { minor: 5, currency: 'eur' } }), 'estimate'), false);
+});
+
+test('the capture’s own save carries the page values, and clearing the auction context takes them off', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'structured-data' } },
+      offerPrice: '1200', offerCurrency: 'EUR', closesAt: '2026-10-15T14:00:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().estimate, { minor: 120000, currency: 'EUR' });
+  assert.equal(lastSaved().closesAt, '2026-10-15T14:00+02:00');
+  assert.equal(lastSaved().photoUrl, 'https://images.auction.example/27.jpg');
+
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  for (const field of ['auctionContext', 'estimate', 'closesAt', 'photoUrl']) assert.equal(lastSaved()[field] ?? null, null, field);
+  assert.equal(lastSaved().reference, 'RIC 306');
+});

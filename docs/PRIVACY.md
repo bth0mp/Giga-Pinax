@@ -10,7 +10,7 @@ Giga Pinax handles references and search terms that you enter. After you explici
 
 The extension stores information you choose to save in browser extension storage. This can include watchlist and collection records, auction identity and page links, notes, bid plans and outcomes, reminders, provenance, measurements, condition, fee estimates, saved house premiums and their bid increment ladders, collector-entered comparable sales and up to two external photo URL links per coin. Giga Pinax stores the photo URLs, not copies of the photo files.
 
-Unsaved capture drafts, which hold the captured page text, and a short ledger of recent write requests are also kept in that storage so a save is not repeated or lost. A reference you have typed is held in the browser's extension session storage while a permission prompt closes the popup, and is discarded when the browser session ends.
+Unsaved capture drafts, which hold the captured page text and what the page stated about the lot's sale (the price its offer gives, when it closes and a photo link), and a short ledger of recent write requests are also kept in that storage so a save is not repeated or lost. A reference you have typed is held in the browser's extension session storage while a permission prompt closes the popup, and is discarded when the browser session ends.
 
 The research popup also keeps a few display settings in the extension page's own `localStorage`, so it opens the way you left it: your last six lookups, up to 50 price-search phrases you have edited, the research form's catalogue, number, volume, ruler or mint, currency and sales period, the light or dark theme, a cache of the Nomisma names an online card has already been given, and a copy of the default currency the popup can read before the background answers it. None of it is part of a backup or of the raw export, and all of it goes when the extension's data is removed.
 
@@ -31,7 +31,7 @@ CoinArchives price research is requested separately from acsearch. It sends the 
 
 In Firefox, updates are Firefox's own business, not Giga Pinax's. The Firefox package names an update manifest, `https://bth0mp.github.io/Giga-Pinax/firefox/updates.json`, which Firefox may request periodically as it does for every add-on that names one; for a signed install it then downloads a newer signed version from the GitHub release. These are ordinary requests to GitHub, carrying connection data such as your IP address and nothing from your records. A temporary install is never updated from it.
 
-When you open saved-coin comparison, Giga Pinax may load the external photo URL links you entered. Those photo servers can use HTTP or HTTPS and receive an ordinary image request, including connection data such as your IP address. Images are lazy-loaded with no referrer. Photo servers are not contacted when you import, list or edit a coin, and a failed image shows an unavailable-image fallback.
+When you open saved-coin comparison, Giga Pinax may load the external photo URL links you entered or kept from a captured page. Those photo servers can use HTTP or HTTPS and receive an ordinary image request, including connection data such as your IP address. Images are lazy-loaded with no referrer. Photo servers are not contacted when you import, list or edit a coin, and a failed image shows an unavailable-image fallback.
 
 ## Storage, retention and deletion
 

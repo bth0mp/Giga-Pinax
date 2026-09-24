@@ -593,6 +593,31 @@ function preferencesResult(preferences, path) {
   return { ok: true, value: preferences };
 }
 
+// What a lot page states about its own sale, kept on a current-lot draft until the collector confirms or clears it in the workspace. An estimate is
+// the page's own figure in the page's own currency - any three-letter code, since nothing is converted and nothing is pooled - in that currency's
+// minor units. A closing is a day, or a time only with the offset the page wrote beside it: a time with no offset names no zone, and none is
+// invented for it.
+const CLOSES_AT = /^(\d{4}-\d{2}-\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d))?$/;
+
+function pageEstimateResult(value, path) {
+  const object = objectResult(value, path); if (!object.ok) return object;
+  const unexpected = Object.keys(value).find((key) => key !== 'minor' && key !== 'currency');
+  if (unexpected) return failure('unexpected-field', 'Estimate contains an unsupported field.', `${path}.${unexpected}`);
+  return firstFailure(
+    integerResult(value.minor, `${path}.minor`, { minimum: 1 }),
+    typeof value.currency === 'string' && /^[A-Z]{3}$/.test(value.currency)
+      ? { ok: true, value: value.currency }
+      : failure('invalid-currency', 'Expected a three-letter ISO currency code.', `${path}.currency`),
+  );
+}
+
+function closesAtResult(value, path) {
+  const match = typeof value === 'string' ? CLOSES_AT.exec(value) : null;
+  return match && dateResult(match[1], path).ok
+    ? { ok: true, value }
+    : failure('invalid-date', 'Expected a YYYY-MM-DD date, or a date and time with its UTC offset.', path);
+}
+
 export function validateDraftPayload(kind, payload, path = '') {
   const kindPath = path ? `${path}.kind` : 'kind';
   const payloadPath = path ? `${path}.payload` : 'payload';
@@ -602,7 +627,7 @@ export function validateDraftPayload(kind, payload, path = '') {
   if (!object.ok) return object;
 
   const allowed = kind === 'current-lot'
-    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext'])
+    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext', 'estimate', 'closesAt', 'photoUrl'])
     : new Set(['rawText', 'pageUrl', 'auctionContext']);
   const unexpected = Object.keys(payload).find((key) => !allowed.has(key));
   if (unexpected) {
@@ -618,6 +643,9 @@ export function validateDraftPayload(kind, payload, path = '') {
       optionalString(payload, 'reference', payloadPath, LIMITS.shortText),
       optionalString(payload, 'pageUrl', payloadPath, LIMITS.url),
       OWN(payload, 'auctionContext') ? auctionContextResult(payload.auctionContext, `${payloadPath}.auctionContext`) : { ok: true },
+      OWN(payload, 'estimate') ? pageEstimateResult(payload.estimate, `${payloadPath}.estimate`) : { ok: true },
+      OWN(payload, 'closesAt') ? closesAtResult(payload.closesAt, `${payloadPath}.closesAt`) : { ok: true },
+      optionalUrl(payload, 'photoUrl', payloadPath),
     );
     return fields.ok ? { ok: true, value: payload } : fields;
   }

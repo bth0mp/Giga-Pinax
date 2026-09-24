@@ -5,7 +5,7 @@ import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
-import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
+import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
@@ -80,8 +80,13 @@ export function buildWatchlistDraftPayload(input) {
       if (value) payload.auctionContext[field] = value;
     }
   }
-  return payload;
+  // What the captured page states about its sale, for the workspace to offer: an estimate, when it closes, a photo link.
+  return { ...payload, ...draftPageValues(input) };
 }
+
+// The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.
+const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'photoUrl']);
+const withoutPageValues = (draft) => Object.fromEntries(Object.entries(draft).filter(([key]) => !PAGE_VALUES.includes(key)));
 
 export function clearAuctionContextFromPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
@@ -145,6 +150,7 @@ export function watchlistPayloadFromCapture(draft) {
     reference: draft?.reference?.value,
     pageUrl: draft?.pageUrl,
     auctionContext: Object.hasOwn(draft ?? {}, 'auctionContext') ? draft.auctionContext : (draft?.pageUrl ? { pageUrl: draft.pageUrl } : undefined),
+    ...Object.fromEntries(PAGE_VALUES.map((field) => [field, draft?.[field]])),
   });
 }
 
@@ -463,7 +469,7 @@ async function initCompanionPopup() {
   // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
   // stopped being about that page.
   const dropAuctionContext = () => {
-    if (captureDraft) captureDraft = { ...captureDraft, auctionContext: null };
+    if (captureDraft) captureDraft = { ...withoutPageValues(captureDraft), auctionContext: null };
     researchAuctionContext = null;
     safeCard = clearAuctionContextFromPayload(safeCard);
     if (globalThis.gigaPinaxWatchlistReference) {

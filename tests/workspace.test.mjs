@@ -12,6 +12,8 @@ import {
   mergeLotSourceLinks,
   mergeEventReminders,
   lotDraftToEditor,
+  estimateNoteText,
+  offeredEventFromDraft,
   moneyInputText,
   reminderControlsForPrecision,
   outcomeDraftForLot,
@@ -1028,4 +1030,42 @@ test('only the status line and the announcement are live, not the coin pane', ()
   assert.ok(markup.querySelector('.coin-detail'), 'the coin pane is present');
   assert.deepEqual(markup.querySelectorAll('[aria-live]').map((element) => element.id), ['announcement']);
   assert.equal(markup.getElementById('workspace-status').getAttribute('role'), 'status');
+});
+
+// 0.34 (W2a): the values a lot page stated about its sale reach the draft form as the page gave them, for the collector to keep or clear - the
+// photo link in Photo URL 1, the estimate as a line of the notes (the lot has no estimate field of its own) and the closing as an offered auction.
+test('a watchlist draft brings the page’s photo, estimate and closing into the editor, and nothing it cannot hold', () => {
+  assert.deepEqual(lotDraftToEditor({ target: 'watchlist', title: 'Coin', pageUrl: 'https://auction.example/lot',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/1.jpg' }), {
+    title: 'Coin', reference: '', sourceUrl: 'https://auction.example/lot',
+    photoUrl: 'https://images.auction.example/1.jpg', estimateNote: 'Estimate from page: EUR 1200.00', closesAt: '2026-10-15T14:00+02:00',
+  });
+  assert.deepEqual(lotDraftToEditor({ target: 'watchlist', title: 'Coin', estimate: { minor: 1.5, currency: 'EUR' }, closesAt: 'soon', photoUrl: 'javascript:alert(1)' }),
+    { title: 'Coin', reference: '', sourceUrl: '' });
+});
+
+test('an estimate is written in its own currency and places, never converted', () => {
+  assert.equal(estimateNoteText({ minor: 120000, currency: 'EUR' }), 'Estimate from page: EUR 1200.00');
+  assert.equal(estimateNoteText({ minor: 500000, currency: 'JPY' }), 'Estimate from page: JPY 500000');
+  assert.equal(estimateNoteText({ minor: 95005, currency: 'SEK' }), 'Estimate from page: SEK 950.05');
+  assert.equal(estimateNoteText({ minor: 5, currency: 'KWD' }), 'Estimate from page: KWD 0.005');
+  assert.equal(estimateNoteText({ minor: 5, currency: 'eur' }), '');
+  assert.equal(estimateNoteText(null), '');
+});
+
+test('the offered auction keeps the page’s instant in the collector’s own zone, and a day stays a date-only auction day', () => {
+  const timed = offeredEventFromDraft({ closesAt: '2026-10-15T14:00+02:00', pageUrl: 'https://auction.example/lot' }, 'America/New_York');
+  assert.deepEqual(timed, {
+    eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-15', localTime: '08:00', timeZone: 'America/New_York',
+    reminderScope: 'linked-lots', reminders: createEventDraft('timed').reminders,
+    capturedText: 'From the page: 2026-10-15T14:00+02:00', capturedFromUrl: 'https://auction.example/lot',
+  });
+  assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T23:30Z' }, 'Asia/Tokyo').localDate, '2026-10-16');
+  assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T23:30Z' }, 'Asia/Tokyo').localTime, '08:30');
+  assert.deepEqual(offeredEventFromDraft({ closesAt: '2026-10-15' }, 'Europe/Zurich'), {
+    eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-15', timeZone: 'Europe/Zurich',
+    reminderScope: 'linked-lots', reminders: createEventDraft('date-only').reminders, capturedText: 'From the page: 2026-10-15',
+  });
+  for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
+  assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
 });

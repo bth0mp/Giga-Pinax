@@ -1,0 +1,29 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Product",
+      "name": "Lot 27. Nero, 54-68. Denarius. RIC I 306.",
+      "description": "Emperor: Nero. Rome mint. Good very fine. Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's 1991.",
+      "url": "https://house.example/sale-9/lot-27",
+      "image": [
+        { "@type": "ImageObject", "contentUrl": "https://images.house.example/sale-9/27-obverse.jpg" },
+        "https://images.house.example/sale-9/27-reverse.jpg"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "url": "https://house.example/sale-9/lot-27",
+        "price": "1200.00",
+        "priceCurrency": "EUR",
+        "availabilityEnds": "2026-10-15T14:00:00+02:00"
+      }
+    },
+    {
+      "@type": "Product",
+      "name": "Lot 28. Galba, 68-69. Denarius. RIC I 167.",
+      "url": "https://house.example/sale-9/lot-28",
+      "image": "https://images.house.example/sale-9/28.jpg",
+      "offers": { "@type": "Offer", "price": 800, "priceCurrency": "EUR", "availabilityEnds": "2026-10-15T14:02:00+02:00" }
+    }
+  ]
+}

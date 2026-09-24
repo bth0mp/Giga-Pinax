@@ -316,3 +316,67 @@ test('the Search route offers the open coin’s reference as the query, never ov
   await page.navigate('#search');
   assert.equal(page.$('research-query').value, '', 'a coin with no reference offers nothing');
 });
+
+// 0.34 (W2a): a lot draft captured from a page brings what the page stated about its sale - a photo link, an estimate, when it closes - each
+// labelled as the page's, for the collector to keep or clear before anything is saved.
+async function backgroundWithPageDraft(payload) {
+  const background = await backgroundWithCoins();
+  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload: { target: 'watchlist', title: 'Captured coin', pageUrl: 'https://house.example/lot/27', ...payload } });
+  assert.equal(draft.ok, true, draft.message);
+  return { background, hash: `#lot-draft=${draft.value.id}` };
+}
+
+test('a lot draft shows the page’s photo, estimate and closing as the page’s, and saves only what the collector kept', async () => {
+  const { background, hash } = await backgroundWithPageDraft({
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.house.example/27.jpg',
+  });
+  const page = await mountWorkspace({ background, hash });
+  const form = page.$('lot-form').elements;
+  assert.equal(page.$('lot-page-values').hidden, false);
+  const shown = page.$('lot-page-values').textContent;
+  for (const phrase of ['from the page', 'EUR 1200.00', 'Photo URL 1', '2026-10-15T14:00+02:00']) assert.ok(shown.includes(phrase), phrase);
+  assert.equal(form.photoUrl1.value, 'https://images.house.example/27.jpg');
+  assert.equal(form.notes.value, 'Estimate from page: EUR 1200.00');
+  assert.equal(form.pageAuction.checked, false, 'the auction is offered, not added');
+
+  // The collector clears the photo and leaves the auction unticked: the estimate line is kept, and no auction is written.
+  await page.typeDetails('photoUrl1', '');
+  await page.saveDetails();
+  const saved = storedLot(background, 'Captured coin');
+  assert.equal(saved.notes, 'Estimate from page: EUR 1200.00');
+  assert.equal(saved.coinDetails, undefined);
+  assert.equal(saved.auctionEventId, undefined);
+  assert.deepEqual(background.root().auctionEvents, []);
+  assert.equal(page.$('lot-page-values').hidden, true, 'the page values go once the coin is saved');
+});
+
+test('ticking the offered auction saves it at the page’s instant and attaches it to the drafted coin', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15T14:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  const box = page.$('lot-form').elements.pageAuction;
+  box.checked = true;
+  await page.$('lot-form').emit('input', { target: box });
+  await page.saveDetails();
+  await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.startsAt, '2026-10-15T12:00:00.000Z');
+  assert.equal(event.precision, 'timed');
+  assert.equal(event.eventKind, 'lot-closes');
+  assert.equal(event.name, 'Captured coin');
+  assert.equal(event.capturedText, 'From the page: 2026-10-15T14:00+02:00');
+  assert.equal(event.capturedFromUrl, 'https://house.example/lot/27');
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, event.id);
+});
+
+test('an auction the collector already chose wins over the one the page offers', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15' });
+  const chosen = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Chosen sale', eventKind: 'auction-day', precision: 'date-only',
+    localDate: '2026-11-01', timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+  const page = await mountWorkspace({ background, hash });
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.typeDetails('auctionEventId', chosen.value.id);
+  await page.saveDetails();
+  await settle();
+  assert.equal(background.root().auctionEvents.length, 1);
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, chosen.value.id);
+});

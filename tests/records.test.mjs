@@ -25,6 +25,39 @@ test('capture and research drafts accept validated auction context', () => {
   assert.equal(validateDraftPayload('auction-capture', { auctionContext: { pageUrl: 'file:///bad' } }).ok, false);
 });
 
+// 0.34 (W2a): what a lot page states about its sale rides on a current-lot draft for the collector to confirm - an estimate in the page's own
+// currency and minor units, a closing day or a closing time with its offset, and a photo link - each validated here as it is kept.
+test('a current-lot draft carries the page’s estimate, closing time and photo only in their validated shapes', () => {
+  const draft = (fields) => validateDraftPayload('current-lot', { target: 'watchlist', title: 'Coin', ...fields });
+  for (const fields of [
+    { estimate: { minor: 120000, currency: 'EUR' } }, { estimate: { minor: 5000, currency: 'JPY' } },
+    { closesAt: '2026-10-15' }, { closesAt: '2026-10-15T14:00+02:00' }, { closesAt: '2026-10-15T12:00Z' }, { closesAt: '2026-10-15T09:30-05:00' },
+    { photoUrl: 'https://house.test/27.jpg' },
+  ]) assert.equal(draft(fields).ok, true, JSON.stringify(fields));
+  for (const [fields, path] of [
+    [{ estimate: { minor: 1200, currency: 'eur' } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 1200, currency: 'EURO' } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 12.5, currency: 'EUR' } }, 'payload.estimate.minor'],
+    [{ estimate: { minor: 0, currency: 'EUR' } }, 'payload.estimate.minor'],
+    [{ estimate: { minor: 1200 } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 1200, currency: 'EUR', converted: true } }, 'payload.estimate.converted'],
+    [{ estimate: '1200 EUR' }, 'payload.estimate'],
+    [{ closesAt: '2026-10-15T14:00' }, 'payload.closesAt'],
+    [{ closesAt: '2026-02-30' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T24:00Z' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00+15:00' }, 'payload.closesAt'],
+    [{ closesAt: 'next Tuesday' }, 'payload.closesAt'],
+    [{ photoUrl: 'javascript:alert(1)' }, 'payload.photoUrl'],
+    [{ photoUrl: `https://house.test/${'x'.repeat(2048)}` }, 'payload.photoUrl'],
+  ]) {
+    const result = draft(fields);
+    assert.equal(result.ok, false, JSON.stringify(fields));
+    assert.equal(result.error.path, path, JSON.stringify(fields));
+  }
+  // Only the watchlist's own draft kind takes them.
+  assert.equal(validateDraftPayload('auction-capture', { rawText: 'Coin', photoUrl: 'https://house.test/27.jpg' }).ok, false);
+});
+
 const NOW = '2026-09-12T12:00:00.000Z';
 const IDS = Object.freeze({
   eventUsd: '11111111-1111-4111-8111-111111111111',
