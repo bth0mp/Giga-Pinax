@@ -940,6 +940,7 @@ const DIAGNOSTIC_ENTRIES = [
 test('the Diagnostics card says how many failures are kept, and copies them as plain text', async () => {
   const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: DIAGNOSTIC_ENTRIES } });
   assert.equal(page.element('diagnostics-count').textContent, '2 failures recorded on this device.');
+  assert.match(page.element('diagnostics').textContent, /catalogue lookup, specimen photos, acsearch/);
   await page.element('copy-diagnostics').click();
   await settle();
   assert.equal(page.copied.length, 1);

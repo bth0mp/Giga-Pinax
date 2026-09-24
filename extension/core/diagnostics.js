@@ -14,7 +14,7 @@ export const DIAGNOSTICS_KEY = 'gigaPinax:diagnostics:v1';
 export const MAX_DIAGNOSTICS = 50;
 
 const PAGES = new Set(['popup', 'workspace', 'settings', 'background']);
-const AREAS = new Set(['lookup', 'acsearch', 'coinarchives', 'store', 'capture', 'reminders']);
+const AREAS = new Set(['lookup', 'specimens', 'acsearch', 'coinarchives', 'store', 'capture', 'reminders']);
 const CODES = new Set([
   'http', 'network', 'timeout', 'aborted', 'too-large', 'parse', 'redirect', 'content-type',
   'storage', 'validation', 'conflict', 'unsupported', 'duplicate', 'not-saved', 'not-opened', 'failed',

@@ -941,7 +941,7 @@ export async function fetchSpecimens(card, { fetchImpl = fetch, timeoutMs = 8000
     }
     return specimens;
   } catch (error) {
-    if (!signal?.aborted) void recordFetchFailure('lookup', error);
+    if (!signal?.aborted) void recordFetchFailure('specimens', error);
     return [];
   } finally {
     clearTimeout(timer);
