@@ -24,8 +24,9 @@ export function documentMode(search = '') {
   return { panel, windowed, acceptsLookupMessages: windowed && !panel };
 }
 
+// A list of types stands outside Refine (popup.html), so it opens nothing: only a reference that needs a ruler typed, or a guided field in error, does.
 export function shouldRevealRefine(outcome, field = '') {
-  return outcome?.status === 'candidates' || outcome?.status === 'too-many'
+  return outcome?.status === 'too-many'
     || Boolean(field && ['catalogue', 'reference-number', 'ric-volume', 'ric-section'].includes(field));
 }
 

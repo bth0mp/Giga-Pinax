@@ -14,7 +14,7 @@ import {
   NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
   catalogueFailureMessage, coinArchivesFailure, onlineMessage,
 } from './popup-messages.js';
-import { coinArchivesCounts, filterLines, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
+import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
 
 const LABELS_KEY = 'giga-pinax-labels-v1';
@@ -462,16 +462,34 @@ async function showSpecimens(card) {
   $('specimens').hidden = false;
 }
 
-// A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
+// The rows of the list of types on show, with the title each is filtered by and the volume group it sits in (null in a list that is not grouped).
+let candidateRows = [];
+// A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions. A long RIC list is grouped
+// by volume, and where every type came from the bundled data that is said once, beside the count, rather than on every row. Past twelve rows a filter
+// narrows them.
 function renderCandidates(candidates, corpus, partial, personMismatch = false) {
   $('candidates-label').textContent = personMismatch ? 'No matching ruler found locally. Other types with this reference:' : partial ? 'Choose a type:' : 'Did you mean:';
-  $('candidate-list').replaceChildren(...candidates.map(({ id, title, source }) => {
+  const local = candidates.every(({ source }) => source === 'local');
+  $('candidates-count').textContent = `${candidates.length} ${candidates.length === 1 ? 'type' : 'types'}${local ? ', local catalogue' : ''}`;
+  const groups = candidateGroups(candidates);
+  candidateRows = [];
+  const row = ({ id, title, source }, split = null, group = null) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'text-button';
-    button.textContent = title;
-    if (source === 'local') {
+    // The whole title is the button's name wherever the row shows only part of it under its volume's heading.
+    button.setAttribute('aria-label', title);
+    if (split) {
+      const ruler = document.createElement('strong');
+      ruler.textContent = split.section;
+      const rest = document.createElement('span');
+      rest.className = 'candidate-rest';
+      rest.textContent = split.rest;
+      button.append(ruler, ' ', rest);
+    } else button.textContent = title;
+    // A list mixing bundled and online types still marks the bundled ones.
+    if (source === 'local' && !local) {
       const badge = document.createElement('span');
       badge.className = 'source-badge candidate-source';
       badge.textContent = 'Local catalogue';
@@ -489,13 +507,38 @@ function renderCandidates(candidates, corpus, partial, personMismatch = false) {
       beginResearch(parsed, () => localFirstId(corpus, id), '', { corpus, id, label: title });
     });
     item.append(button);
+    candidateRows.push({ item, title: folded(title), group });
     return item;
-  }));
+  };
+  $('candidate-list').replaceChildren(...(groups ? groups.map(({ heading, rows }) => {
+    const group = document.createElement('li');
+    group.className = 'candidate-group';
+    const title = document.createElement('p');
+    title.className = 'candidate-heading';
+    title.textContent = heading;
+    const list = document.createElement('ul');
+    list.className = 'candidate-rows';
+    list.append(...rows.map(({ candidate, section, rest }) => row(candidate, { section, rest }, group)));
+    group.append(title, list);
+    return group;
+  }) : candidates.map((candidate) => row(candidate))));
+  $('candidate-filter').value = '';
+  $('candidate-filter').hidden = candidates.length <= 12;
   $('candidates').hidden = false;
-  if (shouldRevealRefine({ status: 'candidates' })) $('refine-reference').open = true;
   announce(`${candidates.length} possible matches. Choose one.`);
   revealAgain('candidates');
 }
+
+// The filter keeps the rows whose title holds what is typed, and a volume with none of them left goes with its rows. Enter in it filters, never submits
+// the form it stands in.
+$('candidate-filter').addEventListener('input', () => {
+  const wanted = folded($('candidate-filter').value.trim());
+  for (const entry of candidateRows) entry.item.hidden = Boolean(wanted) && !entry.title.includes(wanted);
+  for (const group of new Set(candidateRows.map((entry) => entry.group).filter(Boolean))) {
+    group.hidden = candidateRows.every((entry) => entry.group !== group || entry.item.hidden);
+  }
+});
+$('candidate-filter').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.preventDefault(); });
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
 // from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or an SC "Ad." title would not read back) and makes

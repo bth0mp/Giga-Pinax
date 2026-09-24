@@ -2165,3 +2165,59 @@ test('the footer is one line: a short credit and an unbroken acsearch link', () 
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
   assert.match(css, /\.popup-footer a \{[^}]*white-space:nowrap/);
 });
+
+// Loop 1 (P-06): "RIC 237" listed 47 types flat, each ending in the same "Local catalogue" badge, inside the open Refine form. The list now stands
+// outside Refine, grouped by volume under a small heading with its count, says once where the types came from, and above 12 rows offers a filter.
+const volumeChoices = (count) => ({ status: 'candidates', corpus: 'ocre', partial: true, candidates: [
+  ...['Augustus', 'Galba', 'Nero'].map((ruler) => ({ id: `ric.1(2).${ruler}.237`, title: `RIC I (second edition) ${ruler} 237`, source: 'local' })),
+  ...['Caracalla', 'Elagabalus', 'Gordian III', 'Philip I', 'Septimius Severus', 'Severus Alexander', 'Volusian', 'Maximinus I', 'Balbinus', 'Pupienus']
+    .map((ruler) => ({ id: `ric.4.${ruler}.237`, title: `RIC IV ${ruler} 237`, source: 'local' })),
+  { id: 'ric.7.tri.237', title: 'RIC VII Treveri 237', source: 'local' },
+].slice(0, count) });
+
+test('a list of types is grouped by volume, says once where it came from, and stays out of Refine', async () => {
+  const opened = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => volumeChoices(14),
+    localProvider: { serves: () => true, lookupById: async (corpus, id) => { opened.push(id); return { status: 'ok', card: { id, corpus, label: 'RIC IV Caracalla 237', obverse: {}, reverse: {} } }; } } });
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('candidates').hidden, false);
+  assert.equal(popup.element('refine-reference').open, false);
+  assert.equal(popup.element('candidates-count').textContent, '14 types, local catalogue');
+  const groups = popup.element('candidate-list').children;
+  assert.deepEqual(groups.map((group) => group.children[0].textContent), ['RIC I² · 3', 'RIC IV · 10', 'RIC VII · 1']);
+  const row = groups[1].children[1].children[0].children[0];
+  assert.equal(row['aria-label'], 'RIC IV Caracalla 237');
+  assert.equal(row.children[0].textContent, 'Caracalla');
+  assert.equal(JSON.stringify(row.children).includes('Local catalogue'), false);
+  // Above 12 rows, a filter narrows them, and a volume left empty goes with its rows.
+  assert.equal(popup.element('candidate-filter').hidden, false);
+  popup.element('candidate-filter').value = 'treveri';
+  await popup.element('candidate-filter').emit('input');
+  assert.deepEqual(groups.map((group) => group.hidden), [true, true, false]);
+  assert.equal(groups[1].children[1].children[0].hidden, true);
+  await row.emit('click');
+  await settle();
+  assert.deepEqual(opened, ['ric.4.Caracalla.237']);
+});
+
+test('a short list of types keeps no filter and no volume headings', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => volumeChoices(3) });
+  popup.element('quick-reference').value = 'RIC 237';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('candidate-filter').hidden, true);
+  assert.equal(popup.element('candidates-count').textContent, '3 types, local catalogue');
+  assert.deepEqual(popup.element('candidate-list').children.map((item) => item.children[0]['aria-label']),
+    ['RIC I (second edition) Augustus 237', 'RIC I (second edition) Galba 237', 'RIC I (second edition) Nero 237']);
+});
+
+test('the list of types stands outside the Refine form', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const refine = html.slice(html.indexOf('<details id="refine-reference"'), html.indexOf('</details>', html.indexOf('<details id="refine-reference"')));
+  assert.doesNotMatch(refine, /id="candidates"/);
+  assert.match(html, /id="candidates"/);
+});

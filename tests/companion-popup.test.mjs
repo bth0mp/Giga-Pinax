@@ -163,7 +163,8 @@ test('native panels and the panel fallback ignore pop-out routing, which only th
 });
 
 test('ambiguity and guided-field errors reveal refinement', () => {
-  assert.equal(shouldRevealRefine({ status: 'candidates' }), true);
+  // Loop 1 (P-06): a list of types stands outside Refine, so choosing one no longer opens it.
+  assert.equal(shouldRevealRefine({ status: 'candidates' }), false);
   assert.equal(shouldRevealRefine({ status: 'too-many' }), true);
   assert.equal(shouldRevealRefine({ status: 'none' }, 'reference-number'), true);
   assert.equal(shouldRevealRefine({ status: 'network' }), false);
