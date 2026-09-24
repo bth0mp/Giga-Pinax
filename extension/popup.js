@@ -281,10 +281,10 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
+  shownUpcoming = null;
   renderPriceFilters();
   resetCopyLabel();
   $('prices-panel').hidden = true;
-  shownUpcoming = null;
   $('upcoming').hidden = true;
   $('upcoming-list').replaceChildren();
   // A new result starts with Inspect sales folded; a period redraw leaves it as it was.

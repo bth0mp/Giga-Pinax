@@ -1743,3 +1743,20 @@ test('the CoinArchives panel draws its own median by year, never pooled with acs
   assert.deepEqual(popup.element('coinarchives-year-lines').children.map((line) => line.textContent), ['2025: median $250 (3)']);
   assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023: median $200 (3)', '2024: median $500 (3)']);
 });
+
+// The toggles stand for the rows on show: clearing the Upcoming list takes them down with it, as it does after a re-fetch that finds nothing and after
+// Get prices with an emptied term, which clears the panel once and asks nothing.
+test('clearing the Upcoming list takes the toggles down with it', async () => {
+  const replies = [{ status: 'unpriced', term: '"Price 23"', lots: withUpcoming.lots.slice(1) }, { status: 'empty', term: '"Price 23"' }];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => replies.shift() ?? { status: 'empty', term: 'x' } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('citing-row').hidden, false);
+  popup.element('price-term').value = '';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('upcoming').hidden, true);
+  assert.equal(popup.element('citing-row').hidden, true);
+  assert.equal(popup.element('price-filters').hidden, true);
+});
