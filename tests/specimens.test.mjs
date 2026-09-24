@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fetchSpecimens } from '../extension/lookup.js';
+import { fetchSpecimens, lookupType, parseReference } from '../extension/lookup.js';
+import { bundle, skip } from './helpers/bundle.mjs';
 
 // The fixture is Nomisma's own answer to the specimen query for RIC I² Nero 306 (https://nomisma.org/query, 2026-09-24), trimmed by hand to the
 // variables fetchSpecimens asks for. Six specimens, every one with both sides imaged and a holding collection.
@@ -127,4 +128,32 @@ test('the caller cancelling stops the request itself', async () => {
   controller.abort();
   assert.deepEqual(await pending, []);
   assert.equal(seen.aborted, true);
+});
+
+// 0.34 final review: PCO (Lorber's CPE) and AGCO (Newell's Demetrius Poliorcetes) cards are type cards like the others, so the strip asks for them
+// too, under the URI each corpus publishes (http://numismatics.org/pco/id/cpe.1_1.1, http://numismatics.org/agco/id/newell.demetrius.1) and https.
+for (const [corpus, id] of [['pco', 'cpe.1_1.1'], ['pco', 'cpe.1_2.B549'], ['agco', 'newell.demetrius.1'], ['agco', 'newell.demetrius.45']]) {
+  test(`a ${corpus} card (${id}) asks Nomisma once for its type, under both schemes`, async () => {
+    const requests = [];
+    await fetchSpecimens({ id, corpus }, { fetchImpl: async (url) => { requests.push(url); return answer(fixture())(); } });
+    assert.equal(requests.length, 1);
+    const query = new URL(requests[0]).searchParams.get('query');
+    for (const scheme of ['http', 'https']) assert.ok(query.includes(`<${scheme}://numismatics.org/${corpus}/id/${id}>`), `${id} ${scheme}`);
+  });
+}
+
+// The cards the package itself opens: CPE 330, Newell Demetrius 45, and CPE 330 again as reached from Svoronos 487, filed in PCO under its CPE id.
+test('the bundled CPE, Newell and Svoronos-filed cards each ask for their own type', { skip }, async () => {
+  const noRequest = async (url) => { throw new Error(`no request: ${url}`); };
+  for (const [text, corpus, id] of [['CPE 330', 'pco', 'cpe.1_1.330'], ['Newell Demetrius 45', 'agco', 'newell.demetrius.45'],
+    ['Svoronos 487', 'pco', 'cpe.1_1.330']]) {
+    const found = await lookupType(parseReference(text), { localProvider: bundle, fetchImpl: noRequest });
+    assert.equal(found.status, 'ok', text);
+    assert.equal(found.card.corpus, corpus, text);
+    assert.equal(found.card.id, id, text);
+    const requests = [];
+    await fetchSpecimens(found.card, { fetchImpl: async (url) => { requests.push(url); return answer(fixture())(); } });
+    assert.equal(requests.length, 1, text);
+    assert.ok(new URL(requests[0]).searchParams.get('query').includes(`<http://numismatics.org/${corpus}/id/${id}>`), text);
+  }
 });

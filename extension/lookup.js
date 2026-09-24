@@ -921,7 +921,7 @@ export async function lookupType(given, options = {}) {
 // is asked for under http and https alike, since the corpora publish it both ways. Nothing here is cached or stored: the caller draws the answer and
 // forgets it. A failed, slow, oversized or unreadable answer is no specimens, never an error the card has to wait for.
 export async function fetchSpecimens(card, { fetchImpl = fetch, timeoutMs = 8000, signal } = {}) {
-  const TYPE_CORPORA = ['ocre', 'crro', 'pella', 'sco', 'bigr'];
+  const TYPE_CORPORA = ['ocre', 'crro', 'pella', 'sco', 'bigr', 'pco', 'agco'];
   // An id is written into the query between angle brackets, so only the characters the corpora's ids use may reach it: none of them can end the
   // IRI or start another term. Nine bundled OCRE ids carry a "?" (a doubtful letter) or a "," (a list of numbers); both may stand in an IRI, and
   // whether Nomisma holds such a type as written or percent-encoded is not known, so both forms are asked for, as both schemes are.
