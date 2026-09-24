@@ -186,8 +186,13 @@ def resources(element: ET.Element, name: str) -> list[str]:
     return [value for child in element if child.tag == TAGS[name] and (value := child.get(RESOURCE))]
 
 
+# ANS writes the odd Nomisma link over https (RIC II.3 Hadrian quinarii, 2026-09-24); it names the same concept.
+NOMISMA_IDS = (NOMISMA_ID, "https://nomisma.org/id/")
+
+
 def compact_resource(uri: str) -> str:
-    return uri[len(NOMISMA_ID):] if uri.startswith(NOMISMA_ID) else uri
+    prefix = next((prefix for prefix in NOMISMA_IDS if uri.startswith(prefix)), "")
+    return uri[len(prefix):] if prefix else uri
 
 
 def inspect_source(path: Path) -> tuple[int, str]:
@@ -690,9 +695,9 @@ def fetch_labels(slugs: set[str], retrieved_on: str) -> dict:
         for binding in payload.get("results", {}).get("bindings", []):
             uri = (binding.get("id") or {}).get("value") or ""
             label = " ".join(((binding.get("label") or {}).get("value") or "").split())
-            if not uri.startswith(NOMISMA_ID) or not label:
+            slug = compact_resource(uri)
+            if slug == uri or not label:
                 continue
-            slug = uri[len(NOMISMA_ID):]
             # Two English preferred labels for one concept is not something to choose between: it stops the fetch.
             if labels.setdefault(slug, label) != label:
                 raise ImportFailure(f"Nomisma gives {slug} two English labels")

@@ -450,6 +450,14 @@ class LabelTests(unittest.TestCase):
         # A concept published somewhere other than Nomisma is kept whole on the record and asked of nobody.
         self.assertEqual({"anonymous", "denarius", "rome", "ar", "roma", "dioscuri"}, collected)
 
+    def test_a_nomisma_concept_written_over_https_is_the_same_concept(self):
+        # ANS writes a few links as https://nomisma.org/id/... (RIC II.3 Hadrian quinarii in the 2026-09-24 export); they
+        # name the same concept as the http form, so the card gets its label rather than a raw address.
+        self.assertEqual("quinarius", self.imports.compact_resource("https://nomisma.org/id/quinarius"))
+        self.assertEqual("quinarius", self.imports.compact_resource("http://nomisma.org/id/quinarius"))
+        museum = "https://collection.britishmuseum.org/id/person-institution/60208"
+        self.assertEqual(museum, self.imports.compact_resource(museum))
+
     def test_a_concept_the_snapshot_does_not_label_is_left_out_rather_than_invented(self):
         payload = self.imports.label_payload({"labels": {"ar": "Silver"}}, {"ar", "dupondius_or_as"})
         self.assertEqual({"schemaVersion": 1, "labels": {"ar": "Silver"}}, payload)

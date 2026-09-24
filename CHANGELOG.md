@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- The catalogue importer reads a Nomisma link written as `https://nomisma.org/id/…` as the same concept as `http://…`. The ANS export of 24 September 2026 writes the RIC II.3 Hadrian quinarii that way, and a refresh would otherwise have shown their denomination as a raw web address instead of **Quinarius**.
+
 ## [0.34.0] - 2026-09-24
 
 ### Added
