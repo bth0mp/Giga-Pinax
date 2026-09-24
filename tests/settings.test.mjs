@@ -949,7 +949,7 @@ test('the Diagnostics card says how many failures are kept, and copies them as p
   assert.ok(text.endsWith([
     'Failures recorded: 2 (oldest first, at most 50 kept)',
     '2026-09-20T08:00:00.000Z popup acsearch http 503 (0.32.1)',
-    '2026-09-21T09:30:00.000Z background store storage (0.32.1)',
+    '2026-09-21T09:30:00.000Z background local records storage (0.32.1)',
     '',
   ].join('\n')), text);
   assert.equal(page.status(), 'Diagnostics copied.');

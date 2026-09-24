@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   DIAGNOSTICS_KEY, MAX_DIAGNOSTICS, clearDiagnostics, diagnosticEntry, diagnosticsText, fetchFailureFields,
@@ -168,9 +169,21 @@ test('the copied summary is plain text, newest last, and says when nothing is re
     'Failures recorded: 3 (oldest first, at most 50 kept)',
     '2026-09-24T10:00:00.000Z popup acsearch http 503 (0.34.0)',
     '2026-09-24T10:00:00.000Z workspace acsearch too-large over 4194304 bytes (0.34.0)',
-    '2026-09-24T10:00:00.000Z background store storage (0.34.0)',
+    '2026-09-24T10:00:00.000Z background local records storage (0.34.0)',
     '',
   ].join('\n'));
+});
+
+// 0.34 final review: the copied line names each part as Settings, PRIVACY.md and the changelog do, so "store" reads as the local records it is.
+test('the copied summary names every part in the words Settings uses', async () => {
+  const storage = fakeStorage();
+  const areas = ['lookup', 'specimens', 'acsearch', 'coinarchives', 'store', 'capture', 'reminders'];
+  for (const area of areas) await recordDiagnostic({ area, code: 'failed' }, options(storage));
+  const lines = diagnosticsText(await readDiagnostics(options(storage)), { version: '0.34.0', now: NOW }).split('\n').slice(4, -1);
+  assert.deepEqual(lines.map((line) => line.replace(/^\S+ popup /, '').replace(/ failed \(0\.34\.0\)$/, '')),
+    ['catalogue lookup', 'specimen photos', 'acsearch', 'CoinArchives', 'local records', 'page capture', 'reminders']);
+  const settings = readFileSync(new URL('../extension/settings.html', import.meta.url), 'utf8');
+  assert.match(settings, /\(catalogue lookup, specimen photos, acsearch, CoinArchives, local records, page capture or reminders\)/);
 });
 
 test('a stored entry is checked again when read, so a hand-edited key cannot smuggle text out', async () => {

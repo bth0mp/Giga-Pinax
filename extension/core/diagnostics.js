@@ -182,8 +182,14 @@ export async function clearDiagnostics(options = {}) {
   if (storage) await storage.set({ [DIAGNOSTICS_KEY]: [] });
 }
 
+// Each part as Settings, PRIVACY.md and the changelog name it, so a copied line reads in the words the collector was given.
+const AREA_NAMES = Object.freeze({
+  lookup: 'catalogue lookup', specimens: 'specimen photos', acsearch: 'acsearch', coinarchives: 'CoinArchives',
+  store: 'local records', capture: 'page capture', reminders: 'reminders',
+});
+
 function entryLine(entry) {
-  const parts = [entry.at, entry.page, entry.area, entry.code];
+  const parts = [entry.at, entry.page, AREA_NAMES[entry.area] ?? entry.area, entry.code];
   if (entry.status !== undefined) parts.push(String(entry.status));
   if (entry.bytes !== undefined) parts.push(`over ${entry.bytes} bytes`);
   return `${parts.join(' ')} (${entry.version})`;
