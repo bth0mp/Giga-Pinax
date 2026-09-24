@@ -870,7 +870,8 @@ export function createCommandWriter(storageArea, context) {
         error: clone(applied.error),
       };
       const code = ['conflict', 'unsupported'].includes(applied.error.code) ? applied.error.code : 'validation';
-      return errorReply(command, code, 'not-committed', applied.error.message);
+      // A refused value carries the path of the field it was read from, so a page can point at the field.
+      return { ...errorReply(command, code, 'not-committed', applied.error.message), ...(code === 'validation' ? { error: clone(applied.error) } : {}) };
     }
     if (!applied.value.mutated) {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: applied.value.value };

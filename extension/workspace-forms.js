@@ -349,3 +349,24 @@ export function reminderControlsForPrecision(reminders, precision) {
   const [first, second] = (reminders ?? []).filter((item) => item.kind === 'offset');
   return { firstEnabled: Boolean(first), firstValue: first?.offsetMinutes ?? 1440, secondEnabled: Boolean(second), secondValue: second?.offsetMinutes ?? 60 };
 }
+
+// Where a record path the store refuses (`lots[0].coinDetails.photoUrls[0]`) lives in the details form, so the page can
+// open its section and name it. Null for a part of the record the form holds elsewhere or not at all.
+const LOT_FIELD_PATHS = [
+  [/\.coinDetails\.photoUrls\[(\d)\]$/, (match) => `photoUrl${Number(match[1]) + 1}`],
+  [/\.coinDetails\.weightMg$/, () => 'weightGrams'], [/\.coinDetails\.diameterHundredthsMm$/, () => 'diameterMm'], [/\.coinDetails\.condition$/, () => 'condition'],
+  [/\.auctionContext\.pageUrl$/, () => 'auctionPageUrl'], [/\.auctionContext\.canonicalUrl$/, () => 'auctionCanonicalUrl'], [/\.auctionContext\.house$/, () => 'auctionHouse'],
+  [/\.auctionContext\.saleId$/, () => 'auctionSaleId'], [/\.auctionContext\.lotNumber$/, () => 'auctionLotNumber'],
+  [/\.sourceLinks\[\d+\](?:\.url)?$/, () => 'sourceUrl'], [/^[^.]*\.(title|reference|lotNumber|notes)$/, (match) => match[1]],
+];
+/**
+ * @param {*} path
+ * @returns {string | null}
+ */
+export function lotFieldForPath(path) {
+  for (const [pattern, field] of LOT_FIELD_PATHS) {
+    const match = pattern.exec(String(path ?? ''));
+    if (match) return field(match);
+  }
+  return null;
+}

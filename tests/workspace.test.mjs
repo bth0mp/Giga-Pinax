@@ -17,7 +17,7 @@ import {
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
-  outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
+  lotFieldForPath, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
@@ -1226,4 +1226,18 @@ test('a coin’s saved comparables are counted per currency for its exact refere
   ]);
   assert.deepEqual(lotComparables(evidence, ''), []);
   assert.deepEqual(lotComparables(evidence, 'RIC 60'), []);
+});
+
+// Review Minor 3: a field the store refuses is named and opened on the form, from the path the store answers with.
+test('a refused record path leads back to the form field that holds it', () => {
+  assert.equal(lotFieldForPath('lots[0].coinDetails.photoUrls[0]'), 'photoUrl1');
+  assert.equal(lotFieldForPath('lot.coinDetails.photoUrls[1]'), 'photoUrl2');
+  assert.equal(lotFieldForPath('lots[3].coinDetails.weightMg'), 'weightGrams');
+  assert.equal(lotFieldForPath('lots[3].auctionContext.lotNumber'), 'auctionLotNumber');
+  assert.equal(lotFieldForPath('lots[3].auctionContext.canonicalUrl'), 'auctionCanonicalUrl');
+  assert.equal(lotFieldForPath('lots[3].lotNumber'), 'lotNumber');
+  assert.equal(lotFieldForPath('lots[3].sourceLinks[1].url'), 'sourceUrl');
+  assert.equal(lotFieldForPath('lots[3].title'), 'title');
+  assert.equal(lotFieldForPath('lots[3].provenanceNotes[0].text'), null);
+  assert.equal(lotFieldForPath(undefined), null);
 });

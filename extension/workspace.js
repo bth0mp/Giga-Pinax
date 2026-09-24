@@ -8,7 +8,7 @@ import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
-  moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
+  lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
@@ -340,7 +340,10 @@ async function initWorkspace() {
     }
     if (!reply.ok) {
       if (editor === 'lot') {
-        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(reply.message ?? 'The coin could not be saved.')); status.classList.add('error');
+        // A refused value is named, and its folded section opened, so the collector can see what to change.
+        const field = lotFieldForPath(reply.path ?? reply.error?.path); const control = field ? $('lot-form').elements[field] : null;
+        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(`${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`)); status.classList.add('error');
+        if (control) { const section = sectionOf(control); if (section) section.open = true; control.focus(); }
         const existingLotId = reply.existingLotId ?? reply.error?.existingLotId;
         if (reply.code === 'duplicate' && existingLotId) {
           const open = text('button', 'Open existing coin', 'quiet'); open.type = 'button'; open.addEventListener('click', () => selectLot(existingLotId)); status.append(document.createTextNode(' '), open);

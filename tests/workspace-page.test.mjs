@@ -894,3 +894,17 @@ test('an invalid value in a folded section opens it and names the field', async 
   await outcome.emit('invalid', { target: outcome.elements.acquisitionDate });
   assert.equal(page.$('workspace-status').textContent, 'Check Acquisition date: the value is not valid.');
 });
+
+// Review Minor 3: a value the store refuses opens its section and names and focuses the field.
+test('a value the store refuses opens its section and names the field', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const form = page.$('lot-form');
+  await page.typeDetails('photoUrl1', 'javascript:alert(1)');
+  form.elements.photoUrl1.closest('details').open = false;
+  await page.saveDetails();
+  assert.equal(page.$('lot-action-status').textContent, 'Expected an HTTP or HTTPS URL. (Photo URL 1)');
+  assert.equal(form.elements.photoUrl1.closest('details').open, true);
+  assert.equal(page.document.activeElement, form.elements.photoUrl1);
+});
