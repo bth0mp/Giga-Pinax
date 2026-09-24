@@ -593,7 +593,7 @@ export function memoryStorageArea() {
 // The background worker as far as a page sees it: one writer over one storage area. `send` is any
 // other view writing — a second workspace tab, the popup — and returns the writer's reply.
 export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid } = {}) {
-  const { createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
+  const { COMMAND_TYPES, createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
   const storage = memoryStorageArea();
   const writer = createCommandWriter(storage, { now: () => now, newId });
   const holds = [];
@@ -601,6 +601,7 @@ export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000
     storage,
     writer,
     holds,
+    commandTypes: COMMAND_TYPES,
     send: (command) => writer.commitCommand({ requestId: testUuid(), ...command }),
     root: () => storage.read(STORAGE_KEY),
     // The next command of this type sent by a page is written, and its reply then waits for
@@ -624,6 +625,9 @@ function fakeExtensionRuntime(background, commands) {
       async sendMessage(message) {
         const command = structuredClone(message);
         commands.push(structuredClone(command));
+        // The worker answers only the commands it lists; any other message gets no reply, which the
+        // browser reports to the sender as an error.
+        if (!background.commandTypes.has(command?.type)) throw new Error('The message got no reply: the background worker does not answer this command.');
         const reply = await background.writer.commitCommand(command);
         const index = background.holds.findIndex((hold) => hold.type === command.type);
         if (index >= 0) {
@@ -700,7 +704,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts,
+    $, document, location, commands, prompts, browser,
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
     // What the browser's leave-page prompt would do now: true when the page asks to stay.

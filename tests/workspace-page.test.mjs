@@ -272,3 +272,15 @@ test('the History route says so when there is no collection yet', async () => {
   assert.equal(page.$('collection-totals'), null);
   assert.ok(page.$('collection-list').textContent.includes('No collection entries yet.'));
 });
+
+// The harness answers only what the background worker answers: a command type the worker does not
+// list gets no reply at all, which a page sees as the worker being unreachable.
+test('the harness refuses a command the background worker would not answer', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const before = background.root();
+  await assert.rejects(page.browser.runtime.sendMessage({ type: 'lot.purge', requestId: 'request-unlisted' }), /no reply/i);
+  assert.deepEqual(background.root(), before, 'nothing was written');
+  const listed = await page.browser.runtime.sendMessage({ type: 'snapshot.get', requestId: 'request-listed' });
+  assert.equal(listed.ok, true);
+});

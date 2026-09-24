@@ -11,6 +11,20 @@ import { TOO_DEEPLY_NESTED, clone, failure, isRecursionError, own } from './core
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+// The commands the background worker answers from an extension page; any other message gets no reply.
+export const COMMAND_TYPES = new Set([
+  'snapshot.get', 'snapshot.raw',
+  'preferences.migrateIfAbsent', 'preferences.save',
+  'lot.save', 'lot.delete',
+  'group.save', 'group.delete', 'group.reorder',
+  'bid.plan', 'bid.place', 'bid.cancel',
+  'lot.outcome.set', 'collection.review.resolve',
+  'event.save', 'event.delete',
+  'evidence.add', 'evidence.include', 'evidence.resolve',
+  'draft.save', 'draft.get', 'draft.consume',
+  'alert.ack', 'alert.snooze', 'alert.markAllRead',
+  'backup.import', 'quarantine.restore',
+]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set', 'backup.import',
   'quarantine.restore',
