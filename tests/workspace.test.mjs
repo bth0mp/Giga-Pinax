@@ -1148,3 +1148,10 @@ test('the outcome form opens an open lot on Won, in its bid’s currency, with t
   assert.equal(outcomeDraftForLot({ outcome: { status: 'lost', hammer: eur(900) } }, 'en-US', { defaultCurrency: 'USD' }).status, 'lost');
   assert.equal(outcomeDraftForLot({ outcome: { status: 'passed' } }, 'en-US', { defaultCurrency: 'GBP' }).status, 'passed');
 });
+
+// N4: the bid form shows the bid in force. A lot saved before placing cleared its plan can hold both, and the placed
+// figure is the one that binds.
+test('the bid form reads the placed bid before a plan', () => {
+  const lot = { plannedBid: { amount: { currency: 'EUR', minor: 120000 } }, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } };
+  assert.deepEqual(bidFormValues(lot, 'en-US', 'USD'), { amount: '1300.00', currency: 'EUR', premium: '20' });
+});

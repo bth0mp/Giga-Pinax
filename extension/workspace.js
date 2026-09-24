@@ -586,6 +586,9 @@ async function initWorkspace() {
     if (!lot) return;
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
     $('bid-form').disabled = false; $('outcome-form').disabled = false;
+    // A settled lot's bids are history: the store refuses a change, so the form offers none and says why.
+    const settled = Boolean(lot.outcome?.status && lot.outcome.status !== 'open');
+    $('bid-fields').disabled = settled; $('bid-settled').hidden = !settled;
     if (!dirtyEditors.has('lot')) {
       setBasis('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl: lot.sourceLinks?.find((link) => link.source === 'manual')?.url });
       populateLotForm(lot);
@@ -715,7 +718,7 @@ async function initWorkspace() {
   };
   function populateBidForm(lot) {
     const f = $('bid-form').elements;
-    const terms = lot?.plannedBid ?? lot?.activeBid;
+    const terms = lot?.activeBid ?? lot?.plannedBid;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
     bidCalculator?.setValues({ lotId: lot?.id ?? null, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });

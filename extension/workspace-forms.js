@@ -93,7 +93,8 @@ export function premiumInputText(buyerPremiumBps) {
  * @returns {{ amount: string, currency: string, premium: string }}
  */
 export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
-  const terms = lot?.plannedBid ?? lot?.activeBid;
+  // The bid in force binds; a plan is only what the form shows before one is placed.
+  const terms = lot?.activeBid ?? lot?.plannedBid;
   return {
     amount: moneyInputText(terms?.amount, locale),
     currency: terms?.amount?.currency ?? fallbackCurrency,

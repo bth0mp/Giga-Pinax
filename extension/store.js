@@ -279,6 +279,11 @@ function mutation(snapshot, command, context) {
         }
       } else if (command.type === 'bid.place') {
         const action = lot.activeBid ? 'active-revised' : 'placed';
+        // The placed bid carries the plan out: the plan is kept in the history, not beside the bid in force.
+        if (lot.plannedBid) {
+          appendBidHistory(lot, 'planned-cleared', lot.plannedBid, context);
+          delete lot.plannedBid;
+        }
         lot.activeBid = { ...clone(command.activeBid), placedAt: now };
         appendBidHistory(lot, action, command.activeBid, context);
       } else {

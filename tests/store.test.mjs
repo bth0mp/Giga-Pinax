@@ -145,16 +145,29 @@ test('keeps group order compact and records planned, placed, revised, and cancel
     lotId: first.value.id,
     expectedRevision: 4,
   }));
-  const cleared = reduce(cancelled.snapshot, command('bid.plan', {
-    lotId: first.value.id,
-    expectedRevision: 5,
-    plannedBid: null,
-  }));
-  const lot = cleared.value;
+  const lot = cancelled.value;
   assert.equal('activeBid' in lot, false);
+  // Placing the bid settles the plan: it is kept in the history, not as a second figure beside the bid.
+  assert.equal('plannedBid' in lot, false);
   assert.deepEqual(lot.bidHistory.map(({ action }) => action), [
-    'planned-revised', 'placed', 'active-revised', 'externally-cancelled', 'planned-cleared',
+    'planned-revised', 'planned-cleared', 'placed', 'active-revised', 'externally-cancelled',
   ]);
+});
+
+// N4: a placed bid replaces the plan it carried out. The plan stays in the bid history as a cleared plan with its own
+// amount and premium, and the lot no longer shows the planned figure beside the one in force.
+test('placing a bid clears the plan into the bid history', () => {
+  const created = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Plan lot', sourceLinks: [] } }));
+  const planned = reduce(created.snapshot, command('bid.plan', { lotId: created.value.id, expectedRevision: 0, plannedBid: { amount: { currency: 'EUR', minor: 120000 }, buyerPremiumBps: 2000 } }));
+  const placed = reduce(planned.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 1, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } }));
+  assert.equal('plannedBid' in placed.value, false);
+  assert.deepEqual(placed.value.activeBid.amount, { currency: 'EUR', minor: 130000 });
+  assert.deepEqual(placed.value.bidHistory.map(({ action, amount, buyerPremiumBps }) => [action, amount.minor, buyerPremiumBps]), [
+    ['planned-revised', 120000, 2000], ['planned-cleared', 120000, 2000], ['placed', 130000, 2000],
+  ]);
+  // With no plan to clear, placing records only the placement.
+  const direct = reduce(created.snapshot, command('bid.place', { lotId: created.value.id, expectedRevision: 0, activeBid: { amount: { currency: 'EUR', minor: 5000 } } }));
+  assert.deepEqual(direct.value.bidHistory.map(({ action }) => action), ['placed']);
 });
 
 test('moving a lot between groups revises both groups so stale source reorders conflict', () => {

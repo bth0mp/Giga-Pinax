@@ -551,3 +551,22 @@ test('the re-open question appears only when a settled lot is set back to open',
   await page.$('outcome-form').emit('change', { target: page.$('open-outcome') });
   assert.equal(page.$('reopen-choice').hidden, false);
 });
+
+// N4: a settled lot's bids cannot change, so its Bid tab says so and offers nothing to press; the Bid tab of an open
+// lot shows the placed figure.
+test('the Bid tab shows the placed bid, and a settled lot’s is closed with the reason', async () => {
+  const background = await backgroundWithBidOnAuction();
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  assert.equal(page.$('bid-form').elements.amount.value, '650.00');
+  assert.equal(page.$('bid-fields').disabled, false);
+  assert.equal(page.$('bid-settled').hidden, true);
+
+  page.$('outcome-form').elements.status.value = 'won';
+  await page.type('outcome-form', 'hammer', '700');
+  await page.submit('outcome-form');
+  assert.equal(storedLot(background, 'Nero, denarius').outcome.status, 'won');
+  assert.equal(page.$('bid-fields').disabled, true);
+  assert.equal(page.$('bid-settled').hidden, false);
+  assert.equal(page.$('bid-settled').textContent, 'Settled — re-open the lot under Outcome to change bids.');
+});
