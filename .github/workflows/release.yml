@@ -24,7 +24,7 @@ jobs:
           # Nothing here pushes, and the job runs on a tag anybody with write access can move: the checkout leaves no
           # credential in .git/config for a later step, or a compromised one, to push with.
           persist-credentials: false
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       # web-ext and its whole dependency tree are pinned, with integrity hashes, in tools/web-ext/package-lock.json.
@@ -130,7 +130,7 @@ jobs:
         with:
           persist-credentials: false
       - if: steps.credentials.outputs.present == 'true'
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
       - if: steps.credentials.outputs.present == 'true'
