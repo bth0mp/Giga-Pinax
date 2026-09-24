@@ -18,6 +18,8 @@ const COINARCHIVES_ORIGIN = 'https://www.coinarchives.com/*';
 const COINARCHIVES_HOME = 'https://www.coinarchives.com/';
 const EMPTY_OTHER_MESSAGE = 'Enter a reference, such as “BCD Boiotia 174b”.';
 const COPY_FAILED_MESSAGE = 'Couldn’t copy the summary.';
+// The references the first popup offers as chips, before anything has been looked up: one of each kind the box reads most, all bundled.
+const EXAMPLE_REFERENCES = Object.freeze(['RIC I² Nero 306', 'Crawford 44/5', 'Price 23']);
 const QUICK_ERROR = 'Couldn’t read that reference. Try “RIC 972”, “Titus 123”, “Crawford 44/5”, “SC 1266.2”, “Bop Euthydemus I 24A” or “Price 23”, or use the fields below.';
 const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearch only.';
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
@@ -64,7 +66,7 @@ function coinArchivesFailure(outcome, currency) {
 
 export {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
-  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE,
+  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
   catalogueFailureMessage, coinArchivesFailure, onlineMessage,
 };

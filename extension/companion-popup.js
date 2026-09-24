@@ -3,6 +3,7 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
+import { lotsNeedingOutcome } from './core/projections.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
@@ -24,15 +25,17 @@ export function documentMode(search = '') {
   return { panel, windowed, acceptsLookupMessages: windowed && !panel };
 }
 
+// A list of types stands outside Refine (popup.html), so it opens nothing: only a reference that needs a ruler typed, or a guided field in error, does.
 export function shouldRevealRefine(outcome, field = '') {
-  return outcome?.status === 'candidates' || outcome?.status === 'too-many'
+  return outcome?.status === 'too-many'
     || Boolean(field && ['catalogue', 'reference-number', 'ric-volume', 'ric-section'].includes(field));
 }
 
 // Research coin needs a query as well as a draft: a capture that gave no readable reference has fields to edit and can still be saved to the watchlist,
-// but nothing to look up.
-export function captureControlsState(pending, hasDraft, researchable = hasDraft) {
-  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft, researchDisabled: pending || !hasDraft || !researchable };
+// but nothing to look up. A capture that failed read nothing, so it opens no editor to fill: its reason stands beside the button instead.
+export function captureControlsState(pending, hasDraft, researchable = hasDraft, failed = false) {
+  return { editorVisible: !pending && !failed, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft,
+    researchDisabled: pending || !hasDraft || !researchable };
 }
 
 export async function runVisibleAction(action, fallback) {
@@ -242,6 +245,8 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// How long a message stands in a hint line before the line's own words come back.
+const SAID_FOR_MS = 8000;
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
 // background, so the note must not promise a loss that is not one.
 const PREFERENCES_UNAVAILABLE = 'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.';
@@ -289,12 +294,33 @@ async function initCompanionPopup() {
   } catch { /* the calculator remains useful in a standalone page */ }
   if (!extensionRuntimeAvailable(globalThis.browser ?? globalThis.chrome)) bridge = null;
 
-  const announce = (message, error = false) => {
-    $('companion-status').textContent = message;
-    $('companion-status').classList.toggle('companion-error', error);
+  // Said to a screen reader alone: for a message already on screen where it belongs.
+  const speak = (message) => {
     const live = $('announcement');
     live.textContent = '';
     requestAnimationFrame(() => { live.textContent = message; });
+  };
+  // A message is said where it happened: in the hint line under the control that caused it (the Save hint, the capture line, the Upcoming note, the
+  // storage note), for a while, and then that line's own words come back. Nothing is drawn over the panel, so the Reference box is never covered.
+  // The live region speaks it too. With no line (a Watch whose failure the research half shows beside its list), it is only spoken.
+  const swapped = new Map();
+  const announce = (message, error = false, anchor = 'storage-note') => {
+    speak(message);
+    const line = anchor ? $(anchor) : null;
+    if (!line) return;
+    const own = swapped.get(anchor) ?? { text: line.textContent, hidden: line.hidden, timer: 0 };
+    clearTimeout(own.timer);
+    line.textContent = message;
+    line.hidden = false;
+    line.classList.toggle('said-error', error);
+    own.timer = setTimeout(() => {
+      swapped.delete(anchor);
+      if (line.textContent !== message) return;
+      line.textContent = own.text;
+      line.hidden = own.hidden;
+      line.classList.toggle('said-error', false);
+    }, SAID_FOR_MS);
+    swapped.set(anchor, own);
   };
   const activate = (name, focus = false) => {
     for (const tabName of TABS) {
@@ -305,6 +331,22 @@ async function initCompanionPopup() {
     }
     if (focus) $(`companion-tab-${name}`).focus();
   };
+  // The Reference box, from anywhere in the popup: the skip link that leads the header, Ctrl+K (⌘K on a Mac) on any tab, or "/" when the keyboard
+  // is not in a text field. The box's text is selected, so typing replaces it.
+  const toReference = () => {
+    activate('research');
+    $('quick-reference').focus();
+    $('quick-reference').select?.();
+  };
+  $('skip-to-research')?.addEventListener('click', (event) => { event.preventDefault(); toReference(); });
+  addEventListener('keydown', (event) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName ?? '') || event.target?.isContentEditable === true;
+    const chord = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && String(event.key).toLowerCase() === 'k';
+    const slash = event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (!chord && !slash) return;
+    event.preventDefault();
+    toReference();
+  });
   for (const name of TABS) {
     $(`companion-tab-${name}`).addEventListener('click', () => activate(name));
     $(`companion-tab-${name}`).addEventListener('keydown', (event) => {
@@ -316,10 +358,20 @@ async function initCompanionPopup() {
 
   const calculator = mountBidCalculator($('companion-bid-calculator'), { compact: true });
 
+  // Current source starts folded; it opens by itself where there is a page to capture - the active tab a web page the extension may read, which the
+  // toolbar popup's click grants - so it is one line everywhere else.
+  void callExtension((globalThis.browser ?? globalThis.chrome)?.tabs, 'query', captureTabQuery(mode))
+    .then((tabs) => { if (capturableTab(tabs)) $('companion-current-lot').open = true; })
+    .catch(() => { /* no tab to read: it stays folded */ });
+
   const renderSummary = () => {
     const summary = buildWatchlistSummary(snapshot);
     $('companion-next-event').textContent = summary.nextEvent?.name ?? 'No upcoming auction';
     $('companion-due-count').textContent = String(summary.dueAuctionCount);
+    // Lots whose auction has ended with no outcome recorded, and the way to the workspace queue that lists them.
+    const ended = lotsNeedingOutcome(snapshot).length;
+    $('companion-needs-outcome').hidden = ended === 0;
+    $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
     for (const currency of CURRENCIES) {
       const item = summary.exposure[currency];
       $('companion-exposure-' + currency).textContent = `${formatMoney({ currency, minor: item.hammerMinor }, navigator.language)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
@@ -351,8 +403,9 @@ async function initCompanionPopup() {
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let draftSavePending = false;
-  const saveWatchlistDraft = async (payload, leftOff = []) => {
-    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
+  // anchor: the hint line under the control the save came from (null: the caller says it elsewhere).
+  const saveWatchlistDraft = async (payload, leftOff = [], anchor = 'companion-save-hint') => {
+    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true, anchor); return { ok: false, message: STORAGE_UNAVAILABLE }; }
     // The two save buttons are disabled while a save is pending, so only a Watch in the research half reaches this: refused aloud, not dropped.
     if (draftSavePending) return { ok: false, message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' };
     draftSavePending = true;
@@ -360,9 +413,10 @@ async function initCompanionPopup() {
     $('companion-capture-watchlist').disabled = true;
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
-      if (!saved.ok) { announce(saved.message, true); return saved; }
+      if (!saved.ok) { announce(saved.message, true, anchor === 'upcoming-note' ? null : anchor); return saved; }
       // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
-      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.');
+      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.',
+        false, anchor);
     } finally {
       draftSavePending = false;
       $('companion-save-watchlist').disabled = !canSave(safeCard);
@@ -374,7 +428,7 @@ async function initCompanionPopup() {
   // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
   // lot is acsearch's, not the page captured here. A failure is handed back too, to be said beside the list Watch was pressed in.
   addEventListener('giga-pinax-watch', async (event) => {
-    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail));
+    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail), [], 'upcoming-note');
     if (saved?.ok === false) dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
   });
 
@@ -406,8 +460,8 @@ async function initCompanionPopup() {
       shownFormError = '';
     }
   };
-  const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
-    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())));
+  const applyCaptureState = (pending, hasDraft = Boolean(captureDraft), failed = false) => {
+    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())), failed);
     $('companion-capture-editor').hidden = !state.editorVisible;
     for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
     $('companion-use-capture').disabled = state.researchDisabled;
@@ -443,7 +497,7 @@ async function initCompanionPopup() {
       applyCaptureState(false, true);
       $('companion-capture-ruler').focus();
       // The message is an alert beside the Reference box already: announcing it as well would have it read out twice.
-      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.');
+      if (buildResearchQuery(reviewedCapture())) announce('Current-page details are ready to review.', false, 'companion-capture-source');
       else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
@@ -459,9 +513,12 @@ async function initCompanionPopup() {
       }
       $('companion-save-watchlist').disabled = !canSave(safeCard);
       for (const id of captureFieldIds) $(id).value = '';
-      $('companion-capture-source').textContent = error.message;
-      applyCaptureState(false, false);
-      announce(error.message, true);
+      $('companion-capture-source').textContent = '';
+      applyCaptureState(false, false, true);
+      // Said once, beside the button that failed, and never over the Reference box's own line.
+      $('companion-capture-error').textContent = error.message;
+      $('companion-capture-error').hidden = false;
+      speak(error.message);
     } finally {
       if (requestId === captureRequestId) {
         captureButton.disabled = false;
@@ -481,7 +538,7 @@ async function initCompanionPopup() {
     const draft = reviewedCapture();
     if (!draft) return;
     const payload = watchlistPayloadFromCapture(draft);
-    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload));
+    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload), 'companion-capture-source');
   });
   // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
   // stopped being about that page.
@@ -498,7 +555,7 @@ async function initCompanionPopup() {
   $('companion-clear-auction-context').addEventListener('click', () => {
     if (!captureDraft) return;
     dropAuctionContext();
-    announce('Auction context cleared.');
+    announce('Auction context cleared.', false, 'companion-capture-source');
   });
   // A lookup this window was SENT is about a page somebody right-clicked on, not the one captured here, so the captured
   // page must not ride along on the coin saved from it. popup.js says so before it opens the card. A reference typed into
@@ -506,11 +563,16 @@ async function initCompanionPopup() {
   addEventListener('giga-pinax-lookup-received', () => {
     if (researchAuctionContext) dropAuctionContext();
   });
-  const navigate = async (action, fallback) => {
+  // A link that could not open says so under the Watchlist tab's own buttons, or in the storage note for the header's.
+  const navigate = async (action, fallback, anchor = 'storage-note') => {
     const result = await runVisibleAction(action, fallback);
-    if (!result.ok) announce(result.message, true);
+    if (!result.ok) announce(result.message, true, anchor);
   };
-  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.'));
+  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) {
+    $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
+  }
+  $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
+    'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 

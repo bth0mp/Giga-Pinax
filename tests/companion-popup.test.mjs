@@ -20,13 +20,22 @@ globalThis.browser = {
 };
 const lookupListeners = [];
 const watchListeners = [];
+const keyListeners = [];
 globalThis.addEventListener = (type, listener) => {
+  if (type === 'keydown') keyListeners.push(listener);
   if (type === 'giga-pinax-card') cardListeners.push(listener);
   if (type === 'giga-pinax-lookup-received') lookupListeners.push(listener);
   if (type === 'giga-pinax-watch') watchListeners.push(listener);
 };
 globalThis.dispatchEvent = () => true;
 globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
+// The status line clears itself after some seconds; that timer must not keep this file running once its tests are done.
+const nodeSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (callback, wait, ...rest) => {
+  const timer = nodeSetTimeout(callback, wait, ...rest);
+  if (wait >= 1000) timer.unref?.();
+  return timer;
+};
 
 // Imported after the surroundings exist: browser-api.js takes up the extension API as it is evaluated, and the page starts itself where a document is.
 const {
@@ -122,6 +131,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // Each page keeps its giga-pinax-card listener for as long as it lives; the pages started before this one are never driven again, so they are let go
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
+  keyListeners.length = 0;
   lookupListeners.length = 0;
   watchListeners.length = 0;
   started = element;
@@ -135,6 +145,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
     card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
     lookupReceived: () => lookupListeners[0]?.({ type: 'giga-pinax-lookup-received' }),
     watch: (detail) => watchListeners[0]?.({ type: 'giga-pinax-watch', detail }),
+    key: (event) => { const sent = { preventDefault() { sent.prevented = true; }, ...event }; keyListeners[0]?.(sent); return sent; },
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
@@ -163,7 +174,8 @@ test('native panels and the panel fallback ignore pop-out routing, which only th
 });
 
 test('ambiguity and guided-field errors reveal refinement', () => {
-  assert.equal(shouldRevealRefine({ status: 'candidates' }), true);
+  // Loop 1 (P-06): a list of types stands outside Refine, so choosing one no longer opens it.
+  assert.equal(shouldRevealRefine({ status: 'candidates' }), false);
   assert.equal(shouldRevealRefine({ status: 'too-many' }), true);
   assert.equal(shouldRevealRefine({ status: 'none' }, 'reference-number'), true);
   assert.equal(shouldRevealRefine({ status: 'network' }), false);
@@ -354,8 +366,9 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
     assert.equal(page.element('storage-note').hidden, false, name);
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
     assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
-    // A reply nobody could read names no reason a collector could act on, so it is never shown as one.
-    assert.equal(page.element('companion-status').textContent, announced, name);
+    // A reply nobody could read names no reason a collector could act on, so it is never shown as one. It is said in the storage note, which is there
+    // for exactly this, never over the panel.
+    assert.equal(page.element('storage-note').textContent, announced, name);
 
     page.card({ title: 'Nero denarius', reference: 'RIC 306' });
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
@@ -383,7 +396,6 @@ test('blocked site data costs the remembered preferences, not the watchlist save
   assert.equal(page.element('storage-note').hidden, false);
   assert.equal(page.element('storage-note').textContent,
     'Appearance and lookup preferences can\'t be remembered in this browser profile. Watchlist records are not affected.');
-  assert.equal(page.element('companion-status').textContent, '');
 
   page.card({ title: 'Nero denarius', reference: 'RIC 306' });
   assert.equal(page.element('companion-save-watchlist').disabled, false);
@@ -434,19 +446,19 @@ test('a stored currency the research select already shows disturbs nothing', asy
 // never reached the background owes the collector is the reason it goes no further than that.
 test('a currency change after a failed start-up is explained once rather than dropped in silence', async () => {
   const page = await loadCompanion({ sendMessage: async () => undefined });
-  assert.equal(page.element('companion-status').textContent, 'Extension storage is unavailable.');
+  assert.equal(page.element('storage-note').textContent, 'Extension storage is unavailable.');
 
   page.element('currency').value = 'CHF';
   await page.element('currency').emit('change');
   await settle();
-  assert.equal(page.element('companion-status').textContent, 'The currency could not be saved.');
+  assert.equal(page.element('storage-note').textContent, 'The currency could not be saved.');
 
   // Said once: every later change would only repeat it over whatever the page is saying by then.
-  page.element('companion-status').textContent = 'Nothing to report.';
+  page.element('storage-note').textContent = 'Nothing to report.';
   page.element('currency').value = 'EUR';
   await page.element('currency').emit('change');
   await settle();
-  assert.equal(page.element('companion-status').textContent, 'Nothing to report.');
+  assert.equal(page.element('storage-note').textContent, 'Nothing to report.');
 });
 
 const capturedPage = (candidates = {}) => async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates } }];
@@ -602,7 +614,8 @@ test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, wit
     pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
   globalThis.browser.tabs.create = create;
   assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
-  assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
+  // Said under the Upcoming list Watch was pressed in.
+  assert.equal(page.element('upcoming-note').textContent, 'Watchlist details are ready to review.');
 });
 
 // 0.34 review (M5): a Watch that could not be saved is said on this half's status line and handed back to the research half, where the collector
@@ -617,7 +630,8 @@ test('a failed Watch hands its reason back to the research half', async () => {
   page.watch(watched);
   for (let tick = 0; tick < 20; tick += 1) await settle();
   assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
-  assert.equal(page.element('companion-status').textContent, 'Draft store is full.');
+  // The research half shows it beside the list; here it is only spoken.
+  assert.equal(page.element('announcement').textContent, 'Draft store is full.');
   page.watch(watched);
   for (let tick = 0; tick < 20; tick += 1) await settle();
   globalThis.dispatchEvent = dispatch;
@@ -803,7 +817,7 @@ test('page values give way before a draft outgrows its storage bound, and the co
   const saved = commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
   assert.equal(Object.hasOwn(saved, 'provenance'), false);
   assert.equal(saved.photoUrl, long('photo'));
-  assert.equal(page.element('companion-status').textContent,
+  assert.equal(page.element('companion-capture-source').textContent,
     'Watchlist details are ready to review. Left off, the draft being at its size bound: provenance.');
 
   // A draft with room for everything says nothing more.
@@ -815,5 +829,160 @@ test('page values give way before a draft outgrows its storage bound, and the co
   });
   await roomy.click('companion-capture-current');
   await roomy.click('companion-capture-watchlist');
-  assert.equal(roomy.element('companion-status').textContent, 'Watchlist details are ready to review.');
+  assert.equal(roomy.element('companion-capture-source').textContent, 'Watchlist details are ready to review.');
+});
+
+// Loop 1 (P-05): Current source stood open on every popup with a paragraph of prose. It starts folded under a summary that says what it does, and
+// opens by itself only where there is a page to capture: the active tab is a web page the extension may read.
+test('Current source starts folded, and opens itself over a web page it could capture', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const details = markup.getElementById('companion-current-lot');
+  assert.equal(details.getAttribute('open'), null);
+  assert.equal(details.querySelector('summary').textContent, 'Capture the lot page you’re on');
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }] });
+  await settle();
+  assert.equal(page.element('companion-current-lot').open, true);
+  const blank = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] });
+  await settle();
+  assert.equal(blank.element('companion-current-lot').open, false);
+});
+
+// Loop 1 (C-01): a failed capture opened the empty Ruler/Denomination/Mint/Reference editor and said why twice - under the button and again in the
+// status line, which stood under the footer. The editor stays shut, the reason is said once beside the button, and the status line sits under the tabs.
+test('a failed capture keeps the editor shut and says why once, beside the button', async () => {
+  assert.equal(captureControlsState(false, false, false, true).editorVisible, false);
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] });
+  page.element('companion-capture-editor').hidden = true;
+  await page.click('companion-capture-current');
+  assert.equal(page.element('companion-capture-editor').hidden, true);
+  assert.match(page.element('companion-capture-error').textContent, /^This page can't be read\./);
+  assert.equal(page.element('companion-capture-error').hidden, false);
+  assert.equal(page.element('form-error').textContent, '');
+  assert.match(page.element('announcement').textContent, /^This page can't be read\./);
+
+  page.setTabs(async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }]);
+  answerScript = capturedPage({ reference: { value: 'RIC 306', provenance: 'visible-text' } });
+  await page.click('companion-capture-current');
+  assert.equal(page.element('companion-capture-editor').hidden, false);
+  assert.equal(page.element('companion-capture-error').hidden, true);
+});
+
+test('the capture error stands outside the editor, and messages are spoken by the one live region', () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const editor = markup.getElementById('companion-capture-editor');
+  assert.equal(editor.querySelectorAll('#companion-capture-error').length, 0);
+  assert.ok(markup.getElementById('companion-capture-error'));
+  assert.equal(markup.getElementById('announcement').getAttribute('role'), 'status');
+});
+
+// Loop 1 (D-02): the calculator said "Enter an amount and buyer premium." in body text, as loud as a result, and stood a six-line explanation in the
+// way of the figures. The prompt is muted until there is a result, and the explanation folds under its own summary; Fees keeps its accent.
+test('the calculator mutes its prompt and folds its explanation', async () => {
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+  const root = page.element('companion-bid-calculator').children[0];
+  const about = root.children.find((child) => child.className === 'bid-calculator-about');
+  assert.ok(about, 'the explanation has a fold of its own');
+  assert.equal(about.children[0].textContent, 'How the total is counted');
+  assert.equal(about.children[1].className, 'bid-calculator-note');
+  const css = readFileSync(new URL('../extension/bid-tools.css', import.meta.url), 'utf8');
+  // No result yet is exactly when "Use in bid" is disabled, in every calculator, shown or not.
+  assert.match(css, /\.bid-calculator:has\(\.bid-calculator-actions button:disabled\) \.bid-calculator-output\{[^}]*color:var\(--muted\);font-size:12px/);
+  assert.match(css, /\.bid-calculator-about \.bid-calculator-note\{[^}]*font-size:11px/);
+  assert.match(css, /\.bid-calculator-fees summary[^{]*\{[^}]*color:var\(--accent\)/);
+});
+
+// Loop 1 (K-01): after a lookup the header was thirty stops from the Reference box, and nothing brought the box back from the Calculator or Watchlist.
+// A skip link leads the header, and Ctrl+K (⌘K on a Mac), or "/" outside a text field, takes the keyboard back to the box on the Research tab.
+test('Ctrl+K, "/" and the skip link bring the Reference box back from any tab', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const header = markup.querySelector('.popup-header');
+  const first = header.querySelectorAll('a, button, summary, input')[0];
+  assert.equal(first.getAttribute('id'), 'skip-to-research');
+  assert.equal(first.textContent, 'Skip to research');
+  assert.equal(markup.getElementById('quick-reference').getAttribute('aria-keyshortcuts'), 'Control+K Meta+K');
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+  const box = page.element('quick-reference');
+  let selected = 0;
+  box.select = () => { selected += 1; };
+  await page.click('companion-tab-calculator');
+  assert.equal(page.element('companion-panel-research').hidden, true);
+  const chord = page.key({ key: 'k', ctrlKey: true, target: page.element('companion-bid-calculator') });
+  assert.equal(chord.prevented, true);
+  assert.equal(page.element('companion-panel-research').hidden, false);
+  assert.equal(page.element('companion-tab-research')['aria-selected'], 'true');
+  assert.equal(box.focused, true);
+  assert.equal(selected, 1);
+  // "/" typed into a field is the character, not the shortcut.
+  const typed = page.key({ key: '/', target: { tagName: 'INPUT' } });
+  assert.equal(typed.prevented, undefined);
+  const slash = page.key({ key: '/', target: { tagName: 'BODY' } });
+  assert.equal(slash.prevented, true);
+  box.focused = false;
+  await page.click('companion-tab-watchlist');
+  await page.element('skip-to-research').emit('click');
+  assert.equal(page.element('companion-panel-research').hidden, false);
+  assert.equal(box.focused, true);
+});
+
+// Fix round 2 (re-review Important 2): the status line lay over the top of the panel, so after Save reference to watchlist it covered the Reference
+// box for 8 s. There is no status line now: a message is said in the hint line under the control that caused it, for 8 s, then that line's own text
+// comes back; the live region speaks it as before. Nothing is drawn over the panel.
+test('a save is said in the hint under its button for a while, then the hint comes back', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  assert.equal(markup.getElementById('companion-status'), null);
+  assert.equal(markup.querySelectorAll('.status-anchor').length, 0);
+  const hint = markup.getElementById('companion-save-hint');
+  assert.match(hint.textContent, /^Saves the reference/);
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
+  try {
+    const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-3' } } : WORKING_SNAPSHOT) });
+    page.element('companion-save-hint').textContent = hint.textContent;
+    page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
+    await page.click('companion-save-watchlist');
+    assert.equal(page.element('companion-save-hint').textContent, 'Watchlist details are ready to review.');
+    assert.equal(page.element('announcement').textContent, 'Watchlist details are ready to review.');
+    const restore = timers.filter(({ wait }) => wait === 8000).at(-1);
+    assert.ok(restore, 'the hint is restored after 8 s');
+    restore.callback();
+    assert.equal(page.element('companion-save-hint').textContent, hint.textContent);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+// Fix round 2 (N7, with L3's lotsNeedingOutcome): the Watchlist tab says how many lots ended with no outcome recorded, and opens the workspace on
+// that queue.
+test('the Watchlist tab counts lots ended without an outcome and opens their queue', async () => {
+  const ended = { id: 'e1', name: 'Roma E-Sale 120', localDate: '2020-01-10', timeZone: 'Europe/London', precision: 'date' };
+  const lots = [{ id: 'a', auctionEventId: 'e1', outcome: { status: 'open' } }, { id: 'b', auctionEventId: 'e1' }, { id: 'c', auctionEventId: 'e1', outcome: { status: 'won' } }];
+  const snapshot = { ok: true, value: { lots, auctionEvents: [ended], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: async () => snapshot });
+    assert.equal(page.element('companion-needs-outcome').hidden, false);
+    assert.equal(page.element('companion-open-needs-outcome').textContent, '2 lots ended without an outcome');
+    await page.click('companion-open-needs-outcome');
+    assert.deepEqual(opened, ['moz-extension://test/workspace.html#watchlist?queue=needs-outcome']);
+    const none = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+    assert.equal(none.element('companion-needs-outcome').hidden, true);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
+});
+
+test('the workspace opens on the queue its address names, and ignores one it does not list', async () => {
+  const { mountWorkspace } = await import('./helpers/dom.mjs');
+  const named = await mountWorkspace({ hash: '#watchlist?queue=needs-outcome' });
+  assert.equal(named.document.getElementById('lot-queue').value, 'needs-outcome');
+  const plain = await mountWorkspace({ hash: '#watchlist' });
+  const unknown = await mountWorkspace({ hash: '#watchlist?queue=nonsense' });
+  assert.equal(unknown.document.getElementById('lot-queue').value, plain.document.getElementById('lot-queue').value);
+  assert.notEqual(unknown.document.getElementById('lot-queue').value, 'nonsense');
 });

@@ -44,9 +44,10 @@
 .companion-outline-button:hover {background:var(--accent-soft);}
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
 .companion-full-button {width:100%; margin-top:14px;}
-.companion-status {min-height:0; flex-shrink:0; padding:0 16px; color:var(--muted); font-size:11px; line-height:1.4;}
-.companion-status:not(:empty) {padding-top:7px; padding-bottom:7px; border-top:1px solid var(--line);}
-.companion-status.companion-error {color:var(--error);}
+/* A message said for a while in the hint line under the control that caused it (companion-popup.js); a failure in the error colour. */
+.said-error {color:var(--error);}
+.companion-needs-outcome {margin:10px 0 0;}
+.companion-needs-outcome .text-button {padding:4px 0; text-align:left;}
 .windowed .companion-tab-panel {flex:1 1 auto;}
 .panel-mode .companion-tab-panel {flex:1 1 auto;}
 @media (max-width:359px) {

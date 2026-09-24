@@ -59,7 +59,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 7. **Price check on a real signed-in acsearch session.** Sign in to acsearch in the same browser with an account that
     shows hammer prices. Look up `Price 23` and select **Get prices**.
-    *Expected:* the panel gives its query and a line of the form "N of M results cite Price 23"; the median is taken
+    *Expected:* the query shows beside **Change search**, and a line of the form "N of M results cite Price 23"; the median is taken
     from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
     automated fixtures for this page are synthetic, so unless a scrubbed real page has been added to
     `tests/fixtures/acsearch-real/`, this is the only check that the signed-in page is read correctly.

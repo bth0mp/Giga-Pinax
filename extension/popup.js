@@ -1,5 +1,5 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
-import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
+import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
@@ -10,11 +10,11 @@ import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
-  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE,
+  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
   catalogueFailureMessage, coinArchivesFailure, onlineMessage,
 } from './popup-messages.js';
-import { coinArchivesCounts, filterLines, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
+import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
 
 const LABELS_KEY = 'giga-pinax-labels-v1';
@@ -33,6 +33,9 @@ let shownPrices = null;
 let shownCoinArchivesPrices = null;
 // The acsearch lots not sold yet, as the Upcoming list under the panel shows them: the whole page they came from, so a toggle can redraw the list.
 let shownUpcoming = null;
+// A search under way, for the filter row above the panel: drawn while acsearch answers from the reference and term already known, so the row is in its
+// place before the prices are and their arrival moves nothing (renderPriceFilters). Cleared with the panel.
+let pendingPrices = null;
 // Watch on an upcoming lot hands it to the other half of this page, which owns the watchlist draft path (companion-popup.js).
 const WATCH_EVENT = 'giga-pinax-watch';
 let coinArchivesRequestId = 0;
@@ -181,6 +184,23 @@ function setPricesBusy(busy) {
   $('prices-label').textContent = busy ? 'Fetching…' : 'Get prices';
 }
 
+// While acsearch answers, the median block is drawn with its label, a dash and what is happening, and the range block keeps its room: the panel has
+// its final height before the prices are in it, so their arrival moves nothing below the card. Nothing of a previous answer is shown in it.
+const LOADING_HIDDEN = ['cited-count', 'sale-trend', 'last-sale', 'sale-period', 'year-medians', 'grade-medians', 'ungraded-count', 'check-row',
+  'check-result', 'sale-details', 'copy-summary', 'price-note'];
+function showPricesLoading(term, context) {
+  pendingPrices = { context, searched: filtersCitations(context.reference) && searchesReference(term, context.reference) };
+  renderPriceFilters();
+  $('prices-panel').dataset.state = 'loading';
+  $('median-amount').textContent = '—';
+  $('median-currency').textContent = '';
+  $('sale-strength').textContent = 'Fetching acsearch…';
+  $('median-line').hidden = false;
+  $('range-block').hidden = false;
+  for (const id of LOADING_HIDDEN) $(id).hidden = true;
+  $('prices-panel').hidden = false;
+}
+
 function resetCopyLabel() {
   clearTimeout(copiedTimer);
   $('copy-summary').textContent = 'Copy summary';
@@ -192,9 +212,14 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
   shownUpcoming = null;
+  pendingPrices = null;
   renderPriceFilters();
   resetCopyLabel();
   $('prices-panel').hidden = true;
+  $('prices-panel').dataset.state = '';
+  // The dash and "Fetching" of a search this replaces go with it.
+  $('median-amount').textContent = '';
+  $('sale-strength').textContent = '';
   $('upcoming').hidden = true;
   $('upcoming-list').replaceChildren();
   $('upcoming-status').hidden = true;
@@ -227,6 +252,16 @@ function clearPrices(options) {
   clearAcsearchPrices(options);
   clearCoinArchivesPrices(options);
 }
+
+// A basis line's parts, those that apply, as one line.
+const basisLine = (...parts) => parts.filter(Boolean).join(' · ');
+// Said once, in the basis line, wherever a strip of medians by year is drawn.
+const YEARS_BASIS = 'by year: years with at least 3 counted sales';
+// A sale's day as acsearch dates it ("01.06.2028"), written out ("1 Jun 2028"); a date that does not read is shown as it came.
+const saleDay = (text) => {
+  const day = isoDay(text);
+  return day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`)) : String(text ?? '');
+};
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
@@ -278,6 +313,8 @@ function setBusy(busy) {
 const cardFallbackTerm = () => researchContext?.label ?? '';
 
 function updateAcsearchLink() {
+  // The term searched is shown folded, beside "Change search", exactly as it is written: the panel's lines no longer repeat it.
+  $('price-search-term').textContent = $('price-term').value.trim();
   const term = $('price-term').value.trim() || cardFallbackTerm();
   // The category follows the reference on the card, not the edited term: a Krause reference searches modern coins.
   $('acsearch-link').href = term ? buildSearchUrl({ term, currency: $('currency').value, category: searchCategory(researchContext?.reference) }) : ACSEARCH_HOME;
@@ -305,6 +342,8 @@ function initialisePriceResearch(reference, identity = null) {
   researchContext = Object.freeze({ reference: Object.freeze({ ...reference }), label: buildQuery(reference).query, identity, term: chosen,
     currency: $('currency').value, priceTicket: priceRequestId });
   $('price-term').value = chosen;
+  // The search runs by itself, so its form starts folded; a note or an error that needs Get prices opens it.
+  $('price-search').open = false;
   updateAcsearchLink();
   updateCoinArchivesLink();
   $('research-prices').hidden = false;
@@ -429,16 +468,34 @@ async function showSpecimens(card) {
   $('specimens').hidden = false;
 }
 
-// A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions.
+// The rows of the list of types on show, with the title each is filtered by and the volume group it sits in (null in a list that is not grouped).
+let candidateRows = [];
+// A partial RIC search lists every type with the number, so it asks for a choice; near misses and Bop lists stay suggestions. A long RIC list is grouped
+// by volume, and where every type came from the bundled data that is said once, beside the count, rather than on every row. Past twelve rows a filter
+// narrows them.
 function renderCandidates(candidates, corpus, partial, personMismatch = false) {
   $('candidates-label').textContent = personMismatch ? 'No matching ruler found locally. Other types with this reference:' : partial ? 'Choose a type:' : 'Did you mean:';
-  $('candidate-list').replaceChildren(...candidates.map(({ id, title, source }) => {
+  const local = candidates.every(({ source }) => source === 'local');
+  $('candidates-count').textContent = `${candidates.length} ${candidates.length === 1 ? 'type' : 'types'}${local ? ', local catalogue' : ''}`;
+  const groups = candidateGroups(candidates);
+  candidateRows = [];
+  const row = ({ id, title, source }, split = null, group = null) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'text-button';
-    button.textContent = title;
-    if (source === 'local') {
+    // The whole title is the button's name wherever the row shows only part of it under its volume's heading.
+    button.setAttribute('aria-label', title);
+    if (split) {
+      const ruler = document.createElement('strong');
+      ruler.textContent = split.section;
+      const rest = document.createElement('span');
+      rest.className = 'candidate-rest';
+      rest.textContent = split.rest;
+      button.append(ruler, ' ', rest);
+    } else button.textContent = title;
+    // A list mixing bundled and online types still marks the bundled ones.
+    if (source === 'local' && !local) {
       const badge = document.createElement('span');
       badge.className = 'source-badge candidate-source';
       badge.textContent = 'Local catalogue';
@@ -456,13 +513,45 @@ function renderCandidates(candidates, corpus, partial, personMismatch = false) {
       beginResearch(parsed, () => localFirstId(corpus, id), '', { corpus, id, label: title });
     });
     item.append(button);
+    candidateRows.push({ item, title: folded(title), group });
     return item;
-  }));
+  };
+  $('candidate-list').replaceChildren(...(groups ? groups.map(({ name, rows }, index) => {
+    const group = document.createElement('li');
+    group.className = 'candidate-group';
+    const title = document.createElement('p');
+    title.className = 'candidate-heading';
+    title.id = `candidate-group-${index}`;
+    // The heading counts the rows on show under it, so the filter keeps it true (below).
+    group.dataset.name = name;
+    title.textContent = `${name} · ${rows.length}`;
+    const list = document.createElement('ul');
+    list.className = 'candidate-rows';
+    // The heading names its list, so a screen reader says "RIC IV, list, 8 items".
+    list.setAttribute('aria-labelledby', title.id);
+    list.append(...rows.map(({ candidate, section, rest }) => row(candidate, { section, rest }, group)));
+    group.append(title, list);
+    return group;
+  }) : candidates.map((candidate) => row(candidate))));
+  $('candidate-filter').value = '';
+  $('candidate-filter').hidden = candidates.length <= 12;
   $('candidates').hidden = false;
-  if (shouldRevealRefine({ status: 'candidates' })) $('refine-reference').open = true;
   announce(`${candidates.length} possible matches. Choose one.`);
   revealAgain('candidates');
 }
+
+// The filter keeps the rows whose title holds what is typed, and a volume with none of them left goes with its rows. Enter in it filters, never submits
+// the form it stands in.
+$('candidate-filter').addEventListener('input', () => {
+  const wanted = folded($('candidate-filter').value.trim());
+  for (const entry of candidateRows) entry.item.hidden = Boolean(wanted) && !entry.title.includes(wanted);
+  for (const group of new Set(candidateRows.map((entry) => entry.group).filter(Boolean))) {
+    const shown = candidateRows.filter((entry) => entry.group === group && !entry.item.hidden).length;
+    group.hidden = shown === 0;
+    group.children[0].textContent = `${group.dataset.name} · ${shown}`;
+  }
+});
+$('candidate-filter').addEventListener('keydown', (event) => { if (event.key === 'Enter') event.preventDefault(); });
 
 // A chip, or its label recalled into the Reference box and sent unchanged, is a user action like a "Did you mean" choice: it fills the guided fields
 // from the stored title (so the acsearch term follows it), reopens the type by corpus and id (a BIGR title or an SC "Ad." title would not read back) and makes
@@ -514,6 +603,8 @@ async function openLotReference(found, rulers, button, note = '') {
 // chosen; several wait for a pick, so a lot fetches nothing it wasn't asked for.
 function showLot(text) {
   const { references, rulers } = findReferences(text);
+  answered = true;
+  renderFirstRun();
   clearOutput();
   clearLot();
   markScroll();
@@ -556,10 +647,34 @@ function renderRecent() {
     return item;
   }));
   $('recent').hidden = preferences.recent.length === 0;
+  renderFirstRun();
   const chips = [...$('recent-list').querySelectorAll('button')];
   const target = chips.find((chip) => chip.dataset.key === focusedKey) || chips[0];
   if (refocus && target) target.focus();
 }
+
+// The examples are for a popup that has looked nothing up yet: they go with the first answer of any kind (a card, a list of types, an error) or a
+// Recent row, and while the box holds text.
+let answered = false;
+function renderFirstRun() {
+  $('first-run').hidden = answered || preferences.recent.length > 0 || Boolean($('quick-reference').value.trim());
+}
+
+// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler.
+$('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
+  const item = document.createElement('li');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = example;
+  button.addEventListener('click', () => {
+    $('quick-reference').value = example;
+    $('quick-reference').dispatchEvent(new Event('input', { bubbles: true }));
+    $('quick-reference').focus({ preventScroll: true });
+    $('reference-form').requestSubmit();
+  });
+  item.append(button);
+  return item;
+}));
 
 // The filters an acsearch page is drawn with, for the median and the Upcoming list alike.
 // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
@@ -624,7 +739,7 @@ function watchUpcoming(sale, context) {
     pageUrl: lotUrl(sale), closesAt: isoDay(sale.date) }) }));
 }
 
-// A Watch the other half could not save: it says why on its own status line, at the foot of the popup, and hands the reason back to be shown here,
+// A Watch the other half could not save: it speaks the reason and hands it back to be shown here,
 // beside the list the collector pressed Watch in. The live region has already spoken it, so this line is only seen.
 window.addEventListener('giga-pinax-watch-failed', (event) => {
   $('upcoming-status').textContent = String(event.detail?.message ?? '');
@@ -634,11 +749,13 @@ window.addEventListener('giga-pinax-watch-failed', (event) => {
 // The two toggles stand above both providers' panels: one state governs both medians, and either panel may be the only one a collector fetched — the
 // public CoinArchives search is the whole of the signed-out path. Each is offered while a panel on show has rows it applies to.
 function renderPriceFilters() {
-  const shown = shownPrices ?? shownCoinArchivesPrices ?? shownUpcoming;
+  const shown = shownPrices ?? shownCoinArchivesPrices ?? shownUpcoming ?? pendingPrices;
   // The Upcoming list follows the same toggles, and on a page without a counted price it is the only thing they govern.
-  const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched || shownUpcoming?.searched);
-  // Both panels filter on the denomination the verified card carries, so either may be the one offering the toggle.
-  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || shownUpcoming?.denomination || '';
+  const citing = Boolean(shownPrices?.searched || shownCoinArchivesPrices?.searched || shownUpcoming?.searched || pendingPrices?.searched);
+  // Both panels filter on the denomination the verified card carries, so either may be the one offering the toggle; a search under way offers the
+  // one its card carries as soon as the card is verified, as the answer will.
+  const pendingDenomination = pendingPrices ? filterableDenomination(priceCard(pendingPrices.context).denomination) : '';
+  const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || shownUpcoming?.denomination || pendingDenomination || '';
   $('citing-row').hidden = !citing;
   $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
   $('citing-filter').checked = onlyCiting;
@@ -683,7 +800,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-details').hidden = !visibility.curation;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const years = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  const years = summary.earliest === null ? '' : ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const counts = priceCuration.counts(periodLots);
   // Nothing counted: either the period holds no sale with a price, or every sale in it is excluded. Reset undoes only the collector's own decisions,
   // so it is offered as the way back only where it would leave a sale counted.
@@ -691,7 +808,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const none = periodLots.length === 0 ? noPeriodSales
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
-  $('sale-strength').textContent = empty ? none : `${count} recorded ${count === 1 ? 'sale' : 'sales'}${years}`;
+  $('sale-strength').textContent = empty ? none : `${sales(count)}${years}`;
   const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('cited-count').textContent = filters.join(' · ');
   $('cited-count').hidden = filters.length === 0;
@@ -702,27 +819,38 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('last-sale').hidden = !last;
   if (last) {
     // The name keeps the date it shows, so a screen reader or voice control still finds it.
-    const link = lotLink(last, last.date);
-    link.setAttribute('aria-label', `Last sale ${last.date} on acsearch, opens a new tab`);
-    $('last-sale').replaceChildren('Last sale ', link, ` · ${money.format(last.amount)}`);
+    const link = lotLink(last, saleDay(last.date));
+    link.setAttribute('aria-label', `Last sale ${saleDay(last.date)} on acsearch, opens a new tab`);
+    $('last-sale').replaceChildren(`last ${money.format(last.amount)} on `, link);
   }
-  // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" and the note below say how much acsearch held.
+  // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" says how much acsearch held. The query is not
+  // repeated here: it is shown beside Change search, where it can be edited.
   // Lots with no price at all (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
   const drawnFrom = summarise(lotsInPeriod(lots, period.value, now), currency);
   const { total, unpriced } = drawnFrom;
-  const skipped = total - drawnFrom.count - unpriced;
+  // A lot dated after today is no sale whatever its price field holds: it is named apart (L2's futureText, the words Copy summary uses), not lumped
+  // with prices that could not be read.
+  const future = drawnFrom.future ?? 0;
+  const skipped = total - drawnFrom.count - unpriced - future;
   // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
   // is proves the page reaches back past the period, so every sale of the period is already on it.
   const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
-  let drawn = `Out of ${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'}${period.years ? ` from the last ${period.years} years` : ''} for ${quotedTerm(term)}`;
+  let drawn = `${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'} on acsearch`;
   if (unpriced) drawn += ` · ${unpriced} without a price`;
+  if (future) drawn += ` · ${futureText(drawnFrom)}`;
   if (skipped) drawn += ` · ${skipped} not counted`;
   $('sale-period').textContent = drawn;
+  // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip.
+  const whole = (...ids) => ids.filter((id) => !$(id).hidden).map((id) => $(id).textContent || [...$(id).children].map((part) => part.textContent ?? part).join('')).join(' · ');
+  $('sale-period').hidden = false;
+  $('price-note').hidden = false;
+  $('stat-sales').title = whole('sale-strength', 'last-sale');
+  $('stat-counts').title = whole('cited-count', 'sale-period');
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
   // The whisker's ends in numbers: a quarter of the sales lie above the middle 50%, so the top sale is printed too.
-  $('range-all').textContent = count === 1 ? `1 sale ${money.format(summary.min)}` : `All ${count} sales ${money.format(summary.min)}–${money.format(summary.max)}`;
+  $('range-all').textContent = count === 1 ? '1 sale' : `all ${money.format(summary.min)}–${money.format(summary.max)}`;
   const span = summary.max - summary.min;
   const percent = (value) => rangePercent(summary, value);
   $('range-box').style.left = `${percent(summary.lowerQuartile)}%`;
@@ -771,14 +899,16 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   }));
   focusSaleId = null;
   if (restore) restore.focus();
-  // About the page, whatever the period and whatever the filters left: it holds only the 100 most recent lots.
-  $('price-note').textContent = pageSummary.capped
-    ? 'Hammer prices exclude buyer’s fees, tax and shipping. Only the 100 most recent sales are counted.'
-    : 'Hammer prices exclude buyer’s fees, tax and shipping.';
+  // The panel's one basis line, at its foot: what the figures are, how much of acsearch the page holds (only the 100 most recent lots), and which years
+  // the strip draws.
+  $('price-note').textContent = basisLine('Hammer only, no premium, tax or shipping', pageSummary.capped && 'acsearch returns the 100 most recent sales',
+    byYear.length > 1 && YEARS_BASIS);
   const upcoming = renderUpcoming(lots, term, context, card);
+  pendingPrices = null;
   shownPrices = { context, card, lots, currency, term, summary, searched, denomination, extras: { period, last, trend, filters, grades, ungraded, years: byYear, upcoming } };
   renderPriceFilters();
   showCheck();
+  $('prices-panel').dataset.state = 'ready';
   $('prices-panel').hidden = false;
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
@@ -819,21 +949,22 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
   const median = summary.count ? money.format(summary.median) : '—';
   for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
-  $('coinarchives-query').textContent = `Query: ${outcome.term}`;
   $('coinarchives-median').textContent = summary.count ? median : '';
   $('coinarchives-median-line').hidden = summary.count === 0;
   $('coinarchives-median-currency').textContent = summary.count && !median.includes(currency) ? currency : '';
   const dates = used.map(({ date }) => date).sort();
   const formatDate = (date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
-  const dateSpan = dates.length ? `, ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
-  $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${summary.count} recorded ${summary.count === 1 ? 'sale' : 'sales'}${dateSpan}`
-    : `${period.label}: No recorded sales in this period.`;
-  $('coinarchives-coverage').textContent = 'Coverage: auctions added in the past 6 months; first 100 results.';
+  const dateSpan = dates.length ? ` · ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
+  $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${sales(summary.count)}${dateSpan}` : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
   const filters = filterLines(periodLots, coinArchivesCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
   $('coinarchives-cited').textContent = filters.join(' · ');
   $('coinarchives-cited').hidden = filters.length === 0;
-  renderYears('coinarchives-', mediansByYear(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency), money.format);
+  const byYear = mediansByYear(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
+  renderYears('coinarchives-', byYear, money.format);
+  // The public panel's one basis line, with the search it ran: CoinArchives takes one spelling of the citation, and nothing else shows it.
+  $('coinarchives-coverage').textContent = basisLine('Hammer only, no premium, tax or shipping, no currency conversion',
+    `CoinArchives public results for ${outcome.term}: auctions added in the past 6 months, first 100 results`, byYear.length > 1 && YEARS_BASIS);
   const counts = coinArchivesCuration.counts(periodLots);
   $('coinarchives-curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('coinarchives-sale-count').textContent = String(summary.count);
@@ -867,7 +998,8 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   }));
   focusSaleId = null;
   if (restore) restore.focus();
-  $('coinarchives-source-link').href = outcome.url;
+  // The heading's results link opens the very search these prices came from.
+  $('coinarchives-link').href = outcome.url;
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-panel').hidden = false;
   shownCoinArchivesPrices = { context, outcome, currency, summary, searched, denomination };
@@ -906,6 +1038,7 @@ function showCheck() {
 }
 
 function showPricesNote(message, withSignIn) {
+  $('price-search').open = true;
   $('prices-note-text').textContent = message;
   $('signin-link').hidden = !withSignIn;
   $('prices-note').hidden = false;
@@ -913,6 +1046,7 @@ function showPricesNote(message, withSignIn) {
 }
 
 function showPricesError(message) {
+  $('price-search').open = true;
   $('prices-error').textContent = message;
   $('prices-error').hidden = false;
 }
@@ -953,6 +1087,7 @@ async function run(perform, note = '', failedReference = null) {
   finally { if (id === requestId) setBusy(false); }
   // A lookup another has replaced: nobody is waiting for this answer, and the reference it was kept for has been typed over.
   if (id !== requestId) { forgetPendingReference(); return; }
+  if (outcome.status !== 'cancelled') { answered = true; renderFirstRun(); }
   // The lookup the typed reference was kept for has answered, whatever it answered: only a cancelled lookup, and one still waiting for access, keep it.
   if (!['cancelled', 'permission', 'online-required'].includes(outcome.status)) forgetPendingReference();
   if (outcome.status === 'ok') {
@@ -975,6 +1110,8 @@ async function run(perform, note = '', failedReference = null) {
         resetCopyLabel();
         renderPrices(shownPrices.lots, shownPrices.currency, shownPrices.term);
       } else if (shownUpcoming?.context === researchContext) renderUpcoming(shownUpcoming.lots, shownUpcoming.term);
+      // A search still under way draws the denomination toggle this card offers now, before its answer lands under it.
+      else if (pendingPrices?.context === researchContext) renderPriceFilters();
     }
     if (!researchContext) {
       const reference = referenceFromCard(outcome.card);
@@ -1042,12 +1179,18 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
   setPricesBusy(true);
+  showPricesLoading(term, context);
   let outcome;
   try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }); }
   catch { outcome = { status: 'network' }; }
   finally { if (id === priceRequestId) setPricesBusy(false); }
   if (id !== priceRequestId || context !== researchContext) return;
-  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealAgain('research-prices'); return; }
+  if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealPrices(); return; }
+  // No median to hold a place for: the note below says why, and the filter row drawn for the search goes unless something on show still needs it.
+  $('prices-panel').hidden = true;
+  $('prices-panel').dataset.state = '';
+  pendingPrices = null;
+  renderPriceFilters();
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {
@@ -1060,6 +1203,12 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     const listed = renderUpcoming(outcome.lots, term, context);
     if (listed.length) $('announcement').textContent += ` ${upcomingText(listed)}.`;
   }
+}
+
+// The card is the answer and stands above the prices, so prices landing under it bring nothing into view: the collector is reading the coin. Only
+// prices with no card above them (a lookup that failed, or has not answered yet) are the answer to bring into view.
+function revealPrices() {
+  if ($('result').hidden) revealAgain('research-prices');
 }
 
 // Counted so a reference the store is still fetching cannot land in a window that has since been sent a lookup of its own (openFrom below).
@@ -1122,6 +1271,7 @@ $('quick-reference').addEventListener('input', () => {
   recalled = -1;
   clearLot();
   clearRicNote();
+  renderFirstRun();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
   $('quick-reference').removeAttribute('aria-invalid');
@@ -1352,7 +1502,7 @@ $('coinarchives-prices-button').addEventListener('click', async () => {
   if (outcome.status === 'ok') {
     shownCoinArchivesPrices = { context, outcome, currency };
     renderCoinArchivesPrices();
-    revealAgain('research-prices');
+    revealPrices();
   } else showCoinArchivesError(coinArchivesFailure(outcome, currency));
 });
 $('theme-toggle').addEventListener('click', () => chooseTheme(shownTheme() === 'dark' ? 'light' : 'dark'));

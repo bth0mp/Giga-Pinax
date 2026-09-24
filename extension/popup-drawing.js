@@ -3,6 +3,8 @@
 // lookup's state: a specimen, a sale's link, the filter lines, the median by year and the CoinArchives
 // counts.
 import { yearText, yearsSentence } from './prices.js';
+import { parseReference } from './lookup.js';
+import { RIC_VOLUMES } from './catalogues.js';
 import { $ } from './popup-shell.js';
 /**
  * A sale as a price panel draws it: the provider's row, read by prices.js.
@@ -148,8 +150,38 @@ function renderYears(prefix, years, format) {
     line.textContent = yearText(entry, format);
     return line;
   }));
-  $(`${prefix}year-medians`).hidden = years.length === 0;
+  // One year is one bar, which says nothing the median above it does not: the strip is drawn from two years on. Its lines stay for Copy summary.
+  $(`${prefix}year-medians`).hidden = years.length < 2;
 }
+
+// A long list of RIC types, grouped by the volume each is filed in, in the order the list gives them: each row keeps its candidate, and splits its title
+// into the ruler or mint (the part a collector scans for) and the rest. Only a list longer than a glance - more than three rows - whose every title reads
+// back as a RIC volume, section and number is grouped; anything else is listed as it came (null).
+/**
+ * @param {Array<{ id: string, title: string, source?: string }>} candidates
+ * @returns {Array<{ name: string, rows: Array<{ candidate: { id: string, title: string, source?: string }, section: string, rest: string }> }> | null}
+ */
+function candidateGroups(candidates) {
+  if (candidates.length <= 3) return null;
+  const parsed = candidates.map(({ title }) => parseReference(title));
+  if (!parsed.every((reference) => reference?.catalogue === 'RIC' && reference.volume && reference.section)) return null;
+  /** @type {Map<string, Array<{ candidate: { id: string, title: string, source?: string }, section: string, rest: string }>>} */
+  const groups = new Map();
+  candidates.forEach((candidate, index) => {
+    const { volume, section } = parsed[index];
+    const at = candidate.title.indexOf(section);
+    const rest = at < 0 ? candidate.title : candidate.title.slice(at + section.length).trim();
+    if (!groups.has(volume)) groups.set(volume, []);
+    groups.get(volume)?.push({ candidate, section, rest });
+  });
+  // The volume as the Volume select names it, without its edition note: "I² (2nd ed.)" heads its group as "RIC I²".
+  const name = (volume) => (RIC_VOLUMES.find((entry) => entry.value === volume)?.label ?? volume).replace(/ \(2nd ed\.\)$/, '');
+  return [...groups].map(([volume, rows]) => ({ name: `RIC ${name(volume)}`, rows }));
+}
+
+// Text as the list filter compares it: case folded and accents stripped, so "lugdunum" finds Lugdunum and "neron" finds Nerón.
+/** @type {(text: string) => string} */
+const folded = (text) => String(text).normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
 
 /** @type {(outcome: *, currency: string) => string} */
 const coinArchivesCounts = (outcome, currency) => {
@@ -166,5 +198,5 @@ const coinArchivesCounts = (outcome, currency) => {
 };
 
 export {
-  coinArchivesCounts, filterLines, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters,
+  candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters,
 };
