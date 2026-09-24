@@ -1049,10 +1049,11 @@ test('the offered auction keeps the page’s instant in the collector’s own zo
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
 });
 
-// The workspace's stylesheet, read as rules: `{ media, selector, declarations }` for every rule, with the media query
+// The workspace's stylesheets - the shared layer, then its own - read as rules: `{ media, selector, declarations }` for every rule, with the media query
 // the rule sits in ('' at the top level). The file is written by hand, one rule after another, so this reads it.
 function workspaceCssRules() {
-  const css = readFileSync(new URL('../extension/workspace.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const css = ['design-tokens.css', 'workspace.css'].map((file) => readFileSync(new URL(`../extension/${file}`, import.meta.url), 'utf8')).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
   const rules = [];
   const read = (text, media) => {
     let index = 0;
@@ -1081,7 +1082,8 @@ test('the workspace nav wraps at phone width, so no route is scrolled out of sig
 
 // W-05: a danger button is red on a transparent face, never red text on the accent's purple (1.46:1).
 test('a danger button draws its red on a transparent face with a red border', () => {
-  const danger = cssDeclarations('button.danger');
+  // The danger kind is drawn once, by the shared layer (loop 2, M2).
+  const danger = cssDeclarations('.danger');
   assert.match(danger, /background:transparent/);
   assert.match(danger, /border-color:var\(--error\)/);
   assert.match(danger, /color:var\(--error\)/);

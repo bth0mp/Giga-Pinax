@@ -1,5 +1,51 @@
 :root{color-scheme:light;--bg:#f5f5f4;--surface:#fff;--card:#fff;--soft:#f0eeee;--ink:#211c20;--muted:#6f676d;--line:#ded9dc;--border:#c9c1c6;--field:#81747c;--accent:#6b1f5c;--accent-hover:#551749;--accent-soft:#f3e9f0;--on-accent:#fff;--focus:#8c377a;--error:#a3243e;--warning:#855c12;--gold:#89691d;--gold-line:#c9b36f;--shadow:0 1px 3px rgba(32,20,29,.09);--font-ui:"Segoe UI",Arial,sans-serif;--font-serif:Georgia,"Iowan Old Style",serif;--font-mono:Consolas,"Liberation Mono",monospace;font-family:var(--font-ui);color:var(--ink);background:var(--bg);font-synthesis:none}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#171416;--surface:#201c1f;--card:#262125;--soft:#302a2e;--ink:#f1ecef;--muted:#b7acb3;--line:#453c42;--border:#5b4e56;--field:#94848e;--accent:#d6a6ca;--accent-hover:#e5b9da;--accent-soft:#3e2938;--on-accent:#25101f;--focus:#e4b5d9;--error:#ff9cad;--warning:#e5c06e;--gold:#d7bd72;--gold-line:#655532;--shadow:none}}
 :root[data-theme="dark"]{color-scheme:dark;--bg:#171416;--surface:#201c1f;--card:#262125;--soft:#302a2e;--ink:#f1ecef;--muted:#b7acb3;--line:#453c42;--border:#5b4e56;--field:#94848e;--accent:#d6a6ca;--accent-hover:#e5b9da;--accent-soft:#3e2938;--on-accent:#25101f;--focus:#e4b5d9;--error:#ff9cad;--warning:#e5c06e;--gold:#d7bd72;--gold-line:#655532;--shadow:none}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,select,textarea{font:inherit;color:inherit}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.sources-menu{position:relative}.sources-menu summary{cursor:pointer;color:var(--accent);font-weight:650}.sources-menu-body{display:grid;gap:12px;width:min(280px,calc(100vw - 24px));padding:12px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow)}.sources-menu-group{display:grid;gap:6px}.sources-menu-group strong{font-family:var(--font-serif)}.sources-menu-links{display:flex;flex-wrap:wrap;gap:10px}.sources-menu a{color:var(--accent);text-underline-offset:3px}
+/* One control layer for every page (D-01). The pages keep their layout; the look of text, controls, pills and folds is decided here.
+   Type: 11 meta, 12 body, labels and buttons, 13 inputs, 14 small serif headings, 16 section headings, 21-25 page headings, 32 the one figure
+   per panel. Spacing on a 4 px grid. Controls 38 px high (32 small), radius 6 (8 for panels, round for pills and chips). */
+:root{--text-meta:11px;--text-body:12px;--text-input:13px;--text-h4:14px;--text-h3:16px;--text-h2:21px;--text-figure:32px;--label-weight:650;--label-gap:6px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--control-h:38px;--control-h-sm:32px;--control-pad:12px;--radius:6px;--radius-panel:8px;--radius-pill:999px;--focus-width:3px;--focus-offset:2px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:var(--focus-width) solid var(--focus);outline-offset:var(--focus-offset)}
+/* The browser's own placeholder grey is 3.4:1 on a dark field; the muted ink is 5.5:1 light and 7.2:1 dark. */
+::placeholder{color:var(--muted);opacity:1}
+
+/* Labels: one style, 12 px at 650; each page places it 6 px above its control. */
+label{font-size:var(--text-body);font-weight:var(--label-weight)}
+
+/* Fields: every text box, list and note box. A value is typed text, never the label's bold. */
+input:where(:not([type=checkbox],[type=radio],[type=range],[type=color])),select,textarea{min-height:var(--control-h);padding:7px 10px;border:1px solid var(--field);border-radius:var(--radius);background:var(--card);color:var(--ink);font-size:var(--text-input);font-weight:400}
+textarea{line-height:1.45}
+input:where(:not([type=checkbox],[type=radio],[type=range],[type=color])):hover:not(:disabled),select:hover:not(:disabled),textarea:hover:not(:disabled){border-color:var(--accent)}
+
+/* Buttons: four kinds and a text button. primary is filled with the accent; secondary is the accent's outline; quiet is a neutral outline for
+   the lesser actions beside them; danger is red on a transparent face, never on the accent; a text button has no edge. A workspace, Settings or
+   calculator button with no kind of its own is primary. The older class names below are the same kinds under the names the scripts give them. */
+.btn,.primary-button,.button,.button-link,.secondary,.secondary-button,.companion-outline-button,.companion-save-watchlist,.quiet,.danger,:where(.page-workspace,.page-settings,.bid-calculator) button{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:var(--control-h);padding:0 var(--control-pad);border:1px solid var(--accent);border-radius:var(--radius);background:var(--accent);color:var(--on-accent);font-size:var(--text-body);font-weight:650;text-decoration:none;cursor:pointer}
+/* Hover changes only the face, at the specificity of the kind it belongs to, so a page's own rule (a coin row, a tab) keeps its look. */
+.btn:where(:hover:not(:disabled)),.primary-button:where(:hover:not(:disabled)),.button:where(:hover:not(:disabled)),.button-link:where(:hover:not(:disabled)),:where(.page-workspace,.page-settings,.bid-calculator) button:where(:hover:not(:disabled)){background:var(--accent-hover)}
+.secondary,.secondary-button,.companion-outline-button,.companion-save-watchlist{border-color:var(--accent);background:var(--card);color:var(--accent)}
+.secondary:where(:hover:not(:disabled)),.secondary-button:where(:hover:not(:disabled)),.companion-outline-button:where(:hover:not(:disabled)),.companion-save-watchlist:where(:hover:not(:disabled)){background:var(--accent-soft)}
+.quiet{border-color:var(--border);background:transparent;color:var(--ink)}
+.quiet:where(:hover:not(:disabled)){background:var(--soft)}
+.danger{border-color:var(--error);background:transparent;color:var(--error)}
+.danger:where(:hover:not(:disabled)){background:var(--soft)}
+.text-button{border:0;background:transparent;color:var(--accent);font-size:var(--text-body);font-weight:650;cursor:pointer}
+.text-button:where(:hover:not(:disabled)){text-decoration:underline;text-underline-offset:3px}
+:where(.btn,.primary-button,.button,.button-link,.secondary,.secondary-button,.companion-outline-button,.companion-save-watchlist,.quiet,.danger,.text-button,.page-workspace button,.page-settings button,.bid-calculator button):disabled{opacity:.5;cursor:not-allowed}
+.btn-sm,.secondary-button{min-height:var(--control-h-sm);padding:0 10px}
+
+/* Pills: a record's state (status-pill) or where an answer came from (source-badge), one shape and size. Chips are the round buttons that look
+   something up or choose a period: their edge is the muted ink, 4.7:1 on the page, so they read as controls. */
+.pill,.status-pill,.source-badge{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:var(--radius-pill);background:var(--soft);color:var(--ink);font-size:var(--text-meta);font-weight:650;line-height:1.4;white-space:nowrap}
+.source-badge{border-color:transparent;color:var(--muted);font-weight:400}
+
+/* Folds: every summary that is a line of text ends in the same small chevron, pointing down while closed and up while open. (A ⌄ glyph
+   turned over sits above the line, since the glyph sits low in its box.) */
+:is(.sources-menu,.refine-reference,.companion-current-lot,.context-calculator,.bid-calculator-fees,.bid-calculator-about,.bid-preset-editor,.why,.premium-ladder-details,.preset-share,.coinarchives-pro,.form-group)>summary{list-style:none;cursor:pointer}
+:is(.sources-menu,.refine-reference,.companion-current-lot,.context-calculator,.bid-calculator-fees,.bid-calculator-about,.bid-preset-editor,.why,.premium-ladder-details,.preset-share,.coinarchives-pro,.form-group)>summary::-webkit-details-marker{display:none}
+:is(.sources-menu,.refine-reference,.companion-current-lot,.context-calculator,.bid-calculator-fees,.bid-calculator-about,.bid-preset-editor,.why,.premium-ladder-details,.preset-share,.coinarchives-pro,.form-group)>summary::after{content:"";display:inline-block;width:7px;height:7px;margin:0 3px 0 8px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);vertical-align:middle;transform:translateY(-3px) rotate(45deg)}
+:is(.sources-menu,.refine-reference,.companion-current-lot,.context-calculator,.bid-calculator-fees,.bid-calculator-about,.bid-preset-editor,.why,.premium-ladder-details,.preset-share,.coinarchives-pro,.form-group)[open]>summary::after{transform:translateY(0) rotate(-135deg)}
+
+.sources-menu{position:relative}.sources-menu summary{cursor:pointer;color:var(--accent);font-weight:650}.sources-menu-body{display:grid;gap:12px;width:min(280px,calc(100vw - 24px));padding:12px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow)}.sources-menu-group{display:grid;gap:6px}.sources-menu-group strong{font-family:var(--font-serif)}.sources-menu-links{display:flex;flex-wrap:wrap;gap:10px}.sources-menu a{color:var(--accent);text-underline-offset:3px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}

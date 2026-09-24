@@ -2247,7 +2247,10 @@ test('the header shows Sources like its neighbours and a working theme switch', 
   for (const id of ['icon-moon', 'icon-sun']) assert.equal(markup.getElementById(id).querySelectorAll('svg').length, 1, id);
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
   assert.match(css, /\.header-actions summary \{[^}]*list-style:none/);
-  assert.match(css, /\.header-actions summary::after \{[^}]*content:"⌄"/);
+  // Loop 2 (M2 fix round): its ⌄ is the chevron every fold draws, from the shared layer; the popup no longer draws a glyph of its own.
+  assert.doesNotMatch(css, /\.header-actions[^{]*summary::after/);
+  const layer = readFileSync(new URL('../extension/design-tokens.css', import.meta.url), 'utf8');
+  assert.match(layer, /:is\(\.sources-menu[^{]*>summary::after\{content:""[^}]*border-right:[^}]*border-bottom:/);
   const stored = new Map();
   const popup = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   // The system is dark here, so the switch offers light, and remembers it under the key Settings writes.
