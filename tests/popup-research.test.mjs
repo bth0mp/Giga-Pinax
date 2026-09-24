@@ -2221,3 +2221,27 @@ test('the list of types stands outside the Refine form', () => {
   assert.doesNotMatch(refine, /id="candidates"/);
   assert.match(html, /id="candidates"/);
 });
+
+// Loop 1 (P-07): the header read "Panel ▸ Sources Settings" - a disclosure marker between two plain buttons - and the theme switch was hidden. Sources
+// draws as the other two do, with a trailing ⌄, and the switch is an icon button in the header again, writing the same choice Settings → Appearance
+// shows (the last one made wins, wherever it was made).
+test('the header shows Sources like its neighbours and a working theme switch', async () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const toggle = markup.getElementById('theme-toggle');
+  assert.equal(toggle.hidden, false);
+  assert.equal(toggle.getAttribute('aria-hidden'), null);
+  assert.equal(toggle.getAttribute('tabindex'), null);
+  assert.match(toggle.getAttribute('class'), /\bicon-button\b/);
+  for (const id of ['icon-moon', 'icon-sun']) assert.equal(markup.getElementById(id).querySelectorAll('svg').length, 1, id);
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.header-actions summary \{[^}]*list-style:none/);
+  assert.match(css, /\.header-actions summary::after \{[^}]*content:"⌄"/);
+  const stored = new Map();
+  const popup = await loadPopup({ stored, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
+  // The system is dark here, so the switch offers light, and remembers it under the key Settings writes.
+  assert.equal(popup.element('theme-toggle')['aria-pressed'], 'true');
+  await popup.element('theme-toggle').emit('click');
+  assert.equal(popup.document.documentElement.dataset.theme, 'light');
+  assert.equal(stored.get('giga-pinax-theme-v1'), 'light');
+  assert.equal(popup.element('theme-toggle')['aria-pressed'], 'false');
+});
