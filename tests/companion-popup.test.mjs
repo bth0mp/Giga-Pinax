@@ -689,3 +689,23 @@ test('the capture’s own save carries the page values, and clearing the auction
   for (const field of ['auctionContext', 'estimate', 'closesAt', 'photoUrl']) assert.equal(lastSaved()[field] ?? null, null, field);
   assert.equal(lastSaved().reference, 'RIC 306');
 });
+
+test('the captured lot’s provenance entries go to its draft and come off with its auction context', async () => {
+  const entries = [{ text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' }];
+  assert.deepEqual(buildWatchlistDraftPayload({ title: 'Lot', provenance: [...entries, { text: '' }, { text: 'Ex Hess', year: 'soon', extra: 1 }] }).provenance,
+    [...entries, { text: 'Ex Hess' }]);
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().provenance, entries);
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  assert.equal(Object.hasOwn(lastSaved(), 'provenance'), false);
+});

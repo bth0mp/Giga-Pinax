@@ -58,6 +58,27 @@ test('a current-lot draft carries the page’s estimate, closing time and photo 
   assert.equal(validateDraftPayload('auction-capture', { rawText: 'Coin', photoUrl: 'https://house.test/27.jpg' }).ok, false);
 });
 
+test('a current-lot draft carries the page’s provenance entries only in their validated shape', () => {
+  const draft = (provenance) => validateDraftPayload('current-lot', { target: 'watchlist', title: 'Coin', provenance });
+  assert.equal(draft([{ text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' }, { text: 'Ex Hess' }]).ok, true);
+  for (const [provenance, path] of [
+    ['Ex Leu 7', 'payload.provenance'],
+    [Array.from({ length: 11 }, () => ({ text: 'Ex Leu' })), 'payload.provenance'],
+    [[{ text: '' }], 'payload.provenance[0].text'],
+    [[{ text: 'x'.repeat(301) }], 'payload.provenance[0].text'],
+    [[{ text: 'Ex Leu', source: 'x'.repeat(121) }], 'payload.provenance[0].source'],
+    [[{ text: 'Ex Leu', year: '1973' }], 'payload.provenance[0].year'],
+    [[{ text: 'Ex Leu', year: 99999 }], 'payload.provenance[0].year'],
+    [[{ text: 'Ex Leu', lot: 'x'.repeat(21) }], 'payload.provenance[0].lot'],
+    [[{ text: 'Ex Leu', sourceUrl: 'https://x.test' }], 'payload.provenance[0].sourceUrl'],
+    [[null], 'payload.provenance[0]'],
+  ]) {
+    const result = draft(provenance);
+    assert.equal(result.ok, false, JSON.stringify(provenance).slice(0, 80));
+    assert.equal(result.error.path, path, JSON.stringify(provenance).slice(0, 80));
+  }
+});
+
 const NOW = '2026-09-12T12:00:00.000Z';
 const IDS = Object.freeze({
   eventUsd: '11111111-1111-4111-8111-111111111111',

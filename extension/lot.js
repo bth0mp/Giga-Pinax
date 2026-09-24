@@ -98,17 +98,93 @@ const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\
 const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)((?:Ex|From|Provenance)\b)/;
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
+// Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975."), whose tail would be left behind as a reference.
+const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec))\.(?=\s)|\n|$/u;
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
     const start = cut.index + cut[0].length - cut[1].length;
     const rest = out.slice(start);
-    // Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975."), whose tail would be left behind as a reference.
-    const end = rest.search(/(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec))\.(?=\s)|\n|$/u);
+    const end = rest.search(PROVENANCE_END);
     out = out.slice(0, start) + rest.slice(end + 1);
   }
   return out;
 };
+
+// The provenance a lot text carries, read into ordered entries from what is written: "Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's
+// 1991" is two owners, each with the words it was written in. A source is the entry's own words with its date and lot taken out, never a house
+// named from an abbreviation; a year is a four-digit year the entry writes (not a lot, sale or catalogue number); a lot is the number after "lot".
+// Every pattern here is anchored or bounded and the text is read once, forwards, with its spaces collapsed first, so no run a page writes - of
+// spaces, brackets, digits or words - makes it backtrack.
+const PROVENANCE_READ = 6000;
+const PROVENANCE_ENTRIES = 10;
+const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
+const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
+const PROVENANCE_LABEL = /^provenance ?:? ?/i;
+const PROVENANCE_MARKER = /^(?:ex|from)\b\.? ?:? ?/i;
+const PROVENANCE_LOT = /,? ?\blots?\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
+const PROVENANCE_DATE = /(?:\b\d{1,2}(?:st|nd|rd|th)?\.? )?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?)\.? (?:\d{1,2}(?:st|nd|rd|th)?,? )?$|\b\d{1,2}[./]\d{1,2}[./]$/i;
+const TRIMMED = new Set([' ', ',', '.', ';', ':', '-', '–', '\n']);
+const trimEnds = (value) => {
+  let start = 0, end = value.length;
+  while (start < end && TRIMMED.has(value[start])) start += 1;
+  while (end > start && TRIMMED.has(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+};
+
+function provenanceSentences(text) {
+  const source = String(text).slice(0, PROVENANCE_READ * 4).replace(/[^\S\n]+/g, ' ').replace(/ ?\n\s*/g, '\n').slice(0, PROVENANCE_READ);
+  const sentences = [];
+  PROVENANCE_ALL.lastIndex = 0;
+  for (let cut; sentences.length < PROVENANCE_ENTRIES * 2 && (cut = PROVENANCE_ALL.exec(source));) {
+    const start = cut.index + cut[0].length - cut[1].length;
+    PROVENANCE_END_ALL.lastIndex = start;
+    const end = PROVENANCE_END_ALL.exec(source)?.index ?? source.length;
+    sentences.push(source.slice(start, end));
+    PROVENANCE_ALL.lastIndex = Math.max(end, start + 1);
+  }
+  return sentences;
+}
+
+function provenanceEntry(piece) {
+  const text = trimEnds(piece.replace(PROVENANCE_LABEL, ''));
+  let working = trimEnds(text.replace(PROVENANCE_MARKER, ''));
+  if (!/[\p{L}\d]/u.test(working)) return null;
+  const entry = { text: text.slice(0, 300) };
+  const lot = PROVENANCE_LOT.exec(working);
+  if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
+  let year = null;
+  PROVENANCE_YEAR.lastIndex = 0;
+  for (let found; (found = PROVENANCE_YEAR.exec(working));) year = found;
+  if (year) {
+    const at = year.index;
+    let from = at, to = at + 4;
+    const open = working.lastIndexOf('(', at), close = working.indexOf(')', at);
+    const date = PROVENANCE_DATE.exec(working.slice(Math.max(0, at - 30), at));
+    if (open >= 0 && close >= 0 && working.lastIndexOf(')', at) < open && !working.slice(at, close).includes('(')) { from = open; to = close + 1; }
+    else if (date) from = at - (Math.min(at, 30) - date.index);
+    working = working.slice(0, from) + working.slice(to);
+  }
+  const source = trimEnds(working.replace(/,(?= ?,)/g, '')).slice(0, 120);
+  if (/\p{L}/u.test(source)) entry.source = source;
+  if (year) entry.year = Number(year[0]);
+  if (lot) entry.lot = lot[1];
+  return entry;
+}
+
+export function readProvenance(text) {
+  if (typeof text !== 'string') return [];
+  const entries = [];
+  for (const sentence of provenanceSentences(text)) {
+    for (const piece of sentence.split(/;|,(?= ?ex )/i)) {
+      if (entries.length >= PROVENANCE_ENTRIES) return entries;
+      const entry = provenanceEntry(piece);
+      if (entry) entries.push(entry);
+    }
+  }
+  return entries;
+}
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
 // A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
 // volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").

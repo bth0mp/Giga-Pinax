@@ -254,6 +254,14 @@ export function lotDraftToEditor(payload) {
   const estimateNote = estimateNoteText(payload?.estimate);
   if (estimateNote) result.estimateNote = estimateNote;
   if (closesAtParts(payload?.closesAt)) result.closesAt = payload.closesAt;
+  // The provenance the page lists, offered only where the lot page can stand as each entry's source.
+  if ((result.auctionContext?.pageUrl || result.sourceUrl) && Array.isArray(payload?.provenance)) {
+    const provenance = payload.provenance.slice(0, 10).map((entry) => ({
+      text: bounded(entry?.text, 300), source: bounded(entry?.source, 120),
+      year: Number.isInteger(entry?.year) ? entry.year : null, lot: bounded(entry?.lot, 20),
+    })).filter((entry) => entry.text);
+    if (provenance.length) result.provenance = provenance;
+  }
   return result;
 }
 
@@ -689,6 +697,7 @@ async function initWorkspace() {
     root.replaceChildren(text('p', 'Filled in from the page you captured. Check each before saving; nothing here is saved until you save the coin.', 'field-note'));
     if (values.estimateNote) root.append(text('p', `Estimate from the page: ${values.estimateNote.replace(/^Estimate from page: /, '')}, the price its offer states. It is written as a line of Notes; clear that line to leave it out.`, 'field-note'));
     if (values.photoUrl) root.append(text('p', 'Photo link from the page, in Photo URL 1. Clear it to leave it out.', 'field-note'));
+    if (values.provenance?.length) root.append(text('p', `Provenance from the page: ${values.provenance.length === 1 ? 'one entry' : `${values.provenance.length} entries`} under Sourced provenance, each kept only if you tick it.`, 'field-note'));
     const offered = values.closesAt ? offeredEventFromDraft({ closesAt: values.closesAt, pageUrl }, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
     if (offered) {
       pageOffer = { closesAt: values.closesAt, pageUrl, eventId: null };
@@ -700,16 +709,25 @@ async function initWorkspace() {
     }
     root.hidden = root.children.length < 2;
   };
-  const provenanceValues = () => [...$('provenance-editor').querySelectorAll('.provenance-row')].map((row) => ({
+  const provenanceValues = () => [...$('provenance-editor').querySelectorAll('.provenance-row')]
+    .filter((row) => row.dataset.offered !== 'true' || row.querySelector('[name="provenanceKeep"]').checked).map((row) => ({
     id: row.dataset.id || requestId(),
     text: row.querySelector('[name="provenanceText"]').value.trim(),
     sourceUrl: row.querySelector('[name="provenanceSourceUrl"]').value.trim(),
     recordedAt: row.dataset.recordedAt || new Date().toISOString(),
     ...(row.querySelector('[name="provenanceAuctionDate"]').value ? { auctionDate: row.querySelector('[name="provenanceAuctionDate"]').value } : {}),
   })).filter((item) => item.text || item.sourceUrl);
-  const appendProvenanceEditor = (entry = {}) => {
+  // A row the page offered (a lot draft's provenance) waits for the collector's tick: unticked, it is shown and never saved.
+  const appendProvenanceEditor = (entry = {}, offered = null) => {
     const row = document.createElement('div'); row.className = 'provenance-row'; row.dataset.id = entry.id ?? requestId(); row.dataset.recordedAt = entry.recordedAt ?? new Date().toISOString();
     row.innerHTML = '<label>Note<textarea name="provenanceText" maxlength="1000" required></textarea></label><label>Source URL<input name="provenanceSourceUrl" type="url" maxlength="2048" required></label><label>Auction date <span class="optional">optional</span><input name="provenanceAuctionDate" type="date"></label><div class="form-actions"><button class="quiet" type="button">Remove entry</button></div>';
+    if (offered) {
+      row.dataset.offered = 'true';
+      const keep = document.createElement('label'); const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'provenanceKeep';
+      const read = [offered.source, offered.year, offered.lot ? `lot ${offered.lot}` : ''].filter(Boolean).join(', ');
+      keep.append(box, document.createTextNode(` Keep this entry. From the page${read ? `: ${read}` : ''}`));
+      row.prepend(keep);
+    }
     row.querySelector('[name="provenanceText"]').value = entry.text ?? ''; row.querySelector('[name="provenanceSourceUrl"]').value = entry.sourceUrl ?? ''; row.querySelector('[name="provenanceAuctionDate"]').value = entry.auctionDate ?? '';
     row.querySelector('button').addEventListener('click', () => { row.remove(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
     $('provenance-editor').append(row);
@@ -1494,6 +1512,7 @@ async function initWorkspace() {
       $('provenance-editor').replaceChildren();
       clearPageValues();
       showPageValues(values, values.auctionContext?.pageUrl || values.sourceUrl);
+      for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
       form.elements.title.focus();

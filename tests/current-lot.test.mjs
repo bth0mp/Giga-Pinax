@@ -370,3 +370,19 @@ test('a page that could not be read keeps no page values in its draft', () => {
   const draft = draftOf({ pageTitle: 'Lot', pageUrl: 'about:blank', offerPrice: '1200', offerCurrency: 'EUR', closesAt: '2026-10-15', photoUrl: 'https://x.test/1.jpg', candidates: {} });
   for (const field of ['estimate', 'closesAt', 'photoUrl']) assert.equal(Object.hasOwn(draft, field), false, field);
 });
+
+// 0.34 (W2a): the provenance the lot page writes, in its structured description or its visible text, read into entries for the workspace to
+// offer - once each, however many places the page repeats it.
+test('the lot’s provenance is read from its description and its text, once each, in the order written', () => {
+  const injected = new Function(`return (${collectCurrentLotCandidates.toString()})`)();
+  const capture = injected(page({ jsonLd: [OFFER_PAGE], nodes: [node("Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's 1991."), node('Ex Hess 1958.')] }),
+    { href: 'https://house.example/sale-9/lot-27' });
+  assert.deepEqual(draftOf(capture).provenance, [
+    { text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' },
+    { text: "Ex Hunt collection, Sotheby's 1991", source: "Hunt collection, Sotheby's", year: 1991 },
+    { text: 'Ex Hess 1958', source: 'Hess', year: 1958 },
+  ]);
+  // A page with no provenance gives none, and a page that could not be read gives none either.
+  assert.equal(Object.hasOwn(draftOf(injected(page({ nodes: [node('Reference: RIC 306')] }), { href: 'https://auction.test/1' })), 'provenance'), false);
+  assert.equal(Object.hasOwn(draftOf({ pageUrl: 'about:blank', rawText: 'Ex Leu 7 (1973).', candidates: {} }), 'provenance'), false);
+});

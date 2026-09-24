@@ -618,6 +618,26 @@ function closesAtResult(value, path) {
     : failure('invalid-date', 'Expected a YYYY-MM-DD date, or a date and time with its UTC offset.', path);
 }
 
+// The provenance a lot page lists, read into entries (lot.js readProvenance) for the collector to tick in the workspace: each keeps the words it
+// was written in, with the source, year and lot the reader found in them.
+function draftProvenanceResult(value, path) {
+  const array = arrayResult(value, path, 10); if (!array.ok) return array;
+  for (let index = 0; index < value.length; index += 1) {
+    const entry = value[index], entryPath = `${path}[${index}]`;
+    const object = objectResult(entry, entryPath); if (!object.ok) return object;
+    const unexpected = Object.keys(entry).find((key) => !['text', 'source', 'year', 'lot'].includes(key));
+    if (unexpected) return failure('unexpected-field', 'Provenance entry contains an unsupported field.', `${entryPath}.${unexpected}`);
+    const result = firstFailure(
+      stringResult(entry.text, `${entryPath}.text`, 300),
+      optionalString(entry, 'source', entryPath, LIMITS.shortText),
+      OWN(entry, 'year') ? integerResult(entry.year, `${entryPath}.year`, { minimum: 1000, maximum: 2999 }) : { ok: true },
+      optionalString(entry, 'lot', entryPath, 20),
+    );
+    if (!result.ok) return result;
+  }
+  return { ok: true, value };
+}
+
 export function validateDraftPayload(kind, payload, path = '') {
   const kindPath = path ? `${path}.kind` : 'kind';
   const payloadPath = path ? `${path}.payload` : 'payload';
@@ -627,7 +647,7 @@ export function validateDraftPayload(kind, payload, path = '') {
   if (!object.ok) return object;
 
   const allowed = kind === 'current-lot'
-    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext', 'estimate', 'closesAt', 'photoUrl'])
+    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext', 'estimate', 'closesAt', 'photoUrl', 'provenance'])
     : new Set(['rawText', 'pageUrl', 'auctionContext']);
   const unexpected = Object.keys(payload).find((key) => !allowed.has(key));
   if (unexpected) {
@@ -646,6 +666,7 @@ export function validateDraftPayload(kind, payload, path = '') {
       OWN(payload, 'estimate') ? pageEstimateResult(payload.estimate, `${payloadPath}.estimate`) : { ok: true },
       OWN(payload, 'closesAt') ? closesAtResult(payload.closesAt, `${payloadPath}.closesAt`) : { ok: true },
       optionalUrl(payload, 'photoUrl', payloadPath),
+      OWN(payload, 'provenance') ? draftProvenanceResult(payload.provenance, `${payloadPath}.provenance`) : { ok: true },
     );
     return fields.ok ? { ok: true, value: payload } : fields;
   }

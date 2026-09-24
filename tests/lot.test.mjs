@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { anyCase, looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine } from '../extension/lot.js';
+import { anyCase, looksLikeLot, findReferences, isLot, lotLabel, lotLookup, oneLine, readProvenance } from '../extension/lot.js';
 import { parseReference } from '../extension/lookup.js';
 import { defaultTerm } from '../extension/prices.js';
 
@@ -1139,4 +1139,54 @@ test('anyCase reads a word whatever its capitals, and a letter with no one-lette
   assert.ok(!reads('ß', 'SS'));
   assert.ok(reads('a.b', 'A.B'));
   assert.ok(!reads('a.b', 'AxB'));
+});
+
+// 0.34 (W2a): the provenance a lot text carries, read into ordered entries from what is written - a house is never named from an abbreviation, a
+// year is a year only where the entry writes one, and each entry keeps its own words for the collector to check.
+test('the provenance reader splits the cut text into ordered entries, each keeping its original words', () => {
+  assert.deepEqual(readProvenance("Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's 1991"), [
+    { text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' },
+    { text: "Ex Hunt collection, Sotheby's 1991", source: "Hunt collection, Sotheby's", year: 1991 },
+  ]);
+  // Read from a whole lot text: only the provenance sentences, in the order written, and the references after them stay out.
+  assert.deepEqual(readProvenance('Nero. AR Denarius. Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17. Ex CNG 105, lot 45a.'), [
+    { text: 'Ex Leu 4, 25 May 1972, lot 123', source: 'Leu 4', year: 1972, lot: '123' },
+    { text: 'Ex CNG 105, lot 45a', source: 'CNG 105', lot: '45a' },
+  ]);
+  assert.deepEqual(readProvenance('Provenance: Gorny & Mosch 250.'), [{ text: 'Gorny & Mosch 250', source: 'Gorny & Mosch 250' }]);
+  assert.deepEqual(readProvenance('From the Sunrise Collection.\nEx Dr. Sear collection, 1975.'), [
+    { text: 'From the Sunrise Collection', source: 'the Sunrise Collection' },
+    { text: 'Ex Dr. Sear collection, 1975', source: 'Dr. Sear collection', year: 1975 },
+  ]);
+  // A second "ex" inside one sentence is a second owner.
+  assert.deepEqual(readProvenance('Ex NAC 50, lot 4, ex Hess 1958.').map(({ source, year }) => [source, year]), [['NAC 50', undefined], ['Hess', 1958]]);
+});
+
+test('the provenance reader guesses nothing: no house from an abbreviation, no year from a lot or sale number', () => {
+  // "CNG" stays "CNG", and a four-digit lot is a lot, not a year.
+  assert.deepEqual(readProvenance('Ex CNG e-auction 250, lot 1975.'), [{ text: 'Ex CNG e-auction 250, lot 1975', source: 'CNG e-auction 250', lot: '1975' }]);
+  assert.deepEqual(readProvenance('Ex Leu sale 1850, lot 7.'), [{ text: 'Ex Leu sale 1850, lot 7', source: 'Leu sale 1850', lot: '7' }]);
+  // No provenance at all, or only its marker, reads as nothing.
+  assert.deepEqual(readProvenance('Nero. AR Denarius. RIC 306.'), []);
+  assert.deepEqual(readProvenance('Ex.'), []);
+  for (const empty of [undefined, null, 42, {}]) assert.deepEqual(readProvenance(empty), []);
+});
+
+test('hostile provenance text stays linear: long runs, nested brackets and no year', () => {
+  for (const text of [
+    `Ex ${'('.repeat(20000)}Leu 7 1973${')'.repeat(20000)}`,
+    `Ex ${'Leu '.repeat(20000)}`,
+    `Ex ${'1973 '.repeat(20000)}`,
+    `Ex ${' '.repeat(20000)}Leu;${' ; '.repeat(20000)}`,
+    `${'Ex. '.repeat(20000)}`,
+    `${'\n'.repeat(20000)}Ex Leu`,
+    `Ex Leu, lot ${'1'.repeat(20000)}`,
+    `Ex ${'May '.repeat(20000)}1973`,
+  ]) {
+    const start = Date.now();
+    const entries = readProvenance(text);
+    assert.ok(Date.now() - start < 2000, `hostile provenance must not freeze the reader: ${JSON.stringify(text.slice(0, 20))}`);
+    assert.ok(entries.length <= 10);
+    for (const entry of entries) assert.ok(entry.text.length <= 300 && (entry.source ?? '').length <= 120 && (entry.lot ?? '').length <= 20);
+  }
 });

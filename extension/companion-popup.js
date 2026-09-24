@@ -80,12 +80,12 @@ export function buildWatchlistDraftPayload(input) {
       if (value) payload.auctionContext[field] = value;
     }
   }
-  // What the captured page states about its sale, for the workspace to offer: an estimate, when it closes, a photo link.
+  // What the captured page states about its lot, for the workspace to offer: an estimate, when it closes, a photo link, its provenance.
   return { ...payload, ...draftPageValues(input) };
 }
 
 // The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.
-const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'photoUrl']);
+const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'photoUrl', 'provenance']);
 const withoutPageValues = (draft) => Object.fromEntries(Object.entries(draft).filter(([key]) => !PAGE_VALUES.includes(key)));
 
 export function clearAuctionContextFromPayload(payload) {

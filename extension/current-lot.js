@@ -1,4 +1,5 @@
 import { parseReference } from './lookup.js';
+import { readProvenance } from './lot.js';
 
 // Injected into the auction page by scripting.executeScript, so it stands alone: every helper it uses is defined inside it, and everything it reads is
 // the page's own text, which the page controls. ponytail: no per-auction-house selector table - none of the houses' markup is verified here, so the
@@ -135,6 +136,8 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     }
   }
   const closesAt = shownLot?.closing || (eventStarts.length === 1 ? eventStarts[0] : '');
+  // The lines that may carry the lot's provenance, each kept whole and once, so a sentence never runs on into the next line's text.
+  const provenanceText = [...new Set([...structured, ...visibleLines].filter((text) => /\b(?:Ex|From|Provenance)\b/.test(text)))].join('\n').slice(0, 3000);
   return {
     pageTitle,
     pageUrl,
@@ -142,6 +145,7 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     ...(shownLot?.price ? { offerPrice: shownLot.price, offerCurrency: shownLot.currency } : {}),
     ...(closesAt ? { closesAt } : {}),
     ...(shownLot?.photo ? { photoUrl: shownLot.photo } : {}),
+    ...(provenanceText ? { provenanceText } : {}),
     rawText: limit(visibleLines.join('\n'), 3000),
     candidates,
     capturedSelection: selection || undefined,
@@ -196,6 +200,27 @@ export function pageClosesAt(value) {
   return `${dayOnly}T${hour}:${minute}Z`;
 }
 
+// Provenance entries as a draft holds them: each once, and all of them well inside the draft's storage bound.
+function provenanceEntries(entries) {
+  const kept = [];
+  const seen = new Set();
+  let length = 0;
+  for (const entry of Array.isArray(entries) ? entries.slice(0, 10) : []) {
+    const text = bounded(entry?.text, 300);
+    if (!text || seen.has(text.toLocaleLowerCase('en-US')) || length + text.length > 2000) continue;
+    seen.add(text.toLocaleLowerCase('en-US'));
+    length += text.length;
+    const item = { text };
+    const source = bounded(entry.source, 120);
+    if (source) item.source = source;
+    if (Number.isInteger(entry.year) && entry.year >= 1000 && entry.year <= 2999) item.year = entry.year;
+    const lot = bounded(entry.lot, 20);
+    if (lot) item.lot = lot;
+    kept.push(item);
+  }
+  return kept;
+}
+
 // The page values a draft may hold, taken again from whatever hands them over, so a watchlist draft carries them only in the shapes the store keeps.
 export function draftPageValues(input) {
   const values = {};
@@ -207,6 +232,8 @@ export function draftPageValues(input) {
   if (closesAt) values.closesAt = closesAt;
   const photoUrl = webAddress(input?.photoUrl);
   if (photoUrl) values.photoUrl = photoUrl;
+  const provenance = provenanceEntries(input?.provenance);
+  if (provenance.length) values.provenance = provenance;
   return values;
 }
 
@@ -244,6 +271,8 @@ export function buildResearchDraft(capture, context = {}) {
     if (estimate) draft.estimate = estimate;
     if (closesAt) draft.closesAt = closesAt;
     if (photoUrl) draft.photoUrl = photoUrl;
+    const provenance = provenanceEntries(readProvenance(typeof capture?.provenanceText === 'string' ? capture.provenanceText.slice(0, 3000) : ''));
+    if (provenance.length) draft.provenance = provenance;
   }
   draft.capturedAt = now;
   return draft;

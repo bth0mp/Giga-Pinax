@@ -380,3 +380,33 @@ test('an auction the collector already chose wins over the one the page offers',
   assert.equal(background.root().auctionEvents.length, 1);
   assert.equal(storedLot(background, 'Captured coin').auctionEventId, chosen.value.id);
 });
+
+// 0.34 (W2a): the provenance the page lists is offered as rows of the Sourced provenance editor, with the lot page as each row's source; only the
+// rows the collector ticks are saved.
+test('the page’s provenance is offered as unticked rows, and only a ticked row is saved, sourced to the lot page', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ provenance: [
+    { text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' },
+    { text: "Ex Hunt collection, Sotheby's 1991", source: "Hunt collection, Sotheby's", year: 1991 },
+  ] });
+  const page = await mountWorkspace({ background, hash });
+  const rows = page.$('provenance-editor').querySelectorAll('.provenance-row');
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].querySelector('[name="provenanceText"]').value, 'Ex Leu 7 (1973), lot 123');
+  assert.equal(rows[0].querySelector('[name="provenanceSourceUrl"]').value, 'https://house.example/lot/27');
+  assert.ok(rows[0].textContent.includes('From the page: Leu 7, 1973, lot 123'));
+  for (const row of rows) assert.equal(row.querySelector('[name="provenanceKeep"]').checked, false, 'nothing is kept unticked');
+  assert.ok(page.$('lot-page-values').textContent.includes('Provenance from the page: 2 entries under Sourced provenance'));
+
+  rows[1].querySelector('[name="provenanceKeep"]').checked = true;
+  await page.saveDetails();
+  const saved = storedLot(background, 'Captured coin');
+  assert.deepEqual(saved.provenanceNotes.map(({ text, sourceUrl }) => [text, sourceUrl]), [["Ex Hunt collection, Sotheby's 1991", 'https://house.example/lot/27']]);
+  assert.equal(saved.provenanceNotes[0].auctionDate, undefined, 'a year is not a day');
+});
+
+test('a draft whose rows are all left unticked saves no provenance', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ provenance: [{ text: 'Ex Hess 1958', source: 'Hess', year: 1958 }] });
+  const page = await mountWorkspace({ background, hash });
+  await page.saveDetails();
+  assert.deepEqual(storedLot(background, 'Captured coin').provenanceNotes ?? [], []);
+});
