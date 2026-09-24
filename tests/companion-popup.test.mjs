@@ -832,3 +832,35 @@ test('Current source starts folded, and opens itself over a web page it could ca
   await settle();
   assert.equal(blank.element('companion-current-lot').open, false);
 });
+
+// Loop 1 (C-01): a failed capture opened the empty Ruler/Denomination/Mint/Reference editor and said why twice - under the button and again in the
+// status line, which stood under the footer. The editor stays shut, the reason is said once beside the button, and the status line sits under the tabs.
+test('a failed capture keeps the editor shut and says why once, beside the button', async () => {
+  assert.equal(captureControlsState(false, false, false, true).editorVisible, false);
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] });
+  page.element('companion-capture-editor').hidden = true;
+  await page.click('companion-capture-current');
+  assert.equal(page.element('companion-capture-editor').hidden, true);
+  assert.match(page.element('companion-capture-error').textContent, /^This page can't be read\./);
+  assert.equal(page.element('companion-capture-error').hidden, false);
+  assert.equal(page.element('companion-status').textContent, '');
+  assert.equal(page.element('form-error').textContent, '');
+  assert.match(page.element('announcement').textContent, /^This page can't be read\./);
+
+  page.setTabs(async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }]);
+  answerScript = capturedPage({ reference: { value: 'RIC 306', provenance: 'visible-text' } });
+  await page.click('companion-capture-current');
+  assert.equal(page.element('companion-capture-editor').hidden, false);
+  assert.equal(page.element('companion-capture-error').hidden, true);
+});
+
+test('the capture error stands outside the editor, and the status line under the tabs', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const editor = markup.getElementById('companion-capture-editor');
+  assert.equal(editor.querySelectorAll('#companion-capture-error').length, 0);
+  assert.ok(markup.getElementById('companion-capture-error'));
+  const tabs = html.indexOf('</nav>', html.indexOf('id="companion-tabs"'));
+  assert.ok(tabs < html.indexOf('id="companion-status"') && html.indexOf('id="companion-status"') < html.indexOf('id="companion-panel-research"'));
+  assert.equal(markup.getElementById('companion-status').getAttribute('role'), 'status');
+});

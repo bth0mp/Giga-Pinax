@@ -30,9 +30,10 @@ export function shouldRevealRefine(outcome, field = '') {
 }
 
 // Research coin needs a query as well as a draft: a capture that gave no readable reference has fields to edit and can still be saved to the watchlist,
-// but nothing to look up.
-export function captureControlsState(pending, hasDraft, researchable = hasDraft) {
-  return { editorVisible: !pending, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft, researchDisabled: pending || !hasDraft || !researchable };
+// but nothing to look up. A capture that failed read nothing, so it opens no editor to fill: its reason stands beside the button instead.
+export function captureControlsState(pending, hasDraft, researchable = hasDraft, failed = false) {
+  return { editorVisible: !pending && !failed, fieldsDisabled: pending, actionsDisabled: pending || !hasDraft,
+    researchDisabled: pending || !hasDraft || !researchable };
 }
 
 export async function runVisibleAction(action, fallback) {
@@ -289,12 +290,16 @@ async function initCompanionPopup() {
   } catch { /* the calculator remains useful in a standalone page */ }
   if (!extensionRuntimeAvailable(globalThis.browser ?? globalThis.chrome)) bridge = null;
 
-  const announce = (message, error = false) => {
-    $('companion-status').textContent = message;
-    $('companion-status').classList.toggle('companion-error', error);
+  // Said to a screen reader alone: for a message already on screen where it belongs.
+  const speak = (message) => {
     const live = $('announcement');
     live.textContent = '';
     requestAnimationFrame(() => { live.textContent = message; });
+  };
+  const announce = (message, error = false) => {
+    $('companion-status').textContent = message;
+    $('companion-status').classList.toggle('companion-error', error);
+    speak(message);
   };
   const activate = (name, focus = false) => {
     for (const tabName of TABS) {
@@ -412,8 +417,8 @@ async function initCompanionPopup() {
       shownFormError = '';
     }
   };
-  const applyCaptureState = (pending, hasDraft = Boolean(captureDraft)) => {
-    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())));
+  const applyCaptureState = (pending, hasDraft = Boolean(captureDraft), failed = false) => {
+    const state = captureControlsState(pending, hasDraft, Boolean(buildResearchQuery(reviewedCapture())), failed);
     $('companion-capture-editor').hidden = !state.editorVisible;
     for (const id of captureFieldIds) $(id).disabled = state.fieldsDisabled;
     $('companion-use-capture').disabled = state.researchDisabled;
@@ -465,9 +470,12 @@ async function initCompanionPopup() {
       }
       $('companion-save-watchlist').disabled = !canSave(safeCard);
       for (const id of captureFieldIds) $(id).value = '';
-      $('companion-capture-source').textContent = error.message;
-      applyCaptureState(false, false);
-      announce(error.message, true);
+      $('companion-capture-source').textContent = '';
+      applyCaptureState(false, false, true);
+      // Said once, beside the button that failed: not in the status line as well, and never over the Reference box's own line.
+      $('companion-capture-error').textContent = error.message;
+      $('companion-capture-error').hidden = false;
+      speak(error.message);
     } finally {
       if (requestId === captureRequestId) {
         captureButton.disabled = false;

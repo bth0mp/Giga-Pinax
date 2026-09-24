@@ -32,6 +32,7 @@
       <button id="companion-tab-calculator" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-calculator" tabindex="-1">Calculator</button>
       <button id="companion-tab-watchlist" type="button" role="tab" aria-selected="false" aria-controls="companion-panel-watchlist" tabindex="-1">Watchlist</button>
     </nav>
+    <p id="companion-status" class="companion-status" role="status"></p>
     <section id="companion-panel-research" class="companion-tab-panel" role="tabpanel" aria-labelledby="companion-tab-research">
     <div class="popup-scroll">
       <form id="reference-form" class="reference-form" novalidate>
@@ -128,14 +129,14 @@
         <summary>Capture the lot page you’re on</summary>
         <div class="companion-current-lot-body">
           <button id="companion-capture-current" class="companion-outline-button" type="button">Capture current page</button>
+          <p id="companion-capture-error" class="form-error" hidden></p>
           <div id="companion-capture-editor" hidden>
             <p id="companion-capture-source" class="field-hint"></p>
-            <p id="companion-capture-error" class="form-error" hidden></p>
             <div class="companion-field-pair"><label>Ruler<input id="companion-capture-ruler" maxlength="120"></label><label>Denomination<input id="companion-capture-denomination" maxlength="120"></label></div>
             <div class="companion-field-pair"><label>Mint<input id="companion-capture-mint" maxlength="120"></label><label>Reference<input id="companion-capture-reference" maxlength="120"></label></div>
             <div class="companion-capture-actions"><button id="companion-use-capture" class="primary-button" type="button" disabled>Research coin</button><button id="companion-capture-watchlist" class="companion-outline-button" type="button" data-companion-runtime disabled>Save to watchlist</button><button id="companion-clear-auction-context" class="text-button" type="button">Clear auction context</button></div>
+            <p class="field-hint">Review extracted fields before researching or saving.</p>
           </div>
-          <p class="field-hint">Review extracted fields before researching or saving.</p>
         </div>
       </details>
       <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
@@ -165,7 +166,6 @@
         <p id="companion-runtime-note" class="storage-note" hidden>Durable watchlist features require the installed extension. The calculator still works here.</p>
       </div>
     </section>
-    <p id="companion-status" class="companion-status" role="status"></p>
     <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
   </main>
 </body>

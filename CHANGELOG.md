@@ -15,6 +15,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Fixed
 
+- A capture of a page that cannot be read no longer opens an empty Ruler/Denomination/Mint/Reference editor or says why twice: the reason shows once, under **Capture current page**. The popup's status line now sits under the Research, Calculator and Watchlist tabs instead of under the footer.
 - The popup's footer fits on one line: the credit reads “Type data: ANS · Nomisma (ODbL, CC BY)”, with the full list in **Settings** → **Local catalogue data**, and the arrow of **acsearch ↗** no longer drops under the word.
 - The popup no longer loses its header and Research, Calculator and Watchlist tabs after some lookups. A pasted lot looked up after a list of types scrolled the whole popup page, and no scrolling brought the header back; only the panel under the tabs scrolls now.
 
