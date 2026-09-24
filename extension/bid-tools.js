@@ -177,20 +177,28 @@ export function ladderTierText(tiers, minor, currency, locale = 'en-US') {
   return `on ${range}, steps of ${money(step)}`;
 }
 
-// The calculator's own preset editor knows the premium, and the VAT on it and the platform fee when
-// they are filled in; it replaces those and leaves the rest of the house's preset — its ladder, and
-// a charge the calculator was not given — as Settings wrote it.
+// The calculator's own preset editor knows the premium, the VAT on it and the platform fee: a charge
+// given as a number is written, one given as null (its field left blank) is taken off the preset, and
+// one not given at all is left as it was. The rest of the house's preset — its ladder — stays as
+// Settings wrote it.
 export function presetsWithPremium(presets, name, buyerPremiumBps, charges = {}) {
   const key = presetKey(name);
   const existing = (presets ?? []).find((item) => presetKey(item.name) === key);
-  const given = {};
+  const preset = { ...existing, name: String(name).trim().replace(/\s+/g, ' '), buyerPremiumBps };
   for (const { key: chargeKey } of HOUSE_CHARGES) {
-    if (Number.isSafeInteger(charges[chargeKey])) given[chargeKey] = charges[chargeKey];
+    if (Number.isSafeInteger(charges[chargeKey])) preset[chargeKey] = charges[chargeKey];
+    else if (Object.hasOwn(charges, chargeKey) && charges[chargeKey] === null) delete preset[chargeKey];
   }
-  return [
-    ...(presets ?? []).filter((item) => presetKey(item.name) !== key),
-    { ...existing, name: String(name).trim().replace(/\s+/g, ' '), buyerPremiumBps, ...given },
-  ];
+  return [...(presets ?? []).filter((item) => presetKey(item.name) !== key), preset];
+}
+
+// What a save from the calculator wrote, in words: every term of the house as it now stands.
+function savedPresetText(preset) {
+  const percent = (bps) => `${(bps / 100).toFixed(2)}%`;
+  const vat = Number.isSafeInteger(preset.premiumVatBps) ? `VAT on premium ${percent(preset.premiumVatBps)}` : 'no VAT on premium';
+  const platform = Number.isSafeInteger(preset.platformFeeBps) ? `platform fee ${percent(preset.platformFeeBps)}` : 'no platform fee';
+  const ladder = preset.incrementLadder ? ' Its increment ladder is unchanged.' : '';
+  return `Saved ${preset.name}: premium ${percent(preset.buyerPremiumBps)}, ${vat}, ${platform}.${ladder}`;
 }
 
 export function buildBidCalculation(input) {
@@ -509,7 +517,7 @@ export function mountBidCalculator(
         showError(charge.error.message);
         return;
       }
-      if (charge.value !== null) charges[key] = charge.value;
+      charges[key] = charge.value;
     }
     presetSavePending = true;
     save.disabled = true;
@@ -524,13 +532,12 @@ export function mountBidCalculator(
       if (!Number.isInteger(preferences?.revision)) {
         throw new Error('House presets are not ready, so the preset was not saved. Reload the page and try again.');
       }
+      const housePremiumPresets = presetsWithPremium(preferences.housePremiumPresets, name, parsed.value, charges);
       const reply = await sendCommand({
         type: 'preferences.save',
         requestId: newRequestId(),
         expectedRevision: preferences.revision,
-        preferences: {
-          housePremiumPresets: presetsWithPremium(preferences.housePremiumPresets, name, parsed.value, charges),
-        },
+        preferences: { housePremiumPresets },
       });
       if (!reply.ok) {
         throw new Error(reply.message || reply.error?.message || 'Could not save the preset.');
@@ -538,7 +545,7 @@ export function mountBidCalculator(
       takePreferences({ preferences: reply.value });
       presetName.value = '';
       editor.open = false;
-      status.textContent = 'House preset saved.';
+      status.textContent = savedPresetText(housePremiumPresets.at(-1));
       status.dataset.error = 'false';
     } catch (error) {
       showError(error.message || 'Could not save the preset.');

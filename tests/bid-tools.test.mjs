@@ -229,11 +229,17 @@ test("a preset row carries the house's VAT on premium and platform fee, and name
   assert.equal(presetFromFields({ name: 'Roma', premiumText: '20', platformFeeText: '101' }).error.field, 'platformFee');
 });
 
-test('saving from the calculator writes the VAT and platform fee it holds, and keeps what it was not given', () => {
+// The calculator's fields are the house's terms as saved: a charge typed is written, a charge blanked
+// is taken off the preset, and only a charge the caller says nothing about is left as it was.
+test('saving from the calculator writes the VAT and platform fee it holds, and clears one left blank', () => {
   const presets = [{ name: 'Künker', buyerPremiumBps: 2000, premiumVatBps: 1900, platformFeeBps: 100 }];
   assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500), [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, platformFeeBps: 100 }]);
-  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500, { premiumVatBps: 2000 }),
+  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500, { premiumVatBps: 2000, platformFeeBps: 100 }),
     [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 2000, platformFeeBps: 100 }]);
+  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500, { premiumVatBps: null, platformFeeBps: 100 }),
+    [{ name: 'Künker', buyerPremiumBps: 2500, platformFeeBps: 100 }]);
+  assert.deepEqual(presetsWithPremium(presets, 'Künker', 2500, { premiumVatBps: null, platformFeeBps: null }),
+    [{ name: 'Künker', buyerPremiumBps: 2500 }]);
 });
 
 test('saving a premium from the calculator keeps the ladder that editor never showed', () => {
@@ -361,7 +367,7 @@ test('saving a preset sends it against the revision the calculator read', async 
   assert.equal(calculator.commands.length, 1);
   assert.equal(calculator.commands[0].expectedRevision, 5);
   assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [{ name: 'Roma', buyerPremiumBps: 2000 }]);
-  assert.equal(calculator.status.textContent, 'House preset saved.');
+  assert.equal(calculator.status.textContent, 'Saved Roma: premium 20.00%, no VAT on premium, no platform fee.');
 });
 
 const KUNKER = { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 };
@@ -479,4 +485,21 @@ test('pasted house presets are refused whole, with the house and field at fault'
   assert.equal(refuse([{ name: 'Roma', buyerPremiumBps: 2000 }, { name: ' roma ', buyerPremiumBps: 2100 }]).error.message, 'The pasted text names Roma twice.');
   assert.match(refuse(Array.from({ length: 51 }, (_, index) => ({ name: `House ${index}`, buyerPremiumBps: 0 }))).error.message, /at most 50/);
   assert.equal(refuse('x'.repeat(200001)).error.message, 'The pasted text is too long to be house presets.');
+});
+
+test('blanking VAT in the calculator and saving the house takes the VAT off it, and says what was saved', async () => {
+  const leu = { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900, platformFeeBps: 150, incrementLadder: { currency: 'EUR', tiers: [{ from: 0, step: 500 }] } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { revision: 2, preferences: { revision: 5, currency: 'EUR', housePremiumPresets: [leu] } } } });
+  const preset = calculator.field('House preset');
+  preset.value = 'künker';
+  await preset.emit('change');
+  assert.equal(calculator.field('VAT on premium %').value, '19.00');
+  calculator.field('VAT on premium %').value = '  ';
+  calculator.presetName.value = 'Künker';
+  await calculator.save.click();
+  await settle();
+  const { premiumVatBps, ...kept } = leu;
+  assert.equal(premiumVatBps, 1900);
+  assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [kept]);
+  assert.equal(calculator.status.textContent, 'Saved Künker: premium 25.00%, no VAT on premium, platform fee 1.50%. Its increment ladder is unchanged.');
 });
