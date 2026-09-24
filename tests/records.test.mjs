@@ -1248,3 +1248,18 @@ test('a stored cost is held to its outcome: won only, the hammer’s currency, a
   const older = structuredClone(won); delete older.outcome.cost;
   assert.equal(validateSnapshot(snapshotWith(older)).ok, true);
 });
+
+// N12: an entry says which of its fields the collector corrected on it, from a closed list, each once.
+test('a collection entry’s corrected fields are named from a closed list, each once', () => {
+  const lot = makeLot(IDS.lotEur, { outcome: { status: 'won' }, collectionEntryId: IDS.collection });
+  const entry = (editedFields) => ({
+    id: IDS.collection, revision: 0, dataClass: 'collector', lotId: IDS.lotEur, title: 'Coin', acquisitionDate: '2026-09-12',
+    sourceLinks: [], createdAt: NOW, updatedAt: NOW, ...(editedFields ? { editedFields } : {}),
+  });
+  const root = (editedFields) => { const snapshot = snapshotWith(lot); snapshot.collectionEntries.push(entry(editedFields)); return validateSnapshot(snapshot); };
+  assert.equal(root(undefined).ok, true, 'an entry written before corrections existed');
+  assert.equal(root(['acquisitionDate', 'actualInvoice', 'notes']).ok, true);
+  assert.equal(root(['hammer']).error.code, 'invalid-enum');
+  assert.equal(root(['notes', 'notes']).error.code, 'duplicate-field');
+  assert.equal(root('notes').error.code, 'collection-limit');
+});

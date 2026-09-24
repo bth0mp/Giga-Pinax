@@ -301,6 +301,105 @@ test('a won coin’s real cost is stored with its outcome and outlives later cha
   assert.deepEqual(edited.value.outcome.cost, cost, 'the cost kept with the outcome is history, not a live reading');
 });
 
+// N12: a collection entry can be corrected on its own - acquisition date, invoice paid, notes - and it follows a
+// corrected outcome. Which wins: a field the collector corrected on the entry keeps the collector's figure; every
+// other field, and the hammer and cost always, follow the outcome.
+function wonWithEntry(outcome = { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, actualInvoice: { currency: 'EUR', minor: 125000 } }) {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] } }));
+  const won = reduce(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0, outcome,
+    addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-12', sourceLinks: [], notes: 'Tray 4' },
+  }));
+  return { state: won.snapshot, lotId: saved.value.id, entry: won.snapshot.collectionEntries[0] };
+}
+
+test('a collection entry’s acquisition date, invoice paid and notes can be corrected, and each correction is marked', () => {
+  const { state, lotId, entry } = wonWithEntry();
+  const updated = reduce(state, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 0,
+    entry: { acquisitionDate: '2026-09-15', actualInvoice: { currency: 'EUR', minor: 126000 }, notes: 'Tray 4' },
+  }));
+  assert.equal(updated.value.acquisitionDate, '2026-09-15');
+  assert.deepEqual(updated.value.actualInvoice, { currency: 'EUR', minor: 126000 });
+  assert.equal(updated.value.notes, 'Tray 4');
+  assert.deepEqual(updated.value.editedFields, ['acquisitionDate', 'actualInvoice'], 'notes sent unchanged are not a correction');
+  assert.equal(updated.value.revision, 1);
+  assert.equal(updated.snapshot.lots.find(({ id }) => id === lotId).revision, 1, 'the lot is not touched');
+
+  const cleared = reduce(updated.snapshot, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 1, entry: { actualInvoice: null, notes: null },
+  }));
+  assert.equal(Object.hasOwn(cleared.value, 'actualInvoice'), false);
+  assert.equal(Object.hasOwn(cleared.value, 'notes'), false);
+  assert.deepEqual(cleared.value.editedFields, ['acquisitionDate', 'actualInvoice', 'notes']);
+
+  const stale = applyCommand(cleared.snapshot, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 1, entry: { notes: 'late' },
+  }), context());
+  assert.equal(stale.error.code, 'conflict');
+  const badDate = applyCommand(cleared.snapshot, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 2, entry: { acquisitionDate: '2026-02-30' },
+  }), context());
+  assert.equal(badDate.error.code, 'validation');
+  assert.equal(badDate.error.path, 'collectionEntries[0].acquisitionDate');
+  for (const refused of [{ acquisitionDate: null }, { hammer: { currency: 'EUR', minor: 1 } }, { title: 'Renamed' }]) {
+    const result = applyCommand(cleared.snapshot, command('collection.update', {
+      collectionEntryId: entry.id, expectedRevision: 2, entry: refused,
+    }), context());
+    assert.equal(result.ok, false, JSON.stringify(refused));
+  }
+  const unchanged = reduce(cleared.snapshot, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 2, entry: { acquisitionDate: '2026-09-15' },
+  }));
+  assert.equal(unchanged.mutated, false, 'nothing changed, so nothing is written');
+});
+
+test('an entry nobody corrected follows a corrected outcome: hammer and invoice', () => {
+  const { state, lotId, entry } = wonWithEntry();
+  const corrected = reduce(state, command('lot.outcome.set', {
+    lotId, expectedRevision: 1,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 110000 }, actualInvoice: { currency: 'EUR', minor: 137500 } },
+  }));
+  const followed = corrected.snapshot.collectionEntries[0];
+  assert.deepEqual(followed.hammer, { currency: 'EUR', minor: 110000 });
+  assert.deepEqual(followed.actualInvoice, { currency: 'EUR', minor: 137500 });
+  assert.equal(followed.revision, entry.revision + 1);
+  assert.equal(followed.notes, 'Tray 4');
+  assert.equal(followed.acquisitionDate, '2026-09-12');
+
+  const invoiceRemoved = reduce(corrected.snapshot, command('lot.outcome.set', {
+    lotId, expectedRevision: 2, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 110000 } },
+  }));
+  assert.equal(Object.hasOwn(invoiceRemoved.snapshot.collectionEntries[0], 'actualInvoice'), false);
+  const same = reduce(invoiceRemoved.snapshot, command('lot.outcome.set', {
+    lotId, expectedRevision: 3, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 110000 } },
+  }));
+  assert.equal(same.snapshot.collectionEntries[0].revision, invoiceRemoved.snapshot.collectionEntries[0].revision,
+    'an outcome saved again unchanged leaves the entry alone');
+});
+
+test('the collector’s own correction on the entry wins over a corrected outcome; the hammer still follows', () => {
+  const { state, lotId, entry } = wonWithEntry();
+  const edited = reduce(state, command('collection.update', {
+    collectionEntryId: entry.id, expectedRevision: 0, entry: { actualInvoice: { currency: 'CHF', minor: 131000 } },
+  }));
+  const corrected = reduce(edited.snapshot, command('lot.outcome.set', {
+    lotId, expectedRevision: 1,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 110000 }, actualInvoice: { currency: 'EUR', minor: 137500 } },
+  }));
+  const kept = corrected.snapshot.collectionEntries[0];
+  assert.deepEqual(kept.actualInvoice, { currency: 'CHF', minor: 131000 }, 'the invoice the collector typed on the entry is kept');
+  assert.deepEqual(kept.hammer, { currency: 'EUR', minor: 110000 }, 'the hammer is the outcome’s and follows it');
+  assert.equal(kept.revision, 2);
+  // A lost correction raises the review and leaves the entry's figures as they were.
+  const lost = reduce(corrected.snapshot, command('lot.outcome.set', {
+    lotId, expectedRevision: 2, outcome: { status: 'lost', hammer: { currency: 'EUR', minor: 900000 } },
+  }));
+  assert.deepEqual(lost.snapshot.collectionEntries[0].hammer, { currency: 'EUR', minor: 110000 });
+  assert.equal(lost.snapshot.collectionEntries[0].reviewReason, 'source-lot-no-longer-won');
+  assert.equal(lost.snapshot.collectionEntries[0].revision, 3);
+});
+
 test('event save derives timed UTC instant and reminder IDs in the authority', () => {
   const saved = reduce(createEmptySnapshot(NOW), command('event.save', {
     expectedRevision: null,

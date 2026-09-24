@@ -113,6 +113,19 @@ test('a won coin’s cost round-trips, and a backup written before costs existed
   assert.equal(replaced.ok, true, replaced.error?.message);
 });
 
+// N12: which fields the collector corrected on a collection entry is an optional list, so it round-trips and a backup
+// without it imports as before.
+test('a collection entry’s own corrections round-trip in a backup', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  snapshot.lots.push(lot(uuid(1), { outcome: { status: 'won' }, collectionEntryId: uuid(2) }));
+  snapshot.collectionEntries.push(wonEntry(uuid(2), uuid(1), { notes: 'Cabinet 3', editedFields: ['notes'] }));
+  const restored = validateBackup(exportBackup(snapshot, NOW).value);
+  assert.equal(restored.ok, true, restored.error?.message);
+  assert.deepEqual(restored.value.collectionEntries[0].editedFields, ['notes']);
+  delete snapshot.collectionEntries[0].editedFields;
+  assert.equal(validateBackup(exportBackup(snapshot, NOW).value).ok, true);
+});
+
 test('backups round-trip optional lot auction metadata', () => {
   const snapshot = createEmptySnapshot(NOW);
   snapshot.lots.push({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 0, dataClass: 'collector', title: 'Coin', sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW,

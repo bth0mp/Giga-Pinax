@@ -239,3 +239,14 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     saved, and the table shows `€1,701.75 (1 of 2)`. **Export CSV** of the lots and check `total_cost` is `1701.75` for
     the first and blank, with `total_cost_missing` `premium-rate fees`, for the second. At phone width the money line
     folds to two columns and never pushes the page sideways.
+
+29. **A collection entry you correct, and one that follows the outcome.** With two won coins in collection history,
+    select **Edit entry** on the first, change its acquisition date, its invoice paid to `1710` and its notes, and
+    select **Save entry**.
+    *Expected:* the form closes and the entry reads the new date and notes, and "Invoice paid €1,710.00 (your
+    correction; the outcome records …)". Open that coin's **Outcome**, change its hammer to `1310` and its invoice to
+    `1720`, and save. *Expected:* on History the entry's money line shows the new hammer and total cost, and its
+    invoice paid is still €1,710.00. Correct the second coin's hammer and invoice under **Outcome** without editing its
+    entry. *Expected:* its entry and the collection totals show the new figures. Open **Edit entry**, type in a field,
+    and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
+    typed.

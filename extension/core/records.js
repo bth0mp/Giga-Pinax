@@ -492,7 +492,23 @@ function collectionEntryResult(entry, path) {
       `${path}.reviewReason`,
     ));
   }
+  if (OWN(entry, 'editedFields')) checks.push(editedFieldsResult(entry.editedFields, `${path}.editedFields`));
   return firstFailure(...checks);
+}
+
+// The fields the collector corrected on the entry itself, which an outcome correction then leaves alone: a closed
+// list, each named once.
+/** @type {ReadonlyArray<'acquisitionDate' | 'actualInvoice' | 'notes'>} */
+export const ENTRY_EDITABLE_FIELDS = Object.freeze(['acquisitionDate', 'actualInvoice', 'notes']);
+const ENTRY_EDITABLE_SET = new Set(ENTRY_EDITABLE_FIELDS);
+/** @returns {Result<any>} */
+function editedFieldsResult(fields, path) {
+  const array = arrayResult(fields, path, ENTRY_EDITABLE_FIELDS.length); if (!array.ok) return array;
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = enumResult(fields[index], ENTRY_EDITABLE_SET, `${path}[${index}]`); if (!field.ok) return field;
+    if (fields.indexOf(fields[index]) !== index) return failure('duplicate-field', 'A corrected field is named once.', `${path}[${index}]`);
+  }
+  return { ok: true, value: fields };
 }
 
 /** @returns {Result<SaleEvidence>} */

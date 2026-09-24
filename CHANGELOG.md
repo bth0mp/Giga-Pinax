@@ -9,6 +9,11 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Added
 
 - A won coin's **real cost** is worked out when its outcome is saved and kept with it: the hammer, the buyer's premium at the rate on the bid it was won on, VAT on that premium, a platform's fee on the hammer, and the shipping and payment fee saved with the bid, all in the hammer's currency. Its **History** card and its collection entry show one money line — **Hammer · Premium · Fees · Total**, the currency named once — with the premium rate and each fee spelled out beneath it, the collection table gains a **Total cost** column per currency, and the CSV exports carry `premium`, `fees`, `total_cost` and `total_cost_currency`. A figure that was never recorded is never estimated: the total then reads **Incomplete** and says which one is missing (no premium rate on the bid, no fees saved with the coin, fees saved in another currency), and the CSV names it in `total_cost_missing`. A house preset or a fee changed later never rewrites what a coin cost; a coin won before this version is costed from the same records it already has. The invoice you typed stays as you typed it. Backups need no new version: older ones import unchanged, and 0.35.0 opens a backup that carries costs.
+- **Edit entry** on a collection entry in **History** corrects its acquisition date, invoice paid and notes in place; the entry now shows its notes. Only what you change is saved, and what you correct there is yours: a later correction of the coin's outcome leaves it alone.
+
+### Fixed
+
+- A collection entry follows a corrected outcome. Correcting a won coin's hammer or invoice under **Outcome** used to leave the old figures in the collection and its totals; the entry now takes the new hammer always, and the new invoice unless you corrected the invoice on the entry itself, in which case the entry says so beside it ("your correction; the outcome records €625.00"). Its notes and acquisition date are never touched by an outcome.
 
 ## [0.35.0] - 2026-09-24
 

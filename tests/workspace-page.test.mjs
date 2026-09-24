@@ -298,6 +298,65 @@ test('a won coin’s History card and the collection totals show what it really 
   assert.equal(entry.querySelector('.money-line').children.at(-1).textContent, 'Total 1,701.75', 'the collection entry carries the same line');
 });
 
+// N12: a collection entry is corrected in place on the History route - acquisition date, invoice paid, notes - and
+// only what the collector changed is sent, so a later outcome correction still reaches everything else.
+const entryCard = (page, title) => page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes(title));
+test('a collection entry is corrected in place, and says the invoice is the collector’s own figure', async () => {
+  const background = await createWorkspaceBackground();
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const edit = entryCard(page, 'Nero, denarius').querySelectorAll('button').find((button) => button.textContent === 'Edit entry');
+  await edit.click();
+  const form = page.$('entry-edit-form');
+  assert.equal(form.elements.acquisitionDate.value, '2023-06-15');
+  assert.equal(form.elements.invoice.value, '625.00');
+  assert.equal(form.elements.invoiceCurrency.value, 'EUR');
+  await page.type('entry-edit-form', 'acquisitionDate', '2023-06-20');
+  await page.type('entry-edit-form', 'invoice', '640');
+  // Another view writes while the form is open: the page is drawn again, and what was typed stays.
+  const other = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Unrelated coin', sourceLinks: [] } });
+  assert.equal(other.ok, true);
+  await settle();
+  assert.equal(page.$('entry-edit-form').elements.invoice.value, '640', 'typing survives a redraw');
+  await page.type('entry-edit-form', 'notes', 'Tray 4, envelope from the sale');
+  await page.submit('entry-edit-form');
+
+  const [stored] = background.root().collectionEntries;
+  assert.equal(stored.acquisitionDate, '2023-06-20');
+  assert.deepEqual(stored.actualInvoice, { currency: 'EUR', minor: 64000 });
+  assert.equal(stored.notes, 'Tray 4, envelope from the sale');
+  assert.deepEqual(stored.editedFields, ['acquisitionDate', 'actualInvoice', 'notes']);
+  assert.equal(page.$('entry-edit-form'), null, 'the form closes once saved');
+  const card = entryCard(page, 'Nero, denarius');
+  assert.ok(card.textContent.includes('Invoice paid €640.00 (your correction; the outcome records €625.00)'));
+  assert.ok(card.textContent.includes('Tray 4, envelope from the sale'));
+  assert.ok(card.textContent.includes('Nero, denarius · 2023-06-20'));
+});
+
+test('an entry form sends only what changed, refuses a bad amount beside the field, and Cancel keeps the entry', async () => {
+  const background = await createWorkspaceBackground();
+  await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15' });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const open = () => entryCard(page, 'Nero, denarius').querySelectorAll('button').find((button) => button.textContent === 'Edit entry').click();
+  await open(); await settle();
+  await page.type('entry-edit-form', 'invoice', '6,40,0');
+  await page.submit('entry-edit-form');
+  const error = page.$('entry-edit-form').querySelector('.error');
+  assert.equal(error.hidden, false);
+  assert.match(error.textContent, /digits with at most two decimal places/);
+  const cancel = page.$('entry-edit-form').querySelectorAll('button').find((button) => button.textContent === 'Cancel');
+  await cancel.click(); await settle();
+  assert.equal(page.$('entry-edit-form'), null);
+  assert.equal(background.root().collectionEntries[0].revision, 0, 'nothing was written');
+
+  await open(); await settle();
+  await page.type('entry-edit-form', 'notes', 'Only the notes');
+  await page.submit('entry-edit-form');
+  const sent = page.commands.filter(({ type }) => type === 'collection.update');
+  assert.deepEqual(sent.map(({ entry }) => entry), [{ notes: 'Only the notes' }]);
+  assert.deepEqual(background.root().collectionEntries[0].editedFields, ['notes']);
+});
+
 test('the History route says so when there is no collection yet', async () => {
   const background = await createWorkspaceBackground();
   await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Watched only', sourceLinks: [] } });

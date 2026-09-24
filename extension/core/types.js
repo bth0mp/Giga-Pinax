@@ -229,7 +229,9 @@
 /** @typedef {RecordBase & { name: string }} AlternativeGroup */
 
 /**
- * A coin the collector won and keeps, linked both ways to the lot it came from.
+ * A coin the collector won and keeps, linked both ways to the lot it came from. Its hammer follows the lot's won
+ * outcome, and so does its invoice unless the collector corrected that on the entry: `editedFields` names what the
+ * collector corrected here (`collection.update`), and those keep the collector's figure over an outcome correction.
  * @typedef {RecordBase & {
  *   lotId: string,
  *   title: string,
@@ -239,6 +241,7 @@
  *   hammer?: Money,
  *   actualInvoice?: Money,
  *   reviewReason?: 'source-lot-no-longer-won',
+ *   editedFields?: Array<'acquisitionDate' | 'actualInvoice' | 'notes'>,
  * }} CollectionEntry
  */
 
