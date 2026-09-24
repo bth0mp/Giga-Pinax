@@ -1317,19 +1317,31 @@ export function projectExposure(snapshot) {
 // A reference and a saved query are the same only when they read the same once spacing and case
 // are set aside: a query that merely starts like the reference (`RIC 27` for `RIC 27b`) is another
 // coin, and one median must never take in another coin's sales.
-const sameReference = (left, right) => {
-  const normal = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
-  return normal(left) !== '' && normal(left) === normal(right);
-};
+const normalReference = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+
+// Saved rows by each of their observations' normalised query labels, built once per projection:
+// the view is drawn on every snapshot, and scanning every row for every entry did not scale.
+function indexByReference(evidence) {
+  const index = new Map();
+  for (const row of evidence ?? []) {
+    for (const key of new Set((row?.observations ?? []).map((item) => normalReference(item.queryLabel)))) {
+      if (!key) continue;
+      if (!index.has(key)) index.set(key, []);
+      index.get(key).push(row);
+    }
+  }
+  return index;
+}
 
 // The median of the collector's own saved comparables for one reference, in one currency, through
 // the same statistics the Search route shows: excluded rows stay out, a row in another currency is
 // never converted in, and fewer than three rows give a count without a median.
-function ownComparables(evidence, reference, currency) {
+function ownComparables(index, reference, currency) {
   const none = (status) => ({ status, currency, count: 0, median: null });
-  if (!String(reference ?? '').trim()) return none('no-reference');
+  const key = normalReference(reference);
+  if (!key) return none('no-reference');
   if (!currency) return none('no-currency');
-  const rows = (evidence ?? []).filter((row) => (row?.observations ?? []).some((item) => sameReference(item.queryLabel, reference)));
+  const rows = index.get(key) ?? [];
   const observations = rows.flatMap((row) => row.observations ?? []);
   const dates = observations.map((item) => item.auctionDate).filter((date) => typeof date === 'string').sort();
   if (!rows.length || !dates.length) return none('none');
@@ -1361,6 +1373,7 @@ const addMinor = (total, minor) => {
 // the collector's own records and evidence, never an appraisal or a valuation.
 export function projectCollection(snapshot) {
   const lots = new Map((snapshot?.lots ?? []).map((lot) => [lot.id, lot]));
+  const evidence = indexByReference(snapshot?.evidence);
   const byCurrency = {};
   const unpriced = { entryCount: 0, firstYear: null, lastYear: null };
   const entries = [];
@@ -1386,7 +1399,7 @@ export function projectCollection(snapshot) {
     const reference = String(lots.get(entry.lotId)?.reference ?? '').trim();
     entries.push({
       id: entry.id, lotId: entry.lotId, title: entry.title, acquisitionDate: entry.acquisitionDate,
-      reference, currency, comparables: ownComparables(snapshot?.evidence, reference, currency),
+      reference, currency, comparables: ownComparables(evidence, reference, currency),
     });
   }
   const ordered = {};

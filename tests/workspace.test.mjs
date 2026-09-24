@@ -53,7 +53,7 @@ import {
   premiumInputText,
 } from '../extension/workspace.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
-import { projectCollection } from '../extension/core/records.js';
+import { LIMITS, projectCollection } from '../extension/core/records.js';
 
 test('workspace chooses only supported direct routes', () => {
   assert.equal(routeFromHash('#watchlist'), 'watchlist');
@@ -759,6 +759,24 @@ test('a collection total too large to hold exactly is withheld rather than round
   assert.equal(collection.byCurrency.EUR.hammerMinor, null);
   assert.equal(collection.byCurrency.EUR.hammerCount, 2);
   assert.equal(collection.byCurrency.EUR.invoiceMinor, 5);
+});
+
+// The view is projected on every snapshot in every open tab, so it has to stay quick at the store's
+// own limits: a full collection against a full evidence list.
+test('the collection view is projected quickly at the store’s limits', () => {
+  const lots = []; const collectionEntries = []; const evidenceRows = [];
+  for (let index = 0; index < LIMITS.collectionEntries; index += 1) {
+    lots.push({ id: `lot-${index}`, reference: `RIC ${index}` });
+    collectionEntries.push(collectionEntry(`c${index}`, `lot-${index}`, '2020-01-01', { hammer: eur(1000 + index) }));
+  }
+  for (let index = 0; index < LIMITS.evidenceObservations; index += 1) {
+    evidenceRows.push(comparable(`e${index}`, `RIC ${index % (LIMITS.collectionEntries * 2)}`, eur(500 + index)));
+  }
+  const started = performance.now();
+  const collection = projectCollection({ lots, collectionEntries, evidence: evidenceRows });
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 500, `took ${Math.round(elapsed)} ms`);
+  assert.deepEqual(collection.entries[7].comparables, { status: 'median', currency: 'EUR', count: 5, median: eur(4507) });
 });
 
 test('an entry with no hammer is counted without one, and one with no amount at all has no currency', () => {
