@@ -1290,6 +1290,36 @@ test('gradeOf reads the German "s." as see, never as a grade of its own', () => 
   assert.equal(gradeOf('Erhaltung: s'), 'Fine and below');
 });
 
+// Loop N5: whole houses grade in spellings the reader did not know, so their rows fell out of every grade median: NAC's mixed-case "Fdc", the British
+// "GVF"/"GEF"/"NEF"/"NVF", German "Stgl." and "prfr.", Austrian "prägefrisch", the American "BU", "aUNC" and "Gem MS", Italian "Spl", Spanish "S/C",
+// German "sge" and English "Fair". Each is read in the class whose edges fit it, and each keeps out of the prose it could be mistaken for.
+test('gradeOf reads the house spellings of NAC, Baldwin’s, Künker, Rauch, Heritage, Artemide, Áureo and Gorny', () => {
+  for (const [text, bucket] of [
+    ['Virtually as struck and Fdc', 'AU/Mint State'], ['Rare. Fdc.', 'AU/Mint State'], ['Extremely fine / Fdc', 'EF'],
+    ['Toned, GVF.', 'VF'], ['Attractive, GEF, rare.', 'EF'], ['NEF with some lustre', 'EF'], ['Some porosity, NVF.', 'VF'], ['Toned, nEF.', 'EF'],
+    ['Toned, nVF.', 'VF'], ['GVF/GEF', 'VF'],
+    ['RIC 53. 3,42 g. Stgl.', 'AU/Mint State'], ['Feine Tönung. Stgl', 'AU/Mint State'], ['fast Stgl.', 'AU/Mint State'], ['f.Stgl.', 'AU/Mint State'],
+    ['vz-Stgl.', 'EF'], ['Feine Tönung, prfr.', 'AU/Mint State'], ['Herrliche Tönung, prägefrisch.', 'AU/Mint State'], ['Fast prägefrisch.', 'AU/Mint State'],
+    ['BU, prooflike', 'AU/Mint State'], ['Choice BU.', 'AU/Mint State'], ['aUNC.', 'AU/Mint State'], ['AUNC', 'AU/Mint State'],
+    ['NGC Gem MS 5/5 - 5/5', 'AU/Mint State'], ['Brilliant Uncirculated.', 'AU/Mint State'],
+    ['Bella patina. Spl', 'EF'], ['qSpl.', 'EF'], ['BB/Spl', 'VF'],
+    ['S/C. Brillo original.', 'AU/Mint State'], ['EBC/S/C', 'EF'],
+    ['Schöne Patina, sge', 'Fine and below'], ['sge-s', 'Fine and below'], ['sge/ss', 'Fine and below'],
+    ['Fair, worn.', 'Fine and below'], ['Fair to Fine', 'Fine and below'], ['Pitted. Fair.', 'Fine and below']]) {
+    assert.equal(gradeOf(text), bucket, text);
+  }
+  // None of them reads the prose, the monogram, the senate's mark or the collection it could be taken for.
+  for (const prose of ['A fair portrait.', 'Fair Lawn collection. Unread.', 'Ex Fair collection', 'fair', 'Of Fair style',
+    'Rev. BU monogram in field.', 'Ex BU collection.', 'Cohen 302 (BU).', 'control: BU.',
+    'Rev. Spes advancing left. S/C.', 'Rev. S/C, legend around.', 'SC (unlisted)', 'S/C (unlisted)',
+    'Splendido esemplare.', 'Gemma incisa. Pubblicato.', 'Gem of a portrait.', 'fdc', 'gvf', 'Stglanz', 'prägefrischer Glanz']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
+  // A new spelling joins the others exactly as the old ones do: the grade still counted is the dealer's last statement, and a labelled one wins.
+  assert.equal(gradeOf('Ex Fair collection. GVF.'), 'VF');
+  assert.equal(gradeOf('Erhaltung: Stgl. Notes: vz for the type'), 'AU/Mint State');
+});
+
 // 0.32 review, round 3: three rounds of patching the reader traded one class of error for another, so it was redesigned against a corpus instead of
 // patched again. Every description the reviewer's probes and the report's own tables name is in the corpus with the bucket the design reads it into;
 // a row the design cannot read carries null there, and its note says why. A wrong bucket is what this guards against — an ungraded row is not one.

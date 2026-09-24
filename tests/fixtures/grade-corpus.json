@@ -226,8 +226,8 @@
  },
  {
   "text": "Fast prägefrisch.",
-  "grade": null,
-  "note": "r3_hunt.mjs"
+  "grade": "mint",
+  "note": "r3_hunt.mjs; loop N5: “prägefrisch” is read as a praise adjective opening its clause, and “Fast” keeps its bucket"
  },
  {
   "text": "Gutes Porträt. ss",
@@ -701,8 +701,8 @@
  },
  {
   "text": "Fair to Fine",
-  "grade": null,
-  "note": "r3_hunt.mjs expected fine; design A3: bare Fine needs an opening edge or a qualifier, and “Fair” is no grade, so this is no range"
+  "grade": "fine",
+  "note": "r3_hunt.mjs expected fine; loop N5: “Fair” is now a grade read as bare Fine is, so this is a range of two"
  },
  {
   "text": "Fine or better",
@@ -866,8 +866,8 @@
  },
  {
   "text": "sge-s",
-  "grade": null,
-  "note": "r3_hunt2.mjs expected fine; design A7: “sge” is no mark, so this is no range"
+  "grade": "fine",
+  "note": "r3_hunt2.mjs expected fine; loop N5: “sge” (sehr gut erhalten) is now a mark, so this is a range with s"
  },
  {
   "text": "Fine-style portrait. EF",
@@ -1136,8 +1136,8 @@
  },
  {
   "text": "Rs. Adler st. n. l. Fast prägefrisch",
-  "grade": null,
-  "note": "r3_hunt2.mjs"
+  "grade": "mint",
+  "note": "r3_hunt2.mjs; loop N5: the full stop opens the clause “Fast prägefrisch” grades"
  },
  {
   "text": "Rs. Providentia st. l. vz+",
@@ -3558,5 +3558,125 @@
   "text": "Kopf n. r., ss und Graffito.",
   "grade": null,
   "note": "0.33 review fix round 1: two grades an and (und, e, et, y) joins are a group lot's range, read as the lower; the word lends neither a capital nor a range-only mark, and und/e/et/y close a grade only in front of the next grade"
+ },
+ {
+  "text": "Sicily, Syracuse. Dionysios I, 405 – 367. Decadrachm signed by Euainetos circa 405-400, AR 43.00 g. Dewing 892 (these dies). Virtually as struck and Fdc",
+  "grade": "mint",
+  "note": "loop N5: NAC’s mixed-case Fdc"
+ },
+ {
+  "text": "Trajan, 98 – 117. Aureus 114-117, AV 7.29 g. C 276. BMC 549. RIC 347. Rare. Struck on a very broad flan. Extremely fine / Fdc",
+  "grade": "ef",
+  "note": "loop N5: NAC range, the lower of the two"
+ },
+ {
+  "text": "Nero, AD 54-68, Denarius, Rome, laureate head right, rev. Jupiter seated left, RIC 53. Toned, GVF.",
+  "grade": "vf",
+  "note": "loop N5: Baldwin’s GVF"
+ },
+ {
+  "text": "Charles I, Halfcrown, Tower mint, mm. triangle. Attractive, GEF, rare.",
+  "grade": "ef",
+  "note": "loop N5: Spink/Baldwin’s GEF"
+ },
+ {
+  "text": "Hadrian, Denarius, Rome, RIC 241. NEF with some lustre",
+  "grade": "ef",
+  "note": "loop N5: Noonans NEF"
+ },
+ {
+  "text": "Constantine I, Follis, London, RIC VII 27. Some porosity, NVF.",
+  "grade": "vf",
+  "note": "loop N5: St James’s NVF"
+ },
+ {
+  "text": "Julia Domna, Denarius, RIC 574. Toned, nEF.",
+  "grade": "ef",
+  "note": "loop N5: lower-case n qualifier"
+ },
+ {
+  "text": "Traianus, 98-117. Aureus, 114/117, Rom; 7,29 g. RIC 347; Woytek 571f. R Prachtexemplar. Fast Stgl.",
+  "grade": "mint",
+  "note": "loop N5: Künker/Emporium Stgl. behind Fast"
+ },
+ {
+  "text": "Nero, 54-68. Denar, Rom. RIC 53. 3,42 g. f.Stgl.",
+  "grade": "mint",
+  "note": "loop N5: Peus f.Stgl."
+ },
+ {
+  "text": "Hadrianus, 117-138. Denar. RIC 241. Feine Tönung, prfr.",
+  "grade": "mint",
+  "note": "loop N5: Rauch prfr."
+ },
+ {
+  "text": "Maria Theresia, Taler 1780. Herrliche Tönung, prägefrisch.",
+  "grade": "mint",
+  "note": "loop N5: Höhn/Rauch prägefrisch"
+ },
+ {
+  "text": "Probus. Antoninian. RIC 200. Schöne Patina, sge",
+  "grade": "fine",
+  "note": "loop N5: sge (sehr gut erhalten), below schön"
+ },
+ {
+  "text": "Morgan Dollar 1881-S. BU, prooflike",
+  "grade": "mint",
+  "note": "loop N5: Heritage BU"
+ },
+ {
+  "text": "Nero. AR Denarius. RIC I 53. NGC Gem MS 5/5 - 5/5",
+  "grade": "mint",
+  "note": "loop N5: NGC Gem MS with scores"
+ },
+ {
+  "text": "Victoria, Sovereign 1887. aUNC.",
+  "grade": "mint",
+  "note": "loop N5: aUNC"
+ },
+ {
+  "text": "Nerone (54-68). Denario, Roma. RIC 53. Bella patina. Spl",
+  "grade": "ef",
+  "note": "loop N5: Artemide/Varesi Spl"
+ },
+ {
+  "text": "Felipe II. 8 reales. Sevilla. S/C. Brillo original.",
+  "grade": "mint",
+  "note": "loop N5: Áureo & Calicó S/C"
+ },
+ {
+  "text": "Commodus. Sestertius. RIC 312. Pitted. Fair.",
+  "grade": "fine",
+  "note": "loop N5: Fair, read as bare Fine is"
+ },
+ {
+  "text": "Nero. As. Rev. Victory flying left; S/C across field. Rev. Spes advancing left. S/C.",
+  "grade": null,
+  "note": "loop N5: S/C behind a described type is the senate’s mark, as SC is"
+ },
+ {
+  "text": "Rev. BU monogram in left field. VF",
+  "grade": "vf",
+  "note": "loop N5: BU without a closing edge is a monogram"
+ },
+ {
+  "text": "Cohen 302 (BU). EF",
+  "grade": "ef",
+  "note": "loop N5: a bracketed BU is a control mark"
+ },
+ {
+  "text": "A fair portrait of the emperor. VF",
+  "grade": "vf",
+  "note": "loop N5: lower-case fair is the adjective"
+ },
+ {
+  "text": "Ex Fair Lawn collection. Good VF",
+  "grade": "vf",
+  "note": "loop N5: Fair with no closing edge is a name"
+ },
+ {
+  "text": "Rev. Spes advancing left. S/C.",
+  "grade": null,
+  "note": "loop N5: S/C behind a described type is the senate’s mark, as SC is"
  }
 ]

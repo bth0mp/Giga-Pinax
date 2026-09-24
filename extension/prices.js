@@ -451,25 +451,32 @@ const MINT = 'AU/Mint State';
 export const GRADE_BUCKETS = Object.freeze([FINE, 'VF', 'EF', MINT]);
 
 // Class 1. The English abbreviations, exactly as the trade writes them: nothing else in a lot description is spelled this way, so a closing edge is
-// all they need.
-const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT };
+// all they need. The British houses capitalise the qualifier ("GVF", "NEF") and NAC writes "Fdc" in mixed case; the capitals are still exact, so
+// "gvf" and "fdc" stay prose.
+const ABBREVIATIONS = { gF: FINE, aF: FINE, VG: FINE, VF: 'VF', gVF: 'VF', aVF: 'VF', EF: 'EF', XF: 'EF', gEF: 'EF', aEF: 'EF', FDC: MINT, UNC: MINT, AU: MINT,
+  Fdc: MINT, GVF: 'VF', NVF: 'VF', nVF: 'VF', GEF: 'EF', NEF: 'EF', nEF: 'EF', aUNC: MINT, AUNC: MINT };
 // Class 2. The names spelled out, a closing edge again enough — but the phrase must carry a capital somewhere: an all-lower-case "very fine" is the
 // ordinary adjective, and only a range whose first half was read lends it a grade's standing.
 const NAMES = {
-  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT,
+  'Very Fine': 'VF', 'Extremely Fine': 'EF', 'Mint State': MINT, Uncirculated: MINT, 'Brilliant Uncirculated': MINT,
   Stempelglanz: MINT, 'fleur de coin': MINT, 'fior di conio': MINT, 'très très beau': 'VF',
 };
 // Class 3. Bare "Fine", the one name that is also an everyday adjective: it needs an opening edge (or one of a short list of qualifiers) as well, and
-// never stands in front of the words a compliment carries on with.
-const BARE_FINE = { Fine: FINE };
+// never stands in front of the words a compliment carries on with. "Fair", the grade below it, is as ordinary a word ("a fair portrait") and is read
+// by the same rule.
+const BARE_FINE = { Fine: FINE, Fair: FINE };
 // Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials. The Spanish
 // (BC, MBC, EBC, SC: bien, muy bien, extraordinariamente bien conservada, sin circular) and the Dutch (ZF zeer fraai, PR prachtig) are marks too.
+// So are the other short spellings, for the same reason: the American "BU" and NGC's "Gem MS", the German "Stgl" (Stempelglanz), "prfr"
+// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash.
 const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
-  BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF' };
+  BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF',
+  BU: MINT, 'Gem MS': MINT, Stgl: MINT, prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
+// "prägefrisch" is the Austrian trade's Stempelglanz, written in lower case mid-sentence as "vorzüglich" is.
 const PRAISE = { 'sehr schön': 'VF', 'vorzüglich': 'EF', superbe: 'EF', splendide: 'EF', splendido: 'EF', bellissimo: 'VF', 'molto bello': FINE, 'très beau': FINE, beau: FINE,
-  'zeer fraai': 'VF', prachtig: 'EF' };
+  'zeer fraai': 'VF', prachtig: 'EF', 'prägefrisch': MINT };
 // Class 7. The marks that are a word of their own far more often than a grade: German "s." is "siehe", see; a lone "F" is an initial; and "schön" is
 // what a dealer calls any pretty coin, as Dutch "fraai" is. Each is read only as a half of a range with another grade, or directly behind a grade
 // label.
@@ -563,6 +570,8 @@ const CAPITAL = /\p{Lu}/u;
 // "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins. A spaced dash
 // or a bracket behind it is a Seleucid Coins citation's own aside ("SC –; cf. ESM 123.", "SC (unlisted)"): the type is not in the book.
 const DESCRIBED = /(?<![\p{L}\d])\p{Ll}\p{L}*\.\s*$/u;
+// The Spanish spelling with its slash is the same mark, and a legend is split across the field the same way ("S/C").
+const SENATE = new Set(['SC', 'S/C']);
 const CITATION_ASIDE = /^\s[-–(]/;
 const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(tail) && (start === 0
   || (/\.\s*$/.test(before) && !SIDE_OPENS.test(before) && !DESCRIBED.test(before)) || quals !== '' || joined || LABEL.test(before));
@@ -571,13 +580,14 @@ const senateFree = (start, before, quals, joined, tail) => !CITATION_ASIDE.test(
 // too ("there described as VF/EF"). "NGC graded AU" is the slab's own grade and stays.
 const PROVENANCE_GRADE = /(?<![\p{L}\d])(?:(?:described|catalogued|cataloged|offered|sold|listed)\s+as|(?:there|where|previously|formerly)\s+graded|graded\s+there)\s*["“']?\s*$/iu;
 
+const BARE_FINE_NAMES = new Set(Object.keys(BARE_FINE).map((name) => name.toLowerCase()));
 const kindOf = (token) => {
   if (Object.hasOwn(RANGE_ONLY, token)) return 'range-only';
   if (Object.hasOwn(ABBREVIATIONS, token)) return 'abbreviation';
   if (Object.hasOwn(MARKS, token)) return 'mark';
   const spelled = token.toLowerCase();
   if (Object.hasOwn(RANGE_ONLY, spelled)) return 'range-only';
-  if (Object.hasOwn(BARE_FINE, token) || spelled === 'fine') return 'bare-fine';
+  if (BARE_FINE_NAMES.has(spelled)) return 'bare-fine';
   return Object.hasOwn(PRAISE, spelled) ? 'praise' : 'name';
 };
 const bucketOf = (token) => EXACT[token] ?? SPELLED_BUCKETS.get(token.toLowerCase()) ?? null;
@@ -604,7 +614,7 @@ export function gradeOf(description) {
     const before = text.slice(Math.max(0, start - EDGE), start);
     // The slab's own tail is read only where a slab prints one: behind NGC or PCGS in the same clause, or as the numeric Mint State grade opening the
     // text ("MS 63"). Anywhere else " 12" behind a grade is a lot number or a weight ("Slg. vz 12.", "Very Fine 17.23 g").
-    const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && token === 'MS');
+    const slabbed = SLABBERS.test(quals) || SLABBERS.test(before.split(/[.;:(]/).pop()) || (start === 0 && (token === 'MS' || token === 'Gem MS'));
     const end = start + quals.length + token.length + plus.length + (slabbed ? slab.length : 0);
     ends.push(end);
     const tail = text.slice(end, end + EDGE);
@@ -633,7 +643,7 @@ export function gradeOf(description) {
     else if (kind === 'name') read = capital || quals !== '';
     else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
-      && !PLACE_COMMA.test(before) && (token !== 'SC' || senateFree(start, before, quals, ranged || sided, tail));
+      && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
     else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;

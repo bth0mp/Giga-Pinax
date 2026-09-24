@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- The grade medians read the spellings whole houses grade in, which were dropped as ungraded before: NAC's `Fdc`, the British `GVF`, `GEF`, `NEF`, `NVF` and `nEF`, the German `Stgl.`, `fast Stgl.`, `prfr.`, `prägefrisch` and `sge`, the American `BU`, `aUNC` and `NGC Gem MS`, the Italian `Spl`, the Spanish `S/C` and the English `Fair` (counted under Fine and below). Each is read only where a dealer writes a grade: `BU` in a monogram, `S/C` behind a described reverse and a lower-case "fair" stay unread.
+
 ## [0.34.1] - 2026-09-24
 
 ### Changed
