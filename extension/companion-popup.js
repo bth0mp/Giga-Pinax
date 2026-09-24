@@ -86,7 +86,7 @@ export function buildWatchlistDraftPayload(input) {
   // can write every address as long as a draft allows, so these give way, provenance first, before the draft outgrows the store's bound
   // (LIMITS.draftPayloadBytes in core/records.js) and is refused with the coin's own fields in it.
   const full = { ...payload, ...draftPageValues(input) };
-  for (const field of ['provenance', 'photoUrl', 'estimate', 'closesAt']) {
+  for (const field of ['provenance', 'photoUrl', 'estimate', 'startsAt', 'closesAt']) {
     if (new TextEncoder().encode(JSON.stringify(full)).length <= DRAFT_BUDGET) break;
     delete full[field];
   }
@@ -94,10 +94,10 @@ export function buildWatchlistDraftPayload(input) {
 }
 
 // The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.
-const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'photoUrl', 'provenance']);
+const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'startsAt', 'photoUrl', 'provenance']);
 const withoutPageValues = (draft) => Object.fromEntries(Object.entries(draft).filter(([key]) => !PAGE_VALUES.includes(key)));
 // The page values a capture held that its draft payload had no room for, in the words the collector reads them in.
-const PAGE_VALUE_NAMES = Object.freeze({ estimate: 'estimate', closesAt: 'closing time', photoUrl: 'photo link', provenance: 'provenance' });
+const PAGE_VALUE_NAMES = Object.freeze({ estimate: 'estimate', closesAt: 'closing time', startsAt: 'start time', photoUrl: 'photo link', provenance: 'provenance' });
 export function pageValuesLeftOff(draft, payload) {
   return PAGE_VALUES.filter((field) => draft?.[field] && !Object.hasOwn(payload ?? {}, field)).map((field) => PAGE_VALUE_NAMES[field]);
 }

@@ -368,6 +368,19 @@ test('ticking the offered auction saves it at the page’s instant and attaches 
   assert.equal(storedLot(background, 'Captured coin').auctionEventId, event.id);
 });
 
+test('an auction start the page gives is offered as the auction starting, and saved as one', async () => {
+  const { background, hash } = await backgroundWithPageDraft({ startsAt: '2026-10-15T10:00+02:00' });
+  const page = await mountWorkspace({ background, hash });
+  assert.match(page.$('lot-page-values').textContent, /Add an auction starting 2026-10-15 \d\d:\d\d \(.+\) when saving, from the page \(2026-10-15T10:00\+02:00\)\./);
+  page.$('lot-form').elements.pageAuction.checked = true;
+  await page.saveDetails();
+  await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.eventKind, 'auction-starts');
+  assert.equal(event.startsAt, '2026-10-15T08:00:00.000Z');
+  assert.equal(storedLot(background, 'Captured coin').auctionEventId, event.id);
+});
+
 test('an auction the collector already chose wins over the one the page offers', async () => {
   const { background, hash } = await backgroundWithPageDraft({ closesAt: '2026-10-15' });
   const chosen = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Chosen sale', eventKind: 'auction-day', precision: 'date-only',

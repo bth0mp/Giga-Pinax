@@ -1067,6 +1067,13 @@ test('the offered auction keeps the page’s instant in the collector’s own zo
     reminderScope: 'linked-lots', reminders: createEventDraft('date-only').reminders, capturedText: 'From the page: 2026-10-15',
   });
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00+14:00' }, 'UTC').localTime, '00:00');
+  // A start the page's auction event gives is offered as the auction starting, and its day as the auction's day.
+  assert.deepEqual(offeredEventFromDraft({ startsAt: '2026-10-15T10:00+02:00' }, 'Europe/Zurich'), {
+    eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-15', localTime: '10:00', timeZone: 'Europe/Zurich',
+    reminderScope: 'linked-lots', reminders: createEventDraft('timed').reminders, capturedText: 'From the page: 2026-10-15T10:00+02:00',
+  });
+  assert.equal(offeredEventFromDraft({ startsAt: '2026-10-15' }, 'Europe/Zurich').eventKind, 'auction-day');
+  assert.equal(offeredEventFromDraft({ closesAt: '2026-10-16T12:00Z', startsAt: '2026-10-15' }, 'UTC').eventKind, 'lot-closes');
   for (const closesAt of [undefined, '', 'soon', '2026-10-15T14:00', '2026-02-30', '2026-10-15T14:00+14:30']) assert.equal(offeredEventFromDraft({ closesAt }, 'Europe/Zurich'), null, String(closesAt));
   assert.equal(offeredEventFromDraft({ closesAt: '2026-10-15T14:00Z' }, 'Not/AZone'), null);
 });

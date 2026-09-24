@@ -662,6 +662,7 @@ test('a captured lot takes the page’s estimate, closing time and photo to its 
   });
   assert.deepEqual(payload, { target: 'watchlist', title: 'Lot 27', pageUrl: 'https://auction.example/27',
     estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' });
+  assert.equal(buildWatchlistDraftPayload({ title: 'Lot', startsAt: '2026-10-15T10:00:00+02:00' }).startsAt, '2026-10-15T10:00+02:00');
   const refused = buildWatchlistDraftPayload({
     title: 'Lot 27', estimate: { minor: 12.5, currency: 'EUR', note: 'x' }, closesAt: '2026-10-15T14:00', photoUrl: 'javascript:alert(1)',
   });

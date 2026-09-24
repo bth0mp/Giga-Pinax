@@ -254,6 +254,7 @@ export function lotDraftToEditor(payload) {
   const estimateNote = estimateNoteText(payload?.estimate);
   if (estimateNote) result.estimateNote = estimateNote;
   if (closesAtParts(payload?.closesAt)) result.closesAt = payload.closesAt;
+  if (closesAtParts(payload?.startsAt)) result.startsAt = payload.startsAt;
   // The provenance the page lists, offered only where the lot page can stand as each entry's source.
   if ((result.auctionContext?.pageUrl || result.sourceUrl) && Array.isArray(payload?.provenance)) {
     const provenance = payload.provenance.slice(0, 10).map((entry) => ({
@@ -288,25 +289,28 @@ function closesAtParts(value) {
   return { localDate: `${year}-${month}-${day}`, timed: Boolean(time) };
 }
 
-// The auction a draft offers for its closing, in the collector's own time zone. A time the page gave with its offset is the same instant written
-// in that zone, so no zone is ever guessed for the page; a day stays a date-only auction day. The collector names and confirms it on save.
-export function offeredEventFromDraft({ closesAt, pageUrl } = {}, timeZone) {
-  const parts = closesAtParts(closesAt);
+// The auction a draft offers for its closing - or, where the page gave none, for the start of the sale its auction event names - in the
+// collector's own time zone. A time the page gave with its offset is the same instant written in that zone, so no zone is ever guessed for the
+// page; a day stays a date-only auction day. The collector names and confirms it on save.
+export function offeredEventFromDraft({ closesAt, startsAt, pageUrl } = {}, timeZone) {
+  const closing = closesAtParts(closesAt);
+  const when = closing ? closesAt : startsAt;
+  const parts = closing ?? closesAtParts(startsAt);
   if (!parts) return null;
   const precision = parts.timed ? 'timed' : 'date-only';
-  const event = { eventKind: parts.timed ? 'lot-closes' : 'auction-day', precision, localDate: parts.localDate, timeZone };
+  const event = { eventKind: !parts.timed ? 'auction-day' : closing ? 'lot-closes' : 'auction-starts', precision, localDate: parts.localDate, timeZone };
   try { new Intl.DateTimeFormat('en', { timeZone }).format(0); }
   catch { return null; }
   if (parts.timed) {
     const local = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
       timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', numberingSystem: 'latn',
-    }).formatToParts(new Date(Date.parse(closesAt))).map(({ type, value }) => [type, value]));
+    }).formatToParts(new Date(Date.parse(when))).map(({ type, value }) => [type, value]));
     event.localDate = `${local.year}-${local.month}-${local.day}`;
     event.localTime = `${local.hour}:${local.minute}`;
   }
   return {
     ...event, reminderScope: 'linked-lots', reminders: createEventDraft(precision).reminders,
-    capturedText: `From the page: ${closesAt}`, ...(typeof pageUrl === 'string' && /^https?:\/\//i.test(pageUrl) ? { capturedFromUrl: pageUrl } : {}),
+    capturedText: `From the page: ${when}`, ...(typeof pageUrl === 'string' && /^https?:\/\//i.test(pageUrl) ? { capturedFromUrl: pageUrl } : {}),
   };
 }
 
@@ -698,13 +702,14 @@ async function initWorkspace() {
     if (values.estimateNote) root.append(text('p', `Estimate from the page: ${values.estimateNote.replace(/^Estimate from page: /, '')}, the price its offer states. It is written as a line of Notes; clear that line to leave it out.`, 'field-note'));
     if (values.photoUrl) root.append(text('p', 'Photo link from the page, in Photo URL 1. Clear it to leave it out.', 'field-note'));
     if (values.provenance?.length) root.append(text('p', `Provenance from the page: ${values.provenance.length === 1 ? 'one entry' : `${values.provenance.length} entries`} under Sourced provenance, each kept only if you tick it.`, 'field-note'));
-    const offered = values.closesAt ? offeredEventFromDraft({ closesAt: values.closesAt, pageUrl }, Intl.DateTimeFormat().resolvedOptions().timeZone) : null;
+    const offered = offeredEventFromDraft({ closesAt: values.closesAt, startsAt: values.startsAt, pageUrl }, Intl.DateTimeFormat().resolvedOptions().timeZone);
     if (offered) {
-      pageOffer = { closesAt: values.closesAt, pageUrl, eventId: null };
+      pageOffer = { closesAt: values.closesAt, startsAt: values.startsAt, pageUrl, eventId: null };
       const label = document.createElement('label');
       const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'pageAuction';
-      const when = offered.precision === 'timed' ? `closing ${offered.localDate} ${offered.localTime} (${offered.timeZone})` : `day on ${offered.localDate}`;
-      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${values.closesAt}). An auction you choose under Auction reminder is used instead.`));
+      const when = offered.precision !== 'timed' ? `day on ${offered.localDate}`
+        : `${offered.eventKind === 'auction-starts' ? 'starting' : 'closing'} ${offered.localDate} ${offered.localTime} (${offered.timeZone})`;
+      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${offered.capturedText.replace(/^From the page: /, '')}). An auction you choose under Auction reminder is used instead.`));
       root.append(label);
     }
     root.hidden = root.children.length < 2;

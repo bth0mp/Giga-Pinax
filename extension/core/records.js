@@ -647,7 +647,7 @@ export function validateDraftPayload(kind, payload, path = '') {
   if (!object.ok) return object;
 
   const allowed = kind === 'current-lot'
-    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext', 'estimate', 'closesAt', 'photoUrl', 'provenance'])
+    ? new Set(['target', 'title', 'reference', 'pageUrl', 'auctionContext', 'estimate', 'closesAt', 'startsAt', 'photoUrl', 'provenance'])
     : new Set(['rawText', 'pageUrl', 'auctionContext']);
   const unexpected = Object.keys(payload).find((key) => !allowed.has(key));
   if (unexpected) {
@@ -665,6 +665,7 @@ export function validateDraftPayload(kind, payload, path = '') {
       OWN(payload, 'auctionContext') ? auctionContextResult(payload.auctionContext, `${payloadPath}.auctionContext`) : { ok: true },
       OWN(payload, 'estimate') ? pageEstimateResult(payload.estimate, `${payloadPath}.estimate`) : { ok: true },
       OWN(payload, 'closesAt') ? closesAtResult(payload.closesAt, `${payloadPath}.closesAt`) : { ok: true },
+      OWN(payload, 'startsAt') ? closesAtResult(payload.startsAt, `${payloadPath}.startsAt`) : { ok: true },
       optionalUrl(payload, 'photoUrl', payloadPath),
       OWN(payload, 'provenance') ? draftProvenanceResult(payload.provenance, `${payloadPath}.provenance`) : { ok: true },
     );

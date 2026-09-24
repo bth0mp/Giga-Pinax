@@ -58,7 +58,7 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
       // The graph is the page's own and as long as it cares to make it: only what the node budget still has room for is taken up.
       if (Array.isArray(entry['@graph'])) queue.push(...entry['@graph'].slice(0, Math.max(0, 49 - seen - queue.length)));
       const types = [].concat(entry['@type'] ?? []).map((type) => typeof type === 'string' ? type.replace(/^https?:\/\/schema\.org\//, '') : '');
-      // An auction the page describes as an event: its start stands for the sale's date only where the page describes exactly one.
+      // An auction the page describes as an event: its start is kept, as a start, only where the page describes exactly one.
       if (types.includes('Event') || types.includes('SaleEvent')) eventStarts.push(limit(entry.startDate, 60));
       if (!types.includes('Product')) continue;
       const texts = [];
@@ -136,7 +136,9 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
       }
     }
   }
-  const closesAt = shownLot?.closing || (eventStarts.length === 1 ? eventStarts[0] : '');
+  // An auction event's start is when the sale starts, kept as that: it stands in only where no offer says when the lot closes.
+  const closesAt = shownLot?.closing || '';
+  const startsAt = !closesAt && eventStarts.length === 1 ? eventStarts[0] : '';
   // The lines that may carry the lot's provenance, each kept whole and once, so a sentence never runs on into the next line's text.
   const provenanceText = [...new Set([...structured, ...visibleLines].filter((text) => /\b(?:Ex|From|Provenance)\b/.test(text)))].join('\n').slice(0, 3000);
   return {
@@ -145,6 +147,7 @@ export function collectCurrentLotCandidates(root = globalThis.document, pageLoca
     ...(canonicalUrl ? { canonicalUrl } : {}),
     ...(shownLot?.price ? { offerPrice: shownLot.price, offerCurrency: shownLot.currency } : {}),
     ...(closesAt ? { closesAt } : {}),
+    ...(startsAt ? { startsAt } : {}),
     ...(shownLot?.photo ? { photoUrl: shownLot.photo } : {}),
     ...(provenanceText ? { provenanceText } : {}),
     rawText: limit(visibleLines.join('\n'), 3000),
@@ -235,6 +238,8 @@ export function draftPageValues(input) {
   }
   const closesAt = pageClosesAt(input?.closesAt);
   if (closesAt) values.closesAt = closesAt;
+  const startsAt = pageClosesAt(input?.startsAt);
+  if (startsAt) values.startsAt = startsAt;
   const photoUrl = webAddress(input?.photoUrl);
   if (photoUrl) values.photoUrl = photoUrl;
   const provenance = provenanceEntries(input?.provenance);
@@ -272,6 +277,8 @@ export function buildResearchDraft(capture, context = {}) {
     // What the page states about its sale, for the collector to confirm or clear in the workspace; only from a page that was read.
     const estimate = pageEstimate(capture?.offerPrice, capture?.offerCurrency);
     const closesAt = pageClosesAt(capture?.closesAt);
+    const startsAt = pageClosesAt(capture?.startsAt);
+    if (startsAt) draft.startsAt = startsAt;
     const photoUrl = webAddress(capture?.photoUrl);
     if (estimate) draft.estimate = estimate;
     if (closesAt) draft.closesAt = closesAt;

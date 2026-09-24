@@ -363,14 +363,21 @@ test('a hostile page cannot put a script address in the photo or an unreadable f
   assert.equal(through.closesAt, '2026-10-15');
 });
 
-test('an auction event on the page gives its date only when it is the one event there', () => {
+// 0.34 review (W2a, Minor 4): what an auction event gives is when the sale starts, and it is kept as that, not as the lot's closing.
+test('an auction event on the page gives its start only when it is the one event there, and the offer’s closing wins', () => {
   const product = { '@type': 'Product', name: 'Reference: RIC 306' };
-  const one = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'SaleEvent', name: 'Sale 9', startDate: '2026-10-15T10:00+02:00' }])] }),
-    { href: 'https://auction.test/27' });
-  assert.equal(draftOf(one).closesAt, '2026-10-15T10:00+02:00');
-  const two = collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'Event', startDate: '2026-10-15' }, { '@type': 'Event', startDate: '2026-11-20' }])] }),
-    { href: 'https://auction.test/27' });
-  assert.equal(draftOf(two).closesAt, undefined);
+  const one = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'SaleEvent', name: 'Sale 9', startDate: '2026-10-15T10:00+02:00' }])] }),
+    { href: 'https://auction.test/27' }));
+  assert.equal(one.startsAt, '2026-10-15T10:00+02:00');
+  assert.equal(one.closesAt, undefined);
+  const two = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([product, { '@type': 'Event', startDate: '2026-10-15' }, { '@type': 'Event', startDate: '2026-11-20' }])] }),
+    { href: 'https://auction.test/27' }));
+  assert.equal(two.startsAt, undefined);
+  assert.equal(two.closesAt, undefined);
+  const both = draftOf(collectCurrentLotCandidates(page({ jsonLd: [JSON.stringify([{ ...product, offers: { availabilityEnds: '2026-10-16' } },
+    { '@type': 'Event', startDate: '2026-10-15' }])] }), { href: 'https://auction.test/27' }));
+  assert.equal(both.closesAt, '2026-10-16');
+  assert.equal(both.startsAt, undefined);
 });
 
 test('a page that could not be read keeps no page values in its draft', () => {

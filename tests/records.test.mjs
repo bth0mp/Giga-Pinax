@@ -32,7 +32,7 @@ test('a current-lot draft carries the page’s estimate, closing time and photo 
   for (const fields of [
     { estimate: { minor: 120000, currency: 'EUR' } }, { estimate: { minor: 5000, currency: 'JPY' } },
     { closesAt: '2026-10-15' }, { closesAt: '2026-10-15T14:00+02:00' }, { closesAt: '2026-10-15T12:00Z' }, { closesAt: '2026-10-15T09:30-05:00' },
-    { photoUrl: 'https://house.test/27.jpg' },
+    { photoUrl: 'https://house.test/27.jpg' }, { startsAt: '2026-10-15' }, { startsAt: '2026-10-15T10:00+02:00' },
   ]) assert.equal(draft(fields).ok, true, JSON.stringify(fields));
   for (const [fields, path] of [
     [{ estimate: { minor: 1200, currency: 'eur' } }, 'payload.estimate.currency'],
@@ -49,6 +49,7 @@ test('a current-lot draft carries the page’s estimate, closing time and photo 
     [{ closesAt: '2026-10-15T14:00+14:30' }, 'payload.closesAt'],
     [{ closesAt: '2026-10-15T14:00-14:01' }, 'payload.closesAt'],
     [{ closesAt: 'next Tuesday' }, 'payload.closesAt'],
+    [{ startsAt: '2026-10-15T10:00' }, 'payload.startsAt'],
     [{ photoUrl: 'javascript:alert(1)' }, 'payload.photoUrl'],
     [{ photoUrl: `https://house.test/${'x'.repeat(2048)}` }, 'payload.photoUrl'],
   ]) {
