@@ -1,4 +1,4 @@
-import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries } from './lookup.js';
+import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits } from './lookup.js';
 import { isMintOnly, isRicPerson, isSectionOnly, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -114,10 +114,22 @@ function createStore(name, fetchImpl, baseUrl) {
     return value;
   };
   const loadMetadata = () => (metadataPromise ??= retried(metadata, () => { metadataPromise = undefined; }));
+  // The entries a lookup compares titles against, as objects rather than the pairs the file stores. Each is built the first time a lookup reaches its
+  // position and kept for the life of the page: a RIC number reaches a few dozen of OCRE's 52,254, and nothing builds the rest for it. A title
+  // catalogue compares every title, so its whole list is built once and handed out again. Every lookup shares them, and none writes to one: an
+  // answer that lists entries lists copies (local, below).
   const loadIndex = async () => {
     const value = await json(fetchImpl, new URL('index.json', base));
     if (value?.schemaVersion !== 1 || !Array.isArray(value.entries) || value.entries.some((entry) => !Array.isArray(entry) || entry.length !== 2 || entry.some((part) => typeof part !== 'string'))) throw new Error(`Invalid local ${corpus.label} index`);
-    return value.entries;
+    const pairs = value.entries;
+    let built;
+    const at = (position) => ((built ??= new Array(pairs.length))[position] ??= { id: pairs[position][0], title: pairs[position][1] });
+    let whole;
+    const all = () => {
+      if (!whole) built = whole = pairs.map(([id, title], position) => built?.[position] ?? { id, title });
+      return whole;
+    };
+    return { count: pairs.length, at, all };
   };
   const indexEntries = () => (indexPromise ??= retried(loadIndex, () => { indexPromise = undefined; }));
   const loadNumbers = async () => {
@@ -185,24 +197,24 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     if (found.status !== 'ok') throw stale(name);
     return found;
   };
-  // The entries a lookup compares titles against, as objects rather than the pairs the file stores.
-  const entries = async (name) => (await store(name).indexEntries()).map(([id, title]) => ({ id, title }));
+  // Every entry of a corpus's index, built once.
+  const entries = async (name) => (await store(name).indexEntries()).all();
   // The entries carrying a RIC number: the positions numbers.json lists it under, in index order, so pickRicEntries parses a few dozen titles
-  // instead of all 52,254. A number without a key, and a range without one, fall back to the whole index and the answer is the same either way.
+  // instead of all 52,254, and only those few dozen are ever built. A number without a key, and a range without one, fall back to the whole index
+  // and the answer is the same either way.
   const numbered = async (reference) => {
     const keys = [reference.number, ...(reference.range ? [reference.range] : [])].map(numberKey);
     const wanted = keys.every((key) => key !== null);
     const ocre = store('ocre');
-    const [meta, listed, index] = await Promise.all([ocre.loadMetadata(), entries('ocre'), wanted ? ocre.numberIndex() : null]);
-    if (!index) return listed;
+    const [meta, listed, index] = await Promise.all([ocre.loadMetadata(), ocre.indexEntries(), wanted ? ocre.numberIndex() : null]);
+    if (!index) return listed.all();
     // A number index built against another index still lists positions that resolve, and the lookup would quietly miss
     // whatever the two disagree about. The count it carries is what tells the two apart.
-    if (index.entryCount !== listed.length || index.entryCount !== meta.activeRecordCount) throw new Error('Invalid local OCRE number index');
+    if (index.entryCount !== listed.count || index.entryCount !== meta.activeRecordCount) throw new Error('Invalid local OCRE number index');
     const { numbers } = index;
     return [...new Set(keys.flatMap((key) => numbers[key] ?? []))].sort((a, b) => a - b).map((position) => {
-      const entry = Number.isInteger(position) && position >= 0 ? listed[position] : undefined;
-      if (!entry) throw new Error('Invalid local OCRE number index');
-      return entry;
+      if (!Number.isInteger(position) || position < 0 || position >= listed.count) throw new Error('Invalid local OCRE number index');
+      return listed.at(position);
     });
   };
   const personIds = (reference) => {
@@ -213,6 +225,14 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   // section's own. A heading naming one ruler has already been read as that section by the lot.
   const headedSections = (reference) => (!reference.section && Array.isArray(reference.rulers) && reference.rulers.length > 1
     ? reference.rulers.filter(isSectionOnly) : []);
+  // OCRE's titles read as references, each once for the life of the page: a lookup that broadens its volume or its section, or weighs a candidate
+  // against a heading, reads the same few dozen titles again. An id names one title in the one index, so it keys the reading.
+  const readings = new Map();
+  const reading = (entry) => {
+    if (!readings.has(entry.id)) readings.set(entry.id, parseReference(entry.title, false));
+    return readings.get(entry.id);
+  };
+  const pickRic = (list, reference) => pickRicHits(list.map((entry) => ({ entry, hit: reading(entry) })), reference);
   const hasPerson = (record, ids) => [...(record?.a ?? []), ...(record?.o?.p ?? [])].some((id) => ids.has(id));
   const citationReference = (reference) => ({ ...reference, section: isRicPerson(reference.section) ? '' : reference.section, id: undefined, rulers: undefined });
   const local = (picked, name, query) => ({ ...picked, candidates: picked.candidates?.map((entry) => ({ ...entry, source: 'local' })), corpus: name, query });
@@ -235,15 +255,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     }
     if (people.size > 0 || headed.length > 0) {
       const citationRef = citationReference(reference);
-      const inHeaded = (entry) => headed.some((section) => pickRicEntries([entry], { ...citationRef, section }).status !== 'none');
-      const picked = pickRicEntries(await candidateEntries(), citationRef);
+      const inHeaded = (entry) => headed.some((section) => pickRic([entry], { ...citationRef, section }).status !== 'none');
+      const picked = pickRic(await candidateEntries(), citationRef);
       const entries = picked.status === 'ok' ? [picked.entry] : (picked.candidates ?? []);
       const query = squash(`RIC ${reference.volume} ${reference.number}`);
       // Candidates of one number spread across volumes, so across shards: they are fetched together, not one lookup's wait after another. A record
       // the index lists and its shard lacks is left out, and the bundle is only stale for this lookup where the answer rests on that record: it is
       // filed under one of the heading's own people, or nothing that is there matched and the miss could be it. Another ruler's coin gone missing
       // costs "Trajan. RIC 306" nothing.
-      const namedHere = (entry) => inHeaded(entry) || ricPeople((parseReference(entry.title, false)?.section ?? '').split(' (')[0]).some(({ id }) => people.has(id));
+      const namedHere = (entry) => inHeaded(entry) || ricPeople((reading(entry)?.section ?? '').split(' (')[0]).some(({ id }) => people.has(id));
       const withPerson = async (list) => {
         const records = await Promise.all(list.map((entry) => recordById(entry.id)));
         const kept = list.filter((entry, index) => records[index] && (hasPerson(records[index], people) || inHeaded(entry)));
@@ -257,15 +277,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       // Where the mint's section does hold his coin, a coin in one of his own sections is as good an answer ("Diocletian. RIC 15 (Lugdunum)" is his
       // RIC V 15 as readily as RIC VI Lugdunum 15), so both are offered; his coins at other mints are not, since the lot says where it was struck.
       if (!reference.volume && isMintOnly(reference.section)) {
-        const wider = pickRicEntries(await candidateEntries(), { ...citationRef, section: '' });
+        const wider = pickRic(await candidateEntries(), { ...citationRef, section: '' });
         const theirs = await withPerson(wider.status === 'ok' ? [wider.entry] : (wider.candidates ?? []));
         const more = matched.length === 0 ? theirs
-          : theirs.filter((entry) => !matched.some(({ id }) => id === entry.id) && !isMintOnly(parseReference(entry.title, false)?.section ?? ''));
+          : theirs.filter((entry) => !matched.some(({ id }) => id === entry.id) && !isMintOnly(reading(entry)?.section ?? ''));
         if (more.length > 0) return local({ status: 'candidates', candidates: [...matched, ...more], partial: true }, 'ocre', query);
       }
       if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       if (matched.length > 0) {
-        let final = pickRicEntries(matched, citationRef);
+        let final = pickRic(matched, citationRef);
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.
@@ -275,14 +295,14 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       }
       return { status: 'candidates', candidates: entries.map((entry) => ({ ...entry, source: 'local' })), partial: true, personMismatch: true, corpus: 'ocre', query };
     }
-    let picked = pickRicEntries(await candidateEntries(), reference);
+    let picked = pickRic(await candidateEntries(), reference);
     let broadened = false;
     // The section the collector asked for is what he is looking at: a volume is broadened before it, so the same mint or ruler in another volume
     // comes before another section of the volume he typed. A section dropped altogether leaves other rulers' coins, which are choices, never the answer,
     // and so is a section read from a lot heading's mint alone: the heading may name a ruler the people table cannot place. A mint typed or chosen with
     // no volume ("RIC 411 (Rome)", "RIC Rome 411", Any volume) is the same case with no heading at all: it says where the coin was struck, never whose.
-    if (picked.status === 'none' && reference.section && reference.volume) { picked = pickRicEntries(await candidateEntries(), { ...reference, volume: '' }); broadened = picked.status !== 'none'; }
-    if (picked.status === 'none' && reference.section) { picked = pickRicEntries(await candidateEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
+    if (picked.status === 'none' && reference.section && reference.volume) { picked = pickRic(await candidateEntries(), { ...reference, volume: '' }); broadened = picked.status !== 'none'; }
+    if (picked.status === 'none' && reference.section) { picked = pickRic(await candidateEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
     const struck = !reference.volume && isMintOnly(reference.section);
     if (picked.status === 'ok' && (broadened || reference.rulers?.length || reference.headingMint || struck)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
     if (picked.status !== 'ok') return local(picked, 'ocre', squash(`RIC ${reference.volume} ${reference.section} ${reference.number}`));

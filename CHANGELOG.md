@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- A RIC lookup answered from the bundled catalogue builds only the few dozen index entries its number reaches, where it used to rebuild all 52,254 on every lookup, and every later lookup in the same window reuses them and the titles it has already read, so a second RIC lookup takes a fraction of the time it did. Crawford, Price and Seleucid Coins lookups build their index once per window instead of once per lookup. The answers are unchanged.
+
 ## [0.33.0] - 2026-09-24
 
 ### Added

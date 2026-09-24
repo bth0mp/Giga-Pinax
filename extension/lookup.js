@@ -692,6 +692,12 @@ function ricSearch({ number, volume, section, range }, rulers = []) {
 // "V, Part 2" finds V). A ruler also keeps the sections OCRE splits it into ("Gallienus (joint reign)"). More hits than one page are too many to list.
 export function pickRicEntries(entries, reference, total = entries.length) {
   if (total > entries.length) return { status: 'too-many' };
+  return pickRicHits(entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) })), reference);
+}
+
+// The same pick over entries whose titles have already been read ({ entry, hit }, hit being parseReference(title, false)): the bundled catalogue
+// keeps each reading for the life of the page, since a lookup that broadens its volume or its section reads the same titles again.
+export function pickRicHits(read, reference) {
   const [number, volume, ruler] = [spaced(ricNumber(reference.number)), unquote(reference.volume), norm(phrase(reference.section))];
   const exact = !volume || listed(volume);
   const [numeral, part] = shelf(volume);
@@ -710,7 +716,7 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const range = reference.range ? spaced(ricNumber(reference.range)) : '';
   const numbered = (hit, wanted) => [spaced(hit.number), bareNumber(hit.number)].includes(wanted);
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
-  const found = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
+  const found = read
     .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && (numbered(hit, number) || (range && numbered(hit, range)))
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));
