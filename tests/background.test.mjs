@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SCHEMA_VERSION } from '../extension/core/records.js';
+import { localDateAtInstant, reminderNotice } from '../extension/core/reminders.js';
 import { STORAGE_KEY } from '../extension/store.js';
 import { DIAGNOSTICS_KEY } from '../extension/core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, showInWindow } from '../extension/selection.js';
@@ -21,6 +22,7 @@ const storageCalls = { get: 0, set: 0 };
 let notificationsAllowed = false;
 let notificationResult = 'notification-id';
 let notificationCalls = 0;
+const notifications = [];
 let storageSetFails = false;
 let tabCreateFails = false;
 let tabCalls = 0;
@@ -68,7 +70,7 @@ globalThis.browser = {
     async contains() { return notificationsAllowed; },
     onAdded: { addListener(listener) { listeners.permissionsAdded.push(listener); } },
   },
-  notifications: { async create() { notificationCalls += 1; if (notificationResult instanceof Error) throw notificationResult; return notificationResult; } },
+  notifications: { async create(id, options) { notificationCalls += 1; notifications.push({ id, ...options }); if (notificationResult instanceof Error) throw notificationResult; return notificationResult; } },
   tabs: { async create() { tabCalls += 1; if (tabCreateFails) throw new Error('no tab'); } },
   windows: { async create() {}, async update() {} },
 };
@@ -217,6 +219,36 @@ test('enabling desktop alerts reconciles and delivers an already-due reminder', 
   });
   assert.equal(saved.ok, true);
   assert.equal(notificationCalls, before + 1);
+});
+
+// N14: the notification names the auction's own clock and the collector's, and the auction's place wherever its zone is
+// not the collector's. Kathmandu keeps no summer time, so the wall time just gone there always exists exactly once.
+test('a date-only reminder’s notification names the sale day, its place and both clocks', async () => {
+  const zone = 'Asia/Kathmandu';
+  const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const now = Date.now();
+  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+  const before = notifications.length;
+  const event = await send({
+    type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
+    event: {
+      name: 'Kathmandu sale day', eventKind: 'auction-day', precision: 'date-only',
+      localDate: localDateAtInstant(zone, now), timeZone: zone,
+      reminderScope: 'standalone', reminders: [{ kind: 'wall-time', daysBefore: 0, localTime }],
+    },
+  });
+  assert.equal(event.ok, true, event.message);
+  const shown = notifications.slice(before).find(({ id }) => id === `auction-companion:${event.value.id}`);
+  assert.ok(shown, 'the due reminder is shown');
+  assert.equal(shown.title, 'Kathmandu sale day');
+  const state = await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  const alert = state.value.alerts.find(({ eventId }) => eventId === event.value.id);
+  assert.equal(shown.message, reminderNotice({
+    id: alert.triggerId, eventId: event.value.id, eventRevision: 0, reminderId: alert.reminderId, triggerAt: alert.triggerAt,
+    eventName: 'Kathmandu sale day', precision: 'date-only', localDate: event.value.localDate, timeZone: zone,
+  }, { eventKind: 'auction-day', timeZone: viewer }));
+  assert.match(shown.message, /^Sale day .* — reminder for .*your time$/);
+  if (viewer !== zone) assert.match(shown.message, /\(Kathmandu\) — reminder for .* Kathmandu, .*your time$/);
 });
 
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {
