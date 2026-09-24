@@ -123,11 +123,12 @@ const numberOnly = (body) => NUMBER_ONLY.test(unpunctuate(body.replace(REMARKS, 
 const unseparate = (body) => body.replace(/^(?![.,]\s)[\s.:#-]+(?!\p{Lu})/u, ' ');
 const YEAR = /^\s*(?:1[5-9]\d\d|20\d\d|2100)$/;
 // A bare 1500-2100 number after a key may be the year of a book rather than a type number, and only evidence decides which. First, a typed catalogue
-// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits, Lorber's CPE I
-// ends at 965 and B560 and Newell's Demetrius at 182, so a number this big is a year whatever else the line says. Otherwise the clause must say so: a citation cue in front of the year, or a page, plate, note,
-// edition, bracketed year or verb of argument behind it. With neither, the reference is kept - Price runs past 3900 and Sear, Hendin, Svoronos and SNG
+// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits and Newell's
+// Demetrius ends at 182, so a number this big is a year whatever else the line says. CPE is not among them: its key names every volume of Lorber's
+// book, and PCO, which holds only the first, cannot say where a later one's numbers end. Otherwise the clause must say so: a citation cue in front of
+// the year, or a page, plate, note, edition, bracketed year or verb of argument behind it. With neither, the reference is kept - Price runs past 3900 and Sear, Hendin, Svoronos and SNG
 // Copenhagen all have real numbers in that range, and losing one of those costs the collector more than a stray prices-only row does.
-const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?|CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
+const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
 // The cue stands in the reference's own sentence: across a full stop "As." is the Roman denomination, not the cue of "as Price 1991 argues".
 const CUE = /\b(?:see|cf|per|following|compare|contra|after|from|published|discussed|cited|dated|attributed)(?:\s+(?:by|in|as))?\s*$/i;
 // Only what is said of an author: "reads", "gives", "places" and "attributes" are what a dealer says of the coin, and a reference is no book because
@@ -316,6 +317,10 @@ const AMOUNT_KEY = /^(?:Price|Pr)$/i;
 const AMOUNT = /^[\s.:]*\d+(?:[.,']\d+)*\s*(?:[$€£]|(?:EUR|USD|CHF|GBP)(?!\p{L}))/u;
 // RIC spelled with stops is RIC.
 const RIC_STOPS = /^R\.I\.C\.?\s*/;
+// A CPE or Newell Demetrius citation may put "no." before its number, as PCO's and AGCO's own titles do ("CPE no. 330", "Newell Demetrius
+// Poliorcetes, no. 45"): the word is read past, and a volume numeral in front of it stays ("CPE I, no. 330" is CPE I 330).
+const NUMBERED_KEY = /^(?:CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
+const NUMBER_WORD = /^(\s+I(?![\p{L}\d]))?\s*,?\s*no\.\s*(?=[Bb]?\d)/iu;
 
 // The reference after one key: its first chunk (read up to its last number), then, for a catalogue without type data, every chunk that starts with a
 // number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
@@ -404,7 +409,8 @@ export function findReferences(input) {
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
     const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
-    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '') : after;
+    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '')
+      : NUMBERED_KEY.test(match[2]) ? after.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : after;
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);

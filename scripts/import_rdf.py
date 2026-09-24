@@ -95,10 +95,12 @@ CORPORA = {
         "bundled": re.compile(r"cpe\.1_1\.[0-9][0-9A-Za-z]*|cpe\.1_2\.B[0-9][0-9A-Za-z]*"),
         "group": lambda record_id: "cpe",
         "groups": "cpe",
-        # PCO also publishes Svoronos's older numbers, most of them replaced by the CPE type they became. A Svoronos
-        # reference stays a prices-only citation, so its records, and the redirects out of them, are weight nothing reads.
+        # PCO also publishes Svoronos's older numbers, 1,067 of them replaced by the CPE type they became. No Svoronos record
+        # is bundled as a card of its own; the link from one to the CPE type it became is how a Svoronos citation finds that
+        # type, so those links are written into metadata.json as the corpus's concordance.
         "excluded": {"svoronos": re.compile(r"svoronos-1904\..+")},
-        "reason": "only Lorber's CPE numbers are read as PCO references; Svoronos numbers are searched for prices only",
+        "concordance": "svoronos",
+        "reason": "only Lorber's CPE types are bundled; a Svoronos number is kept only as PCO's link to the CPE type it became",
         "numbers": False,
     },
     "agco": {
@@ -494,6 +496,23 @@ def excluded_counts(corpus: dict, record_ids: list[str]) -> dict:
     return {"count": len(record_ids), "reason": corpus["reason"], "byGroup": counts}
 
 
+def concordance_links(corpus: dict, replacements: dict[str, list[str]], active: dict[str, dict]) -> dict[str, list[str]]:
+    """The types each left-out record of the corpus's concordance group is replaced by, in the export's own words (PCO's
+    Svoronos numbers, each dcterms:isReplacedBy the CPE type it became). A record is kept only when every type it names is
+    bundled, since a link with a type missing would offer the rest as though they were all of it."""
+    group = corpus.get("concordance")
+    if not group:
+        return {}
+    pattern, base = corpus["excluded"][group], corpus["base"]
+    links = {}
+    for old_id in sorted(replacements):
+        uris = set(replacements[old_id])
+        targets = sorted(uri[len(base):] for uri in uris if uri.startswith(base))
+        if pattern.fullmatch(old_id) and targets and len(targets) == len(uris) and all(target in active for target in targets):
+            links[old_id] = targets
+    return links
+
+
 def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     try:
         date.fromisoformat(generated_on)
@@ -507,15 +526,17 @@ def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     # An id the corpus publishes but the extension cannot ask for is no target for a redirect either, so it joins the
     # conflicts as somewhere a replacement chain must not end.
     aliases, replacement_skips = replacement_aliases(records, replacements, conflicts | (set(records) - kept), corpus["base"])
-    # A redirect out of an id the extension never builds (PCO's Svoronos numbers, replaced by the CPE types they became)
-    # is never asked for, so it is counted rather than written. Only a corpus that has one says so.
+    active = {record_id: record for record_id, record in records.items()
+              if record_id in kept and record_id not in replacements and record_id not in conflicts}
+    concordance = concordance_links(corpus, replacements, active)
+    # A redirect out of an id the extension never builds is never asked for by id, so it is no alias. PCO's Svoronos links
+    # are kept as its concordance instead; any other is counted rather than written. Only a corpus that has one says so.
     unreachable = [old_id for old_id in aliases if not corpus["bundled"].fullmatch(old_id)]
     for old_id in unreachable:
         del aliases[old_id]
-    if unreachable:
-        replacement_skips["fromExcluded"] = len(unreachable)
-    active = {record_id: record for record_id, record in records.items()
-              if record_id in kept and record_id not in replacements and record_id not in conflicts}
+    written_nowhere = [old_id for old_id in unreachable if old_id not in concordance]
+    if written_nowhere:
+        replacement_skips["fromExcluded"] = len(written_nowhere)
     metadata = {
         "schemaVersion": 1,
         "corpus": name,
@@ -532,6 +553,7 @@ def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
         # Only a corpus that leaves something out says so, so a corpus bundled whole carries no empty claim about it.
         **({"excluded": excluded} if excluded["count"] else {}),
         "aliases": aliases,
+        **({"concordance": concordance} if corpus.get("concordance") else {}),
         "replacementSkips": replacement_skips,
         "conflicts": {"count": len(conflicts), "ids": sorted(conflicts)},
         "shards": {},

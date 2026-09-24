@@ -440,6 +440,8 @@ const andList = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')}
 // RIC files a Caesar's coins under the reigning emperor (Titus under Vespasian) and an empress's under her husband, which reads as a wrong result
 // until the card says so. It reports only what the record holds: no rank, no claim that the search was wrong, and no name RIC does not use itself.
 export function filingNote(card) {
+  // A CPE card reached from a Svoronos number says where PCO files that number; the bundle wrote the sentence from PCO's own link.
+  if (typeof card?.filedAs === 'string') return card.filedAs;
   if (card?.corpus !== 'ocre') return '';
   const reference = parseReference(card.label, false);
   if (reference?.catalogue !== 'RIC') return '';
@@ -821,8 +823,10 @@ export async function lookupType(given, options = {}) {
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
-  if (corpus === OTHER) return { status: 'ok', card: otherCard(query) };
   const { localProvider, online = true } = options;
+  // A reference without type data is its own card. The one exception is a Svoronos number PCO has replaced with the CPE type it became: the bundle
+  // follows PCO's own link, and answers null for anything else, which is then the prices-only card it always was.
+  if (corpus === OTHER) return (await localProvider?.lookupSvoronos?.(query)) ?? { status: 'ok', card: otherCard(query) };
   // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
   const local = localProvider?.lookupType ? await localProvider.lookupType(reference) : null;
   if (local) {

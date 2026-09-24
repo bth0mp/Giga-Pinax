@@ -18,7 +18,7 @@ Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin
 
 ## Catalogues
 
-Type records resolve for RIC, RRC/Crawford, Seleucid Coins, Price, CPE (Lorber's *Coins of the Ptolemaic Empire*, `CPE 330`, `CPE B549`), Newell's *Demetrius Poliorcetes* (`Newell Demetrius 45`) and Bopearachchi. Many further catalogues are read for prices only, including RPC, Sear, SNG, BCD, HGC, Svoronos, a bare `Newell` number and Krause KM#/Y# numbers; pasted lot text is read against a table of over 200 catalogue keys, so a dealer's citation is listed even when no open type data carries it.
+Type records resolve for RIC, RRC/Crawford, Seleucid Coins, Price, CPE (Lorber's *Coins of the Ptolemaic Empire*, `CPE 330`, `CPE B549`), Newell's *Demetrius Poliorcetes* (`Newell Demetrius 45`) and Bopearachchi, and a Svoronos number PCO links to the CPE type it became opens that type too. Many further catalogues are read for prices only, including RPC, Sear, SNG, BCD, HGC, Svoronos, a bare `Newell` number (Newell wrote several catalogues) and Krause KM#/Y# numbers; pasted lot text is read against a table of over 200 catalogue keys, so a dealer's citation is listed even when no open type data carries it.
 
 ```
 RIC I² Nero 306        Crawford 44/5       SC 1266.2         Price 23

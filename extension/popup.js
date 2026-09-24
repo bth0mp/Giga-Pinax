@@ -561,7 +561,7 @@ async function openLotReference(found, rulers, button, note = '') {
     if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
   }, note);
 }
 
@@ -1371,7 +1371,7 @@ $('reference-form').addEventListener('submit', async (event) => {
     if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
       runPrices(context.term, context.currency, { remember: false, context });
     }
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
   });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);

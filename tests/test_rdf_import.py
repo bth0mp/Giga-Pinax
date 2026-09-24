@@ -238,10 +238,11 @@ class CorpusImportTests(unittest.TestCase):
                           ["cpe.1_2.B146", "Coins of the Ptolemaic Empire Vol. I, Part II, no. B146"]],
                          load(output / "index.json")["entries"])
         self.assertEqual({"cpe": [{"file": "records-cpe.json", "from": ""}]}, metadata["shards"])
-        # Two Svoronos numbers are replaced by the CPE types they became. No reference the extension reads builds a
-        # Svoronos identifier, so the redirects out of them are never asked for and are counted rather than written.
+        # Two Svoronos numbers are replaced by the CPE types they became. No lookup asks for a Svoronos record by id, so the
+        # links are no aliases: they are kept as PCO's own concordance, which a Svoronos citation is read through.
         self.assertEqual({}, metadata["aliases"])
-        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0, "fromExcluded": 2}, metadata["replacementSkips"])
+        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0}, metadata["replacementSkips"])
+        self.assertEqual({"svoronos-1904.487": ["cpe.1_1.330"], "svoronos-1904.71": ["cpe.1_2.B146"]}, metadata["concordance"])
         record = load(output / "records-cpe.json")["records"]["cpe.1_1.330"]
         self.assertEqual({
             "i": "cpe.1_1.330", "l": "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330", "a": ["ptolemy_ii"], "d": ["decadrachm"],
@@ -251,6 +252,26 @@ class CorpusImportTests(unittest.TestCase):
             "r": {"l": "ΑΡΣΙΝΟΗΣ l., ΦΙΛΑΔΕΛΦΟΥ r.", "d": "Double Cornucopiae bound with royal diadem, containing pyramidal cakes, "
                   "pomegranate, and other fruits, a grape cluster hanging from the rim of each horn, dotted border"},
         }, record)
+
+    def test_a_svoronos_link_is_kept_only_when_every_type_it_names_is_bundled(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = "http://numismatics.org/pco/id/"
+            def record(record_id, *targets):
+                links = "".join(f"<dcterms:isReplacedBy rdf:resource='{base}{target}'/>" for target in targets)
+                return f"<nmo:TypeSeriesItem rdf:about='{base}{record_id}'><skos:prefLabel xml:lang='en'>{record_id}</skos:prefLabel>{links}</nmo:TypeSeriesItem>"
+            source = root / "pco.rdf"
+            source.write_text(f"<rdf:RDF {NAMESPACES}>" + "".join([
+                record("cpe.1_1.1"), record("cpe.1_1.2"),
+                # Two types for one number is offered as two; a link to a type the export does not hold, or a Svoronos record, is not kept.
+                record("svoronos-1904.9", "cpe.1_1.2", "cpe.1_1.1"), record("svoronos-1904.8", "cpe.1_1.3"),
+                record("svoronos-1904.7", "cpe.1_1.1", "cpe.1_1.3"), record("svoronos-1904.6", "svoronos-1904.5"), record("svoronos-1904.5"),
+            ]) + "</rdf:RDF>", encoding="utf-8")
+            result = run_import(source, root / "pco", corpus="pco")
+            self.assertEqual(0, result.returncode, result.stderr)
+            metadata = load(root / "pco" / "metadata.json")
+            self.assertEqual({"svoronos-1904.9": ["cpe.1_1.1", "cpe.1_1.2"]}, metadata["concordance"])
+            self.assertEqual({}, metadata["aliases"])
 
     def test_agco_bundles_every_newell_demetrius_type(self):
         output = self.imported("agco")

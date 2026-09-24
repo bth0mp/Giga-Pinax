@@ -32,9 +32,9 @@ export const CATALOGUES = Object.freeze({
   // no. 330", "... Part II, no. B146") read too, the part agreeing with the number, so a Recent chip fills the fields like the others. Svoronos,
   // whose older numbers PCO also publishes, stays prices only.
   CPE: Object.freeze({ corpus: 'pco', corpusName: 'PCO', idPrefix: 'cpe.', label: 'CPE number (B for a bronze)', help: 'Example: CPE 330 or CPE B549',
-    defaultNumber: '330', notFoundHint: 'Check the number.', queryKey: 'CPE', termKeys: ['CPE'], citationKeys: ['CPE'],
-    prefixPattern: /^(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*(?=[Bb]?\d|$)/iu,
-    referencePattern: /^(?:(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*|Coins of the Ptolemaic Empire Vol\. I, Part (?:1, no\.\s*(?=\d)|II, no\.\s*(?=B)))([Bb]?\d\S*)$/iu }),
+    defaultNumber: '330', notFoundHint: 'Check the number.', queryKey: 'CPE', termKeys: ['CPE'], citationKeys: ['CPE', 'CPE I'],
+    prefixPattern: /^(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*(?:no\.\s*)?(?=[Bb]?\d|$)/iu,
+    referencePattern: /^(?:(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*(?:no\.\s*)?|Coins of the Ptolemaic Empire Vol\. I, Part (?:1, no\.\s*(?=\d)|II, no\.\s*(?=B)))([Bb]?\d\S*)$/iu }),
   // Newell's The Coinages of Demetrius Poliorcetes, the one book AGCO publishes, which titles its types "Newell Demetrius Poliorcetes, no. 45". Newell's
   // other books are cited by number as well (the Seleucid mints, the Alexander hoards), so a reference is read only where it names Demetrius; a bare
   // "Newell 45" stays prices only. The king is what an acsearch lot must name beside the citation, in Latin or in Greek, for the same reason.

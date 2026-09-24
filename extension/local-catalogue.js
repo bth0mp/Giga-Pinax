@@ -341,8 +341,31 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     return local(picked, name, query);
   }
 
+  // PCO replaces 1,067 of Svoronos's numbers with the CPE type each became (dcterms:isReplacedBy), and the importer keeps those links in PCO's
+  // metadata as its concordance. A Svoronos citation, alone, is read through them: one type opens its card, saying where PCO files the number;
+  // several are offered and none opened. No link, a damaged bundle or a link to a type the shard lacks answers null, and the citation stays the
+  // prices-only reference it always was. Nothing here asks the network.
+  async function svoronosLookup(text) {
+    const number = String(text ?? '').match(/^Svoronos\s+(\d+[A-Za-z]?)$/i)?.[1];
+    if (!number) return null;
+    const meta = await store('pco').loadMetadata();
+    const key = `svoronos-1904.${number}`;
+    const links = isMap(meta.concordance) && Object.hasOwn(meta.concordance, key) ? meta.concordance[key] : null;
+    if (!Array.isArray(links) || links.length === 0 || links.some((id) => typeof id !== 'string')) return null;
+    const records = await Promise.all(links.map((id) => store('pco').recordById(id)));
+    if (records.some((record) => !record)) return null;
+    const query = `Svoronos ${number}`;
+    if (records.length > 1) return { status: 'candidates', candidates: records.map((record) => ({ id: record.i, title: record.l, source: 'local' })), corpus: 'pco', query };
+    const card = packedRecordToCard(records[0], cache, 'pco', await labels());
+    const cpe = parseReference(card.label);
+    return { status: 'ok', card: { ...card, filedAs: `${query} is filed in PCO as ${cpe?.catalogue === 'CPE' ? `CPE ${cpe.number}` : card.label}.` } };
+  }
+
   return {
     serves: (name) => Object.hasOwn(LOCAL_CORPORA, name),
+    async lookupSvoronos(text) {
+      try { return await svoronosLookup(text); } catch { return null; }
+    },
     async lookupById(name, id) {
       if (!Object.hasOwn(LOCAL_CORPORA, name)) return null;
       try { return await byId(name, id); } catch { return { status: 'unavailable', source: 'local' }; }

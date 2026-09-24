@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { CATALOGUES, catalogueForCorpus, catalogueOf, CORPORA } from '../extension/catalogues.js';
 import { createLocalCatalogue, LOCAL_CORPORA } from '../extension/local-catalogue.js';
 import { findReferences, lotLabel, lotLookup } from '../extension/lot.js';
-import { buildQuery, lookupById, lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
+import { buildQuery, filingNote, lookupById, lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
 import { citationPhrases, citesReference, coinArchivesTerm, defaultTerm, referenceName, searchesReference } from '../extension/prices.js';
 import { bundle, bundleJson, bundledLabels, bundlePath, skip } from './helpers/bundle.mjs';
 
@@ -74,8 +74,28 @@ test('lot text reads CPE and Newell Demetrius as type references and leaves Svor
     [['Newell', '45', true], ['Other', 'SNG Alpha Bank 950', false]]);
   assert.deepEqual(findReferences('Demetrios Poliorketes. Tetradrachm. Newell 45.').references.map(({ reference, typed }) => [reference.catalogue, reference.number, typed]),
     [['Other', 'Newell 45', false]]);
-  // Neither book reaches a four-digit number, so a year after the key is the book's.
+  // Newell's Demetrius has 182 numbers, so a year after its key is the book's.
   assert.deepEqual(findReferences('Tetradrachm. Newell Demetrius 1927 lists the dies. SNG Cop 12.').references.map(({ text }) => text), ['SNG Cop 12']);
+});
+
+// PCO holds CPE I, but "CPE" is the key of every volume of Lorber's book, and nothing in the export says where a later one's numbers end: a
+// four-digit CPE number is kept, as v0.33.0 kept it, and is searched for prices with the same phrase it was searched with then.
+test('a CPE number past the volume PCO holds is still a citation, searched as v0.33.0 searched it', () => {
+  for (const [text, rows] of [['Ptolemy VI. AR Tetradrachm. CPE 1712.', ['CPE 1712']], ['Ptolemy VI. AR Tetradrachm. CPE 1712; Svoronos 1234.', ['CPE 1712', 'Svoronos 1234']],
+    ['Ptolemy VI. AR Tetradrachm. Lorber, CPE 1712.', ['CPE 1712']]]) {
+    const { references } = findReferences(text);
+    assert.deepEqual(references.map(({ text: row }) => row), rows, text);
+    assert.equal(defaultTerm(references[0].reference), '"CPE 1712"', text);
+  }
+});
+
+test('the "no." a title puts before the number is read, typed and in lot text', () => {
+  for (const [text, catalogue, number] of [['CPE no. 330', 'CPE', '330'], ['CPE no. B549', 'CPE', 'B549'], ['CPE I, no. 330', 'CPE', '330'],
+    ['Newell Demetrius Poliorcetes, no. 45', 'Newell', '45']]) {
+    assert.deepEqual(read(text), { catalogue, number }, text);
+    const row = findReferences(`Tetradrachm. ${text}. SNG Cop 12.`).references[0];
+    assert.deepEqual([row.reference.catalogue, row.reference.number, row.typed], [catalogue, number, true], `lot: ${text}`);
+  }
 });
 
 test('acsearch is asked for the citation as dealers write it, and a Demetrius search needs his name in the lot', () => {
@@ -93,6 +113,10 @@ test('acsearch is asked for the citation as dealers write it, and a Demetrius se
   assert.equal(citesReference('Ptolemy IV. AE. Cpe b549.', cpe), false);
   assert.equal(citesReference('Ptolemy IV. AE. CPE B5490.', cpe), false);
   assert.equal(citesReference('Ptolemy IV. AE. Svoronos B549.', cpe), false);
+  // The volume a dealer names is PCO's own, and a volume PCO does not hold is another book.
+  assert.equal(citesReference('Ptolemy IV. AE. CPE I B549.', cpe), true);
+  assert.equal(citesReference('Ptolemy IV. AE. CPE I, B549.', cpe), true);
+  assert.equal(citesReference('Ptolemy IV. AE. CPE II B549.', cpe), false);
   assert.equal(citesReference('Demetrios Poliorketes. Newell 45.', newell), true);
   assert.equal(citesReference('Demetrios Poliorketes. Newell, Demetrius 45.', newell), true);
   assert.equal(citesReference('Demetrios Poliorketes. Newell 145.', newell), false);
@@ -187,4 +211,49 @@ test('the popup offers every catalogue the table reads, and credits every bundle
   assert.deepEqual([...select.matchAll(/<option value="([^"]+)">/g)].map((match) => match[1]).sort(), Object.keys(CATALOGUES).sort());
   const footer = html.match(/<footer class="popup-footer"><span>([^<]*)<\/span>/)[1];
   for (const { label } of Object.values(LOCAL_CORPORA)) assert.match(footer, new RegExp(`(?<![A-Z])${label}(?![A-Z])`), label);
+});
+
+// PCO replaces 1,067 of Svoronos's numbers with the CPE type each became (dcterms:isReplacedBy, one target each in the export). A Svoronos citation
+// stays a prices-only reference, and where PCO's own link names its type the bundle opens that card too, saying where PCO files it.
+const svoronos = (text, options = {}) => lookupType(parseReference(text), { localProvider: bundle, fetchImpl: async (url) => { throw new Error(`no request: ${url}`); }, ...options });
+
+test('a Svoronos number PCO replaces opens the CPE type it became, saying so, from the package', { skip }, async () => {
+  const found = await svoronos('Svoronos 487');
+  assert.equal(found.status, 'ok');
+  assert.equal(found.card.id, 'cpe.1_1.330');
+  assert.equal(found.card.source, 'local');
+  assert.equal(filingNote(found.card), 'Svoronos 487 is filed in PCO as CPE 330.');
+  assert.equal((await svoronos('Svoronos 71')).card.id, 'cpe.1_2.B146');
+  // Lot text reaches the same card, and the row's prices are still Svoronos's.
+  const row = findReferences('Ptolemy II. AR Tetradrachm. Svoronos 487.').references[0];
+  assert.equal(defaultTerm(row.reference), '"Svoronos 487"');
+  assert.equal((await lookupType(lotLookup(row, []), { localProvider: bundle })).card.id, 'cpe.1_1.330');
+});
+
+test('a Svoronos number with no link, or several citations, stays a prices-only card', { skip }, async () => {
+  for (const text of ['Svoronos 1255', 'Svoronos 99999', 'Svoronos 487; SNG Cop 12', 'Svoronos 487a']) {
+    const found = await svoronos(text);
+    assert.equal(found.status, 'ok', text);
+    assert.equal(found.card.corpus, 'other', text);
+  }
+  // Without the bundle there is nothing to follow, and no request is made for one.
+  const alone = await lookupType(parseReference('Svoronos 487'), { fetchImpl: async (url) => { throw new Error(`no request: ${url}`); } });
+  assert.equal(alone.card.corpus, 'other');
+});
+
+test('a Svoronos number PCO replaces with several types offers them all, never one', async () => {
+  const metadata = { schemaVersion: 1, corpus: 'pco', recordCount: 3, activeRecordCount: 2, aliases: {}, shards: { cpe: [{ file: 'records-cpe.json', from: '' }] },
+    concordance: { 'svoronos-1904.9': ['cpe.1_1.1', 'cpe.1_1.2'], 'svoronos-1904.8': ['cpe.1_1.1'], 'svoronos-1904.7': ['cpe.1_1.3'] } };
+  const records = { 'cpe.1_1.1': { i: 'cpe.1_1.1', l: 'Coins of the Ptolemaic Empire Vol. I, Part 1, no. 1', o: {}, r: {} },
+    'cpe.1_1.2': { i: 'cpe.1_1.2', l: 'Coins of the Ptolemaic Empire Vol. I, Part 1, no. 2', o: {}, r: {} } };
+  const files = { 'pco/metadata.json': metadata, 'pco/records-cpe.json': { schemaVersion: 1, records }, 'nomisma-labels.json': { schemaVersion: 1, labels: {} } };
+  const local = createLocalCatalogue({ baseUrl: 'moz-extension://test/data/',
+    fetchImpl: async (url) => (Object.hasOwn(files, bundlePath(url)) ? { ok: true, status: 200, json: async () => files[bundlePath(url)] } : { ok: false, status: 404, json: async () => ({}) }) });
+  const several = await lookupType(parseReference('Svoronos 9'), { localProvider: local });
+  assert.equal(several.status, 'candidates');
+  assert.deepEqual(several.candidates.map(({ id, title, source }) => [id, title, source]),
+    [['cpe.1_1.1', records['cpe.1_1.1'].l, 'local'], ['cpe.1_1.2', records['cpe.1_1.2'].l, 'local']]);
+  assert.equal((await lookupType(parseReference('Svoronos 8'), { localProvider: local })).card.id, 'cpe.1_1.1');
+  // A link to a type the shard lacks is a damaged bundle, and the citation falls back to what it always was.
+  assert.equal((await lookupType(parseReference('Svoronos 7'), { localProvider: local })).card.corpus, 'other');
 });
