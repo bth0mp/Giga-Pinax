@@ -50,6 +50,7 @@ ASSET_PATHS = (
     "popup.html",
     "popup.css",
     "popup.js",
+    "popup-shell.js",
     "theme.js",
     "updates.css",
     "updates.js",

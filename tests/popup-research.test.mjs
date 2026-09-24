@@ -1703,7 +1703,10 @@ test('a page without a counted price still lists its upcoming lots', async () =>
 test('every element the popup looks up by id is in its markup', () => {
   const read = (name) => readFileSync(new URL(`../extension/${name}`, import.meta.url), 'utf8');
   const markup = parseHtml(read('popup.html'));
-  const ids = [...new Set([...read('popup.js').matchAll(/\$\('([\w-]+)'\)/g)].map((match) => match[1]))];
+  // The page and the modules it was split into (popup-*.js), which look elements up for it.
+  const modules = [...read('popup.js').matchAll(/from '\.\/(popup-[\w-]+\.js)';/g)].map((match) => match[1]);
+  const code = ['popup.js', ...modules].map(read).join('\n');
+  const ids = [...new Set([...code.matchAll(/\$\('([\w-]+)'\)/g)].map((match) => match[1]))];
   assert.ok(ids.includes('upcoming-list'));
   assert.deepEqual(ids.filter((id) => !markup.getElementById(id)), []);
   assert.equal(markup.getElementById('upcoming').hidden, true);
