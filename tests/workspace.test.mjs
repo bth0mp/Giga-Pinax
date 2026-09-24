@@ -1272,3 +1272,11 @@ test('after a cancellation the bid form offers the cancelled terms, and only the
   assert.deepEqual(bidFormValues(clearedSince, 'en-US', 'USD'), { amount: '', currency: 'USD', premium: '' });
   assert.deepEqual(bidFormValues({ bidHistory: [] }, 'en-US', 'GBP'), { amount: '', currency: 'GBP', premium: '' });
 });
+
+// Review Minor 6: the limits come from the store through the page, so the markup carries none of its own to agree by.
+test('the limited text boxes carry no maxlength of their own in the markup', () => {
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  const limited = markup.querySelectorAll('[data-limit]');
+  assert.ok(limited.length >= 9);
+  assert.deepEqual(limited.filter((control) => control.hasAttribute('maxlength')).map((control) => control.name), []);
+});

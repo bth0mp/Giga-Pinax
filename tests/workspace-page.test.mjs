@@ -842,6 +842,7 @@ test('text boxes take their limits from the store and count down near the end', 
   const background = await backgroundWithCoins('Nero, denarius');
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   const lot = page.$('lot-form').elements;
+  // Stale markup numbers would pass the check below by themselves; the page's own pass has to replace them.
   assert.deepEqual([lot.title.maxLength, lot.reference.maxLength, lot.lotNumber.maxLength, lot.notes.maxLength, lot.auctionHouse.maxLength],
     [LIMITS.title, LIMITS.shortText, LIMITS.shortText, LIMITS.notes, LIMITS.shortText].map(String));
   assert.equal(page.$('event-form').elements.name.maxLength, String(LIMITS.title));
