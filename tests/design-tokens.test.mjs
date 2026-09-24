@@ -104,3 +104,16 @@ test('the palette keeps WCAG AA contrast in light and dark', () => {
     for (const face of ['accent', 'accent-hover']) assert.ok(ratio(tokens['on-accent'], tokens[face]) >= 4.5, `${theme}: --on-accent on --${face}`);
   }
 });
+
+// W-09 (styling part): "Compare coins" repeated the coin list as a second list of two-line checkbox rows. The picker is a bounded box of
+// one-line choices, the chosen ones marked by more than the tick, and an empty picker takes no room.
+test('the comparison picker is a short box of one-line choices with the chosen ones marked', () => {
+  const workspace = rules(read('workspace.css'));
+  const body = (selector) => workspace.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('#comparison-picker'), /max-height:\d+px/);
+  assert.match(body('#comparison-picker'), /overflow:auto/);
+  assert.match(body('.compare-choice'), /white-space:nowrap/);
+  assert.match(body('.compare-choice'), /text-overflow:ellipsis/);
+  assert.match(body('.compare-choice:has(:checked)'), /background:var\(--accent-soft\)/);
+  assert.match(body('#comparison-picker:empty'), /margin:0;padding:0/);
+});
