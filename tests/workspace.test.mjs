@@ -1098,8 +1098,10 @@ test('an auctionâ€™s time reads as a day, a time and how soon, in the collectorâ
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-30T07:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 31 h', tone: 'soon' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-01T13:20:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 40 min', tone: 'soon' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
-  // The auction's own zone is named when the collector is elsewhere; the time stays the auction's.
-  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 Europe/London');
+  // The auction's own zone is named by its place when the collector is elsewhere (M3 review), as the reminder rows name
+  // it; the time stays the auction's. Two names of one zone are one zone.
+  assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 London');
+  assert.equal(eventWhen({ ...closes, timeZone: 'Etc/UTC' }, { locale: 'en-GB', timeZone: 'UTC', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 14:00');
   assert.equal(eventWhen(closes, { locale: 'en-US', timeZone: 'Europe/London', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu, Oct 1, 3:00 PM');
   const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-01', timeZone: 'Europe/London' };
   assert.deepEqual(eventWhen(day, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'in 7 days', tone: '' });

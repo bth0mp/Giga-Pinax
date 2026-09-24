@@ -491,14 +491,14 @@ test('a coin row shows its amount beside the title, the auction’s time and how
   const [row] = page.$('lot-list').children;
   assert.equal(row.querySelector('.coin-row-title').textContent, 'RIC I² 306');
   assert.equal(row.querySelector('.coin-row-amount').textContent, '£650.00');
-  assert.match(row.querySelector('.coin-row-when').textContent, /^Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days$/);
+  assert.match(row.querySelector('.coin-row-when').textContent, /^Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days$/);
   assert.equal(row.querySelector('.status-pill').textContent, 'Bid active');
   assert.equal(row.querySelector('.coin-row-event').textContent, 'Roma E-Sale 130');
   assert.equal(row.querySelector('.status-pill').dataset.tone, 'active');
   await page.openCoin('Nero, denarius');
-  assert.match(page.$('attached-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days$/);
+  assert.match(page.$('attached-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days$/);
   await page.navigate('#auctions');
-  assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 3:00 PM( Europe\/London)? · in \d+ days/);
+  assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days/);
 });
 
 // N3: on an open lot the Outcome tab opens on Won in the bid's currency, asks no re-open question and offers no

@@ -89,7 +89,7 @@ const formatWith = (locale, options, date, fallback) => {
 export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
   const verb = VERB[String(event.eventKind)] ?? 'Auction';
-  const zone = event.timeZone && event.timeZone !== timeZone ? ` ${event.timeZone}` : '';
+  const zone = event.timeZone && !sameZone(event.timeZone, timeZone) ? ` ${zonePlace(event.timeZone)}` : '';
   const timing = eventTiming(event, now);
   const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
   const day = timed
