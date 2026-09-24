@@ -1140,3 +1140,11 @@ test('anyCase reads a word whatever its capitals, and a letter with no one-lette
   assert.ok(reads('a.b', 'A.B'));
   assert.ok(!reads('a.b', 'AxB'));
 });
+
+test('a lone Svoronos row promises no "prices only", since PCO may file it under a CPE type; other forms still do', () => {
+  const label = (text) => { const lot = findReferences(text); return lot.references.map((found) => lotLabel(found, lot.rulers)); };
+  assert.deepEqual(label('Ptolemy II. AR Tetradrachm. Svoronos 487.'), ['Svoronos 487']);
+  assert.deepEqual(label('Ptolemy II. AR Tetradrachm. Svoronos 662a var.'), ['Svoronos 662a · var.']);
+  assert.deepEqual(label('Ptolemaic. Svoronos 1600, pl. 20; SNG Cop 123.'), ['Svoronos 1600', 'SNG Cop 123 · prices only']);
+  assert.deepEqual(label('Kroll 15.'), ['Kroll 15 · prices only']);
+});

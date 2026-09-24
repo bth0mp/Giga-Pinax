@@ -482,8 +482,11 @@ export function lotLookup(found, rulers) {
   const section = found.reference.section ? '' : headingSection(rulers);
   return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
 }
+// A lone Svoronos number may open the CPE type PCO files it under (catalogues.js), so its row promises nothing either way.
+const MAYBE_FILED = /^Svoronos \d+[A-Za-z]?$/i;
 export const lotLabel = (found, rulers) => [found.text, (borrowsRulers(found, rulers) && rulers[0]) || mintSection(found),
-  !found.typed && 'prices only', found.cf && 'cf.', found.variant && 'var.'].filter(Boolean).join(' · ');
+  !found.typed && !MAYBE_FILED.test(found.reference?.number ?? '') && 'prices only', found.cf && 'cf.', found.variant && 'var.']
+  .filter(Boolean).join(' · ');
 
 // Lot text copied in lines (a paste, a right-click) for a one-line box: a break separates as ". " does, so a weight or an "Ex …" line never joins the
 // reference above it ("…RIC 1073⏎18 mm"), and a line ending in its own mark keeps it ("HGC 4,⏎1598"). One reference split over lines ("RIC I²⏎Nero

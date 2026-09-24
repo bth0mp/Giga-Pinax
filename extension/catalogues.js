@@ -30,7 +30,7 @@ export const CATALOGUES = Object.freeze({
   // bronzes under B numbers ("CPE B549"), so the number alone says the part. "CPE I" is the volume both are in; a volume PCO does not publish ("CPE
   // II 330") is left unread and searched for prices, as every CPE citation was before. PCO's own titles ("Coins of the Ptolemaic Empire Vol. I, Part 1,
   // no. 330", "... Part II, no. B146") read too, the part agreeing with the number, so a Recent chip fills the fields like the others. Svoronos,
-  // whose older numbers PCO also publishes, stays prices only.
+  // whose older numbers PCO also publishes, opens the CPE type PCO files a lone number under (its own isReplacedBy links) and is otherwise prices only.
   CPE: Object.freeze({ corpus: 'pco', corpusName: 'PCO', idPrefix: 'cpe.', label: 'CPE number (B for a bronze)', help: 'Example: CPE 330 or CPE B549',
     defaultNumber: '330', notFoundHint: 'Check the number.', queryKey: 'CPE', termKeys: ['CPE'], citationKeys: ['CPE', 'CPE I'],
     prefixPattern: /^(?:Lorber\s+)?CPE(?:\s+I(?![\p{L}\d]))?\s*,?\s*(?:no\.\s*)?(?=[Bb]?\d|$)/iu,
