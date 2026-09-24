@@ -125,7 +125,7 @@
         <label>Event kind<select name="eventKind"><option value="auction-starts">Auction starts</option><option value="lot-closes">Lot closes</option><option value="auction-day">Auction day</option></select></label>
         <fieldset><legend>Time precision</legend><label><input type="radio" name="precision" value="timed" checked> Precise time</label><label><input type="radio" name="precision" value="date-only"> Date only</label></fieldset>
         <div class="field-pair"><label>Date<input name="localDate" type="date" required></label><label id="event-time-label">Time<input name="localTime" type="time" required></label></div>
-        <label>Time zone<select name="timeZoneChoice"></select></label>
+        <label>Time zone<select name="timeZoneChoice" aria-describedby="time-zone-note"></select></label>
         <label id="time-zone-other" hidden>Other time zone <span class="optional">an IANA name, such as Asia/Tokyo</span><input name="timeZone" required maxlength="100"></label>
         <p id="time-zone-note" class="field-note" hidden></p>
         <label>Reminder scope<select name="reminderScope"><option value="standalone">Standalone auction</option><option value="linked-lots">Linked lots</option></select></label>

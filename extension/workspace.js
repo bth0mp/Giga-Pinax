@@ -139,7 +139,10 @@ async function initWorkspace() {
     const limit = LIMITS[control.dataset.limit]; const left = limit - String(control.value).length;
     let count = control.parentElement.querySelector('.char-count');
     if (left > limit / 10) { if (count) count.hidden = true; return; }
-    if (!count) { count = text('span', '', 'char-count'); control.after(count); }
+    if (!count) {
+      count = text('span', '', 'char-count'); count.id = `${control.closest('form')?.id ?? 'form'}-${control.name}-count`; count.setAttribute('aria-live', 'polite');
+      control.setAttribute('aria-describedby', count.id); control.after(count);
+    }
     count.textContent = `${left} character${left === 1 ? '' : 's'} left`; count.hidden = false;
   };
   const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };

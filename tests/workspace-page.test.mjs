@@ -934,3 +934,17 @@ test('after recording a cancellation the Bid tab offers the cancelled terms with
   const f = page.$('bid-form').elements;
   assert.deepEqual([f.amount.value, f.currency.value, f.premium.value], ['650.00', 'GBP', '20']);
 });
+
+// Review Minor 7: the zone note is tied to its list, and the countdown is heard as it changes.
+test('the zone note describes the zone list and the character count is announced politely', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(page.$('event-form').elements.timeZoneChoice.getAttribute('aria-describedby'), 'time-zone-note');
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('title', 'x'.repeat(290));
+  const title = page.$('lot-form').elements.title;
+  const count = title.parentElement.querySelector('.char-count');
+  assert.equal(count.getAttribute('aria-live'), 'polite');
+  assert.ok(count.id);
+  assert.equal(title.getAttribute('aria-describedby'), count.id);
+});
