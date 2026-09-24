@@ -1,13 +1,14 @@
 import { computeStatistics } from './core/evidence.js';
+import { LIMITS } from './core/fields.js';
 import { formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { projectCollection } from './core/projections.js';
+import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
-  moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, reminderControlsForPrecision,
+  lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
@@ -16,9 +17,10 @@ import {
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
-  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot,
-  comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
-  filterWorkspaceLots, lotStatusLabel, moveDetailTab, routeFromHash,
+  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
+  comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
+  evidenceRowsForQuery,
+  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -66,6 +68,23 @@ async function initWorkspace() {
     if (className) node.className = className;
     return node;
   };
+  const view = () => ({ locale: navigator.language });
+  // An auction's name, its day and time, and how soon, the relative part toned: amber within 48 hours, muted once past.
+  const eventLine = (event, className, tag = 'span', withName = true) => {
+    const line = text(tag, '', className);
+    if (!event) { line.textContent = 'No auction attached'; return line; }
+    const { when, relative, tone } = eventWhen(event, view());
+    line.append(document.createTextNode(withName ? `${event.name} · ${when}` : when));
+    if (relative) { line.append(document.createTextNode(' · ')); line.append(text('span', relative, `when-relative${tone ? ` when-${tone}` : ''}`)); }
+    return line;
+  };
+  // A record's ISO day, or the day of an instant, as the browser's language writes it.
+  const dayText = (iso) => {
+    const day = String(iso ?? '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return String(iso ?? '');
+    try { return new Intl.DateTimeFormat(navigator.language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`)); } catch { return day; }
+  };
+  const statusPill = (lot) => { const pill = text('span', lotStatusLabel(lot), 'status-pill'); pill.dataset.tone = lotStatusTone(lot); return pill; };
   // What a lot draft's page stated about its sale, offered until the drafted coin is saved or the form is left: the closing, and the auction
   // written for it once the collector has ticked it.
   let pageOffer = null;
@@ -112,6 +131,48 @@ async function initWorkspace() {
     $('provenance-editor').append(row);
   };
   mountSourcesMenu($('source-menu'));
+  // Each text box holds what the store accepts for its field (core/fields.js), and says how much room is left once
+  // nine tenths of it is used, so a long pasted title is shortened in the box rather than refused at save.
+  const limited = document.querySelectorAll('[data-limit]');
+  for (const control of limited) control.maxLength = LIMITS[control.dataset.limit];
+  const updateCount = (control) => {
+    const limit = LIMITS[control.dataset.limit]; const left = limit - String(control.value).length;
+    let count = control.parentElement.querySelector('.char-count');
+    if (left > limit / 10) { if (count) count.hidden = true; return; }
+    if (!count) {
+      count = text('span', '', 'char-count'); count.id = `${control.closest('form')?.id ?? 'form'}-${control.name}-count`; count.setAttribute('aria-live', 'polite');
+      control.setAttribute('aria-describedby', count.id); control.after(count);
+    }
+    count.textContent = `${left} character${left === 1 ? '' : 's'} left`; count.hidden = false;
+  };
+  const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };
+  // A control's own label, without the hints and counts beside it, and the folded section it sits in.
+  const fieldLabel = (control) => [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
+  const sectionOf = (control) => control?.closest('details');
+  const where = (control) => { const section = sectionOf(control); return section ? `${fieldLabel(control)} under ${section.querySelector('summary')?.textContent ?? 'its section'}` : fieldLabel(control); };
+  // A value the browser refuses stops the submit before the page hears of it. The first refused control of a submit
+  // opens its folded section, so the browser can show it, and is named, where Save used to do nothing at all.
+  let invalidNamed = false;
+  const nameInvalid = (report) => (event) => {
+    const section = sectionOf(event.target); if (section) section.open = true;
+    if (invalidNamed) return;
+    invalidNamed = true; queueMicrotask(() => { invalidNamed = false; });
+    report(`Check ${where(event.target)}: ${event.target?.validationMessage || 'the value is not valid.'}`);
+  };
+  $('lot-form').addEventListener('invalid', nameInvalid((message) => { $('lot-action-status').textContent = message; $('lot-action-status').classList.add('error'); }), true);
+  $('outcome-form').addEventListener('invalid', nameInvalid((message) => announce(message, true)), true);
+  // The browser scrolls a focused control into view without knowing about the sticky action bar, and counts a tall box
+  // whose top is showing as in view already: a control that ends under the bar is scrolled clear of it, by no more than
+  // keeps its own top in the window.
+  const keepClearOfBar = (event) => {
+    const bar = event.currentTarget.querySelector('.action-bar'); const control = event.target;
+    if (!bar || !control?.getBoundingClientRect || bar.contains(control)) return;
+    const barTop = bar.getBoundingClientRect().top; const box = control.getBoundingClientRect();
+    const by = Math.min(box.bottom - barTop + 8, box.top - 16);
+    if (box.bottom > barTop && by > 0) window.scrollBy(0, by);
+  };
+  for (const form of [$('lot-form'), $('outcome-form')]) form.addEventListener('focusin', keepClearOfBar);
+  for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
   $('open-settings').addEventListener('click', () => void openSettings());
   const detailPanels = {
@@ -129,11 +190,15 @@ async function initWorkspace() {
   for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
   $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
 
+  const LOADED = 'Local records loaded.';
   const announce = (message, error = false) => {
     $('workspace-status').textContent = message;
     $('workspace-status').classList.toggle('error', error);
     $('announcement').textContent = '';
     requestAnimationFrame(() => { $('announcement').textContent = message; });
+    // Loading is said and then let go, so it is not a standing line above every route; the status line keeps its
+    // height, and a message said since is left alone.
+    if (message === LOADED) setTimeout(() => { if ($('workspace-status').textContent === LOADED) $('workspace-status').textContent = ''; }, 3000);
   };
   // Only the collector's own use of the nav moves the focus there; when the page navigates itself
   // it is on its way to a field, and stealing the focus back would undo that.
@@ -232,6 +297,7 @@ async function initWorkspace() {
     for (const editor of plan.repopulate) populateEditor(editor);
     for (const [editor, previousRecord] of merges) mergeRebasedEditor(editor, previousRecord, incoming);
     if (plan.conflicts) showConflictNote(conflictNoteMessage(plan.conflicts));
+    updateDirtyMarks();
   };
   // `beforeRender` applies the commit that produced this snapshot, so the page renders the editors
   // as the commit left them rather than as they were when the save started.
@@ -243,7 +309,7 @@ async function initWorkspace() {
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
     beforeRender?.(reply.value);
     const removed = acceptIncoming(reply.value);
-    if (!removed) announce('Local records loaded.');
+    if (!removed) announce(LOADED);
     return { ok: true, value: reply.value, removed };
   };
   const send = async (command, editor, previousAttempt = null) => {
@@ -288,7 +354,10 @@ async function initWorkspace() {
     }
     if (!reply.ok) {
       if (editor === 'lot') {
-        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(reply.message ?? 'The coin could not be saved.')); status.classList.add('error');
+        // A refused value is named, and its folded section opened, so the collector can see what to change.
+        const field = lotFieldForPath(reply.path ?? reply.error?.path); const control = field ? $('lot-form').elements[field] : null;
+        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(`${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`)); status.classList.add('error');
+        if (control) { const section = sectionOf(control); if (section) section.open = true; control.focus(); }
         const existingLotId = reply.existingLotId ?? reply.error?.existingLotId;
         if (reply.code === 'duplicate' && existingLotId) {
           const open = text('button', 'Open existing coin', 'quiet'); open.type = 'button'; open.addEventListener('click', () => selectLot(existingLotId)); status.append(document.createTextNode(' '), open);
@@ -331,6 +400,7 @@ async function initWorkspace() {
     if (editor === 'lot') lotInteractionGeneration += 1;
     dirtyEditors.add(editor);
     editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1);
+    updateDirtyMarks();
   }));
   // Unsaved input lives only in this tab, so the browser's own prompt is the last thing between a
   // half-finished entry and a reload.
@@ -345,6 +415,7 @@ async function initWorkspace() {
     const conflicted = editorsWithChangedBasis(snapshot, dirtyEditors, editorBases, savesInFlight);
     if (conflicted.includes('lot')) lotInteractionGeneration += 1;
     for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); }
+    updateDirtyMarks();
     void refresh();
     $('conflict-note').hidden = true;
   });
@@ -383,43 +454,32 @@ async function initWorkspace() {
 
   const selectedSources = () => [...document.querySelectorAll('[name="evidence-source"]:checked')].map((item) => item.value);
   function renderEvidence() {
-    const queryIds = [...new Set((snapshot.evidence ?? []).flatMap((row) => (row.observations ?? []).map((item) => item.queryId)).filter(Boolean))];
-    const queryLabels = new Map();
-    for (const observation of (snapshot.evidence ?? []).flatMap((row) => row.observations ?? [])) if (observation.queryLabel) queryLabels.set(observation.queryId, observation.queryLabel);
-    if (!queryIds.includes(activeQuery.id)) queryIds.unshift(activeQuery.id);
+    const options = comparableSetOptions(snapshot.evidence, activeQuery);
     const querySelect = $('evidence-query');
-    querySelect.replaceChildren(...queryIds.map((id) => {
-      const option = text('option', id === activeQuery.id ? `Current query · ${activeQuery.text || 'untitled'}` : queryLabels.has(id) ? `${queryLabels.get(id)} · ${id.slice(0, 8)}` : `Saved set · ${id}`);
-      option.value = id; return option;
-    }));
-    if (!queryIds.includes(selectedQueryId)) selectedQueryId = activeQuery.id;
+    querySelect.replaceChildren(...options.map(({ id, label }) => { const option = text('option', label); option.value = id; return option; }));
+    if (!options.some(({ id }) => id === selectedQueryId)) selectedQueryId = activeQuery.id;
     querySelect.value = selectedQueryId;
     const evidenceRows = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId);
     const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources() };
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
-    if (stats.validationError) output.append(text('p', stats.validationError.message));
+    if (stats.validationError && evidenceRows.length) output.append(text('p', stats.validationError.message));
     else {
-      output.append(text('strong', `${stats.count} included`));
-      output.append(text('span', stats.median ? `Median ${formatMoney(stats.median)}` : 'No headline median'));
-      output.append(text('span', stats.lowerQuartile ? `Middle 50% ${formatMoney(stats.lowerQuartile)}–${formatMoney(stats.upperQuartile)}` : 'Middle 50% unavailable'));
-      output.append(text('span', stats.presentation.label));
-      output.append(text('span', `Hammer · ${filters.fromDate} to ${filters.toDate}`));
-      const available = stats.coverage.availableSources.length ? stats.coverage.availableSources.join(', ') : 'none';
-      const unavailable = stats.coverage.unavailableSources.length ? ` · unavailable: ${stats.coverage.unavailableSources.join(', ')}` : '';
-      const exclusions = Object.entries(stats.coverage.exclusionCounts).map(([reason, count]) => `${reason} ${count}`).join(', ');
-      output.append(text('span', `Coverage: ${available}${unavailable}${exclusions ? ` · excluded: ${exclusions}` : ''}`));
+      const { headline, leftOut } = comparableSummary(evidenceRows, stats, formatMoney);
+      output.append(text('p', headline, 'metric-headline'));
+      if (leftOut) output.append(text('p', leftOut, 'field-note'));
     }
     const list = $('evidence-list'); list.replaceChildren();
     const effectiveExclusions = new Map(stats.excluded.map((item) => [item.id, item.reason]));
     for (const row of evidenceRows) {
       const card = text('article', '', 'record');
-      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : `Observation ${row.id}`));
+      const first = row.observations?.[0];
+      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : first ? `${first.auctionHouse}${first.houseSaleId ? `, ${first.houseSaleId}` : ''}, lot ${first.lotNumber}` : `Observation ${row.id}`));
       card.append(text('p', `${row.inclusion}${row.exclusionReason ? `: ${row.exclusionReason}` : ''}${row.conflictFields?.length ? ` · conflicts: ${row.conflictFields.join(', ')}` : ''}`));
       for (const observation of row.observations ?? []) {
         const amount = observation.amount ? formatMoney(observation.amount) : 'No amount';
-        card.append(text('p', `${observation.source} · ${observation.auctionDate} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${observation.retrievedAt}` : ''}`));
+        card.append(text('p', `${observation.source} · ${dayText(observation.auctionDate)} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${dayText(observation.retrievedAt)}` : ''}`));
         card.append(text('p', `Query ${observation.queryLabel ?? observation.queryId}`));
         if (observation.sourceUrl) {
           const link = text('a', 'Open source claim'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link);
@@ -451,6 +511,10 @@ async function initWorkspace() {
       const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
       activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
       if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
+      // A set is shown in the currency most of its sales were knocked down in; the others stay out, never converted.
+      const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
+      const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
+      if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
     }
     renderEvidence();
   });
@@ -478,16 +542,18 @@ async function initWorkspace() {
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
+    const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
     if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
-      const main = text('span', '', 'coin-row-main'); main.append(text('strong', lot.reference || lot.title), text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin')));
+      const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
+      const amount = lotRowAmount(lot); if (amount) top.append(text('span', formatMoney(amount), 'coin-row-amount'));
+      const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
-      const meta = text('span', '', 'coin-row-meta'); meta.append(text('span', event ? `${event.name} · ${auctionTimeLabel(event)}` : 'Time unknown'), text('span', lotStatusLabel(lot), 'row-status'));
-      const amounts = text('span', '', 'coin-row-bids');
-      if (lot.plannedBid) amounts.append(text('span', `Plan ${formatMoney(lot.plannedBid.amount)}`));
-      if (lot.activeBid) amounts.append(text('span', `Placed ${formatMoney(lot.activeBid.amount)}`));
-      row.append(main, meta, amounts);
+      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
+      if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
+      if (event) status.append(text('span', event.name, 'coin-row-event'));
+      row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
       row.addEventListener('click', () => selectLot(lot.id));
       list.append(row);
     }
@@ -561,7 +627,7 @@ async function initWorkspace() {
     showDetailTab('details');
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
-    renderLots();
+    renderLots(); updateDirtyMarks();
     if (focus) $('selected-title').focus?.();
   }
   function populateLotForm(lot) {
@@ -569,31 +635,80 @@ async function initWorkspace() {
     for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
     clearPageValues();
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
+    openFilledGroups(lot.id); refreshCounts($('lot-form'));
   }
+  // The folded sections of the details form open themselves when they hold a value. For the coin already shown, a
+  // section the collector opened stays open when the form follows committed data; another coin starts afresh.
+  let groupsShownFor;
+  function openFilledGroups(recordId = null) {
+    const fresh = recordId === null || recordId !== groupsShownFor;
+    groupsShownFor = recordId;
+    for (const group of $('lot-form').querySelectorAll('details')) {
+      const filled = [...group.querySelectorAll('input, textarea, select')].some((control) => !['checkbox', 'radio', 'hidden'].includes(control.type) && String(control.value).trim())
+        || Boolean(group.querySelector('.provenance-row'));
+      group.open = fresh ? filled : group.open || filled;
+    }
+  }
+  const updateDirtyMarks = () => { $('lot-dirty').hidden = !dirtyEditors.has('lot'); $('outcome-dirty').hidden = !dirtyEditors.has('outcome'); };
   function renderSelectedLot() {
     const lot = (snapshot.lots ?? []).find((item) => item.id === selection.selectedLotId);
     $('coin-empty').hidden = Boolean(lot) || selection.mode === 'detail'; $('coin-editor').hidden = !lot && selection.mode !== 'detail';
     if (!lot) return;
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
     $('bid-form').disabled = false; $('outcome-form').disabled = false;
+    // A settled lot's bids are history: the store refuses a change, so the form offers none and says why.
+    const settled = Boolean(lot.outcome?.status && lot.outcome.status !== 'open');
+    $('bid-fields').disabled = settled; $('bid-settled').hidden = !settled;
     if (!dirtyEditors.has('lot')) {
       setBasis('lot', { id: lot.id, revision: lot.revision, record: structuredClone(lot), originalManualUrl: lot.sourceLinks?.find((link) => link.source === 'manual')?.url });
       populateLotForm(lot);
     }
-    $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot);
+    $('selected-reference').textContent = lot.reference || 'Uncatalogued'; $('selected-title').textContent = lot.title; $('selected-title').tabIndex = -1; $('selected-status').textContent = lotStatusLabel(lot); $('selected-status').dataset.tone = lotStatusTone(lot);
+    $('selected-ended').hidden = !lotsNeedingOutcome({ lots: [lot], auctionEvents: snapshot.auctionEvents }).length;
     if (lot.auctionContext?.pageUrl) $('open-auction').href = lot.auctionContext.pageUrl; else $('open-auction').removeAttribute('href');
     $('research-reference').disabled = !String(lot.reference ?? '').trim();
     $('delete-lot').hidden = false;
     $('undo-lot').hidden = lastLotUndo?.saved?.id !== lot.id;
     $('bid-form').elements.lotId.value = lot.id; $('outcome-form').elements.lotId.value = lot.id;
     if (!dirtyEditors.has('bid')) loadBidEditor(lot); if (!dirtyEditors.has('outcome')) loadOutcomeEditor(lot);
+    renderBidEvidence();
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
-    attached.append(text('p', event ? `${event.name} · ${event.localDate}${event.localTime ? ` at ${event.localTime}` : ''}` : 'No auction is attached.'));
+    attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
-    const reminders = $('selected-reminders'); reminders.replaceChildren();
-    if (!event) reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
-    else for (const reminder of event.reminders ?? []) reminders.append(text('p', reminder.kind === 'offset' ? `${reminder.offsetMinutes} minutes before` : `${reminder.daysBefore ? 'Previous day' : 'Auction day'} at ${reminder.localTime}`, 'reminder-row'));
+    renderSelectedReminders(event);
   }
+  // The Reminders tab: the attached auction and its time, then its reminders in words, or the standard two to add;
+  // with no auction, the way to attach one.
+  function renderSelectedReminders(event) {
+    const reminders = $('selected-reminders'); reminders.replaceChildren();
+    if (!event) {
+      reminders.append(text('p', 'Attach an auction to set reminders.', 'field-note'));
+      if ((snapshot.auctionEvents ?? []).length) {
+        const attach = text('button', 'Attach auction', 'quiet'); attach.type = 'button'; attach.id = 'attach-auction';
+        attach.addEventListener('click', () => { showDetailTab('details'); $('lot-form').elements.auctionEventId.focus(); });
+        reminders.append(attach);
+      }
+      return;
+    }
+    reminders.append(eventLine(event, 'reminder-event', 'p'));
+    const instants = reminderInstants(event);
+    for (const reminder of event.reminders ?? []) {
+      const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when'));
+      const instant = instants.get(reminder.id);
+      if (instant) { const at = reminderAtLabel(instant, event.timeZone, view()); row.append(text('span', at.text, `reminder-at${at.tone ? ` when-${at.tone}` : ''}`)); }
+      reminders.append(row);
+    }
+    if ((event.reminders ?? []).length) return;
+    reminders.append(text('p', 'No reminders set.', 'field-note'));
+    const standard = createEventDraft(event.precision === 'date-only' ? 'date-only' : 'timed').reminders;
+    const add = text('button', `Add the standard two (${event.precision === 'date-only' ? 'the day before and on the day, at 09:00' : '1 day and 1 hour before'})`, 'quiet');
+    add.type = 'button'; add.id = 'add-standard-reminders'; add.dataset.needsRuntime = ''; add.disabled = !bridge;
+    add.addEventListener('click', () => void send({ type: 'event.save', requestId: requestId(), expectedRevision: event.revision, event: { ...eventDraftOf(event), reminders: standard } }));
+    reminders.append(add);
+  }
+  // An auction as event.save takes it back: the fields the collector confirmed, never the ones the store derives.
+  const eventDraftOf = (event) => Object.fromEntries(['id', 'name', 'eventKind', 'precision', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'reminders', 'capturedText', 'capturedFromUrl']
+    .filter((key) => event[key] !== undefined).map((key) => [key, structuredClone(event[key])]));
   // Typing in the filter only narrows the list: rebuilding the picker, the groups and the open
   // editors on every keystroke moved the focus and re-read records the collector was editing.
   let filterTimer = null;
@@ -630,7 +745,7 @@ async function initWorkspace() {
     $('comparison-dialog').showModal();
   });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
-  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
   $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
@@ -705,11 +820,44 @@ async function initWorkspace() {
   };
   function populateBidForm(lot) {
     const f = $('bid-form').elements;
-    const terms = lot?.plannedBid ?? lot?.activeBid;
+    const terms = lot?.activeBid ?? lot?.plannedBid;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
-    bidCalculator?.setValues({ lotId: lot?.id ?? null, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
+    // The calculator refills only for another coin or for saved terms that changed (it compares this key), so what the
+    // collector typed in it survives every other re-render, and a bid just saved is followed.
+    const termsKey = lot ? [lot.id, f.currency.value, terms?.amount?.minor ?? '', terms?.buyerPremiumBps ?? '', JSON.stringify(calculatorCostEstimate)].join('|') : null;
+    bidCalculator?.setValues({ lotId: termsKey, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
   }
+  // Beside the maximum hammer, what the coin's own saved comparables sold for: in the bid's currency, the other
+  // currencies only counted, never converted or pooled, and worded as the collector's own records.
+  function renderBidEvidence() {
+    const strip = $('bid-evidence'); strip.replaceChildren();
+    const lot = (snapshot.lots ?? []).find((item) => item.id === selection.selectedLotId);
+    if (!lot) return;
+    const reference = String(lot.reference ?? '').trim();
+    if (!reference) { strip.append(text('p', 'Add a reference under Details to see your saved comparables here.', 'bid-evidence-figure')); return; }
+    const currency = $('bid-form').elements.currency.value;
+    const found = lotComparables(snapshot.evidence, reference);
+    const own = found.find((item) => item.currency === currency);
+    const years = (item) => item.firstYear === null ? '' : `, ${item.firstYear === item.lastYear ? item.firstYear : `${item.firstYear}–${item.lastYear}`}`;
+    strip.append(text('p', !own ? `No saved comparables for ${reference} in ${currency}.`
+      : own.median ? `Your saved comparables for ${reference}: median ${formatMoney(own.median)} from ${own.count}${years(own)}`
+        : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
+    const others = found.filter((item) => item.currency !== currency);
+    if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
+    const add = text('button', 'Add comparable', 'quiet'); add.type = 'button'; add.id = 'bid-add-comparable';
+    add.addEventListener('click', () => {
+      // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
+      const saved = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryLabel && normalReference(item.queryLabel) === normalReference(reference));
+      $('research-query').value = reference;
+      activeQuery = saved ? { id: saved.queryId, text: reference } : { id: requestId(), text: reference };
+      selectedQueryId = activeQuery.id;
+      routeChangeFromNav = false; location.hash = '#search'; setRoute(); renderEvidence();
+      $('evidence-form').elements.auctionHouse.focus();
+    });
+    strip.append(add);
+  }
+  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); });
   const loadBidEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);
     setBasis('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
@@ -725,45 +873,119 @@ async function initWorkspace() {
 
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
-    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(text('p', `${event.localDate}${event.localTime ? ` at ${event.localTime}` : ' · date only'} · ${event.timeZone}`)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
-    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed' }; alerts.replaceChildren(...due.map((alert) => text('p', `${eventsById.get(alert.eventId)?.name ?? 'Auction'} · ${alertLabel[alert.status]}`, 'record'))); $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
+    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(eventLine(event, '', 'p', false)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
+    // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
+    // them, and never snoozed back into a moment already past.
+    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
+    alerts.replaceChildren(...due.map((alert) => text('p', `${alertLabel[alert.status]} · ${eventsById.get(alert.eventId)?.name ?? 'Auction'}`, `record${alert.status === 'missed' ? ' alert-missed' : ''}`)));
+    $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
+    $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
+    if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
-  const openEventEditor = (event) => { eventReturnLot = null; $('event-form').hidden = false; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; updatePrecision(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
-    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'timeZone', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    $('delete-event').hidden = !event.id;
+    setEventZone(event.timeZone ?? viewerTimeZone());
     f.precision.value = event.precision ?? 'timed';
     setReminderControls(f.precision.value, reminderControlsForPrecision(event.reminders ?? [], f.precision.value));
     lastEventPrecision = f.precision.value;
-    updatePrecision();
+    updatePrecision(); updateEventSummary();
   };
+  // The time zone is picked from the browser's list; a name the list lacks is kept and shown under "Other…".
+  const zoneChoices = (() => { let zones = []; try { zones = Intl.supportedValuesOf('timeZone'); } catch { /* no list: Other… only */ } return [...new Set([...zones, 'UTC', viewerTimeZone()])].sort(); })();
+  $('event-form').elements.timeZoneChoice.replaceChildren(...zoneChoices.map((zone) => { const option = text('option', zone.replaceAll('_', ' ')); option.value = zone; return option; }), (() => { const option = text('option', 'Other…'); option.value = 'other'; return option; })());
+  // Whether the collector chose this form's zone: a zone they chose is never replaced by a remembered one.
+  let zoneChosen = false;
+  function setEventZone(zone, { note = '' } = {}) {
+    const f = $('event-form').elements; const listed = zoneChoices.includes(zone);
+    f.timeZone.value = zone; f.timeZoneChoice.value = listed ? zone : 'other'; $('time-zone-other').hidden = listed;
+    $('time-zone-note').textContent = note; $('time-zone-note').hidden = !note;
+  }
+  // A new auction takes the zone the collector gave the same house's last auction, and says which auction that was.
+  const offerRememberedZone = () => {
+    const basis = editorBases.get('event');
+    if (zoneChosen || basis?.id) return;
+    const remembered = rememberedZone(snapshot.auctionEvents, $('event-form').elements.name.value);
+    if (remembered) setEventZone(remembered.timeZone, { note: `The time zone of your last auction from this house, ${remembered.from}. Change it if this one differs.` });
+    else if ($('time-zone-note').textContent) setEventZone(viewerTimeZone());
+  };
+  // Two reminder choices for a timed auction, a custom number of minutes only when asked for.
+  const PRESET_OFFSETS = ['1440', '60', '30'];
+  const reminderChoice = (enabled, minutes) => !enabled ? 'off' : PRESET_OFFSETS.includes(String(minutes)) ? String(minutes) : 'custom';
+  function syncReminderChoices() {
+    const f = $('event-form').elements;
+    $('reminder-first-custom').hidden = f.reminderFirst.value !== 'custom';
+    $('reminder-second-custom').hidden = f.reminderSecond.value !== 'custom';
+  }
   const setReminderControls = (precision, controls) => {
     const f = $('event-form').elements;
     if (precision === 'date-only') {
       f.reminderDayBefore.checked = controls.firstEnabled; f.reminderDayBeforeTime.value = controls.firstValue;
       f.reminderDayOf.checked = controls.secondEnabled; f.reminderDayOfTime.value = controls.secondValue;
     } else {
-      f.reminder24h.checked = controls.firstEnabled; f.reminder24hValue.value = String(controls.firstValue);
-      f.reminder1h.checked = controls.secondEnabled; f.reminder1hValue.value = String(controls.secondValue);
+      f.reminderFirst.value = reminderChoice(controls.firstEnabled, controls.firstValue); f.reminderFirstMinutes.value = String(controls.firstValue);
+      f.reminderSecond.value = reminderChoice(controls.secondEnabled, controls.secondValue); f.reminderSecondMinutes.value = String(controls.secondValue);
+      syncReminderChoices();
     }
   };
-  const updatePrecision = () => { const dateOnly = $('event-form').elements.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; $('event-form').elements.localTime.required = !dateOnly; $('event-form').elements.reminder24h.parentElement.hidden = dateOnly; $('event-form').elements.reminder1h.parentElement.hidden = dateOnly; $('event-form').elements.reminderDayBefore.parentElement.hidden = !dateOnly; $('event-form').elements.reminderDayOf.parentElement.hidden = !dateOnly; };
+  // The timed reminders as the form holds them: on or off, and the minutes before; null while a custom count is no count.
+  const timedReminderControls = () => {
+    const f = $('event-form').elements;
+    const read = (choice, custom) => (choice === 'custom' ? Number(custom) : Number(choice));
+    const controls = { firstEnabled: f.reminderFirst.value !== 'off', firstValue: read(f.reminderFirst.value, f.reminderFirstMinutes.value), secondEnabled: f.reminderSecond.value !== 'off', secondValue: read(f.reminderSecond.value, f.reminderSecondMinutes.value) };
+    const valid = (enabled, value) => !enabled || (Number.isInteger(value) && value >= 1);
+    return valid(controls.firstEnabled, controls.firstValue) && valid(controls.secondEnabled, controls.secondValue) ? controls : null;
+  };
+  const updatePrecision = () => { const f = $('event-form').elements; const dateOnly = f.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; f.localTime.required = !dateOnly; $('timed-reminders').hidden = dateOnly; f.reminderDayBefore.parentElement.hidden = !dateOnly; f.reminderDayOf.parentElement.hidden = !dateOnly; $('date-only-reminder-note').hidden = !dateOnly; };
+  // What Save auction will write, in words, where a confirm dialog used to ask.
+  function updateEventSummary() {
+    const f = $('event-form').elements;
+    const dateOnly = f.precision.value === 'date-only';
+    const kind = ({ 'auction-starts': 'auction starting', 'lot-closes': 'lot closing', 'auction-day': 'auction day' })[f.eventKind.value] ?? 'auction';
+    const format = (options, date, fallback) => { try { return new Intl.DateTimeFormat(navigator.language, { ...options, timeZone: 'UTC' }).format(date); } catch { return fallback; } };
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value) ? format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value) : 'no date yet';
+    const time = dateOnly ? ', date only' : /^\d{2}:\d{2}$/.test(f.localTime.value) ? `, ${format({ hour: 'numeric', minute: '2-digit' }, new Date(`1970-01-01T${f.localTime.value}:00Z`), f.localTime.value)}` : '';
+    let reminders;
+    if (dateOnly) {
+      const parts = [f.reminderDayBefore.checked ? `the day before at ${f.reminderDayBeforeTime.value}` : '', f.reminderDayOf.checked ? `on the day at ${f.reminderDayOfTime.value}` : ''].filter(Boolean);
+      reminders = parts.length ? `reminders ${parts.join(' and ')}` : 'no reminders';
+    } else {
+      const controls = timedReminderControls();
+      const parts = controls ? [[controls.firstEnabled, controls.firstValue], [controls.secondEnabled, controls.secondValue]].filter(([enabled]) => enabled).map(([, minutes]) => reminderLabel({ kind: 'offset', offsetMinutes: minutes }).replace(/ before$/, '')) : [];
+      reminders = !controls ? 'a custom reminder still to fill in' : parts.length ? `reminders ${parts.join(' and ')} before` : 'no reminders';
+    }
+    $('event-summary').textContent = `Saves “${f.name.value.trim() || 'this auction'}”: ${kind} ${day}${time} ${f.timeZone.value.trim() || '(no time zone)'}, with ${reminders}.`;
+  }
+  $('event-form').addEventListener('input', (event) => { if (event.target === $('event-form').elements.name) offerRememberedZone(); else if (event.target === $('event-form').elements.timeZone) zoneChosen = true; updateEventSummary(); });
   $('event-form').addEventListener('change', (event) => {
-    if (event.target.name !== 'precision') return;
-    const precision = event.target.value;
-    if (precision !== lastEventPrecision) setReminderControls(precision, reminderControlsForPrecision(createEventDraft(precision).reminders, precision));
-    lastEventPrecision = precision;
-    updatePrecision();
+    const f = $('event-form').elements;
+    if (event.target === f.timeZoneChoice) {
+      zoneChosen = true; $('time-zone-note').hidden = true;
+      const other = f.timeZoneChoice.value === 'other';
+      $('time-zone-other').hidden = !other;
+      if (other) f.timeZone.focus(); else f.timeZone.value = f.timeZoneChoice.value;
+    }
+    if (event.target === f.reminderFirst || event.target === f.reminderSecond) syncReminderChoices();
+    if (event.target.name === 'precision') {
+      const precision = event.target.value;
+      if (precision !== lastEventPrecision) setReminderControls(precision, reminderControlsForPrecision(createEventDraft(precision).reminders, precision));
+      lastEventPrecision = precision;
+      updatePrecision();
+    }
+    updateEventSummary();
   }); updatePrecision();
   $('event-form').hidden = true;
-  $('event-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('event') ?? { id: null, revision: null }; const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, f.precision.value === 'date-only'
-    ? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value }
-    : { firstEnabled: f.reminder24h.checked, firstValue: Number(f.reminder24hValue.value), secondEnabled: f.reminder1h.checked, secondValue: Number(f.reminder1hValue.value) });
-    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; if (!confirm(`Save ${eventDraft.name} on ${eventDraft.localDate}${eventDraft.localTime ? ` at ${eventDraft.localTime}` : ' as date only'} in ${eventDraft.timeZone}?`)) return; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
+  $('event-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('event') ?? { id: null, revision: null };
+    const timed = f.precision.value === 'date-only' ? null : timedReminderControls();
+    if (f.precision.value !== 'date-only' && !timed) return announce('Enter the minutes before for a custom reminder: a whole number from 1.', true);
+    const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, timed ?? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value });
+    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
       if (!reply?.ok) return;
       if (eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
       const decision = eventAttachDecision({
@@ -779,9 +1001,9 @@ async function initWorkspace() {
       void send(attach).then((attached) => { if (attached?.ok) { routeChangeFromNav = false; location.hash = '#watchlist'; announce('Auction saved and attached to the coin.'); } });
     }); });
   $('delete-event').addEventListener('click', () => { const basis = editorBases.get('event'); if (basis?.id && confirm(`Remove “${basis.record.name}”?`)) void send({ type: 'event.delete', requestId: requestId(), eventId: basis.id, expectedRevision: basis.revision }, 'event'); });
-  const displayedAlertIds = () => $('ack-alerts').dataset.ids.split(',').filter(Boolean);
-  $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds() }));
-  $('snooze-alerts').addEventListener('click', () => void send({ type: 'alert.snooze', requestId: requestId(), triggerIds: displayedAlertIds(), snoozedUntil: new Date(Date.now() + 15 * 60_000).toISOString() }));
+  const displayedAlertIds = (button) => String($(button).dataset.ids ?? '').split(',').filter(Boolean);
+  $('ack-alerts').addEventListener('click', () => void send({ type: 'alert.ack', requestId: requestId(), triggerIds: displayedAlertIds('ack-alerts') }));
+  $('snooze-alerts').addEventListener('click', () => void send({ type: 'alert.snooze', requestId: requestId(), triggerIds: displayedAlertIds('snooze-alerts'), snoozedUntil: new Date(Date.now() + 15 * 60_000).toISOString() }));
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
   $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 
@@ -838,10 +1060,20 @@ async function initWorkspace() {
       collection.append(card);
     }
   }
-  const updateOutcomeVisibility = () => { const f = $('outcome-form').elements; const basis = editorBases.get('outcome'); $('passed-outcome').disabled = Boolean(basis?.record?.activeBid); $('reopen-choice').hidden = f.status.value !== 'open'; };
+  // The re-open question and the "Still open" choice belong to a settled lot only: on an open lot both are no-ops.
+  const updateOutcomeVisibility = () => {
+    const f = $('outcome-form').elements; const lot = editorBases.get('outcome')?.record;
+    const settled = ['won', 'lost'].includes(lot?.outcome?.status);
+    $('passed-outcome').disabled = Boolean(lot?.activeBid); $('passed-help').hidden = !$('passed-outcome').disabled;
+    $('open-outcome').closest('label').hidden = !lot?.outcome?.status || lot.outcome.status === 'open';
+    $('reopen-choice').hidden = !(settled && f.status.value === 'open');
+  };
+  const showAcquisitionError = (message) => { $('acquisition-error').textContent = message; $('acquisition-error').hidden = !message; };
+  const localToday = () => { try { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', numberingSystem: 'latn' }).format(new Date()); } catch { return ''; } };
   function populateOutcomeForm(lot) {
     const f = $('outcome-form').elements;
-    const draft = outcomeDraftForLot(lot, navigator.language); f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = false; f.acquisitionDate.value = ''; f.collectionNotes.value = ''; updateOutcomeVisibility();
+    const draft = outcomeDraftForLot(lot, navigator.language, { defaultCurrency: snapshot.preferences?.currency ?? 'USD', event: eventsById.get(lot?.auctionEventId) ?? null, today: localToday() });
+    f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammer.placeholder = draft.hammerPlaceholder; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = false; f.acquisitionDate.value = draft.acquisitionDate; f.collectionNotes.value = ''; showAcquisitionError(''); updateOutcomeVisibility();
   }
   const loadOutcomeEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('outcome-form').elements.lotId.value);
@@ -849,7 +1081,7 @@ async function initWorkspace() {
     populateOutcomeForm(lot);
   };
   $('outcome-form').addEventListener('change', (event) => { if (event.target.name === 'lotId') loadOutcomeEditor(); else if (event.target.name === 'status') updateOutcomeVisibility(); });
-  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
+  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
 
   function resetEditor(editor) {
     const form = $(`${editor}-form`);
@@ -857,7 +1089,7 @@ async function initWorkspace() {
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
     if (editor === 'lot') clearPageValues();
-    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; updatePrecision(); form.hidden = true; }
+    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
   }
   async function loadRouteDraft() {
@@ -900,6 +1132,7 @@ async function initWorkspace() {
       for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
+      openFilledGroups(); updateDirtyMarks();
       form.elements.title.focus();
       announce('Reference draft loaded. Review the lot details, then save to add it to the watchlist.');
     } else {
@@ -919,7 +1152,7 @@ async function initWorkspace() {
       populateEditor(editor);
     }
   }
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); }
+  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
   setRoute();
   if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {
@@ -931,7 +1164,7 @@ async function initWorkspace() {
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
-      else if (!acceptIncoming(initialized.value)) announce('Local records loaded.');
+      else if (!acceptIncoming(initialized.value)) announce(LOADED);
       await loadRouteDraft();
     } catch (error) {
       console.error(error);

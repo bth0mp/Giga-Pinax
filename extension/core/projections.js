@@ -6,11 +6,13 @@ import { CURRENCIES, calculatePremium, validateMoney } from './money.js';
 import { computeStatistics } from './evidence.js';
 import { dateParts } from './validate.js';
 import { OWN } from './fields.js';
+import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from './reminders.js';
 /**
  * @typedef {import('./types.js').Lot} Lot
  * @typedef {import('./types.js').Evidence} Evidence
  * @typedef {import('./types.js').CollectionEntry} CollectionEntry
  * @typedef {import('./types.js').Money} Money
+ * @typedef {import('./types.js').AuctionEvent} AuctionEvent
  */
 /**
  * What the open bids in one currency add up to: hammers, hammers with the premium where it is known,
@@ -109,7 +111,7 @@ export function projectExposure(snapshot) {
 // A reference and a saved query are the same only when they read the same once spacing and case
 // are set aside: a query that merely starts like the reference (`RIC 27` for `RIC 27b`) is another
 // coin, and one median must never take in another coin's sales.
-const normalReference = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+export const normalReference = (value) => String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 
 // Saved rows by each of their observations' normalised query labels, built once per projection:
 // the view is drawn on every snapshot, and scanning every row for every entry did not scale.
@@ -209,4 +211,98 @@ export function projectCollection(snapshot) {
   const ordered = {};
   for (const currency of CURRENCIES) if (byCurrency[currency]) ordered[currency] = byCurrency[currency];
   return { byCurrency: ordered, unpriced, entries };
+}
+
+/**
+ * Where an auction stands against now. `soon` is a timed instant within the next 48 hours, or a date-only sale day
+ * from the day before through the day itself; `ended` is an instant that has passed, or a day that is over in the
+ * auction's own zone. A live sale that has started (`auction-starts`) is `started` for the rest of its day: its lots
+ * come up for hours afterwards, so it is not ended before its day is. `daysUntil` counts calendar days in the
+ * auction's zone, and `sortMs` places a date-only day at its own midnight, among the timed instants.
+ * @typedef {object} EventTiming
+ * @property {'unknown' | 'upcoming' | 'soon' | 'started' | 'ended'} state
+ * @property {number | null} msUntil
+ * @property {number | null} daysUntil
+ * @property {number | null} sortMs
+ */
+const SOON_MS = 48 * 60 * 60 * 1000;
+const dayNumber = (localDate) => {
+  const parts = dateParts(localDate);
+  return parts ? Date.UTC(parts[0], parts[1] - 1, parts[2]) / 86400000 : null;
+};
+/**
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [now]
+ * @returns {EventTiming}
+ */
+export function eventTiming(event, now = new Date().toISOString()) {
+  const nowMs = Date.parse(now);
+  const eventDay = dayNumber(event?.localDate);
+  if (!event || eventDay === null || !Number.isFinite(nowMs)) return { state: 'unknown', msUntil: null, daysUntil: null, sortMs: null };
+  let today = null;
+  try { today = dayNumber(localDateAtInstant(String(event.timeZone), nowMs)); } catch { today = null; }
+  const daysUntil = today === null ? null : eventDay - today;
+  const startsMs = event.precision === 'timed' ? Date.parse(String(event.startsAt)) : NaN;
+  if (Number.isFinite(startsMs)) {
+    const msUntil = startsMs - nowMs;
+    /** @type {EventTiming['state']} */
+    let state = msUntil > SOON_MS ? 'upcoming' : msUntil >= 0 ? 'soon' : 'ended';
+    if (state === 'ended' && event.eventKind === 'auction-starts' && (daysUntil ?? -1) >= 0) state = 'started';
+    return { state, msUntil, daysUntil, sortMs: startsMs };
+  }
+  const midnight = resolveZonedDateTime({ localDate: event.localDate, localTime: '00:00', timeZone: event.timeZone, disambiguation: 'reject' });
+  const sortMs = midnight.ok ? Date.parse(midnight.value.startsAt) : eventDay * 86400000;
+  if (daysUntil === null) return { state: 'unknown', msUntil: null, daysUntil, sortMs };
+  return { state: daysUntil < 0 ? 'ended' : daysUntil <= 1 ? 'soon' : 'upcoming', msUntil: null, daysUntil, sortMs };
+}
+
+/**
+ * When each of an auction's reminders goes off, by reminder id: the same instants the scheduler derives. A reminder
+ * that resolves to no instant (a wall time that does not exist on that day in the auction's zone) is left out.
+ * @param {AuctionEvent} event
+ * @returns {Map<string, string>}
+ */
+export function reminderInstants(event) {
+  return new Map(deriveReminderTriggers([event]).map((trigger) => [trigger.reminderId, trigger.triggerAt]));
+}
+
+/**
+ * The open coins whose auction has passed with no outcome recorded: a closing or a sale day that is over, or a live
+ * sale whose day is over. The workspace queues them and the popup can count them from the same reading.
+ * @param {{ lots?: Lot[], auctionEvents?: AuctionEvent[] } | null | undefined} snapshot
+ * @param {string} [now]
+ * @returns {Lot[]}
+ */
+export function lotsNeedingOutcome(snapshot, now = new Date().toISOString()) {
+  const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
+  return (snapshot?.lots ?? []).filter((lot) => (!lot?.outcome?.status || lot.outcome.status === 'open') && lot.auctionEventId
+    && eventTiming(events.get(lot.auctionEventId), now).state === 'ended');
+}
+
+/**
+ * One coin's own saved comparables, per currency: the rows saved under exactly its reference (spacing and case set
+ * aside), through the same statistics the Search route shows, so excluded rows stay out and no row in another currency
+ * is converted in. Fewer than three rows in a currency give a count without a median. Most rows first.
+ * @param {Evidence[] | null | undefined} evidence
+ * @param {*} reference
+ * @returns {Array<{ currency: string, count: number, median: Money | null, firstYear: number | null, lastYear: number | null }>}
+ */
+export function lotComparables(evidence, reference) {
+  const key = normalReference(reference);
+  const rows = key ? indexByReference(evidence).get(key) ?? [] : [];
+  const observations = rows.flatMap((row) => row.observations ?? []);
+  const dates = observations.map((item) => item.auctionDate).filter((date) => typeof date === 'string').sort();
+  if (!rows.length || !dates.length) return [];
+  const sources = [...new Set(observations.map((item) => item.source))];
+  const currencies = CURRENCIES.filter((currency) => rows.some((row) => row?.resolved?.hammer?.currency === currency));
+  const found = [];
+  for (const currency of currencies) {
+    const stats = computeStatistics(rows, { currency, fromDate: dates[0], toDate: /** @type {string} */ (dates.at(-1)), sources });
+    if (stats.validationError || !stats.count) continue;
+    const included = new Set(stats.includedIds);
+    const years = rows.filter((row) => included.has(row.id)).flatMap((row) => row.observations ?? [])
+      .map((item) => dateParts(item.auctionDate)?.[0]).filter((year) => Number.isInteger(year));
+    found.push({ currency, count: stats.count, median: stats.median, firstYear: years.length ? Math.min(...years) : null, lastYear: years.length ? Math.max(...years) : null });
+  }
+  return found.sort((left, right) => right.count - left.count);
 }

@@ -56,17 +56,20 @@ export class FakeText {
   }
 }
 
-// One simple selector — `#id`, `.class`, `tag`, `[attr]`, `[attr="value"]` or `*`, in any
+// One simple selector — `#id`, `.class`, `tag`, `[attr]`, `[attr="value"]`, `:checked` or `*`, in any
 // combination — matched against one element. No combinators: no page here selects across a
 // relationship, and a selector that quietly matched the wrong thing would be worse than none, so
 // one that asks for a relationship is refused rather than approximated.
 function matchesSimple(element, selector) {
   const trimmed = selector.trim();
   if (/[\s>+~]/.test(trimmed)) throw new Error(`The fake DOM matches simple selectors only: ${selector}`);
-  const tokens = trimmed.match(/\*|#[\w-]+|\.[\w-]+|\[[^\]]+\]|[\w-]+/g);
+  const tokens = trimmed.match(/\*|#[\w-]+|\.[\w-]+|\[[^\]]+\]|:[\w-]+|[\w-]+/g);
   if (!tokens || !tokens.length) return false;
   return tokens.every((token) => {
     if (token === '*') return true;
+    // The one state a page selects by: a checked box or radio.
+    if (token === ':checked') return Boolean(element.checked);
+    if (token[0] === ':') throw new Error(`The fake DOM matches no ${token} state: ${selector}`);
     if (token[0] === '#') return element.id === token.slice(1);
     if (token[0] === '.') return element.classList.contains(token.slice(1));
     if (token[0] === '[') {
@@ -706,22 +709,26 @@ function loadBridge(browser) {
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
 export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, records, sourceLaunchers] = await Promise.all([
+  const [money, evidence, projections, sourceLaunchers, fields] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
-    import('../../extension/core/records.js'), import('../../extension/source-launchers.js'),
+    import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
+    import('../../extension/core/fields.js'),
   ]);
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
+  const calculatorValues = [];
+  const timers = [];
+  const scrolls = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
   const location = { hash };
   const sandbox = {
-    ...money, ...evidence, ...sourceLaunchers,
-    projectExposure: records.projectExposure, projectCollection: records.projectCollection,
+    ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
-    mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
+    // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
+    mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
     ...browserGlobals(document, {
       language,
       confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; },
@@ -735,7 +742,12 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
       throw new Error(`No module ${specifier} in this sandbox.`);
     },
     requestAnimationFrame: (callback) => callback(),
+    // Timers wait for the test: `runTimers()` fires the ones set so far, as time passing would.
+    setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
+    clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
     location,
+    // What the page scrolls the window by, recorded for a test to read.
+    scrollBy: (x, y) => { scrolls.push([x, y]); },
     addEventListener(type, listener) {
       windowListeners.set(type, [...(windowListeners.get(type) ?? []), listener]);
     },
@@ -753,7 +765,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser,
+    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls,
+    runTimers() { for (const timer of timers.splice(0)) timer.callback?.(); },
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
     // What the browser's leave-page prompt would do now: true when the page asks to stay.
