@@ -122,6 +122,33 @@ jobs:
         with:
           name: proposal
           path: ${{ runner.temp }}/proposal
+      # The patch was made by a job that ran the importer over downloaded RDF, so it may touch only what the importer writes: the
+      # bundled data under extension/data/ (every corpus's records, indexes and metadata.json, and nomisma-labels.json), the ruler and
+      # mint tables in extension/ric-people.js, and the label snapshot in scripts/data/nomisma-labels.json. Any other path, a rename,
+      # a symbolic link, an executable, an empty patch or one git cannot read ends the run before anything is applied.
+      - name: Refuse a patch that reaches outside the bundled data
+        env:
+          PROPOSAL: ${{ runner.temp }}/proposal
+        run: |
+          numstat="$(git apply --numstat "$PROPOSAL/data.patch")"
+          touched="$(printf '%s\n' "$numstat" | cut -f3-)"
+          summary="$(git apply --summary "$PROPOSAL/data.patch")"
+          if [ -z "$touched" ]; then
+            echo "::error::The proposed patch changes no file."
+            exit 1
+          fi
+          name='[A-Za-z0-9_()-][A-Za-z0-9._()-]*'
+          allowed="extension/data/($name/)*$name|extension/ric-people\.js|scripts/data/nomisma-labels\.json"
+          outside="$(printf '%s\n' "$touched" | grep -vxE "$allowed" || true)"
+          if [ -n "$outside" ]; then
+            echo "::error::The proposed patch touches paths the importer does not write; nothing was applied."
+            printf '%s\n' "$outside"
+            exit 1
+          fi
+          if printf '%s\n' "$summary" | grep -E ' (rename|copy) |(mode|=>) (120000|160000|100755) '; then
+            echo "::error::The proposed patch renames, links or makes a file executable; nothing was applied."
+            exit 1
+          fi
       - name: Open the pull request
         env:
           GH_TOKEN: ${{ github.token }}
