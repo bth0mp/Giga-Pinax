@@ -210,3 +210,18 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     image request carries a `Referer` header. Untick the switch, save, and look up the same reference again.
     *Expected:* no request to `nomisma.org/query` and no photo. In Firefox, repeat with the switch on after withholding
     nomisma.org access in `about:addons`. *Expected:* the card shows and no photos appear.
+
+25. **A CPE type with the network disabled.** Turn the network off, then look up `CPE 330` in the popup.
+    *Expected:* the **Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330** card, marked **Local PCO catalogue**,
+    reading Ptolemy II Philadelphus · Decadrachm · Alexandria · Silver · 270–246 BC, with no "couldn't reach" message.
+    The **Catalogue** list now shows **CPE (Lorber, Ptolemaic)**.
+
+26. **A CPE bronze with the network disabled.** With the network still off, look up `CPE B549`.
+    *Expected:* the **Coins of the Ptolemaic Empire Vol. I, Part II, no. B549** card, marked **Local PCO catalogue**,
+    reading Ptolemy IV Philopator · Hemiobol · Tyre · Bronze · 222–204 BC. `Svoronos 487` then opens the **… Part 1, no. 330** card
+    with the line "Svoronos 487 is filed in PCO as CPE 330."
+
+27. **A Newell Demetrius type with the network disabled.** With the network still off, look up `Newell Demetrius 45`.
+    *Expected:* the **Newell Demetrius Poliorcetes, no. 45** card, marked **Local AGCO catalogue**, reading
+    Demetrius I Poliorcetes · Hemidrachm · Tarsus · Silver · 298–295 BC. Settings → **Local catalogue data** lists PCO
+    and AGCO rows. Turn the network back on.

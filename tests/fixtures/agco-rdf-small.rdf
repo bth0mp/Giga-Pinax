@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Trimmed from AGCO (Antigonid Coinage Online), American Numismatic Society,
+https://numismatics.org/agco/nomisma.rdf retrieved 2026-09-24. Type data under the Open
+Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+Two type records and their sides, verbatim, with the root namespace declarations the
+export makes on its rdf:RDF element.
+-->
+<rdf:RDF xmlns:nmo="http://nomisma.org/ontology#" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:void="http://rdfs.org/ns/void#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:un="http://www.owl-ontologies.com/Ontology1181490123.owl#" xmlns:crm="http://www.cidoc-crm.org/cidoc-crm/" xmlns:crmdig="http://www.ics.forth.gr/isl/CRMdig/" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#" xmlns:foaf="http://xmlns.com/foaf/0.1/" xmlns:prov="http://www.w3.org/ns/prov#" xmlns:edm="http://www.europeana.eu/schemas/edm/" xmlns:geo="http://www.w3.org/2003/01/geo/wgs84_pos#" xmlns:oa="http://www.w3.org/ns/oa#" xmlns:svcs="http://rdfs.org/sioc/services#" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:nm="http://nomisma.org/id/">
+    <nmo:TypeSeriesItem xmlns:la="https://linked.art/ns/terms/"
+                        rdf:about="http://numismatics.org/agco/id/newell.demetrius.1">
+        <rdf:type rdf:resource="http://www.w3.org/2004/02/skos/core#Concept"/>
+        <skos:prefLabel xml:lang="en">Newell Demetrius Poliorcetes, no. 1</skos:prefLabel>
+        <skos:definition xml:lang="en">Newell Demetrius Poliorcetes, no. 1</skos:definition>
+        <dcterms:source rdf:resource="http://nomisma.org/id/newell_demetrius_poliorcetes"/>
+        <skos:exactMatch rdf:resource="http://numismatics.org/pella/id/price.3175"/>
+        <nmo:hasDenomination rdf:resource="http://nomisma.org/id/stater"/>
+        <nmo:hasMaterial rdf:resource="http://nomisma.org/id/av"/>
+        <nmo:hasAuthority rdf:resource="http://nomisma.org/id/demetrius_i"/>
+        <nmo:hasStatedAuthority rdf:resource="http://nomisma.org/id/alexander_iii"/>
+        <nmo:hasMint rdf:resource="http://nomisma.org/id/salamis_cyprus"/>
+        <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0306</nmo:hasStartDate>
+        <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0301</nmo:hasEndDate>
+        <nmo:hasObverse rdf:resource="http://numismatics.org/agco/id/newell.demetrius.1#obverse"/>
+        <nmo:hasReverse rdf:resource="http://numismatics.org/agco/id/newell.demetrius.1#reverse"/>
+        <void:inDataset rdf:resource="http://numismatics.org/agco/"/>
+    </nmo:TypeSeriesItem>
+    <rdf:Description xmlns:la="https://linked.art/ns/terms/"
+                     rdf:about="http://numismatics.org/agco/id/newell.demetrius.1#obverse">
+        <dcterms:description xml:lang="en">Head of Athena right in crested Corinthian helmet</dcterms:description>
+        <nmo:hasPortrait rdf:resource="http://nomisma.org/id/athena"/>
+    </rdf:Description>
+    <rdf:Description xmlns:la="https://linked.art/ns/terms/"
+                     rdf:about="http://numismatics.org/agco/id/newell.demetrius.1#reverse">
+        <nmo:hasLegend>ΑΛΕΞΑΝΔΡΟΥ</nmo:hasLegend>
+        <dcterms:description xml:lang="en">Nike standing left holding wreath in outstretched right hand, and mast (stylis) in left hand</dcterms:description>
+        <nmo:hasPortrait rdf:resource="http://nomisma.org/id/nike"/>
+        <nmo:hasControlmark rdf:resource="http://numismatics.org/pella/symbol/monogram.price.1128"/>
+    </rdf:Description>
+    <nmo:TypeSeriesItem xmlns:la="https://linked.art/ns/terms/"
+                        rdf:about="http://numismatics.org/agco/id/newell.demetrius.45">
+        <rdf:type rdf:resource="http://www.w3.org/2004/02/skos/core#Concept"/>
+        <skos:prefLabel xml:lang="en">Newell Demetrius Poliorcetes, no. 45</skos:prefLabel>
+        <skos:definition xml:lang="en">Newell Demetrius Poliorcetes, no. 45</skos:definition>
+        <dcterms:source rdf:resource="http://nomisma.org/id/newell_demetrius_poliorcetes"/>
+        <nmo:hasDenomination rdf:resource="http://nomisma.org/id/hemidrachm"/>
+        <nmo:hasMaterial rdf:resource="http://nomisma.org/id/ar"/>
+        <nmo:hasAuthority rdf:resource="http://nomisma.org/id/demetrius_i"/>
+        <nmo:hasMint rdf:resource="http://nomisma.org/id/tarsus"/>
+        <nmo:hasStartDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0298</nmo:hasStartDate>
+        <nmo:hasEndDate rdf:datatype="http://www.w3.org/2001/XMLSchema#gYear">-0295</nmo:hasEndDate>
+        <nmo:hasObverse rdf:resource="http://numismatics.org/agco/id/newell.demetrius.45#obverse"/>
+        <nmo:hasReverse rdf:resource="http://numismatics.org/agco/id/newell.demetrius.45#reverse"/>
+        <void:inDataset rdf:resource="http://numismatics.org/agco/"/>
+    </nmo:TypeSeriesItem>
+    <rdf:Description xmlns:la="https://linked.art/ns/terms/"
+                     rdf:about="http://numismatics.org/agco/id/newell.demetrius.45#obverse">
+        <dcterms:description xml:lang="en">Nike left, holding trumpet and stylis, landing on prow of ship</dcterms:description>
+        <nmo:hasPortrait rdf:resource="http://nomisma.org/id/nike"/>
+    </rdf:Description>
+    <rdf:Description xmlns:la="https://linked.art/ns/terms/"
+                     rdf:about="http://numismatics.org/agco/id/newell.demetrius.45#reverse">
+        <nmo:hasLegend>ΔΗΜΗΤΡΙΟΥ ΒΑΣΙΛΕΩΣ</nmo:hasLegend>
+        <dcterms:description xml:lang="en">Poseidon striding right holding chlamys and brandishing trident</dcterms:description>
+        <nmo:hasPortrait rdf:resource="http://nomisma.org/id/poseidon"/>
+        <nmo:hasControlmark rdf:resource="http://numismatics.org/pella/symbol/monogram.price.952"/>
+    </rdf:Description>
+</rdf:RDF>

@@ -35,6 +35,8 @@ CORPORA = {
         "label": "OCRE",
         "base": "http://numismatics.org/ocre/id/",
         "url": "https://numismatics.org/ocre/",
+        # The file the export is saved as: OCRE's keeps the name ANS publishes it under, which its metadata has always recorded.
+        "export": "nomisma.rdf",
         "bundled": re.compile(rf"ric\.{VOLUME}\..+"),
         # The RIC volume an id names, which is the book a collector has open and the file a lookup by id opens.
         "group": lambda record_id: record_id.split(".")[1],
@@ -48,6 +50,7 @@ CORPORA = {
         "label": "CRRO",
         "base": "http://numismatics.org/crro/id/",
         "url": "https://numismatics.org/crro/",
+        "export": "crro.rdf",
         "bundled": re.compile(r"rrc-[0-9A-Za-z][0-9A-Za-z.\-]*"),
         "group": lambda record_id: "rrc",
         "groups": "rrc",
@@ -59,6 +62,7 @@ CORPORA = {
         "label": "PELLA",
         "base": "http://numismatics.org/pella/id/",
         "url": "https://numismatics.org/pella/",
+        "export": "pella.rdf",
         "bundled": re.compile(r"price\.[0-9A-Za-z][0-9A-Za-z._\-]*"),
         "group": lambda record_id: "price",
         "groups": "price",
@@ -72,10 +76,43 @@ CORPORA = {
         "label": "SCO",
         "base": "http://numismatics.org/sco/id/",
         "url": "https://numismatics.org/sco/",
+        "export": "sco.rdf",
         # Every SCO record is identified under sc.1, whichever part of Seleucid Coins its title names.
         "bundled": re.compile(r"sc\.1\.[0-9A-Za-z][0-9A-Za-z._\-]*"),
         "group": lambda record_id: "sc",
         "groups": "sc",
+        "excluded": {},
+        "reason": "",
+        "numbers": False,
+    },
+    "pco": {
+        "label": "PCO",
+        "base": "http://numismatics.org/pco/id/",
+        "url": "https://numismatics.org/pco/",
+        "export": "pco.rdf",
+        # Lorber's Coins of the Ptolemaic Empire, volume I: part 1's numbers are plain ("cpe.1_1.330"), part 2 numbers
+        # its bronzes with a B ("cpe.1_2.B549"). A CPE reference names one or the other, so nothing else is bundled.
+        "bundled": re.compile(r"cpe\.1_1\.[0-9][0-9A-Za-z]*|cpe\.1_2\.B[0-9][0-9A-Za-z]*"),
+        "group": lambda record_id: "cpe",
+        "groups": "cpe",
+        # PCO also publishes Svoronos's older numbers, 1,067 of them replaced by the CPE type they became. No Svoronos record
+        # is bundled as a card of its own; the link from one to the CPE type it became is how a Svoronos citation finds that
+        # type, so those links are written into metadata.json as the corpus's concordance.
+        "excluded": {"svoronos": re.compile(r"svoronos-1904\..+")},
+        "concordance": "svoronos",
+        "reason": "only Lorber's CPE types are bundled; a Svoronos number is kept only as PCO's link to the CPE type it became",
+        "numbers": False,
+    },
+    "agco": {
+        "label": "AGCO",
+        "base": "http://numismatics.org/agco/id/",
+        "url": "https://numismatics.org/agco/",
+        "export": "agco.rdf",
+        # Newell's The Coinages of Demetrius Poliorcetes, the one book AGCO publishes: "newell.demetrius.45" is titled
+        # "Newell Demetrius Poliorcetes, no. 45".
+        "bundled": re.compile(r"newell\.demetrius\.[0-9][0-9A-Za-z]*"),
+        "group": lambda record_id: "newell",
+        "groups": "newell",
         "excluded": {},
         "reason": "",
         "numbers": False,
@@ -459,6 +496,23 @@ def excluded_counts(corpus: dict, record_ids: list[str]) -> dict:
     return {"count": len(record_ids), "reason": corpus["reason"], "byGroup": counts}
 
 
+def concordance_links(corpus: dict, replacements: dict[str, list[str]], active: dict[str, dict]) -> dict[str, list[str]]:
+    """The types each left-out record of the corpus's concordance group is replaced by, in the export's own words (PCO's
+    Svoronos numbers, each dcterms:isReplacedBy the CPE type it became). A record is kept only when every type it names is
+    bundled, since a link with a type missing would offer the rest as though they were all of it."""
+    group = corpus.get("concordance")
+    if not group:
+        return {}
+    pattern, base = corpus["excluded"][group], corpus["base"]
+    links = {}
+    for old_id in sorted(replacements):
+        uris = set(replacements[old_id])
+        targets = sorted(uri[len(base):] for uri in uris if uri.startswith(base))
+        if pattern.fullmatch(old_id) and targets and len(targets) == len(uris) and all(target in active for target in targets):
+            links[old_id] = targets
+    return links
+
+
 def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     try:
         date.fromisoformat(generated_on)
@@ -474,6 +528,15 @@ def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
     aliases, replacement_skips = replacement_aliases(records, replacements, conflicts | (set(records) - kept), corpus["base"])
     active = {record_id: record for record_id, record in records.items()
               if record_id in kept and record_id not in replacements and record_id not in conflicts}
+    concordance = concordance_links(corpus, replacements, active)
+    # A redirect out of an id the extension never builds is never asked for by id, so it is no alias. PCO's Svoronos links
+    # are kept as its concordance instead; any other is counted rather than written. Only a corpus that has one says so.
+    unreachable = [old_id for old_id in aliases if not corpus["bundled"].fullmatch(old_id)]
+    for old_id in unreachable:
+        del aliases[old_id]
+    written_nowhere = [old_id for old_id in unreachable if old_id not in concordance]
+    if written_nowhere:
+        replacement_skips["fromExcluded"] = len(written_nowhere)
     metadata = {
         "schemaVersion": 1,
         "corpus": name,
@@ -490,6 +553,7 @@ def convert(name: str, source: Path, output: Path, generated_on: str) -> dict:
         # Only a corpus that leaves something out says so, so a corpus bundled whole carries no empty claim about it.
         **({"excluded": excluded} if excluded["count"] else {}),
         "aliases": aliases,
+        **({"concordance": concordance} if corpus.get("concordance") else {}),
         "replacementSkips": replacement_skips,
         "conflicts": {"count": len(conflicts), "ids": sorted(conflicts)},
         "shards": {},
@@ -663,6 +727,57 @@ def write_labels(root: Path, snapshot: Path) -> int:
     return len(json.loads(payload)["labels"])
 
 
+def export_list() -> list[tuple[str, str, str]]:
+    """Every corpus's export as the refresh workflow downloads it: the corpus, the URL ANS publishes it at, and the file it is saved as."""
+    return [(name, f"{CORPORA[name]['url']}nomisma.rdf", CORPORA[name]["export"]) for name in sorted(CORPORA)]
+
+
+def count_row(name: str, status: str, before: dict | None, after: dict) -> str:
+    def moved(key, measure=lambda value: value):
+        new = measure(after[key])
+        old = measure(before[key]) if before and key in before else None
+        return f"{new:,}" if old is None or old == new else f"{old:,} → {new:,}"
+    return f"| {CORPORA[name]['label']} | {status} | {moved('recordCount')} | {moved('activeRecordCount')} | {moved('aliases', len)} |"
+
+
+def refresh(exports: Path, root: Path, generated_on: str) -> dict:
+    """Import again every corpus whose export differs from the one its data was made from, and report the counts before and after.
+
+    Every export is read before any corpus is written, so a download that failed leaves the data as it was; an export identical to the
+    last one, byte for byte, is not imported again, so its files and its generation date stay exactly as they are."""
+    sources = {}
+    for name in sorted(CORPORA):
+        source = exports / CORPORA[name]["export"]
+        if not source.is_file():
+            raise ImportFailure(f"the {CORPORA[name]['label']} export {source.name} was not downloaded")
+        sources[name] = (source, inspect_source(source))
+    changed, rows = [], []
+    for name, (source, (size, sha256)) in sources.items():
+        path = root / name / "metadata.json"
+        before = read_json(path) if path.is_file() else None
+        if isinstance(before, dict) and before.get("sourceSha256") == sha256 and before.get("inputBytes") == size:
+            rows.append(count_row(name, "unchanged", before, before))
+            continue
+        after = convert(name, source, root / name, generated_on)
+        changed.append(name)
+        rows.append(count_row(name, "changed", before if isinstance(before, dict) else None, after))
+    summary = "\n".join(["| Corpus | Export | Records | Active types | Redirects |", "| --- | --- | ---: | ---: | ---: |", *rows])
+    return {"changed": changed, "summary": summary}
+
+
+def refresh_labels(root: Path, snapshot: Path, retrieved_on: str, fetch=None) -> bool:
+    """Fetch the labels of every bundled concept again, and keep the tracked snapshot as it was when Nomisma gives the same answer, so a
+    refresh that found nothing new changes no file. The generated label file is written from the snapshot either way."""
+    previous = read_json(snapshot)
+    fetched = (fetch or fetch_labels)(bundled_slugs(corpus_reader(root)), retrieved_on)
+    same = (isinstance(previous, dict) and previous.get("labels") == fetched["labels"]
+            and previous.get("requestedCount") == fetched["requestedCount"])
+    if not same:
+        write_file(snapshot, snapshot_bytes(fetched))
+    write_labels(root, snapshot)
+    return not same
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?")
@@ -679,7 +794,29 @@ def main() -> int:
     parser.add_argument("--snapshot", type=Path, default=DEFAULT_LABEL_SNAPSHOT,
                         help="the tracked Nomisma label snapshot to fetch into or generate from")
     parser.add_argument("--retrieved-on", help="explicit YYYY-MM-DD retrieval date for --fetch-labels")
+    parser.add_argument("--list-exports", action="store_true",
+                        help="print each corpus, the URL of its export and the file it is saved as, one line each")
+    parser.add_argument("--refresh", type=Path, metavar="EXPORTS_DIR",
+                        help="import again every corpus whose export in EXPORTS_DIR changed, fetch the labels, and write --report")
+    parser.add_argument("--report", type=Path, help="the JSON report --refresh writes: the corpora it changed and the count table")
     args = parser.parse_args()
+    if args.list_exports:
+        for name, url, file_name in export_list():
+            print(f"{name} {url} {file_name}")
+        return 0
+    if args.refresh is not None:
+        if args.generated_on is None or args.report is None or args.source is not None:
+            parser.error("--refresh needs --generated-on and --report, and takes no source")
+        root = args.output or DEFAULT_DATA_ROOT
+        try:
+            report = refresh(args.refresh, root, args.generated_on)
+            report["labelsChanged"] = refresh_labels(root, args.snapshot, args.generated_on)
+        except (ImportFailure, ET.ParseError, OSError, json.JSONDecodeError) as error:
+            print(f"refresh failed: {error}", file=sys.stderr)
+            return 1
+        write_file(args.report, json_bytes(report))
+        print(f"Refreshed {', '.join(report['changed']) or 'no corpus'}; labels {'changed' if report['labelsChanged'] else 'unchanged'}.")
+        return 0
     if args.fetch_labels is not None or args.write_labels is not None:
         root = args.fetch_labels if args.fetch_labels is not None else args.write_labels
         if args.source is not None or args.output is not None or args.reindex is not None or args.corpus is not None:

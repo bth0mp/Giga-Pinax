@@ -1059,7 +1059,7 @@ test('the bundled-data panel names every corpus the package carries, and only th
   // is not bundled — BIGR's export carries no Bopearachchi citation to verify a hit against — so it must be named as
   // online, and it must not be listed as a corpus the package carries.
   const panel = page.element('catalogue-data').textContent;
-  assert.match(panel, /RIC, Crawford, Price and Seleucid Coins lookups use this local data\./);
+  assert.match(panel, /RIC, Crawford, Price, Seleucid Coins, CPE and Newell \(Demetrius Poliorcetes\) lookups use this local data\./);
   assert.match(panel, /Bopearachchi references and any lookup the local data cannot answer go online/);
   // The names travel with the package now, so the panel says so — and says what it still cannot name. It must not go
   // back to claiming a local card shows nothing but identifiers, and it must not claim every concept has a name.

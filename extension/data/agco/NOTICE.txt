@@ -1,0 +1,25 @@
+Bundled AGCO reference data
+
+Derived from Antigonid Coinage Online (AGCO), American Numismatic Society.
+Source: https://numismatics.org/agco/
+Source export: agco.rdf (https://numismatics.org/agco/nomisma.rdf), retrieved
+24 September 2026
+
+The source type database and this derived database are available under the
+Open Database License (ODbL) 1.0:
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Source filename, SHA-256, coverage, record counts and conversion date are in
+metadata.json. Every type in the export is bundled: the 182 types of Edward T.
+Newell's The Coinages of Demetrius Poliorcetes. The source publication date is
+unknown. This bundle excludes monograms, symbols, images and auction-price
+data. The converter and editable derived data are provided at
+https://github.com/bth0mp/Giga-Pinax .
+Conversion instructions:
+https://github.com/bth0mp/Giga-Pinax/blob/main/docs/LOCAL-CATALOGUE.md
+
+Nomisma.org concept labels are absent from this export. The English name of
+every concept these records carry for an authority, issuer, denomination, mint,
+material or portrait is bundled in ../nomisma-labels.json instead, under CC BY
+3.0; see ../NOTICE.txt. A concept Nomisma publishes no English name for is left
+unresolved rather than labelled from another source.

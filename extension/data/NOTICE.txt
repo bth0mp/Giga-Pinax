@@ -8,7 +8,7 @@ instead of asking nomisma.org for one.
 
 Source: https://nomisma.org/
 SPARQL endpoint: https://nomisma.org/query
-Retrieved 17 September 2026.
+Retrieved 24 September 2026.
 
 Nomisma concept data is available under Creative Commons Attribution 3.0:
 https://creativecommons.org/licenses/by/3.0/

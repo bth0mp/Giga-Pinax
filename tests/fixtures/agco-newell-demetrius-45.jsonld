@@ -1,0 +1,143 @@
+{
+ "@context": {
+  "void": "http://rdfs.org/ns/void#",
+  "dcterms": "http://purl.org/dc/terms/",
+  "un": "http://www.owl-ontologies.com/Ontology1181490123.owl#",
+  "crmarchaeo": "http://www.cidoc-crm.org/cidoc-crm/CRMarchaeo/",
+  "svcs": "http://rdfs.org/sioc/services#",
+  "doap": "http://usefulinc.com/ns/doap#",
+  "crm": "http://www.cidoc-crm.org/cidoc-crm/",
+  "relations": "http://pelagios.github.io/vocab/relations#",
+  "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+  "la": "https://linked.art/ns/terms/",
+  "nm": "http://nomisma.org/id/",
+  "crmsci": "http://www.ics.forth.gr/isl/CRMsci/",
+  "skos": "http://www.w3.org/2004/02/skos/core#",
+  "xsd": "http://www.w3.org/2001/XMLSchema#",
+  "edm": "http://www.europeana.eu/schemas/edm/",
+  "foaf": "http://xmlns.com/foaf/0.1/",
+  "crmgeo": "http://www.ics.forth.gr/isl/CRMgeo/",
+  "nmo": "http://nomisma.org/ontology#",
+  "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+  "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+  "oa": "http://www.w3.org/ns/oa#",
+  "dcmitype": "http://purl.org/dc/dcmitype/",
+  "pelagios": "http://pelagios.github.io/vocab/terms#"
+ },
+ "@graph": [
+  {
+   "@id": "http://numismatics.org/agco/id/newell.demetrius.45",
+   "@type": [
+    "nmo:TypeSeriesItem",
+    "http://www.w3.org/2004/02/skos/core#Concept"
+   ],
+   "rdf:type": [
+    {
+     "@id": "http://www.w3.org/2004/02/skos/core#Concept"
+    }
+   ],
+   "skos:prefLabel": [
+    {
+     "@value": "Newell Demetrius Poliorcetes, no. 45",
+     "@language": "en"
+    }
+   ],
+   "skos:definition": [
+    {
+     "@value": "Newell Demetrius Poliorcetes, no. 45",
+     "@language": "en"
+    }
+   ],
+   "dcterms:source": [
+    {
+     "@id": "http://nomisma.org/id/newell_demetrius_poliorcetes"
+    }
+   ],
+   "nmo:hasDenomination": [
+    {
+     "@id": "http://nomisma.org/id/hemidrachm"
+    }
+   ],
+   "nmo:hasMaterial": [
+    {
+     "@id": "http://nomisma.org/id/ar"
+    }
+   ],
+   "nmo:hasAuthority": [
+    {
+     "@id": "http://nomisma.org/id/demetrius_i"
+    }
+   ],
+   "nmo:hasMint": [
+    {
+     "@id": "http://nomisma.org/id/tarsus"
+    }
+   ],
+   "nmo:hasStartDate": [
+    {
+     "@value": "-0298",
+     "@type": "http://www.w3.org/2001/XMLSchema#gYear"
+    }
+   ],
+   "nmo:hasEndDate": [
+    {
+     "@value": "-0295",
+     "@type": "http://www.w3.org/2001/XMLSchema#gYear"
+    }
+   ],
+   "nmo:hasObverse": [
+    {
+     "@id": "http://numismatics.org/agco/id/newell.demetrius.45#obverse"
+    }
+   ],
+   "nmo:hasReverse": [
+    {
+     "@id": "http://numismatics.org/agco/id/newell.demetrius.45#reverse"
+    }
+   ],
+   "void:inDataset": [
+    {
+     "@id": "http://numismatics.org/agco/"
+    }
+   ]
+  },
+  {
+   "@id": "http://numismatics.org/agco/id/newell.demetrius.45#obverse",
+   "dcterms:description": [
+    {
+     "@value": "Nike left, holding trumpet and stylis, landing on prow of ship",
+     "@language": "en"
+    }
+   ],
+   "nmo:hasPortrait": [
+    {
+     "@id": "http://nomisma.org/id/nike"
+    }
+   ]
+  },
+  {
+   "@id": "http://numismatics.org/agco/id/newell.demetrius.45#reverse",
+   "nmo:hasLegend": [
+    {
+     "@value": "ΔΗΜΗΤΡΙΟΥ ΒΑΣΙΛΕΩΣ"
+    }
+   ],
+   "dcterms:description": [
+    {
+     "@value": "Poseidon striding right holding chlamys and brandishing trident",
+     "@language": "en"
+    }
+   ],
+   "nmo:hasPortrait": [
+    {
+     "@id": "http://nomisma.org/id/poseidon"
+    }
+   ],
+   "nmo:hasControlmark": [
+    {
+     "@id": "http://numismatics.org/pella/symbol/monogram.price.952"
+    }
+   ]
+  }
+ ]
+}
