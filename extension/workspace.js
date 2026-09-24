@@ -161,6 +161,17 @@ async function initWorkspace() {
   };
   $('lot-form').addEventListener('invalid', nameInvalid((message) => { $('lot-action-status').textContent = message; $('lot-action-status').classList.add('error'); }), true);
   $('outcome-form').addEventListener('invalid', nameInvalid((message) => announce(message, true)), true);
+  // The browser scrolls a focused control into view without knowing about the sticky action bar, and counts a tall box
+  // whose top is showing as in view already: a control that ends under the bar is scrolled clear of it, by no more than
+  // keeps its own top in the window.
+  const keepClearOfBar = (event) => {
+    const bar = event.currentTarget.querySelector('.action-bar'); const control = event.target;
+    if (!bar || !control?.getBoundingClientRect || bar.contains(control)) return;
+    const barTop = bar.getBoundingClientRect().top; const box = control.getBoundingClientRect();
+    const by = Math.min(box.bottom - barTop + 8, box.top - 16);
+    if (box.bottom > barTop && by > 0) window.scrollBy(0, by);
+  };
+  for (const form of [$('lot-form'), $('outcome-form')]) form.addEventListener('focusin', keepClearOfBar);
   for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
   $('open-settings').addEventListener('click', () => void openSettings());

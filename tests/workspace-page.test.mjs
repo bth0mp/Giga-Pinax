@@ -948,3 +948,25 @@ test('the zone note describes the zone list and the character count is announced
   assert.ok(count.id);
   assert.equal(title.getAttribute('aria-describedby'), count.id);
 });
+
+// Review Important 2: a control that gets the focus under the sticky bar - a tall notes box the browser counts as
+// already in view - is scrolled clear of it, but never so far that its top leaves the window.
+test('a focused control under the sticky bar is scrolled clear of it', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const form = page.$('lot-form');
+  form.querySelector('.action-bar').getBoundingClientRect = () => ({ top: 739, bottom: 800 });
+  const notes = form.elements.notes;
+  notes.getBoundingClientRect = () => ({ top: 718, bottom: 806 });
+  await form.emit('focusin', { target: notes });
+  assert.deepEqual(page.scrolls, [[0, 75]], 'the box’s bottom clears the bar by 8 px');
+  const title = form.elements.title;
+  title.getBoundingClientRect = () => ({ top: 400, bottom: 439 });
+  await form.emit('focusin', { target: title });
+  assert.equal(page.scrolls.length, 1, 'a control clear of the bar is left where it is');
+  const tall = form.elements.condition;
+  tall.getBoundingClientRect = () => ({ top: 60, bottom: 900 });
+  await form.emit('focusin', { target: tall });
+  assert.deepEqual(page.scrolls.at(-1), [0, 44], 'a box taller than the room keeps its top in the window');
+});

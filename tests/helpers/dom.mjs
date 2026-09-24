@@ -719,6 +719,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const commands = [];
   const calculatorValues = [];
   const timers = [];
+  const scrolls = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
@@ -745,6 +746,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
     clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
     location,
+    // What the page scrolls the window by, recorded for a test to read.
+    scrollBy: (x, y) => { scrolls.push([x, y]); },
     addEventListener(type, listener) {
       windowListeners.set(type, [...(windowListeners.get(type) ?? []), listener]);
     },
@@ -762,7 +765,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser, calculatorValues, timers,
+    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls,
     runTimers() { for (const timer of timers.splice(0)) timer.callback?.(); },
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
