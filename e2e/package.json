@@ -1,0 +1,13 @@
+{
+  "name": "giga-pinax-e2e",
+  "private": true,
+  "description": "Optional browser checks of the built extension; never part of the required CI path.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 *.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

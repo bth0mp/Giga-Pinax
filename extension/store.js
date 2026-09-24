@@ -1,16 +1,55 @@
+// @ts-check
 import {
   LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
-  validateEventLocalTimes, validateQuarantinedRecord, validateSnapshot,
+  validateEventLocalTimes, validateSnapshot,
 } from './core/records.js';
-import { deriveReminderTriggers, reconcileScheduler, resolveZonedDateTime } from './core/reminders.js';
+import { resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
 import { deduplicateEvidence } from './core/evidence.js';
 import { findDuplicateLot } from './core/lot-context.js';
-import { TOO_DEEPLY_NESTED, clone, failure, isRecursionError, own } from './core/validate.js';
+import { TOO_DEEPLY_NESTED, clone, isRecursionError, own } from './core/validate.js';
+import {
+  appendBidHistory, baseRecord, compactGroupPriorities, eventFromDraft, fail, findRecord, getId, getNow, lotFromDraft, ok,
+  preferenceFields,
+} from './store-builders.js';
+import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
+import { reconcileIntoSnapshot } from './store-schedule.js';
+/**
+ * @typedef {import('./core/types.js').Snapshot} Snapshot
+ * @typedef {import('./core/types.js').Command} Command
+ * @typedef {import('./core/types.js').CommandContext} CommandContext
+ * @typedef {import('./core/types.js').CommandResult} CommandResult
+ * @typedef {import('./core/types.js').CommandFailure} CommandFailure
+ * @typedef {import('./core/types.js').CommandSuccess} CommandSuccess
+ * @typedef {import('./core/types.js').StorageArea} StorageArea
+ */
+/**
+ * @template T
+ * @typedef {import('./core/types.js').Result<T>} Result
+ */
+/**
+ * A command applied to a copy of the root: the root it leaves, the value it answers with, the reply the
+ * ledger keeps, and whether it wrote anything at all.
+ * @typedef {{ snapshot: Snapshot, value: *, reply?: CommandSuccess, mutated: boolean }} Applied
+ */
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+// The commands the background worker answers from an extension page; any other message gets no reply.
+export const COMMAND_TYPES = new Set([
+  'snapshot.get', 'snapshot.raw',
+  'preferences.migrateIfAbsent', 'preferences.save',
+  'lot.save', 'lot.delete',
+  'group.save', 'group.delete', 'group.reorder',
+  'bid.plan', 'bid.place', 'bid.cancel',
+  'lot.outcome.set', 'collection.review.resolve',
+  'event.save', 'event.delete',
+  'evidence.add', 'evidence.include', 'evidence.resolve',
+  'draft.save', 'draft.get', 'draft.consume',
+  'alert.ack', 'alert.snooze', 'alert.markAllRead',
+  'backup.import', 'quarantine.restore',
+]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set', 'backup.import',
   'quarantine.restore',
@@ -25,10 +64,12 @@ const OVER_THE_BOUND = new Map([
 ]);
 // What any other command says when its own result, before any reminder it schedules, does not fit.
 const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
-const ALERT_STATE_RANK = {
-  pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
-};
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {boolean} [commandHeadroom]
+ * @returns {number}
+ */
 function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   const reserved = clone(snapshot);
   for (const alert of reserved.alerts) {
@@ -41,266 +82,12 @@ function storageBytesWithReserve(snapshot, commandHeadroom = true) {
   return new TextEncoder().encode(JSON.stringify(reserved)).length + (commandHeadroom ? LIMITS.commandReplyBytes : 0);
 }
 
-const ok = (value) => ({ ok: true, value });
-// The only failure shape with a fourth field: a lot identity that collided names the lot it collided with.
-const fail = (code, message, path, existingLotId) => failure(code, message, path, existingLotId === undefined ? undefined : { existingLotId });
-
-function getNow(context) {
-  return typeof context.now === 'function' ? context.now() : context.now;
-}
-
-function getId(context) {
-  return context.newId();
-}
-
-function findRecord(records, id, expectedRevision, label) {
-  const index = records.findIndex((record) => record.id === id);
-  if (index < 0) return fail('validation', `${label} was not found.`, `${label}.id`);
-  if (records[index].revision !== expectedRevision) {
-    return fail('conflict', `${label} changed in another view. Reload and try again.`, `${label}.revision`);
-  }
-  return ok({ index, record: records[index] });
-}
-
-function baseRecord(draft, context) {
-  const now = getNow(context);
-  return {
-    id: getId(context),
-    revision: 0,
-    dataClass: 'collector',
-    createdAt: now,
-    updatedAt: now,
-    ...draft,
-  };
-}
-
-function preferenceFields(value, includeAlerts = false) {
-  if (!value || typeof value !== 'object') return null;
-  const result = {};
-  for (const key of ['currency', 'housePremiumPresets']) {
-    if (own(value, key)) result[key] = value[key];
-  }
-  if (includeAlerts && own(value, 'desktopAlertsEnabled')) {
-    result.desktopAlertsEnabled = value.desktopAlertsEnabled;
-  }
-  return result;
-}
-
-function lotFromDraft(draft, existing, context) {
-  const now = getNow(context);
-  const optional = ['reference', 'auctionEventId', 'lotNumber'];
-  const lot = existing ? clone(existing) : baseRecord({
-    title: draft.title,
-    sourceLinks: clone(draft.sourceLinks ?? []),
-    bidHistory: [],
-    outcome: { status: 'open' },
-    outcomeHistory: [],
-  }, context);
-  lot.title = draft.title;
-  lot.sourceLinks = clone(draft.sourceLinks ?? []);
-  if (own(draft, 'notes')) lot.notes = draft.notes;
-  for (const key of ['auctionContext', 'coinDetails', 'provenanceNotes', 'costEstimate']) {
-    if (!own(draft, key)) continue;
-    if (draft[key] === null) delete lot[key];
-    else lot[key] = clone(draft[key]);
-  }
-  for (const key of optional) {
-    if (own(draft, key)) lot[key] = draft[key];
-    else delete lot[key];
-  }
-  if (existing) {
-    lot.revision += 1;
-    lot.updatedAt = now;
-  }
-  return lot;
-}
-
-function eventFromDraft(draft, existing, context) {
-  const now = getNow(context);
-  const event = existing ? clone(existing) : baseRecord({}, context);
-  for (const key of [
-    'name', 'eventKind', 'precision', 'localDate', 'localTime', 'timeZone', 'startsAt',
-    'reminderScope', 'capturedText', 'capturedFromUrl', 'sourceUrl',
-  ]) {
-    if (own(draft, key)) event[key] = clone(draft[key]);
-    else delete event[key];
-  }
-  event.reminders = (draft.reminders ?? []).map((reminder) => {
-    const retained = existing?.reminders.find(({ id }) => id === reminder.id);
-    const next = clone(reminder);
-    next.id = retained?.id ?? getId(context);
-    return next;
-  });
-  if (existing) {
-    event.revision += 1;
-    event.updatedAt = now;
-  }
-  return event;
-}
-
-function appendBidHistory(lot, action, terms, context) {
-  const entry = {
-    id: getId(context),
-    action,
-    recordedAt: getNow(context),
-  };
-  if (terms?.amount) entry.amount = clone(terms.amount);
-  if (terms && own(terms, 'buyerPremiumBps')) entry.buyerPremiumBps = terms.buyerPremiumBps;
-  lot.bidHistory.push(entry);
-}
-
-function compactGroupPriorities(lots, groupId, now) {
-  lots.filter((lot) => lot.alternativeGroupId === groupId)
-    .sort((left, right) => left.priority - right.priority)
-    .forEach((lot, index) => {
-      if (lot.priority === index + 1) return;
-      lot.priority = index + 1;
-      lot.revision += 1;
-      lot.updatedAt = now;
-    });
-}
-
-function adoptTriggerIds(alerts) {
-  // Alerts written before 0.32 embed the event revision in their trigger ID, so an edited event
-  // recreated every alert as pending. Rebuild the current identity from the alert's own fields
-  // rather than by parsing the stored string, and keep the collector's decision if two legacy
-  // alerts collapse onto one identity.
-  const byTrigger = new Map();
-  for (const alert of alerts) {
-    alert.triggerId = `${alert.eventId}:${alert.reminderId}:${alert.triggerAt}`;
-    const kept = byTrigger.get(alert.triggerId);
-    if (!kept || ALERT_STATE_RANK[alert.status] > ALERT_STATE_RANK[kept.status]) {
-      byTrigger.set(alert.triggerId, alert);
-    }
-  }
-  return [...byTrigger.values()];
-}
-
-function reconcileIntoSnapshot(next, context) {
-  const now = getNow(context);
-  const events = next.auctionEvents.filter((event) => event.reminderScope === 'standalone' ||
-    next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
-  const triggers = deriveReminderTriggers(events, now);
-  const triggersById = new Map(triggers.map((trigger) => [trigger.id, trigger]));
-  next.alerts = adoptTriggerIds(next.alerts).filter((alert) => triggersById.has(alert.triggerId));
-  const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
-  for (const trigger of triggers) {
-    if (existing.has(trigger.id)) continue;
-    next.alerts.push(baseRecord({
-      triggerId: trigger.id,
-      eventId: trigger.eventId,
-      eventRevision: trigger.eventRevision,
-      reminderId: trigger.reminderId,
-      triggerAt: trigger.triggerAt,
-      status: 'pending',
-    }, context));
-  }
-  const plan = reconcileScheduler(events, { alerts: next.alerts }, now);
-  const missed = new Set(plan.missedTriggerIds);
-  const due = new Set(Object.values(plan.overdueByEvent).flat().map(({ id }) => id));
-  for (const alert of next.alerts) {
-    let status = alert.status;
-    if (missed.has(alert.triggerId)) status = 'missed';
-    else if (due.has(alert.triggerId) && (['pending', 'snoozed'].includes(status) ||
-      (status === 'claimed' && Date.parse(alert.claimedAt) + 5 * 60 * 1000 <= Date.parse(now)))) status = 'due';
-    // The event revision is copied onto the alert for display, so a surviving alert refreshes it.
-    const eventRevision = triggersById.get(alert.triggerId)?.eventRevision ?? alert.eventRevision;
-    if (status === alert.status && eventRevision === alert.eventRevision) continue;
-    if (status !== alert.status && status === 'missed') alert.missedAt = now;
-    alert.status = status;
-    alert.eventRevision = eventRevision;
-    alert.revision += 1;
-    alert.updatedAt = now;
-  }
-  next.scheduler = {
-    revision: next.scheduler.revision + 1,
-    nextWakeAt: plan.nextWakeAt,
-    lastReconciledAt: now,
-  };
-  return plan;
-}
-
-// A link the repair had to clear goes back only where nothing has taken its place: a field the
-// collector has filled since is their own later work, and is left exactly as it is and named in the
-// reply, as is one whose record is no longer there to carry it. The changes are handed back with an
-// undo, because a link can be one the rest of the root has no room for any more.
-function restoreClearedReferences(snapshot, references, now) {
-  const restored = [];
-  const kept = [];
-  const applied = [];
-  for (const reference of references) {
-    const at = { collection: reference.collection, id: reference.id, field: reference.field };
-    const host = Array.isArray(snapshot[reference.collection])
-      ? snapshot[reference.collection].find((row) => row?.id === reference.id)
-      : undefined;
-    // A hand-edited bin can name "__proto__" as the field a record lost, and assigning that runs
-    // the setter instead of writing a key. Nothing the repair clears is called that.
-    if (!host || reference.field === '__proto__') {
-      kept.push(at);
-    } else if (own(host, reference.field)) {
-      const unchanged = JSON.stringify(host[reference.field]) === JSON.stringify(reference.value);
-      (unchanged ? restored : kept).push(at);
-    } else {
-      applied.push({ host, field: reference.field, revision: host.revision, updatedAt: host.updatedAt });
-      host[reference.field] = clone(reference.value);
-      host.revision += 1;
-      host.updatedAt = now;
-      restored.push(at);
-    }
-  }
-  // Backwards, because each link wrote down the revision its host carried before that one link was
-  // applied: replayed forwards, a host that took two of them would end one revision above where it
-  // started, which is an alteration nobody asked for and a false conflict for an open editor.
-  const undo = () => {
-    for (let index = applied.length - 1; index >= 0; index -= 1) {
-      const { host, field, revision, updatedAt } = applied[index];
-      delete host[field];
-      host.revision = revision;
-      host.updatedAt = updatedAt;
-    }
-  };
-  return { restored, kept, undo };
-}
-
-// A lot and its collection entry name each other, and the validator insists both ways, so neither is
-// a valid record without the other. A repair sets them aside one at a time - the lot for its own
-// reason, its entry following as a foreign key - and until now neither could ever come back: each
-// was refused over the one still in the bin. So the pair comes back in one command, or neither does.
-const PAIRED_COLLECTIONS = new Map([
-  ['lots', { self: 'lot', field: 'collectionEntryId', collection: 'collectionEntries', label: 'collection entry' }],
-  ['collectionEntries', { self: 'collection entry', field: 'lotId', collection: 'lots', label: 'lot' }],
-]);
-
-// The record this one is linked to and the root does not hold, or null where it needs nothing that
-// is not already there. A partner that is there but names another record is no pairing this command
-// can settle: the ordinary validation refusal says so in the validator's own words.
-function missingPartner(snapshot, collection, record) {
-  const pair = PAIRED_COLLECTIONS.get(collection);
-  if (!pair || typeof record[pair.field] !== 'string') return null;
-  const home = snapshot[pair.collection];
-  const held = Array.isArray(home) ? home.some(({ id }) => id === record[pair.field]) : false;
-  return held ? null : { ...pair, id: record[pair.field] };
-}
-
-// Everything the store can judge about one entry before anything is written: it holds a record,
-// today's validator accepts that record, its collection is one a record can go back to, and nothing
-// with its ID is saved there already.
-function readyToRestore(snapshot, entry) {
-  if (entry.record === null || entry.record === undefined) {
-    return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');
-  }
-  const candidate = validateQuarantinedRecord(entry.collection, entry.record);
-  if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
-  const home = snapshot[entry.collection];
-  if (!Array.isArray(home)) {
-    return fail('validation', 'This entry is not a record that can be put back.', 'entryId');
-  }
-  if (home.some(({ id }) => id === candidate.value.id)) {
-    return fail('conflict', 'A record with this ID is already saved, so the copy set aside cannot be put back beside it.', `${entry.collection}.id`);
-  }
-  return ok({ home, record: clone(candidate.value) });
-}
-
+/**
+ * @param {Snapshot} snapshot
+ * @param {Command} command
+ * @param {CommandContext} context
+ * @returns {Result<Applied>}
+ */
 function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
@@ -314,14 +101,15 @@ function mutation(snapshot, command, context) {
       if (snapshot.preferences !== null) return ok({ snapshot, value: snapshot.preferences, mutated: false });
       const preferences = preferenceFields(command.preferences);
       if (!preferences) return fail('validation', 'Preferences are required.', 'preferences');
-      next.preferences = {
+      // Held to its shape with the rest of the root before anything is written.
+      next.preferences = /** @type {import('./core/types.js').Preferences} */ ({
         schemaVersion: SCHEMA_VERSION,
         revision: 0,
         ...clone(preferences),
         desktopAlertsEnabled: false,
         createdAt: now,
         updatedAt: now,
-      };
+      });
       value = next.preferences;
       break;
     }
@@ -420,7 +208,8 @@ function mutation(snapshot, command, context) {
       if (!Array.isArray(command.orderedLotIds) || new Set(command.orderedLotIds).size !== command.orderedLotIds.length) {
         return fail('validation', 'Group order must contain unique lot IDs.', 'orderedLotIds');
       }
-      const selected = command.orderedLotIds.map((id) => next.lots.find((lot) => lot.id === id));
+      // An ID naming no lot is refused on the next line, so what is left is lots.
+      const selected = /** @type {import('./core/types.js').Lot[]} */ (command.orderedLotIds.map((id) => next.lots.find((lot) => lot.id === id)));
       if (selected.some((lot) => !lot)) return fail('validation', 'Group order contains an unknown lot.', 'orderedLotIds');
       const sourceGroupIds = new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean));
       const affectedLots = new Set([
@@ -444,7 +233,7 @@ function mutation(snapshot, command, context) {
           return fail('conflict', 'An affected lot changed in another view.', 'expectedLotRevisions');
         }
       }
-      const oldGroups = new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean));
+      const oldGroups = /** @type {Set<string>} */ (new Set(selected.map((lot) => lot.alternativeGroupId).filter(Boolean)));
       for (const lot of next.lots) {
         if (lot.alternativeGroupId === command.groupId && !command.orderedLotIds.includes(lot.id)) {
           delete lot.alternativeGroupId;
@@ -694,7 +483,7 @@ function mutation(snapshot, command, context) {
     case 'draft.save': {
       const payload = validateDraftPayload(command.kind, command.payload);
       if (!payload.ok) return fail('validation', payload.error.message, payload.error.path);
-      value = {
+      value = /** @type {import('./core/types.js').Draft} */ ({
         id: getId(context),
         revision: 0,
         dataClass: 'collector',
@@ -703,7 +492,7 @@ function mutation(snapshot, command, context) {
         createdAt: now,
         updatedAt: now,
         expiresAt: new Date(Date.parse(now) + 30 * 60 * 1000).toISOString(),
-      };
+      });
       next.drafts.push(value);
       next.drafts.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
       next.drafts = next.drafts.slice(-20);
@@ -905,6 +694,7 @@ function mutation(snapshot, command, context) {
 
   next.revision = snapshot.revision + 1;
   next.updatedAt = now;
+  /** @type {CommandSuccess} */
   const reply = { ok: true, requestId: command.requestId, revision: next.revision, value: clone(value) };
   next.recentCommands.push({
     requestId: command.requestId,
@@ -957,6 +747,12 @@ function mutation(snapshot, command, context) {
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
+/**
+ * @param {Snapshot} snapshot
+ * @param {Command} command
+ * @param {CommandContext} context
+ * @returns {Result<Applied>}
+ */
 export function applyCommand(snapshot, command, context) {
   if (!command || typeof command !== 'object' || typeof command.type !== 'string') {
     return fail('validation', 'Command type is required.', 'type');
@@ -974,6 +770,13 @@ export function applyCommand(snapshot, command, context) {
   return mutation(snapshot, command, context);
 }
 
+/**
+ * @param {*} command
+ * @param {string} code
+ * @param {'not-committed' | 'unknown'} outcome
+ * @param {string} message
+ * @returns {CommandFailure}
+ */
 function errorReply(command, code, outcome, message) {
   return {
     ok: false,
@@ -984,6 +787,12 @@ function errorReply(command, code, outcome, message) {
   };
 }
 
+/**
+ * The one writer of the root: commands are applied one at a time, in the order they arrive.
+ * @param {StorageArea} storageArea
+ * @param {CommandContext} context
+ * @returns {{ commitCommand: (command: *) => Promise<CommandResult> }}
+ */
 export function createCommandWriter(storageArea, context) {
   let queue = Promise.resolve();
 

@@ -1,0 +1,178 @@
+{
+ "head": {
+  "vars": [
+   "object",
+   "collection",
+   "obverseThumbnail",
+   "obverseDepiction",
+   "reverseThumbnail",
+   "reverseDepiction"
+  ]
+ },
+ "results": {
+  "bindings": [
+   {
+    "object": {
+     "type": "uri",
+     "value": "http://numismatics.org/collection/1918.999.111"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "American Numismatic Society"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19001949/1918/1918.999.111.obv.width175.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19001949/1918/1918.999.111.obv.width350.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19001949/1918/1918.999.111.rev.width175.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19001949/1918/1918.999.111.rev.width350.jpg"
+    }
+   },
+   {
+    "object": {
+     "type": "uri",
+     "value": "https://gallica.bnf.fr/ark:/12148/btv1b104456737"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Bibliothèque nationale de France"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://gallica.bnf.fr/iiif/ark:/12148/btv1b104456737/f1/full/,120/0/native.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://gallica.bnf.fr/iiif/ark:/12148/btv1b104456737/f1/full/600,/0/native.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://gallica.bnf.fr/iiif/ark:/12148/btv1b104456737/f2/full/,120/0/native.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://gallica.bnf.fr/iiif/ark:/12148/btv1b104456737/f2/full/600,/0/native.jpg"
+    }
+   },
+   {
+    "object": {
+     "type": "uri",
+     "value": "https://hdl.handle.net/428894.vzg/c4aeee88-d25a-4a13-a81d-6244757e5b5a"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Oldenburg Municipal Museum"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-109513_kenom_213442/record_DE-MUS-109513_kenom_213442_vs.jpg/full/120,/0/default.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-109513_kenom_213442/record_DE-MUS-109513_kenom_213442_vs.jpg/full/600,/0/default.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-109513_kenom_213442/record_DE-MUS-109513_kenom_213442_rs.jpg/full/120,/0/default.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-109513_kenom_213442/record_DE-MUS-109513_kenom_213442_rs.jpg/full/600,/0/default.jpg"
+    }
+   },
+   {
+    "object": {
+     "type": "uri",
+     "value": "https://hdl.handle.net/428894.vzg/139c4117-2be1-44f9-9873-f2f24b1fe907"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Münzkabinett der Universität Göttingen"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123091/record_DE-MUS-062622_kenom_123091_vs.jpg/full/120,/0/default.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123091/record_DE-MUS-062622_kenom_123091_vs.jpg/full/600,/0/default.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123091/record_DE-MUS-062622_kenom_123091_rs.jpg/full/120,/0/default.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123091/record_DE-MUS-062622_kenom_123091_rs.jpg/full/600,/0/default.jpg"
+    }
+   },
+   {
+    "object": {
+     "type": "uri",
+     "value": "http://numismatics.org/collection/1982.1.1"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "American Numismatic Society"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19501999/1982/1982.1.1.obv.width175.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19501999/1982/1982.1.1.obv.width350.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19501999/1982/1982.1.1.rev.width175.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://numismatics.org/collectionimages/19501999/1982/1982.1.1.rev.width350.jpg"
+    }
+   },
+   {
+    "object": {
+     "type": "uri",
+     "value": "https://hdl.handle.net/428894.vzg/e2bf8fee-de86-4575-91cc-f655650fa776"
+    },
+    "collection": {
+     "type": "literal",
+     "xml:lang": "en",
+     "value": "Münzkabinett der Universität Göttingen"
+    },
+    "obverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123093/record_DE-MUS-062622_kenom_123093_vs.jpg/full/120,/0/default.jpg"
+    },
+    "obverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123093/record_DE-MUS-062622_kenom_123093_vs.jpg/full/600,/0/default.jpg"
+    },
+    "reverseThumbnail": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123093/record_DE-MUS-062622_kenom_123093_rs.jpg/full/120,/0/default.jpg"
+    },
+    "reverseDepiction": {
+     "type": "uri",
+     "value": "https://www.kenom.de/iiif/image/record_DE-MUS-062622_kenom_123093/record_DE-MUS-062622_kenom_123093_rs.jpg/full/600,/0/default.jpg"
+    }
+   }
+  ]
+ }
+}

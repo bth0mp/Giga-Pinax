@@ -19,9 +19,11 @@ globalThis.browser = {
   scripting: { executeScript: (request) => answerScript(request) },
 };
 const lookupListeners = [];
+const watchListeners = [];
 globalThis.addEventListener = (type, listener) => {
   if (type === 'giga-pinax-card') cardListeners.push(listener);
   if (type === 'giga-pinax-lookup-received') lookupListeners.push(listener);
+  if (type === 'giga-pinax-watch') watchListeners.push(listener);
 };
 globalThis.dispatchEvent = () => true;
 globalThis.requestAnimationFrame = (callback) => { callback(); return 0; };
@@ -121,6 +123,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
   // here rather than piling up on globalThis for the rest of the file.
   cardListeners.length = 0;
   lookupListeners.length = 0;
+  watchListeners.length = 0;
   started = element;
   await import(`../extension/companion-popup.js?start=${++loaded}`);
   // Start-up loads its own modules, so it finishes several turns later: the research tab being selected is its last word.
@@ -131,6 +134,7 @@ async function loadCompanion({ sendMessage, tabs, script, blockedLocalStorage = 
     element,
     card: (detail) => cardListeners[0]?.({ type: 'giga-pinax-card', detail }),
     lookupReceived: () => lookupListeners[0]?.({ type: 'giga-pinax-lookup-received' }),
+    watch: (detail) => watchListeners[0]?.({ type: 'giga-pinax-watch', detail }),
     setTabs: (answer) => { answerTabs = answer; },
     async click(id) { await element(id).emit('click'); for (let tick = 0; tick < 20; tick += 1) await settle(); },
     async type(field, value) { element(`companion-capture-${field}`).value = value; await element(`companion-capture-${field}`).emit('input'); },
@@ -533,7 +537,7 @@ test('a lookup sent to this window takes the captured page off the coin saved fr
 
 test('both watchlist actions visibly share one synchronous pending guard', () => {
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
-  assert.match(source, /if \(draftSavePending\) return;[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
+  assert.match(source, /if \(draftSavePending\) return \{ ok: false, [^\n]*\};[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
   assert.match(source, /finally \{[\s\S]*draftSavePending = false;[\s\S]*companion-save-watchlist[\s\S]*companion-capture-watchlist/);
 });
 
@@ -576,4 +580,240 @@ test('date-only next auctions use each event local calendar day and sort with ti
   assert.equal(summary.nextEvent.id, 'ny');
   const afterNewYorkMidnight = buildWatchlistSummary({ auctionEvents: [newYork], alerts: [], lots: [] }, '2026-09-13T04:00:00.001Z');
   assert.equal(afterNewYorkMidnight.nextEvent, null);
+});
+
+// 0.34 (I2): Watch on an upcoming acsearch lot in the research half saves it through the same draft path as Save to watchlist, and opens the draft.
+test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, without the captured page', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-7' } } : WORKING_SNAPSHOT; },
+    script: capturedPage({ reference: { value: 'Price 23', provenance: 'visible-text' } }),
+  });
+  await page.click('companion-capture-current');
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const saved = commands.filter(({ type }) => type === 'draft.save');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].kind, 'current-lot');
+  assert.deepEqual(saved[0].payload, { target: 'watchlist', title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23',
+    pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
+  globalThis.browser.tabs.create = create;
+  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
+  assert.equal(page.element('companion-status').textContent, 'Watchlist details are ready to review.');
+});
+
+// 0.34 review (M5): a Watch that could not be saved is said on this half's status line and handed back to the research half, where the collector
+// pressed it; a Watch that worked hands nothing back.
+test('a failed Watch hands its reason back to the research half', async () => {
+  const replies = [{ ok: false, outcome: 'rejected', message: 'Draft store is full.' }, { ok: true, value: { id: 'draft-8' } }];
+  const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? replies.shift() : WORKING_SNAPSHOT) });
+  const handedBack = [];
+  const dispatch = globalThis.dispatchEvent;
+  globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
+  const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', closesAt: '2099-10-12' };
+  page.watch(watched);
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
+  assert.equal(page.element('companion-status').textContent, 'Draft store is full.');
+  page.watch(watched);
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  globalThis.dispatchEvent = dispatch;
+  assert.equal(handedBack.length, 1);
+});
+
+// 0.34 final review: a second Watch pressed while the first lot's draft is still being saved is refused aloud, not dropped - the collector who
+// pressed Watch on B is told so beside the list, rather than being told the details are ready and finding only A.
+test('a second Watch while the first draft is saving is refused and handed back, and only the first is saved', async () => {
+  const commands = [];
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(command);
+    if (command.type !== 'draft.save') return WORKING_SNAPSHOT;
+    await held;
+    return { ok: true, value: { id: 'draft-9' } };
+  } });
+  const handedBack = [];
+  const dispatch = globalThis.dispatchEvent;
+  globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
+  const create = globalThis.browser.tabs.create;
+  const opened = [];
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  page.watch({ title: 'Roma, Lot A', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=1', closesAt: '2099-10-12' });
+  await settle(); await settle();
+  page.watch({ title: 'Roma, Lot B', reference: 'Price 24', pageUrl: 'https://www.acsearch.info/search.html?id=2', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 5; tick += 1) await settle();
+  release();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  globalThis.dispatchEvent = dispatch;
+  globalThis.browser.tabs.create = create;
+  const saved = commands.filter(({ type }) => type === 'draft.save');
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].payload.title, 'Roma, Lot A');
+  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-9']);
+  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed',
+    detail: { message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' } }]);
+});
+
+// 0.34 (W2a): a capture the page refused is kept in the local diagnostics list as a kind of failure only - no page title, address or text reaches it.
+test('a refused capture is recorded as a capture failure, with nothing of the page in it', async () => {
+  const stored = {};
+  globalThis.browser.storage.local = { get: async (key) => ({ [key]: stored[key] }), set: async (items) => { Object.assign(stored, items); } };
+  try {
+    const page = await loadCompanion({
+      sendMessage: async () => WORKING_SNAPSHOT,
+      tabs: async () => [{ id: 3, url: 'https://auction.example/secret-lot-27', title: 'Secret lot 27' }],
+      script: async () => { throw new Error('Cannot access contents of https://auction.example/secret-lot-27'); },
+    });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    const entries = stored['gigaPinax:diagnostics:v1'];
+    assert.equal(entries?.length, 1);
+    assert.equal(entries[0].area, 'capture');
+    assert.equal(entries[0].code, 'failed');
+    assert.equal(/auction\.example|secret|Lot 27/i.test(JSON.stringify(entries)), false);
+
+    // A capture that works records nothing.
+    page.setTabs(async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }]);
+    answerScript = capturedPage({ reference: { value: 'RIC 306', provenance: 'visible-text' } });
+    await page.click('companion-capture-current');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.equal(stored['gigaPinax:diagnostics:v1'].length, 1);
+  } finally {
+    delete globalThis.browser.storage.local;
+  }
+});
+
+// 0.34 (W2a): the page's estimate, closing time and photo go with the captured lot to the workspace draft, in the shapes the draft holds, and come
+// off it with the auction context when the collector clears that.
+test('a captured lot takes the page’s estimate, closing time and photo to its draft, and only in their draft shapes', () => {
+  const payload = buildWatchlistDraftPayload({
+    title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg',
+  });
+  assert.deepEqual(payload, { target: 'watchlist', title: 'Lot 27', pageUrl: 'https://auction.example/27',
+    estimate: { minor: 120000, currency: 'EUR' }, closesAt: '2026-10-15T14:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' });
+  assert.equal(buildWatchlistDraftPayload({ title: 'Lot', startsAt: '2026-10-15T10:00:00+02:00' }).startsAt, '2026-10-15T10:00+02:00');
+  const refused = buildWatchlistDraftPayload({
+    title: 'Lot 27', estimate: { minor: 12.5, currency: 'EUR', note: 'x' }, closesAt: '2026-10-15T14:00', photoUrl: 'javascript:alert(1)',
+  });
+  assert.deepEqual(refused, { target: 'watchlist', title: 'Lot 27', closesAt: '2026-10-15' });
+  assert.equal(Object.hasOwn(buildWatchlistDraftPayload({ title: 'Lot', estimate: { minor: 5, currency: 'eur' } }), 'estimate'), false);
+});
+
+test('the capture’s own save carries the page values, and clearing the auction context takes them off', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'structured-data' } },
+      offerPrice: '1200', offerCurrency: 'EUR', closesAt: '2026-10-15T14:00:00+02:00', photoUrl: 'https://images.auction.example/27.jpg' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().estimate, { minor: 120000, currency: 'EUR' });
+  assert.equal(lastSaved().closesAt, '2026-10-15T14:00+02:00');
+  assert.equal(lastSaved().photoUrl, 'https://images.auction.example/27.jpg');
+
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  for (const field of ['auctionContext', 'estimate', 'closesAt', 'photoUrl']) assert.equal(lastSaved()[field] ?? null, null, field);
+  assert.equal(lastSaved().reference, 'RIC 306');
+});
+
+test('the captured lot’s provenance entries go to its draft and come off with its auction context', async () => {
+  const entries = [{ text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' }];
+  assert.deepEqual(buildWatchlistDraftPayload({ title: 'Lot', provenance: [...entries, { text: '' }, { text: 'Ex Hess', year: 'soon', extra: 1 }] }).provenance,
+    [...entries, { text: 'Ex Hess' }]);
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  const lastSaved = () => commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  assert.deepEqual(lastSaved().provenance, entries);
+  await page.click('companion-clear-auction-context');
+  await page.click('companion-capture-watchlist');
+  assert.equal(Object.hasOwn(lastSaved(), 'provenance'), false);
+});
+
+// 0.34 (W2a, closing I2's owner decision): the sale day Watch hands over rides on the draft as its closing day, and the workspace that opens the
+// draft offers it as a date-only auction day for the collector to confirm - end to end, from the Watch the research half sends to the auction the
+// workspace saves.
+test('Watch carries the sale day to the workspace, which offers it as a date-only auction day to confirm', async () => {
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-9' } } : WORKING_SNAPSHOT; },
+  });
+  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const { payload } = commands.find(({ type }) => type === 'draft.save');
+  assert.equal(payload.closesAt, '2099-10-12');
+
+  const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
+  const background = await createWorkspaceBackground();
+  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload });
+  assert.equal(draft.ok, true, draft.message);
+  const workspace = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
+  assert.ok(workspace.$('lot-page-values').textContent.includes('Add an auction day on 2099-10-12 when saving, from the page (2099-10-12).'));
+  const box = workspace.$('lot-form').elements.pageAuction;
+  assert.equal(box.checked, false);
+  box.checked = true;
+  await workspace.saveDetails();
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  const [event] = background.root().auctionEvents;
+  assert.equal(event.eventKind, 'auction-day');
+  assert.equal(event.precision, 'date-only');
+  assert.equal(event.localDate, '2099-10-12');
+  assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
+  assert.equal(background.root().lots[0].auctionEventId, event.id);
+});
+
+// A page can write addresses as long as a draft allows each one; what it states about the lot then gives way, provenance first, so the draft is
+// never refused as too large and the coin's own fields always reach the workspace.
+test('page values give way before a draft outgrows its storage bound, and the collector is told which', async () => {
+  const long = (name) => `https://auction.example/${name}/${'x'.repeat(2000)}`;
+  const provenance = Array.from({ length: 10 }, (_, index) => ({ text: `Ex ${'Leu '.repeat(45)}${index}`.slice(0, 199), source: 'y'.repeat(120), lot: '1'.repeat(20) }));
+  const payload = buildWatchlistDraftPayload({ title: 'Lot', pageUrl: long('page'), auctionContext: { pageUrl: long('page'), canonicalUrl: long('canonical') },
+    photoUrl: long('photo'), closesAt: '2026-10-15', estimate: { minor: 100, currency: 'EUR' }, provenance });
+  assert.ok(new TextEncoder().encode(JSON.stringify(payload)).length <= 10000);
+  assert.equal(Object.hasOwn(payload, 'provenance'), false);
+  assert.equal(payload.closesAt, '2026-10-15');
+  assert.equal(payload.auctionContext.canonicalUrl, long('canonical'));
+
+  // A capture whose page writes such addresses: the draft is saved, and the announcement names what the size bound left off.
+  const commands = [];
+  const page = await loadCompanion({
+    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-1' } } : WORKING_SNAPSHOT; },
+    tabs: async () => [{ id: 3, url: long('page'), title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: long('page'), canonicalUrl: long('canonical'), photoUrl: long('photo'),
+      candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: Array.from({ length: 10 }, (_, index) => `Ex Leu ${index} ${'collection '.repeat(18)}`).join('. ') } }],
+  });
+  await page.click('companion-capture-current');
+  await page.click('companion-capture-watchlist');
+  const saved = commands.filter(({ type }) => type === 'draft.save').at(-1).payload;
+  assert.equal(Object.hasOwn(saved, 'provenance'), false);
+  assert.equal(saved.photoUrl, long('photo'));
+  assert.equal(page.element('companion-status').textContent,
+    'Watchlist details are ready to review. Left off, the draft being at its size bound: provenance.');
+
+  // A draft with room for everything says nothing more.
+  const roomy = await loadCompanion({
+    sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-2' } } : WORKING_SNAPSHOT),
+    tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }],
+    script: async () => [{ result: { pageTitle: 'Lot 27', pageUrl: 'https://auction.example/27', candidates: { reference: { value: 'RIC 306', provenance: 'visible-text' } },
+      provenanceText: 'Ex Leu 7 (1973), lot 123.' } }],
+  });
+  await roomy.click('companion-capture-current');
+  await roomy.click('companion-capture-watchlist');
+  assert.equal(roomy.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });

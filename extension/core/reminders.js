@@ -1,4 +1,15 @@
+// @ts-check
 import { dateParts, failure, isIsoInstant, shiftDate } from './validate.js';
+/**
+ * @typedef {import('./types.js').AuctionEvent} AuctionEvent
+ * @typedef {import('./types.js').Alert} Alert
+ * @typedef {import('./types.js').ReminderTrigger} ReminderTrigger
+ * @typedef {import('./types.js').SchedulePlan} SchedulePlan
+ */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
 
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const FORMATTERS = new Map();
@@ -27,6 +38,11 @@ function localParts(format, instant) {
     .map(({ type, value }) => [type, Number(value)]));
 }
 
+/**
+ * @param {string} timeZone
+ * @param {string | number} instant
+ * @returns {string}
+ */
 export function localDateAtInstant(timeZone, instant) {
   const parts = localParts(formatter(timeZone), new Date(instant));
   return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
@@ -56,6 +72,12 @@ function zonedCandidates(date, localTime, format) {
   return { matches: [...new Set(matches)].sort(), all: [...new Set(all)].sort() };
 }
 
+/**
+ * The one instant a local date and time name in a zone, or a failure where the time does not exist or
+ * occurs twice there.
+ * @param {{ localDate: *, localTime: *, timeZone: *, disambiguation: 'reject' }} input
+ * @returns {Result<{ startsAt: string }>}
+ */
 export function resolveZonedDateTime(input) {
   if (!input || input.disambiguation !== 'reject') {
     return failure('invalid-disambiguation', 'Disambiguation must be reject.', 'disambiguation');
@@ -70,6 +92,7 @@ export function resolveZonedDateTime(input) {
   const cacheKey = `${input.localDate}|${input.localTime}|${input.timeZone}`;
   if (RESOLVED.has(cacheKey)) return structuredClone(RESOLVED.get(cacheKey));
   const unique = zonedCandidates(date, input.localTime, format).matches;
+  /** @type {Result<{ startsAt: string }>} */
   let result;
   if (unique.length === 0) result = failure('nonexistent', 'That local time does not exist in this time zone.', 'localTime');
   else if (unique.length > 1) result = failure('ambiguous', 'That local time occurs more than once in this time zone.', 'localTime');
@@ -79,6 +102,11 @@ export function resolveZonedDateTime(input) {
   return structuredClone(result);
 }
 
+/**
+ * @param {AuctionEvent[]} events
+ * @param {string} [_now]
+ * @returns {ReminderTrigger[]}
+ */
 export function deriveReminderTriggers(events, _now) {
   const triggers = [];
   for (const event of events) {
@@ -146,9 +174,16 @@ function earliest(current, candidate) {
   return current === null || candidate < current ? candidate : current;
 }
 
+/**
+ * @param {AuctionEvent[]} events
+ * @param {{ alerts?: Alert[] } | null | undefined} schedulerState
+ * @param {string} now
+ * @returns {SchedulePlan}
+ */
 export function reconcileScheduler(events, schedulerState, now) {
   const occurrences = new Map((schedulerState?.alerts ?? []).map((alert) => [alert.triggerId, alert]));
   const triggers = deriveReminderTriggers(events, now);
+  /** @type {Record<string, ReminderTrigger[]>} */
   const overdueByEvent = {};
   const missedTriggerIds = [];
   let nextWakeAt = null;
@@ -161,14 +196,15 @@ export function reconcileScheduler(events, schedulerState, now) {
       continue;
     }
     if (occurrence?.status === 'claimed') {
-      const retryAt = instantAt(Date.parse(occurrence.claimedAt) + CLAIM_RETRY_MS);
+      // A claimed alert carries its claim time, and a snoozed one its end (records.js alertResult).
+      const retryAt = instantAt(Date.parse(/** @type {string} */ (occurrence.claimedAt)) + CLAIM_RETRY_MS);
       if (retryAt > now) {
         nextWakeAt = earliest(nextWakeAt, retryAt);
         continue;
       }
     }
-    const effectiveAt = occurrence?.status === 'snoozed' && occurrence.snoozedUntil > now
-      ? occurrence.snoozedUntil : trigger.triggerAt;
+    const effectiveAt = occurrence?.status === 'snoozed' && /** @type {string} */ (occurrence.snoozedUntil) > now
+      ? /** @type {string} */ (occurrence.snoozedUntil) : trigger.triggerAt;
     if (effectiveAt > now) {
       nextWakeAt = earliest(nextWakeAt, effectiveAt);
       continue;

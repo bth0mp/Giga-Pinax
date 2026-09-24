@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { catalogueMetadataText, createLocalCatalogue, packedRecordToCard } from '../extension/local-catalogue.js';
 import { ricMintSection } from '../extension/catalogues.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
-import { lookupType, nomismaSlugs, parseReference, portraitSlug, toCard } from '../extension/lookup.js';
+import { lookupType, nomismaSlugs, parseReference, pickRicEntries, pickRicHits, portraitSlug, toCard } from '../extension/lookup.js';
 import { bundle, bundleJson, bundledLabels, bundlePath, peopleOn, skip } from './helpers/bundle.mjs';
 
 const whole = (prefix) => [{ file: `records-${prefix}.json`, from: '' }];
@@ -709,5 +709,65 @@ test('over the bundled catalogue, a joint heading naming a section and a person 
     assert.equal(result.personMismatch, undefined, text);
     assert.ok(result.candidates.some((entry) => entry.id === id), JSON.stringify(result.candidates));
     assert.ok(result.candidates.length <= 5, JSON.stringify(result.candidates));
+  }
+});
+
+// The index is read into objects once per bundle, and a RIC lookup the number index narrows builds only the entries it lists. Each index pair here
+// counts how often it is read after the index has loaded (its validation reads every pair once, which is the load and not a lookup).
+const countedIndex = () => {
+  let loaded = false;
+  const reads = new Map();
+  const entries = index.entries.map((pair, position) => new Proxy(pair, { get(target, key) {
+    if (loaded && (key === '0' || key === '1')) reads.set(position, (reads.get(position) ?? 0) + 1);
+    return Reflect.get(target, key);
+  } }));
+  return { value: { schemaVersion: 1, entries }, reads, start: () => { loaded = true; } };
+};
+
+test('a RIC lookup builds only the index entries the number index lists, and a second lookup rebuilds none', async () => {
+  const counted = countedIndex();
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch({ 'index.json': counted.value }), baseUrl: 'moz-extension://test/data/' });
+  // The index is loaded, and validated, by the first lookup; only what the lookups after it read is counted.
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972' })).card.id, 'ric.2_1(2).ves.972');
+  counted.start();
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Rome', number: '287' })).card.id, 'ric.7.rom.287');
+  // RIC 287's four positions are 2 to 5, and nothing else is built for it.
+  assert.deepEqual([...counted.reads.keys()].sort((a, b) => a - b), [2, 3, 4, 5]);
+  counted.reads.clear();
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'VII', section: 'Londinium', number: '287' })).card.id, 'ric.7.lon.287');
+  assert.deepEqual([...counted.reads.keys()], []);
+  // Another number builds its own entries and nobody else's.
+  assert.equal((await local.lookupType({ catalogue: 'RIC', volume: 'II', section: 'Trajan', number: '720' })).card.id, 'ric.2.tr.720');
+  assert.deepEqual([...counted.reads.keys()].sort((a, b) => a - b), [6, 7, 8]);
+});
+
+test('a title catalogue\'s index is read into entries once, however many lookups follow', async () => {
+  const pella = {
+    'metadata.json': { schemaVersion: 1, corpus: 'pella', recordCount: 2, activeRecordCount: 2, aliases: {}, shards: { price: whole('price') } },
+    'records-price.json': { schemaVersion: 1, records: {
+      'price.23': { i: 'price.23', l: 'Price 23', o: {}, r: {} }, 'price.24': { i: 'price.24', l: 'Price 24', o: {}, r: {} } } },
+  };
+  let loaded = false;
+  let reads = 0;
+  const entries = [['price.23', 'Price 23'], ['price.24', 'Price 24']].map((pair) => new Proxy(pair, { get(target, key) {
+    if (loaded && (key === '0' || key === '1')) reads += 1;
+    return Reflect.get(target, key);
+  } }));
+  const local = createLocalCatalogue({ fetchImpl: fixtureFetch({ ...pella, 'index.json': { schemaVersion: 1, entries } }), baseUrl: 'moz-extension://test/data/' });
+  assert.equal((await local.lookupType(parseReference('Price 23'))).card.id, 'price.23');
+  loaded = true;
+  assert.equal((await local.lookupType(parseReference('Price 24'))).card.id, 'price.24');
+  assert.equal((await local.lookupType(parseReference('Price 99'))).status, 'candidates');
+  assert.equal(reads, 0);
+});
+
+// The bundled catalogue keeps each title's reading and picks over the readings, so a broadened retry reads nothing twice: the pick over read titles
+// is the pick over the titles themselves.
+test('picking over titles already read is picking over the titles', () => {
+  const entries = index.entries.map(([id, title]) => ({ id, title }));
+  const read = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }));
+  for (const reference of [{ catalogue: 'RIC', volume: 'VII', section: 'Rome', number: '287' }, { catalogue: 'RIC', volume: '', section: '', number: '287' },
+    { catalogue: 'RIC', volume: 'II', section: 'Domitian', number: '720' }, { catalogue: 'RIC', volume: '', section: '', number: '999' }]) {
+    assert.deepEqual(pickRicHits(read, reference), pickRicEntries(entries, reference), JSON.stringify(reference));
   }
 });

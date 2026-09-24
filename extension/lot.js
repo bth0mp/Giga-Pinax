@@ -3,7 +3,7 @@ import { isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
 export const MAX_LOT = 3000;
-const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop']);
+const TYPED = Object.freeze(['RIC', 'RRC', 'SC', 'Price', 'Bop', 'CPE', 'Newell']);
 
 // A run of references starts only at one of these keys. The single letters C (Cohen) and S (Sear) are matched upper case only and kept only in a run
 // that also has a longer key, so "c. 386-338 BC" and the legend "S - C" stay text while "C.309 - RIC.112" is two references. Keys inside a bracket are
@@ -57,7 +57,9 @@ const KEYS = [
   surname('Hendin'), surname('Meshorer'), 'TJC', 'AJC', 'GBC', surname('Mildenberg'), 'HN Italy', surname('Vlasto'), surname('Fischer-Bossert'),
   surname('Böhringer'), surname('Boehringer'), surname('Bohringer'), surname('Noe'), surname('Jenkins'), surname('Weber'), surname('Forrer'),
   surname('Pozzi'), surname('Jameson'),
-  surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'), surname('Newell'), surname('Le Rider'),
+  // Newell's Demetrius Poliorcetes is AGCO's book, and the one Newell a reference names by title: it goes before the bare surname, which stays prices only.
+  surname('Gulbenkian'), plateName('Traité'), plateName('Traite'), surname('Thompson'), surname('Troxell'),
+  String.raw`Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?`, surname('Newell'), surname('Le Rider'),
   'ACGC', surname('Kraay'), surname('Grose'), 'ACIP', 'CNH', surname('Betlyon'), surname('Rouvier'), surname('Klein'), surname('Asyut'), 'IGCH',
   surname('Carradice'), surname('Bodenstedt'), surname('Ashton'), surname('Draganov'), plateName('Von Fritze'), plateName('Karayotov'),
   // Seleucid and Ptolemaic, then the East: Parthia, the Sasanians, Bactria and their collections.
@@ -98,17 +100,94 @@ const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\
 const PROVENANCE = /(?:^|[.!?]\s+|\n\s*)((?:Ex|From|Provenance)\b)/;
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
+// Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975.", "no. 1973", "Nr. 12"), nor at the one a day
+// is written with before its month and year ("25. Mai 1973"), whose tail would be left behind as a reference.
+const PROVENANCE_END = /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u;
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
     const start = cut.index + cut[0].length - cut[1].length;
     const rest = out.slice(start);
-    // Not at the full stop of an initial or an abbreviation inside it ("Ex Dr. Sear collection, 1975."), whose tail would be left behind as a reference.
-    const end = rest.search(/(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec))\.(?=\s)|\n|$/u);
+    const end = rest.search(PROVENANCE_END);
     out = out.slice(0, start) + rest.slice(end + 1);
   }
   return out;
 };
+
+// The provenance a lot text carries, read into ordered entries from what is written: "Ex Leu 7 (1973), lot 123; Ex Hunt collection, Sotheby's
+// 1991" is two owners, each with the words it was written in. A source is the entry's own words with its date and lot taken out, never a house
+// named from an abbreviation; a year is a four-digit year the entry writes (not a lot, sale or catalogue number); a lot is the number after "lot".
+// Every pattern here is anchored or bounded and the text is read once, forwards, with its spaces collapsed first, so no run a page writes - of
+// spaces, brackets, digits or words - makes it backtrack.
+const PROVENANCE_READ = 6000;
+const PROVENANCE_ENTRIES = 10;
+const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
+const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
+const PROVENANCE_LABEL = /^provenance ?:? ?/i;
+const PROVENANCE_MARKER = /^(?:ex|from)\b\.? ?:? ?/i;
+const PROVENANCE_LOT = /,? ?\b(?:lots?|los)\b\.? ?(?:no\.? ?|nr\.? ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
+const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\bno|\bnr|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?![\d,]|\.\d)/gi;
+const PROVENANCE_DATE = /(?:\b\d{1,2}(?:st|nd|rd|th)?\.? )?\b(?:Jan(?:uary)?|Januar|Feb(?:ruary)?|Februar|Mar(?:ch)?|März|Apr(?:il)?|May|Mai|June?|Juni|July?|Juli|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?)\.? (?:\d{1,2}(?:st|nd|rd|th)?,? )?$|\b\d{1,2}[./]\d{1,2}[./]$/i;
+const TRIMMED = new Set([' ', ',', '.', ';', ':', '-', '–', '\n']);
+const trimEnds = (value) => {
+  let start = 0, end = value.length;
+  while (start < end && TRIMMED.has(value[start])) start += 1;
+  while (end > start && TRIMMED.has(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+};
+
+function provenanceSentences(text) {
+  const source = String(text).slice(0, PROVENANCE_READ * 4).replace(/[^\S\n]+/g, ' ').replace(/ ?\n\s*/g, '\n').slice(0, PROVENANCE_READ);
+  const sentences = [];
+  PROVENANCE_ALL.lastIndex = 0;
+  for (let cut; sentences.length < PROVENANCE_ENTRIES * 2 && (cut = PROVENANCE_ALL.exec(source));) {
+    const start = cut.index + cut[0].length - cut[1].length;
+    PROVENANCE_END_ALL.lastIndex = start;
+    const end = PROVENANCE_END_ALL.exec(source)?.index ?? source.length;
+    sentences.push(source.slice(start, end));
+    PROVENANCE_ALL.lastIndex = Math.max(end, start + 1);
+  }
+  return sentences;
+}
+
+function provenanceEntry(piece) {
+  const text = trimEnds(piece.replace(PROVENANCE_LABEL, ''));
+  let working = trimEnds(text.replace(PROVENANCE_MARKER, ''));
+  if (!/[\p{L}\d]/u.test(working)) return null;
+  const entry = { text: text.slice(0, 300) };
+  const lot = PROVENANCE_LOT.exec(working);
+  if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
+  let year = null;
+  PROVENANCE_YEAR.lastIndex = 0;
+  for (let found; (found = PROVENANCE_YEAR.exec(working));) year = found;
+  if (year) {
+    const at = year.index;
+    let from = at, to = at + 4;
+    const open = working.lastIndexOf('(', at), close = working.indexOf(')', at);
+    const date = PROVENANCE_DATE.exec(working.slice(Math.max(0, at - 30), at));
+    if (open >= 0 && close >= 0 && working.lastIndexOf(')', at) < open && !working.slice(at, close).includes('(')) { from = open; to = close + 1; }
+    else if (date) from = at - (Math.min(at, 30) - date.index);
+    working = working.slice(0, from) + working.slice(to);
+  }
+  const source = trimEnds(working.replace(/, ?(?=,)/g, '')).slice(0, 120);
+  if (/\p{L}/u.test(source)) entry.source = source;
+  if (year) entry.year = Number(year[0]);
+  if (lot) entry.lot = lot[1];
+  return entry;
+}
+
+export function readProvenance(text) {
+  if (typeof text !== 'string') return [];
+  const entries = [];
+  for (const sentence of provenanceSentences(text)) {
+    for (const piece of sentence.split(/;|,(?= ?ex )/i)) {
+      if (entries.length >= PROVENANCE_ENTRIES) return entries;
+      const entry = provenanceEntry(piece);
+      if (entry) entries.push(entry);
+    }
+  }
+  return entries;
+}
 const unpunctuate = (value) => value.trim().replace(/\s*[.,;:]+$/, '');
 // A surname's number is the whole of its reference, and a bare year with prose after it ("Sommer 1994 bei Muenzhandlung Ritter") is a date. A plate
 // volume belongs to the number ("Lindgren III 456"), and the remark or variety a dealer hangs on it is dropped before it is read ("Emmett 838 (R2)").
@@ -121,11 +200,12 @@ const numberOnly = (body) => NUMBER_ONLY.test(unpunctuate(body.replace(REMARKS, 
 const unseparate = (body) => body.replace(/^(?![.,]\s)[\s.:#-]+(?!\p{Lu})/u, ' ');
 const YEAR = /^\s*(?:1[5-9]\d\d|20\d\d|2100)$/;
 // A bare 1500-2100 number after a key may be the year of a book rather than a type number, and only evidence decides which. First, a typed catalogue
-// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s and a Bopearachchi series is one or two digits, so a number
-// this big is a year whatever else the line says. Otherwise the clause must say so: a citation cue in front of the year, or a page, plate, note,
-// edition, bracketed year or verb of argument behind it. With neither, the reference is kept - Price runs past 3900 and Sear, Hendin, Svoronos and SNG
+// whose numbers never reach it cannot mean the type: Crawford's Republic ends in the 500s, a Bopearachchi series is one or two digits and Newell's
+// Demetrius ends at 182, so a number this big is a year whatever else the line says. CPE is not among them: its key names every volume of Lorber's
+// book, and PCO, which holds only the first, cannot say where a later one's numbers end. Otherwise the clause must say so: a citation cue in front of
+// the year, or a page, plate, note, edition, bracketed year or verb of argument behind it. With neither, the reference is kept - Price runs past 3900 and Sear, Hendin, Svoronos and SNG
 // Copenhagen all have real numbers in that range, and losing one of those costs the collector more than a stray prices-only row does.
-const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?)$/i;
+const OVER_RANGE = /^(?:RRC|Craw(?:f|ford)?\.?|Cr\.?|Bopearachchi|Bop\.?|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
 // The cue stands in the reference's own sentence: across a full stop "As." is the Roman denomination, not the cue of "as Price 1991 argues".
 const CUE = /\b(?:see|cf|per|following|compare|contra|after|from|published|discussed|cited|dated|attributed)(?:\s+(?:by|in|as))?\s*$/i;
 // Only what is said of an author: "reads", "gives", "places" and "attributes" are what a dealer says of the coin, and a reference is no book because
@@ -304,7 +384,7 @@ function chunks(span) {
 }
 
 // The keys of the catalogues with type data. Their reference is its first chunk: "Price 3949, 3950" cites two types, so 3950 ends Price 3949.
-const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?)$/i;
+const TYPED_KEY_WORD = /^(?:RIC|R\.I\.C\.?|RRC|Crawford|Craw\.?|Cr\.?|SC|Seleucid Coins|Price|Pr|Bopearachchi|Bop\.?|CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
 // A full stop a dealer puts after a typed key ("RIC. 60", "Pr. 3949") is the key's own, as "RSC. 119" has always been read. Only the keys that are no
 // English word take it: "Price." is left alone for the reason readable leaves "Price:" alone, and "SC." ends many a legend ("large SC. 12 h").
 const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;
@@ -314,6 +394,10 @@ const AMOUNT_KEY = /^(?:Price|Pr)$/i;
 const AMOUNT = /^[\s.:]*\d+(?:[.,']\d+)*\s*(?:[$€£]|(?:EUR|USD|CHF|GBP)(?!\p{L}))/u;
 // RIC spelled with stops is RIC.
 const RIC_STOPS = /^R\.I\.C\.?\s*/;
+// A CPE or Newell Demetrius citation may put "no." before its number, as PCO's and AGCO's own titles do ("CPE no. 330", "Newell Demetrius
+// Poliorcetes, no. 45"): the word is read past, and a volume numeral in front of it stays ("CPE I, no. 330" is CPE I 330).
+const NUMBERED_KEY = /^(?:CPE|Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?)$/i;
+const NUMBER_WORD = /^(\s+I(?![\p{L}\d]))?\s*,?\s*no\.\s*(?=[Bb]?\d)/iu;
 
 // The reference after one key: its first chunk (read up to its last number), then, for a catalogue without type data, every chunk that starts with a
 // number ("HGC 12, 72", "Svoronos pl. 20"). A chunk starting with a word is never part of it: a reference without a key ("Thirion 123", "Woytek 290b",
@@ -402,7 +486,8 @@ export function findReferences(input) {
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
     const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
-    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '') : after;
+    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '')
+      : NUMBERED_KEY.test(match[2]) ? after.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : after;
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
@@ -474,8 +559,11 @@ export function lotLookup(found, rulers) {
   const section = found.reference.section ? '' : headingSection(rulers);
   return section ? { ...found.reference, section, volume: volumeFor(section, found.reference.volume) } : { ...found.reference, rulers };
 }
+// A lone Svoronos number may open the CPE type PCO files it under (catalogues.js), so its row promises nothing either way.
+const MAYBE_FILED = /^Svoronos \d+[A-Za-z]?$/i;
 export const lotLabel = (found, rulers) => [found.text, (borrowsRulers(found, rulers) && rulers[0]) || mintSection(found),
-  !found.typed && 'prices only', found.cf && 'cf.', found.variant && 'var.'].filter(Boolean).join(' · ');
+  !found.typed && !MAYBE_FILED.test(found.reference?.number ?? '') && 'prices only', found.cf && 'cf.', found.variant && 'var.']
+  .filter(Boolean).join(' · ');
 
 // Lot text copied in lines (a paste, a right-click) for a one-line box: a break separates as ". " does, so a weight or an "Ex …" line never joins the
 // reference above it ("…RIC 1073⏎18 mm"), and a line ending in its own mark keeps it ("HGC 4,⏎1598"). One reference split over lines ("RIC I²⏎Nero

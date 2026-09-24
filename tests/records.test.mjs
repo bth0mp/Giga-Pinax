@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   LIMITS,
@@ -23,6 +24,63 @@ test('capture and research drafts accept validated auction context', () => {
   assert.equal(validateDraftPayload('auction-capture', { rawText: 'Coin', pageUrl: 'https://house.test/lot/1', auctionContext }).ok, true);
   assert.equal(validateDraftPayload('research-highlight', { rawText: 'Coin', auctionContext }).ok, true);
   assert.equal(validateDraftPayload('auction-capture', { auctionContext: { pageUrl: 'file:///bad' } }).ok, false);
+});
+
+// 0.34 (W2a): what a lot page states about its sale rides on a current-lot draft for the collector to confirm - an estimate in the page's own
+// currency and minor units, a closing day or a closing time with its offset, and a photo link - each validated here as it is kept.
+test('a current-lot draft carries the page’s estimate, closing time and photo only in their validated shapes', () => {
+  const draft = (fields) => validateDraftPayload('current-lot', { target: 'watchlist', title: 'Coin', ...fields });
+  for (const fields of [
+    { estimate: { minor: 120000, currency: 'EUR' } }, { estimate: { minor: 5000, currency: 'JPY' } },
+    { closesAt: '2026-10-15' }, { closesAt: '2026-10-15T14:00+02:00' }, { closesAt: '2026-10-15T12:00Z' }, { closesAt: '2026-10-15T09:30-05:00' },
+    { photoUrl: 'https://house.test/27.jpg' }, { startsAt: '2026-10-15' }, { startsAt: '2026-10-15T10:00+02:00' },
+  ]) assert.equal(draft(fields).ok, true, JSON.stringify(fields));
+  for (const [fields, path] of [
+    [{ estimate: { minor: 1200, currency: 'eur' } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 1200, currency: 'EURO' } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 12.5, currency: 'EUR' } }, 'payload.estimate.minor'],
+    [{ estimate: { minor: 0, currency: 'EUR' } }, 'payload.estimate.minor'],
+    [{ estimate: { minor: 1200 } }, 'payload.estimate.currency'],
+    [{ estimate: { minor: 1200, currency: 'EUR', converted: true } }, 'payload.estimate.converted'],
+    [{ estimate: '1200 EUR' }, 'payload.estimate'],
+    [{ closesAt: '2026-10-15T14:00' }, 'payload.closesAt'],
+    [{ closesAt: '2026-02-30' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T24:00Z' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00+15:00' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00+14:30' }, 'payload.closesAt'],
+    [{ closesAt: '2026-10-15T14:00-14:01' }, 'payload.closesAt'],
+    [{ closesAt: 'next Tuesday' }, 'payload.closesAt'],
+    [{ startsAt: '2026-10-15T10:00' }, 'payload.startsAt'],
+    [{ photoUrl: 'javascript:alert(1)' }, 'payload.photoUrl'],
+    [{ photoUrl: `https://house.test/${'x'.repeat(2048)}` }, 'payload.photoUrl'],
+  ]) {
+    const result = draft(fields);
+    assert.equal(result.ok, false, JSON.stringify(fields));
+    assert.equal(result.error.path, path, JSON.stringify(fields));
+  }
+  // Only the watchlist's own draft kind takes them.
+  assert.equal(validateDraftPayload('auction-capture', { rawText: 'Coin', photoUrl: 'https://house.test/27.jpg' }).ok, false);
+});
+
+test('a current-lot draft carries the page’s provenance entries only in their validated shape', () => {
+  const draft = (provenance) => validateDraftPayload('current-lot', { target: 'watchlist', title: 'Coin', provenance });
+  assert.equal(draft([{ text: 'Ex Leu 7 (1973), lot 123', source: 'Leu 7', year: 1973, lot: '123' }, { text: 'Ex Hess' }]).ok, true);
+  for (const [provenance, path] of [
+    ['Ex Leu 7', 'payload.provenance'],
+    [Array.from({ length: 11 }, () => ({ text: 'Ex Leu' })), 'payload.provenance'],
+    [[{ text: '' }], 'payload.provenance[0].text'],
+    [[{ text: 'x'.repeat(301) }], 'payload.provenance[0].text'],
+    [[{ text: 'Ex Leu', source: 'x'.repeat(121) }], 'payload.provenance[0].source'],
+    [[{ text: 'Ex Leu', year: '1973' }], 'payload.provenance[0].year'],
+    [[{ text: 'Ex Leu', year: 99999 }], 'payload.provenance[0].year'],
+    [[{ text: 'Ex Leu', lot: 'x'.repeat(21) }], 'payload.provenance[0].lot'],
+    [[{ text: 'Ex Leu', sourceUrl: 'https://x.test' }], 'payload.provenance[0].sourceUrl'],
+    [[null], 'payload.provenance[0]'],
+  ]) {
+    const result = draft(provenance);
+    assert.equal(result.ok, false, JSON.stringify(provenance).slice(0, 80));
+    assert.equal(result.error.path, path, JSON.stringify(provenance).slice(0, 80));
+  }
 });
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -1087,4 +1145,11 @@ test('correcting won flags its linked collection entry for explicit review', () 
   assert.equal(corrected.ok, true);
   assert.equal(corrected.value.collectionReviewReason, 'source-lot-no-longer-won');
   assert.equal(corrected.value.outcome.correctedAt, NOW);
+});
+
+// 0.34 final review: the one own-key test the core modules share lives in core/fields.js; the projections import it rather than keep a copy.
+test('core/projections.js takes OWN from core/fields.js and declares no copy of its own', () => {
+  const source = readFileSync(new URL('../extension/core/projections.js', import.meta.url), 'utf8');
+  assert.match(source, /^import \{[^}]*\bOWN\b[^}]*\} from '\.\/fields\.js';$/m);
+  assert.doesNotMatch(source, /^(?:export )?(?:const|let|function) OWN\b/m);
 });

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Giga Pinax</title>
+<meta name="description" content="A Brave, Chrome and Firefox extension for researching ancient coin references and their sale prices, with a local watchlist and collection.">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+<img src="icon.png" alt="">
+<div>
+<h1>Giga Pinax</h1>
+<p>Research ancient coins and what they sell for; keep your auction and collection records in your own browser.</p>
+</div>
+</header>
+<main>
+<p>Giga Pinax is a free, open-source extension for Brave, Chrome and Firefox. Type a catalogue reference or paste a whole lot description, and it finds the coin's type, gathers recent hammer prices, works out what a bid really costs, and keeps the coin in a local watchlist beside your own notes, photos and provenance. It has no account, no analytics and no server of its own, and it never places, changes or cancels a bid.</p>
+
+<p><a class="download" href="https://github.com/bth0mp/Giga-Pinax/releases/latest">Download the latest release</a></p>
+
+<h2>What it does</h2>
+<ul>
+<li><strong>Research.</strong> RIC, Crawford, Price, Seleucid Coins, CPE and Newell (Demetrius Poliorcetes) references are answered from type data packaged with the extension, with no network request; Bopearachchi references and anything the package does not hold are looked up with the American Numismatic Society and Nomisma.org. An ambiguous reference offers choices instead of a guess.</li>
+<li><strong>Prices.</strong> A median of recent acsearch sales, fetched with your own signed-in acsearch session, and a separate median of CoinArchives public results. Each counts how many results cite your coin and keeps the rest out of the median, and currencies and providers are never mixed.</li>
+<li><strong>Bids.</strong> Hammer plus buyer's premium, shipping and payment fees, or the highest hammer a budget allows, with a fixed increment or a house's own increment ladder.</li>
+<li><strong>Records.</strong> Watchlist and auction queues, reminders, outcomes, provenance, measurements and photo links, and comparison of saved coins — all stored in your browser, with JSON backups you export yourself.</li>
+</ul>
+
+<h2>Install</h2>
+<p>Open the <a href="https://github.com/bth0mp/Giga-Pinax/releases/latest">latest release</a> and download the package for your browser under <strong>Assets</strong> — not GitHub's <strong>Source code</strong> archive. No GitHub account is needed.</p>
+
+<div class="browser">
+<h3>Brave or Chrome</h3>
+<p>Extract the Brave ZIP into a folder you will keep. Open <code>brave://extensions</code> or <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>, select <strong>Load unpacked</strong>, and choose the folder holding <code>manifest.json</code>. To update, extract the new ZIP over the same folder and select <strong>Reload</strong>.</p>
+</div>
+
+<div class="browser">
+<h3>Firefox 142 or later</h3>
+<p>When the release carries a signed package, <code>giga-pinax-firefox-x.y.z.xpi</code>, select it in Firefox and confirm the installation. It stays installed, and Firefox keeps it up to date by itself.</p>
+<p>Otherwise, download the Firefox ZIP, open <code>about:debugging</code>, select <strong>This Firefox</strong> and <strong>Load Temporary Add-on</strong>, and choose the ZIP. Firefox removes a temporary add-on when it restarts.</p>
+</div>
+
+<p>The <a href="https://github.com/bth0mp/Giga-Pinax/blob/main/docs/INSTALL.md">installation guide</a> has every step and a first tour.</p>
+
+<h2>Privacy</h2>
+<p>Giga Pinax contacts a research provider only for a lookup or a price search you start, and your saved records never leave your browser unless you export them. The <a href="privacy.html">privacy policy</a> lists every host it contacts and when.</p>
+<p>This site has no scripts, cookies, web fonts or analytics. GitHub Pages serves it, and GitHub receives the ordinary request data of any visit.</p>
+
+<nav aria-label="Project">
+<ul>
+<li><a href="privacy.html">Privacy policy</a></li>
+<li><a href="https://github.com/bth0mp/Giga-Pinax/blob/main/CHANGELOG.md">Changelog</a></li>
+<li><a href="https://github.com/bth0mp/Giga-Pinax">Source code</a></li>
+<li><a href="https://github.com/bth0mp/Giga-Pinax/issues">Issues</a></li>
+</ul>
+</nav>
+</main>
+<footer>
+<p>The code is released under the MIT License. The bundled catalogue data keeps its own terms: OCRE, CRRO, PELLA, SCO, PCO and AGCO type data from the American Numismatic Society under ODbL 1.0, and Nomisma.org concept data under CC BY 3.0. Giga Pinax is not affiliated with the American Numismatic Society, Nomisma.org, acsearch, CoinArchives or any auction house.</p>
+</footer>
+</body>
+</html>

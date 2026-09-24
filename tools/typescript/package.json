@@ -1,0 +1,9 @@
+{
+  "name": "giga-pinax-typescript",
+  "private": true,
+  "description": "The TypeScript that checks the JSDoc types (jsconfig.json), pinned with its lockfile; installed with npm ci by CI.",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

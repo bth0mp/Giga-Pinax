@@ -6,3 +6,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # The web-ext the workflows lint and sign with, pinned with its whole tree in tools/web-ext/package-lock.json.
+  - package-ecosystem: npm
+    directory: /tools/web-ext
+    schedule:
+      interval: weekly
+  # The TypeScript CI checks the JSDoc types with, pinned in tools/typescript/package-lock.json.
+  - package-ecosystem: npm
+    directory: /tools/typescript
+    schedule:
+      interval: weekly
+  # The Playwright the optional Browser checks run, pinned in e2e/package-lock.json.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly

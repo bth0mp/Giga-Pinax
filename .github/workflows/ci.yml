@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
@@ -34,5 +36,28 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Build the packages
         run: python scripts/build.py
+      # web-ext and its whole dependency tree are pinned, with integrity hashes, in tools/web-ext/package-lock.json.
+      - name: Install the pinned web-ext
+        run: npm ci --prefix tools/web-ext --no-audit --no-fund
+      # --self-hosted: the package names its own update manifest, which the linter refuses only for an AMO-hosted add-on.
       - name: Lint the Firefox package
-        run: npx --yes web-ext@10.6.0 lint --source-dir dist/firefox --warnings-as-errors
+        run: tools/web-ext/node_modules/.bin/web-ext lint --source-dir dist/firefox --warnings-as-errors --self-hosted
+
+  # The JSDoc types of the store, core/ and the page modules (jsconfig.json), checked with no build step: nothing is
+  # emitted and the extension ships as it is. TypeScript is pinned, with its integrity hash, in
+  # tools/typescript/package-lock.json and installed with npm ci, as web-ext is.
+  types:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - name: Install the pinned TypeScript
+        run: npm ci --prefix tools/typescript --no-audit --no-fund
+      - name: Check the types
+        run: tools/typescript/node_modules/.bin/tsc -p jsconfig.json --noEmit

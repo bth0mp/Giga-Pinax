@@ -1,4 +1,5 @@
 import { squash } from './core/validate.js';
+import { recordFetchFailure } from './core/diagnostics.js';
 import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
@@ -34,6 +35,19 @@ export const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\
 
 // Every SCO record lives at sc.1.{number}, whatever the volume part of Seleucid Coins it belongs to.
 const SCO_ID = 'sc.1.';
+// The record a reference names outright, for the catalogues whose records are identified by the number itself: SC's above; a CPE number is part 1's
+// (cpe.1_1.330) unless Lorber's B says it is part 2's (cpe.1_2.B549), a letter after it being part of the number and its case kept, since 506A and
+// 506a are two types; a Newell number is its Demetrius Poliorcetes type (newell.demetrius.45).
+const RECORD_IDS = Object.freeze({
+  SC: (number) => `${SCO_ID}${number}`,
+  CPE: (number) => (number.startsWith('B') ? `cpe.1_2.${number}` : `cpe.1_1.${number}`),
+  Newell: (number) => `newell.demetrius.${number}`,
+});
+// The number as the corpus writes it: Lorber's B is a capital whoever typed it.
+const catalogueNumber = (catalogue, number) => {
+  const digits = referenceNumber(catalogue, number);
+  return catalogue === 'CPE' ? digits.replace(/^b(?=\d)/, 'B') : digits;
+};
 // Bopearachchi (1991) references resolve through BIGR, whose own numbering ("Euthydemus I 13.1") differs from Bopearachchi's series ("Euthydème I 24A");
 // the series is read from each record's NUDS XML, which is where BIGR keeps the citation.
 const BIGR = 'bigr';
@@ -284,10 +298,11 @@ export function buildQuery({ catalogue, number, volume, section }) {
   // Cleaned as parseReference cleans it, so the guided field and the Reference box give the same card, Recent chip and term.
   if (catalogue === 'Other') return { corpus: OTHER, query: otherNumber(unwrap(unquote(number))) };
   // The rest are a key and a number: the key as the corpus titles its types, the number without the key a collector typed.
-  const { corpus, queryKey, prefixPattern } = catalogueOf(catalogue) ?? CATALOGUES.Price;
-  const digits = unquote(number).replace(prefixPattern, '');
+  const known = catalogueOf(catalogue) ? catalogue : 'Price';
+  const { corpus, queryKey } = CATALOGUES[known];
+  const digits = catalogueNumber(known, number);
   const query = squash(`${queryKey} ${digits}`);
-  return catalogue === 'SC' ? { corpus, query, id: `${SCO_ID}${digits}` } : { corpus, query };
+  return Object.hasOwn(RECORD_IDS, known) ? { corpus, query, id: RECORD_IDS[known](digits) } : { corpus, query };
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -426,6 +441,8 @@ const andList = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')}
 // RIC files a Caesar's coins under the reigning emperor (Titus under Vespasian) and an empress's under her husband, which reads as a wrong result
 // until the card says so. It reports only what the record holds: no rank, no claim that the search was wrong, and no name RIC does not use itself.
 export function filingNote(card) {
+  // A CPE card reached from a Svoronos number says where PCO files that number; the bundle wrote the sentence from PCO's own link.
+  if (typeof card?.filedAs === 'string') return card.filedAs;
   if (card?.corpus !== 'ocre') return '';
   const reference = parseReference(card.label, false);
   if (reference?.catalogue !== 'RIC') return '';
@@ -584,6 +601,7 @@ export async function lookupById(corpus, id, options = {}) {
     const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
     return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal, citation });
   } catch (error) {
+    void recordFetchFailure('lookup', error);
     return failureOutcome(error);
   } finally {
     timer.done();
@@ -597,7 +615,15 @@ const scBase = (number) => referenceNumber('SC', number).split('.')[0];
 // SCO's must share the typed base number ("1266.9" keeps sc.1.1266 and sc.1.1266.x, never sc.1.12660).
 // Filtering before pickMatch lets a loose search with many hits still yield up to five in-group suggestions.
 // The bundled catalogue filters its own index by the same rule, so the near misses it offers are the ones this offers.
+// A CPE or Newell number the corpus lacks keeps the records that carry its number with no letter, or with any letter after it ("466a" keeps 466,
+// 466A and 466B, never 4660).
+const LETTERED = Object.freeze({ pco: 'CPE', agco: 'Newell' });
 export function inGroup(entries, corpus, reference) {
+  if (Object.hasOwn(LETTERED, corpus)) {
+    const catalogue = LETTERED[corpus];
+    const base = RECORD_IDS[catalogue](catalogueNumber(catalogue, reference.number).replace(/[A-Za-z]+$/, ''));
+    return entries.filter((entry) => entry.id === base || (entry.id.startsWith(base) && /^[A-Za-z]+$/.test(entry.id.slice(base.length))));
+  }
   if (corpus === 'sco') {
     const base = `${SCO_ID}${scBase(reference.number)}`;
     return entries.filter((entry) => entry.id === base || entry.id.startsWith(`${base}.`));
@@ -692,6 +718,12 @@ function ricSearch({ number, volume, section, range }, rulers = []) {
 // "V, Part 2" finds V). A ruler also keeps the sections OCRE splits it into ("Gallienus (joint reign)"). More hits than one page are too many to list.
 export function pickRicEntries(entries, reference, total = entries.length) {
   if (total > entries.length) return { status: 'too-many' };
+  return pickRicHits(entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) })), reference);
+}
+
+// The same pick over entries whose titles have already been read ({ entry, hit }, hit being parseReference(title, false)): the bundled catalogue
+// keeps each reading for the life of the page, since a lookup that broadens its volume or its section reads the same titles again.
+export function pickRicHits(read, reference) {
   const [number, volume, ruler] = [spaced(ricNumber(reference.number)), unquote(reference.volume), norm(phrase(reference.section))];
   const exact = !volume || listed(volume);
   const [numeral, part] = shelf(volume);
@@ -710,7 +742,7 @@ export function pickRicEntries(entries, reference, total = entries.length) {
   const range = reference.range ? spaced(ricNumber(reference.range)) : '';
   const numbered = (hit, wanted) => [spaced(hit.number), bareNumber(hit.number)].includes(wanted);
   const rank = (hit) => RIC_VOLUMES.findIndex((option) => option.value === hit.volume);
-  const found = entries.map((entry) => ({ entry, hit: parseReference(entry.title, false) }))
+  const found = read
     .filter(({ hit }) => hit?.catalogue === 'RIC' && !hit.section.includes(':') && (numbered(hit, number) || (range && numbered(hit, range)))
       && inVolume(hit) && byRuler(hit.section))
     .sort((a, b) => rank(a.hit) - rank(b.hit) || byText(a.hit.section, b.hit.section) || byText(a.entry.title, b.entry.title));
@@ -793,8 +825,10 @@ export async function lookupType(given, options = {}) {
   const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
-  if (corpus === OTHER) return { status: 'ok', card: otherCard(query) };
   const { localProvider, online = true } = options;
+  // A reference without type data is its own card. The one exception is a Svoronos number PCO has replaced with the CPE type it became: the bundle
+  // follows PCO's own link, and answers null for anything else, which is then the prices-only card it always was.
+  if (corpus === OTHER) return (await localProvider?.lookupSvoronos?.(query)) ?? { status: 'ok', card: otherCard(query) };
   // A provider answers null for a corpus it does not bundle, and then this is an ordinary online lookup.
   const local = localProvider?.lookupType ? await localProvider.lookupType(reference) : null;
   if (local) {
@@ -827,12 +861,14 @@ export async function lookupType(given, options = {}) {
       // SCO titles ("Seleucid Coins (part 1) 1266.2") never match "SC 1266.2", but the record id is predictable: fetch it directly,
       // and only when it is missing (404) run the plain search for "Did you mean"; any other failure is a network error.
       // The search is for the base number: SCO finds nothing for a missing "SC 1266.9" but finds sc.1.1266 for "SC 1266".
+      // CPE and Newell numbers name their records the same way, and a missing one is a clean miss: nothing here says what a PCO or AGCO search
+      // returns for a number, so no search is made for one, and the bundle offers the near misses of its own index before the lookup comes here.
       const record = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal).then((jsonld) => ({ jsonld }), (error) => {
         if (error?.status === 404) return null;
         throw error;
       });
       if (record) return await cardOutcome(record.jsonld, corpus, { fetchImpl, cache, signal: timer.signal });
-      picked = pickMatch(inGroup(await search(`SC ${scBase(reference.number)}`), corpus, reference), query);
+      picked = reference.catalogue === 'SC' ? pickMatch(inGroup(await search(`SC ${scBase(reference.number)}`), corpus, reference), query) : { status: 'none' };
     } else {
       // A quoted phrase is exact on every corpus; the loose plain search runs only on a miss, for "Did you mean".
       picked = pickMatch(await search(`"${query}"`), query);
@@ -871,8 +907,78 @@ export async function lookupType(given, options = {}) {
     }
     return found;
   } catch (error) {
+    void recordFetchFailure('lookup', error);
     return failureOutcome(error);
   } finally {
     timer.done();
+  }
+}
+
+// Photographs of real coins of one type, for the card's opt-in specimen strip: at most three pairs, each an obverse and a reverse image, the specimen's
+// own page and the collection that holds it, or [] for anything else. One SPARQL query to Nomisma, which harvests the museums' specimen records; the
+// predicates are the ones Nomisma documents for a physical coin (https://nomisma.org/documentation/contribute/): nmo:hasTypeSeriesItem names the
+// type, nmo:hasCollection the holder, nmo:hasObverse and nmo:hasReverse the sides, and foaf:thumbnail and foaf:depiction each side's images. The type
+// is asked for under http and https alike, since the corpora publish it both ways. Nothing here is cached or stored: the caller draws the answer and
+// forgets it. A failed, slow, oversized or unreadable answer is no specimens, never an error the card has to wait for.
+export async function fetchSpecimens(card, { fetchImpl = fetch, timeoutMs = 8000, signal } = {}) {
+  const TYPE_CORPORA = ['ocre', 'crro', 'pella', 'sco', 'bigr', 'pco', 'agco'];
+  // An id is written into the query between angle brackets, so only the characters the corpora's ids use may reach it: none of them can end the
+  // IRI or start another term. Nine bundled OCRE ids carry a "?" (a doubtful letter) or a "," (a list of numbers); both may stand in an IRI, and
+  // whether Nomisma holds such a type as written or percent-encoded is not known, so both forms are asked for, as both schemes are.
+  if (!TYPE_CORPORA.includes(card?.corpus) || !/^[A-Za-z0-9._~()+,?-]+$/.test(String(card.id ?? ''))) return [];
+  const ids = [...new Set([card.id, card.id.replace(/[?,]/g, (character) => encodeURIComponent(character))])];
+  const types = ids.flatMap((id) => ['http', 'https'].map((scheme) => `<${scheme}://numismatics.org/${card.corpus}/id/${id}>`));
+  const query = [
+    'PREFIX nmo: <http://nomisma.org/ontology#>',
+    'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
+    'PREFIX skos: <http://www.w3.org/2004/02/skos/core#>',
+    'SELECT ?object (SAMPLE(?label) AS ?collection) (SAMPLE(?obverseThumb) AS ?obverseThumbnail) (SAMPLE(?obverseImage) AS ?obverseDepiction)',
+    '  (SAMPLE(?reverseThumb) AS ?reverseThumbnail) (SAMPLE(?reverseImage) AS ?reverseDepiction) WHERE {',
+    `  VALUES ?type { ${types.join(' ')} }`,
+    '  ?object nmo:hasTypeSeriesItem ?type ; a nmo:NumismaticObject ; nmo:hasCollection ?holder ; nmo:hasObverse ?obverse ; nmo:hasReverse ?reverse .',
+    '  ?holder skos:prefLabel ?label FILTER(langMatches(lang(?label), "en"))',
+    '  OPTIONAL { ?obverse foaf:thumbnail ?obverseThumb } OPTIONAL { ?obverse foaf:depiction ?obverseImage }',
+    '  OPTIONAL { ?reverse foaf:thumbnail ?reverseThumb } OPTIONAL { ?reverse foaf:depiction ?reverseImage }',
+    '  FILTER((BOUND(?obverseThumb) || BOUND(?obverseImage)) && (BOUND(?reverseThumb) || BOUND(?reverseImage)))',
+    '} GROUP BY ?object LIMIT 6',
+  ].join('\n');
+  const url = `https://nomisma.org/query?${new URLSearchParams({ query, output: 'json' })}`;
+  // Only a page or an image the browser may follow as a web address: http(s), whatever else a record holds.
+  const web = (binding) => {
+    try {
+      const value = String(binding?.value ?? '');
+      return ['http:', 'https:'].includes(new URL(value).protocol) ? value : null;
+    } catch { return null; }
+  };
+  // Its own deadline, and the caller's signal too: a card replaced before the answer stops the request rather than waiting it out.
+  const stop = new AbortController();
+  const cancel = () => stop.abort();
+  const timer = setTimeout(cancel, timeoutMs);
+  signal?.addEventListener('abort', cancel);
+  try {
+    const response = await fetchImpl(url, { signal: stop.signal, headers: { Accept: 'application/sparql-results+json' } });
+    if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
+    // Six short rows are a few kilobytes; a reply past this is not one.
+    const bindings = JSON.parse(await boundedText(response, 256 * 1024))?.results?.bindings;
+    if (!Array.isArray(bindings)) return [];
+    const specimens = [];
+    for (const row of bindings) {
+      const specimen = {
+        page: web(row?.object),
+        collection: squash(row?.collection?.value ?? ''),
+        obverse: web(row?.obverseThumbnail) ?? web(row?.obverseDepiction),
+        reverse: web(row?.reverseThumbnail) ?? web(row?.reverseDepiction),
+      };
+      if (Object.values(specimen).some((value) => !value) || specimens.some((kept) => kept.page === specimen.page)) continue;
+      specimens.push(specimen);
+      if (specimens.length === 3) break;
+    }
+    return specimens;
+  } catch (error) {
+    if (!signal?.aborted) void recordFetchFailure('specimens', error);
+    return [];
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
   }
 }

@@ -1,20 +1,32 @@
+// @ts-check
 // The checks and shapes the rest of the extension shares: one spelling of a failed result, one calendar, one UUID
 // pattern, one hash. It imports nothing, so any module may reach for it without risking a cycle.
+/** @typedef {import('./types.js').Failure} Failure */
 
 // Text as every table and search here compares it: each run of whitespace one space, the ends trimmed.
+/** @type {(value: unknown) => string} */
 export const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
 // A failed result: the code and the message always, the path only where the caller names one, and whatever else that
 // caller carries with a failure (store.js reports the lot an identity collided with).
+/**
+ * @param {string} code
+ * @param {string} message
+ * @param {string} [path]
+ * @param {object} [extra]
+ * @returns {Failure}
+ */
 export const failure = (code, message, path, extra) =>
   ({ ok: false, error: { code, message, ...(path === undefined ? {} : { path }), ...extra } });
 
+/** @type {(value: unknown, key: PropertyKey) => boolean} */
 export const own = (value, key) => value != null && Object.prototype.hasOwnProperty.call(value, key);
 
 // Copying, measuring and walking a record are all recursive, so an object nested thousands of levels
 // deep - which nothing here writes, and only a hand-made or damaged file carries - runs the stack out
 // wherever it is first touched. The engines spell that differently: V8 throws a RangeError naming the
 // call stack, SpiderMonkey an InternalError saying there was too much recursion, so both are read.
+/** @type {(error: any) => boolean} */
 export const isRecursionError = (error) =>
   error instanceof RangeError || /call stack|too much recursion/i.test(String(error?.message ?? ''));
 
@@ -23,8 +35,14 @@ export const isRecursionError = (error) =>
 // works is the one export that walks nothing: the rescue copy, which the collector can edit the
 // record out of. Saying so is the difference between a dead end and a way through.
 export const TOO_DEEPLY_NESTED = 'This data is nested too deeply to be read. Records this deep are not written by Giga Pinax. Export raw data in Settings still works, and the record can be removed from the copy it writes.';
+/** @type {(path: string) => Failure} */
 export const tooDeeplyNested = (path) => failure('too-deeply-nested', TOO_DEEPLY_NESTED, path);
 
+/**
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
 export const clone = (value) => structuredClone(value);
 
 // Versions 1 through 8: a record this store did not mint is still a record, and the variant nibble is what says the
@@ -35,6 +53,10 @@ export const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // [year, month, day] for a real calendar date written that way, else null: "2026-02-30" is spelled like a date and is
 // not one, and the UTC round trip is what tells the two apart.
+/**
+ * @param {unknown} value
+ * @returns {number[] | null}
+ */
 export function dateParts(value) {
   const match = typeof value === 'string' ? ISO_DATE.exec(value) : null;
   if (!match) return null;
@@ -44,10 +66,16 @@ export function dateParts(value) {
     ? parts : null;
 }
 
+/** @type {(value: unknown) => boolean} */
 export const isIsoDate = (value) => dateParts(value) !== null;
 
 // The date a whole number of days from this one, or null where this one is no date, or where the shift lands outside the
 // range a Date holds: a crafted day count is the bound check's to refuse, not this arithmetic's to throw over.
+/**
+ * @param {unknown} value
+ * @param {number} days
+ * @returns {string | null}
+ */
 export function shiftDate(value, days) {
   const parts = dateParts(value);
   const shifted = parts ? new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)) : null;
@@ -56,6 +84,10 @@ export function shiftDate(value, days) {
 
 // A UTC instant exactly as toISOString writes it. The round trip settles the whole shape; the four leading digits are
 // what keeps the expanded years (+275760-09-13) that no record here stores out.
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 export function isIsoInstant(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) return false;
   const parsed = new Date(value);
@@ -65,6 +97,10 @@ export function isIsoInstant(value) {
 // The click-tracking parameters that name no lot: Google's, Microsoft's and Mailchimp's, plus every utm_ one. Stripped
 // in place, so two links to the same lot compare equal whichever advertisement carried them.
 const TRACKING = new Set(['fbclid', 'gclid', 'dclid', 'msclkid', 'mc_cid', 'mc_eid']);
+/**
+ * @param {URL} url
+ * @returns {URL}
+ */
 export function stripTracking(url) {
   for (const key of [...url.searchParams.keys()]) {
     const name = key.toLowerCase();
@@ -74,6 +110,11 @@ export function stripTracking(url) {
 }
 
 // FNV-1a over the string's code units, for identifiers derived from text rather than minted.
+/**
+ * @param {string} value
+ * @param {number} [seed]
+ * @returns {number}
+ */
 export function fnv32(value, seed = 0x811c9dc5) {
   let hash = seed >>> 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -85,6 +126,10 @@ export function fnv32(value, seed = 0x811c9dc5) {
 
 // A version 4 UUID that is the same every time for the same text: four FNV runs of different seeds, with the version
 // and variant nibbles written in. Derived, never random, so the same evidence yields the same identifier on every device.
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 export function stableUuid(value) {
   const seeds = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
   const chars = seeds.map((seed, index) => fnv32(`${index}:${value}`, seed).toString(16).padStart(8, '0')).join('').split('');

@@ -1,0 +1,164 @@
+name: Refresh bundled data
+
+# Once a month, and whenever someone asks for it from the Actions tab: download the six ANS exports, import every one that changed,
+# fetch the Nomisma labels, test and build, and propose the result as a pull request. Nothing is ever pushed to main.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 3 * *'
+
+# Nothing is granted by default: the job that runs the importer, the tests and the build can only read, and the one job that can write
+# runs no repository code at all.
+permissions: {}
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  # Downloads, imports, tests and builds, read-only. A download that fails (numismatics.org answers 503 now and then) fails this job, so
+  # no pull request is opened for a half-downloaded refresh. Its only output is a patch and the pull request's text.
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.import.outputs.changed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      # The importer names each export and the file it is saved as, so this list and the importer's table cannot disagree.
+      - name: Download the ANS exports
+        run: |
+          mkdir -p exports
+          python scripts/import_rdf.py --list-exports | while read -r corpus url file; do
+            echo "Downloading $corpus from $url"
+            curl --fail --silent --show-error --location --retry 4 --retry-delay 60 --max-time 900 --output "exports/$file" "$url"
+          done
+          ls -l exports
+      - name: Import every changed export and fetch the labels
+        id: import
+        run: |
+          today="$(date -u +%F)"
+          python scripts/import_rdf.py --refresh exports --generated-on "$today" --report refresh-report.json
+          # RIC's ruler and mint tables are generated from the OCRE records, so an OCRE import regenerates them from the tracked snapshots,
+          # without the network; a person or mint the snapshots do not know stops the run here.
+          if python -c 'import json, sys; sys.exit(0 if "ocre" in json.load(open("refresh-report.json"))["changed"] else 1)'; then
+            python scripts/import_people.py generate extension/data/ocre scripts/data/nomisma-ocre-concepts.rdf extension/ric-people.js \
+              --mints scripts/data/nomisma-mints.json --wikidata scripts/data/wikidata-mints.json --generated-on "$today"
+          fi
+          git add --all extension/data extension/ric-people.js scripts/data
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Pinned: tests/test_icons.py compares the committed PNGs with a fresh render, so the renderer must not move.
+      - name: Install Pillow for the icon render test
+        if: steps.import.outputs.changed == 'true'
+        run: python -m pip install --disable-pip-version-check pillow==12.3.0
+      - name: Node tests
+        if: steps.import.outputs.changed == 'true'
+        run: node --test tests/*.test.mjs
+      - name: Python tests
+        if: steps.import.outputs.changed == 'true'
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Build the packages
+        if: steps.import.outputs.changed == 'true'
+        run: python scripts/build.py
+      - name: Write the patch and the pull request text
+        if: steps.import.outputs.changed == 'true'
+        run: |
+          mkdir -p proposal
+          git diff --cached --binary > proposal/data.patch
+          python - <<'EOF'
+          import json
+          report = json.load(open("refresh-report.json", encoding="utf-8"))
+          changed = ", ".join(report["changed"]) or "none"
+          labels = "changed" if report["labelsChanged"] else "unchanged"
+          body = f"""Monthly refresh of the bundled ANS type data, made by the refresh-data workflow.
+
+          Corpora imported again: {changed}. Nomisma labels: {labels}. Both test suites and the build passed on this data.
+
+          {report["summary"]}
+
+          Before merging:
+
+          - [ ] Update the retrieval date in the `NOTICE.txt` of every corpus imported again.
+          - [ ] Update the counts and export sizes in `docs/LOCAL-CATALOGUE.md`, `README.md` and `docs/store/LISTING.md`.
+          - [ ] Add a line under `## [Unreleased]` in `CHANGELOG.md`.
+          - [ ] Run the Firefox lint (CI does not run on a pull request opened by this workflow).
+          """
+          open("proposal/body.md", "w", encoding="utf-8").write(body)
+          EOF
+          cat proposal/body.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.import.outputs.changed == 'true'
+        with:
+          name: proposal
+          path: proposal/
+          if-no-files-found: error
+
+  # Opens the pull request, and nothing else: it applies the patch the refresh job made to a new branch, pushes that branch and opens a pull
+  # request from it. No test, build or importer runs here, and main is never pushed to.
+  propose:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proposal
+          path: ${{ runner.temp }}/proposal
+      # The patch was made by a job that ran the importer over downloaded RDF, so it may touch only what the importer writes: the
+      # bundled data under extension/data/ (every corpus's records, indexes and metadata.json, and nomisma-labels.json), the ruler and
+      # mint tables in extension/ric-people.js, and the label snapshot in scripts/data/nomisma-labels.json. Any other path, a rename,
+      # a symbolic link, an executable, an empty patch or one git cannot read ends the run before anything is applied.
+      - name: Refuse a patch that reaches outside the bundled data
+        env:
+          PROPOSAL: ${{ runner.temp }}/proposal
+        run: |
+          numstat="$(git apply --numstat "$PROPOSAL/data.patch")"
+          touched="$(printf '%s\n' "$numstat" | cut -f3-)"
+          summary="$(git apply --summary "$PROPOSAL/data.patch")"
+          if [ -z "$touched" ]; then
+            echo "::error::The proposed patch changes no file."
+            exit 1
+          fi
+          name='[A-Za-z0-9_()-][A-Za-z0-9._()-]*'
+          allowed="extension/data/($name/)*$name|extension/ric-people\.js|scripts/data/nomisma-labels\.json"
+          outside="$(printf '%s\n' "$touched" | grep -vxE "$allowed" || true)"
+          if [ -n "$outside" ]; then
+            echo "::error::The proposed patch touches paths the importer does not write; nothing was applied."
+            printf '%s\n' "$outside"
+            exit 1
+          fi
+          if printf '%s\n' "$summary" | grep -E ' (rename|copy) |(mode|=>) (120000|160000|100755) '; then
+            echo "::error::The proposed patch renames, links or makes a file executable; nothing was applied."
+            exit 1
+          fi
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROPOSAL: ${{ runner.temp }}/proposal
+        run: |
+          branch="data-refresh/$(date -u +%F)-$GITHUB_RUN_ID"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --create "$branch"
+          git apply --index "$PROPOSAL/data.patch"
+          git commit --quiet --message "Refresh the bundled ANS data ($(date -u +%F))"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base main --head "$branch" --title "Refresh the bundled ANS data ($(date -u +%F))" --body-file "$PROPOSAL/body.md"

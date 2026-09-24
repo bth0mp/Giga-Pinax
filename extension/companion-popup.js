@@ -3,8 +3,9 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
+import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
-import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates } from './current-lot.js';
+import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
@@ -61,6 +62,8 @@ export function applyPreferredCurrency(select, preferred) {
   return true;
 }
 
+const DRAFT_BUDGET = 9500;
+
 export function buildWatchlistDraftPayload(input) {
   const payload = { target: 'watchlist' };
   const title = bounded(input?.title, 200);
@@ -79,7 +82,24 @@ export function buildWatchlistDraftPayload(input) {
       if (value) payload.auctionContext[field] = value;
     }
   }
-  return payload;
+  // What the captured page states about its lot, for the workspace to offer: an estimate, when it closes, a photo link, its provenance. A page
+  // can write every address as long as a draft allows, so these give way, provenance first, before the draft outgrows the store's bound
+  // (LIMITS.draftPayloadBytes in core/records.js) and is refused with the coin's own fields in it.
+  const full = { ...payload, ...draftPageValues(input) };
+  for (const field of ['provenance', 'photoUrl', 'estimate', 'startsAt', 'closesAt']) {
+    if (new TextEncoder().encode(JSON.stringify(full)).length <= DRAFT_BUDGET) break;
+    delete full[field];
+  }
+  return full;
+}
+
+// The values a captured page gave about its sale belong to that page's lot, so they come off with its auction context.
+const PAGE_VALUES = Object.freeze(['estimate', 'closesAt', 'startsAt', 'photoUrl', 'provenance']);
+const withoutPageValues = (draft) => Object.fromEntries(Object.entries(draft).filter(([key]) => !PAGE_VALUES.includes(key)));
+// The page values a capture held that its draft payload had no room for, in the words the collector reads them in.
+const PAGE_VALUE_NAMES = Object.freeze({ estimate: 'estimate', closesAt: 'closing time', startsAt: 'start time', photoUrl: 'photo link', provenance: 'provenance' });
+export function pageValuesLeftOff(draft, payload) {
+  return PAGE_VALUES.filter((field) => draft?.[field] && !Object.hasOwn(payload ?? {}, field)).map((field) => PAGE_VALUE_NAMES[field]);
 }
 
 export function clearAuctionContextFromPayload(payload) {
@@ -144,6 +164,7 @@ export function watchlistPayloadFromCapture(draft) {
     reference: draft?.reference?.value,
     pageUrl: draft?.pageUrl,
     auctionContext: Object.hasOwn(draft ?? {}, 'auctionContext') ? draft.auctionContext : (draft?.pageUrl ? { pageUrl: draft.pageUrl } : undefined),
+    ...Object.fromEntries(PAGE_VALUES.map((field) => [field, draft?.[field]])),
   });
 }
 
@@ -330,16 +351,18 @@ async function initCompanionPopup() {
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let draftSavePending = false;
-  const saveWatchlistDraft = async (payload) => {
-    if (!bridge || storageUnavailable || !payload) return announce(STORAGE_UNAVAILABLE, true);
-    if (draftSavePending) return;
+  const saveWatchlistDraft = async (payload, leftOff = []) => {
+    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true); return { ok: false, message: STORAGE_UNAVAILABLE }; }
+    // The two save buttons are disabled while a save is pending, so only a Watch in the research half reaches this: refused aloud, not dropped.
+    if (draftSavePending) return { ok: false, message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' };
     draftSavePending = true;
     $('companion-save-watchlist').disabled = true;
     $('companion-capture-watchlist').disabled = true;
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
-      if (!saved.ok) return announce(saved.message, true);
-      announce('Watchlist details are ready to review.');
+      if (!saved.ok) { announce(saved.message, true); return saved; }
+      // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
+      announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.');
     } finally {
       draftSavePending = false;
       $('companion-save-watchlist').disabled = !canSave(safeCard);
@@ -348,6 +371,12 @@ async function initCompanionPopup() {
     }
   };
   $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
+  // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
+  // lot is acsearch's, not the page captured here. A failure is handed back too, to be said beside the list Watch was pressed in.
+  addEventListener('giga-pinax-watch', async (event) => {
+    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail));
+    if (saved?.ok === false) dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
+  });
 
   const reviewedCapture = () => {
     if (!captureDraft) return null;
@@ -418,6 +447,8 @@ async function initCompanionPopup() {
       else showCaptureError(CAPTURE_NO_REFERENCE);
     } catch (error) {
       if (requestId !== captureRequestId) return;
+      // The kind of failure only: the page's address, title and text stay out of the local diagnostics list.
+      void recordDiagnostic({ area: 'capture', code: 'failed' });
       captureDraft = null;
       // The page nothing could be read from is now the page being looked at: the last one's context is no longer shown in the editor, so it must not
       // travel with the next coin saved from this page either.
@@ -449,12 +480,13 @@ async function initCompanionPopup() {
   $('companion-capture-watchlist').addEventListener('click', () => {
     const draft = reviewedCapture();
     if (!draft) return;
-    void saveWatchlistDraft(watchlistPayloadFromCapture(draft));
+    const payload = watchlistPayloadFromCapture(draft);
+    void saveWatchlistDraft(payload, pageValuesLeftOff(draft, payload));
   });
   // The captured page comes off the card, the editor and the save, wherever the reason: the collector asked, or the lookup
   // stopped being about that page.
   const dropAuctionContext = () => {
-    if (captureDraft) captureDraft = { ...captureDraft, auctionContext: null };
+    if (captureDraft) captureDraft = { ...withoutPageValues(captureDraft), auctionContext: null };
     researchAuctionContext = null;
     safeCard = clearAuctionContextFromPayload(safeCard);
     if (globalThis.gigaPinaxWatchlistReference) {

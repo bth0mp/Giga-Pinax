@@ -5,6 +5,7 @@
 // the repo ships none, and a test harness is no reason to start.
 
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
 const VOID_TAGS = new Set([
   'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source',
@@ -148,9 +149,14 @@ export class FakeElement {
 
   set type(value) { this.setAttribute('type', value); }
 
-  get value() { return this._value; }
+  // An option's value is its attribute, falling back to its text, as a browser reflects it; a
+  // page's `option.value = ''` has to survive the form's reset() like the markup's own options do.
+  get value() { return this.tagName === 'option' ? this.getAttribute('value') ?? this.textContent : this._value; }
 
-  set value(next) { this._value = String(next); }
+  set value(next) {
+    if (this.tagName === 'option') this.setAttribute('value', next);
+    else this._value = String(next);
+  }
 
   get classList() {
     const element = this;
@@ -504,12 +510,62 @@ export function parseHtmlFile(url) {
 // A page's source with its import statements taken out, ready for a sandbox that is handed the same
 // names as globals - the way tests/popup-research.test.mjs loads extension/popup.js. A dynamic
 // import() becomes a call to the sandbox's `importModule`, since vm cannot import without a flag;
-// a sandbox that has none fails it the way a page without the module would.
+// a sandbox that has none fails it the way a page without the module would. An export list naming
+// the module's own declarations (`export { a, b };`, no `from`) declares and runs nothing, so it goes.
 export function pageSource(url) {
   return readFileSync(url, 'utf8')
     .replace(/^import\b[\s\S]*?';\r?\n/gm, '')
     .replace(/\bimport\((?=['"])/g, 'importModule(')
+    .replace(/^export\s*\{[^}]*\};[ \t]*\r?\n/gm, '')
     .replace(/^export\s+(?=(?:default\s+|async\s+)?(?:function|const|let|var|class)\b)/gm, '');
+}
+
+// --- A page and the modules it was split into ---------------------------------------------------
+//
+// A page split into several modules is still one page: the modules it was split into touch its
+// document, its storage and its state the way its own code does, so they run with it in its sandbox,
+// in the order a browser evaluates them (each one's own page modules first, in import order), rather
+// than being imported here, where they would reach Node's globals instead of the page's. These are
+// they, by file name beside the pages. Anything else a page imports is handed in as sandbox globals,
+// as it always was.
+export const PAGE_MODULES = new Set(['popup-access.js', 'popup-drawing.js', 'popup-messages.js', 'popup-shell.js', 'workspace-editing.js', 'workspace-forms.js', 'workspace-views.js']);
+
+// The top-level names a script declares, read the way these files are written: every top-level
+// declaration starts at the left margin.
+function topLevelNames(source) {
+  const names = [];
+  for (const [, name] of source.matchAll(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([\w$]+)/gm)) names.push(name);
+  for (const [, name] of source.matchAll(/^(?:export\s+)?(?:const|let|var|class)\s+([\w$]+)/gm)) names.push(name);
+  for (const [, list] of source.matchAll(/^(?:export\s+)?(?:const|let|var)\s*\{([^}]*)\}/gm)) {
+    names.push(...list.split(',').map((part) => part.split(':').at(-1).trim()).filter(Boolean));
+  }
+  return names;
+}
+
+// Runs a page in a sandbox with its own modules before it. What a sandbox of scripts cannot do the
+// way the browser's modules do is refused rather than approximated: an import or export form
+// pageSource leaves behind, and one name declared by two of them - a module's names are its own in
+// a browser, while here a second function of the same name would quietly replace the first.
+export function runPage(context, url, modules = PAGE_MODULES) {
+  const declared = new Map();
+  const ran = new Set();
+  const run = (fileUrl) => {
+    if (ran.has(fileUrl.href)) return;
+    ran.add(fileUrl.href);
+    const text = readFileSync(fileUrl, 'utf8');
+    for (const [, specifier] of text.matchAll(/^import\b[^;]*?from\s+'(\.\/[\w.-]+)';/gm)) {
+      if (modules.has(specifier.slice(2))) run(new URL(specifier, fileUrl));
+    }
+    const source = pageSource(fileUrl);
+    const leftover = /^(?:import|export)\b.*$/m.exec(source);
+    if (leftover) throw new Error(`${fileUrl.pathname} keeps "${leftover[0]}", which a sandbox script cannot run.`);
+    for (const name of topLevelNames(source)) {
+      if (declared.has(name)) throw new Error(`${name} is declared by both ${declared.get(name)} and ${fileUrl.pathname}.`);
+      declared.set(name, fileUrl.pathname);
+    }
+    vm.runInContext(source, context, { filename: fileUrl.pathname });
+  };
+  run(url);
 }
 
 // A browser's own globals, as far as a page loaded here uses them.
@@ -538,5 +594,194 @@ export function browserGlobals(document, { localStorage, confirm = () => true, d
     clearTimeout() {},
     queueMicrotask,
     console,
+  };
+}
+
+// --- The workspace page on the real store -------------------------------------------------------
+//
+// The workspace is only as good as what it does with the store's answers, so here it runs against
+// the real command writer (extension/store.js) over an in-memory storage area, reached through the
+// real bridge (extension/browser-api.js) loaded in a sandbox of its own. What is fake is only what a
+// browser would supply: `runtime.sendMessage`, which hands the command straight to the writer the
+// way the background worker does, and `storage.onChanged`, which tells every open page about each
+// write on a later turn, as a browser does. Several pages can share one background, which is how a
+// second tab writing behind the collector's back is shown.
+
+let uuidCounter = 0;
+export const testUuid = () => {
+  uuidCounter += 1;
+  return `00000000-0000-4000-8000-${String(uuidCounter).padStart(12, '0')}`;
+};
+
+export const settle = async (turns = 10) => {
+  for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
+};
+
+// A storage area kept in memory. Every write is announced to the `onChanged` listeners on a later
+// turn, never inside the write itself: a page never hears of a write before the writer has finished.
+export function memoryStorageArea() {
+  const stored = new Map();
+  const listeners = new Set();
+  return {
+    async get(key) { return stored.has(key) ? { [key]: structuredClone(stored.get(key)) } : {}; },
+    async set(items) {
+      const changes = {};
+      for (const [key, value] of Object.entries(items)) {
+        changes[key] = { oldValue: structuredClone(stored.get(key)), newValue: structuredClone(value) };
+        stored.set(key, structuredClone(value));
+      }
+      setImmediate(() => { for (const listener of [...listeners]) listener(structuredClone(changes), 'local'); });
+    },
+    onChanged: {
+      addListener: (listener) => { listeners.add(listener); },
+      removeListener: (listener) => { listeners.delete(listener); },
+    },
+    read: (key) => structuredClone(stored.get(key)),
+  };
+}
+
+// The background worker as far as a page sees it: one writer over one storage area. `send` is any
+// other view writing — a second workspace tab, the popup — and returns the writer's reply.
+export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid } = {}) {
+  const { COMMAND_TYPES, createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
+  const storage = memoryStorageArea();
+  const writer = createCommandWriter(storage, { now: () => now, newId });
+  const holds = [];
+  return {
+    storage,
+    writer,
+    holds,
+    commandTypes: COMMAND_TYPES,
+    send: (command) => writer.commitCommand({ requestId: testUuid(), ...command }),
+    root: () => storage.read(STORAGE_KEY),
+    // The next command of this type sent by a page is written, and its reply then waits for
+    // `release()`: the save is in flight for the page that sent it while its write is already in
+    // storage and on its way to every page's subscription, as it can be in a browser.
+    holdReply(type) {
+      const hold = { type };
+      hold.written = new Promise((resolve) => { hold.markWritten = resolve; });
+      hold.released = new Promise((resolve) => { hold.release = resolve; });
+      holds.push(hold);
+      return hold;
+    },
+  };
+}
+
+// The runtime a page and its bridge are handed: `sendMessage` goes to the background's writer, as
+// the worker's message listener sends it, and `storage` is the background's own area.
+function fakeExtensionRuntime(background, commands) {
+  return {
+    runtime: {
+      async sendMessage(message) {
+        const command = structuredClone(message);
+        commands.push(structuredClone(command));
+        // The worker answers only the commands it lists; any other message gets no reply, which the
+        // browser reports to the sender as an error.
+        if (!background.commandTypes.has(command?.type)) throw new Error('The message got no reply: the background worker does not answer this command.');
+        const reply = await background.writer.commitCommand(command);
+        const index = background.holds.findIndex((hold) => hold.type === command.type);
+        if (index >= 0) {
+          const [hold] = background.holds.splice(index, 1);
+          hold.markWritten(command);
+          await hold.released;
+        }
+        return structuredClone(reply);
+      },
+    },
+    storage: { local: background.storage, onChanged: background.storage.onChanged },
+    permissions: { request: async () => false },
+  };
+}
+
+// The real bridge module, loaded against that runtime.
+function loadBridge(browser) {
+  const url = new URL('../../extension/browser-api.js', import.meta.url);
+  const context = vm.createContext({ browser, crypto: { randomUUID: testUuid }, Promise, Error });
+  vm.runInContext(pageSource(url), context, { filename: url.pathname });
+  return Object.fromEntries(['sendCommand', 'getSnapshot', 'subscribeToSnapshots', 'requestNotificationPermission']
+    .map((name) => [name, context[name]]));
+}
+
+// The workspace page, loaded as tests/settings.test.mjs loads Settings: its markup in the fake DOM,
+// its imports handed in as sandbox globals. With a `background` it runs against that store; without
+// one it runs as the standalone preview a page outside the extension shows.
+export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
+  const [money, evidence, records, sourceLaunchers] = await Promise.all([
+    import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
+    import('../../extension/core/records.js'), import('../../extension/source-launchers.js'),
+  ]);
+  const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
+  const prompts = [];
+  const commands = [];
+  const windowListeners = new Map();
+  const browser = background ? fakeExtensionRuntime(background, commands) : null;
+  const bridge = browser ? loadBridge(browser) : null;
+  const location = { hash };
+  const sandbox = {
+    ...money, ...evidence, ...sourceLaunchers,
+    projectExposure: records.projectExposure, projectCollection: records.projectCollection,
+    // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
+    mountBidCalculator: () => ({ setValues() {} }), mountSourcesMenu() {}, openSettings() {},
+    ...browserGlobals(document, {
+      language,
+      confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; },
+    }),
+    ...(browser ? { browser } : {}),
+    crypto: { randomUUID: testUuid },
+    // The preferences module is Settings' and the popup's; without it the page reads its snapshot
+    // straight from the bridge, the path every other record takes.
+    importModule: async (specifier) => {
+      if (bridge && specifier === './browser-api.js') return bridge;
+      throw new Error(`No module ${specifier} in this sandbox.`);
+    },
+    requestAnimationFrame: (callback) => callback(),
+    location,
+    addEventListener(type, listener) {
+      windowListeners.set(type, [...(windowListeners.get(type) ?? []), listener]);
+    },
+    Date, JSON, Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl,
+    Error, TypeError, RangeError, BigInt, structuredClone,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  runPage(vm.createContext(sandbox), new URL('../../extension/workspace.js', import.meta.url));
+  await settle();
+  const $ = (id) => document.getElementById(id);
+  const type = async (form, field, value) => {
+    const control = $(form).elements[field];
+    control.value = value;
+    await $(form).emit('input', { target: control });
+  };
+  return {
+    $, document, location, commands, prompts, browser,
+    status: () => $('workspace-status').textContent,
+    conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),
+    // What the browser's leave-page prompt would do now: true when the page asks to stay.
+    blocksUnload() {
+      const event = { type: 'beforeunload', defaultPrevented: false, returnValue: undefined, preventDefault() { this.defaultPrevented = true; } };
+      for (const listener of windowListeners.get('beforeunload') ?? []) listener(event);
+      return event.defaultPrevented;
+    },
+    type,
+    typeDetails: (field, value) => type('lot-form', field, value),
+    // A submit that does not wait: the test decides when the save is allowed to finish.
+    startSubmit(form, submitter) { return $(form).emit('submit', submitter ? { submitter } : {}); },
+    async submit(form, submitter) { await this.startSubmit(form, submitter); await settle(); },
+    saveDetails() { return this.submit('lot-form'); },
+    async click(id) { await $(id).click(); await settle(); },
+    // Moves to another route the way a link in the page's nav does: the hash changes, then the
+    // window hears of it.
+    async navigate(hash) {
+      location.hash = hash;
+      for (const listener of windowListeners.get('hashchange') ?? []) listener({ type: 'hashchange' });
+      await settle();
+    },
+    // Opens a coin from the list by its title, as the collector does.
+    async openCoin(title) {
+      const row = $('lot-list').children.find((item) => item.textContent.includes(title));
+      if (!row) throw new Error(`No coin titled ${title} in the list.`);
+      await row.click();
+      await settle();
+    },
   };
 }

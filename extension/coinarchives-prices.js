@@ -1,4 +1,5 @@
 import { boundedText, coinArchivesUrl, localDay, summarise } from './prices.js';
+import { recordDiagnostic, recordFetchFailure } from './core/diagnostics.js';
 
 const COINARCHIVES_PUBLIC_MAX_BYTES = 512 * 1024;
 const COINARCHIVES_PUBLIC_RESULT_CAP = 100;
@@ -135,16 +136,17 @@ export async function fetchCoinArchivesPrices({ term, section = 'a', currency },
   if (!['a', 'w'].includes(section)) return { ...fallback, status: 'network', reason: 'input' };
   try {
     const response = await fetchImpl(url, { method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(timeoutMs) });
-    if (!response.ok) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'http', httpStatus: response.status }; }
+    if (!response.ok) { void recordFetchFailure('coinarchives', response); await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'http', httpStatus: response.status }; }
     // Both addresses through the same normalisation: a browser reports the URL it fetched with every character percent-encoded, so an apostrophe in
     // the term would otherwise read as a redirect.
-    if (response.url && new URL(response.url).href !== new URL(url).href) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'redirect' }; }
+    if (response.url && new URL(response.url).href !== new URL(url).href) { void recordDiagnostic({ area: 'coinarchives', code: 'redirect' }); await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'redirect' }; }
     const contentType = response.headers?.get?.('content-type');
-    if (contentType && !/^text\/html\b/i.test(contentType)) { await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'content-type' }; }
+    if (contentType && !/^text\/html\b/i.test(contentType)) { void recordDiagnostic({ area: 'coinarchives', code: 'content-type' }); await response.body?.cancel?.(); return { ...fallback, status: 'network', reason: 'content-type' }; }
     const html = await boundedText(response, maxBytes);
     return parseCoinArchivesPublic(html, { term, section, currency, now, url });
   } catch (error) {
     // AbortSignal.timeout rejects with a TimeoutError; an AbortError is a caller (or a browser) cutting the request off.
+    void recordFetchFailure('coinarchives', error, error?.message === 'too-large' ? { bytes: maxBytes } : {});
     return { ...fallback, status: 'network', reason: error?.message === 'too-large' ? 'too-large' : ['TimeoutError', 'AbortError'].includes(error?.name) ? 'timeout' : 'fetch' };
   }
 }

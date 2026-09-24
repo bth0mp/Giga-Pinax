@@ -15,7 +15,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "local-rdf-small.rdf"
 DATA = ROOT / "extension" / "data"
 BUNDLE = DATA / "ocre"
 # The corpora bundled beside OCRE, each with a trimmed export of its own under tests/fixtures.
-CORPUS_FIXTURES = {name: ROOT / "tests" / "fixtures" / f"{name}-rdf-small.rdf" for name in ("crro", "pella", "sco")}
+CORPUS_FIXTURES = {name: ROOT / "tests" / "fixtures" / f"{name}-rdf-small.rdf" for name in ("crro", "pella", "sco", "pco", "agco")}
 NAMESPACES = ("xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#' "
               "xmlns:nmo='http://nomisma.org/ontology#' "
               "xmlns:skos='http://www.w3.org/2004/02/skos/core#' "
@@ -225,6 +225,64 @@ class CorpusImportTests(unittest.TestCase):
         # the identifier lookup.js builds from "SC 1315.3c".
         self.assertEqual("Seleucid Coins (part 2) 1315.3c", entries["sc.1.1315.3c"])
         self.assertEqual({"sc": [{"file": "records-sc.json", "from": ""}]}, load(output / "metadata.json")["shards"])
+
+    def test_pco_bundles_only_lorber_cpe_types_and_no_redirect_out_of_svoronos(self):
+        output = self.imported("pco")
+        metadata = load(output / "metadata.json")
+        self.assertEqual((6, 3), (metadata["recordCount"], metadata["activeRecordCount"]))
+        self.assertEqual({"count": 3, "reason": metadata["excluded"]["reason"], "byGroup": {"svoronos": 3}}, metadata["excluded"])
+        self.assertIn("Svoronos", metadata["excluded"]["reason"])
+        # Both parts of CPE volume I, part 2 numbering its bronzes with a B, in one group; the identifier keeps its case.
+        self.assertEqual([["cpe.1_1.330", "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330"],
+                          ["cpe.1_1.466A", "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 466A"],
+                          ["cpe.1_2.B146", "Coins of the Ptolemaic Empire Vol. I, Part II, no. B146"]],
+                         load(output / "index.json")["entries"])
+        self.assertEqual({"cpe": [{"file": "records-cpe.json", "from": ""}]}, metadata["shards"])
+        # Two Svoronos numbers are replaced by the CPE types they became. No lookup asks for a Svoronos record by id, so the
+        # links are no aliases: they are kept as PCO's own concordance, which a Svoronos citation is read through.
+        self.assertEqual({}, metadata["aliases"])
+        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0}, metadata["replacementSkips"])
+        self.assertEqual({"svoronos-1904.487": ["cpe.1_1.330"], "svoronos-1904.71": ["cpe.1_2.B146"]}, metadata["concordance"])
+        record = load(output / "records-cpe.json")["records"]["cpe.1_1.330"]
+        self.assertEqual({
+            "i": "cpe.1_1.330", "l": "Coins of the Ptolemaic Empire Vol. I, Part 1, no. 330", "a": ["ptolemy_ii"], "d": ["decadrachm"],
+            "m": ["alexandreia_egypt"], "x": ["ar"], "s": "-0270", "e": "-0246",
+            "o": {"d": "Veiled Head of deified Arsinoe II right, with ram's horn, wearing diademed stephane, lotus scepter over far "
+                       "shoulder, sometimes with serpent coiled around shaft, dotted border", "p": ["arsinoe_ii"]},
+            "r": {"l": "ΑΡΣΙΝΟΗΣ l., ΦΙΛΑΔΕΛΦΟΥ r.", "d": "Double Cornucopiae bound with royal diadem, containing pyramidal cakes, "
+                  "pomegranate, and other fruits, a grape cluster hanging from the rim of each horn, dotted border"},
+        }, record)
+
+    def test_a_svoronos_link_is_kept_only_when_every_type_it_names_is_bundled(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = "http://numismatics.org/pco/id/"
+            def record(record_id, *targets):
+                links = "".join(f"<dcterms:isReplacedBy rdf:resource='{base}{target}'/>" for target in targets)
+                return f"<nmo:TypeSeriesItem rdf:about='{base}{record_id}'><skos:prefLabel xml:lang='en'>{record_id}</skos:prefLabel>{links}</nmo:TypeSeriesItem>"
+            source = root / "pco.rdf"
+            source.write_text(f"<rdf:RDF {NAMESPACES}>" + "".join([
+                record("cpe.1_1.1"), record("cpe.1_1.2"),
+                # Two types for one number is offered as two; a link to a type the export does not hold, or a Svoronos record, is not kept.
+                record("svoronos-1904.9", "cpe.1_1.2", "cpe.1_1.1"), record("svoronos-1904.8", "cpe.1_1.3"),
+                record("svoronos-1904.7", "cpe.1_1.1", "cpe.1_1.3"), record("svoronos-1904.6", "svoronos-1904.5"), record("svoronos-1904.5"),
+            ]) + "</rdf:RDF>", encoding="utf-8")
+            result = run_import(source, root / "pco", corpus="pco")
+            self.assertEqual(0, result.returncode, result.stderr)
+            metadata = load(root / "pco" / "metadata.json")
+            self.assertEqual({"svoronos-1904.9": ["cpe.1_1.1", "cpe.1_1.2"]}, metadata["concordance"])
+            self.assertEqual({}, metadata["aliases"])
+
+    def test_agco_bundles_every_newell_demetrius_type(self):
+        output = self.imported("agco")
+        metadata = load(output / "metadata.json")
+        self.assertEqual((2, 2), (metadata["recordCount"], metadata["activeRecordCount"]))
+        self.assertNotIn("excluded", metadata)
+        self.assertEqual({"ambiguous": 0, "cyclic": 0, "dangling": 0}, metadata["replacementSkips"])
+        self.assertEqual({"newell": [{"file": "records-newell.json", "from": ""}]}, metadata["shards"])
+        self.assertEqual([["newell.demetrius.1", "Newell Demetrius Poliorcetes, no. 1"],
+                          ["newell.demetrius.45", "Newell Demetrius Poliorcetes, no. 45"]], load(output / "index.json")["entries"])
+        self.assertEqual(["index.json", "metadata.json", "records-newell.json"], sorted(path.name for path in output.iterdir()))
 
     def test_every_corpus_import_is_byte_deterministic_and_reindexes_to_the_same_bytes(self):
         for corpus, fixture in CORPUS_FIXTURES.items():
@@ -446,6 +504,79 @@ class LabelTests(unittest.TestCase):
                 self.imports.read_data(lambda name: {"schemaVersion": 1, "corpus": corpus, "shards": {}})
 
 
+class RefreshTests(unittest.TestCase):
+    """The monthly data refresh (.github/workflows/refresh-data.yml): which exports it downloads, which corpora it imports again, and
+    the counts it reports for the pull request. Nothing here reaches the network: the label fetch is handed a stand-in."""
+
+    def setUp(self):
+        self.imports = load_import_script()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.exports, self.data = self.root / "exports", self.root / "data"
+        self.exports.mkdir()
+        # Every corpus's export as the workflow saves it, and the data those exports were imported into.
+        for name, corpus in self.imports.CORPORA.items():
+            fixture = FIXTURE if name == "ocre" else CORPUS_FIXTURES[name]
+            shutil.copyfile(fixture, self.exports / corpus["export"])
+            self.assertEqual(0, run_import(self.exports / corpus["export"], self.data / name, "2026-09-17", corpus=name).returncode)
+        self.snapshot = self.root / "labels.json"
+        self.snapshot.write_bytes(self.imports.snapshot_bytes(
+            {"retrievedOn": "2026-09-17", "requestedCount": 1, "labelledCount": 1, "labels": {"ar": "Silver"}}))
+
+    def test_every_corpus_names_the_export_it_is_downloaded_from_and_saved_as(self):
+        exports = self.imports.export_list()
+        self.assertEqual(sorted(self.imports.CORPORA), sorted(name for name, _, _ in exports))
+        for name, url, file_name in exports:
+            self.assertEqual(f"{self.imports.CORPORA[name]['url']}nomisma.rdf", url)
+        # OCRE's export keeps the name ANS gives it, which is what its metadata has always recorded; the others are saved under their own.
+        self.assertIn(("ocre", "https://numismatics.org/ocre/nomisma.rdf", "nomisma.rdf"), exports)
+        self.assertIn(("pco", "https://numismatics.org/pco/nomisma.rdf", "pco.rdf"), exports)
+        result = subprocess.run([sys.executable, str(SCRIPT), "--list-exports"], text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("ocre https://numismatics.org/ocre/nomisma.rdf nomisma.rdf", result.stdout.splitlines())
+
+    def test_an_export_that_has_not_changed_is_not_imported_again(self):
+        before = {name: written_digests(self.data / name) for name in self.imports.CORPORA}
+        report = self.imports.refresh(self.exports, self.data, "2026-10-01")
+        self.assertEqual([], report["changed"])
+        # Not even the generation date moves: the files are the ones the last import wrote.
+        self.assertEqual(before, {name: written_digests(self.data / name) for name in self.imports.CORPORA})
+        self.assertIn("| CRRO | unchanged | 4 | 4 | 0 |", report["summary"])
+
+    def test_a_changed_export_is_imported_again_and_its_counts_reported(self):
+        crro = self.exports / "crro.rdf"
+        text = crro.read_text(encoding="utf-8")
+        start = text.index("<nmo:TypeSeriesItem rdf:about=\"http://numismatics.org/crro/id/rrc-44.6\"")
+        end = text.index("</nmo:TypeSeriesItem>", start) + len("</nmo:TypeSeriesItem>")
+        crro.write_text(text[:start] + text[end:], encoding="utf-8")
+        untouched = written_digests(self.data / "sco")
+        report = self.imports.refresh(self.exports, self.data, "2026-10-01")
+        self.assertEqual(["crro"], report["changed"])
+        self.assertEqual("2026-10-01", load(self.data / "crro" / "metadata.json")["generatedOn"])
+        self.assertEqual(untouched, written_digests(self.data / "sco"))
+        self.assertIn("| CRRO | changed | 4 → 3 | 4 → 3 | 0 |", report["summary"])
+
+    def test_a_missing_export_stops_the_refresh_before_anything_is_written(self):
+        (self.exports / "agco.rdf").unlink()
+        (self.exports / "crro.rdf").write_text((self.exports / "crro.rdf").read_text(encoding="utf-8").replace("RRC 44/5", "RRC 44/5 "),
+                                              encoding="utf-8")
+        before = written_digests(self.data / "crro")
+        with self.assertRaises(self.imports.ImportFailure):
+            self.imports.refresh(self.exports, self.data, "2026-10-01")
+        self.assertEqual(before, written_digests(self.data / "crro"))
+
+    def test_labels_nomisma_still_gives_the_same_leave_the_snapshot_as_it_was(self):
+        before = self.snapshot.read_bytes()
+        answer = lambda slugs, retrieved_on: {"retrievedOn": retrieved_on, "requestedCount": 1, "labelledCount": 1, "labels": {"ar": "Silver"}}
+        self.assertFalse(self.imports.refresh_labels(self.data, self.snapshot, "2026-10-01", fetch=answer))
+        self.assertEqual(before, self.snapshot.read_bytes())
+        self.assertTrue((self.data / "nomisma-labels.json").is_file())
+        changed = lambda slugs, retrieved_on: {**answer(slugs, retrieved_on), "labels": {"ar": "Silver", "rome": "Rome"}}
+        self.assertTrue(self.imports.refresh_labels(self.data, self.snapshot, "2026-10-01", fetch=changed))
+        self.assertEqual("2026-10-01", load(self.snapshot)["retrievedOn"])
+
+
 class CorpusTableTests(unittest.TestCase):
     """The importer's CORPORA table and the extension's LOCAL_CORPORA are two languages saying the same thing. They stay
     apart on purpose, but a corpus added, renamed or relabelled in one and not the other would write files no lookup can
@@ -456,7 +587,7 @@ class CorpusTableTests(unittest.TestCase):
         body = source.split("LOCAL_CORPORA = Object.freeze({", 1)[1].split("\n});", 1)[0]
         self.local = {name: {"uri": uri, "label": label} for name, uri, label
                       in re.findall(r"(\w+): \{ uri: '([^']+)', label: '([^']+)'", body)}
-        self.assertEqual(4, len(self.local), "LOCAL_CORPORA could not be read")
+        self.assertEqual(6, len(self.local), "LOCAL_CORPORA could not be read")
 
     def test_the_two_tables_name_the_same_corpora_as_the_bundled_directories(self):
         corpora = sorted(load_import_script().CORPORA)

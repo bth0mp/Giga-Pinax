@@ -1,6 +1,7 @@
 import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './browser-api.js';
-import { createCommandWriter } from './store.js';
+import { COMMAND_TYPES, createCommandWriter } from './store.js';
 import { reconcileScheduler } from './core/reminders.js';
+import { recordDiagnostic } from './core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = extensionApi();
@@ -13,19 +14,6 @@ const MENU_LOOKUP = 'giga-pinax-lookup';
 const MENU_RESEARCH = 'auction-companion:research-selection';
 const MENU_TRACK = 'auction-companion:track-auction';
 const SCHEDULER_ALARM = 'auction-companion:scheduler';
-const COMMAND_TYPES = new Set([
-  'snapshot.get', 'snapshot.raw',
-  'preferences.migrateIfAbsent', 'preferences.save',
-  'lot.save', 'lot.delete',
-  'group.save', 'group.delete', 'group.reorder',
-  'bid.plan', 'bid.place', 'bid.cancel',
-  'lot.outcome.set', 'collection.review.resolve',
-  'event.save', 'event.delete',
-  'evidence.add', 'evidence.include', 'evidence.resolve',
-  'draft.save', 'draft.get', 'draft.consume',
-  'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import', 'quarantine.restore',
-]);
 // The address this extension's own pages are served from; a sender outside it commands nothing.
 const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
@@ -52,6 +40,19 @@ let captureFailureTitle = '';
 // capture warning is retired by the next capture that works or by the collector opening a page, while the reminders
 // stay stopped until a reconcile works again. Sharing one flag let a later capture clear a warning nobody had seen.
 let reconcileFailed = false;
+
+// A failure kept in the local diagnostics the collector can copy from Settings: where and what kind, never what the
+// command or the page carried. Recording never throws and is not waited for.
+const noteFailure = (area, code) => { void recordDiagnostic({ page: 'background', area, code }); };
+// A command refused because storage failed or its data was invalid; a conflict or a duplicate is everyday traffic. So is
+// a workspace link to a capture draft that expired or was already used: that is the one `validation` refusal draft.get
+// and draft.consume give a page's well-formed command, and fifty of them would push every real failure out of the list.
+const EVERYDAY_REFUSALS = new Set(['draft.get', 'draft.consume']);
+const noteStoreFailure = (command, reply) => {
+  if (!reply || reply.ok || !['storage', 'validation'].includes(reply.code)) return;
+  if (reply.code === 'validation' && EVERYDAY_REFUSALS.has(command?.type)) return;
+  noteFailure('store', reply.code);
+};
 
 // The browser keeps the badge and the toolbar title across worker restarts, but module memory
 // only lasts the ~30 s until the worker idles out, so the flag is read back from the badge the
@@ -149,6 +150,7 @@ async function runReconcileRuntime() {
   const reply = await commit({ type: 'scheduler.reconcile', requestId: crypto.randomUUID() });
   if (!reply.ok) {
     console.error('Giga Pinax: the scheduler reconcile failed.', reply.message);
+    noteFailure('reminders', reply.code);
     await showReconcileFailure();
     return reply;
   }
@@ -167,7 +169,7 @@ async function runReconcileRuntime() {
 
 function reconcileRuntime() {
   const result = reconcileQueue.then(runReconcileRuntime);
-  reconcileQueue = result.catch(() => undefined);
+  reconcileQueue = result.catch(() => noteFailure('reminders', 'failed'));
   return result;
 }
 
@@ -217,13 +219,17 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === LOOKUP_MESSAGE || !COMMAND_TYPES.has(message?.type)) return false;
   // Only an extension page sends a command, so the collector is looking at their records.
   void clearCaptureFailure();
-  processCommand(message).then(sendResponse, (error) => sendResponse({
-    ok: false,
-    requestId: message?.requestId ?? '',
-    code: 'storage',
-    outcome: 'not-committed',
-    message: error.message || 'The command failed.',
-  }));
+  // The page is answered first, so its reply never waits on or depends on the note.
+  processCommand(message).then((reply) => { sendResponse(reply); noteStoreFailure(message, reply); }, (error) => {
+    sendResponse({
+      ok: false,
+      requestId: message?.requestId ?? '',
+      code: 'storage',
+      outcome: 'not-committed',
+      message: error.message || 'The command failed.',
+    });
+    noteFailure('store', 'storage');
+  });
   return true;
 });
 
@@ -292,6 +298,7 @@ async function runMenuAction(info) {
     try {
       await showInWindow(api, popupUrlFor(query));
     } catch {
+      noteFailure('lookup', 'not-opened');
       await showCaptureFailure(LOOKUP_FAILURE_TITLE);
     }
     return;
@@ -303,6 +310,7 @@ async function runMenuAction(info) {
   const requestId = crypto.randomUUID();
   const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
   if (!reply.ok) {
+    noteFailure('capture', reply.code);
     await showCaptureFailure(CAPTURE_FAILURE_TITLE);
     return;
   }
@@ -315,12 +323,16 @@ async function runMenuAction(info) {
   } catch {
     // The draft reached storage: only the window that would have shown it is missing, and telling
     // the collector their capture was lost would send them looking for work they still have.
+    noteFailure('capture', 'not-opened');
     await showCaptureFailure(OPEN_FAILURE_TITLE);
   }
 }
 
 api.contextMenus.onClicked.addListener((info) => {
-  void runMenuAction(info).catch(() => showCaptureFailure(CAPTURE_FAILURE_TITLE));
+  void runMenuAction(info).catch(() => {
+    noteFailure('capture', 'failed');
+    return showCaptureFailure(CAPTURE_FAILURE_TITLE);
+  });
 });
 
 api.alarms.onAlarm.addListener((alarm) => {

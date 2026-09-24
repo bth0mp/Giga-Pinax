@@ -1,5 +1,42 @@
+// @ts-check
 import { CURRENCIES, validateMoney } from './money.js';
 import { UUID, failure, isIsoDate, isIsoInstant, stableUuid, stripTracking } from './validate.js';
+/**
+ * @typedef {import('./types.js').Money} Money
+ * @typedef {import('./types.js').SaleObservation} SaleObservation
+ * @typedef {import('./types.js').SaleEvidence} SaleEvidence
+ */
+/**
+ * @template T
+ * @typedef {import('./types.js').Result<T>} Result
+ */
+/**
+ * What a median is asked for: one currency, a date window, and the sources to count.
+ * @typedef {object} StatisticsFilters
+ * @property {string} currency
+ * @property {string} fromDate
+ * @property {string} toDate
+ * @property {string[]} sources
+ */
+/**
+ * A median and its quartiles over the included rows (three or more), with every row left out and why.
+ * @typedef {object} Statistics
+ * @property {{ code: string, message: string, path: string } | null} validationError
+ * @property {string | null} currency
+ * @property {'hammer'} priceBasis
+ * @property {{ fromDate: string | null, toDate: string | null }} dateWindow
+ * @property {string[]} sources
+ * @property {number} count
+ * @property {Money | null} median
+ * @property {Money | null} lowerQuartile
+ * @property {Money | null} upperQuartile
+ * @property {string[]} includedIds
+ * @property {Array<{ id: string, reason: string }>} excluded
+ * @property {{ availableSources: string[], unavailableSources: string[], conflicts: number,
+ *   exclusionCounts: Record<string, number>, incomplete: boolean }} coverage
+ * @property {{ queryIds: string[], retrievedAt: string[] }} provenance
+ * @property {{ eligible: boolean, label: string }} presentation
+ */
 
 const SOURCES = Object.freeze(['coinarchives', 'acsearch', 'manual', 'authorized-import']);
 const SOURCE_SET = new Set(SOURCES);
@@ -20,6 +57,12 @@ function requiredText(value, path) {
   return typeof value === 'string' && value.trim() ? null : failure('invalid-observation', 'A required evidence field is missing.', path);
 }
 
+/**
+ * @param {*} observation
+ * @param {number} index
+ * @param {{ requireUuid?: boolean }} [options]
+ * @returns {Result<SaleObservation>}
+ */
 function validateObservation(observation, index, options = {}) {
   const base = `observations[${index}]`;
   if (!observation || typeof observation !== 'object' || Array.isArray(observation)) {
@@ -83,6 +126,10 @@ function validateObservation(observation, index, options = {}) {
   return { ok: true, value: observation };
 }
 
+/**
+ * @param {*} value
+ * @returns {Result<string>}
+ */
 export function normalizeSourceUrl(value) {
   if (typeof value !== 'string' || value.length === 0) {
     return failure('invalid-url', 'Source URL must be a non-empty HTTPS URL.', 'url');
@@ -100,6 +147,12 @@ export function normalizeSourceUrl(value) {
   return { ok: true, value: url.href };
 }
 
+/**
+ * The key two observations of the same sale share, or a failure when the house, its sale ID or the lot
+ * number is missing.
+ * @param {*} observation
+ * @returns {Result<string>}
+ */
 export function sameEventKey(observation) {
   if (!observation || typeof observation !== 'object') {
     return failure('invalid-observation', 'Sale observation must be an object.', 'observation');
@@ -147,11 +200,17 @@ function exclusionForBasis(observations) {
   return 'not-comparable';
 }
 
+/**
+ * @param {SaleObservation[]} group
+ * @param {string | null} key
+ * @returns {SaleEvidence}
+ */
 function makeEvidence(group, key) {
   const first = group[0];
   const conflicts = conflictFields(group);
   const collectorExcluded = group.find((item) => item.collectorExcluded === true);
   const dataClass = group.some((item) => item.dataClass === 'collector') ? 'collector' : 'authorized';
+  /** @type {SaleEvidence} */
   const row = {
     // The `live:` prefix is what every stored row's ID was derived through, so it stays.
     id: stableUuid(`live:${key ?? first.id}`),
@@ -159,7 +218,8 @@ function makeEvidence(group, key) {
     ...(key ? {
       saleIdentity: {
         auctionHouse: first.auctionHouse.trim().replace(/\s+/g, ' '),
-        houseSaleId: first.houseSaleId.trim().replace(/\s+/g, ' '),
+        // A key is only ever made from a house sale ID (sameEventKey), so there is one here.
+        houseSaleId: /** @type {string} */ (first.houseSaleId).trim().replace(/\s+/g, ' '),
         lotNumber: first.lotNumber.trim().replace(/\s+/g, ' '),
       },
     } : {}),
@@ -180,7 +240,8 @@ function makeEvidence(group, key) {
   if (group.every((item) => item.priceBasis === 'hammer')) {
     row.resolved = {
       priceBasis: 'hammer',
-      hammer: { ...first.amount },
+      // A hammer observation always carries its amount (validateObservation).
+      hammer: { .../** @type {Money} */ (first.amount) },
       resolution: 'source-agreement',
     };
     return row;
@@ -190,6 +251,10 @@ function makeEvidence(group, key) {
   return row;
 }
 
+/**
+ * @param {*} value
+ * @returns {Result<SaleEvidence>}
+ */
 export function validateSaleEvidence(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-evidence', 'Sale evidence must be an object.', 'evidence');
   if (typeof value.id !== 'string' || !value.id || !UUID.test(value.id)) {
@@ -281,6 +346,10 @@ export function validateSaleEvidence(value) {
   return { ok: true, value };
 }
 
+/**
+ * @param {*} observations
+ * @returns {Result<{ evidence: SaleEvidence[], mergedObservationIds: string[], conflicts: string[] }>}
+ */
 export function deduplicateEvidence(observations) {
   if (!Array.isArray(observations)) return failure('invalid-observations', 'Evidence observations must be an array.', 'observations');
   const seenIds = new Set();
@@ -312,6 +381,11 @@ export function deduplicateEvidence(observations) {
   return { ok: true, value: { evidence, mergedObservationIds, conflicts } };
 }
 
+/**
+ * @param {*} filters
+ * @param {{ code: string, message: string, path: string } | null} [validationError]
+ * @returns {Statistics}
+ */
 function emptyStatistics(filters, validationError = null) {
   const sources = Array.isArray(filters?.sources) ? [...filters.sources] : [];
   return {
@@ -360,6 +434,11 @@ function basisReason(row) {
   return 'not-comparable';
 }
 
+/**
+ * @param {*} evidence
+ * @param {*} filters
+ * @returns {Statistics}
+ */
 export function computeStatistics(evidence, filters) {
   const invalidFilters = validateFilters(filters);
   if (invalidFilters) return emptyStatistics(filters, invalidFilters);
