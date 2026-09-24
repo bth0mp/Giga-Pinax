@@ -10,7 +10,7 @@ import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
-  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE,
+  COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
   catalogueFailureMessage, coinArchivesFailure, onlineMessage,
 } from './popup-messages.js';
@@ -589,10 +589,28 @@ function renderRecent() {
     return item;
   }));
   $('recent').hidden = preferences.recent.length === 0;
+  // The examples are for a popup that has looked nothing up yet: the first answer puts a Recent row in their place.
+  $('first-run').hidden = preferences.recent.length > 0;
   const chips = [...$('recent-list').querySelectorAll('button')];
   const target = chips.find((chip) => chip.dataset.key === focusedKey) || chips[0];
   if (refocus && target) target.focus();
 }
+
+// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler.
+$('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
+  const item = document.createElement('li');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = example;
+  button.addEventListener('click', () => {
+    $('quick-reference').value = example;
+    $('quick-reference').dispatchEvent(new Event('input', { bubbles: true }));
+    $('quick-reference').focus({ preventScroll: true });
+    $('reference-form').requestSubmit();
+  });
+  item.append(button);
+  return item;
+}));
 
 // The filters an acsearch page is drawn with, for the median and the Upcoming list alike.
 // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.

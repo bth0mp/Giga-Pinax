@@ -817,3 +817,18 @@ test('page values give way before a draft outgrows its storage bound, and the co
   await roomy.click('companion-capture-watchlist');
   assert.equal(roomy.element('companion-status').textContent, 'Watchlist details are ready to review.');
 });
+
+// Loop 1 (P-05): Current source stood open on every popup with a paragraph of prose. It starts folded under a summary that says what it does, and
+// opens by itself only where there is a page to capture: the active tab is a web page the extension may read.
+test('Current source starts folded, and opens itself over a web page it could capture', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const details = markup.getElementById('companion-current-lot');
+  assert.equal(details.getAttribute('open'), null);
+  assert.equal(details.querySelector('summary').textContent, 'Capture the lot page you’re on');
+  const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'https://auction.example/27', title: 'Lot 27' }] });
+  await settle();
+  assert.equal(page.element('companion-current-lot').open, true);
+  const blank = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT, tabs: async () => [{ id: 3, url: 'about:newtab', title: 'New tab' }] });
+  await settle();
+  assert.equal(blank.element('companion-current-lot').open, false);
+});

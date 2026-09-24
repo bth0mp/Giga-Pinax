@@ -10,6 +10,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - The Reference box and **Look up** stay at the top of the research panel while the answer scrolls under them, so a second lookup no longer starts with scrolling back up, and “Reference changed” shows right under the box.
 - The price panel says each thing once. Under the median, one line gives the sales, their years and the last sale (“3 sales · 2026–2028 · last $380 on 1 Jun 2028”) and one line what the filters left out and how many results matched; each provider ends with a single basis line. The acsearch search folds under **Change search**, with the term it ran beside it, and opens by itself when prices need **Get prices**. The acsearch and CoinArchives **results ↗** links sit in their own headings, and the median-by-year labels are larger.
+- A first popup says what to do. The Reference box's placeholder no longer looks like a typed value, three example chips (`RIC I² Nero 306`, `Crawford 44/5`, `Price 23`) look up on a click until the first lookup, and one line says prices from acsearch follow it. **Current source** is now **Capture the lot page you’re on**, folded unless the tab behind the popup is a web page it could capture.
 - The popup shows the coin before its prices. The type card now comes first and the auction research under it; while acsearch answers, the median's place is held with “Fetching acsearch…”, so prices arriving a moment later no longer push the card off the popup.
 
 ### Fixed

@@ -2127,3 +2127,31 @@ test('each provider names its results link in its own heading, and the year stri
   const search = html.slice(html.indexOf('<details id="price-search"'), html.indexOf('</details>', html.indexOf('<details id="price-search"')));
   assert.match(search, /<form id="prices-form"/);
 });
+
+// Loop 1 (P-05): the first popup showed its placeholder in the typed value's bold mono, so it read as a value, and nothing said what to do. The
+// placeholder now reads as one (short enough to show whole beside Look up at 320 px), and until something has been looked up three example chips
+// look up on a click, over one line on what follows.
+test('the Reference placeholder reads as a placeholder, not a value', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('quick-reference').getAttribute('placeholder'), 'Reference or pasted lot text');
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.quick-search input::placeholder \{[^}]*font-weight:400[^}]*color:var\(--muted\)/);
+});
+
+test('before the first lookup, example chips look up on a click, and they go once there is a Recent row', async () => {
+  const lookedUp = [];
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'ok', card }; } });
+  assert.equal(popup.element('first-run').hidden, false);
+  const chips = popup.element('example-list').children.map((item) => item.children[0]);
+  assert.deepEqual(chips.map((chip) => chip.textContent), ['RIC I² Nero 306', 'Crawford 44/5', 'Price 23']);
+  await chips[2].emit('click');
+  await settle();
+  assert.equal(popup.element('quick-reference').value, 'Price 23');
+  assert.equal(lookedUp.length, 1);
+  assert.equal(lookedUp[0].catalogue, 'Price');
+  assert.equal(popup.element('first-run').hidden, true);
+  // Every example is a reference the box reads.
+  for (const example of chips.map((chip) => chip.textContent)) assert.ok(lookup.parseReference(example), example);
+});

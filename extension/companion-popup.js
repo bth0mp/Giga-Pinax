@@ -316,6 +316,12 @@ async function initCompanionPopup() {
 
   const calculator = mountBidCalculator($('companion-bid-calculator'), { compact: true });
 
+  // Current source starts folded; it opens by itself where there is a page to capture - the active tab a web page the extension may read, which the
+  // toolbar popup's click grants - so it is one line everywhere else.
+  void callExtension((globalThis.browser ?? globalThis.chrome)?.tabs, 'query', captureTabQuery(mode))
+    .then((tabs) => { if (capturableTab(tabs)) $('companion-current-lot').open = true; })
+    .catch(() => { /* no tab to read: it stays folded */ });
+
   const renderSummary = () => {
     const summary = buildWatchlistSummary(snapshot);
     $('companion-next-event').textContent = summary.nextEvent?.name ?? 'No upcoming auction';

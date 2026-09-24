@@ -37,9 +37,9 @@
       <form id="reference-form" class="reference-form" novalidate>
         <div class="quick-row">
           <label for="quick-reference">Reference</label>
-          <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="RIC I² Nero 306" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
+          <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus placeholder="Reference or pasted lot text" aria-describedby="quick-help form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
-          <p id="quick-help" class="field-hint">Catalogue reference or pasted lot text</p>
+          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices from acsearch follow the lookup.</p></div>
         </div>
         <div class="reference-body">
         <p id="form-error" class="form-error" role="alert" hidden></p><button id="online-fallback" class="secondary-button online-fallback" type="button" hidden>Check online</button>
@@ -124,10 +124,9 @@
           </div>
         </section>
       </section>
-      <details class="companion-current-lot" open>
-        <summary>Current source</summary>
+      <details id="companion-current-lot" class="companion-current-lot">
+        <summary>Capture the lot page you’re on</summary>
         <div class="companion-current-lot-body">
-          <p class="source-intro">Bring the auction page you are viewing into this research document.</p>
           <button id="companion-capture-current" class="companion-outline-button" type="button">Capture current page</button>
           <div id="companion-capture-editor" hidden>
             <p id="companion-capture-source" class="field-hint"></p>
