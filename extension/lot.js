@@ -696,7 +696,10 @@ export function findReferences(input) {
   const headline = heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length));
   const { names: before, first } = rulersIn(headline);
   // K-03: a heading that names nobody leaves the ruler a collector writes after the number ("RIC 306 Nero", "RIC II 253, Trajan") to say whose it is.
-  const rulers = before.length ? before : rulerAfter(text, kept.find((piece) => RIC_KEY.test(piece.key)));
+  // The name belongs to its own citation, while a lot's rulers are the lot's: read so only where the lot holds that one RIC citation, since in
+  // "RIC 306 Nero; RIC 12 Galba" Nero is not whose 12 it is (review C1).
+  const ricPieces = kept.filter((piece) => RIC_KEY.test(piece.key));
+  const rulers = before.length ? before : ricPieces.length === 1 ? rulerAfter(text, ricPieces[0]) : [];
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
   // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the

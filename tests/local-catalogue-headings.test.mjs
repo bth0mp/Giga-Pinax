@@ -85,3 +85,15 @@ test('over the bundled catalogue, a ruler after the number answers as the ruler 
   }
   assert.ok(opened > 100);
 });
+
+// Loop 6 fix round (review C1): over the bundle, no row of a multi-coin lot opens the coin of a ruler another citation named.
+test('over the bundled catalogue, a multi-coin lot opens no row under another citation\'s ruler', { skip }, async () => {
+  const { findReferences, lotLookup } = await import('../extension/lot.js');
+  for (const text of ['Lot of 2. RIC 306 Nero; RIC 12 Galba.', 'RIC 306 Nero, RIC 12 Galba, RIC 5 Otho.']) {
+    const found = findReferences(text);
+    for (const row of found.references) {
+      const result = await answer(lotLookup(row, found.rulers));
+      assert.notEqual(result.status, 'ok', `${text}: ${row.text} opened ${result.card?.id}`);
+    }
+  }
+});

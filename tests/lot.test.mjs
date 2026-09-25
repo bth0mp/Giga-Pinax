@@ -1701,3 +1701,15 @@ test('a ruler written straight after a RIC number is the lot\'s ruler, and nothi
   // The heading's ruler is the lot's ruler, whatever follows the number.
   assert.deepEqual(findReferences('Galba. Denarius. RIC 306 Nero.').rulers, ['Galba']);
 });
+
+// Loop 6 fix round (review C1): a name written after one RIC number belongs to that citation, not to the lot. With two or more RIC citations in
+// the lot, no name after a number is read as the lot's ruler: "RIC 12 Galba" never opened Nero's 12 because the first citation named Nero.
+test('a ruler after the number is read only where the lot holds one RIC citation', () => {
+  for (const text of ['Lot of 2. RIC 306 Nero; RIC 12 Galba.', 'RIC 306 Nero, RIC 12 Galba, RIC 5 Otho.', 'Lot of 3 coins. RIC 306 Nero; RIC 12 Galba; RIC 5 Otho.']) {
+    const found = findReferences(text);
+    assert.deepEqual(found.rulers, [], text);
+    for (const row of found.references) assert.equal(lotLookup(row, found.rulers).rulers, undefined, `${text}: ${row.text}`);
+  }
+  // One RIC citation beside another catalogue's still reads its ruler.
+  assert.deepEqual(findReferences('RIC 306 Nero; Cohen 12').rulers, ['Nero']);
+});
