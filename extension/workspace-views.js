@@ -201,7 +201,8 @@ export function comparisonRows(lots, selectedIds) {
       ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
       : [`${estimate.currency} fees: shipping ${((estimate.shippingMinor ?? 0) / 100).toFixed(2)} + fixed ${((estimate.paymentFeeMinor ?? 0) / 100).toFixed(2)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
         estimate.premiumVatBps ? `VAT ${(estimate.premiumVatBps / 100).toFixed(2)}% on the premium` : '',
-        estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : ''].filter(Boolean).join(' · ');
+        estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : '',
+        estimate.importVatBps ? `import VAT ${(estimate.importVatBps / 100).toFixed(2)}% on hammer, premium and shipping` : ''].filter(Boolean).join(' · ');
     let totalLabel = terminal ? '' : Number.isInteger(bid?.buyerPremiumBps) ? 'Estimated total unknown; recalculate fees' : 'Estimated total unknown; buyer premium not recorded';
     if (!terminal && amount && Number.isInteger(bid?.buyerPremiumBps) && estimate?.currency === amount.currency) {
       const calculated = calculateBidCost(amount, bid.buyerPremiumBps, estimate);
@@ -228,7 +229,7 @@ const COST_GAP_WORDS = Object.freeze({
   'premium-rate': 'no buyer’s premium rate',
   'fee-currency': 'its fees were saved in another currency, and are never converted',
 });
-const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
+const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
 
 /**
  * A won coin's money line, as its History card and its collection entry show it: Hammer · Premium · Fees · Total in

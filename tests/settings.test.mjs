@@ -1395,3 +1395,25 @@ test('a refused command is reported without claiming the import happened', async
   assert.equal(result.reply.ok, false);
   assert.equal(result.copied, COPY.name, 'the copy still reached disk and is still worth naming');
 });
+
+// Q-04: the usual import VAT for a sale in another currency than the default, off (blank) by default.
+test('import VAT for a foreign sale is off until typed, saved as a rate, and cleared by blanking it', async () => {
+  const page = await openSettings({
+    snapshot: snapshotWith({ preferences: preferences({ importVatBps: 500 }) }),
+    reply: (command) => ({ ok: true, value: preferences({ revision: 4, ...command.preferences }) }),
+  });
+  assert.equal(page.element('import-vat').value, '5.00');
+  page.element('import-vat').value = '';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands[0].preferences.importVatBps, null, 'blank turns it off');
+  page.element('import-vat').value = 'twenty';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands.length, 1, 'a rate that cannot be read saves nothing');
+  assert.match(page.status(), /^Import VAT /);
+  page.element('import-vat').value = '7';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands[1].preferences.importVatBps, 700);
+});

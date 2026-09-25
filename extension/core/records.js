@@ -142,7 +142,7 @@ function costEstimateResult(value, path) {
     integerResult(value.paymentFeeMinor, `${path}.paymentFeeMinor`),
     integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
     integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
-    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path),
+    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path), bpsResult(value, 'importVatBps', path),
   );
 }
 
@@ -257,8 +257,9 @@ function wonCostResult(outcome, path) {
     const gaps = arrayResult(cost.missing, `${path}.missing`, COST_GAPS.length); if (!gaps.ok) return gaps;
     cost.missing.forEach((gap, index) => checks.push(enumResult(gap, COST_GAP_SET, `${path}.missing[${index}]`)));
   }
+  if (OWN(cost, 'importVat')) checks.push(moneyResult(cost.importVat, `${path}.importVat`));
   const shapes = firstFailure(...checks); if (!shapes.ok) return shapes;
-  for (const key of [...COST_MONEY, 'total']) {
+  for (const key of [...COST_MONEY, 'total', 'importVat']) {
     if (OWN(cost, key) && cost[key].currency !== outcome.hammer?.currency) {
       return failure('invalid-cost', 'A cost is kept in its hammer’s currency.', `${path}.${key}`);
     }
@@ -268,6 +269,9 @@ function wonCostResult(outcome, path) {
   if (OWN(cost, 'total') === gapCount > 0) {
     return failure('invalid-cost', 'A cost has a total or names what is missing, never both or neither.', path);
   }
+  // Import VAT (Q-04) is kept beside a complete cost's total, not in it: the total stays the hammer and the five parts
+  // 0.36.0 checks, so a backup from this version still imports there.
+  if (OWN(cost, 'importVat') && !OWN(cost, 'total')) return failure('invalid-cost', 'Import VAT belongs to a complete cost.', `${path}.importVat`);
   if (!OWN(cost, 'total')) return { ok: true, value: outcome };
   if (!OWN(cost, 'buyerPremiumBps') || !COST_MONEY.every((key) => OWN(cost, key))) {
     return failure('invalid-cost', 'A complete cost carries every part.', path);
@@ -607,6 +611,7 @@ function preferencesResult(preferences, path) {
     typeof preferences.desktopAlertsEnabled === 'boolean'
       ? { ok: true, value: preferences.desktopAlertsEnabled }
       : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
+    bpsResult(preferences, 'importVatBps', path),
   );
   if (!common.ok) return common;
   if (!OWN(preferences, 'housePremiumPresets')) return { ok: true, value: preferences };

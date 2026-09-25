@@ -78,6 +78,7 @@ const optionalPercent = (text, locale, subject) => (typeof text === 'string' && 
 export const FEE_SHEET_FIELDS = Object.freeze([
   { name: 'premiumVat', label: 'VAT on premium %', key: 'premiumVatBps', kind: 'percent', subject: 'VAT on premium', optional: true },
   { name: 'platformFee', label: 'Platform fee % on hammer', key: 'platformFeeBps', kind: 'percent', subject: 'Platform fee on hammer', optional: true },
+  { name: 'importVat', label: 'Import VAT / duty %', key: 'importVatBps', kind: 'percent', subject: 'Import VAT', optional: true },
   { name: 'shipping', label: 'Shipping', key: 'shippingMinor', kind: 'money' },
   { name: 'paymentPercent', label: 'Payment fee %', key: 'paymentFeeBps', kind: 'percent', subject: 'Payment fee' },
   { name: 'paymentFixed', label: 'Fixed payment fee', key: 'paymentFeeMinor', kind: 'money' },
@@ -260,7 +261,8 @@ export function buildBidCalculation(input) {
   const minimum = optionalMoney(input.minimumText, 0);
   const premiumVat = optionalPercent(input.premiumVatText, input.locale, 'VAT on premium');
   const platformFee = optionalPercent(input.platformFeeText, input.locale, 'Platform fee on hammer');
-  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]
+  const importVat = optionalPercent(input.importVatText, input.locale, 'Import VAT');
+  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]
     .find((entry) => !entry.ok);
   if (failed) return failed;
   if (increment.value.minor <= 0) return { ok: false, error: { code: 'invalid-increment', message: 'Enter an increment greater than zero.' } };
@@ -271,6 +273,7 @@ export function buildBidCalculation(input) {
   // Written only when typed, so an estimate without them keeps the shape earlier versions saved.
   if (premiumVat.value !== null) costEstimate.premiumVatBps = premiumVat.value;
   if (platformFee.value !== null) costEstimate.platformFeeBps = platformFee.value;
+  if (importVat.value !== null) costEstimate.importVatBps = importVat.value;
   const options = { ...costEstimate };
   delete options.currency;
   // A house ladder belongs to the house, not to this lot, so it drives the calculation without
@@ -338,6 +341,7 @@ export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total
     minimum: formatMinorInput(estimate.minimumBidMinor, locale),
     premiumVat: formatMinorInput(estimate.premiumVatBps, locale),
     platformFee: formatMinorInput(estimate.platformFeeBps, locale),
+    importVat: formatMinorInput(estimate.importVatBps, locale),
     // A house's tiers belong to that house, not to whichever lot is on screen: leaving them
     // selected would compute this lot's premium and minimum on the last house's schedule. The lot's
     // own saved increment applies until the collector picks a house again.
@@ -376,6 +380,7 @@ export function mountBidCalculator(
   const minimum = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0.00' });
   const premiumVat = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
   const platformFee = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
+  const importVat = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
   const preset = el('select');
   const fields = el('div', { className: 'bid-calculator-fields' });
   const label = (text, control) => {
@@ -396,7 +401,7 @@ export function mountBidCalculator(
   const feeFields = el('div', { className: 'bid-fees-fields' });
   feeFields.append(
     label('VAT on premium %', premiumVat).node, label('Platform fee % on hammer', platformFee).node,
-    label('Shipping', shipping).node, label('Payment fee %', paymentPercent).node,
+    label('Import VAT / duty %', importVat).node, label('Shipping', shipping).node, label('Payment fee %', paymentPercent).node,
     label('Fixed payment fee', paymentFixed).node, label('Bid increment', increment).node,
     label('Minimum bid', minimum).node);
   fees.append(el('summary', { textContent: 'Fees and bid increments' }), feeFields);
@@ -404,7 +409,7 @@ export function mountBidCalculator(
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer and import taxes are excluded.',
+    className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Import VAT or duty, when the coin crosses a border, is charged on hammer, premium and shipping and paid to the carrier or customs, so no payment fee is added to it; Settings can start it at your usual rate for a house in another currency than your default. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer is excluded, and nothing is estimated where a field is blank.',
   });
   // The explanation folds under its own summary, so the figures above it lead.
   const about = el('details', { className: 'bid-calculator-about' });
@@ -492,6 +497,7 @@ export function mountBidCalculator(
   const takePreferences = createPreferenceRevisionGate((incoming) => {
     preferences = incoming;
     renderPresets();
+    offerImportVat();
     if (selectLadder()) calculate();
   }, () => !destroyed);
   const calculate = () => {
@@ -505,7 +511,7 @@ export function mountBidCalculator(
     const calculated = buildBidCalculation({ mode: mode.value, amountText: amount.value, premiumText: premium.value,
       shippingText: shipping.value, paymentPercentText: paymentPercent.value, paymentFixedText: paymentFixed.value,
       incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.record ?? null,
-      premiumVatText: premiumVat.value, platformFeeText: platformFee.value,
+      premiumVatText: premiumVat.value, platformFeeText: platformFee.value, importVatText: importVat.value,
       currency: currencyControl.value, locale: language() });
     if (!calculated.ok) {
       output.textContent = 'Enter an amount and buyer premium.';
@@ -521,7 +527,8 @@ export function mountBidCalculator(
     const estimate = calculated.costEstimate;
     const vat = Object.hasOwn(estimate, 'premiumVatBps') ? ` + VAT ${formatMoney(calculated.value.premiumVat, locale)}` : '';
     const platform = Object.hasOwn(estimate, 'platformFeeBps') ? ` · Platform fee ${formatMoney(calculated.value.platformFee, locale)}` : '';
-    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)}${vat}${platform} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
+    const imported = Object.hasOwn(estimate, 'importVatBps') ? ` · Import VAT ${formatMoney(calculated.value.importVat, locale)}` : '';
+    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)}${vat}${platform}${imported} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
@@ -529,9 +536,21 @@ export function mountBidCalculator(
     amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Hammer price';
     calculate();
   });
-  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]) {
+  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]) {
     control.addEventListener('input', calculate);
   }
+  // Settings' usual import VAT starts the field for a house in another currency than the collector's default, and
+  // leaves it again for one in the default; a rate the collector typed or cleared is theirs and is never replaced.
+  let importVatOffered = null;
+  const offerImportVat = () => {
+    if (importVatOffered !== null && importVat.value !== importVatOffered) importVatOffered = null;
+    const rate = preferences?.importVatBps;
+    const foreign = Number.isSafeInteger(rate) && preferences?.currency && currencyControl.value !== preferences.currency;
+    if (foreign && importVat.value.trim() === '') { importVat.value = formatMinorInput(rate); importVatOffered = importVat.value; }
+    else if (!foreign && importVatOffered !== null) { importVat.value = ''; importVatOffered = null; }
+  };
+  importVat.addEventListener('input', () => { importVatOffered = null; });
+  currencyControl.addEventListener('input', () => { offerImportVat(); calculate(); });
   preset.addEventListener('change', () => {
     const item = selectedPreset();
     if (preset.value !== '' && !item) return;
@@ -623,9 +642,11 @@ export function mountBidCalculator(
       if (Object.hasOwn(inputs, 'amount')) amount.value = inputs.amount;
       for (const [control, key] of [[premium, 'premium'], [shipping, 'shipping'], [paymentPercent, 'paymentPercent'],
         [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum'],
-        [premiumVat, 'premiumVat'], [platformFee, 'platformFee']]) {
+        [premiumVat, 'premiumVat'], [platformFee, 'platformFee'], [importVat, 'importVat']]) {
         control.value = inputs[key];
       }
+      importVatOffered = null;
+      offerImportVat();
       calculate();
     },
     destroy() {

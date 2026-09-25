@@ -1372,3 +1372,28 @@ test('a coin corrected from Lost to Won is costed at the rate its settled bid ca
   const wonAfterReopen = setOutcome(reopened.value, { status: 'won', hammer: { currency: 'EUR', minor: 48000 } }, NOW);
   assert.equal(wonAfterReopen.value.outcome.cost.buyerPremiumBps, 2000);
 });
+
+// Q-04: import VAT saved with the fee sheet is costed on a won coin as its own part. The stored total stays the
+// hammer and the five parts 0.36.0 checks, so a backup from this version still imports there; the import VAT is kept
+// beside it and costTotal adds it.
+test('a won coin’s import VAT is kept beside its total, and the full total adds it', async () => {
+  const { costTotal, costFees } = await import('../extension/core/projections.js');
+  const lot = makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2500 },
+    costEstimate: { ...KUENKER_FEES, importVatBps: 500 },
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  const cost = won.value.outcome.cost;
+  // 1,000 + 250 + 15 shipping = 1,265.00 at 5 %.
+  assert.deepEqual(cost.importVat, { currency: 'EUR', minor: 6325 });
+  assert.equal(cost.total.minor, 100000 + 25000 + 4750 + 1500, 'the stored total is the house invoice, shipping and payment fee');
+  assert.equal(costTotal(cost).minor, 100000 + 25000 + 4750 + 1500 + 6325);
+  assert.equal(costFees(cost).minor, 4750 + 1500 + 6325);
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+  const broken = structuredClone(won.value); broken.outcome.cost.importVat.currency = 'USD';
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.code, 'invalid-cost');
+  const noTotal = structuredClone(won.value); delete noTotal.outcome.cost.total; noTotal.outcome.cost.missing = ['fees'];
+  assert.equal(validateSnapshot(snapshotWith(noTotal)).error.code, 'invalid-cost', 'import VAT belongs to a complete cost');
+  const badRate = structuredClone(won.value); badRate.costEstimate.importVatBps = 10001;
+  assert.equal(validateSnapshot(snapshotWith(badRate)).error.path, 'lots[0].costEstimate.importVatBps');
+});

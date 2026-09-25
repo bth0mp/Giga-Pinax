@@ -92,7 +92,7 @@ function baseRecord(draft, context) {
 function preferenceFields(value, includeAlerts = false) {
   if (!value || typeof value !== 'object') return null;
   const result = {};
-  for (const key of ['currency', 'housePremiumPresets']) {
+  for (const key of ['currency', 'housePremiumPresets', 'importVatBps']) {
     if (own(value, key)) result[key] = value[key];
   }
   if (includeAlerts && own(value, 'desktopAlertsEnabled')) {

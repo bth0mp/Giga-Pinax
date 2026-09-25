@@ -2423,3 +2423,17 @@ test('an entry that drifted from its corrected won lot before 0.36 follows it on
   assert.equal(other.ok, true, other.message);
   assert.deepEqual(storage.read().collectionEntries[0].hammer, { currency: 'EUR', minor: 131000 }, 'the next write persists it');
 });
+
+// Q-04: the usual import VAT for a sale in another currency is an optional preference: saved as a rate, taken off by
+// null, refused out of range, and left alone by a save that does not name it.
+test('the import VAT preference is saved, cleared by null, refused out of range and kept by other saves', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', { preferences: { currency: 'GBP' } })).snapshot;
+  state = reduce(state, command('preferences.save', { expectedRevision: 0, preferences: { currency: 'GBP', importVatBps: 500 } })).snapshot;
+  assert.equal(state.preferences.importVatBps, 500);
+  state = reduce(state, command('preferences.save', { expectedRevision: 1, preferences: { currency: 'EUR' } })).snapshot;
+  assert.equal(state.preferences.importVatBps, 500, 'a save that does not name it keeps it');
+  state = reduce(state, command('preferences.save', { expectedRevision: 2, preferences: { currency: 'EUR', importVatBps: null } })).snapshot;
+  assert.equal(Object.hasOwn(state.preferences, 'importVatBps'), false);
+  const refused = applyCommand(state, command('preferences.save', { expectedRevision: 3, preferences: { currency: 'EUR', importVatBps: 10001 } }), context());
+  assert.equal(refused.ok, false);
+});

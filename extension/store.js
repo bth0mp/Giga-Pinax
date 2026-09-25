@@ -134,6 +134,8 @@ function mutation(snapshot, command, context) {
         revision: snapshot.preferences.revision + 1,
         updatedAt: now,
       };
+      // The usual import VAT for a sale in another currency is off when it is null (Q-04).
+      if (next.preferences.importVatBps === null) delete next.preferences.importVatBps;
       value = next.preferences;
       break;
     }

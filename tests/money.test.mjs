@@ -33,7 +33,7 @@ test('calculates full bid cost with half-up percentage fees', () => {
     hammer: { currency: 'GBP', minor: 10000 }, premium: { currency: 'GBP', minor: 2250 },
     premiumVat: { currency: 'GBP', minor: 0 }, platformFee: { currency: 'GBP', minor: 0 },
     hammerPlusPremium: { currency: 'GBP', minor: 12250 }, shipping: { currency: 'GBP', minor: 1000 },
-    paymentFee: { currency: 'GBP', minor: 418 }, total: { currency: 'GBP', minor: 13668 },
+    importVat: { currency: 'GBP', minor: 0 }, paymentFee: { currency: 'GBP', minor: 418 }, total: { currency: 'GBP', minor: 13668 },
   }});
 });
 
@@ -49,17 +49,34 @@ test('VAT on the premium and a platform fee on the hammer join the cost before t
   }), { ok: true, value: {
     hammer, premium: { currency: 'CHF', minor: 25000 }, premiumVat: { currency: 'CHF', minor: 4750 },
     platformFee: { currency: 'CHF', minor: 3000 }, hammerPlusPremium: { currency: 'CHF', minor: 125000 },
-    shipping: { currency: 'CHF', minor: 2000 }, paymentFee: { currency: 'CHF', minor: 2695 },
+    shipping: { currency: 'CHF', minor: 2000 }, importVat: { currency: 'CHF', minor: 0 }, paymentFee: { currency: 'CHF', minor: 2695 },
     total: { currency: 'CHF', minor: 137445 },
   }});
   // The VAT is worked out on the premium as invoiced, half up: 20 % of £0.05 is £0.01.
   assert.equal(calculateBidCost({ currency: 'GBP', minor: 25 }, 2000, { premiumVatBps: 2000 }).value.premiumVat.minor, 1);
-  for (const key of ['premiumVatBps', 'platformFeeBps']) {
+  for (const key of ['premiumVatBps', 'platformFeeBps', 'importVatBps']) {
     for (const bad of [-1, 10001, 1.5, '19', null]) {
       assert.equal(calculateBidCost(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
       assert.equal(calculateAffordableBid(hammer, 2500, { [key]: bad }).error?.code, 'invalid-option', `${key} ${bad}`);
     }
   }
+});
+
+// Q-04: a coin crossing a border pays import VAT or duty on hammer + premium + shipping (the CIF value), to the carrier
+// or customs rather than on the house's invoice, so the house's payment fee is not charged on it.
+test('import VAT is charged on hammer, premium and shipping, and joins the total after the payment fee', () => {
+  const hammer = { currency: 'EUR', minor: 100000 };
+  const cost = calculateBidCost(hammer, 2500, { shippingMinor: 1500, paymentFeeBps: 300, importVatBps: 500 }).value;
+  // 1,000 + 250 + 15 = 1,265.00; 5 % is 63.25. The payment fee is 3 % of 1,265.00 = 37.95.
+  assert.equal(cost.importVat.minor, 6325);
+  assert.equal(cost.paymentFee.minor, 3795);
+  assert.equal(cost.total.minor, 126500 + 3795 + 6325);
+  // VAT on the premium and a platform fee are the house's, not part of the value customs charges on.
+  assert.equal(calculateBidCost(hammer, 2500, { premiumVatBps: 1900, platformFeeBps: 300, importVatBps: 500 }).value.importVat.minor, 6250);
+  // A budget answer counts it, so it is never too high for a foreign sale.
+  const budget = calculateAffordableBid({ currency: 'EUR', minor: 136620 }, 2500, { shippingMinor: 1500, paymentFeeBps: 300, importVatBps: 500, incrementMinor: 1000 });
+  assert.equal(budget.value.hammer.minor, 100000);
+  assert.equal(calculateAffordableBid({ currency: 'EUR', minor: 136619 }, 2500, { shippingMinor: 1500, paymentFeeBps: 300, importVatBps: 500, incrementMinor: 1000 }).value.hammer.minor, 99000);
 });
 
 // The one direction a budget answer must never err in is too high.

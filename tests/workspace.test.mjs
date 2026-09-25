@@ -1413,3 +1413,17 @@ test('a won outcome saves as terms only what differs from the coin’s own bid a
   assert.deepEqual(outcomeTermsFromForm(bare, { hammerCurrency: 'EUR', premium: 'twenty' }).error.field, 'premium');
   assert.deepEqual(outcomeTermsFromForm(bare, { hammerCurrency: 'EUR', shipping: '1,2,3' }).error.field, 'shipping');
 });
+
+// Q-04: import VAT is named on the money line, in the fee sheet's order, and counted in Fees and Total.
+test('a won coin’s money line names its import VAT and totals it', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const line = wonCostLine({ outcome: { status: 'won', hammer: eur(100000), cost: {
+    buyerPremiumBps: 2500, premium: eur(25000), premiumVat: eur(0), platformFee: eur(0), shipping: eur(1500), paymentFee: eur(0), total: eur(126500), importVat: eur(6325),
+  } } });
+  assert.deepEqual(line.cells.map(({ figure }) => figure), ['1,000.00', '250.00', '78.25', '1,328.25']);
+  assert.equal(line.detail, 'Premium 25% · import VAT 63.25 · shipping 15.00');
+  const [row] = comparisonRows([{ id: 'a', title: 'A', outcome: { status: 'open' }, plannedBid: { amount: eur(100000), buyerPremiumBps: 2500 },
+    costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, importVatBps: 500, incrementMinor: 1, minimumBidMinor: 0 } }], ['a']);
+  assert.match(row.estimateLabel, /import VAT 5\.00% on hammer, premium and shipping/);
+  assert.equal(row.totalLabel, 'Estimated total EUR 1328.25');
+});

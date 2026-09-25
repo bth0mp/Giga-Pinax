@@ -59,7 +59,7 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  */
 export const COST_GAPS = Object.freeze(['hammer', 'premium-rate', 'fees', 'fee-currency']);
 const COST_PARTS = Object.freeze(['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee']);
-export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'shipping', 'paymentFee']);
+export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'importVat', 'shipping', 'paymentFee']);
 
 // The buyer's premium rate on the coin's bids: the last bid settled or re-opened that carries a rate (settled won, or
 // settled lost and then corrected to won, which is the same bid), else the plan the collector made for it. A plan
@@ -118,12 +118,15 @@ export function deriveWonCost(lot, hammer) {
   }
   const worked = calculateBidCost(money, rate, {
     shippingMinor: fees.shippingMinor, paymentFeeBps: fees.paymentFeeBps, paymentFeeMinor: fees.paymentFeeMinor,
-    premiumVatBps: fees.premiumVatBps ?? 0, platformFeeBps: fees.platformFeeBps ?? 0,
+    premiumVatBps: fees.premiumVatBps ?? 0, platformFeeBps: fees.platformFeeBps ?? 0, importVatBps: fees.importVatBps ?? 0,
   });
   if (!worked.ok) return null;
   const cost = { buyerPremiumBps: rate };
   for (const part of COST_PARTS) cost[part] = worked.value[part];
-  cost.total = worked.value.total;
+  // The stored total is the hammer and the five parts, as 0.36.0 checks it; import VAT, where the fee sheet has a rate
+  // for it, is kept beside it (costTotal adds it).
+  cost.total = { currency: money.currency, minor: worked.value.total.minor - worked.value.importVat.minor };
+  if (OWN(fees, 'importVatBps')) cost.importVat = worked.value.importVat;
   return cost;
 }
 
@@ -140,7 +143,7 @@ export function lotCost(lot) {
 }
 
 /**
- * The fees of a worked-out cost as one amount: VAT on the premium, platform fee, shipping and payment fee.
+ * The fees of a worked-out cost as one amount: VAT on the premium, platform fee, import VAT, shipping and payment fee.
  * @param {import('./types.js').WonCost | null | undefined} cost
  * @returns {Money | null}
  */
@@ -149,6 +152,18 @@ export function costFees(cost) {
   let minor = 0;
   for (const part of COST_FEE_PARTS) minor += cost[part]?.minor ?? 0;
   return { currency: cost.total.currency, minor };
+}
+
+/**
+ * Everything a complete cost adds up to: its stored total (hammer, premium and the house's, the carrier's and the
+ * payment fees) and the import VAT kept beside it. Null for an incomplete cost or a sum too large to hold exactly.
+ * @param {import('./types.js').WonCost | null | undefined} cost
+ * @returns {Money | null}
+ */
+export function costTotal(cost) {
+  if (!cost?.total) return null;
+  const minor = BigInt(cost.total.minor) + BigInt(cost.importVat?.minor ?? 0);
+  return minor > BigInt(Number.MAX_SAFE_INTEGER) ? null : { currency: cost.total.currency, minor: Number(minor) };
 }
 
 /**
@@ -161,7 +176,7 @@ export function costFees(cost) {
  * @returns {{ total: Money | null, partial: boolean }}
  */
 export function shownCostTotal(cost, hammer) {
-  if (cost?.total) return { total: cost.total, partial: false };
+  if (cost?.total) return { total: costTotal(cost), partial: false };
   const onlyFees = cost?.missing?.length === 1 && cost.missing[0] === 'fees';
   if (!onlyFees || !cost?.premium || !validateMoney(hammer).ok || hammer?.currency !== cost.premium.currency) return { total: null, partial: false };
   const minor = BigInt(/** @type {Money} */ (hammer).minor) + BigInt(cost.premium.minor);

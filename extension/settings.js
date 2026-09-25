@@ -5,7 +5,7 @@ import {
 } from './core/backup.js';
 import { CSV_TABLES, csvFiles } from './core/csv.js';
 import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
-import { CURRENCIES } from './core/money.js';
+import { CURRENCIES, parsePercent } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePresets, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
 import { cacheDefaultCurrency, initializeCompanionPreferences } from './companion-preferences.js';
@@ -280,6 +280,7 @@ function renderDataHealth(entries) {
 
 function render() {
   $('currency').value = preferencesSnapshot.preferences.currency;
+  $('import-vat').value = formatMinorInput(preferencesSnapshot.preferences.importVatBps);
   $('theme').value = storedTheme();
   $('specimen-photos').checked = storedSpecimenPhotos();
   $('premium-list').replaceChildren(
@@ -291,6 +292,7 @@ function render() {
 function formState() {
   return JSON.stringify({
     currency: $('currency').value,
+    importVat: $('import-vat').value,
     theme: $('theme').value,
     specimenPhotos: $('specimen-photos').checked,
     rows: [...document.querySelectorAll('.premium-row')]
@@ -300,7 +302,7 @@ function formState() {
 
 // The two settings this page writes. Anything else in the record - desktop alerts - is kept by the
 // store's own merge, so a revision that moved only for it overwrites nothing this page shows.
-const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency &&
+const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency && (a.importVatBps ?? null) === (b.importVatBps ?? null) &&
   JSON.stringify(a.housePremiumPresets ?? []) === JSON.stringify(b.housePremiumPresets ?? []);
 
 // Data health read again on its own. The revision the page saves against follows the store only
@@ -513,13 +515,22 @@ $('save-settings').addEventListener('click', async () => {
       status('');
       return;
     }
+    // Blank is off, which the store takes as null; anything else must read as a rate.
+    const importVatText = $('import-vat').value.trim();
+    const importVat = importVatText ? parsePercent(importVatText, navigator.language, 'Import VAT') : { ok: true, value: null };
+    if (!importVat.ok) {
+      $('import-vat').setAttribute('aria-invalid', 'true');
+      $('import-vat').focus();
+      throw new Error(importVat.error.message);
+    }
+    $('import-vat').removeAttribute('aria-invalid');
     const theme = $('theme').value;
     const specimenPhotos = $('specimen-photos').checked;
     const reply = await bridge.sendCommand({
       type: 'preferences.save',
       requestId: bridge.newRequestId(),
       expectedRevision: preferencesSnapshot.preferences.revision,
-      preferences: { currency: $('currency').value, housePremiumPresets: presets.value },
+      preferences: { currency: $('currency').value, importVatBps: importVat.value, housePremiumPresets: presets.value },
     });
     if (!reply.ok) {
       const message = reply.message || reply.error?.message || 'Could not save settings. Reload and review your changes.';

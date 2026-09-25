@@ -102,7 +102,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   };
   assert.deepEqual(calculatorInputsForLot(values, { loadedLotId: null, mode: 'total', locale: 'en-US' }), {
     currency: 'EUR', amount: '150.00', premium: '20.00', shipping: '5.00',
-    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00', premiumVat: '', platformFee: '',
+    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00', premiumVat: '', platformFee: '', importVat: '',
     preset: '', ladder: null,
   });
   assert.equal(calculatorInputsForLot(values, { loadedLotId: 'lot-a', mode: 'total', locale: 'en-US' }), null);
@@ -110,7 +110,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   assert.equal(Object.hasOwn(budget, 'amount'), false);
   assert.equal(budget.premium, '20.00');
   assert.deepEqual(calculatorInputsForLot({ currency: 'GBP' }, { loadedLotId: 'lot-a', locale: 'en-US' }), {
-    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '', premiumVat: '', platformFee: '',
+    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '', premiumVat: '', platformFee: '', importVat: '',
     preset: '', ladder: null,
   });
 });
@@ -502,4 +502,45 @@ test('blanking VAT in the calculator and saving the house takes the VAT off it, 
   assert.equal(premiumVatBps, 1900);
   assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [kept]);
   assert.equal(calculator.status.textContent, 'Saved Künker: premium 25.00%, no VAT on premium, platform fee 1.50%. Its increment ladder is unchanged.');
+});
+
+// Q-04: import VAT or duty on the invoice, a field of the fee sheet, named in the answer and saved with the estimate;
+// Settings' usual rate starts it for a house in another currency than the collector's default, and only then.
+test('the calculator adds import VAT, names it, and starts it from Settings for a sale in another currency', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'GBP', importVatBps: 500, housePremiumPresets: [] } } } });
+  const importVat = calculator.field('Import VAT / duty %');
+  assert.ok(importVat.closest('.bid-calculator-fees'));
+  const currency = calculator.field('Currency');
+  currency.value = 'GBP'; await currency.emit('input');
+  assert.equal(importVat.value, '', 'a sale in the collector’s own currency crosses no border');
+  currency.value = 'EUR'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00');
+  calculator.field('Hammer price').value = '1000';
+  calculator.premium.value = '25';
+  calculator.field('Shipping').value = '15';
+  await importVat.emit('input');
+  assert.match(calculator.output.textContent, /Import VAT €63\.25/);
+  assert.match(calculator.output.textContent, /Total €1,328\.25/);
+  currency.value = 'GBP'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00', 'a rate the collector has seen in a calculation stays until they change it');
+  importVat.value = ''; await importVat.emit('input');
+  currency.value = 'CHF'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00', 'a blank field is started again for another foreign sale');
+  const result = buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '25', importVatText: '5', currency: 'EUR', locale: 'en-US' });
+  assert.equal(result.costEstimate.importVatBps, 500);
+  assert.equal(Object.hasOwn(buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '25', currency: 'EUR', locale: 'en-US' }).costEstimate, 'importVatBps'), false);
+});
+
+// The one fee sheet the calculator, the Bid tab and the Outcome tab share: all blank is no fee sheet (fees not
+// recorded); once one fee is typed a blank one is none; the optional charges are written only when typed.
+test('a fee sheet read from its fields is null when blank, and names the field an error belongs to', async () => {
+  const { feeSheetEstimate, feeSheetTexts, FEE_SHEET_FIELDS } = await import('../extension/bid-tools.js');
+  assert.deepEqual(FEE_SHEET_FIELDS.map(({ name }) => name), ['premiumVat', 'platformFee', 'importVat', 'shipping', 'paymentPercent', 'paymentFixed']);
+  assert.deepEqual(feeSheetEstimate({ shipping: ' ' }, { currency: 'EUR' }), { ok: true, value: null });
+  assert.deepEqual(feeSheetEstimate({ importVat: '5' }, { currency: 'EUR', incrementMinor: 1000 }).value,
+    { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, importVatBps: 500 });
+  assert.equal(feeSheetEstimate({ shipping: 'ten' }, { currency: 'EUR' }).error.field, 'shipping');
+  assert.equal(feeSheetEstimate({ importVat: '120' }, { currency: 'EUR' }).error.field, 'importVat');
+  assert.deepEqual(feeSheetTexts({ shippingMinor: 1500, paymentFeeBps: 0, importVatBps: 500 }),
+    { premiumVat: '', platformFee: '', importVat: '5.00', shipping: '15.00', paymentPercent: '0.00', paymentFixed: '' });
 });
