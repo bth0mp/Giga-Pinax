@@ -2707,3 +2707,23 @@ test('the age of an answer drawn again keeps up with the clock', async () => {
   intervals[0]();
   assert.equal(reopened.element('prices-restored-text').textContent, 'as of 3 min ago', 'a hidden line is left alone');
 });
+
+// Loop P2 fix round 3 (re-review Minor 3): a lot row with a dotted letter ("RIC IV 27 b.") names no single type until the collector chooses one of the
+// two the lookup offers, so it starts no acsearch search and shows no plain term; its lot line keeps the letter as the dealer wrote it.
+test('a dotted-letter lot row searches no prices and shows no plain term until a type is chosen', async () => {
+  const fetched = [];
+  const lookedUp = [];
+  const offer = { status: 'candidates', corpus: 'ocre', partial: true, candidates: [{ id: 'ric.4.ph_i.27', title: 'RIC IV Philip I 27' },
+    { id: 'ric.4.ph_i.27B', title: 'RIC IV Philip I 27B' }] };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async (request) => { fetched.push(request.term); return acrossVolumes; },
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return offer; } });
+  popup.element('quick-reference').value = 'Philip I. Antoninian. Rome. RIC IV 27 b.';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  await settle();
+  assert.equal(lookedUp.at(-1)?.dottedLetter, 'b');
+  assert.equal(popup.element('candidates').hidden, false);
+  assert.deepEqual(fetched, []);
+  assert.equal(popup.element('price-search-term').textContent, '');
+  assert.equal(popup.element('lot-list').children[0].children[0].textContent, 'RIC IV 27 b. · Philip I');
+});

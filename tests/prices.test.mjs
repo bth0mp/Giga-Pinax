@@ -1724,7 +1724,7 @@ test('citesReference reads Newell with Poliorcetes behind the key, and a spaced 
 // "27 s." see, "u." and, "a. Chr."), so it cites the plain type; CGB's " - ", "=" and a line break close a spaced letter.
 test('citesReference reads a spaced RIC letter exactly as the lot row does', () => {
   const plain = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
-  for (const cited of ['RIC 306 f.', 'RIC 306 s.', 'RIC 306 u. Cohen 12.', 'RIC 306 a. Chr.', 'RIC 306 ff.', 'RIC 306 m;']) assert.equal(citesReference(cited, plain), true, cited);
+  for (const cited of ['RIC 306 s.', 'RIC 306 u. Cohen 12.', 'RIC 306 a. Chr.', 'RIC 306 ff.', 'RIC 306 m;']) assert.equal(citesReference(cited, plain), true, cited);
   assert.equal(citesReference('RIC 306 f.', { ...plain, number: '306f' }), false);
   const philip = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
   const lettered = { ...philip, number: '27b' };
@@ -1751,4 +1751,21 @@ test('the glued separator reads a spaced colon, a hyphen before the volume and a
 test('an RPC temporary number with a remark behind a comma is searched in every spelling', () => {
   assert.equal(defaultTerm({ catalogue: 'Other', number: 'RPC IV.2 online 1234 (temporary), corr.', section: '' }),
     '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234")');
+});
+
+// Loop P2 fix round 3 (re-review Minor 2, the lead's decision): a dotted letter is ambiguous, so the row counts for neither card: not the plain type,
+// not the lettered one. The spaced abbreviations and grades behind a number, which are no dotted letter, still cite the plain type.
+test('citesReference counts an ambiguous dotted-letter citation for neither card', () => {
+  const plain = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  const lettered = { ...plain, number: '27b' };
+  for (const text of ['RIC 27 b.', 'RIC.27 b.', 'RIC IV 27 b. C. 9.', 'RIC 27 b. Sehr schön.', 'RIC 27 b. (Rome)']) {
+    assert.equal(citesReference(text, plain), false, text);
+    assert.equal(citesReference(text, lettered), false, text);
+  }
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  assert.equal(citesReference('RIC 306 f.', nero), false);
+  assert.equal(citesReference('RIC 306 f.', { ...nero, number: '306f' }), false);
+  for (const text of ['RIC 306 a. Chr.', 'RIC 306 f. vz.', 'RIC 306 a. VF.', 'RIC 306 d. h. selten.', 'RIC 306 i. e. rare.', 'RIC 306 c. 300 AD.', 'RIC 306 a. C.']) {
+    assert.equal(citesReference(text, nero), true, text);
+  }
 });

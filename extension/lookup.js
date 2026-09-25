@@ -850,20 +850,39 @@ async function pickPortrait(reference, feed) {
 // or too-broad plain lookup is returned as it is. An OCRE id the dealer linked settles it, and nothing else carries the letter.
 const dottedLetterOf = (reference) => (reference?.catalogue === 'RIC' && typeof reference.dottedLetter === 'string' && /^[a-l]$/.test(reference.dottedLetter)
   && /^\d+$/.test(String(reference.number ?? '')) && typeof reference.id !== 'string' ? reference.dottedLetter : '');
-const readingHits = (result) => {
-  if (result?.status === 'ok' && result.card?.id) return [{ id: result.card.id, title: result.card.label, ...(result.card.source === 'local' ? { source: 'local' } : {}) }];
-  return result?.status === 'candidates' && !result.personMismatch ? result.candidates ?? [] : [];
+// A lettered type the lookup marks as another person's still answers the row where it stands in the section the row names, or in one of its
+// rulers' sections: RIC files a Caesar's coins in his Augustus's section ("RIC IV Trajan Decius 223C" carries Herennius's portrait). Another section's
+// ("RIC V Gallienus 306f" behind a Nero heading) does not.
+const ownSection = (entry, reference) => {
+  const section = norm((parseReference(entry.title, false)?.section ?? '').split(' (')[0]);
+  const named = [reference.section, ...(Array.isArray(reference.rulers) ? reference.rulers : [])].map((name) => norm(String(name ?? '').split(' (')[0]));
+  return Boolean(section) && named.includes(section);
 };
+const readingHits = (result, reference = {}) => {
+  if (result?.status === 'ok' && result.card?.id) return [{ id: result.card.id, title: result.card.label, ...(result.card.source === 'local' ? { source: 'local' } : {}) }];
+  if (result?.status !== 'candidates') return [];
+  return result.personMismatch ? (result.candidates ?? []).filter((entry) => ownSection(entry, reference)) : result.candidates ?? [];
+};
+// Whether a reading answered at all: a type, a choice, "not there" or "too many". A failed request (the network, a damaged bundle, a rate limit) says
+// nothing about whether the lettered type exists.
+const answered = (result) => ['ok', 'candidates', 'none', 'too-many'].includes(result?.status)
+  || (result?.status === 'online-required' && ['none', 'too-many'].includes(result.localStatus));
 export async function eitherReading(reference, look) {
   const letter = dottedLetterOf(reference);
   const { dottedLetter, ...plain } = reference ?? {};
   if (!letter) return look(dottedLetter === undefined ? reference : plain);
   const [one, other] = await Promise.all([look(plain), look({ ...plain, number: `${plain.number}${letter}`, range: undefined })]);
-  const lettered = readingHits(other);
+  // The lettered reading failed: the plain coin is offered alone, never opened on it; anything short of a coin is the failure, with its retry.
+  if (other && !answered(other)) {
+    return one?.status === 'ok' ? { status: 'candidates', candidates: readingHits(one), partial: true, corpus: one.card?.corpus ?? 'ocre', query: one.query ?? '' } : other;
+  }
+  const lettered = readingHits(other, plain);
   // A plain number the bundle does not hold, asked locally only, comes back as "online-required": it is still no answer beside the lettered one.
   const missing = one?.status === 'none' || (one?.status === 'online-required' && one.localStatus === 'none');
   if (lettered.length === 0 || !(missing || ['ok', 'candidates'].includes(one?.status))) return one;
-  const offered = [...readingHits(one), ...lettered].filter((entry, index, all) => all.findIndex(({ id }) => id === entry.id) === index);
+  // The plain reading's choice goes in whole, other rulers' types included, as it was offered before the letter was read.
+  const plainHits = one?.status === 'candidates' ? one.candidates ?? [] : readingHits(one);
+  const offered = [...plainHits, ...lettered].filter((entry, index, all) => all.findIndex(({ id }) => id === entry.id) === index);
   return { status: 'candidates', candidates: offered, partial: true, corpus: one.corpus ?? other.corpus ?? 'ocre', query: one.query ?? other.query ?? '' };
 }
 

@@ -1515,3 +1515,33 @@ test('a dotted RIC letter behind the number is carried on the row as ambiguous, 
   const lot = findReferences('Philip I. Antoninian. RIC IV 27 b.');
   assert.equal(lotLookup(lot.references[0], lot.rulers).dottedLetter, 'b');
 });
+
+// Loop P2 fix round 3 (re-review Minor 1 and 3): a dotted letter is the one straight behind the row's own number, never one behind a later figure a
+// unit or a die axis carries; a spaced abbreviation or grade behind it ("a. VF", "g. VF", "f. vz.", "d. h.", "i. e.", the Italian "a. C.") is no
+// letter; and the row keeps the letter as the dealer wrote it, so the lot line says why two types are offered.
+test('a dotted letter is read only straight behind the row\'s number, never before a spaced abbreviation or grade, and the row shows it', () => {
+  const dotted = (text) => findReferences(text).references[0]?.reference.dottedLetter;
+  for (const text of ['Nero. RIC 12. 12 h.', 'As. RIC 12. 12 g.', 'Nero. RIC 3. 3 g.', 'Nero. RIC 306 a. VF.', 'Nero. RIC 306 g. VF.', 'Nero. RIC 306 c. VF.',
+    'Nero. RIC 306 e. EF.', 'Nero. RIC 306 f. vz.', 'Nero. RIC 306 d. h. selten.', 'Nero. RIC 306 i. e. rare.', 'Filippo I. RIC 27 a. C.', 'Nero. RIC 306 a. a. O.']) {
+    assert.equal(dotted(text), undefined, text);
+  }
+  for (const [text, letter] of [['Philip I. RIC 27 b.', 'b'], ['Philip I. RIC IV 27 b. C. 9.', 'b'], ['Philip I. RIC 27 b. Sehr schön.', 'b'], ['Philip I. RIC IV/3 27 b.', 'b']]) {
+    assert.equal(dotted(text), letter, text);
+  }
+  const lot = findReferences('Philip I. Antoninian. RIC IV 27 b.');
+  assert.equal(lot.references[0].text, 'RIC IV 27 b.');
+  assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC IV 27 b. · Philip I');
+  assert.equal(lot.references[0].reference.number, '27');
+});
+
+// Loop P2 fix round 3 (re-review Minor 4): the three purchase shapes that still took the citation with them.
+test('a purchase sentence gives up a citation behind a spaced dash, a bracket or a bare space', () => {
+  for (const text of ['Purchased from Spink, 1998 - RIC 53.', 'Purchased from Seaby, 1965 (RIC 53).', 'Acquired from Spink 1998 RIC 53']) {
+    assert.equal(texts(text)[0], 'RIC 53', text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Purchased from Seaby, 1965 (RIC 53).').map(({ source, year }) => [source, year]), [['Purchased from Seaby', 1965]]);
+  // "Ex" keeps its own rule, and a purchase sentence without a citation behind it is whole.
+  assert.deepEqual(texts('Ex Spink, 1998 - RIC 53.'), []);
+  assert.deepEqual(readProvenance('Purchased from Spink - London, 1998.').map(({ text }) => text), ['Purchased from Spink - London, 1998']);
+});

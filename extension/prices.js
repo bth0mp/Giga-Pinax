@@ -1,7 +1,7 @@
 import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, rpcReference, searchablePart, sgNumber } from './lookup.js';
 import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
-import { anyCase } from './lot.js';
+import { anyCase, DOTTED_TAIL } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
@@ -371,11 +371,13 @@ const citationKeys = (reference) => {
 const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
 // CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"), read exactly as lot.js reads it: a single letter of RIC's own alphabet (a–l)
 // closing the citation — the end of the text or of its line, a ",", ";" or ":", a bracket, "var.", or CGB's " - " and "=" — is the letter, so it
-// cites RIC 27b and no longer RIC 27. A letter with a full stop behind it is an abbreviation ("306 f." and following, "27 s." see, "u." and, "a. Chr."),
-// a capital the next key ("RIC 27 C. 9"), and a letter a word or a number follows prose ("RIC 27 a rare variety", "RIC 27 e 28"): those cite the
-// plain type. The text is squashed before it is read, so a line break behind a lone letter is marked as the "=" it stands for first.
+// cites RIC 27b and no longer RIC 27. A letter of a–l with a full stop behind it ("RIC 27 b.", lot.js DOTTED_TAIL) may be the type letter or an
+// abbreviation ("306 f.", and following), and the lookup offers both: such a row counts for neither card, since nothing says which it cites. The
+// abbreviations that are no such letter ("27 s." see, "u." and, "a. Chr.", "f. vz."), a capital (the next key, "RIC 27 C. 9") and a letter a word or
+// a number follows ("RIC 27 a rare variety", "RIC 27 e 28") cite the plain type. The text is squashed before it is read, so a line break behind a
+// lone letter is marked as the "=" it stands for first.
 const SPACED_LETTER_END = String.raw`(?:$|[,;:]|\s*\(|\s+var\b|\s[-–=]\s)`;
-const SPACED_LETTER = String.raw`(?!\s[a-l]${SPACED_LETTER_END})`;
+const SPACED_LETTER = String.raw`(?!\s[a-l]${SPACED_LETTER_END})(?!${DOTTED_TAIL})`;
 const LETTER_AT_BREAK = /(\s[a-l])[^\S\n]*\n/g;
 function numberPattern(catalogue, number) {
   const [, digits, typeLetter] = (catalogue === 'RIC' && /^(\d+)([a-z])$/i.exec(number)) || [];

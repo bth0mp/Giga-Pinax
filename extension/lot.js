@@ -131,7 +131,10 @@ const PROVENANCE_END = new RegExp(String.raw`${CITED_NEXT}|` + /(?<!\b\p{L})(?<!
 // A purchase sentence says how the coin came, and houses run the citation on behind it with a ";" or a comma ("Acquired from Spink, 1998; RIC 53"),
 // which "Ex" has never been read to do: there the sentence ends at a ";" or "," a citation follows, by the same rule a full stop ends it.
 const PURCHASE = /^(?:Privately purchased|Acquired|Purchased|Bought)$/;
-const PURCHASE_END = new RegExp(`${citedAt('[;,]')}|${PROVENANCE_END.source}`, 'u');
+// A spaced dash, an opening bracket or a bare space end it too, where a typed catalogue's citation follows ("Purchased from Spink, 1998 - RIC 53",
+// "Purchased from Seaby, 1965 (RIC 53)", "Acquired from Spink 1998 RIC 53"): a key of RIC, Crawford, Price, SC, Bop, CPE or Newell with its number.
+const TYPED_CITATION = String.raw`(?:${TYPED_NEXT})${BETWEEN}\d`;
+const PURCHASE_END = new RegExp(`${citedAt('[;,]')}|${citedAt(String.raw`\s[-–]`)}|${String.raw`\s(?=\(?`}${TYPED_CITATION})|${PROVENANCE_END.source}`, 'u');
 const endOf = (marker) => (PURCHASE.test(marker) ? PURCHASE_END : PROVENANCE_END);
 const withoutProvenance = (text) => {
   let out = text;
@@ -524,13 +527,21 @@ const withSpacedLetter = (span, context) => {
 // The same letter with a full stop behind it ("RIC 27 b.") is either the type letter closing its sentence or an abbreviation ("335 f.", and
 // following; "306 a. Chr."), and nothing in the text says which. The row keeps the plain number and carries the letter as dottedLetter, and the
 // lookup offers both readings and opens neither (lookup.js eitherReading). Only a letter of RIC's alphabet with a full stop and then a space or the
-// end: "a.C." and "a. Chr." are dates, "c. 300" is circa, "ff." is no letter, and "s.", "u.", "v." are no RIC type letter at all.
-const DOTTED_LETTER = /^([^;\n]{0,80}?\d) ([a-l])\.(?=\s|$)(?!\s+Chr\b)(?!(?<= c\.)\s+\d)/u;
+// end: "a.C." and "a. Chr." are dates, "c. 300" is circa, "ff." is no letter, and "s.", "u.", "v." are no RIC type letter at all. Nor is one another
+// spaced abbreviation follows ("d. h.", "i. e.", "a. a. O.", the Italian "a. C."; "b. C. 9" is still Cohen's number behind the letter), nor one a
+// grade follows, which makes it the grade's qualifier ("a. VF" about, "g. VF" good, "c. VF" choice, "f. vz." fast). prices.js reads the same tail, so
+// a citation the lookup calls ambiguous is counted for neither card.
+export const DOTTED_TAIL = String.raw` ([a-l])\.(?=\s|$)(?!\s+Chr\b)(?!(?<= c\.)\s+\d)(?!\s+\p{L}\.(?!\s*\d))`
+  + String.raw`(?!\s+(?:VF|EF|XF|VG|AU|UNC|Unc|FDC|Fdc|MS|BU|GVF|GEF|NVF|NEF|F|G|vz|ss|s|st|Fine|Very|Extremely|Good|Choice|Near|About|TTB|TB|SUP|BB|SPL|MBC|EBC|ZF|PR)(?![\p{L}\d]))`;
+const DOTTED_LETTER = new RegExp(String.raw`^([^;\n]{0,80}?\d)${DOTTED_TAIL}`, 'u');
+// The letter must stand straight behind the row's own number, the first time that number stands in the citation: a unit or a die axis that
+// happens to carry the same figure further on ("RIC 12. 12 g.") is not it.
 const withDottedLetter = (found, dotted) => {
   const { reference } = found;
   const number = reference.catalogue === 'RIC' && /^\d+$/.test(reference.number) ? reference.number : '';
-  if (!dotted || !number || !(dotted[1].endsWith(number) && !/\d/.test(dotted[1].at(-number.length - 1) ?? ''))) return found;
-  return { ...found, reference: { ...reference, dottedLetter: dotted[2] } };
+  const first = number && dotted ? new RegExp(`(?<!\\d)${number}(?!\\d)`).exec(dotted[1]) : null;
+  if (!first || first.index + number.length !== dotted[1].length) return found;
+  return { ...found, text: `${found.text} ${dotted[2]}.`, reference: { ...reference, dottedLetter: dotted[2] } };
 };
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.

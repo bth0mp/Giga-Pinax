@@ -136,17 +136,21 @@ test('over the bundled catalogue, a dotted RIC letter offers both readings and o
   const kTypes = new Set(entries.map(([, title]) => /^(\d+)k(?![a-z\d])/i.exec(parseReference(title, false)?.number ?? '')?.[1]).filter(Boolean));
   for (const [id, title] of entries) {
     const hit = parseReference(title, false);
-    if (!hit || hit.section.includes('(') || hit.section.includes(' and ') || n++ % 6) continue;
-    const lettered = /^(\d+)([a-l])$/.exec(hit.number);
+    if (!hit || hit.section.includes('(') || hit.section.includes(' and ')) continue;
+    // Every lettered title: the "never opens" rule holds whole, not on a sample. The other checks take every sixth.
+    // OCRE titles a type letter in either case ("223C", "27b"); a dealer spaces it off in lower case.
+    const lettered = /^(\d+)([a-l])$/i.exec(hit.number);
+    const sampled = n++ % 6 === 0;
     if (lettered) {
-      const [, digits, letter] = lettered;
+      const [digits, letter] = [lettered[1], lettered[2].toLowerCase()];
       const result = await lookup(`${hit.section}. Denarius. RIC ${numeral(hit.volume)} ${digits} ${letter}.`);
       assert.notEqual(result.status, 'ok', `${title}: opened ${result.card?.id}`);
       if (result.status === 'candidates' && result.candidates.some((entry) => entry.id === id)) offered += 1;
       // The same letter closed by a ";" is no ambiguity: it opens the lettered coin or offers, as before, never another coin.
+      if (!sampled) continue;
       const closed = await lookup(`${hit.section}. Denarius. RIC ${numeral(hit.volume)} ${digits} ${letter};`);
       assert.ok(closed.status !== 'ok' || closed.card.id === id, `${title}: ${closed.card?.id}`);
-    } else if (/^\d+$/.test(hit.number) && !kTypes.has(hit.number)) {
+    } else if (sampled && /^\d+$/.test(hit.number) && !kTypes.has(hit.number)) {
       // A letter no lettered type answers is read as the plain number, exactly as main read it.
       const plain = await lookup(`${hit.section}. Denar. RIC ${numeral(hit.volume)} ${hit.number}.`);
       const following = await lookup(`${hit.section}. Denar. RIC ${numeral(hit.volume)} ${hit.number} k.`);
@@ -155,5 +159,15 @@ test('over the bundled catalogue, a dotted RIC letter offers both readings and o
       kept += 1;
     }
   }
-  assert.ok(offered > 200 && kept > 100, `${offered} offered, ${kept} kept`);
+  assert.ok(offered > 1200 && kept > 100, `${offered} offered, ${kept} kept`);
+});
+
+// Loop P2 fix round 3 (re-review Important 2): a lettered type filed in the heading's own section under another portrait is still a reading.
+test('over the bundled catalogue, a dotted letter offers the lettered type of the heading\'s own section', { skip }, async () => {
+  const decius = await lookup('Trajan Decius. Denarius. RIC IV 223 c.');
+  assert.equal(decius.status, 'candidates');
+  assert.deepEqual(['ric.4.tr_d.223', 'ric.4.tr_d.223C'].filter((id) => decius.candidates.some((entry) => entry.id === id)), ['ric.4.tr_d.223', 'ric.4.tr_d.223C']);
+  const macrinus = await lookup('Macrinus. Denarius. RIC IV 102 b.');
+  assert.notEqual(macrinus.status, 'ok');
+  assert.ok(macrinus.candidates.some((entry) => entry.id === 'ric.4.mcs.102b'), JSON.stringify(macrinus.candidates));
 });

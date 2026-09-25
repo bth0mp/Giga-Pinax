@@ -1653,3 +1653,32 @@ test('lookupType reads a dotted RIC letter both ways: both offered where the let
     assert.equal(once.asked.length, 1);
   }
 });
+
+// Loop P2 fix round 3 (re-review Important 1 and 2): a lettered reading that failed is no evidence there is no lettered type, so the plain coin is
+// never opened on it; and a lettered type filed in the heading's own RIC section is a reading of its own, whoever's portrait it carries.
+test('lookupType never opens the plain coin of a dotted letter when the lettered reading failed, and counts a lettered type in the heading\'s own section', async () => {
+  const card = (id, label) => ({ status: 'ok', card: { id, label, source: 'local' } });
+  const provider = (answers) => ({ lookupType: async (reference) => answers[reference.number] ?? { status: 'none', corpus: 'ocre' } });
+  const dotted = { catalogue: 'RIC', number: '27', volume: 'IV', section: '', rulers: ['Philip I'], dottedLetter: 'b' };
+  const plain = card('ric.4.ph_i.27', 'RIC IV Philip I 27');
+  // A lettered reading the bundle could not answer (a damaged shard): the plain coin is offered alone, never opened.
+  const damaged = await lookupType(dotted, { localProvider: provider({ 27: plain, '27b': { status: 'unavailable', source: 'local' } }), online: false });
+  assert.deepEqual([damaged.status, damaged.partial, damaged.candidates?.map(({ id }) => id)], ['candidates', true, ['ric.4.ph_i.27']]);
+  // Online, a dropped request for the lettered reading does the same.
+  const online = await lookupType(dotted, { localProvider: provider({ 27: plain }), online: true, timeoutMs: 1000,
+    fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
+  assert.deepEqual([online.status, online.candidates?.map(({ id }) => id)], ['candidates', ['ric.4.ph_i.27']]);
+  // A plain reading that is no single coin, beside a failed lettered one, is the failure: the popup reports it and offers its retry.
+  const choices = { status: 'candidates', partial: true, corpus: 'ocre', candidates: [{ id: 'ric.4.ph_i.27', title: 'RIC IV Philip I 27' }, { id: 'ric.5.x.27', title: 'RIC V X 27' }] };
+  const failed = await lookupType(dotted, { localProvider: provider({ 27: choices, '27b': { status: 'unavailable', source: 'local' } }), online: false });
+  assert.equal(failed.status, 'online-required');
+  // Trajan Decius's section files 223C under Herennius's portrait: the lettered reading comes back marked as another person's, and is still one.
+  const decius = { catalogue: 'RIC', number: '223', volume: 'IV', section: '', rulers: ['Trajan Decius'], dottedLetter: 'c' };
+  const own = await lookupType(decius, { online: false, localProvider: provider({ 223: card('ric.4.tr_d.223', 'RIC IV Trajan Decius 223'),
+    '223c': { status: 'candidates', partial: true, personMismatch: true, corpus: 'ocre', candidates: [{ id: 'ric.4.tr_d.223C', title: 'RIC IV Trajan Decius 223C' }] } }) });
+  assert.deepEqual([own.status, own.candidates?.map(({ id }) => id)], ['candidates', ['ric.4.tr_d.223', 'ric.4.tr_d.223C']]);
+  // Another section's lettered type behind the heading is still another ruler's, and the plain coin stands.
+  const stranger = await lookupType(decius, { online: false, localProvider: provider({ 223: card('ric.4.tr_d.223', 'RIC IV Trajan Decius 223'),
+    '223c': { status: 'candidates', partial: true, personMismatch: true, corpus: 'ocre', candidates: [{ id: 'ric.5.gall(1).223c', title: 'RIC V Gallienus 223c' }] } }) });
+  assert.equal(stranger.card?.id, 'ric.4.tr_d.223');
+});
