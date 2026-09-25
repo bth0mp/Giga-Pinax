@@ -3,7 +3,7 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, minorDigits, parseMoney, parsePremiumPercent, plainDecimal } from './core/money.js';
 import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
-import { WANT_GRADE_CHOICES, openWantsFor, resolveWantReference, wantBadgeText, wantFromForm } from './core/wantlist.js';
+import { WANT_GRADE_CHOICES, openWantsFor, resolveWantReference, wantBadgeText, wantFromForm, wantPillText } from './core/wantlist.js';
 import { defaultLocalCatalogue } from './local-catalogue.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
@@ -717,13 +717,15 @@ async function initWorkspace() {
     if (focus) $('selected-title').focus?.();
   }
   // A coin whose reference names a type on the want list says so under its Reference, draft or saved (G-22): matched by the
-  // catalogue rules, as the popup's card is, and only for a reference that names one type.
+  // catalogue rules, as the popup's card is, and only for a reference that names one type. The badge is the popup's Wanted
+  // pill (H-05), one shape in three places: its short words, and the want's whole terms as its tooltip.
   function renderLotWantMatch() {
     const line = $('lot-want-match');
-    const words = wantBadgeText(openWantsFor(snapshot.wants, $('lot-form').elements.reference.value), navigator.language);
-    const [badge, ...rest] = words ? words.split(' · ') : [];
-    line.replaceChildren(...(badge ? [text('span', badge, 'pill'), ...rest.map((part) => document.createTextNode(` · ${part}`))] : []));
-    line.hidden = !badge;
+    const wants = openWantsFor(snapshot.wants, $('lot-form').elements.reference.value);
+    const pill = wants.length ? text('mark', wantPillText(wants, navigator.language), 'pill want-pill') : null;
+    if (pill) pill.title = wantBadgeText(wants, navigator.language);
+    line.replaceChildren(...(pill ? [pill] : []));
+    line.hidden = !pill;
   }
   $('lot-form').addEventListener('input', renderLotWantMatch);
   function populateLotForm(lot) {

@@ -88,3 +88,7 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .filter-fold{grid-column:1/-1;margin:0}.filter-fold .form-group-body{padding-bottom:0}.coinarchives-pro{margin-top:16px}#evidence-more{margin-top:4px}
 /* H-07: one empty state everywhere; a watchlist with no coin at all is its list alone, the empty state its whole page. */
 .coin-workspace[data-empty="true"]{grid-template-columns:1fr;min-height:0}.coin-workspace[data-empty="true"] .coin-detail,.coin-workspace[data-empty="true"] .queue-controls,.coin-workspace[data-empty="true"] #lot-count,.coin-workspace[data-empty="true"] .groups{display:none}.coin-workspace[data-empty="true"] .coin-index{border-right:0;background:var(--surface)}.metric-strip.is-empty{padding:0;border:0;background:transparent}
+/* H-05 (workspace side): the draft's want badge is the popup's Wanted pill on its status row - the rules of .status-row and
+   .status-row .pill in companion-popup.css, which this page does not load, over the shared .pill of design-tokens.css. */
+.want-match{display:flex;align-items:center;gap:6px;min-height:24px;margin:-4px 0 12px;font-size:var(--text-body);line-height:1.4;color:var(--ink);white-space:nowrap}
+.want-match .pill{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;padding:3px 10px;font-family:var(--font-ui);line-height:1.4}

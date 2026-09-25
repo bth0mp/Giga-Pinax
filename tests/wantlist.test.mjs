@@ -11,7 +11,7 @@ import { exportBackup, importChangeLines, previewImport, validateBackup } from '
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
-  cardReference, namesOneType, openWantsFor, resolveWantReference, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading,
+  cardReference, namesOneType, openWantsFor, resolveWantReference, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantPillText, wantReferenceProblem, wantTermsText, wantedReading,
   wonCoinsFor,
 } from '../extension/core/wantlist.js';
 import { MINT_SPELLINGS, RIC_SECTIONS, ricMintSection, rulerKey } from '../extension/catalogues.js';
@@ -358,6 +358,11 @@ test('the open wants of a type are the ones not yet found; a stored want no rule
   assert.equal(wantBadgeText(openWantsFor(wants, 'RIC I² Nero 306')), 'On your want list · up to €800.00 · VF or better');
   assert.equal(wantBadgeText([makeWant()]), 'On your want list');
   assert.equal(wantBadgeText([]), '');
+  // H-05: the pill's short words, as the popup's card and Upcoming rows write them.
+  assert.equal(wantPillText(openWantsFor(wants, 'RIC I² Nero 306')), 'Wanted · up to €800.00 · VF+');
+  assert.equal(wantPillText([makeWant()]), 'Wanted');
+  assert.equal(wantPillText([makeWant({ minGrade: 'F' })]), 'Wanted · F+');
+  assert.equal(wantPillText([]), '');
   assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'F or better');
   assert.equal(wantTermsText(makeWant({ maxPrice: { currency: 'CHF', minor: 120000 } })), `up to ${formatMoney({ currency: 'CHF', minor: 120000 }, 'en-US', { narrow: true })}`);
 });
@@ -501,8 +506,13 @@ test('a captured lot citing a wanted type is marked in its draft, and one that d
   const page = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
   assert.equal(page.$('lot-form').elements.reference.value, 'RIC I (second edition) Nero 306');
   assert.equal(page.$('lot-want-match').hidden, false);
-  assert.equal(page.$('lot-want-match').textContent, 'On your want list · up to £650.00 · VF or better');
-  assert.equal(page.$('lot-want-match').querySelector('.pill').textContent, 'On your want list');
+  // H-05: the draft's badge is the popup's Wanted pill, its whole terms the tooltip.
+  const pill = page.$('lot-want-match').querySelector('.want-pill');
+  assert.equal(pill.tagName, 'mark');
+  assert.equal(pill.className, 'pill want-pill');
+  assert.equal(pill.textContent, 'Wanted · up to £650.00 · VF+');
+  assert.equal(pill.title, 'On your want list · up to £650.00 · VF or better');
+  assert.equal(page.$('lot-want-match').textContent, 'Wanted · up to £650.00 · VF+');
   // Typed to a neighbour, the mark goes; typed back, it returns.
   await page.typeDetails('reference', 'RIC I² Nero 306a');
   assert.equal(page.$('lot-want-match').hidden, true);

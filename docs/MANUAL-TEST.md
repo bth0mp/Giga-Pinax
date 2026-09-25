@@ -306,7 +306,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     **On your want list** · up to £650.00 · VF or better, and on **Upcoming** (when acsearch lists a lot still to come)
     the badge after each lot citing it, whose **Watch** saves it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
     no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
-    watchlist**: the workspace draft says **On your want list** under its Reference. Win a coin of the type: its want
+    watchlist**: the workspace draft shows the **Wanted · up to £650.00 · VF+** pill under its Reference, the popup's pill, with the want's full terms as its tooltip. Win a coin of the type: its want
     offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
     A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
     leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.

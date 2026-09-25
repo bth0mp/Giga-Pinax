@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Added
 
 - The Want list is a hunting board: each want says since when it is wanted, lists the coins of its type on your watchlist as rows with their bid, sale and status, each opening its coin, and offers **Look up ↗** (the popup's card and prices) and **Search acsearch ↗** for the type. Saving a coin's outcome as **Won** for a wanted type offers **Mark found on your want list** in the outcome's own line. Grades are written one way: `VF · Very Fine` in the form's list and `VF or better` on the card and the badge (`F or better`, where Fine was spelled out before).
+- The want badge under a coin's Reference in the workspace, drafted or saved, is the popup's **Wanted** pill (`Wanted · up to £650.00 · VF+`), with the want's full terms as its tooltip, so the badge is one shape wherever it shows.
 
 ### Changed
 
