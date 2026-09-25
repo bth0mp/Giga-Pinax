@@ -544,10 +544,11 @@ const BARE_FINE = { Fine: FINE, Fair: FINE };
 // Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials. The Spanish
 // (BC, MBC, EBC, SC: bien, muy bien, extraordinariamente bien conservada, sin circular) and the Dutch (ZF zeer fraai, PR prachtig) are marks too.
 // So are the other short spellings, for the same reason: the American "BU" and NGC's "Gem MS", the German "Stgl" (Stempelglanz), "prfr"
-// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash.
+// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash. Rauch writes
+// sehr schön "s.sch.".
 const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
   BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF',
-  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
+  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT, 's.sch.': 'VF', 's.sch': 'VF' };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
 // "prägefrisch" is the Austrian trade's Stempelglanz, written in lower case mid-sentence as "vorzüglich" is.
@@ -652,6 +653,11 @@ const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|be
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
 const CAPITAL = /\p{Lu}/u;
+// Spink runs the grade on behind the citations in lower case, with no qualifier: "…, 4.42g (RIC VII 22; Depeyrot 17/3), extremely fine, very rare".
+// Straight behind a bracket that opens on a catalogue key with its number, and a comma, a spelled grade is the grade: prose does not stand there.
+// Only there — everywhere else a lower-case "very fine" is still the adjective — and the closing edge is still needed.
+const CITATIONS_BEFORE = /\((?:cf\.\s*)?(?:RIC|RSC|RPC|RRC|BMCRE|BMCRR|BMC|Crawford|Craw|Cr|Sydenham|Syd|Cohen|C|Sear|SGCV|SG|SNG|HGC|Price|SC|CPE|Calic[oó]|Depeyrot|LRBC|DOC|MIB|SB)\.?\s?[IVX\d][^()]*\)\s*,\s*$/u;
+const CITATION_WINDOW = 160;
 // "SC" is also the senate's mark on a Roman bronze ("Rev. SC, legend around.", "Minerva standing right; SC."), so as the Spanish sin circular it must
 // open the text or a sentence (never one a side label opens, nor one behind a sentence ending in a lower-case word, which is the type described:
 // "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins. A spaced dash
@@ -728,12 +734,13 @@ export function gradeOf(description) {
     const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
+    const cited = () => quals === '' && CITATIONS_BEFORE.test(text.slice(Math.max(0, start - CITATION_WINDOW), start));
     let read = false;
     if (kind === 'abbreviation') read = true;
     // A qualifier stands in for the capitals: a dealer who writes "otherwise very fine" or "nearly extremely fine" all in lower case is grading the
     // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
-    else if (kind === 'name') read = capital || quals !== '';
-    else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
+    else if (kind === 'name') read = capital || quals !== '' || cited();
+    else if (kind === 'bare-fine') read = (capital || cited()) && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
       && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
