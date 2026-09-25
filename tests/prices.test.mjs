@@ -1656,3 +1656,22 @@ test('citesReference reads a hyphen, colon or hash glued to the number, and neve
   assert.equal(citesReference('CPE-B549.', { catalogue: 'CPE', number: 'B549' }), true);
   assert.equal(citesReference('Bopearachchi-24A.', { catalogue: 'Bop', number: '24A' }), true);
 });
+
+// Loop Q-03: Jean Elsen, Bertolami, Artemide and InAsta grade straight behind the weight, with no full stop between ("3,21 g TTB."), and Heritage
+// Europe and Schulman space the plus off the first grade of a range ("Zeer fraai +/prachtig"). The first went unread, or read only its second half,
+// which put a Fine coin in the EF bucket; the second dropped the lower half of the range.
+test('gradeOf reads a grade the weight or diameter stands straight in front of, and a range whose first grade carries a spaced plus', () => {
+  for (const [text, bucket] of [
+    ['4,03g Très Beau à Superbe / Superbe.', 'Fine and below'], ['14,40g Superbe.', 'EF'], ['3,21g TTB.', 'VF'], ['3,21 g TTB.', 'VF'],
+    ['17,10 g BB.', 'VF'], ['17,10 g BB+.', 'VF'], ['g 17,10 BB.', 'VF'], ['(g 17,10) BB+.', 'VF'], ['gr. 3,45 SPL.', 'EF'], ['24 mm MBC.', 'VF'],
+    ['3,45 g vz.', 'EF'], ['17.15 g - Zeer fraai +/prachtig.', 'VF'], ['17.15 g - Zeer fraai/prachtig.', 'VF'], ['Zeer fraai +/prachtig.', 'VF'],
+    ['Vorzüglich +/Stempelglanz.', 'EF'], ['VF + / EF.', 'VF'], ['Sehr schön+/vorzüglich.', 'VF'], ['ss +- vz.', 'VF'],
+  ]) assert.equal(gradeOf(text), bucket, text);
+  // The measurement opens a grade; it lends no word the closing edge a grade needs, nor a capital, nor the senate's SC its sin circular.
+  for (const prose of ['Rev. Victory. 3,21 g MB in field.', '14,40 g superbe patine verte.', '3.21 g Fine style portrait.', 'Rev. S C. 25 mm SC.',
+    '17 mm very fine portrait.', 'Lot of 12 g BB silver.', 'Ex Slg. 3,45 g 12.']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
+  // A die axis is no opening edge: "12 h" closes the grade in front of it.
+  assert.equal(gradeOf('Fine 12 h TTB portrait.'), 'Fine and below');
+});

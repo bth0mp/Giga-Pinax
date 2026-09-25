@@ -576,6 +576,11 @@ const metalAu = (before, tail) => METAL_TAIL.test(tail) || (GOLD_BRACKET.test(be
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
 const PRAISE_OPENS = /[.;,:/]\s*$/;
+// A weight or a diameter ends the clause it stands in, whether the unit follows the figure ("4,03g", "3,21 g", "17,10 g") or leads it, as the Italian
+// houses write it ("g 17,10", "gr. 3,45"), bracketed or behind a dash: Jean Elsen, Bertolami and Heritage Europe grade straight behind it with no
+// stop ("3,21 g TTB.", "17,10 g BB.", "17.15 g - Zeer fraai"). So it opens a mark and a praise word as a full stop does. A die axis is not one of
+// them: "12 h" closes a grade in front of it, it does not open one behind it.
+const MEASURED = new RegExp(String.raw`(?:\d(?:[.,]\d+)?\s?(?:g|gr|gm|mm)\.?|(?<![\p{L}\d])(?:g|gr|gm)\.?\s?\d{1,3}(?:[.,]\d{1,3})?)\)?(?:\s[-–])?\s+$`, 'u');
 // The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s", "Vz. ZF, Kz. PR"). The
 // Dutch voorzijde, "Vz.", is not one: it is spelled as the German grade vz.
 const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|dritto|rovescio)`;
@@ -584,8 +589,9 @@ const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
 // A Spanish house labels it "Conservación".
 const LABEL = /(?:Erhaltung|Grade|Condition|Conservaci[oó]n)\s*:?\s*$/i;
-// Two grades a range separator joins are one statement, read as the lower of the two.
-const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
+// Two grades a range separator joins are one statement, read as the lower of the two. The plus a Dutch or German house spaces off the first grade is
+// that grade's own ("Zeer fraai +/prachtig", "Vorzüglich +/Stempelglanz", "VF + / EF"), so it may stand in front of the separator.
+const RANGE_GAP = /^\s*(?:\+\s*)?(?:[-–/]|to|bis|à)\s*$/i;
 // So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
 // lower one is what the lot is worth. The word lends the second grade neither a capital nor a range-only mark's standing, so "Good VF and fine for
 // the type" and "vz und s. Anm." are not ranges; and only English "and" closes a grade by itself: "und", "e", "et" and "y" close one only where the
@@ -676,7 +682,7 @@ export function gradeOf(description) {
     const signed = joinable && RANGE_GAP.test(gap);
     const ranged = signed || (joinable && RANGE_WORD.test(gap));
     const sided = joinable && SIDE_GAP.test(gap);
-    const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before);
+    const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before) || MEASURED.test(before);
     const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
@@ -690,7 +696,7 @@ export function gradeOf(description) {
       && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
-    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;
+    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || MEASURED.test(before) || signed;
     else read = signed || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
     if (!read) continue;
     const bucket = bucketOf(token);

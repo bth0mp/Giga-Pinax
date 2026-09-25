@@ -9,6 +9,8 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - The citation filter now counts the sales of houses that glue their separator to the number (`RIC-118`, `Price-112`, `RIC II-118`, `RIC: 118`, `RIC#118`), as Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album write it. A spaced dash (`RIC - 118`) still reads as "not in RIC", and `Price:` before a number is still a sale's amount.
+- The grade reader reads a grade written straight behind the weight or diameter, with no full stop between (`4,03g Très Beau à Superbe`, `3,21 g TTB.`, `17,10 g BB.`, `gr. 3,45 SPL.`), as Jean Elsen and the Italian houses write it. `4,03g Très Beau à Superbe / Superbe.` had counted a Fine coin in the EF bucket.
+- A range whose first grade carries a spaced plus (`Zeer fraai +/prachtig`, `Vorzüglich +/Stempelglanz`) now counts under its lower grade, not its upper one.
 
 ## [0.36.0] - 2026-09-25
 
