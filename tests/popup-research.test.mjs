@@ -3255,3 +3255,14 @@ test('one How it works link opens the first tour, and the first popup mentions t
   // The anchor it names is the guide's own heading.
   assert.match(readFileSync(new URL('../docs/INSTALL.md', import.meta.url), 'utf8'), /^## First checks$/m);
 });
+
+// Loop 6 fix round (review M4b): an acsearch 5xx said "Couldn’t reach acsearch. Check your connection", though the connection was fine.
+test('an acsearch server error says acsearch answered with an error, not that the connection failed', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unavailable', httpStatus: 503 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [message, again] = popup.element('prices-error').children;
+  assert.equal(message, 'acsearch answered with an error (HTTP 503). It may be down for a while. ');
+  assert.equal(again.textContent, 'Try again');
+});

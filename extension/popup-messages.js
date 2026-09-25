@@ -11,6 +11,7 @@ const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connecti
 // X-06: a wait has deadlines the collector can see: "still waiting" with Cancel after a few seconds, and after the fifteen-second deadline a
 // sentence that says it was the wait, not the connection.
 const ACSEARCH_WAITING = 'Still waiting for acsearch…';
+const acsearchErrorMessage = (httpStatus) => `acsearch answered with an error (HTTP ${httpStatus}). It may be down for a while.`;
 const ACSEARCH_TIMEOUT_MESSAGE = 'acsearch didn’t answer within 15 seconds. It may be slow or down.';
 const ACSEARCH_CANCELLED = 'The acsearch search was cancelled. Select “Get prices” to search again.';
 const LOOKUP_WAITING = 'Still waiting for numismatics.org…';
@@ -108,5 +109,5 @@ export {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, firstEditionMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, acsearchErrorMessage, catalogueFailureMessage, firstEditionMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 };

@@ -299,7 +299,9 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q', lots: [lot(''), lot('-')].map((entry) => ({ ...entry, grade: null })) });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'network' });
+  // Loop 6 fix round (review M4b): a 5xx is acsearch answering with an error, not a connection that failed; another refusal stays as it was.
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'unavailable', httpStatus: 503 });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 404 }) }), { status: 'network' });
   // Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
   const hang = (url, { signal }) => new Promise((resolve, reject) => {
     const alive = setTimeout(resolve, 1000);

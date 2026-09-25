@@ -15,7 +15,7 @@ import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, firstEditionMessage, hiddenPricesMessage, onlineMessage, rulerMessage,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, acsearchErrorMessage, catalogueFailureMessage, coinArchivesFailure, firstEditionMessage, hiddenPricesMessage, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
@@ -1490,6 +1490,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
   else if (outcome.status === 'timeout') showPricesError(ACSEARCH_TIMEOUT_MESSAGE, true);
+  else if (outcome.status === 'unavailable') showPricesError(acsearchErrorMessage(outcome.httpStatus), true);
   else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
   // A page without a counted price still lists the lots not sold yet; the note is said first, then how many are coming up.
   if (outcome.lots) {

@@ -1022,7 +1022,8 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
   try {
     const signal = cancel ? AbortSignal.any([deadline, cancel]) : deadline;
     const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal, credentials: 'include', cache: 'no-store' });
-    if (!response.ok) { void recordFetchFailure('acsearch', response); return { status: 'network' }; }
+    // A 5xx is acsearch answering with an error, not a connection that failed (review M4b).
+    if (!response.ok) { void recordFetchFailure('acsearch', response); return response.status >= 500 && response.status <= 599 ? { status: 'unavailable', httpStatus: response.status } : { status: 'network' }; }
     let html;
     try { html = await boundedText(response, maxBytes, { fatal: false }); }
     catch (error) { if (error?.message === 'too-large') { void recordFetchFailure('acsearch', error, { bytes: maxBytes }); return { status: 'network', reason: 'too-large' }; } throw error; }
