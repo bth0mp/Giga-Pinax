@@ -810,8 +810,8 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     assert.equal(Object.hasOwn(lot, 'auctionContext'), false, 'the captured page does not ride along');
     assert.equal(Object.hasOwn(lot, 'auctionEventId'), false, 'no auction until the collector asks');
     const line = page.element('upcoming-saved');
-    // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language.
-    const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
+    // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language. A sale outside this year carries its year (K-07).
+    const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
     assert.equal(lineParts(line), `[Watching] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
     await lineButton(line, 'Add').emit('click');
     await settleAll();

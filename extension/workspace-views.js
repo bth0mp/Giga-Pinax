@@ -13,7 +13,7 @@
 // Money is written by formatMoney(amount, locale, { narrow: true }) (H-04), grades by their abbreviation ("VF or better").
 
 import { calculateBidCost, formatAmount, formatMoney } from './core/money.js';
-import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
+import { costFees, eventTiming, feeSheetOf, lotCost, normalReference, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { parseReference } from './lookup.js';
 import { wantTermsText, watchedLotsFor, wonCoinsFor } from './core/wantlist.js';
@@ -80,14 +80,32 @@ export function filterWorkspaceLots(lots, query) {
     .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
 }
 
+// A zone's name and whether two names are one zone ask the browser each time; the answers never change while the page is
+// open, so each is asked once (K-05).
+const ZONE_ANSWERS = new Map();
+const zoneAnswer = (key, work) => { if (!ZONE_ANSWERS.has(key)) { if (ZONE_ANSWERS.size >= 500) ZONE_ANSWERS.clear(); ZONE_ANSWERS.set(key, work()); } return ZONE_ANSWERS.get(key); };
+const oneZone = (left, right) => (left === right ? true : zoneAnswer(`same|${left}|${right}`, () => sameZone(left, right)));
+const placeOf = (zone) => zoneAnswer(`place|${zone}`, () => zonePlace(zone));
+
 const OPEN_OUTCOME = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
 /** The collector's own time zone, as the browser reports it. */
 export const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
 const VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
+// A sale that has passed is written in the past tense once (K-07): the verb says it, so no relative word follows it,
+// except a sale day, whose name has no tense.
+const PAST_VERB = { 'lot-closes': 'Closed', 'auction-starts': 'Started', 'auction-day': 'Sale day' };
 const PAST_WORD = { 'lot-closes': 'closed', 'auction-starts': 'started', 'auction-day': 'ended' };
 // A format in the browser's language, or the ISO text the record holds where the language or zone cannot be used.
+// Building a format is most of what writing a date costs, and a list of 800 coins writes thousands (K-05): each is built
+// once per language and options, and kept.
+const FORMATS = new Map();
 const formatWith = (locale, options, date, fallback) => {
-  try { return new Intl.DateTimeFormat(locale, options).format(date); } catch { return fallback; }
+  try {
+    const key = `${locale}|${JSON.stringify(options)}`;
+    let format = FORMATS.get(key);
+    if (!format) { if (FORMATS.size >= 500) FORMATS.clear(); format = new Intl.DateTimeFormat(locale, options); FORMATS.set(key, format); }
+    return format.format(date);
+  } catch { return fallback; }
 };
 /**
  * An auction's day and time as the collector reads it: in the browser's language, at the auction's own wall time,
@@ -99,17 +117,21 @@ const formatWith = (locale, options, date, fallback) => {
  */
 export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
-  const verb = VERB[String(event.eventKind)] ?? 'Auction';
-  const zone = event.timeZone && !sameZone(event.timeZone, timeZone) ? ` ${zonePlace(event.timeZone)}` : '';
   const timing = eventTiming(event, now);
+  const past = timing.state === 'ended' || timing.state === 'started';
+  const verb = (past ? PAST_VERB : VERB)[String(event.eventKind)] ?? 'Auction';
+  const zone = event.timeZone && !oneZone(event.timeZone, timeZone) ? ` ${placeOf(event.timeZone)}` : '';
   const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
+  // The year is written whenever it is not this one (K-07): a 2021 sale never reads as this September's.
+  const thisYear = formatWith('en-CA', { year: 'numeric', timeZone }, new Date(now), String(now).slice(0, 4));
+  const year = String(event.localDate).slice(0, 4) !== thisYear ? { year: 'numeric' } : {};
   const day = timed
-    ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localDate)
-    : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate);
+    ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', ...year, timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localDate)
+    : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', ...year, timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate);
   const time = timed ? `, ${formatWith(locale, { hour: 'numeric', minute: '2-digit', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localTime ?? '')}`
     : event.precision === 'timed' && event.localTime ? `, ${event.localTime}` : '';
   const when = `${verb} ${day}${time}${zone}`;
-  if (timing.state === 'ended' || timing.state === 'started') return { when, relative: PAST_WORD[String(event.eventKind)] ?? 'past', tone: 'past' };
+  if (past) return { when, relative: PAST_WORD[String(event.eventKind)] ?? 'past', tone: 'past' };
   if (timing.state === 'unknown') return { when, relative: '', tone: '' };
   const tone = timing.state === 'soon' ? 'soon' : '';
   if (timing.msUntil === null) {
@@ -121,13 +143,40 @@ export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-
   return { when, relative, tone };
 }
 /**
+ * The month heading a long coin list puts where the auction month changes (K-06): "March 2026", or "No sale date" for a
+ * coin with no auction. It is the month of the instant the queue sorts the sale by, on the collector's clock, so the
+ * headings of a sorted list never run backwards across zones (review Minor 6).
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [locale]
+ * @param {{ timeZone?: string, now?: string }} [view]
+ * @returns {string}
+ */
+export function monthHeading(event, locale = 'en-US', { timeZone = viewerTimeZone(), now = new Date().toISOString() } = {}) {
+  if (!event?.localDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(event.localDate))) return 'No sale date';
+  const sortMs = eventTiming(event, now).sortMs;
+  if (sortMs === null) return 'No sale date';
+  return formatWith(locale, { month: 'long', year: 'numeric', timeZone }, new Date(sortMs), String(event.localDate).slice(0, 7));
+}
+
+/**
  * @param {Partial<AuctionEvent> | null | undefined} event
  * @param {{ now?: string, locale?: string, timeZone?: string }} [view]
  * @returns {string}
  */
 export function auctionTimeLabel(event, view) {
-  const { when, relative } = eventWhen(event, view);
-  return relative ? `${when} · ${relative}` : when;
+  const said = eventWhen(event, view);
+  const relative = relativeToShow(event, said);
+  return relative ? `${said.when} · ${relative}` : said.when;
+}
+/**
+ * The relative word a line writes after eventWhen's `when`: none where the past verb already says it ("Closed Fri 8 Oct
+ * 2021, 11:00"); a sale day, whose name has no tense, keeps "ended" (K-07).
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {{ relative: string, tone: string }} said
+ * @returns {string}
+ */
+export function relativeToShow(event, said) {
+  return said.tone === 'past' && event?.eventKind !== 'auction-day' && Object.hasOwn(PAST_VERB, String(event?.eventKind)) ? '' : said.relative;
 }
 
 /**
@@ -141,23 +190,39 @@ export function auctionTimeLabel(event, view) {
 export function auctionQueueForLots(lots, events, queue = 'all-open', now = new Date().toISOString()) {
   const eventById = new Map((events ?? []).map((event) => [event.id, event]));
   const entries = (lots ?? []).map((lot, index) => ({ lot, event: eventById.get(lot.auctionEventId) ?? null, index }));
-  const matches = ({ lot, event }) => {
+  const matches = ({ lot, timing }) => {
     if (queue === 'all-coins') return true;
     if (queue === 'completed') return !OPEN_OUTCOME(lot);
     if (!OPEN_OUTCOME(lot)) return false;
-    if (queue === 'closing-soon') return eventTiming(event, now).state === 'soon';
-    if (queue === 'needs-outcome') return eventTiming(event, now).state === 'ended';
+    if (queue === 'closing-soon') return timing.state === 'soon';
+    if (queue === 'needs-outcome') return timing.state === 'ended';
     if (queue === 'needs-research') return !String(lot.reference ?? '').trim();
     if (queue === 'planned') return Boolean(lot.plannedBid) && !lot.activeBid;
     if (queue === 'active') return Boolean(lot.activeBid);
     return true;
   };
-  // A timed auction sorts at its instant and a date-only day at its own midnight, so the two interleave by time.
-  const sortKey = ({ event }) => { const sortMs = eventTiming(event, now).sortMs; return sortMs === null ? [1, 0] : [0, sortMs]; };
-  return entries.filter(matches).sort((left, right) => {
-    const a = sortKey(left); const b = sortKey(right);
-    return a[0] - b[0] || a[1] - b[1] || left.index - right.index;
-  });
+  // A timed auction sorts at its instant and a date-only day at its own midnight, so the two interleave by time. Each
+  // auction's timing is worked out once, however many coins it holds (K-05).
+  const timings = new Map();
+  const timingOf = (event) => { if (!timings.has(event)) timings.set(event, eventTiming(event, now)); return timings.get(event); };
+  const keyed = entries.filter(({ lot, event }) => matches({ lot, timing: timingOf(event) }))
+    .map((entry) => { const sortMs = timingOf(entry.event).sortMs; return { entry, rank: sortMs === null ? 1 : 0, at: sortMs ?? 0 }; });
+  return keyed.sort((left, right) => left.rank - right.rank || left.at - right.at || left.entry.index - right.entry.index).map(({ entry }) => entry);
+}
+
+/**
+ * The Auctions page's two lists (K-07): the sales still to come or under way, soonest first (one with no date last), and
+ * those that have passed, newest first.
+ * @param {*} events
+ * @param {string} [now]
+ * @returns {{ upcoming: AuctionEvent[], past: AuctionEvent[] }}
+ */
+export function splitAuctions(events, now = new Date().toISOString()) {
+  const timed = (events ?? []).map((event, index) => ({ event, index, timing: eventTiming(event, now) }));
+  const at = ({ timing }) => (timing.sortMs === null ? Number.POSITIVE_INFINITY : timing.sortMs);
+  const upcoming = timed.filter(({ timing }) => timing.state !== 'ended').sort((left, right) => at(left) - at(right) || left.index - right.index);
+  const past = timed.filter(({ timing }) => timing.state === 'ended').sort((left, right) => at(right) - at(left) || left.index - right.index);
+  return { upcoming: upcoming.map(({ event }) => event), past: past.map(({ event }) => event) };
 }
 
 /**
@@ -399,6 +464,40 @@ export function decidingBidLine(lot, format) {
 }
 
 /**
+ * The year a settled coin belongs to on the History page (K-08): its auction's, else the year its outcome was recorded.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @returns {string}
+ */
+export function settledYear(lot, event) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(event?.localDate ?? '')) ? String(event?.localDate)
+    : String(lot?.outcomeHistory?.at(-1)?.recordedAt ?? lot?.updatedAt ?? '');
+  return /^\d{4}/.test(day) ? day.slice(0, 4) : '';
+}
+
+/**
+ * The settled coins the History page shows (K-08): those whose outcome is ticked, of the chosen year, and whose title,
+ * reference, house or lot number holds the typed text, spacing and case aside.
+ * @param {Lot[]} lots settled coins, in the order shown
+ * @param {Map<string, AuctionEvent>} eventsById
+ * @param {{ text?: string, year?: string, outcomes?: string[] }} filter
+ * @returns {Lot[]}
+ */
+export function filterSettledLots(lots, eventsById, { text = '', year = '', outcomes = ['won', 'lost', 'passed'] } = {}) {
+  const needle = String(text).trim().toLocaleLowerCase();
+  return (lots ?? []).filter((lot) => {
+    if (!outcomes.includes(String(lot?.outcome?.status))) return false;
+    const event = eventsById.get(String(lot.auctionEventId));
+    if (year && settledYear(lot, event) !== year) return false;
+    if (!needle) return true;
+    /** @type {Record<string, *>} */
+    const context = lot.auctionContext ?? {};
+    return [lot.title, lot.reference, lot.lotNumber, context.house, context.saleId, context.lotNumber, event?.name]
+      .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle));
+  });
+}
+
+/**
  * The settled coins newest first: by when their outcome was last recorded, else when they were last written.
  * @param {Lot[] | null | undefined} lots
  * @returns {Lot[]}
@@ -456,7 +555,7 @@ export function reminderAtLabel(instant, eventZone, { now = new Date().toISOStri
   // The auction's clock is named by its place, with its own day where that is not the collector's (M3, N14).
   const auctionDay = eventZone && dayOf(at, eventZone) !== dayOf(at)
     ? `${formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: eventZone }, at, '')} ` : '';
-  const auction = eventZone && !sameZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${zonePlace(eventZone)}` : '';
+  const auction = eventZone && !oneZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${placeOf(eventZone)}` : '';
   const untilMs = at.getTime() - Date.parse(now);
   if (untilMs < 0) return { text: `${day} ${time(timeZone)} (your time)${auction} · passed`, tone: 'past' };
   return { text: `${day} ${time(timeZone)} (your time)${auction}`, tone: untilMs < 86400000 ? 'soon' : '' };
@@ -580,13 +679,87 @@ export function comparableSetOptions(evidence, active) {
     for (const item of row.observations ?? []) if (item.queryLabel && item.queryId) labels.set(item.queryId, item.queryLabel);
   }
   const ids = [...counts.keys()];
-  if (!ids.includes(active.id)) ids.unshift(active.id);
+  // A new, empty set is offered last (K-09): the saved sets come first.
+  if (!ids.includes(active.id)) ids.push(active.id);
   const seen = new Map();
   return ids.map((id) => {
     const name = labels.get(id) ?? (id === active.id ? active.text : '');
     const count = counts.get(id) ?? 0;
-    if (!name) return { id, label: id === active.id && !count ? 'New comparable set' : `Unnamed set (${count})` };
+    if (!name) return { id, label: id === active.id && !count ? 'New set…' : `Unnamed set (${count})` };
     const repeat = (seen.get(name) ?? 0) + 1; seen.set(name, repeat);
     return { id, label: `${name}${repeat > 1 ? ` · set ${repeat}` : ''}${count ? ` (${count})` : ''}` };
   });
 }
+
+/**
+ * The set a comparable was last added to (K-09): the query of the observation read most recently, or null with none.
+ * @param {Evidence[] | null | undefined} evidence
+ * @returns {string | null}
+ */
+export function lastAddedSet(evidence) {
+  let latest = null;
+  for (const row of evidence ?? []) {
+    for (const item of row.observations ?? []) {
+      if (item.queryId && (!latest || String(item.retrievedAt ?? '') >= String(latest.retrievedAt ?? ''))) latest = item;
+    }
+  }
+  return latest?.queryId ?? null;
+}
+
+/**
+ * The saved comparable set a reference names (K-09): one whose query reads as the same catalogue entry by the lookup's
+ * rules, or, for text no catalogue reads, the same text spacing and case aside; the last added to when several do.
+ * @param {Evidence[] | null | undefined} evidence
+ * @param {*} reference
+ * @returns {string | null}
+ */
+export function savedSetFor(evidence, reference) {
+  const key = normalReference(reference);
+  if (!key) return null;
+  const labels = new Map();
+  for (const row of evidence ?? []) for (const item of row.observations ?? []) if (item.queryId && item.queryLabel) labels.set(item.queryId, item.queryLabel);
+  const matching = new Set([...labels].filter(([, label]) => normalReference(label) === key || sameReference(label, reference)).map(([id]) => id));
+  if (!matching.size) return null;
+  return lastAddedSet((evidence ?? []).map((row) => ({ ...row, observations: (row.observations ?? []).filter((item) => matching.has(item.queryId)) })));
+}
+
+/**
+ * How many comparables are saved and in how many sets: "400 comparables in 40 sets."
+ * @param {Evidence[] | null | undefined} evidence
+ * @returns {string}
+ */
+export function savedComparablesCount(evidence) {
+  const rows = evidence ?? [];
+  const sets = new Set(rows.flatMap((row) => (row.observations ?? []).map((item) => item.queryId).filter(Boolean)));
+  return `${rows.length} comparable${rows.length === 1 ? '' : 's'} in ${sets.size} set${sets.size === 1 ? '' : 's'}.`;
+}
+
+/**
+ * A saved comparable as a sale row (K-09): "Nomos 234, lot 942" and "10 Aug 2022 · CHF 1,360.00 hammer · manual" - the
+ * sale's figure being the one the statistics use, and where the row's records disagree, the first record's.
+ * @param {Evidence} row
+ * @param {{ money: (amount: *) => string, day: (iso: *) => string }} format
+ * @returns {{ title: string, line: string }}
+ */
+export function comparableSaleText(row, { money, day }) {
+  const first = row?.observations?.[0];
+  const identity = row?.saleIdentity;
+  const house = identity?.auctionHouse ?? first?.auctionHouse ?? '';
+  const sale = identity?.houseSaleId ?? first?.houseSaleId ?? '';
+  const lotNumber = identity?.lotNumber ?? first?.lotNumber ?? '';
+  const title = [[house, sale].filter(Boolean).join(' '), lotNumber ? `lot ${lotNumber}` : ''].filter(Boolean).join(', ') || 'Saved comparable';
+  const basis = String(first?.priceBasis ?? '');
+  const amount = row?.resolved?.hammer ?? first?.amount ?? null;
+  const figure = basis === 'unsold' ? 'unsold' : basis === 'missing' || !amount ? 'no price' : `${money(amount)} ${basis === 'hammer' ? 'hammer' : basis}`;
+  const sources = [...new Set((row?.observations ?? []).map((item) => item.source === 'authorized-import' ? 'imported' : item.source).filter(Boolean))].join(', ');
+  return { title, line: [first?.auctionDate ? day(first.auctionDate) : '', figure, sources].filter(Boolean).join(' · ') };
+}
+
+// Why a comparable is left out, in the collector's words.
+const EXCLUSION_WORDS = { 'collector-excluded': 'you excluded it', currency: 'in another currency', date: 'outside the dates', 'source-filter': 'from a source not ticked',
+  estimate: 'an estimate, not a hammer', unsold: 'unsold', 'missing-price': 'no price', conflict: 'its records disagree', 'not-comparable': 'not a hammer price', 'invalid-evidence': 'unreadable' };
+/**
+ * @param {*} reason
+ * @returns {string}
+ */
+export const comparableExclusionText = (reason) => EXCLUSION_WORDS[String(reason)] ?? String(reason ?? 'excluded');

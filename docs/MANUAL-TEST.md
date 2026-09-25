@@ -255,6 +255,11 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* its line reads `Fees not recorded` and a **Total** of hammer + premium, with **Add fees**; the table's
     cell says `(1 without fees)`. At phone width the money line
     folds to two columns and never pushes the page sideways.
+    Above the ledger, type the first coin's house in the filter box, then choose its year under **Every year** and
+    untick **Lost** and **Passed**.
+    *Expected:* the count line above the cards says how many settled coins are shown of how many (`1 of 2 settled ·
+    1 won`), only the matching cards are listed, and the collection panel is headed `Your collection in <year>` with the
+    totals of the entries acquired that year.
 
 29. **A collection entry you correct, and one that follows the outcome.** With two won coins in collection history,
     select **Edit entry** on the first, change its acquisition date, its invoice paid to `1710` and its notes, and
@@ -317,7 +322,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
     no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
     watchlist**: the workspace draft shows the **Wanted · up to £650 · VF+** pill under its Reference, the popup's pill, with the want's full terms as its tooltip. Win a coin of the type: its want
-    offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
+    reads `Won once since this want was added` with **Mark found**, and once found it is folded under **Found (1)** and no card or row carries the badge. Export the **Want list** CSV from Settings.
     A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
     leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.
     Add the want `RIC I Nero 306` after removing the first. *Expected:* "Want saved · RIC I² Nero 306 · you wrote
