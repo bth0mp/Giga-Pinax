@@ -6,9 +6,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
-### Fixed
-
-- Settings could wipe a house added, or a field typed, in the moment before it had loaded your saved settings: drawing them replaced the list. The editing controls now wait for the settings to load, as **Save settings** already did.
+## [0.38.0] - 2026-09-25
 
 ### Added
 
@@ -20,6 +18,10 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Changed
 
 - A date-only auction's reminders go off at their time on your own clock, where they went off at that time in the auction's time zone: a Zurich sale day's 09:00 reminder reaches a New York collector at 09:00 New York, not at 03:00. Each goes off on the latest of your days whose 09:00 still falls inside its day where the auction is (the sale day, or the day before for **Previous day**), so it is never after that day ends there or before it starts; where no 09:00 falls inside it (a day shortened by a clock change can miss it), it goes off at the latest minute inside it between 08:00 and 21:00 your time. A reminder time that the auction's time zone skips on the day its clocks change is no longer refused. The reminder keeps the time zone your browser had when you last changed the auction's sale day, time zone or reminders, and the **Reminders** tab and the notification give your time first. Reminders saved before this version keep their times until you change their auction's sale day, time zone or reminders; a rename or a note leaves them, and their acknowledgements, as they are; a backup from this version still imports into 0.37.0, where these reminders go off at their time in the auction's time zone as before (one at a time that zone skips on its clock-change day does not go off there).
+
+### Fixed
+
+- Settings could wipe a house added, or a field typed, in the moment before it had loaded your saved settings: drawing them replaced the list. The editing controls now wait for the settings to load, as **Save settings** already did.
 
 ## [0.37.0] - 2026-09-25
 
@@ -483,7 +485,8 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
-[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.38.0
 [0.37.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.37.0
 [0.36.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.36.0
 [0.35.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.35.0
