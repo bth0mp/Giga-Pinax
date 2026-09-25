@@ -326,7 +326,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* "Nero is a RIC ruler…", **Refine reference** open on RIC with Nero in its field and the cursor in the
     number, a **Search acsearch for “nero denarius”** button, the three example chips and a line of spellings; the
     network panel shows no request. Select the search. *Expected:* acsearch's median for those words, with no card and
-    nothing to save. Type `Athens tetradrachm`. *Expected:* "No catalogue reference in that text." and the same button,
-    Refine closed. Paste `https://www.cngcoins.com/Lot.aspx?LOT_ID=1`. *Expected:* "That’s a web address…", **Capture
+    nothing to save. Type `Athens tetradrachm`. *Expected:* "No catalogue reference in that text." and the same button
+    for those words. Paste `https://www.cngcoins.com/Lot.aspx?LOT_ID=1`. *Expected:* "That’s a web address…", **Capture
     the lot page you’re on** opened, and no acsearch request. Type `RIC XI Nero 1`. *Expected:* "Couldn’t read that
     reference…" as before.
