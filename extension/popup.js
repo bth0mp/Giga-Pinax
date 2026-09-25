@@ -820,11 +820,13 @@ function searchPhrase(words) {
   answered = true;
   renderFirstRun();
   const reference = Object.freeze({ catalogue: 'Other', number: words, volume: '', section: '' });
-  researchContext = Object.freeze({ reference, label: words, identity: null, term: words, currency: $('currency').value, priceTicket: priceRequestId, phrase: true });
+  // Searched as the phrase the button names, in acsearch's own quotes, as every other term the popup writes (review M1).
+  const term = `"${words.replace(/["“”„]/g, '')}"`;
+  researchContext = Object.freeze({ reference, label: words, identity: null, term, currency: $('currency').value, priceTicket: priceRequestId, phrase: true });
   const context = researchContext;
   // The search is the answer he chose: Refine, opened for a ruler, folds away so the prices come up under the box.
   $('refine-reference').open = false;
-  $('price-term').value = words;
+  $('price-term').value = term;
   $('price-search').open = false;
   updateAcsearchLink();
   updateCoinArchivesLink();
@@ -833,7 +835,7 @@ function searchPhrase(words) {
   void Promise.resolve(access).then((allowed) => {
     if (context !== researchContext) return;
     if (!allowed) { showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
-    runPrices(words, context.currency, { remember: false, context });
+    runPrices(term, context.currency, { remember: false, context });
   });
 }
 

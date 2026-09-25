@@ -3016,7 +3016,8 @@ test('free words are offered as a search, a ruler opens Refine, and a web addres
   await settle();
   assert.equal(JSON.stringify(asked.map(({ origins }) => origins)), '[["https://www.acsearch.info/*"]]');
   assert.equal(searched.length, 1);
-  assert.equal(searched[0].term, 'nero denarius');
+  // Review M1: the words are searched as the phrase the button names, in acsearch's own quotes.
+  assert.equal(searched[0].term, '"nero denarius"');
   assert.equal(popup.element('result').hidden, true, 'a phrase search has no card, so nothing can be saved from it');
   assert.equal(popup.element('refine-reference').open, false, 'Refine folds away for the prices');
   assert.equal(popup.element('research-prices').hidden, false);
