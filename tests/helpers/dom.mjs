@@ -709,10 +709,10 @@ function loadBridge(browser) {
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
 export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, projections, sourceLaunchers, fields] = await Promise.all([
+  const [money, evidence, projections, sourceLaunchers, fields, bidTools] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
-    import('../../extension/core/fields.js'),
+    import('../../extension/core/fields.js'), import('../../extension/bid-tools.js'),
   ]);
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
@@ -727,6 +727,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const location = { hash };
   const sandbox = {
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
+    // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
+    ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
     sameZone, zonePlace,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.

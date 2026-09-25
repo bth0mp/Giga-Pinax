@@ -2,6 +2,9 @@
 // The workspace's forms and the records they stand for (workspace.js): a coin, its bid and its outcome
 // read into form fields and back, a page's draft read into the coin editor and the auction it offers,
 // and an auction's reminders read into their two controls and back.
+import { FEE_SHEET_FIELDS, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
+import { parsePremiumPercent } from './core/money.js';
+import { bidPremiumRate } from './core/projections.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').Money} Money
@@ -303,17 +306,28 @@ export function moneyInputText(money, locale = 'en-US') {
 // The outcome form opens on the action the collector is about to take: an open lot on Won, in the currency of the bid
 // in force (else the plan's, else the default), and a settled lot on what was recorded. The placed bid is offered as
 // the hammer box's hint only, never as its value, and a won coin's acquisition day is the attached auction's, else
-// today.
+// today. The premium rate a won coin is costed on is its outcome's own, else its bid's, else its plan's, else the rate
+// of the collector's preset for the lot's house, and the form says which; the fee sheet is the outcome's, else the one
+// saved with the lot, in the hammer's currency, else the house preset's VAT and platform fee beside its rate. The fees
+// fold opens by itself when the lot carries no rate or no fee sheet (Q-01).
 /**
  * @param {Lot | null | undefined} lot
  * @param {string} [locale]
- * @param {{ defaultCurrency?: string, event?: { localDate?: string } | null, today?: string }} [context]
- * @returns {Record<string, string>}
+ * @param {{ defaultCurrency?: string, event?: { localDate?: string } | null, today?: string, presets?: Array<Record<string, *>> }} [context]
+ * @returns {Record<string, *>}
  */
-export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'USD', event = null, today = '' } = {}) {
+export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'USD', event = null, today = '', presets = [] } = {}) {
   const settled = Boolean(lot?.outcome?.status && lot.outcome.status !== 'open');
   const bidCurrency = lot?.activeBid?.amount?.currency ?? lot?.plannedBid?.amount?.currency ?? defaultCurrency;
   const hammerCurrency = lot?.outcome?.hammer?.currency ?? bidCurrency;
+  const terms = lot?.outcome?.status === 'won' ? lot.outcome.terms : undefined;
+  let rate = null; let premiumSource = ''; let preset = null;
+  if (Number.isInteger(terms?.buyerPremiumBps)) { rate = terms?.buyerPremiumBps; premiumSource = 'as recorded with this outcome'; }
+  else if (Number.isInteger(recordsPremiumRate(lot))) { rate = recordsPremiumRate(lot); premiumSource = lot?.activeBid ? 'from your bid' : lot?.plannedBid && rate === lot.plannedBid.buyerPremiumBps ? 'from your plan' : 'from your last bid'; }
+  else if ((preset = housePresetFor(presets, lot?.auctionContext?.house))) { rate = preset.buyerPremiumBps; premiumSource = `from your ${preset.name} preset`; }
+  const saved = terms?.costEstimate ?? lot?.costEstimate;
+  const estimate = saved?.currency === hammerCurrency ? saved : null;
+  const fees = estimate ? feeSheetTexts(estimate) : feeSheetTexts(preset ? { premiumVatBps: preset.premiumVatBps, platformFeeBps: preset.platformFeeBps } : null);
   return {
     status: settled ? String(lot?.outcome?.status) : 'won',
     hammer: moneyInputText(lot?.outcome?.hammer, locale),
@@ -323,7 +337,46 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
     bindingActive: '',
     hammerPlaceholder: !settled && lot?.activeBid?.amount ? `Your bid ${moneyInputText(lot.activeBid.amount, locale)}` : '',
     acquisitionDate: lot?.collectionEntryId ? '' : event?.localDate ?? today,
+    premium: premiumInputText(rate),
+    premiumSource,
+    fees,
+    feesOpen: rate === null || !estimate,
   };
+}
+
+// The rate the store would cost a won coin on from its bids alone: the bid in force, else the last settled one or the
+// plan.
+const recordsPremiumRate = (lot) => (Number.isInteger(lot?.activeBid?.buyerPremiumBps) ? lot?.activeBid?.buyerPremiumBps : bidPremiumRate(lot));
+const sameFeeSheet = (left, right) => Boolean(left && right) && ['currency', 'incrementMinor', 'minimumBidMinor', ...FEE_SHEET_FIELDS.map(({ key }) => key)]
+  .every((key) => (left[key] ?? null) === (right[key] ?? null));
+
+// The terms a Won outcome is saved with (Q-01): only what the coin's own records do not already say - a rate other than
+// its bid's, a fee sheet other than the lot's - so a coin won on its bid's terms keeps no copy of them. Terms the
+// outcome kept that the form no longer states are taken off (`null`); nothing to state and nothing kept is `undefined`.
+/**
+ * @param {Lot | null | undefined} lot
+ * @param {Record<string, *>} values the form's premium, fee sheet and hammer currency
+ * @param {string} [locale]
+ * @returns {{ ok: true, value: Record<string, *> | null | undefined } | { ok: false, error: { message: string, field: string } }}
+ */
+export function outcomeTermsFromForm(lot, values, locale = 'en-US') {
+  const premiumText = String(values.premium ?? '').trim();
+  let rate = null;
+  if (premiumText) {
+    const parsed = parsePremiumPercent(premiumText, locale);
+    if (!parsed.ok) return { ok: false, error: { message: parsed.error.message, field: 'premium' } };
+    rate = parsed.value;
+  }
+  const fees = feeSheetEstimate(values, {
+    currency: values.hammerCurrency, locale, incrementMinor: lot?.costEstimate?.incrementMinor ?? 1, minimumBidMinor: lot?.costEstimate?.minimumBidMinor ?? 0,
+  });
+  if (!fees.ok) return { ok: false, error: { message: fees.error.message, field: fees.error.field } };
+  /** @type {Record<string, *>} */
+  const terms = {};
+  if (rate !== null && rate !== recordsPremiumRate(lot)) terms.buyerPremiumBps = rate;
+  if (fees.value && !sameFeeSheet(fees.value, lot?.costEstimate)) terms.costEstimate = fees.value;
+  if (Object.keys(terms).length) return { ok: true, value: terms };
+  return { ok: true, value: lot?.outcome?.terms ? null : undefined };
 }
 
 /**

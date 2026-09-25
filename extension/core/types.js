@@ -163,6 +163,16 @@
  * @property {string} [correctedAt]
  * @property {'personal-unverified'} [verification]
  * @property {WonCost} [cost]
+ * @property {OutcomeTerms} [terms]
+ */
+
+/**
+ * The premium rate and fee sheet a won coin's outcome states (the Outcome form), for a coin won without a recorded bid
+ * or on other terms than its bid. The cost is still worked out by the store from them; they are kept so a corrected
+ * hammer is costed on them again. The fee sheet is in the hammer's currency.
+ * @typedef {object} OutcomeTerms
+ * @property {number} [buyerPremiumBps]
+ * @property {CostEstimate} [costEstimate]
  */
 
 /**

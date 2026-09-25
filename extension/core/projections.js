@@ -60,21 +60,38 @@ export const COST_GAPS = Object.freeze(['hammer', 'premium-rate', 'fees', 'fee-c
 const COST_PARTS = Object.freeze(['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee']);
 export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'shipping', 'paymentFee']);
 
-// The buyer's premium rate the coin was won on: the bid that was settled as won, else the plan the collector made
-// for it. A plan revised after the last win - a coin re-opened and planned again - is newer than that win, so its
-// rate is the one the coin is won on now.
-function wonPremiumRate(lot) {
+// The buyer's premium rate on the coin's bids: the last bid settled or re-opened that carries a rate (settled won, or
+// settled lost and then corrected to won, which is the same bid), else the plan the collector made for it. A plan
+// revised after that entry - a coin re-opened and planned again - is newer, so its rate is the one it is won on now.
+const SETTLED_ACTIONS = new Set(['settled-won', 'settled-lost', 'reopened-active', 'reopened-inactive']);
+/**
+ * @param {Lot | null | undefined} lot
+ * @returns {number | null}
+ */
+export function bidPremiumRate(lot) {
   const history = lot?.bidHistory ?? [];
-  const lastIndex = (action) => history.findLastIndex((entry) => entry.action === action);
-  const settled = history[lastIndex('settled-won')];
-  const plan = Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? lot.plannedBid.buyerPremiumBps : null;
-  if (plan !== null && lastIndex('planned-revised') > lastIndex('settled-won')) return plan;
-  return Number.isInteger(settled?.buyerPremiumBps) ? settled.buyerPremiumBps : plan;
+  const settledIndex = history.findLastIndex((entry) => SETTLED_ACTIONS.has(entry.action) && Number.isInteger(entry.buyerPremiumBps));
+  const plan = Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? /** @type {number} */ (lot?.plannedBid?.buyerPremiumBps) : null;
+  if (plan !== null && history.findLastIndex((entry) => entry.action === 'planned-revised') > settledIndex) return plan;
+  return settledIndex >= 0 ? /** @type {number} */ (history[settledIndex].buyerPremiumBps) : plan;
+}
+
+// The terms a won coin is costed on: the premium rate and fee sheet its outcome states (the Outcome form's, for a coin
+// won without a recorded bid or on other terms than its bid), else its bid's rate and the fee sheet saved with the lot.
+/**
+ * @param {Lot | null | undefined} lot
+ * @returns {{ rate: number | null, estimate: import('./types.js').CostEstimate | undefined }}
+ */
+export function wonTerms(lot) {
+  const terms = lot?.outcome?.terms;
+  const rate = Number.isInteger(terms?.buyerPremiumBps) ? /** @type {number} */ (terms?.buyerPremiumBps) : bidPremiumRate(lot);
+  return { rate, estimate: terms?.costEstimate ?? lot?.costEstimate };
 }
 
 /**
  * What a won coin really cost, worked out from what the collector recorded for it and nothing else: the hammer, the
- * premium at the rate on its bid, and the fees saved with the lot (VAT on the premium, a platform's fee on the hammer,
+ * premium at the rate its outcome states or else the rate on its bid, and the fees its outcome states or else the ones
+ * saved with the lot (VAT on the premium, a platform's fee on the hammer,
  * shipping and the payment fee), all in the hammer's currency. A figure that was never recorded is not estimated: the
  * cost then keeps what could be worked out and names every gap, and it has no total. A fee sheet saved without VAT or
  * a platform fee charges none, as the calculator that saved it did. `null` only for a sum too large to hold exactly.
@@ -84,8 +101,7 @@ function wonPremiumRate(lot) {
  */
 export function deriveWonCost(lot, hammer) {
   const hasHammer = validateMoney(hammer).ok;
-  const rate = wonPremiumRate(lot);
-  const estimate = lot?.costEstimate;
+  const { rate, estimate } = wonTerms(lot);
   /** @type {CostGap[]} */
   const missing = [];
   if (!hasHammer) missing.push('hammer');

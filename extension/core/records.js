@@ -211,8 +211,32 @@ function outcomeResult(outcome, path) {
       outcome.verification !== 'personal-unverified') {
     return failure('missing-verification', 'User-entered outcome prices require a verification label.', `${path}.verification`);
   }
+  if (OWN(outcome, 'terms')) {
+    if (outcome.status !== 'won') return failure('invalid-outcome-terms', 'Only a won outcome carries premium and fee terms.', `${path}.terms`);
+    const terms = outcomeTermsResult(outcome.terms, `${path}.terms`, outcome.hammer?.currency);
+    if (!terms.ok) return terms;
+  }
   if (OWN(outcome, 'cost')) return wonCostResult(outcome, `${path}.cost`);
   return { ok: true, value: outcome };
+}
+
+// The premium rate and fee sheet a won coin's outcome states (Q-01): an object with either or both, the fee sheet in
+// the hammer's currency, since a cost is never converted.
+/** @returns {Result<any>} */
+function outcomeTermsResult(terms, path, hammerCurrency) {
+  const object = objectResult(terms, path); if (!object.ok) return object;
+  if (!OWN(terms, 'buyerPremiumBps') && !OWN(terms, 'costEstimate')) {
+    return failure('invalid-outcome-terms', 'Outcome terms name a premium rate, a fee sheet or both.', path);
+  }
+  const checks = firstFailure(
+    bpsResult(terms, 'buyerPremiumBps', path),
+    OWN(terms, 'costEstimate') ? costEstimateResult(terms.costEstimate, `${path}.costEstimate`) : { ok: true },
+  );
+  if (!checks.ok) return checks;
+  if (OWN(terms, 'costEstimate') && hammerCurrency && terms.costEstimate.currency !== hammerCurrency) {
+    return failure('invalid-outcome-terms', 'Fees are recorded in the hammer’s currency; nothing is converted.', `${path}.costEstimate.currency`);
+  }
+  return { ok: true, value: terms };
 }
 
 const COST_GAP_SET = new Set(COST_GAPS);
@@ -1332,6 +1356,14 @@ export function setOutcome(lot, outcomeDraft, now) {
     const invoice = moneyResult(outcomeDraft.actualInvoice, 'outcome.actualInvoice');
     if (!invoice.ok) return invoice;
   }
+  // The terms a won coin is costed on when its bids carry none, or other ones (Q-01). Stated again, they replace the
+  // ones kept; `null` takes them off; left out of a won correction, the ones kept stand.
+  const statesTerms = OWN(outcomeDraft, 'terms') && outcomeDraft.terms !== null;
+  if (statesTerms) {
+    if (outcomeDraft.status !== 'won') return failure('invalid-outcome-terms', 'Only a won outcome carries premium and fee terms.', 'outcome.terms');
+    const terms = outcomeTermsResult(outcomeDraft.terms, 'outcome.terms', outcomeDraft.hammer?.currency);
+    if (!terms.ok) return terms;
+  }
 
   const reopeningSettled = outcomeDraft.status === 'open' &&
     (lot.outcome.status === 'won' || lot.outcome.status === 'lost');
@@ -1357,6 +1389,14 @@ export function setOutcome(lot, outcomeDraft, now) {
   const nextOutcome = { status: outcomeDraft.status, ...prices };
   if (Object.keys(prices).length > 0) nextOutcome.verification = 'personal-unverified';
   if (lot.outcome.status !== 'open') nextOutcome.correctedAt = now;
+  if (statesTerms) {
+    nextOutcome.terms = {
+      ...(OWN(outcomeDraft.terms, 'buyerPremiumBps') ? { buyerPremiumBps: outcomeDraft.terms.buyerPremiumBps } : {}),
+      ...(OWN(outcomeDraft.terms, 'costEstimate') ? { costEstimate: structuredClone(outcomeDraft.terms.costEstimate) } : {}),
+    };
+  } else if (!OWN(outcomeDraft, 'terms') && outcomeDraft.status === 'won' && lot.outcome.status === 'won' && lot.outcome.terms) {
+    nextOutcome.terms = structuredClone(lot.outcome.terms);
+  }
   next.outcome = nextOutcome;
 
   if ((outcomeDraft.status === 'won' || outcomeDraft.status === 'lost') && OWN(next, 'activeBid')) {

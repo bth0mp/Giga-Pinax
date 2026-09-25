@@ -72,6 +72,52 @@ const HOUSE_CHARGES = Object.freeze([
 const optionalPercent = (text, locale, subject) => (typeof text === 'string' && text.trim()
   ? parsePercent(text, locale, subject) : { ok: true, value: null });
 
+// The fee sheet a lot's cost is worked out with, the one set of fields the calculator, the workspace's Bid tab and its
+// Outcome tab all show, in this order. Each names the key a cost estimate stores it under; VAT on the premium and a
+// platform fee are written only when typed, so an estimate without them keeps the shape earlier versions saved.
+export const FEE_SHEET_FIELDS = Object.freeze([
+  { name: 'premiumVat', label: 'VAT on premium %', key: 'premiumVatBps', kind: 'percent', subject: 'VAT on premium', optional: true },
+  { name: 'platformFee', label: 'Platform fee % on hammer', key: 'platformFeeBps', kind: 'percent', subject: 'Platform fee on hammer', optional: true },
+  { name: 'shipping', label: 'Shipping', key: 'shippingMinor', kind: 'money' },
+  { name: 'paymentPercent', label: 'Payment fee %', key: 'paymentFeeBps', kind: 'percent', subject: 'Payment fee' },
+  { name: 'paymentFixed', label: 'Fixed payment fee', key: 'paymentFeeMinor', kind: 'money' },
+]);
+
+// The collector's preset for a house, by the house's name as a lot records it: the same name, case and spacing set
+// aside, and nothing else - a name that merely looks alike proposes no terms.
+export function housePresetFor(presets, houseName) {
+  const key = presetKey(houseName);
+  return key ? (presets ?? []).find((item) => presetKey(item?.name) === key) ?? null : null;
+}
+
+// A fee sheet read from its fields, in the currency of the amount it goes with. Every field blank is no fee sheet at
+// all (null): the fees were not recorded, which is not the same as fees of nothing. Once one fee is typed, a blank one
+// is none. An error names the field it belongs to.
+export function feeSheetEstimate(texts = {}, { currency, locale = 'en-US', incrementMinor = 1, minimumBidMinor = 0 } = {}) {
+  if (FEE_SHEET_FIELDS.every(({ name }) => !String(texts[name] ?? '').trim())) return { ok: true, value: null };
+  const estimate = { currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor, minimumBidMinor };
+  for (const { name, key, kind, subject, optional } of FEE_SHEET_FIELDS) {
+    const text = String(texts[name] ?? '');
+    if (kind === 'money') {
+      if (!text.trim()) continue;
+      const parsed = parseMoney(text, currency, locale);
+      if (!parsed.ok) return { ok: false, error: { ...parsed.error, field: name } };
+      estimate[key] = parsed.value.minor;
+    } else {
+      const parsed = optionalPercent(text, locale, subject);
+      if (!parsed.ok) return { ok: false, error: { ...parsed.error, field: name } };
+      if (parsed.value !== null) estimate[key] = parsed.value;
+      else if (!optional) estimate[key] = 0;
+    }
+  }
+  return { ok: true, value: estimate };
+}
+
+// A saved fee sheet written back into its fields; a key the estimate does not hold leaves its field blank.
+export function feeSheetTexts(estimate) {
+  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key }) => [name, formatMinorInput(estimate?.[key])]));
+}
+
 // The house preset behind one row of the presets editor. It names the field its error belongs to so
 // the page can show the message beside that field rather than in a page-wide status line. VAT on the
 // premium and a platform fee are written only when typed, so a row without them saves the shape an

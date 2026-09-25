@@ -17,7 +17,7 @@ import {
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
-  lotFieldForPath, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
+  lotFieldForPath, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
@@ -85,7 +85,8 @@ test('title-only lot edits preserve all prior provenance links and replace only 
 test('unknown writes are resolved from the request ledger and outcome editors preserve saved money', () => {
   assert.equal(commandWasCommitted({ recentCommands: [{ requestId: 'req-1' }] }, 'req-1'), true);
   assert.equal(commandWasCommitted({ recentCommands: [] }, 'req-1'), false);
-  assert.deepEqual(outcomeDraftForLot({ outcome: { status: 'won', hammer: { currency: 'GBP', minor: 1234 }, actualInvoice: { currency: 'EUR', minor: 1600 } } }, 'de-DE'), {
+  const { status, hammer, hammerCurrency, invoice, invoiceCurrency, bindingActive, hammerPlaceholder, acquisitionDate } = outcomeDraftForLot({ outcome: { status: 'won', hammer: { currency: 'GBP', minor: 1234 }, actualInvoice: { currency: 'EUR', minor: 1600 } } }, 'de-DE');
+  assert.deepEqual({ status, hammer, hammerCurrency, invoice, invoiceCurrency, bindingActive, hammerPlaceholder, acquisitionDate }, {
     status: 'won', hammer: '12.34', hammerCurrency: 'GBP', invoice: '16.00', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: '', acquisitionDate: '',
   });
   assert.equal(moneyInputText({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 'en-US'), '90071992547409.91');
@@ -1141,7 +1142,8 @@ test('an event is soon within 48 hours or from the day before a sale day, and en
 test('the outcome form opens an open lot on Won, in its bid’s currency, with the bid only as a hint', () => {
   const eur = (minor) => ({ currency: 'EUR', minor });
   const open = { outcome: { status: 'open' }, activeBid: { amount: eur(130000) }, plannedBid: { amount: { currency: 'GBP', minor: 100 } } };
-  assert.deepEqual(outcomeDraftForLot(open, 'en-US', { defaultCurrency: 'USD', event: { localDate: '2026-10-01' }, today: '2026-10-03' }), {
+  const draft = outcomeDraftForLot(open, 'en-US', { defaultCurrency: 'USD', event: { localDate: '2026-10-01' }, today: '2026-10-03' });
+  assert.deepEqual(Object.fromEntries(['status', 'hammer', 'hammerCurrency', 'invoice', 'invoiceCurrency', 'bindingActive', 'hammerPlaceholder', 'acquisitionDate'].map((key) => [key, draft[key]])), {
     status: 'won', hammer: '', hammerCurrency: 'EUR', invoice: '', invoiceCurrency: 'EUR', bindingActive: '', hammerPlaceholder: 'Your bid 1300.00', acquisitionDate: '2026-10-01',
   });
   const planned = { outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 50000 } } };
@@ -1360,4 +1362,39 @@ test('an incomplete cost shows what it has, never a total, and says what is miss
   assert.equal(bare.note, 'Total incomplete: no hammer recorded; no buyer’s premium rate on its bid; no fees were saved with this coin.');
   const foreign = wonCostLine({ outcome: { status: 'won', hammer: usd(1), cost: { buyerPremiumBps: 0, premium: usd(0), missing: ['fee-currency'] } } });
   assert.equal(foreign.note, 'Total incomplete: its fees were saved in another currency, and are never converted.');
+});
+
+// Q-01: the Outcome form states the premium rate and fees a won coin is costed on - its bid's, else its plan's, else
+// the preset of its house - and saves as terms only what the coin's own records do not already say.
+test('the outcome form offers the premium from the bid, the plan or the house preset, and says which', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const presets = [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }];
+  const bid = outcomeDraftForLot({ outcome: { status: 'open' }, activeBid: { amount: eur(1000), buyerPremiumBps: 2000 }, bidHistory: [] }, 'en-US', { presets });
+  assert.deepEqual([bid.premium, bid.premiumSource, bid.feesOpen], ['20', 'from your bid', true]);
+  const plan = outcomeDraftForLot({ outcome: { status: 'open' }, plannedBid: { amount: eur(1000), buyerPremiumBps: 1800 }, bidHistory: [] }, 'en-US', { presets });
+  assert.deepEqual([plan.premium, plan.premiumSource], ['18', 'from your plan']);
+  const house = outcomeDraftForLot({ outcome: { status: 'open' }, bidHistory: [], auctionContext: { pageUrl: 'https://x.test', house: ' künker ' } }, 'en-US', { presets, defaultCurrency: 'EUR' });
+  assert.deepEqual([house.premium, house.premiumSource, house.fees.premiumVat, house.feesOpen], ['25', 'from your Künker preset', '19.00', true]);
+  const nothing = outcomeDraftForLot({ outcome: { status: 'open' }, bidHistory: [], auctionContext: { pageUrl: 'https://x.test', house: 'Künker & Co' } }, 'en-US', { presets });
+  assert.deepEqual([nothing.premium, nothing.premiumSource, nothing.fees.premiumVat], ['', '', ''], 'another house name proposes nothing');
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 };
+  const recorded = outcomeDraftForLot({ outcome: { status: 'won', hammer: eur(90000), terms: { buyerPremiumBps: 2200, costEstimate: fees } }, bidHistory: [] }, 'en-US', { presets });
+  assert.deepEqual([recorded.premium, recorded.premiumSource, recorded.fees.shipping, recorded.feesOpen], ['22', 'as recorded with this outcome', '15.00', false]);
+  const foreign = outcomeDraftForLot({ outcome: { status: 'won', hammer: eur(90000) }, costEstimate: { ...fees, currency: 'CHF' }, bidHistory: [] }, 'en-US');
+  assert.equal(foreign.fees.shipping, '', 'a fee sheet in another currency is not offered as the hammer’s');
+});
+
+test('a won outcome saves as terms only what differs from the coin’s own bid and fee sheet', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 };
+  const lot = { outcome: { status: 'open' }, activeBid: { amount: eur(1000), buyerPremiumBps: 2000 }, bidHistory: [], costEstimate: fees };
+  const values = { hammerCurrency: 'EUR', premium: '20', shipping: '15.00', premiumVat: '', platformFee: '', paymentPercent: '0.00', paymentFixed: '0.00' };
+  assert.deepEqual(outcomeTermsFromForm(lot, values), { ok: true, value: undefined }, 'won on the bid’s own terms: nothing is copied');
+  assert.deepEqual(outcomeTermsFromForm(lot, { ...values, premium: '22' }).value, { buyerPremiumBps: 2200 });
+  assert.deepEqual(outcomeTermsFromForm(lot, { ...values, premiumVat: '19' }).value, { costEstimate: { ...fees, premiumVatBps: 1900 } });
+  const bare = { outcome: { status: 'open' }, bidHistory: [] };
+  assert.deepEqual(outcomeTermsFromForm(bare, { hammerCurrency: 'EUR', premium: '20' }).value, { buyerPremiumBps: 2000 }, 'blank fees are not recorded');
+  assert.deepEqual(outcomeTermsFromForm({ ...bare, outcome: { status: 'won', terms: { buyerPremiumBps: 2000 } } }, { hammerCurrency: 'EUR', premium: '' }).value, null, 'terms no longer stated are taken off');
+  assert.deepEqual(outcomeTermsFromForm(bare, { hammerCurrency: 'EUR', premium: 'twenty' }).error.field, 'premium');
+  assert.deepEqual(outcomeTermsFromForm(bare, { hammerCurrency: 'EUR', shipping: '1,2,3' }).error.field, 'shipping');
 });

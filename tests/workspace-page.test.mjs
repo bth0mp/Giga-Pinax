@@ -1199,3 +1199,32 @@ test('focus returns to Edit entry, and opening another entry asks before droppin
   await settle();
   assert.ok(page.document.activeElement === editButton(page, 'Trajan, sestertius'), 'a redraw keeps the keyboard on Edit entry');
 });
+
+// Q-01: a coin won without a bid recorded here gets its cost from the Outcome tab: the premium rate (offered from the
+// house's preset) and a fees fold that opens by itself, in one save and without re-opening the coin.
+test('a coin won without a recorded bid is costed from the premium and fees typed on its Outcome tab', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Hadrian, sestertius', sourceLinks: [], auctionContext: { pageUrl: 'https://house.test/1', house: 'Künker' } } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Hadrian, sestertius');
+  await page.click('detail-tab-outcome');
+  const f = page.$('outcome-form').elements;
+  assert.equal(page.$('outcome-terms').hidden, false);
+  assert.equal(f.premium.value, '25');
+  assert.equal(page.$('outcome-premium-source').textContent, 'from your Künker preset');
+  assert.equal(page.$('outcome-fees').open, true, 'no fee sheet on the lot: the fold opens by itself');
+  assert.equal(f.premiumVat.value, '19.00');
+  await page.type('outcome-form', 'hammer', '900');
+  await page.type('outcome-form', 'shipping', '15');
+  await page.submit('outcome-form');
+  const [lot] = background.root().lots;
+  assert.equal(lot.outcome.status, 'won');
+  assert.deepEqual(lot.outcome.terms.buyerPremiumBps, 2500);
+  // 900.00 + 225.00 premium + 42.75 VAT on it + 15.00 shipping.
+  assert.equal(lot.outcome.cost.total.minor, 90000 + 22500 + 4275 + 1500);
+  // Lost hides the terms: another bidder's hammer carries no premium of the collector's.
+  page.$('outcome-form').elements.status.value = 'lost';
+  await page.$('outcome-form').emit('change', { target: page.$('outcome-form').elements.status[1] ?? page.$('passed-outcome') });
+  assert.equal(page.$('outcome-terms').hidden, true);
+});

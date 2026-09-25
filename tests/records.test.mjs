@@ -1304,3 +1304,71 @@ test('a coin re-opened, planned again and won again is costed at the newest rate
   const settledLast = { ...lot, bidHistory: [lot.bidHistory[2], lot.bidHistory[0], lot.bidHistory[1]] };
   assert.equal(setOutcome(settledLast, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW).value.outcome.cost.buyerPremiumBps, 2500);
 });
+
+// Q-01: a coin won without a recorded bid (a floor bid, a phone bid, a coin entered from the invoice) gets its cost
+// from the premium rate and fee sheet the Outcome form states. The store still works the cost out; the terms are
+// inputs, kept with the outcome so a later correction of the hammer is costed on them again.
+test('a coin won without a bid is costed from the premium and fees its outcome states, and they are kept for a correction', () => {
+  const lot = makeLot(IDS.lotEur);
+  const hammer = { currency: 'EUR', minor: 90000 };
+  const won = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000, costEstimate: KUENKER_FEES } }, NOW);
+  assert.equal(won.ok, true, won.error?.message);
+  // 900.00 + 180.00 premium + 34.20 VAT on it + 15.00 shipping.
+  assert.equal(won.value.outcome.cost.total.minor, 90000 + 18000 + 3420 + 1500);
+  assert.deepEqual(won.value.outcome.terms, { buyerPremiumBps: 2000, costEstimate: KUENKER_FEES });
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+
+  const rateOnly = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000 } }, NOW);
+  assert.deepEqual(rateOnly.value.outcome.cost, { buyerPremiumBps: 2000, premium: { currency: 'EUR', minor: 18000 }, missing: ['fees'] });
+
+  const corrected = setOutcome(won.value, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.deepEqual(corrected.value.outcome.terms, won.value.outcome.terms, 'a correction that does not restate the terms keeps them');
+  assert.equal(corrected.value.outcome.cost.total.minor, 100000 + 20000 + 3800 + 1500);
+  const cleared = setOutcome(won.value, { status: 'won', hammer, terms: null }, NOW);
+  assert.equal(Object.hasOwn(cleared.value.outcome, 'terms'), false);
+  assert.deepEqual(cleared.value.outcome.cost, { missing: ['premium-rate', 'fees'] });
+  const lost = setOutcome(won.value, { status: 'lost', hammer }, NOW);
+  assert.equal(Object.hasOwn(lost.value.outcome, 'terms'), false, 'terms belong to a won coin only');
+});
+
+test('the outcome’s own terms are what the coin was won on, over the bid’s rate and the lot’s fee sheet', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { buyerPremiumBps: 2000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  assert.equal(won.value.outcome.cost.premiumVat.minor, 3800, 'the lot’s own fee sheet still applies where the outcome states none');
+});
+
+test('outcome terms are refused off a won coin, in another currency than the hammer, or out of shape', () => {
+  const lot = makeLot(IDS.lotEur);
+  const hammer = { currency: 'EUR', minor: 90000 };
+  const refused = (outcome) => setOutcome(lot, outcome, NOW);
+  assert.equal(refused({ status: 'lost', hammer, terms: { buyerPremiumBps: 2000 } }).error.path, 'outcome.terms');
+  assert.equal(refused({ status: 'won', hammer, terms: { costEstimate: { ...KUENKER_FEES, currency: 'CHF' } } }).error.path, 'outcome.terms.costEstimate.currency');
+  assert.equal(refused({ status: 'won', hammer, terms: { buyerPremiumBps: 10001 } }).error.path, 'outcome.terms.buyerPremiumBps');
+  assert.equal(refused({ status: 'won', hammer, terms: { costEstimate: { ...KUENKER_FEES, shippingMinor: -1 } } }).error.path, 'outcome.terms.costEstimate.shippingMinor');
+  assert.equal(refused({ status: 'won', hammer, terms: 'twenty' }).error.path, 'outcome.terms');
+  const stored = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000 } }, NOW).value;
+  const broken = structuredClone(stored); broken.outcome.status = 'lost'; delete broken.outcome.cost;
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.path, `lots[0].outcome.terms`);
+});
+
+// Q-05: a lot placed with a rate, settled Lost by a slip of the radio button and corrected to Won keeps its rate.
+test('a coin corrected from Lost to Won is costed at the rate its settled bid carried', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 50000 }, buyerPremiumBps: 2000, placedAt: NOW },
+    bidHistory: [{ ...settledWon(50000, 2000), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const lost = setOutcome(lot, { status: 'lost', hammer: { currency: 'EUR', minor: 65000 } }, NOW);
+  const won = setOutcome(lost.value, { status: 'won', hammer: { currency: 'EUR', minor: 48000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  assert.equal(won.value.outcome.cost.total.minor, 48000 + 9600 + 1824 + 1500);
+  // Re-opened without the terms being active again, then won: the re-open entry carries the same rate.
+  const reopened = setOutcome(lost.value, { status: 'open', bindingActive: false }, NOW);
+  const wonAfterReopen = setOutcome(reopened.value, { status: 'won', hammer: { currency: 'EUR', minor: 48000 } }, NOW);
+  assert.equal(wonAfterReopen.value.outcome.cost.buyerPremiumBps, 2000);
+});
