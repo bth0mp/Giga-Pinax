@@ -374,6 +374,10 @@ async function initWorkspace() {
   };
   const send = async (command, editor, previousAttempt = null) => {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
+    // A form's second click while its save is in flight sends nothing: the first is already saying "Saving…", and a second
+    // write would save a comparable twice into the collector's own median, or add a coin twice. The flag is released on
+    // every path below.
+    if (editor && savesInFlight.has(editor) && !previousAttempt) return { ok: false, code: 'in-flight', requestId: command.requestId };
     const { submittedVersion, submittedBasis } = submissionContext(previousAttempt, editor, editorVersions, editorBases);
     const submittedRevisions = previousAttempt?.submittedRevisions ?? commandReplacedRevisions(command, snapshot);
     let preserved = false;
@@ -1368,7 +1372,7 @@ async function initWorkspace() {
   };
   // Only what the collector changed is sent: a field left as it opened stays one the outcome can still correct.
   async function saveEntryForm() {
-    const editing = editingEntry; if (!editing) return;
+    const editing = editingEntry; if (!editing || editing.saving) return;
     const { values, baseline } = editing;
     const refuse = (message) => { editing.error = message; renderHistory(); };
     if (!values.acquisitionDate) return refuse('Enter the acquisition date.');
@@ -1384,7 +1388,11 @@ async function initWorkspace() {
     }
     if (values.notes !== baseline.notes) changes.notes = values.notes.trim() ? values.notes : null;
     if (!Object.keys(changes).length) { closeEntryForm(); return announce('Nothing was changed.'); }
-    const reply = await send({ type: 'collection.update', requestId: requestId(), collectionEntryId: editing.id, expectedRevision: editing.revision, entry: changes });
+    // The entry form saves once at a time, as every editor does through send.
+    editing.saving = true;
+    let reply;
+    try { reply = await send({ type: 'collection.update', requestId: requestId(), collectionEntryId: editing.id, expectedRevision: editing.revision, entry: changes }); }
+    finally { editing.saving = false; }
     if (editingEntry !== editing) return;
     if (reply?.ok) { closeEntryForm(); return announce('Collection entry saved.'); }
     const current = (snapshot.collectionEntries ?? []).find(({ id }) => id === editing.id);

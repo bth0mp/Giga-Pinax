@@ -1992,3 +1992,55 @@ test('the workspace says buyer’s premium, comparable and auction, never BP, ev
   assert.match(page.$('exposure-list').textContent, /Incomplete — buyer’s premium unknown for 1 bid/);
   assert.equal(page.$('lot-form').elements.lotNumber.closest('label').childNodes[0].textContent, 'Lot number shown ');
 });
+
+// --- Fix round (s2-review) ---------------------------------------------------------------------------
+
+// Important 1: a second click on a form's save while its first is in flight sends nothing, so a sale is never saved twice
+// into the collector's own median, nor a coin added twice.
+test('a second submit while the first save is in flight sends nothing more, on every form that saves through the page', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#search' });
+  page.$('evidence-form').elements.priceBasis.value = 'hammer';
+  page.$('evidence-form').elements.currency.value = 'EUR';
+  for (const [field, value] of [['auctionHouse', 'Roma'], ['auctionDate', '2026-06-01'], ['lotNumber', '12'], ['amount', '600']]) await page.type('evidence-form', field, value);
+  await Promise.all([page.startSubmit('evidence-form'), page.startSubmit('evidence-form')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'evidence.add').length, 1, 'one comparable');
+  assert.equal(background.root().evidence.length, 1);
+
+  await page.navigate('#watchlist');
+  await page.click('new-lot');
+  await page.typeDetails('title', 'Double coin');
+  await Promise.all([page.startSubmit('lot-form'), page.startSubmit('lot-form')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'lot.save').length, 1, 'one coin');
+  assert.equal(background.root().lots.filter(({ title }) => title === 'Double coin').length, 1);
+
+  // The bid, outcome, auction and want forms go through the same send.
+  await page.openCoin('Nero, denarius');
+  await page.type('bid-form', 'amount', '250');
+  const plan = { value: 'plan' };
+  await Promise.all([page.startSubmit('bid-form', plan), page.startSubmit('bid-form', plan)]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'bid.plan').length, 1, 'one plan');
+  await page.navigate('#auctions');
+  await page.click('new-event');
+  for (const [field, value] of [['name', 'Roma 31'], ['localDate', '2030-10-15'], ['localTime', '14:00']]) await page.type('event-form', field, value);
+  await Promise.all([page.startSubmit('event-form'), page.startSubmit('event-form')]);
+  await settle();
+  assert.equal(background.root().auctionEvents.length, 1, 'one auction');
+});
+
+// Important 1: an entry form saved twice sends one correction.
+test('a collection entry form saved twice while its save is in flight sends one correction', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] } });
+  await background.send({ type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 10000 } }, addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-01', sourceLinks: [] } });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await page.$('history-list').querySelectorAll('button').find((button) => button.textContent === 'Edit entry').click(); await settle();
+  const form = page.$('entry-edit-form');
+  form.elements.notes.value = 'Bought from Roma'; await form.emit('input', { target: form.elements.notes });
+  await Promise.all([form.emit('submit'), form.emit('submit')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'collection.update').length, 1);
+});
