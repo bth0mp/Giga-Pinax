@@ -139,8 +139,8 @@ test('an increment ladder is typed one tier per line, in the currency the tiers 
   const parsed = parseIncrementLadder('0: 5\n100: 10,00\n\n 1 000 : 25 ', 'EUR');
   assert.deepEqual(parsed.value, { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 10000, step: 1000 }, { from: 100000, step: 2500 }] });
   assert.equal(parseIncrementLadder('   ', 'EUR').value, null, 'an empty ladder box means no ladder');
-  assert.equal(parseIncrementLadder('   ', 'JPY').value, null, 'a currency nobody chose does not matter without tiers');
-  assert.equal(parseIncrementLadder('0: 5', 'JPY').error.field, 'ladderCurrency');
+  assert.equal(parseIncrementLadder('   ', 'XAU').value, null, 'a currency nobody chose does not matter without tiers');
+  assert.equal(parseIncrementLadder('0: 5', 'XAU').error.field, 'ladderCurrency');
   assert.equal(parseIncrementLadder('0 5', 'EUR').ok, false);
   assert.match(parseIncrementLadder('0: 5\n100', 'EUR').error.message, /^Line 2: /);
   assert.match(parseIncrementLadder('0: 5\n100: x', 'EUR').error.message, /^Line 2: /);
@@ -593,7 +593,7 @@ test('session medians are read per provider and only in their exact shape', asyn
     { reference: 'RIC I² Nero 306', provider: 'coinarchives', providerLabel: 'CoinArchives', currency: 'GBP', median: { currency: 'GBP', minor: 19000 }, count: 5, at },
   ]);
   assert.equal(readSessionMedians({ acsearch: { ...acsearch, at: new Date(at).toISOString() } }, now)[0].at, at);
-  for (const bad of [{ ...acsearch, provider: 'coinarchives' }, { ...acsearch, currency: 'JPY' }, { ...acsearch, median: { currency: 'EUR', minor: 24000 } },
+  for (const bad of [{ ...acsearch, provider: 'coinarchives' }, { ...acsearch, currency: 'XAU' }, { ...acsearch, median: { currency: 'EUR', minor: 24000 } },
     { ...acsearch, median: 0 }, { ...acsearch, median: 1.5 }, { ...acsearch, count: 0 }, { ...acsearch, count: '2' }, { ...acsearch, at: 'yesterday' },
     { ...acsearch, at: now + 3600000 }, { ...acsearch, reference: '' }, { ...acsearch, reference: 7 }, null, 'x']) {
     assert.deepEqual(readSessionMedians({ acsearch: bad }, now), [], JSON.stringify(bad));
@@ -645,7 +645,7 @@ test('the popup calculator puts back what was typed, and a bare default no longe
   const now = Date.parse('2026-09-25T12:00:00.000Z');
   const record = { version: 1, at: now - 60000, mode: 'total', currency: 'EUR', texts: { amount: '1000' } };
   assert.equal(readCalculatorMemory(record, now).texts.amount, '1000');
-  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'JPY' }, { ...record, mode: 'x' },
+  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'XAU' }, { ...record, mode: 'x' },
     { ...record, texts: { amount: 7 } }, { ...record, texts: { amount: 'x'.repeat(33) } }, { ...record, texts: {} }, { ...record, version: 2 }, null]) {
     assert.equal(readCalculatorMemory(bad, now), null, JSON.stringify(bad));
   }

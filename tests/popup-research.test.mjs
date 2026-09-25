@@ -1357,6 +1357,15 @@ test('a stored preference arriving late switches the select, the cache and the p
   popup.element('announcement').textContent = '';
   assert.equal(companion.applyPreferredCurrency(popup.element('currency'), 'GBP'), false);
   assert.equal(popup.element('announcement').textContent, '');
+  // A default bid currency prices are not researched in (SEK, JPY) leaves the research select, its cache and its
+  // prices as they are.
+  for (const currency of ['SEK', 'JPY']) {
+    assert.equal(companion.applyPreferredCurrency(popup.element('currency'), currency), false, currency);
+    assert.equal(popup.element('currency').value, 'GBP');
+  }
+  assert.equal(cachedCurrency(stored), 'GBP');
+  await settle();
+  assert.deepEqual(fetched, ['EUR', 'GBP']);
 });
 
 // Re-pricing must never be the thing that asks for acsearch: a prompt closes the popup in Firefox, and nobody pressed

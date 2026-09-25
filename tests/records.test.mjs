@@ -547,7 +547,7 @@ test('quarantine reports an unusable root instead of guessing at its shape', () 
 // store can run without or build again, so the repair sets the settings aside whole and starts the rest again.
 test('damage to the parts of the root every record shares is repaired without touching a record', () => {
   const settings = {
-    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'JPY', housePremiumPresets: [],
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'XAU', housePremiumPresets: [],
     desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
   };
   const snapshot = snapshotWith(makeLot());
@@ -891,7 +891,7 @@ test('a house preset may carry an optional increment ladder that older data simp
   ladder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]);
   assert.equal(validateSnapshot(snapshot).ok, true);
   // The tiers are in the house's own currency, which the calculator's currency need not match.
-  ladder([{ from: 0, step: 500 }], 'JPY');
+  ladder([{ from: 0, step: 500 }], 'XAU');
   assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.currency');
   preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }];
   assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder');

@@ -37,6 +37,9 @@ test('a page that changes the stored default currency writes the popup display c
   // A currency the calculator has no ladders for is not one the popup may be told to price in.
   assert.equal(cacheDefaultCurrency(local, 'XYZ'), false);
   assert.equal(JSON.parse(local.read(GIGA_KEY)).currency, 'CHF');
+  // A default bid currency prices are not researched in leaves the research form's own currency as it was.
+  assert.equal(cacheDefaultCurrency(local, 'SEK'), false);
+  assert.equal(JSON.parse(local.read(GIGA_KEY)).currency, 'CHF');
   // Blocked site data costs the cache, not the save that had already happened.
   assert.equal(cacheDefaultCurrency({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } }, 'EUR'), false);
 });

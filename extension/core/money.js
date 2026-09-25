@@ -40,10 +40,60 @@ import { failure } from './validate.js';
  * @property {Money} total
  */
 
-export const CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
+// The currencies an amount may be recorded in, and each one's minor units: the ISO 4217 exponent, fixed here rather
+// than read from the browser, because a stored amount is a count of these units and must mean the same thing in
+// every browser for good. The table agrees with Intl's own (`resolvedOptions().maximumFractionDigits`), which a test
+// checks. The yen has no minor unit, so a JPY amount is whole yen. The forint keeps its ISO 4217 two places although
+// no coin smaller than a forint circulates and houses sell in whole forints: an amount typed in whole forints is
+// stored and shown exactly, with .00. The first four are the ones every earlier version knew, in their old order.
+// Nothing is ever converted between them.
+const MINOR_UNITS = Object.freeze({
+  USD: 2, EUR: 2, GBP: 2, CHF: 2,
+  AUD: 2, CAD: 2, CZK: 2, DKK: 2, HKD: 2, HUF: 2, JPY: 0, NOK: 2, PLN: 2, SEK: 2,
+});
+export const CURRENCIES = Object.freeze(Object.keys(MINOR_UNITS));
+// The currencies price research is asked in: acsearch converts its hammer prices into one of these, and the popup's
+// research form offers only these. They keep their own set; a default bid currency beyond them leaves research alone.
+export const RESEARCH_CURRENCIES = Object.freeze(['USD', 'EUR', 'GBP', 'CHF']);
 
 const CURRENCY_SET = new Set(CURRENCIES);
+// The places of a percentage: basis points are hundredths of a percent.
 export const FRACTION_DIGITS = 2;
+export const UNSUPPORTED_CURRENCY_MESSAGE = `Currency must be one of ${CURRENCIES.slice(0, -1).join(', ')} or ${CURRENCIES.at(-1)}.`;
+
+/**
+ * The minor units of a supported currency: 2 for cents, 0 for the yen. Anything else is not a currency here.
+ * @param {*} currency
+ * @returns {number | null}
+ */
+export function minorDigits(currency) {
+  return CURRENCY_SET.has(currency) ? MINOR_UNITS[/** @type {keyof typeof MINOR_UNITS} */ (currency)] : null;
+}
+
+/**
+ * A count of minor units as plain text in the one form the money parser reads in every locale: ASCII digits, a
+ * point before the places and no grouping - 25050 with two places is "250.50", 1200000 with none is "1200000".
+ * Anything but a whole non-negative count writes nothing.
+ * @param {*} minor
+ * @param {number} [digits]
+ * @returns {string}
+ */
+export function plainDecimal(minor, digits = FRACTION_DIGITS) {
+  if (!Number.isSafeInteger(minor) || minor < 0) return '';
+  if (digits === 0) return String(minor);
+  const text = String(minor).padStart(digits + 1, '0');
+  return `${text.slice(0, -digits)}.${text.slice(-digits)}`;
+}
+
+/**
+ * An amount as plain text in its own currency's places (see plainDecimal); a currency this build does not know is
+ * written with two, as every amount was before there were others.
+ * @param {*} money
+ * @returns {string}
+ */
+export function plainAmount(money) {
+  return plainDecimal(money?.minor, minorDigits(money?.currency) ?? FRACTION_DIGITS);
+}
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
 const DECIMAL = /^(\d+)([.,])(\d+)$/;
@@ -52,8 +102,12 @@ const DECIMAL = /^(\d+)([.,])(\d+)$/;
 // Swiss listings group with the typographic apostrophe; a grouping space may be plain, no-break
 // or narrow, written as escapes here so an invisible byte cannot be lost in an edit.
 const GROUPED = /^(\d{1,3})((['\u2019 \u00a0\u202f,.])\d{3}(?:\3\d{3})*)(?:([.,])(\d{1,2}))?$/;
-const ambiguousMessage = (input) =>
-  `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.`;
+const ambiguousMessage = (input, digits) =>
+  `“${input}” could mean two different amounts; write it without a thousands separator, for example 1200${digits ? ` or 1200.${'0'.repeat(digits)}` : ''}.`;
+// What a readable amount looks like, with the places this amount may have.
+const formatMessage = (subject, digits, currency) => (digits === 0
+  ? `${subject} in ${currency} is whole units with no decimal places, written like 1200 or 1,200.`
+  : `${subject} must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.`);
 
 // `1,200` or `1.200`: three digits after a separator, behind at most three, read as well as a thousands group as three decimal places.
 /** @type {(whole: string, fraction: string) => boolean} */
@@ -101,14 +155,19 @@ function splitAmount(input, locale) {
 }
 
 // Only a lone `1,200` or `1.200` depends on the locale; every other shape reads the same everywhere.
+// The places are the amount's own: two for a percentage and for most currencies, none for the yen. A place the
+// amount cannot have is refused unless it is a zero, which changes nothing: "1200.00" yen is exactly 1200 yen, and
+// "1200.50" yen is no amount at all, never one rounded to 1200 or 1201.
 /**
  * @param {*} text
  * @param {bigint} maximumMinor
  * @param {string} subject
  * @param {string} locale
+ * @param {number} [digits]
+ * @param {string} [currency] named in the message of an amount with no places
  * @returns {Result<number>}
  */
-function parseFixed(text, maximumMinor, subject, locale) {
+function parseFixed(text, maximumMinor, subject, locale, digits = FRACTION_DIGITS, currency = '') {
   if (typeof text !== 'string') {
     return failure('invalid-format', `${subject} must be entered as text.`);
   }
@@ -116,17 +175,14 @@ function parseFixed(text, maximumMinor, subject, locale) {
   const input = text.trim();
   if (input.length > 32) return failure('input-too-long', `${subject} input is too long.`);
   const parts = splitAmount(input, locale);
-  if (!parts) {
-    return failure(
-      'invalid-format',
-      `${subject} must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.`,
-    );
+  if (parts?.ambiguous) return failure('ambiguous-amount', ambiguousMessage(input, digits));
+  if (!parts || /[^0]/.test(parts.fraction.slice(digits))) {
+    return failure('invalid-format', formatMessage(subject, digits, currency));
   }
-  if (parts.ambiguous) return failure('ambiguous-amount', ambiguousMessage(input));
 
   const whole = BigInt(parts.whole);
-  const fraction = BigInt(parts.fraction.padEnd(FRACTION_DIGITS, '0'));
-  const minor = whole * 100n + fraction;
+  const fraction = BigInt(parts.fraction.slice(0, digits).padEnd(digits, '0') || '0');
+  const minor = whole * 10n ** BigInt(digits) + fraction;
   if (minor > maximumMinor) {
     return failure('unsafe-money', `${subject} is outside the supported integer range.`);
   }
@@ -142,7 +198,7 @@ export function validateMoney(value) {
     return failure('invalid-money', 'Money must be an object.');
   }
   if (!CURRENCY_SET.has(value.currency)) {
-    return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
+    return failure('unsupported-currency', UNSUPPORTED_CURRENCY_MESSAGE, 'currency');
   }
   if (!Number.isSafeInteger(value.minor) || value.minor < 0) {
     return failure(
@@ -162,9 +218,9 @@ export function validateMoney(value) {
  */
 export function parseMoney(text, currency, locale = 'en-US') {
   if (!CURRENCY_SET.has(currency)) {
-    return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', 'currency');
+    return failure('unsupported-currency', UNSUPPORTED_CURRENCY_MESSAGE, 'currency');
   }
-  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money', locale);
+  const parsed = parseFixed(text, MAX_SAFE_BIGINT, 'Money', locale, /** @type {number} */ (minorDigits(currency)), currency);
   if (!parsed.ok) return parsed;
   return { ok: true, value: { currency, minor: parsed.value } };
 }
@@ -207,19 +263,48 @@ export function parsePremiumPercent(text, locale = 'en-US') {
 export function formatMoney(money, locale = 'en-US', { narrow = false } = {}) {
   const checked = validateMoney(money);
   if (!checked.ok) throw new TypeError(checked.error.message);
-
-  const whole = BigInt(money.minor) / 100n;
-  const fraction = String(money.minor % 100).padStart(FRACTION_DIGITS, '0');
-  const formatter = new Intl.NumberFormat(locale, {
+  const digits = /** @type {number} */ (minorDigits(money.currency));
+  return exactParts(money.minor, digits, new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: money.currency,
     ...(narrow ? { currencyDisplay: 'narrowSymbol' } : {}),
-    minimumFractionDigits: FRACTION_DIGITS,
-    maximumFractionDigits: FRACTION_DIGITS,
-  });
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }));
+}
+
+// The locale's formatter lays out the whole units, and the places are written in from the stored count itself, so
+// no amount passes through a floating-point number on its way to the page.
+/**
+ * @param {number} minor
+ * @param {number} digits
+ * @param {Intl.NumberFormat} formatter
+ * @returns {string}
+ */
+function exactParts(minor, digits, formatter) {
+  const scale = 10n ** BigInt(digits);
+  const whole = BigInt(minor) / scale;
+  const fraction = String(BigInt(minor) % scale).padStart(digits, '0');
   return formatter.formatToParts(whole)
     .map((part) => part.type === 'fraction' ? fraction : part.value)
     .join('');
+}
+
+/**
+ * An amount's figure alone, as a money line shows it beside the currency it names once: the collector's grouping and
+ * decimal mark, the currency's own places, no symbol. A locale Intl refuses falls back to en-US.
+ * @param {Money} money
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function formatAmount(money, locale = 'en-US') {
+  const checked = validateMoney(money);
+  if (!checked.ok) throw new TypeError(checked.error.message);
+  const digits = /** @type {number} */ (minorDigits(money.currency));
+  const options = { minimumFractionDigits: digits, maximumFractionDigits: digits };
+  let formatter;
+  try { formatter = new Intl.NumberFormat(locale, options); } catch { formatter = new Intl.NumberFormat('en-US', options); }
+  return exactParts(money.minor, digits, formatter);
 }
 
 /**
@@ -326,7 +411,7 @@ export function validateIncrementLadder(ladder, path = 'incrementLadder') {
     return failure('invalid-ladder', 'An increment ladder needs a currency and its tiers.', path);
   }
   if (!CURRENCY_SET.has(ladder.currency)) {
-    return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', `${path}.currency`);
+    return failure('unsupported-currency', UNSUPPORTED_CURRENCY_MESSAGE, `${path}.currency`);
   }
   const tiers = validateLadderTiers(ladder.tiers, `${path}.tiers`);
   return tiers.ok ? { ok: true, value: ladder } : tiers;

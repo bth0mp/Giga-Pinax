@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { restorePreferences, rememberTerm, rememberedTerm, rememberRecent, recallStep, RECENT_LIMIT, STORAGE_KEY, DEFAULT_NUMBER, DEFAULT_SECTION, THEME_KEY, THEMES, restoreTheme } from '../extension/preferences.js';
-import { CURRENCIES } from '../extension/core/money.js';
+import { CURRENCIES, RESEARCH_CURRENCIES } from '../extension/core/money.js';
 
 const defaults = { currency: 'USD', catalogue: 'Price', number: '23', volume: 'I (2nd edition)', section: 'Nero', period: 'all', terms: {}, recent: [] };
 
@@ -22,7 +22,14 @@ test('saved preferences are constrained, trimmed to 120 characters and stripped 
   assert.equal(invalid.volume.length, 120);
   assert.equal(restorePreferences(JSON.stringify({ catalogue: 'RIC' })).number, '306');
   assert.equal(STORAGE_KEY, 'giga-pinax-preferences-v1');
-  assert.deepEqual([...CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
+  // Prices are researched in the four currencies acsearch and CoinArchives are asked in; a default bid currency beyond
+  // them is not one the research form can show, so the form keeps its own.
+  assert.deepEqual([...RESEARCH_CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
+  assert.ok(RESEARCH_CURRENCIES.every((code) => CURRENCIES.includes(code)));
+  for (const currency of ['SEK', 'JPY', 'AUD']) assert.equal(restorePreferences(JSON.stringify({ currency })).currency, 'USD', currency);
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  const select = /<select id="currency"[^>]*>(.*?)<\/select>/.exec(html)[1];
+  assert.deepEqual([...select.matchAll(/value="([A-Z]{3})"/g)].map((match) => match[1]), [...RESEARCH_CURRENCIES]);
 });
 
 // The stored blob is untrusted JSON, so the catalogue may be any shape at all; only one of the six names is kept, and the rest restore Price 23.
