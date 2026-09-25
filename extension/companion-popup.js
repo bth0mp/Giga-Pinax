@@ -143,6 +143,10 @@ export function replaceAuctionContextInPayload(payload, auctionContext) {
   return clean && auctionContext ? { ...clean, auctionContext } : clean;
 }
 
+// X-11: what the collector is told when the background never answered, or the message port closed under the save: the raw browser error ("The message
+// port closed before a response was received.") is no sentence for him. It names the button to press again, and says why pressing it is safe.
+export const noAnswerMessage = (button) => `Giga Pinax’s background didn’t answer. Select ${button} again — the same request is retried, never saved twice.`;
+
 // Which coin a payload is about: a storage outcome nobody can tell (unknown) keeps its own payload and request id, so the same save is retried rather
 // than written twice - but only for that coin. A different reference or page is a different save and starts its own request.
 const draftIdentity = (payload) => `${payload?.reference ?? ''}\n${payload?.pageUrl ?? ''}`;
@@ -162,7 +166,7 @@ export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: sen
           // No reply at all is no outcome to read: the save is not known to have been refused, so its request is kept for the retry.
           const outcome = reply ? reply.outcome ?? reply.error?.outcome : 'unknown';
           if (outcome !== 'unknown') retry = null;
-          return reply ?? { ok: false };
+          return reply ?? { ok: false, outcome: 'unknown', unanswered: true };
         }
         retry.draftId = reply.value.id;
       }
@@ -170,7 +174,10 @@ export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: sen
       if (opened?.ok === false) return opened;
       retry = null;
       return { ok: true };
-    })().catch((error) => ({ ok: false, message: error?.message || 'Could not save these details.' }))
+    // A send that threw never reached the store's answer (the port closed): its request is kept for the retry, and the caller says so in words.
+    // Once the draft is saved, only its opening can have failed.
+    })().catch((error) => (retry?.draftId ? { ok: false, message: error?.message || 'Could not open these details in the workspace.' }
+      : { ok: false, outcome: 'unknown', unanswered: true }))
       .finally(() => { pending = null; });
     return pending;
   };
@@ -744,7 +751,11 @@ async function initCompanionPopup() {
     savePending = true;
     holdSaveButtons();
     try {
-      const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
+      const answer = await draftSaver(payload);
+      // A background that said nothing (X-11) is recorded as a kind of failure only, and said in words; a refusal says the store's own reason.
+      if (answer?.unanswered) void recordDiagnostic({ area: 'store', code: 'not-saved' });
+      const saved = answer?.unanswered ? { ok: false, message: noAnswerMessage(anchor === 'companion-save-hint' ? 'Watch' : 'Save to watchlist') }
+        : answer?.ok ? { ok: true } : { ok: false, message: answer?.message || answer?.error?.message || 'Couldn’t save these details to the watchlist.' };
       if (!saved.ok) { announce(saved.message, true, anchor); return saved; }
       // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
       announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.',
@@ -763,10 +774,15 @@ async function initCompanionPopup() {
   // One request per coin until the store has answered it: a save whose reply was lost is sent again under the same request, and the store answers it
   // from its ledger rather than saving the coin twice.
   let directRequest = null;
-  const NO_ANSWER = 'The watchlist did not answer. Try again.';
-  const sendDirect = async (command) => {
-    try { return (await bridge.sendCommand(command)) ?? { ok: false, outcome: 'unknown', message: NO_ANSWER }; }
-    catch (error) { return { ok: false, outcome: 'unknown', message: error?.message || NO_ANSWER }; }
+  // X-11: no reply, or an exception from the bridge, is one sentence that names the button to press again; the kind of failure goes to the local
+  // diagnostics, never the browser's words.
+  const sendDirect = async (command, button = 'Watch') => {
+    try {
+      const reply = await bridge.sendCommand(command);
+      if (reply) return reply;
+    } catch { /* said below, as no answer */ }
+    void recordDiagnostic({ area: 'store', code: 'not-saved' });
+    return { ok: false, outcome: 'unknown', message: noAnswerMessage(button) };
   };
   const saveDirect = async (payload, anchor) => {
     const refuse = (message) => { if (anchor) announce(message, true, anchor); return { ok: false, message }; };
@@ -798,7 +814,7 @@ async function initCompanionPopup() {
     if (justSaved !== entry) return;
     clearTimeout(entry.timer);
     const current = (snapshot.lots ?? []).find(({ id }) => id === entry.lot.id) ?? entry.lot;
-    const reply = await sendDirect({ type: 'lot.delete', requestId: bridge.newRequestId(), lotId: entry.lot.id, expectedRevision: current.revision });
+    const reply = await sendDirect({ type: 'lot.delete', requestId: bridge.newRequestId(), lotId: entry.lot.id, expectedRevision: current.revision }, 'Undo');
     if (!reply.ok) { announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor); return; }
     if (entry.event) await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: entry.event.id, expectedRevision: entry.event.revision });
     justSaved = null;
@@ -846,11 +862,11 @@ async function initCompanionPopup() {
     if (justSaved !== entry || entry.event) return;
     clearTimeout(entry.timer);
     entry.offerRequest ??= bridge.newRequestId();
-    const eventReply = await sendDirect({ type: 'event.save', requestId: entry.offerRequest, expectedRevision: null, event: { ...offer, name: entry.lot.title.slice(0, 300) } });
+    const eventReply = await sendDirect({ type: 'event.save', requestId: entry.offerRequest, expectedRevision: null, event: { ...offer, name: entry.lot.title.slice(0, 300) } }, 'Add');
     if (!eventReply.ok) { announce(eventReply.message || 'Couldn’t add the auction.', true, 'upcoming-note'); confirmSaved(entry, line, 'upcoming-note'); return; }
     const values = lotFormValues(entry.lot);
     const lot = buildWorkspaceLotDraft(entry.lot, { ...values, auctionEventId: eventReply.value.id }, values.sourceUrl);
-    const lotReply = await sendDirect({ type: 'lot.save', requestId: bridge.newRequestId(), expectedRevision: entry.lot.revision, lot });
+    const lotReply = await sendDirect({ type: 'lot.save', requestId: bridge.newRequestId(), expectedRevision: entry.lot.revision, lot }, 'Add');
     if (!lotReply.ok) {
       // The auction goes with the attachment that failed, so nothing is left behind that the collector did not see saved.
       await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: eventReply.value.id, expectedRevision: eventReply.value.revision });

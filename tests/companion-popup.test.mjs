@@ -898,7 +898,7 @@ test('a one-step save retried after a lost reply is the same request', async () 
   page.card(neroCard);
   await page.click('companion-save-watchlist');
   await settleAll();
-  assert.equal(page.element('companion-save-hint').textContent, 'The watchlist did not answer. Try again.');
+  assert.equal(page.element('companion-save-hint').textContent, 'Giga Pinax’s background didn’t answer. Select Watch again — the same request is retried, never saved twice.');
   await page.click('companion-save-watchlist');
   await settleAll();
   const saves = commands.filter(({ type }) => type === 'lot.save');
@@ -1521,4 +1521,42 @@ test('the Watchlist tab lists a coin with no auction, and the coin just saved le
     globalThis.browser.tabs.create = create;
     globalThis.browser.runtime.getURL = getURL;
   }
+});
+
+// Loop 6 (X-11): a Save whose message port closed printed the browser's own words ("The message port closed before a response was received.") under
+// the card. Every bridge failure is one sentence naming the button to press again; the retry is the same request, and the store keeps one coin.
+test('a save whose bridge throws says so in words, keeps its request for the retry, and records only the kind of failure', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  let fail = true;
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(structuredClone(command));
+    if (command.type === 'lot.save' && fail) { fail = false; await background.send(command); throw new Error('The message port closed before a response was received.'); }
+    return background.send(command);
+  } });
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const hint = page.element('companion-save-hint').textContent;
+  assert.equal(hint, 'Giga Pinax’s background didn’t answer. Select Watch again — the same request is retried, never saved twice.');
+  assert.doesNotMatch(hint, /port closed/);
+  assert.equal(page.element('companion-save-watchlist').disabled, false);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const saves = commands.filter(({ type }) => type === 'lot.save');
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].requestId, saves[1].requestId);
+  assert.equal(background.root().lots.length, 1, 'committed before the port closed, and not written twice');
+  assert.equal(lineParts(page.element('companion-saved-line')), '[Watching] · [Open] · [Undo]');
+
+  // The capture's draft path says the same of its own button, and keeps its request.
+  const sent = [];
+  const saver = createDraftSaver({ newRequestId: () => 'request-draft', sendCommand: async (command) => { sent.push(command.requestId); if (sent.length === 1) throw new Error('port closed'); return { ok: true, value: { id: 'draft-1' } }; },
+    openDraft: async () => ({ ok: true }) });
+  const first = await saver({ reference: 'RIC 306' });
+  assert.equal(first.ok, false);
+  assert.equal(first.unanswered, true);
+  assert.equal(Object.hasOwn(first, 'message'), false, 'no browser words travel with it');
+  assert.equal((await saver({ reference: 'RIC 306' })).ok, true);
+  assert.deepEqual(sent, ['request-draft', 'request-draft']);
 });
