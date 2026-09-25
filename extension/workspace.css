@@ -84,3 +84,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .groups>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 var(--text-h4)/1.2 var(--font-serif)}.groups-body{padding-top:8px}.groups-body .subheading{align-items:center}
 /* H-13: Enable desktop alerts sits in the reminders fold, a one-time permission and not a page action. */
 .why #enable-notifications{margin-top:8px}
+/* H-14: the Search route as a coin sees it - the launchers on the query's row, the filters folded, the add form short. */
+.filter-fold{grid-column:1/-1;margin:0}.filter-fold .form-group-body{padding-bottom:0}.coinarchives-pro{margin-top:16px}#evidence-more{margin-top:4px}

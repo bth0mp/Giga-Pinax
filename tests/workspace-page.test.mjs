@@ -1925,7 +1925,37 @@ test('each workspace form has one filled button, its own save, and the search la
   await page.openCoin('Nero, denarius');
   const filled = (root) => root.querySelectorAll('button').filter((button) => !['quiet', 'secondary', 'danger'].some((kind) => button.classList.contains(kind))).map((button) => button.textContent);
   assert.deepEqual(filled(page.$('research-form')), [], 'the launchers open a site; the page’s save is the comparable’s');
-  assert.deepEqual(filled(page.$('evidence-form')), ['Save manual evidence']);
+  assert.deepEqual(filled(page.$('evidence-form')), ['Save comparable']);
   assert.deepEqual(filled(page.$('bid-form')), ['Save plan']);
   for (const form of ['lot-form', 'outcome-form', 'event-form', 'want-form', 'group-form']) assert.equal(filled(page.$(form)).length, 1, form);
+});
+
+// H-14: the Search route as the coin sees it - the set named in the heading, the filters folded until one is set, a source
+// nobody has kept out of sight, and the add form opened from a coin in the coin's bid currency.
+test('the Search route names the set, folds its filters, and records a comparable in the coin’s currency', async () => {
+  const background = await backgroundWithCoins('Taisei lot 88');
+  const coin = storedLot(background, 'Taisei lot 88');
+  await background.send({ type: 'lot.save', expectedRevision: coin.revision, lot: { id: coin.id, title: coin.title, reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  const saved = storedLot(background, 'Taisei lot 88');
+  await background.send({ type: 'bid.plan', lotId: saved.id, expectedRevision: saved.revision, plannedBid: { amount: { currency: 'JPY', minor: 1200000 } } });
+  const page = await mountWorkspace({ background, hash: '#search' });
+  assert.deepEqual([page.$('launch-ac').textContent, page.$('launch-ca').textContent], ['acsearch \u2197', 'CoinArchives \u2197']);
+  assert.equal(page.$('evidence-filter-fold').open, false, 'no filter is set, so none is shown');
+  assert.equal(page.$('authorized-source').hidden, true, 'a source nobody has is not offered');
+  assert.equal(page.$('statistics-heading').textContent, 'Saved comparables');
+  await page.navigate('#watchlist');
+  await page.openCoin('Taisei lot 88');
+  await page.click('bid-add-comparable');
+  assert.equal(page.location.hash, '#search');
+  assert.equal(page.$('evidence-form').elements.currency.value, 'JPY', 'the sale is recorded in the bid’s currency');
+  assert.equal(page.$('evidence-currency').value, 'JPY');
+  // The fake DOM's select starts blank where a browser's starts on its first option, Hammer.
+  page.$('evidence-form').elements.priceBasis.value = 'hammer';
+  for (const [field, value] of [['auctionHouse', 'Taisei'], ['auctionDate', '2026-06-01'], ['lotNumber', '12'], ['amount', '900000']]) await page.type('evidence-form', field, value);
+  await page.submit('evidence-form');
+  assert.deepEqual(background.root().evidence[0].observations[0].amount, { currency: 'JPY', minor: 900000 });
+  assert.equal(page.$('statistics-heading').textContent, 'Saved comparables · RIC I² Nero 306 (1)');
+  page.$('evidence-from').value = '2020-01-01';
+  await page.$('evidence-filters').emit('input', { target: page.$('evidence-from') });
+  assert.equal(page.$('evidence-filter-fold').open, true, 'a filter that is set is shown');
 });

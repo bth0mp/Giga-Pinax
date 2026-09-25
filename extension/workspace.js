@@ -169,6 +169,7 @@ async function initWorkspace() {
     invalidNamed = true; queueMicrotask(() => { invalidNamed = false; });
     report(`Check ${where(event.target)}: ${event.target?.validationMessage || 'the value is not valid.'}`);
   };
+  $('evidence-form').addEventListener('invalid', nameInvalid((message) => announce(message, true)), true);
   $('lot-form').addEventListener('invalid', nameInvalid((message) => { $('lot-action-status').textContent = message; $('lot-action-status').classList.add('error'); }), true);
   $('outcome-form').addEventListener('invalid', nameInvalid((message) => announce(message, true)), true);
   // The browser scrolls a focused control into view without knowing about the sticky action bar, and counts a tall box
@@ -520,6 +521,14 @@ async function initWorkspace() {
     querySelect.value = selectedQueryId;
     const evidenceRows = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId);
     const filters = { currency: $('evidence-currency').value, fromDate: $('evidence-from').value, toDate: $('evidence-to').value, sources: selectedSources() };
+    // The set is the panel's heading (H-14); the date and source filters stay folded until one is set, and a source nobody
+    // has is offered only where rows of it exist.
+    const chosen = options.find(({ id }) => id === selectedQueryId);
+    $('statistics-heading').textContent = chosen && evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).length ? `Saved comparables · ${chosen.label}` : 'Saved comparables';
+    const allSources = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []);
+    $('authorized-source').hidden = !allSources.some((item) => item.source === 'authorized-import');
+    const defaultSources = filters.sources.join() === 'manual,authorized-import';
+    if (filters.fromDate !== '1900-01-01' || filters.toDate !== `${new Date().getFullYear()}-12-31` || !defaultSources) $('evidence-filter-fold').open = true;
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
@@ -994,6 +1003,9 @@ async function initWorkspace() {
       // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
       const saved = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryLabel && normalReference(item.queryLabel) === normalReference(reference));
       $('research-query').value = reference;
+      // The sale is recorded, and the set shown, in the bid's own currency.
+      const bidCurrency = $('bid-form').elements.currency.value;
+      if (CURRENCIES.includes(bidCurrency)) { $('evidence-form').elements.currency.value = bidCurrency; $('evidence-currency').value = bidCurrency; }
       activeQuery = saved ? { id: saved.queryId, text: reference } : { id: requestId(), text: reference };
       selectedQueryId = activeQuery.id;
       routeChangeFromNav = false; location.hash = '#search'; setRoute(); renderEvidence();

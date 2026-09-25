@@ -36,8 +36,39 @@
       <div class="section-heading"><h2 id="search-heading">Search</h2></div>
       <form id="research-form" class="toolbar-form">
         <label for="research-query">Coin or reference query</label>
-        <div class="inline-actions"><input id="research-query" maxlength="400" required><button id="launch-ca" class="secondary" type="button">Search CoinArchives</button><button id="launch-ac" class="secondary" type="button">Search acsearch</button></div>
+        <div class="inline-actions"><input id="research-query" maxlength="400" required><button id="launch-ac" class="secondary" type="button" title="Search acsearch for this query">acsearch ↗</button><button id="launch-ca" class="secondary" type="button" title="Search CoinArchives for this query">CoinArchives ↗</button></div>
       </form>
+      <div class="split-layout">
+        <section class="panel" aria-labelledby="statistics-heading">
+          <h3 id="statistics-heading">Saved comparables</h3>
+          <form id="evidence-filters" class="filter-grid">
+            <label>Comparable set<select id="evidence-query"></select></label>
+            <label>Currency<select id="evidence-currency"></select></label>
+            <details id="evidence-filter-fold" class="form-group filter-fold"><summary>Filter</summary><div class="form-group-body filter-grid">
+              <label>From<input id="evidence-from" type="date" value="1900-01-01"></label>
+              <label>To<input id="evidence-to" type="date"></label>
+              <fieldset><legend>Sources</legend><label><input type="checkbox" name="evidence-source" value="manual" checked> Manual</label><label id="authorized-source" hidden><input type="checkbox" name="evidence-source" value="authorized-import" checked> Authorized import</label><label><input type="checkbox" name="evidence-source" value="coinarchives"> CoinArchives</label><label><input type="checkbox" name="evidence-source" value="acsearch"> acsearch</label></fieldset>
+            </div></details>
+          </form>
+          <div id="statistics-output" class="metric-strip"></div>
+          <div id="evidence-list" class="record-list"></div>
+        </section>
+        <section class="panel" aria-labelledby="manual-evidence-heading">
+          <h3 id="manual-evidence-heading">Add a comparable</h3>
+          <form id="evidence-form" data-editor="evidence">
+            <label>Auction house<input name="auctionHouse" required maxlength="500"></label>
+            <div class="field-pair"><label>Auction date<input name="auctionDate" type="date" required></label><label>Lot number<input name="lotNumber" required maxlength="500"></label></div>
+            <div class="field-pair"><label>Hammer<input name="amount" inputmode="decimal"></label><label>Currency<select name="currency"></select></label></div>
+            <details id="evidence-more" class="form-group"><summary>Sale, price basis and source</summary><div class="form-group-body">
+              <label>Price basis<select name="priceBasis"><option value="hammer">Hammer</option><option value="estimate">Estimate</option><option value="unsold">Unsold</option><option value="missing">Missing price</option><option value="hammer-plus-bp">Hammer + buyer’s premium</option></select></label>
+              <label>House sale or catalogue ID<input name="houseSaleId" maxlength="500"></label>
+              <label>Auction name<input name="auctionName" maxlength="500"></label>
+              <label>Source URL<input name="sourceUrl" type="url" maxlength="4096"></label>
+            </div></details>
+            <button type="submit" data-needs-runtime disabled data-until-loaded>Save comparable</button>
+          </form>
+        </section>
+      </div>
       <details class="coinarchives-pro">
         <summary>CoinArchives Pro</summary>
         <div class="coinarchives-pro-body">
@@ -50,32 +81,6 @@
           <p class="field-note">Giga Pinax never handles your Pro credentials. The free CoinArchives search launcher remains available above.</p>
         </div>
       </details>
-      <div class="split-layout">
-        <section class="panel" aria-labelledby="statistics-heading">
-          <h3 id="statistics-heading">Saved comparables</h3>
-          <form id="evidence-filters" class="filter-grid">
-            <label>Comparable set<select id="evidence-query"></select></label>
-            <label>Currency<select id="evidence-currency"></select></label>
-            <label>From<input id="evidence-from" type="date" value="2000-01-01"></label>
-            <label>To<input id="evidence-to" type="date"></label>
-            <fieldset><legend>Sources</legend><label><input type="checkbox" name="evidence-source" value="manual" checked> Manual</label><label><input type="checkbox" name="evidence-source" value="authorized-import" checked> Authorized import</label><label><input type="checkbox" name="evidence-source" value="coinarchives"> CoinArchives</label><label><input type="checkbox" name="evidence-source" value="acsearch"> acsearch</label></fieldset>
-          </form>
-          <div id="statistics-output" class="metric-strip"></div>
-          <div id="evidence-list" class="record-list"></div>
-        </section>
-        <section class="panel" aria-labelledby="manual-evidence-heading">
-          <h3 id="manual-evidence-heading">Add a comparable manually</h3>
-          <form id="evidence-form" data-editor="evidence">
-            <label>Auction house<input name="auctionHouse" required maxlength="500"></label>
-            <label>House sale or catalogue ID<input name="houseSaleId" maxlength="500"></label>
-            <div class="field-pair"><label>Auction name<input name="auctionName" maxlength="500"></label><label>Lot number<input name="lotNumber" required maxlength="500"></label></div>
-            <div class="field-pair"><label>Auction date<input name="auctionDate" type="date" required></label><label>Price basis<select name="priceBasis"><option value="hammer">Hammer</option><option value="estimate">Estimate</option><option value="unsold">Unsold</option><option value="missing">Missing price</option><option value="hammer-plus-bp">Hammer + BP</option></select></label></div>
-            <div class="field-pair"><label>Amount<input name="amount" inputmode="decimal"></label><label>Currency<select name="currency"></select></label></div>
-            <label>Source URL<input name="sourceUrl" type="url" maxlength="4096"></label>
-            <button type="submit" data-needs-runtime disabled data-until-loaded>Save manual evidence</button>
-          </form>
-        </section>
-      </div>
     </section>
 
     <section id="route-watchlist" class="route" aria-labelledby="watchlist-heading" hidden>
