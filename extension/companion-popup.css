@@ -37,7 +37,10 @@
 /* The coins that want the collector now: each a row that opens the workspace on that coin. */
 .companion-coin-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .companion-coin-list li {border-bottom:1px solid var(--line);}
-.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:600; overflow-wrap:anywhere;}
+.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:400; color:var(--muted); overflow-wrap:anywhere;}
+/* A coin to watch leads with its reference in serif, as every workspace row does (H-16); then its title, muted; then when, in the accent. */
+.companion-coin-list .coin-reference {font-family:var(--font-serif); font-size:var(--text-input); font-weight:600; color:var(--ink);}
+.companion-coin-list .coin-when {font-weight:650; color:var(--accent);}
 /* Save and the capture buttons are secondary buttons (design-tokens.css); Save sits in the card's heading row at the small height. */
 .companion-save-watchlist {min-height:var(--control-h-sm); padding:0 12px;}
 .companion-current-lot {margin:0; border-bottom:1px solid var(--line);}

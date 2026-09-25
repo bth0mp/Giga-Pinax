@@ -317,15 +317,17 @@ export function nextEventText(event, { now = new Date().toISOString(), locale = 
 
 
 // The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
+// Each is said as a workspace row says a coin (H-16): its reference first, then its title, then when.
 export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
   const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
-  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => ({ lot, text: `${lot.title} · ended, record the outcome` }));
+  const row = (lot, when) => ({ lot, reference: displayReference(lot.reference ?? ''), title: String(lot.title ?? ''), when });
+  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => row(lot, 'ended, record the outcome'));
   const coming = (snapshot?.lots ?? [])
     .filter((lot) => (lot?.outcome?.status ?? 'open') === 'open' && events.has(lot.auctionEventId))
     .map((lot) => ({ lot, event: events.get(lot.auctionEventId), timing: eventTiming(events.get(lot.auctionEventId), now) }))
     .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state))
     .sort((left, right) => (left.timing.sortMs ?? Infinity) - (right.timing.sortMs ?? Infinity))
-    .map(({ lot, event }) => ({ lot, text: [lot.title, eventWhen(event, { now, locale }).relative].filter(Boolean).join(' · ') }));
+    .map(({ lot, event }) => row(lot, eventWhen(event, { now, locale }).relative));
   return [...ended, ...coming].slice(0, limit);
 }
 
@@ -518,12 +520,18 @@ async function initCompanionPopup() {
     $('companion-needs-outcome').hidden = ended === 0;
     $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
     const coins = coinsToWatch(snapshot, { now, locale });
-    $('companion-coin-list').replaceChildren(...coins.map(({ lot, text }) => {
+    $('companion-coin-list').replaceChildren(...coins.map(({ lot, reference, title, when }) => {
       const item = document.createElement('li');
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'text-button';
-      button.textContent = text;
+      const parts = [['coin-reference', reference], ['coin-title', title], ['coin-when', when]].filter(([, words]) => words);
+      parts.forEach(([className, words], index) => {
+        const part = document.createElement('span');
+        part.className = className;
+        part.textContent = words;
+        button.append(...(index ? [' · ', part] : [part]));
+      });
       button.disabled = !bridge;
       button.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
       item.append(button);

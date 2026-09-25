@@ -58,6 +58,7 @@ const {
   directLotFromPayload,
   savesDirectly,
   savedLotsFor,
+  coinsToWatch,
   savedLineText,
   dueText,
 } = await import('../extension/companion-popup.js');
@@ -1227,8 +1228,8 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
   const cng = { id: 'cng', name: 'CNG Feature Auction 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
   const roma = { id: 'roma', name: 'Roma E-Sale 120', eventKind: 'auction-day', precision: 'date-only', localDate: '2020-01-10', timeZone: 'Europe/London' };
   const lots = [
-    { id: 'a', title: 'Hadrian denarius', auctionEventId: 'roma', outcome: { status: 'open' } },
-    { id: 'b', title: 'Nero as', auctionEventId: 'cng', outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } },
+    { id: 'a', title: 'Hadrian denarius', reference: 'RIC II.3 Hadrian 2726', auctionEventId: 'roma', outcome: { status: 'open' } },
+    { id: 'b', title: 'Nero as', reference: 'RIC I (second edition) Nero 306', auctionEventId: 'cng', outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } },
     { id: 'c', title: 'Won coin', auctionEventId: 'cng', outcome: { status: 'won' } },
   ];
   const alerts = [{ eventId: 'cng', status: 'due' }, { eventId: 'roma', status: 'missed' }];
@@ -1243,7 +1244,14 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
     assert.match(page.element('companion-next-event').textContent, /^CNG Feature Auction 130 · sale day \w{3}, \w{3} \d+ · in 20 days$/);
     assert.equal(page.element('companion-due-count').textContent, '1 due · 1 missed');
     const rows = page.element('companion-coin-list').children.map((item) => item.children[0]);
-    assert.deepEqual(rows.map((button) => button.textContent), ['Hadrian denarius · ended, record the outcome', 'Nero as · in 20 days']);
+    // H-16: a row leads with the coin's reference, as every workspace row does, then its title, then when.
+    const parts = (button) => button.children.map((part) => (typeof part === 'string' ? part : `${part.className}:${part.textContent}`)).join('');
+    assert.deepEqual(rows.map(parts), [
+      'coin-reference:RIC II.3 Hadrian 2726 · coin-title:Hadrian denarius · coin-when:ended, record the outcome',
+      'coin-reference:RIC I² Nero 306 · coin-title:Nero as · coin-when:in 20 days',
+    ]);
+    const unreferenced = coinsToWatch({ lots: [{ id: 'x', title: 'Unread coin', auctionEventId: 'cng', outcome: { status: 'open' } }], auctionEvents: [cng] });
+    assert.deepEqual(unreferenced.map(({ reference, title, when }) => [reference, title, when]), [['', 'Unread coin', 'in 20 days']]);
     assert.equal(page.element('companion-coins').hidden, false);
     const exposure = page.element('companion-exposure-list').children;
     assert.equal(exposure.length, 1, 'only the currency that holds a bid');

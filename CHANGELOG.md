@@ -12,6 +12,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A popup card whose coin you are watching and want says both in one row of pills under its summary — `Watching · £650.00 bid · in 25 h` and `Wanted · up to £650.00 · VF+` — where two boxed lines pushed the median below the fold of the 600 px popup; it is back in view. The full sentence of each is its tooltip, and selecting **Watching** opens the coin in the workspace. Right after **Save** the row reads **Saved · Open · Undo**. An **Upcoming** lot citing a wanted type carries the same **Wanted** pill.
 - The popup's lists date a lot as the **Watchlist** tab dates a sale day, in your browser's language: an **Upcoming** lot reads `Mon, 12 Oct 2099 · Roma …` where it read `2099-10-12`, and the acsearch and CoinArchives sale lists `28 Jul` (with the year when it is not this year) where they read `28.07.2026` or `2026-07-28`.
 - After a lookup, **Recent** stays in view above the answer wherever the window has the room for it with the median still in its top two thirds, as in the side panel; in the 600 px popup the answer comes first, as before.
+- The popup's **Watchlist** tab lists its **Coins to watch** by reference first, in serif, as the workspace does — `RIC II.3 Hadrian 2726 · Hadrian denarius · ended, record the outcome` — where each row began with the coin's title.
 - A popup opened again draws its last answer once your watchlist has been read, so the card arrives with its status row instead of the row pushing the prices down a moment later.
 
 ### Fixed
