@@ -1122,32 +1122,31 @@ async function initWorkspace() {
 
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
-  function collectionTotalsTable(view) {
-    // A region the keyboard can scroll too, since its last columns sit past the side panel's edge.
-    const wrap = text('div', '', 'table-scroll'); wrap.setAttribute('tabindex', '0'); wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Recorded totals by currency');
-    const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
-    table.append(text('caption', 'Your recorded totals by currency'));
-    const head = document.createElement('thead'); const headRow = document.createElement('tr');
-    for (const label of ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
-    head.append(headRow);
+  // One stat row per currency (G-17), each figure in its own money and the row wrapping rather than scrolling: a hammer
+  // or invoice total covers the entries that recorded one, and says how many of the currency's entries that is when it
+  // is not all of them.
+  function collectionTotalsRows(view) {
+    const root = text('div', '', 'collection-totals'); root.id = 'collection-totals'; root.setAttribute('role', 'group'); root.setAttribute('aria-label', 'Your recorded totals by currency');
     const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
-    // A coin whose fees were never recorded counts as having none, and the cell says how many did (G-05).
+    // A coin whose fees were never recorded counts as having none, and the figure says how many did (G-05).
     const total = (currency, minor, count, of, none = 'None recorded', noFees = 0) => {
       if (!count) return none;
       const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
       const parts = [count < of ? `${count} of ${of}` : '', noFees ? `${noFees} without fees` : ''].filter(Boolean);
       return parts.length ? `${amount} (${parts.join(', ')})` : amount;
     };
-    const body = document.createElement('tbody');
-    const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
+    const row = (currency, cells) => {
+      const line = text('div', '', 'collection-total-row'); line.append(text('strong', currency, 'collection-total-currency'));
+      for (const [label, value] of cells) { const cell = text('span', '', 'collection-total-cell'); cell.append(text('span', label, 'stat-label'), text('span', value, 'stat-value')); line.append(cell); }
+      root.append(line);
+    };
     for (const [currency, totals] of Object.entries(view.byCurrency)) {
-      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount),
-        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete', totals.costNoFeesCount),
-        total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
+      row(currency, [['Entries', String(totals.entryCount)], ['Hammer', total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount)],
+        ['Total cost', total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete', totals.costNoFeesCount)],
+        ['Invoice paid', total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount)], ['Acquired', years(totals)]]);
     }
-    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', '—', years(view.unpriced)]);
-    table.append(head, body); wrap.append(table);
-    return wrap;
+    if (view.unpriced.entryCount) row('No amount recorded', [['Entries', String(view.unpriced.entryCount)], ['Acquired', years(view.unpriced)]]);
+    return root;
   }
   // The collector's own evidence for the entry's coin, worded as that and never as a value.
   const collectionComparablesLabel = (item) => {
@@ -1282,12 +1281,31 @@ async function initWorkspace() {
     }
     return line;
   };
+  // A collection entry's part of its coin's card: since when it is in the collection and any review, the invoice, the
+  // notes, the collector's own comparables, and the entry's own actions and form.
+  const appendEntry = (card, entry, viewItem, lot) => {
+    card.append(text('p', `In your collection since ${dayText(entry.acquisitionDate)}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`, 'collection-since'));
+    const invoiceLine = entryInvoiceLine(entry, lot);
+    if (invoiceLine) card.append(text('p', invoiceLine));
+    if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
+    card.append(text('p', collectionComparablesLabel(viewItem), 'collection-comparables'));
+    const actions = text('div', '', 'actions');
+    if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
+    if (editingEntry?.id === entry.id) card.append(entryEditForm());
+    else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
+    if (actions.children.length) card.append(actions);
+  };
   function renderHistory() {
     // A redraw while a field of the entry form has the keyboard gives it back to that field.
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
     const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
-    // A ledger, newest first: what the coin is and where it was won, what it cost, and the bid that decided it (Q-12).
+    const view = projectCollection(snapshot);
+    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const entriesByLot = new Map((snapshot.collectionEntries ?? []).map((entry) => [entry.lotId, entry]));
+    const shownEntries = new Set();
+    // A ledger, newest first (Q-12), one card per settled coin (G-17): what the coin is and where it was won, what it
+    // cost - the money line once - the bid that decided it, and its collection entry, if it has one, beneath.
     for (const lot of settledNewestFirst(snapshot.lots)) {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
@@ -1296,35 +1314,28 @@ async function initWorkspace() {
       if (line) card.append(...costLineParts(line, lot.id));
       else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
-      card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid')); root.append(card);
+      card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid'));
+      const entry = entriesByLot.get(lot.id);
+      if (entry) { shownEntries.add(entry.id); appendEntry(card, entry, viewByEntry.get(entry.id), lot); }
+      root.append(card);
     }
-    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
-    const view = projectCollection(snapshot);
-    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    // An entry whose coin is not a settled one on this device still has a card of its own.
     const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
+    for (const entry of (snapshot.collectionEntries ?? []).filter(({ id }) => !shownEntries.has(id))) {
+      const lot = lotsById.get(entry.lotId);
+      const card = text('article', '', 'record'); card.append(text('h3', entry.title));
+      if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
+      appendEntry(card, entry, viewByEntry.get(entry.id), lot);
+      root.append(card);
+    }
+    if (!root.children.length) root.append(text('p', 'No settled coins yet. A coin whose outcome you record appears here.', 'empty-row'));
+    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Your collection'));
     if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
     else {
-      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin with no fees recorded counts as having none, and one missing its hammer or premium rate is counted as incomplete, never estimated.', 'field-note collection-note'));
-      collection.append(collectionTotalsTable(view));
-    }
-    for (const entry of snapshot.collectionEntries ?? []) {
-      const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
-      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
-      const entryLot = lotsById.get(entry.lotId);
-      const ledger = entryLot ? historyLine(entryLot, eventsById.get(entryLot.auctionEventId), navigator.language) : '';
-      if (ledger) card.append(text('p', ledger, 'history-line'));
-      if (line) card.append(...costLineParts(line, entry.lotId));
-      else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
-      const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));
-      if (invoiceLine) card.append(text('p', invoiceLine));
-      if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
-      card.append(text('p', collectionComparablesLabel(viewByEntry.get(entry.id)), 'collection-comparables'));
-      const actions = text('div', '', 'actions');
-      if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
-      if (editingEntry?.id === entry.id) card.append(entryEditForm());
-      else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
-      if (actions.children.length) card.append(actions);
-      collection.append(card);
+      collection.append(text('p', 'From your own records: not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
+      const why = document.createElement('details'); why.className = 'why';
+      why.append(text('summary', 'Why'), text('p', 'The amounts are the ones you entered and the comparables the ones you saved. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin with no fees recorded counts as having none, and one missing its hammer or premium rate is counted as incomplete, never estimated.', 'field-note'));
+      collection.append(why, collectionTotalsRows(view));
     }
     if (editingEntry && !(snapshot.collectionEntries ?? []).some(({ id }) => id === editingEntry?.id)) editingEntry = null;
     if (focusedField) $('entry-edit-form')?.elements[focusedField]?.focus?.();

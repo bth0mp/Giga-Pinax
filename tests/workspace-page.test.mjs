@@ -239,6 +239,9 @@ async function savedComparable(background, queryLabel, lotNumber, amount) {
   assert.equal(reply.ok, true, reply.message);
 }
 const cells = (row) => row.querySelectorAll('th, td').map((cell) => cell.textContent);
+// A currency's stat row of the collection totals (G-17), read as the table row it replaced: currency, then each figure.
+const totalRows = (page) => page.$('collection-totals').querySelectorAll('.collection-total-row')
+  .map((row) => [row.querySelector('.collection-total-currency').textContent, ...row.querySelectorAll('.stat-value').map((value) => value.textContent)]);
 
 test('the History route totals the collection per currency and shows each entry’s own saved comparables', async () => {
   const background = await createWorkspaceBackground();
@@ -254,14 +257,15 @@ test('the History route totals the collection per currency and shows each entry�
   assert.equal(page.$('route-history').hidden, false);
   const collection = page.$('collection-list');
   assert.match(collection.querySelector('.collection-note').textContent, /your own records.*not an appraisal or a valuation.*no amount is converted/i);
-  const table = collection.querySelector('#collection-totals');
-  assert.deepEqual(cells(table.querySelector('thead').querySelector('tr')), ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']);
+  assert.equal(collection.querySelector('.why').children[0].textContent, 'Why', 'the reasons fold under one line');
+  const labels = page.$('collection-totals').querySelectorAll('.collection-total-row')[0].querySelectorAll('.stat-label').map((label) => label.textContent);
+  assert.deepEqual(labels, ['Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']);
   // None of these coins had a bid with a premium rate or fees saved, so no total cost is guessed at.
-  assert.deepEqual(table.querySelector('tbody').querySelectorAll('tr').map(cells), [
+  assert.deepEqual(totalRows(page), [
     ['USD', '1', '$500.00', 'Incomplete', 'None recorded', '2023'],
     ['EUR', '2', '€1,200.00', 'Incomplete', '€250.00 (1 of 2)', '2019–2021'],
   ]);
-  const lines = collection.querySelectorAll('.collection-comparables').map((line) => line.textContent);
+  const lines = page.$('history-list').querySelectorAll('.collection-comparables').map((line) => line.textContent);
   assert.deepEqual(lines, [
     'Your saved comparables for RIC 27b: median €180.00 from 3 in EUR',
     'No saved comparables for RIC 60 in USD',
@@ -303,15 +307,16 @@ test('a won coin’s History card and the collection totals show what it really 
   assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
   assert.equal(page.$('detail-tab-outcome').getAttribute('aria-selected'), 'true');
   assert.ok(page.document.activeElement === page.$('outcome-form').elements.premium);
-  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  const [eur] = totalRows(page);
   assert.deepEqual(eur, ['EUR', '2', '€1,800.00', '€1,701.75 (1 of 2)', 'None recorded', '2023–2026']);
-  const entry = page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes('Künker lot 1234'));
-  assert.equal(entry.querySelector('.money-line').children.at(-1).textContent, 'Total 1,701.75', 'the collection entry carries the same line');
+  // G-17: one card per won coin - its collection entry sits under its money line, which is shown once.
+  assert.equal(card.querySelectorAll('.money-line').length, 1);
+  assert.ok(card.querySelector('.collection-since').textContent.startsWith('In your collection since '));
 });
 
 // N12: a collection entry is corrected in place on the History route - acquisition date, invoice paid, notes - and
 // only what the collector changed is sent, so a later outcome correction still reaches everything else.
-const entryCard = (page, title) => page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes(title));
+const entryCard = (page, title) => page.$('history-list').querySelectorAll('article').find((item) => item.textContent.includes(title));
 test('a collection entry is corrected in place, and says the invoice is the collector’s own figure', async () => {
   const background = await createWorkspaceBackground();
   await wonCoin(background, { title: 'Nero, denarius', hammer: { currency: 'EUR', minor: 50000 }, actualInvoice: { currency: 'EUR', minor: 62500 }, acquisitionDate: '2023-06-15' });
@@ -341,7 +346,7 @@ test('a collection entry is corrected in place, and says the invoice is the coll
   const card = entryCard(page, 'Nero, denarius');
   assert.ok(card.textContent.includes('Invoice paid €640.00 (your correction; the outcome records €625.00)'));
   assert.ok(card.textContent.includes('Tray 4, envelope from the sale'));
-  assert.ok(card.textContent.includes('Nero, denarius · 2023-06-20'));
+  assert.equal(card.querySelector('.collection-since').textContent, 'In your collection since Jun 20, 2023');
 });
 
 test('an entry form sends only what changed, refuses a bad amount beside the field, and Cancel keeps the entry', async () => {
@@ -1125,7 +1130,7 @@ test('a second save after another tab corrected the outcome neither reverts the 
 // Important 2: one hammer on the page and in the file, whether the entry drifted under 0.35 or through a merge.
 function hammersShown(page, title) {
   const line = entryCard(page, title).querySelector('.money-line');
-  const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  const [eur] = totalRows(page);
   return { card: line.children[1].textContent, table: eur[2] };
 }
 test('an entry left behind by a correction made under 0.35 shows its lot\u2019s one hammer on the card, in the totals and in the CSV', async () => {
@@ -1259,7 +1264,7 @@ test('a won coin with no fees recorded shows hammer + premium, counts it in the 
   assert.deepEqual(line.children.map((cell) => cell.textContent), ['USD', 'Hammer 240.00', 'Premium 48.00', 'Fees not recorded', 'Total 288.00hammer + premium']);
   assert.equal(line.dataset.tone, undefined, 'not a failure: nothing is in the warning tone');
   assert.equal(background.root().lots[0].outcome.cost.missing[0], 'fees', 'the data still names the gap');
-  const [usd] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  const [usd] = totalRows(page);
   assert.equal(usd[3], '$288.00 (1 without fees)');
   await card.querySelectorAll('button').find((button) => button.textContent === 'Add fees').click(); await settle();
   assert.equal(page.$('outcome-fees').open, true);
