@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as money from '../extension/core/money.js';
-import { FakeDocument, browserGlobals, pageSource } from './helpers/dom.mjs';
+import { FakeDocument, browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
   formatMinorInput, housePresetsText, ladderTierText, parseHousePresets, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
@@ -102,7 +102,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   };
   assert.deepEqual(calculatorInputsForLot(values, { loadedLotId: null, mode: 'total', locale: 'en-US' }), {
     currency: 'EUR', amount: '150.00', premium: '20.00', shipping: '5.00',
-    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00', premiumVat: '', platformFee: '',
+    paymentPercent: '2.50', paymentFixed: '0.00', increment: '10.00', minimum: '20.00', premiumVat: '', platformFee: '', importVat: '',
     preset: '', ladder: null,
   });
   assert.equal(calculatorInputsForLot(values, { loadedLotId: 'lot-a', mode: 'total', locale: 'en-US' }), null);
@@ -110,7 +110,7 @@ test('the calculator loads a lot only when the selection changes and never overw
   assert.equal(Object.hasOwn(budget, 'amount'), false);
   assert.equal(budget.premium, '20.00');
   assert.deepEqual(calculatorInputsForLot({ currency: 'GBP' }, { loadedLotId: 'lot-a', locale: 'en-US' }), {
-    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '', premiumVat: '', platformFee: '',
+    currency: 'GBP', amount: '', premium: '', shipping: '', paymentPercent: '', paymentFixed: '', increment: '', minimum: '', premiumVat: '', platformFee: '', importVat: '',
     preset: '', ladder: null,
   });
 });
@@ -311,7 +311,7 @@ test('preset save has a synchronous pending guard and disables its control', () 
 
 // The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
 // by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
-async function mountCalculator({ snapshot }) {
+async function mountCalculator({ snapshot, session = null, options = {} }) {
   const document = new FakeDocument();
   const container = document.createElement('div');
   const commands = [];
@@ -321,23 +321,27 @@ async function mountCalculator({ snapshot }) {
     sendCommand: async (command) => { commands.push(structuredClone(command)); return { ok: true, value: command.preferences }; },
     newRequestId: () => `request-${commands.length + 1}`,
     subscribeToSnapshots: () => () => {},
+    ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), set: async (items) => { Object.assign(session, structuredClone(items)); }, onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
     ...browserGlobals(document),
     Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
   vm.runInContext(pageSource(new URL('../extension/bid-tools.js', import.meta.url)), context, { filename: 'bid-tools.js' });
-  context.mountBidCalculator(container);
+  const mounted = context.mountBidCalculator(container, options);
   for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
   const inputs = container.querySelectorAll('input');
   // A control by the caption of its label, as the collector finds it.
   const field = (caption) => container.querySelectorAll('label')
     .find((label) => label.querySelector('span')?.textContent === caption)?.querySelector('input, select');
   return {
+    mounted,
     commands,
     container,
     field,
     output: container.querySelector('.bid-calculator-output'),
+    figure: container.querySelector('.bid-calculator-figure'),
+    label: container.querySelector('.bid-calculator-label'),
     note: container.querySelector('.bid-calculator-note'),
     premium: inputs[1],
     presetName: inputs.at(-1),
@@ -384,12 +388,12 @@ test('the calculator has VAT on premium and platform fee fields, and names both 
   calculator.premium.value = '25';
   vat.value = '19';
   await vat.emit('input');
-  assert.match(calculator.output.textContent, /Premium CHF\s?250\.00 \+ VAT CHF\s?47\.50/);
-  assert.match(calculator.output.textContent, /Total CHF\s?1,297\.50/);
-  assert.doesNotMatch(calculator.output.textContent, /Platform fee/, 'a platform fee nobody entered is not listed');
+  assert.match(calculator.output.textContent, /premium CHF\s?250\.00 \(25%\) · VAT on premium CHF\s?47\.50/);
+  assert.match(calculator.figure.textContent, /^CHF\s?1,297\.50$/);
+  assert.doesNotMatch(calculator.output.textContent, /platform fee/, 'a platform fee nobody entered is not listed');
   platform.value = '3';
   await platform.emit('input');
-  assert.match(calculator.output.textContent, /Platform fee CHF\s?30\.00/);
+  assert.match(calculator.output.textContent, /platform fee CHF\s?30\.00/);
   assert.doesNotMatch(calculator.note.textContent, /Tax is excluded/);
 });
 
@@ -503,3 +507,157 @@ test('blanking VAT in the calculator and saving the house takes the VAT off it, 
   assert.deepEqual(calculator.commands[0].preferences.housePremiumPresets, [kept]);
   assert.equal(calculator.status.textContent, 'Saved Künker: premium 25.00%, no VAT on premium, platform fee 1.50%. Its increment ladder is unchanged.');
 });
+
+// Q-04: import VAT or duty on the invoice, a field of the fee sheet, named in the answer and saved with the estimate;
+// Settings' usual rate starts it for a house in another currency than the collector's default, and only then.
+test('the calculator adds import VAT, names it, and starts it from Settings for a sale in another currency', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'GBP', importVatBps: 500, housePremiumPresets: [] } } } });
+  const importVat = calculator.field('Import VAT / duty %');
+  assert.ok(importVat.closest('.bid-calculator-fees'));
+  const currency = calculator.field('Currency');
+  currency.value = 'GBP'; await currency.emit('input');
+  assert.equal(importVat.value, '', 'a sale in the collector’s own currency crosses no border');
+  currency.value = 'EUR'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00');
+  calculator.field('Hammer price').value = '1000';
+  calculator.premium.value = '25';
+  calculator.field('Shipping').value = '15';
+  await importVat.emit('input');
+  assert.match(calculator.output.textContent, /import VAT €63\.25 · shipping €15\.00/);
+  assert.equal(calculator.figure.textContent, '€1,328.25');
+  currency.value = 'GBP'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00', 'a rate the collector has seen in a calculation stays until they change it');
+  importVat.value = ''; await importVat.emit('input');
+  currency.value = 'CHF'; await currency.emit('input');
+  assert.equal(importVat.value, '5.00', 'a blank field is started again for another foreign sale');
+  const result = buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '25', importVatText: '5', currency: 'EUR', locale: 'en-US' });
+  assert.equal(result.costEstimate.importVatBps, 500);
+  assert.equal(Object.hasOwn(buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '25', currency: 'EUR', locale: 'en-US' }).costEstimate, 'importVatBps'), false);
+});
+
+// The one fee sheet the calculator, the Bid tab and the Outcome tab share: all blank is no fee sheet (fees not
+// recorded); once one fee is typed a blank one is none; the optional charges are written only when typed.
+test('a fee sheet read from its fields is null when blank, and names the field an error belongs to', async () => {
+  const { feeSheetEstimate, feeSheetTexts, FEE_SHEET_FIELDS } = await import('../extension/bid-tools.js');
+  assert.deepEqual(FEE_SHEET_FIELDS.map(({ name }) => name), ['premiumVat', 'platformFee', 'importVat', 'shipping', 'paymentPercent', 'paymentFixed']);
+  assert.deepEqual(feeSheetEstimate({ shipping: ' ' }, { currency: 'EUR' }), { ok: true, value: null });
+  assert.deepEqual(feeSheetEstimate({ importVat: '5' }, { currency: 'EUR', incrementMinor: 1000 }).value,
+    { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, importVatBps: 500 });
+  assert.equal(feeSheetEstimate({ shipping: 'ten' }, { currency: 'EUR' }).error.field, 'shipping');
+  assert.equal(feeSheetEstimate({ importVat: '120' }, { currency: 'EUR' }).error.field, 'importVat');
+  assert.deepEqual(feeSheetTexts({ shippingMinor: 1500, paymentFeeBps: 0, importVatBps: 500 }),
+    { premiumVat: '', platformFee: '', importVat: '5.00', shipping: '15.00', paymentPercent: '', paymentFixed: '' });
+});
+
+// G-15: the answer is a stat block like the median's - what it is, the figure, one line of what makes it up with the
+// lines that are nothing left out - and no card or heading of its own inside the Calculator tab.
+test('the calculator answers with a labelled figure and one line, and in budget mode the figure is the hammer', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } } });
+  assert.equal(calculator.container.querySelector('h3'), null, 'the tab is the heading');
+  assert.equal(calculator.figure.hidden, true);
+  calculator.field('Currency').value = 'USD';
+  calculator.field('Hammer price').value = '260';
+  calculator.premium.value = '20';
+  await calculator.premium.emit('input');
+  assert.deepEqual([calculator.label.textContent, calculator.figure.textContent, calculator.output.textContent],
+    ['All-in total', '$312.00', 'Hammer $260.00 · premium $52.00 (20%) · no fees']);
+  const mode = calculator.field('Calculation');
+  mode.value = 'budget'; await mode.emit('change');
+  calculator.field('Total budget').value = '312';
+  await calculator.premium.emit('input');
+  assert.deepEqual([calculator.label.textContent, calculator.figure.textContent, calculator.output.textContent],
+    ['Maximum hammer', '$260.00', 'All-in $312.00 · premium $52.00 (20%) · no fees']);
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  assert.equal(markup.getElementById('companion-bid-calculator').className, '', 'no card inside the tab');
+});
+
+// G-24 (N15 cleanup): the calculator is keyed by a real key, not by a fingerprint passed as a lot id.
+test('the calculator reloads only under another key, and a caller without one keys by lot id', () => {
+  const values = { key: 'lot-a|EUR|15000|2000', lotId: 'lot-a', currency: 'EUR', hammerMinor: 15000, buyerPremiumBps: 2000 };
+  assert.equal(calculatorInputsForLot(values, { loadedKey: 'lot-a|EUR|15000|2000' }), null);
+  assert.ok(calculatorInputsForLot(values, { loadedKey: 'lot-a|EUR|14000|2000' }), 'the same coin with new terms loads again');
+  assert.equal(calculatorInputsForLot({ lotId: 'lot-a', currency: 'EUR' }, { loadedKey: 'lot-a' }), null);
+  assert.ok(calculatorInputsForLot({ currency: 'GBP' }, { loadedKey: 'lot-a' }), 'no key: always loads');
+});
+
+// G-04: the popup's session medians, read defensively: one entry per provider, each in its own shape - filed under its
+// own provider, a provider this tool searches, the median in minor units, a real count and a time not in the future.
+test('session medians are read per provider and only in their exact shape', async () => {
+  const { readSessionMedians, sessionMedianAge } = await import('../extension/bid-tools.js');
+  const now = Date.parse('2026-09-25T12:00:00.000Z');
+  const at = now - 3 * 60000;
+  const acsearch = { reference: ' RIC I² Nero 306 ', provider: 'acsearch', currency: 'USD', median: 24000, count: 2, at };
+  const coinarchives = { reference: 'RIC I² Nero 306', provider: 'coinarchives', currency: 'GBP', median: 19000, count: 5, at };
+  assert.deepEqual(readSessionMedians({ acsearch, coinarchives }, now), [
+    { reference: 'RIC I² Nero 306', provider: 'acsearch', providerLabel: 'acsearch', currency: 'USD', median: { currency: 'USD', minor: 24000 }, count: 2, at },
+    { reference: 'RIC I² Nero 306', provider: 'coinarchives', providerLabel: 'CoinArchives', currency: 'GBP', median: { currency: 'GBP', minor: 19000 }, count: 5, at },
+  ]);
+  assert.equal(readSessionMedians({ acsearch: { ...acsearch, at: new Date(at).toISOString() } }, now)[0].at, at);
+  for (const bad of [{ ...acsearch, provider: 'coinarchives' }, { ...acsearch, currency: 'JPY' }, { ...acsearch, median: { currency: 'EUR', minor: 24000 } },
+    { ...acsearch, median: 0 }, { ...acsearch, median: 1.5 }, { ...acsearch, count: 0 }, { ...acsearch, count: '2' }, { ...acsearch, at: 'yesterday' },
+    { ...acsearch, at: now + 3600000 }, { ...acsearch, reference: '' }, { ...acsearch, reference: 7 }, null, 'x']) {
+    assert.deepEqual(readSessionMedians({ acsearch: bad }, now), [], JSON.stringify(bad));
+  }
+  assert.deepEqual(readSessionMedians({ ebay: { ...acsearch, provider: 'ebay' } }, now), []);
+  assert.deepEqual(readSessionMedians(acsearch, now), [], 'a bare entry is not the keyed record');
+  assert.deepEqual(readSessionMedians(null, now), []);
+  assert.equal(sessionMedianAge(now - 3 * 60000, now), 'seen 3 min ago');
+  assert.equal(sessionMedianAge(now - 2 * 3600000, now), 'seen 2 h ago');
+});
+
+test('the calculator offers the session median above the fields and puts it in the hammer in its own currency', async () => {
+  const session = { 'giga-pinax-session-median': { acsearch: { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'GBP', median: 24000, count: 2, at: Date.now() } } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session });
+  const box = calculator.container.querySelector('.bid-calculator-median');
+  assert.equal(box.hidden, false);
+  // Fix round, Minor 6: the reference once, then one short line per provider, so two medians leave the figure in view.
+  assert.equal(box.children[0].textContent, 'For RIC I² Nero 306');
+  const line = box.children[1];
+  assert.equal(line.children[0].textContent, 'acsearch median £240.00 · 2 sales');
+  assert.equal(calculator.field('Currency').value, 'GBP', 'an empty calculator follows the lookup’s currency');
+  calculator.field('Currency').value = 'USD'; await calculator.field('Currency').emit('input');
+  await line.children[1].click();
+  assert.equal(calculator.field('Currency').value, 'GBP');
+  assert.equal(calculator.field('Hammer price').value, '240.00');
+  const mode = calculator.field('Calculation'); mode.value = 'budget'; await mode.emit('change');
+  assert.equal(box.hidden, true, 'a median is a hammer, not a budget');
+});
+
+// G-01 (Calculator part): the popup's calculator keeps what was typed in session storage and puts it back when the popup
+// opens again within 30 minutes; the preferred currency arriving afterwards does not wipe it.
+test('the popup calculator puts back what was typed, and a bare default no longer resets it', async () => {
+  const { readCalculatorMemory, CALCULATOR_MEMORY_KEY } = await import('../extension/bid-tools.js');
+  const session = {};
+  const snapshot = { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } };
+  const first = await mountCalculator({ snapshot, session, options: { remember: true } });
+  first.field('Currency').value = 'EUR'; await first.field('Currency').emit('input');
+  first.field('Hammer price').value = '1000'; await first.field('Hammer price').emit('input');
+  first.premium.value = '25'; await first.premium.emit('input');
+  first.field('Shipping').value = '15'; await first.field('Shipping').emit('input');
+  assert.equal(session[CALCULATOR_MEMORY_KEY].texts.shipping, '15');
+  const again = await mountCalculator({ snapshot, session, options: { remember: true } });
+  assert.deepEqual([again.field('Currency').value, again.field('Hammer price').value, again.premium.value, again.field('Shipping').value], ['EUR', '1000', '25', '15']);
+  assert.equal(again.figure.textContent, '€1,265.00');
+  again.mounted.setValues({ currency: 'USD' });
+  assert.equal(again.field('Currency').value, 'EUR', 'the preferred currency arriving later does not reset what was put back');
+  const plain = await mountCalculator({ snapshot, session });
+  assert.equal(plain.field('Hammer price').value, '', 'a calculator that does not remember puts nothing back');
+  const now = Date.parse('2026-09-25T12:00:00.000Z');
+  const record = { version: 1, at: now - 60000, mode: 'total', currency: 'EUR', texts: { amount: '1000' } };
+  assert.equal(readCalculatorMemory(record, now).texts.amount, '1000');
+  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'JPY' }, { ...record, mode: 'x' },
+    { ...record, texts: { amount: 7 } }, { ...record, texts: { amount: 'x'.repeat(33) } }, { ...record, texts: {} }, { ...record, version: 2 }, null]) {
+    assert.equal(readCalculatorMemory(bad, now), null, JSON.stringify(bad));
+  }
+});
+
+// Fix round, Important 1: the popup reads the session median before the preferred currency arrives; the currency the
+// median set is the collector's context, and the bare preferred-currency default must not undo it.
+test('an empty calculator keeps the median’s currency when the preferred currency arrives after it', async () => {
+  const session = { 'giga-pinax-session-median': { acsearch: { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'GBP', median: 24000, count: 2, at: Date.now() } } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session, options: { remember: true } });
+  assert.equal(calculator.field('Currency').value, 'GBP', 'the session read comes first');
+  calculator.mounted.setValues({ currency: 'USD' });
+  assert.equal(calculator.field('Currency').value, 'GBP', 'the preference second does not override it');
+});
+

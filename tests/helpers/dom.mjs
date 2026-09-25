@@ -648,10 +648,13 @@ export function memoryStorageArea() {
 export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid } = {}) {
   const { COMMAND_TYPES, createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
   const storage = memoryStorageArea();
+  // The browser's session area, which the popup writes its last median into (G-04) and the workspace reads.
+  const session = memoryStorageArea();
   const writer = createCommandWriter(storage, { now: () => now, newId });
   const holds = [];
   return {
     storage,
+    session,
     writer,
     holds,
     commandTypes: COMMAND_TYPES,
@@ -691,7 +694,7 @@ function fakeExtensionRuntime(background, commands) {
         return structuredClone(reply);
       },
     },
-    storage: { local: background.storage, onChanged: background.storage.onChanged },
+    storage: { local: background.storage, session: background.session, onChanged: background.storage.onChanged },
     permissions: { request: async () => false },
   };
 }
@@ -708,11 +711,11 @@ function loadBridge(browser) {
 // The workspace page, loaded as tests/settings.test.mjs loads Settings: its markup in the fake DOM,
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
-export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, projections, sourceLaunchers, fields] = await Promise.all([
+export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false } = {}) {
+  const [money, evidence, projections, sourceLaunchers, fields, bidTools, lookup] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
-    import('../../extension/core/fields.js'),
+    import('../../extension/core/fields.js'), import('../../extension/bid-tools.js'), import('../../extension/lookup.js'),
   ]);
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
@@ -727,7 +730,9 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const location = { hash };
   const sandbox = {
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
-    sameZone, zonePlace,
+    // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
+    ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
+    sameZone, zonePlace, parseReference: lookup.parseReference,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
@@ -744,6 +749,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
       throw new Error(`No module ${specifier} in this sandbox.`);
     },
     requestAnimationFrame: (callback) => callback(),
+    // The page's width, as the one media query it asks (G-06: a wide screen opens a coin on arrival).
+    matchMedia: (query) => ({ matches: wide && /min-width/.test(query), media: query }),
     // Timers wait for the test: `runTimers()` fires the ones set so far, as time passing would.
     setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
     clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
@@ -795,7 +802,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     async openCoin(title) {
       const row = $('lot-list').children.find((item) => item.textContent.includes(title));
       if (!row) throw new Error(`No coin titled ${title} in the list.`);
-      await row.click();
+      // A row is the coin's button, beside its compare box (G-14).
+      await (row.classList.contains('coin-row') ? row : row.querySelector('.coin-row')).click();
       await settle();
     },
   };

@@ -1002,12 +1002,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 12500,
       bindingCount: 1,
       unknownPremiumCount: 0,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventChf]: {
           hammerMinor: 10000,
           knownHammerPlusBpMinor: 12500,
           bindingCount: 1,
           unknownPremiumCount: 0,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1016,12 +1020,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 9600,
       bindingCount: 1,
       unknownPremiumCount: 0,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventEur]: {
           hammerMinor: 8000,
           knownHammerPlusBpMinor: 9600,
           bindingCount: 1,
           unknownPremiumCount: 0,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1030,12 +1038,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 12500,
       bindingCount: 2,
       unknownPremiumCount: 1,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventUsd]: {
           hammerMinor: 30000,
           knownHammerPlusBpMinor: 12500,
           bindingCount: 2,
           unknownPremiumCount: 1,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1303,4 +1315,167 @@ test('a coin re-opened, planned again and won again is costed at the newest rate
   // Without a later plan, the settled bid's rate stands even when an older plan is still saved.
   const settledLast = { ...lot, bidHistory: [lot.bidHistory[2], lot.bidHistory[0], lot.bidHistory[1]] };
   assert.equal(setOutcome(settledLast, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW).value.outcome.cost.buyerPremiumBps, 2500);
+});
+
+// Q-01: a coin won without a recorded bid (a floor bid, a phone bid, a coin entered from the invoice) gets its cost
+// from the premium rate and fee sheet the Outcome form states. The store still works the cost out; the terms are
+// inputs, kept with the outcome so a later correction of the hammer is costed on them again.
+test('a coin won without a bid is costed from the premium and fees its outcome states, and they are kept for a correction', () => {
+  const lot = makeLot(IDS.lotEur);
+  const hammer = { currency: 'EUR', minor: 90000 };
+  const won = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000, costEstimate: KUENKER_FEES } }, NOW);
+  assert.equal(won.ok, true, won.error?.message);
+  // 900.00 + 180.00 premium + 34.20 VAT on it + 15.00 shipping.
+  assert.equal(won.value.outcome.cost.total.minor, 90000 + 18000 + 3420 + 1500);
+  assert.deepEqual(won.value.outcome.terms, { buyerPremiumBps: 2000, costEstimate: KUENKER_FEES });
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+
+  const rateOnly = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000 } }, NOW);
+  assert.deepEqual(rateOnly.value.outcome.cost, { buyerPremiumBps: 2000, premium: { currency: 'EUR', minor: 18000 }, missing: ['fees'] });
+
+  const corrected = setOutcome(won.value, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.deepEqual(corrected.value.outcome.terms, won.value.outcome.terms, 'a correction that does not restate the terms keeps them');
+  assert.equal(corrected.value.outcome.cost.total.minor, 100000 + 20000 + 3800 + 1500);
+  const cleared = setOutcome(won.value, { status: 'won', hammer, terms: null }, NOW);
+  assert.equal(Object.hasOwn(cleared.value.outcome, 'terms'), false);
+  assert.deepEqual(cleared.value.outcome.cost, { missing: ['premium-rate', 'fees'] });
+  const lost = setOutcome(won.value, { status: 'lost', hammer }, NOW);
+  assert.equal(Object.hasOwn(lost.value.outcome, 'terms'), false, 'terms belong to a won coin only');
+});
+
+test('the outcome’s own terms are what the coin was won on, over the bid’s rate and the lot’s fee sheet', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2500, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2500), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { buyerPremiumBps: 2000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  assert.equal(won.value.outcome.cost.premiumVat.minor, 3800, 'the lot’s own fee sheet still applies where the outcome states none');
+});
+
+test('outcome terms are refused off a won coin, in another currency than the hammer, or out of shape', () => {
+  const lot = makeLot(IDS.lotEur);
+  const hammer = { currency: 'EUR', minor: 90000 };
+  const refused = (outcome) => setOutcome(lot, outcome, NOW);
+  assert.equal(refused({ status: 'lost', hammer, terms: { buyerPremiumBps: 2000 } }).error.path, 'outcome.terms');
+  assert.equal(refused({ status: 'won', hammer, terms: { costEstimate: { ...KUENKER_FEES, currency: 'CHF' } } }).error.path, 'outcome.terms.costEstimate.currency');
+  assert.equal(refused({ status: 'won', hammer, terms: { buyerPremiumBps: 10001 } }).error.path, 'outcome.terms.buyerPremiumBps');
+  assert.equal(refused({ status: 'won', hammer, terms: { costEstimate: { ...KUENKER_FEES, shippingMinor: -1 } } }).error.path, 'outcome.terms.costEstimate.shippingMinor');
+  assert.equal(refused({ status: 'won', hammer, terms: 'twenty' }).error.path, 'outcome.terms');
+  const stored = setOutcome(lot, { status: 'won', hammer, terms: { buyerPremiumBps: 2000 } }, NOW).value;
+  const broken = structuredClone(stored); broken.outcome.status = 'lost'; delete broken.outcome.cost;
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.path, `lots[0].outcome.terms`);
+});
+
+// Q-05: a lot placed with a rate, settled Lost by a slip of the radio button and corrected to Won keeps its rate.
+test('a coin corrected from Lost to Won is costed at the rate its settled bid carried', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 50000 }, buyerPremiumBps: 2000, placedAt: NOW },
+    bidHistory: [{ ...settledWon(50000, 2000), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const lost = setOutcome(lot, { status: 'lost', hammer: { currency: 'EUR', minor: 65000 } }, NOW);
+  const won = setOutcome(lost.value, { status: 'won', hammer: { currency: 'EUR', minor: 48000 } }, NOW);
+  assert.equal(won.value.outcome.cost.buyerPremiumBps, 2000);
+  assert.equal(won.value.outcome.cost.total.minor, 48000 + 9600 + 1824 + 1500);
+  // Re-opened without the terms being active again, then won: the re-open entry carries the same rate.
+  const reopened = setOutcome(lost.value, { status: 'open', bindingActive: false }, NOW);
+  const wonAfterReopen = setOutcome(reopened.value, { status: 'won', hammer: { currency: 'EUR', minor: 48000 } }, NOW);
+  assert.equal(wonAfterReopen.value.outcome.cost.buyerPremiumBps, 2000);
+});
+
+// Q-04: import VAT saved with the fee sheet is costed on a won coin as its own part. The stored total stays the
+// hammer and the five parts 0.36.0 checks, so a backup from this version still imports there; the import VAT is kept
+// beside it and costTotal adds it.
+test('a won coin’s import VAT is kept beside its total, and the full total adds it', async () => {
+  const { costTotal, costFees } = await import('../extension/core/projections.js');
+  const lot = makeLot(IDS.lotEur, {
+    plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2500 },
+    costEstimate: { ...KUENKER_FEES, importVatBps: 500 },
+  });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  const cost = won.value.outcome.cost;
+  // 1,000 + 250 + 15 shipping = 1,265.00 at 5 %.
+  assert.deepEqual(cost.importVat, { currency: 'EUR', minor: 6325 });
+  assert.equal(cost.total.minor, 100000 + 25000 + 4750 + 1500, 'the stored total is the house invoice, shipping and payment fee');
+  assert.equal(costTotal(cost).minor, 100000 + 25000 + 4750 + 1500 + 6325);
+  assert.equal(costFees(cost).minor, 4750 + 1500 + 6325);
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+  const broken = structuredClone(won.value); broken.outcome.cost.importVat.currency = 'USD';
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.code, 'invalid-cost');
+  const noTotal = structuredClone(won.value); delete noTotal.outcome.cost.total; noTotal.outcome.cost.missing = ['fees'];
+  assert.equal(validateSnapshot(snapshotWith(noTotal)).error.code, 'invalid-cost', 'import VAT belongs to a complete cost');
+  const badRate = structuredClone(won.value); badRate.costEstimate.importVatBps = 10001;
+  assert.equal(validateSnapshot(snapshotWith(badRate)).error.path, 'lots[0].costEstimate.importVatBps');
+});
+
+// Q-11: what leaves the account if every active bid wins: hammer, premium and the fees saved beside each bid, in the
+// bid's currency, counted only where the premium is known and the fee sheet is in that currency - never converted.
+test('exposure adds the all-in total of the bids whose premium and fees are known in their own currency', () => {
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 };
+  const exposure = projectExposure(snapshotWith(
+    makeLot(IDS.lotEur, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: fees }),
+    makeLot(IDS.lotChf, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 10000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: { ...fees, currency: 'CHF' } }),
+    makeLot(IDS.lotPlanned, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 10000 }, placedAt: NOW }, costEstimate: fees }),
+  ));
+  // 1,300 + 260 premium + 49.40 VAT on it + 15 shipping.
+  assert.equal(exposure.EUR.knownTotalMinor, 130000 + 26000 + 4940 + 1500);
+  assert.equal(exposure.EUR.totalCount, 1, 'fees in francs and an unknown premium are left out, not guessed');
+  assert.equal(exposure.EUR.bindingCount, 3);
+  assert.equal(exposure.EUR.byEvent[IDS.eventEur].knownTotalMinor, 130000 + 26000 + 4940 + 1500);
+});
+
+// Fix round, Important 2: "No fees were charged beyond the premium" is `terms.costEstimate: null` - a complete cost of
+// hammer + premium, over the fee sheet saved with the bid; a correction that restates nothing keeps it.
+test('outcome terms with no fee sheet cost the coin at hammer and premium alone, over the bid’s sheet', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2000), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const none = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { costEstimate: null } }, NOW);
+  assert.equal(none.ok, true, none.error?.message);
+  assert.equal(none.value.outcome.cost.total.minor, 100000 + 20000);
+  assert.equal(none.value.outcome.cost.shipping.minor, 0);
+  assert.deepEqual(none.value.outcome.terms, { costEstimate: null });
+  assert.equal(validateSnapshot(snapshotWith(none.value)).ok, true);
+  const corrected = setOutcome(none.value, { status: 'won', hammer: { currency: 'EUR', minor: 110000 } }, NOW);
+  assert.equal(corrected.value.outcome.cost.total.minor, 110000 + 22000, 'kept over a correction');
+  const blank = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.equal(blank.value.outcome.cost.total.minor, 100000 + 20000 + 3800 + 1500, 'no terms: the bid’s sheet applies');
+});
+
+// Fix round, Minor 1: a grid-only sheet (increment and minimum, no fee recorded) is no fee sheet for a coin's cost.
+test('a grid-only sheet records no fees: the won cost names the gap, and gridOnly is true or absent', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 10000, gridOnly: true };
+  const lot = makeLot(IDS.lotEur, { plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000 }, costEstimate: grid });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.deepEqual(won.value.outcome.cost.missing, ['fees']);
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+  const broken = structuredClone(won.value); broken.costEstimate.gridOnly = false;
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.path, 'lots[0].costEstimate.gridOnly');
+});
+
+// Re-review: a grid-only sheet holds no fee, and an outcome's own terms carry fees, never a grid alone.
+test('gridOnly is refused beside a fee, and inside an outcome’s terms', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 0, gridOnly: true };
+  for (const fee of [{ shippingMinor: 1500 }, { paymentFeeBps: 100 }, { paymentFeeMinor: 50 }, { premiumVatBps: 1900 }, { platformFeeBps: 300 }, { importVatBps: 500 }]) {
+    const lot = makeLot(IDS.lotEur, { costEstimate: { ...grid, ...fee } });
+    assert.equal(validateSnapshot(snapshotWith(lot)).error?.path, 'lots[0].costEstimate.gridOnly', JSON.stringify(fee));
+  }
+  assert.equal(validateSnapshot(snapshotWith(makeLot(IDS.lotEur, { costEstimate: { ...grid, premiumVatBps: 0 } }))).ok, true, 'a fee of nothing is no fee');
+  const refused = setOutcome(makeLot(IDS.lotEur), { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { costEstimate: grid } }, NOW);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'outcome.terms.costEstimate.gridOnly');
+});
+
+// Re-review: a grid-only sheet beside an active bid adds nothing to the all-in exposure.
+test('a grid-only sheet beside an active bid counts no fees in the all-in exposure', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 0, gridOnly: true };
+  const exposure = projectExposure(snapshotWith(makeLot(IDS.lotEur, {
+    auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: grid,
+  })));
+  assert.equal(exposure.EUR.totalCount, 0);
+  assert.equal(exposure.EUR.knownTotalMinor, 0);
 });

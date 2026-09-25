@@ -110,6 +110,8 @@
  * @property {number} minimumBidMinor
  * @property {number} [premiumVatBps] VAT charged on the buyer's premium alone
  * @property {number} [platformFeeBps] a live-bidding platform's fee on the hammer alone
+ * @property {number} [importVatBps] import VAT or duty on hammer + premium + shipping, paid when the coin crosses a border
+ * @property {true} [gridOnly] only the bid's increment and minimum were saved: no fee is recorded
  */
 
 /**
@@ -149,7 +151,9 @@
  * @property {Money} [platformFee]
  * @property {Money} [shipping]
  * @property {Money} [paymentFee]
- * @property {Money} [total] hammer + premium + VAT on it + platform fee + shipping + payment fee
+ * @property {Money} [total] hammer + premium + VAT on it + platform fee + shipping + payment fee: without import VAT, as
+ *   0.36.0 checks it; the full total is `costTotal(cost)` (projections.js)
+ * @property {Money} [importVat] import VAT or duty, kept beside a complete cost's total when its fee sheet has a rate
  * @property {Array<'hammer' | 'premium-rate' | 'fees' | 'fee-currency'>} [missing]
  */
 
@@ -163,6 +167,16 @@
  * @property {string} [correctedAt]
  * @property {'personal-unverified'} [verification]
  * @property {WonCost} [cost]
+ * @property {OutcomeTerms} [terms]
+ */
+
+/**
+ * The premium rate and fee sheet a won coin's outcome states (the Outcome form), for a coin won without a recorded bid
+ * or on other terms than its bid. The cost is still worked out by the store from them; they are kept so a corrected
+ * hammer is costed on them again. The fee sheet is in the hammer's currency.
+ * @typedef {object} OutcomeTerms
+ * @property {number} [buyerPremiumBps]
+ * @property {CostEstimate | null} [costEstimate] null: no fees were charged beyond the premium
  */
 
 /**
@@ -411,6 +425,7 @@
  * @property {string} currency
  * @property {boolean} desktopAlertsEnabled
  * @property {HousePremiumPreset[]} [housePremiumPresets]
+ * @property {number} [importVatBps] the usual import VAT or duty for a sale in another currency than `currency`; absent is off
  */
 
 /**

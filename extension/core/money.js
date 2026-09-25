@@ -12,13 +12,16 @@ import { failure } from './validate.js';
  */
 /**
  * The fees a cost is worked out with; each defaults to zero. VAT on the premium is charged on the
- * premium alone (Künker, Roma, Leu), a platform fee on the hammer alone (biddr, NumisBids, Sixbid).
+ * premium alone (Künker, Roma, Leu), a platform fee on the hammer alone (biddr, NumisBids, Sixbid), and
+ * import VAT or duty on hammer + premium + shipping (the CIF value a carrier or customs charges on when
+ * the coin crosses a border: UK 5 %, Germany 7 %).
  * @typedef {object} BidCostOptions
  * @property {number} [shippingMinor]
  * @property {number} [paymentFeeBps]
  * @property {number} [paymentFeeMinor]
  * @property {number} [premiumVatBps]
  * @property {number} [platformFeeBps]
+ * @property {number} [importVatBps]
  */
 /**
  * The fees, and the grid a bid must sit on: a fixed increment from the minimum bid, or a house ladder.
@@ -32,6 +35,7 @@ import { failure } from './validate.js';
  * @property {Money} platformFee
  * @property {Money} hammerPlusPremium
  * @property {Money} shipping
+ * @property {Money} importVat
  * @property {Money} paymentFee
  * @property {Money} total
  */
@@ -193,11 +197,14 @@ export function parsePremiumPercent(text, locale = 'en-US') {
 }
 
 /**
+ * An amount in the collector's locale. `narrow` writes the narrow symbol ("$", not "US$"), where only one currency is in
+ * view and the code is named beside it.
  * @param {Money} money
  * @param {string} [locale]
+ * @param {{ narrow?: boolean }} [options]
  * @returns {string}
  */
-export function formatMoney(money, locale = 'en-US') {
+export function formatMoney(money, locale = 'en-US', { narrow = false } = {}) {
   const checked = validateMoney(money);
   if (!checked.ok) throw new TypeError(checked.error.message);
 
@@ -206,6 +213,7 @@ export function formatMoney(money, locale = 'en-US') {
   const formatter = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: money.currency,
+    ...(narrow ? { currencyDisplay: 'narrowSymbol' } : {}),
     minimumFractionDigits: FRACTION_DIGITS,
     maximumFractionDigits: FRACTION_DIGITS,
   });
@@ -382,7 +390,7 @@ function optionInteger(value, key, { positive = false, maximum = Number.MAX_SAFE
   return { ok: true, value };
 }
 
-const FEE_DEFAULTS = Object.freeze({ shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 0, platformFeeBps: 0 });
+const FEE_DEFAULTS = Object.freeze({ shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 0, platformFeeBps: 0, importVatBps: 0 });
 
 // Every fee a cost is worked out with: amounts are non-negative, percentages from 0 through 100 %.
 /**
@@ -393,7 +401,7 @@ function feeOptions(values) {
   for (const key of ['shippingMinor', 'paymentFeeMinor']) {
     const valid = optionInteger(values[key], key); if (!valid.ok) return valid;
   }
-  for (const key of ['paymentFeeBps', 'premiumVatBps', 'platformFeeBps']) {
+  for (const key of ['paymentFeeBps', 'premiumVatBps', 'platformFeeBps', 'importVatBps']) {
     const valid = optionInteger(values[key], key, { maximum: 10000 }); if (!valid.ok) return valid;
   }
   return { ok: true, value: values };
@@ -419,15 +427,18 @@ export function calculateBidCost(hammer, buyerPremiumBps, options = {}) {
   const platformFee = share(BigInt(hammer.minor), values.platformFeeBps);
   const base = BigInt(premium.value.hammerPlusPremium.minor) + premiumVat + platformFee + BigInt(values.shippingMinor);
   const paymentFee = share(base, values.paymentFeeBps) + BigInt(values.paymentFeeMinor);
-  const total = base + paymentFee;
-  if ([base, paymentFee, total].some((value) => value > MAX_SAFE_BIGINT)) {
+  // Import VAT is paid to the carrier or customs, not on the house's invoice, so the house's payment fee is not
+  // charged on it; it is charged on the coin's value as customs reads it: hammer, premium and shipping.
+  const importVat = share(BigInt(premium.value.hammerPlusPremium.minor) + BigInt(values.shippingMinor), values.importVatBps);
+  const total = base + paymentFee + importVat;
+  if ([base, paymentFee, importVat, total].some((value) => value > MAX_SAFE_BIGINT)) {
     return failure('unsafe-money', 'Bid cost calculation is outside the supported integer range.');
   }
   const money = (minor) => ({ currency: hammer.currency, minor: Number(minor) });
   return { ok: true, value: {
     hammer: { ...hammer }, premium: premium.value.premium, premiumVat: money(premiumVat), platformFee: money(platformFee),
     hammerPlusPremium: premium.value.hammerPlusPremium,
-    shipping: money(BigInt(values.shippingMinor)), paymentFee: money(paymentFee), total: money(total),
+    shipping: money(BigInt(values.shippingMinor)), importVat: money(importVat), paymentFee: money(paymentFee), total: money(total),
   }};
 }
 

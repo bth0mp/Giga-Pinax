@@ -1,14 +1,15 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
+import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
+import { zonePlace } from './core/reminders.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
-import { mountBidCalculator } from './bid-tools.js';
+import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
-  bidFormValues, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
-  lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, premiumInputText, rememberedZone, reminderControlsForPrecision,
+  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
+  lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
@@ -17,10 +18,10 @@ import {
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
-  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
+  DETAIL_TABS, ROUTES, applyActiveRoute, openingTab, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
   wonCostLine,
 } from './workspace-views.js';
 
@@ -48,8 +49,6 @@ async function initWorkspace() {
   let comparisonSelection = [];
   let lotInteractionGeneration = 0;
   let lastLotUndo = null;
-  let bidCalculator = null;
-  let calculatorCostEstimate = null;
   let eventReturnLot = null;
   let activeDetailTab = 'details';
   let eventDraftId = null;
@@ -175,32 +174,51 @@ async function initWorkspace() {
   for (const form of [$('lot-form'), $('outcome-form')]) form.addEventListener('focusin', keepClearOfBar);
   for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
-  $('open-settings').addEventListener('click', () => void openSettings());
+  // Settings knows it was opened from here, and offers the way back (G-25).
+  $('open-settings').addEventListener('click', () => void openSettings('from-workspace'));
   const detailPanels = {
     details: $('lot-form'), bid: $('bid-form').closest('.detail-section'),
     reminders: $('selected-reminders').closest('.detail-section'), outcome: $('outcome-form').closest('.detail-section'),
   };
   const detailTabs = document.createElement('div'); detailTabs.className = 'detail-tabs'; detailTabs.setAttribute('role', 'tablist'); detailTabs.setAttribute('aria-label', 'Coin record sections');
   const tabButtons = new Map();
+  // The tab the collector last chose with the tabs themselves, remembered for this page's session (G-20).
+  let chosenDetailTab = null;
   const showDetailTab = (name, focus = false) => {
     if (!DETAIL_TABS.includes(name) || tabButtons.get(name)?.disabled) return;
     activeDetailTab = name;
     for (const tab of DETAIL_TABS) { const selected = tab === name; tabButtons.get(tab).setAttribute('aria-selected', String(selected)); tabButtons.get(tab).tabIndex = selected ? 0 : -1; detailPanels[tab].hidden = !selected; }
     if (focus) tabButtons.get(name).focus();
   };
-  for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
+  for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => { chosenDetailTab = name; showDetailTab(name); }); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); chosenDetailTab = next; showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
   $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
 
-  const LOADED = 'Local records loaded.';
+  // The page's own notice line: page-level events only (a conflict, the worker, storage, an import); loading is not said
+  // at all (G-06), and a form says what happened to it in its own action bar (G-07).
   const announce = (message, error = false) => {
     $('workspace-status').textContent = message;
     $('workspace-status').classList.toggle('error', error);
     $('announcement').textContent = '';
     requestAnimationFrame(() => { $('announcement').textContent = message; });
-    // Loading is said and then let go, so it is not a standing line above every route; the status line keeps its
-    // height, and a message said since is left alone.
-    if (message === LOADED) setTimeout(() => { if ($('workspace-status').textContent === LOADED) $('workspace-status').textContent = ''; }, 3000);
   };
+  // Committed data read again: a failure it answers, or a save still said to be under way, is no longer true.
+  const settleNotice = () => {
+    const status = $('workspace-status');
+    if (status.classList.contains('error') || status.textContent === 'Saving…') { status.textContent = ''; status.classList.remove('error'); }
+  };
+  // Feedback lives in the action bar of the form that was submitted (G-07): the lot, bid and outcome forms each say what
+  // happened to them, with the figure, and the page's own status line keeps only page-level notices. A button - Open,
+  // Undo - may follow the words.
+  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status' };
+  const formStatus = (editor, message, { error = false, action = null } = {}) => {
+    const line = $(FORM_STATUS[editor]);
+    line.replaceChildren(document.createTextNode(message));
+    if (action) { const button = text('button', action.label, 'quiet'); button.type = 'button'; button.addEventListener('click', action.run); line.append(document.createTextNode(' '), button); }
+    line.classList.toggle('error', error);
+    $('announcement').textContent = '';
+    requestAnimationFrame(() => { $('announcement').textContent = message; });
+  };
+  const clearFormStatus = (...editors) => { for (const editor of editors) { $(FORM_STATUS[editor]).replaceChildren(); $(FORM_STATUS[editor]).classList.remove('error'); } };
   // Only the collector's own use of the nav moves the focus there; when the page navigates itself
   // it is on its way to a field, and stealing the focus back would undo that.
   let routeChangeFromNav = false;
@@ -208,6 +226,10 @@ async function initWorkspace() {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
     if (active === 'search') offerSelectedReference();
+    // An address naming a queue ("#watchlist?queue=needs-outcome", from a missed reminder or the popup) shows it.
+    const queue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
+    if (active === 'watchlist' && queue && [...$('lot-queue').options].some((option) => option.value === queue) && $('lot-queue').value !== queue) { $('lot-queue').value = queue; renderCoinList(); }
+    if (active === 'watchlist') openFirstCoin();
     if (focusLink) document.querySelector(`[data-route="${active}"]`)?.focus({ preventScroll: true });
   };
   // A comparable saved while a coin is open belongs, unless the collector says otherwise, to that
@@ -310,7 +332,7 @@ async function initWorkspace() {
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
     beforeRender?.(reply.value);
     const removed = acceptIncoming(reply.value);
-    if (!removed) announce(LOADED);
+    if (!removed) settleNotice();
     return { ok: true, value: reply.value, removed };
   };
   const send = async (command, editor, previousAttempt = null) => {
@@ -337,7 +359,8 @@ async function initWorkspace() {
       if (!refreshed.ok) commit(value, snapshot, false);
       return refreshed;
     };
-    announce('Saving…');
+    const say = (message, error = false) => (FORM_STATUS[editor] ? formStatus(editor, message, { error }) : announce(message, error));
+    say('Saving…');
     if (editor) savesInFlight.add(editor);
     // The flag is held until the commit has been applied: a subscription snapshot arriving between
     // the reply and the refresh carries this page's own write, which is no conflict with the form
@@ -385,14 +408,15 @@ async function initWorkspace() {
         return reply;
       }
       released();
-      if (!removed) announce(reply.message, true);
+      // The lot form has named the refused field in its own line already.
+      if (!removed && editor !== 'lot') say(reply.message, true);
       return reply;
     }
     const refreshed = await commitAndRefresh(reply.value);
     if (editor === 'lot') $('lot-action-status').classList.remove('error');
     // A failed refresh has already said the worker is unreachable, and a coin that went missing
     // during the save has already said so too; "Saved." would bury either.
-    if (refreshed.ok && !refreshed.removed) announce(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
+    if (refreshed.ok && !refreshed.removed) say(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
     return { ...reply, editorPreserved: preserved };
   };
 
@@ -541,6 +565,10 @@ async function initWorkspace() {
   function renderCoinList() {
     const list = $('lot-list'); list.replaceChildren();
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    // The coin open in the editor stays in its list until another is chosen, even once its outcome moved it to another
+    // queue: a list that drops the coin beside its own editor reads as a coin lost (G-07).
+    const open = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
+    if (open && !queuedLots.includes(open)) queuedLots.push(open);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
@@ -548,7 +576,7 @@ async function initWorkspace() {
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
       const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
-      const amount = lotRowAmount(lot); if (amount) top.append(text('span', formatMoney(amount), 'coin-row-amount'));
+      const amount = lotRowAmountLabel(lot, formatMoney); if (amount) top.append(text('span', amount, 'coin-row-amount'));
       const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
       const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
@@ -556,34 +584,26 @@ async function initWorkspace() {
       if (event) status.append(text('span', event.name, 'coin-row-event'));
       row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
       row.addEventListener('click', () => selectLot(lot.id));
-      list.append(row);
+      // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
+      const wrap = text('div', '', 'coin-row-wrap');
+      const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
+      box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
+      box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
+      wrap.append(box, row);
+      list.append(wrap);
     }
+    updateComparisonControls();
   }
-  // Toggling a coin changes only the controls, never the checkbox the collector is standing on.
+  // Toggling a coin changes only the controls, never the checkbox the collector is standing on. The boxes show while any
+  // is ticked, and "Compare (n)" opens the comparison once two to four are.
   function updateComparisonControls() {
-    for (const box of $('comparison-picker').querySelectorAll('input[type="checkbox"]')) {
+    for (const box of $('lot-list').querySelectorAll('.compare-box')) {
       box.checked = comparisonSelection.includes(box.dataset.lotId);
       box.disabled = !box.checked && comparisonSelection.length >= 4;
     }
-    $('comparison-count').textContent = `${comparisonSelection.length} selected · choose 2–4 coins`;
+    $('lot-list').classList.toggle('comparing', comparisonSelection.length > 0);
+    $('open-comparison').textContent = comparisonSelection.length ? `Compare (${comparisonSelection.length})` : 'Compare';
     $('open-comparison').disabled = comparisonSelection.length < 2 || comparisonSelection.length > 4;
-  }
-  // The filter narrows the picker by hiding rows: rebuilding it on every keystroke is what used to
-  // move the focus out of the box being typed in.
-  function updateComparisonFilter() {
-    const visible = new Set(filterWorkspaceLots(snapshot.lots ?? [], $('lot-filter').value).map((lot) => lot.id));
-    for (const row of $('comparison-picker').querySelectorAll('label[data-lot-id]')) row.hidden = !visible.has(row.dataset.lotId);
-  }
-  function renderComparisonPicker() {
-    const picker = $('comparison-picker'); picker.replaceChildren();
-    for (const lot of snapshot.lots ?? []) {
-      const label = document.createElement('label'); label.className = 'compare-choice'; label.dataset.lotId = lot.id;
-      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.dataset.lotId = lot.id;
-      checkbox.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
-      label.append(checkbox, document.createTextNode(comparisonPickerLabel(lot))); picker.append(label);
-    }
-    updateComparisonFilter();
-    updateComparisonControls();
   }
   function populateGroupForm(group) {
     const form = $('group-form'); form.hidden = false; form.elements.id.value = group.id; form.elements.name.value = group.name;
@@ -613,7 +633,8 @@ async function initWorkspace() {
     const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id));
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
-    renderCoinList(); renderComparisonPicker(); renderGroups(); renderSelectedLot();
+    renderBidPresets();
+    renderCoinList(); renderGroups(); renderSelectedLot();
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
   function selectLot(lotId, { focus = true } = {}) {
@@ -623,9 +644,11 @@ async function initWorkspace() {
     lotDraftId = null;
     if (lotId !== selection.selectedLotId) lotInteractionGeneration += 1;
     for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); }
+    clearFormStatus('lot', 'bid', 'outcome');
     selection = chooseSelectedLot(selection, lotId, snapshot.lots ?? []);
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
-    showDetailTab('details');
+    const chosen = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
+    showDetailTab(openingTab(chosen, eventsById.get(chosen?.auctionEventId), chosenDetailTab));
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
     renderLots(); updateDirtyMarks();
@@ -692,6 +715,10 @@ async function initWorkspace() {
       return;
     }
     reminders.append(eventLine(event, 'reminder-event', 'p'));
+    // A sale that has started or ended is past reminding: it says so, and offers no reminders to add (G-20).
+    const state = eventTiming(event).state;
+    const past = state === 'ended' || state === 'started';
+    if (past) reminders.append(text('p', `This auction has ${state === 'ended' ? 'ended' : 'started'}.`, 'field-note reminder-past'));
     const instants = reminderInstants(event);
     for (const reminder of event.reminders ?? []) {
       const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when'));
@@ -699,7 +726,7 @@ async function initWorkspace() {
       if (instant) { const at = reminderAtLabel(instant, event.timeZone, view()); row.append(text('span', at.text, `reminder-at${at.tone ? ` when-${at.tone}` : ''}`)); }
       reminders.append(row);
     }
-    if ((event.reminders ?? []).length) return;
+    if ((event.reminders ?? []).length || past) return;
     reminders.append(text('p', 'No reminders set.', 'field-note'));
     const standard = createEventDraft(event.precision === 'date-only' ? 'date-only' : 'timed').reminders;
     const add = text('button', `Add the standard two (${event.precision === 'date-only' ? 'the day before and on the day, at 09:00' : '1 day and 1 hour before'})`, 'quiet');
@@ -715,7 +742,7 @@ async function initWorkspace() {
   let filterTimer = null;
   $('lot-filter').addEventListener('input', () => {
     clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => { renderCoinList(); updateComparisonFilter(); }, 150);
+    filterTimer = setTimeout(() => { renderCoinList(); }, 150);
   });
   $('lot-queue').addEventListener('change', renderCoinList);
   $('open-comparison').addEventListener('click', () => {
@@ -809,9 +836,31 @@ async function initWorkspace() {
     const basis = editorBases.get('lot');
     if (!basis?.id || !confirm(`Remove “${basis.record.title}”?`)) return;
     removedHere = basis.id;
-    void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot')
-      .then((reply) => { removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply); });
+    const deleteRequestId = requestId();
+    void send({ type: 'lot.delete', requestId: deleteRequestId, lotId: basis.id, expectedRevision: basis.revision }, 'lot')
+      .then((reply) => {
+        removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply);
+        if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
+      });
   });
+  // "Removed · Undo" on the page for ten seconds: Undo asks the store to put back the very coin that delete removed.
+  let undoRemoveTimer = null;
+  const offerUndoRemove = (title, deleteRequestId) => {
+    const status = $('workspace-status'); clearTimeout(undoRemoveTimer);
+    status.replaceChildren(document.createTextNode(`Removed “${title}” · `)); status.classList.remove('error');
+    const undo = text('button', 'Undo', 'quiet'); undo.type = 'button'; undo.id = 'undo-remove';
+    undo.addEventListener('click', () => {
+      clearTimeout(undoRemoveTimer);
+      void send({ type: 'lot.restore', requestId: requestId(), deleteRequestId }).then((reply) => {
+        if (!reply?.ok) return;
+        announce(`Put back “${title}”.`);
+        if (reply.value?.id) selectLot(reply.value.id, { focus: false });
+      });
+    });
+    status.append(undo);
+    $('announcement').textContent = `Removed ${title}. Undo is available for ten seconds.`;
+    undoRemoveTimer = setTimeout(() => { if (status.contains(undo)) status.replaceChildren(); }, 10000);
+  };
   $('group-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('group') ?? { id: null, revision: null }; void send({ type: 'group.save', requestId: requestId(), expectedRevision: basis.revision, group: { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim() } }, 'group'); });
 
   const bidMoney = (form) => {
@@ -819,15 +868,40 @@ async function initWorkspace() {
     const value = { amount: money.value }; if (form.premium.value.trim()) { const premium = parsePremiumPercent(form.premium.value, navigator.language); if (!premium.ok) return premium; value.buyerPremiumBps = premium.value; }
     return { ok: true, value };
   };
+  // One form for one figure (G-09): the maximum and premium, the fee sheet saved with the bid, and the budget fold, all
+  // read from the coin; the house preset and the budget are the collector's to choose again for each coin.
   function populateBidForm(lot) {
     const f = $('bid-form').elements;
-    const terms = lot?.activeBid ?? lot?.plannedBid;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
-    calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
-    // The calculator refills only for another coin or for saved terms that changed (it compares this key), so what the
-    // collector typed in it survives every other re-render, and a bid just saved is followed.
-    const termsKey = lot ? [lot.id, f.currency.value, terms?.amount?.minor ?? '', terms?.buyerPremiumBps ?? '', JSON.stringify(calculatorCostEstimate)].join('|') : null;
-    bidCalculator?.setValues({ lotId: termsKey, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
+    for (const [field, value] of Object.entries(bidFeeFields(lot, f.currency.value))) f[field].value = value;
+    // A plan saved beside the bid in force is shown, not hidden behind the placed terms the form holds (Q-10).
+    const plan = raisePlanLine(lot, formatMoney);
+    $('bid-plan-text').textContent = plan; $('bid-plan-line').hidden = !plan;
+    f.preset.value = ''; f.budget.value = '';
+    $('bid-fees').open = Boolean(feeSheetOf(lot?.costEstimate) && lot?.costEstimate?.currency === f.currency.value);
+    $('bid-budget').open = Boolean(lot?.costEstimate?.gridOnly && lot.costEstimate.currency === f.currency.value);
+    updateBidAnswers();
+  }
+  const bidValues = () => {
+    const f = $('bid-form').elements;
+    return Object.fromEntries(['amount', 'currency', 'premium', 'budget', 'increment', 'minimum', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value]));
+  };
+  const chosenPreset = () => (snapshot.preferences?.housePremiumPresets ?? []).find((item) => item.name === $('bid-form').elements.preset.value) ?? null;
+  // The live all-in line, and the budget fold's answer with its "Use as maximum".
+  let budgetHammer = null;
+  function updateBidAnswers() {
+    const values = bidValues();
+    $('bid-live').textContent = bidLiveLine(values, navigator.language);
+    const ladder = chosenPreset()?.incrementLadder ?? null;
+    const answer = bidBudgetAnswer(values, ladder, navigator.language);
+    $('bid-budget-answer').textContent = answer.text; budgetHammer = answer.hammer;
+    $('use-budget').disabled = !budgetHammer || $('bid-fields').disabled;
+  }
+  // The house presets Settings keeps, offered on the premium row; the one chosen stays chosen while it exists.
+  function renderBidPresets() {
+    const select = $('bid-form').elements.preset; const chosen = select.value;
+    select.replaceChildren(Object.assign(text('option', 'No preset'), { value: '' }), ...(snapshot.preferences?.housePremiumPresets ?? []).map((item) => Object.assign(text('option', item.name), { value: item.name })));
+    select.value = [...select.options].some((option) => option.value === chosen) ? chosen : '';
   }
   // Beside the maximum hammer, what the coin's own saved comparables sold for: in the bid's currency, the other
   // currencies only counted, never converted or pooled, and worded as the collector's own records.
@@ -846,6 +920,22 @@ async function initWorkspace() {
         : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
     const others = found.filter((item) => item.currency !== currency);
     if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
+    // The medians the popup has on screen this session, only for this very coin - the same reference read by the
+    // catalogue rules, never by its spelling - and in the bid's own currency, each provider on its own line; offered,
+    // never stored (G-04).
+    for (const session of sessionMedians.filter((item) => item.currency === currency && sameReference(item.reference, reference))) {
+      const line = text('p', `${session.providerLabel} median ${formatMoney(session.median)} from ${session.count} ${session.count === 1 ? 'sale' : 'sales'} · ${sessionMedianAge(session.at)}, session only`, 'bid-evidence-session');
+      if (!$('bid-fields').disabled) {
+        const use = text('button', 'Use as maximum', 'quiet'); use.type = 'button'; use.dataset.provider = session.provider;
+        use.addEventListener('click', () => {
+          const f = $('bid-form').elements; f.amount.value = moneyInputText(session.median, navigator.language);
+          $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+          f.amount.focus();
+        });
+        line.append(use);
+      }
+      strip.append(line);
+    }
     const add = text('button', 'Add comparable', 'quiet'); add.type = 'button'; add.id = 'bid-add-comparable';
     add.addEventListener('click', () => {
       // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
@@ -858,27 +948,80 @@ async function initWorkspace() {
     });
     strip.append(add);
   }
-  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); });
+  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); updateBidAnswers(); });
+  // A house's terms are its premium and what it charges on top; a house without VAT or a platform fee clears the one
+  // the last house left.
+  $('bid-form').addEventListener('change', (event) => {
+    const f = $('bid-form').elements; const preset = chosenPreset();
+    if (event.target !== f.preset || !preset) return;
+    f.premium.value = premiumInputText(preset.buyerPremiumBps);
+    f.premiumVat.value = formatMinorInput(preset.premiumVatBps); f.platformFee.value = formatMinorInput(preset.platformFeeBps);
+    if (preset.premiumVatBps || preset.platformFeeBps) $('bid-fees').open = true;
+    $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  // Enter in the budget box works the answer out; it never saves a plan.
+  $('bid-form').elements.budget.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); updateBidAnswers(); } });
+  $('use-budget').addEventListener('click', () => {
+    if (!budgetHammer) return;
+    const f = $('bid-form').elements; f.amount.value = moneyInputText(budgetHammer, navigator.language); f.currency.value = budgetHammer.currency;
+    $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+    f.amount.focus();
+  });
   const loadBidEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);
     setBasis('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     populateBidForm(lot);
   };
-  bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps, costEstimate }) => {
-    calculatorCostEstimate = costEstimate ?? null;
-    const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = premiumInputText(buyerPremiumBps);
-    for (const control of [f.amount, f.currency, f.premium]) control.dispatchEvent(new Event('input', { bubbles: true }));
-  } });
-  $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send(buildBidSaveCommand(action, basis, parsed.value, calculatorCostEstimate), 'bid'); });
-  $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
+  $('bid-form').addEventListener('submit', (event) => {
+    event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f);
+    if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true);
+    const estimate = bidEstimateToSend(basis.record, bidValues(), navigator.language);
+    if (!estimate.ok) { const details = f[estimate.error.field]?.closest('details'); if (details) details.open = true; f[estimate.error.field]?.focus(); return announce(estimate.error.message, true); }
+    const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return;
+    void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid').then((reply) => {
+      if (!reply?.ok || reply.editorPreserved) return;
+      const rate = Number.isInteger(parsed.value.buyerPremiumBps) ? ` · ${parsed.value.buyerPremiumBps / 100}%` : '';
+      formStatus('bid', action === 'place' ? `Placed bid recorded · ${formatMoney(parsed.value.amount)}${rate}` : `Plan saved · ${formatMoney(parsed.value.amount)} max${rate}`);
+    });
+  });
+  $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Plan cleared'); }); });
+  $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Cancellation recorded · the bid is no longer active'); }); });
 
+  // Auctions as rows like the coins' (G-18): name, when, how many coins, and the row itself opens the auction's form.
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
-    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(eventLine(event, '', 'p', false)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
+    const coinCounts = new Map();
+    for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
+    if (!(snapshot.auctionEvents ?? []).length) list.append(text('p', 'No auctions yet. Add one to keep its date, time zone and reminders; the line under Save auction says what will be saved.', 'empty-row'));
+    for (const event of snapshot.auctionEvents ?? []) {
+      const row = text('button', '', 'event-row'); row.type = 'button';
+      const top = text('span', '', 'event-row-top'); top.append(text('strong', event.name, 'event-row-name'), text('span', 'Edit', 'event-row-edit'));
+      const count = coinCounts.get(event.id) ?? 0;
+      row.append(top, eventLine(event, 'event-row-when', 'span', false), text('span', count ? `${count} coin${count === 1 ? '' : 's'}` : 'No coins attached', 'event-row-coins'));
+      row.addEventListener('click', () => openEventEditor(event));
+      list.append(row);
+    }
     // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
-    // them, and never snoozed back into a moment already past.
-    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
-    alerts.replaceChildren(...due.map((alert) => text('p', `${alertLabel[alert.status]} · ${eventsById.get(alert.eventId)?.name ?? 'Auction'}`, `record${alert.status === 'missed' ? ' alert-missed' : ''}`)));
+    // them, and never snoozed back into a moment already past. Each says which reminder, when it went off in the
+    // collector's own time, the auction, and the coins that sale has left needing an outcome (Q-14).
+    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status));
+    const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
+    const needing = lotsNeedingOutcome(snapshot);
+    $('alert-list').replaceChildren(...due.map((alert) => {
+      const event = eventsById.get(alert.eventId);
+      const reminder = (event?.reminders ?? []).find(({ id }) => id === alert.reminderId);
+      const at = alert.triggerAt && event ? reminderAtLabel(alert.triggerAt, event.timeZone, view()).text.replace(/ · passed$/, '') : '';
+      const waiting = needing.filter((lot) => lot.auctionEventId === alert.eventId).length;
+      const row = text('p', [alertLabel[alert.status], reminder ? reminderLabel(reminder) : '', at, event?.name ?? 'Auction'].filter(Boolean).join(' · '), `record${alert.status === 'missed' ? ' alert-missed' : ''}`);
+      if (waiting) {
+        row.append(document.createTextNode(` — ${waiting} ${waiting === 1 ? 'lot needs' : 'lots need'} an outcome `));
+        const link = text('a', 'Record outcomes'); link.href = '#watchlist?queue=needs-outcome';
+        row.append(link);
+      }
+      return row;
+    }));
+    // The panel and its buttons are there only while something is due.
+    $('due-reminders').hidden = !due.length;
     $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
     $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
     if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }
@@ -890,7 +1033,12 @@ async function initWorkspace() {
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
-    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    // The scope in words (G-19): "linked lots" reminds only while a coin attached to the auction is still open, as the
+    // scheduler reads it; "standalone", the default, reminds whatever is attached.
+    f.remindEachCoin.checked = event.reminderScope === 'linked-lots';
+    // What a page captured is shown folded, and only opened when there is something in it.
+    $('event-captured').open = Boolean(String(event.capturedText ?? '').trim() || String(event.capturedFromUrl ?? '').trim());
     $('delete-event').hidden = !event.id;
     setEventZone(event.timeZone ?? viewerTimeZone());
     f.precision.value = event.precision ?? 'timed';
@@ -944,13 +1092,15 @@ async function initWorkspace() {
     return valid(controls.firstEnabled, controls.firstValue) && valid(controls.secondEnabled, controls.secondValue) ? controls : null;
   };
   const updatePrecision = () => { const f = $('event-form').elements; const dateOnly = f.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; f.localTime.required = !dateOnly; $('timed-reminders').hidden = dateOnly; f.reminderDayBefore.parentElement.hidden = !dateOnly; f.reminderDayOf.parentElement.hidden = !dateOnly; $('date-only-reminder-note').hidden = !dateOnly; };
-  // What Save auction will write, in words, where a confirm dialog used to ask.
+  // What Save auction will write, in words, where a confirm dialog used to ask - said once there is a day to say it of
+  // (G-19): "Auction starts Thu 1 Oct, 15:00 London · reminders 1 day and 1 hour before".
   function updateEventSummary() {
     const f = $('event-form').elements;
     const dateOnly = f.precision.value === 'date-only';
-    const kind = ({ 'auction-starts': 'auction starting', 'lot-closes': 'lot closing', 'auction-day': 'auction day' })[f.eventKind.value] ?? 'auction';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value)) { $('event-summary').textContent = ''; return; }
+    const kind = ({ 'auction-starts': 'Auction starts', 'lot-closes': 'Lot closes', 'auction-day': 'Auction day' })[f.eventKind.value] ?? 'Auction';
     const format = (options, date, fallback) => { try { return new Intl.DateTimeFormat(navigator.language, { ...options, timeZone: 'UTC' }).format(date); } catch { return fallback; } };
-    const day = /^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value) ? format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value) : 'no date yet';
+    const day = format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value);
     const time = dateOnly ? ', date only' : /^\d{2}:\d{2}$/.test(f.localTime.value) ? `, ${format({ hour: 'numeric', minute: '2-digit' }, new Date(`1970-01-01T${f.localTime.value}:00Z`), f.localTime.value)}` : '';
     let reminders;
     if (dateOnly) {
@@ -961,7 +1111,10 @@ async function initWorkspace() {
       const parts = controls ? [[controls.firstEnabled, controls.firstValue], [controls.secondEnabled, controls.secondValue]].filter(([enabled]) => enabled).map(([, minutes]) => reminderLabel({ kind: 'offset', offsetMinutes: minutes }).replace(/ before$/, '')) : [];
       reminders = !controls ? 'a custom reminder still to fill in' : parts.length ? `reminders ${parts.join(' and ')} before` : 'no reminders';
     }
-    $('event-summary').textContent = `Saves “${f.name.value.trim() || 'this auction'}”: ${kind} ${day}${time} ${f.timeZone.value.trim() || '(no time zone)'}, with ${reminders}.`;
+    const zone = f.timeZone.value.trim();
+    let place = zone || '(no time zone)';
+    try { if (zone) place = zonePlace(zone); } catch { place = zone; }
+    $('event-summary').textContent = `${kind} ${day}${time} ${place} · ${reminders}`;
   }
   $('event-form').addEventListener('input', (event) => { if (event.target === $('event-form').elements.name) offerRememberedZone(); else if (event.target === $('event-form').elements.timeZone) zoneChosen = true; updateEventSummary(); });
   $('event-form').addEventListener('change', (event) => {
@@ -986,7 +1139,7 @@ async function initWorkspace() {
     const timed = f.precision.value === 'date-only' ? null : timedReminderControls();
     if (f.precision.value !== 'date-only' && !timed) return announce('Enter the minutes before for a custom reminder: a whole number from 1.', true);
     const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, timed ?? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value });
-    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
+    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.remindEachCoin.checked ? 'linked-lots' : 'standalone', reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
       if (!reply?.ok) return;
       if (eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
       const decision = eventAttachDecision({
@@ -1008,34 +1161,35 @@ async function initWorkspace() {
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
   $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 
-  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', formatMoney({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${formatMoney({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${formatMoney({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
+  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', formatMoney({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${formatMoney({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.totalCount) card.append(text('p', `All-in if every bid wins ${formatMoney({ currency: section.currency, minor: section.knownTotalMinor })} (${section.totalCount} of ${section.bindingCount} with fees)`, 'exposure-all-in')); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${formatMoney({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
 
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
-  function collectionTotalsTable(view) {
-    // A region the keyboard can scroll too, since its last columns sit past the side panel's edge.
-    const wrap = text('div', '', 'table-scroll'); wrap.setAttribute('tabindex', '0'); wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Recorded totals by currency');
-    const table = document.createElement('table'); table.id = 'collection-totals'; table.className = 'collection-totals';
-    table.append(text('caption', 'Your recorded totals by currency'));
-    const head = document.createElement('thead'); const headRow = document.createElement('tr');
-    for (const label of ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
-    head.append(headRow);
+  // One stat row per currency (G-17), each figure in its own money and the row wrapping rather than scrolling: a hammer
+  // or invoice total covers the entries that recorded one, and says how many of the currency's entries that is when it
+  // is not all of them.
+  function collectionTotalsRows(view) {
+    const root = text('div', '', 'collection-totals'); root.id = 'collection-totals'; root.setAttribute('role', 'group'); root.setAttribute('aria-label', 'Your recorded totals by currency');
     const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
-    const total = (currency, minor, count, of, none = 'None recorded') => {
+    // A coin whose fees were never recorded counts as having none, and the figure says how many did (G-05).
+    const total = (currency, minor, count, of, none = 'None recorded', noFees = 0) => {
       if (!count) return none;
       const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
-      return count < of ? `${amount} (${count} of ${of})` : amount;
+      const parts = [count < of ? `${count} of ${of}` : '', noFees ? `${noFees} without fees` : ''].filter(Boolean);
+      return parts.length ? `${amount} (${parts.join(', ')})` : amount;
     };
-    const body = document.createElement('tbody');
-    const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
+    const row = (currency, cells) => {
+      const line = text('div', '', 'collection-total-row'); line.append(text('strong', currency, 'collection-total-currency'));
+      for (const [label, value] of cells) { const cell = text('span', '', 'collection-total-cell'); cell.append(text('span', label, 'stat-label'), text('span', value, 'stat-value')); line.append(cell); }
+      root.append(line);
+    };
     for (const [currency, totals] of Object.entries(view.byCurrency)) {
-      row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount),
-        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete'),
-        total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
+      row(currency, [['Entries', String(totals.entryCount)], ['Hammer', total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount)],
+        ['Total cost', total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete', totals.costNoFeesCount)],
+        ['Invoice paid', total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount)], ['Acquired', years(totals)]]);
     }
-    if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', '—', years(view.unpriced)]);
-    table.append(head, body); wrap.append(table);
-    return wrap;
+    if (view.unpriced.entryCount) row('No amount recorded', [['Entries', String(view.unpriced.entryCount)], ['Acquired', years(view.unpriced)]]);
+    return root;
   }
   // The collector's own evidence for the entry's coin, worded as that and never as a value.
   const collectionComparablesLabel = (item) => {
@@ -1048,13 +1202,33 @@ async function initWorkspace() {
   };
   // A won coin's Hammer · Premium · Fees · Total, currency code once, then the premium rate and each fee, or what
   // stopped the total from being worked out.
-  const costLineParts = (line) => {
+  // The one figure that would complete it is a link to that field on the coin's Outcome tab.
+  const costLineParts = (line, lotId) => {
     const row = text('div', '', 'money-line'); row.append(text('span', line.currency, 'money-currency'));
-    for (const { label, figure } of line.cells) {
+    if (line.tone) row.dataset.tone = line.tone;
+    for (const { label, figure, hint } of line.cells) {
       const cell = text('span', '', 'money-cell'); cell.append(text('span', label, 'money-label'), document.createTextNode(' '), text('span', figure, 'money-figure'));
+      if (hint) cell.append(text('span', hint, 'money-hint'));
       row.append(cell);
     }
-    return [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+    const parts = [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+    if (line.fix && lotId) {
+      const fix = text('button', line.fix.label, 'quiet money-fix'); fix.type = 'button';
+      fix.addEventListener('click', () => openCoinField(lotId, line.fix.field));
+      parts.push(fix);
+    }
+    return parts;
+  };
+  // A coin opened on its Outcome tab with the keyboard on one field: the premium, the hammer, or the first fee with
+  // its fold open. A settled coin the open queue does not list is shown under Completed.
+  const openCoinField = (lotId, field) => {
+    routeChangeFromNav = false; location.hash = '#watchlist'; setRoute();
+    if (!auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).some(({ lot }) => lot.id === lotId)) $('lot-queue').value = 'completed';
+    selectLot(lotId, { focus: false });
+    if (selection.selectedLotId !== lotId) return;
+    showDetailTab('outcome');
+    const f = $('outcome-form').elements;
+    if (field === 'fees') { $('outcome-fees').open = true; f[FEE_SHEET_FIELDS[0].name].focus(); } else f[field]?.focus();
   };
   // The one collection entry being corrected in place, what it read when the form opened, and what has been typed
   // since: kept here, so a redraw of the route while the form is open never loses the typing.
@@ -1150,43 +1324,61 @@ async function initWorkspace() {
     }
     return line;
   };
+  // A collection entry's part of its coin's card: since when it is in the collection and any review, the invoice, the
+  // notes, the collector's own comparables, and the entry's own actions and form.
+  const appendEntry = (card, entry, viewItem, lot) => {
+    card.append(text('p', `In your collection since ${dayText(entry.acquisitionDate)}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`, 'collection-since'));
+    const invoiceLine = entryInvoiceLine(entry, lot);
+    if (invoiceLine) card.append(text('p', invoiceLine));
+    if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
+    card.append(text('p', collectionComparablesLabel(viewItem), 'collection-comparables'));
+    const actions = text('div', '', 'actions');
+    if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
+    if (editingEntry?.id === entry.id) card.append(entryEditForm());
+    else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
+    if (actions.children.length) card.append(actions);
+  };
   function renderHistory() {
     // A redraw while a field of the entry form has the keyboard gives it back to that field.
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
     const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
-    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
-      const line = wonCostLine(lot, navigator.language);
-      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
-      if (line) card.append(...costLineParts(line));
-      else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
-      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
-      card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card);
-    }
-    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
     const view = projectCollection(snapshot);
     const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const entriesByLot = new Map((snapshot.collectionEntries ?? []).map((entry) => [entry.lotId, entry]));
+    const shownEntries = new Set();
+    // A ledger, newest first (Q-12), one card per settled coin (G-17): what the coin is and where it was won, what it
+    // cost - the money line once - the bid that decided it, and its collection entry, if it has one, beneath.
+    for (const lot of settledNewestFirst(snapshot.lots)) {
+      const line = wonCostLine(lot, navigator.language);
+      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
+      const ledger = historyLine(lot, eventsById.get(lot.auctionEventId), navigator.language);
+      if (ledger) card.append(text('p', ledger, 'history-line'));
+      // A lost coin's hammer is said once, in the line of the bid that decided it.
+      if (line) card.append(...costLineParts(line, lot.id));
+      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
+      card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid'));
+      const entry = entriesByLot.get(lot.id);
+      if (entry) { shownEntries.add(entry.id); appendEntry(card, entry, viewByEntry.get(entry.id), lot); }
+      root.append(card);
+    }
+    // An entry whose coin is not a settled one on this device still has a card of its own.
     const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
+    for (const entry of (snapshot.collectionEntries ?? []).filter(({ id }) => !shownEntries.has(id))) {
+      const lot = lotsById.get(entry.lotId);
+      const card = text('article', '', 'record'); card.append(text('h3', entry.title));
+      if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
+      appendEntry(card, entry, viewByEntry.get(entry.id), lot);
+      root.append(card);
+    }
+    if (!root.children.length) root.append(text('p', 'No settled coins yet. A coin whose outcome you record appears here.', 'empty-row'));
+    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Your collection'));
     if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
     else {
-      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin missing any of those figures is counted as incomplete, never estimated.', 'field-note collection-note'));
-      collection.append(collectionTotalsTable(view));
-    }
-    for (const entry of snapshot.collectionEntries ?? []) {
-      const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
-      const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
-      if (line) card.append(...costLineParts(line));
-      else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
-      const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));
-      if (invoiceLine) card.append(text('p', invoiceLine));
-      if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
-      card.append(text('p', collectionComparablesLabel(viewByEntry.get(entry.id)), 'collection-comparables'));
-      const actions = text('div', '', 'actions');
-      if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
-      if (editingEntry?.id === entry.id) card.append(entryEditForm());
-      else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
-      if (actions.children.length) card.append(actions);
-      collection.append(card);
+      collection.append(text('p', 'From your own records: not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
+      const why = document.createElement('details'); why.className = 'why';
+      why.append(text('summary', 'Why'), text('p', 'The amounts are the ones you entered and the comparables the ones you saved. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin with no fees recorded counts as having none, and one missing its hammer or premium rate is counted as incomplete, never estimated.', 'field-note'));
+      collection.append(why, collectionTotalsRows(view));
     }
     if (editingEntry && !(snapshot.collectionEntries ?? []).some(({ id }) => id === editingEntry?.id)) editingEntry = null;
     if (focusedField) $('entry-edit-form')?.elements[focusedField]?.focus?.();
@@ -1199,13 +1391,30 @@ async function initWorkspace() {
     $('passed-outcome').disabled = Boolean(lot?.activeBid); $('passed-help').hidden = !$('passed-outcome').disabled;
     $('open-outcome').closest('label').hidden = !lot?.outcome?.status || lot.outcome.status === 'open';
     $('reopen-choice').hidden = !(settled && f.status.value === 'open');
+    $('outcome-terms').hidden = f.status.value !== 'won';
+    // A coin already in the collection says since when and where to correct its entry; a coin not yet in it is offered
+    // the collection only for a win (Q-09).
+    const entry = lot?.collectionEntryId ? (snapshot.collectionEntries ?? []).find((item) => item.id === lot.collectionEntryId) : null;
+    $('outcome-in-collection').hidden = !entry;
+    $('outcome-in-collection-text').textContent = entry ? `In your collection since ${dayText(entry.acquisitionDate)}` : '';
+    $('outcome-collection').hidden = Boolean(lot?.collectionEntryId) || f.status.value !== 'won';
   };
+  $('outcome-edit-entry').addEventListener('click', () => {
+    const lot = editorBases.get('outcome')?.record;
+    const entry = (snapshot.collectionEntries ?? []).find((item) => item.id === lot?.collectionEntryId);
+    if (!entry) return;
+    routeChangeFromNav = false; location.hash = '#history'; setRoute();
+    openEntryForm(entry);
+  });
   const showAcquisitionError = (message) => { $('acquisition-error').textContent = message; $('acquisition-error').hidden = !message; };
   const localToday = () => { try { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', numberingSystem: 'latn' }).format(new Date()); } catch { return ''; } };
   function populateOutcomeForm(lot) {
     const f = $('outcome-form').elements;
-    const draft = outcomeDraftForLot(lot, navigator.language, { defaultCurrency: snapshot.preferences?.currency ?? 'USD', event: eventsById.get(lot?.auctionEventId) ?? null, today: localToday() });
-    f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammer.placeholder = draft.hammerPlaceholder; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = false; f.acquisitionDate.value = draft.acquisitionDate; f.collectionNotes.value = ''; showAcquisitionError(''); updateOutcomeVisibility();
+    const draft = outcomeDraftForLot(lot, navigator.language, { defaultCurrency: snapshot.preferences?.currency ?? 'USD', event: eventsById.get(lot?.auctionEventId) ?? null, today: localToday(), presets: snapshot.preferences?.housePremiumPresets ?? [] });
+    f.premium.value = draft.premium; $('outcome-premium-source').textContent = draft.premiumSource;
+    for (const [name, value] of Object.entries(draft.fees)) f[name].value = value;
+    $('outcome-fees').open = draft.feesOpen || draft.noFees; f.noFees.checked = draft.noFees;
+    f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammer.placeholder = draft.hammerPlaceholder; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = draft.addToCollection; f.acquisitionDate.value = draft.acquisitionDate; f.collectionNotes.value = ''; showAcquisitionError(''); updateOutcomeVisibility();
   }
   const loadOutcomeEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('outcome-form').elements.lotId.value);
@@ -1213,7 +1422,18 @@ async function initWorkspace() {
     populateOutcomeForm(lot);
   };
   $('outcome-form').addEventListener('change', (event) => { if (event.target.name === 'lotId') loadOutcomeEditor(); else if (event.target.name === 'status') updateOutcomeVisibility(); });
-  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
+  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'won') { const terms = outcomeTermsFromForm(lot, { ...Object.fromEntries(['premium', 'hammerCurrency', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value])), noFees: f.noFees.checked }, navigator.language); if (!terms.ok) { if (terms.error.field !== 'premium') $('outcome-fees').open = true; f[terms.error.field]?.focus?.(); return announce(terms.error.message, true); } if (terms.value !== undefined) outcome.terms = terms.value; } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; const adding = status === 'won' && !lot.collectionEntryId && f.addToCollection.checked; if (adding && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (adding) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome').then((reply) => { if (reply?.ok && !reply.editorPreserved) sayOutcomeSaved(reply.value); }); });
+  // "Outcome saved · Won at €240.00 · in History [Open]", and where the coin now sits when the open queue no longer
+  // lists it.
+  const sayOutcomeSaved = (lot) => {
+    const status = lot?.outcome?.status;
+    if (!status) return;
+    const words = { won: 'Won', lost: 'Lost', passed: 'Passed', open: 'open again' }[status];
+    const hammer = lot.outcome.hammer ? ` at ${formatMoney(lot.outcome.hammer)}` : '';
+    const moved = status !== 'open' && !['completed', 'all-coins'].includes($('lot-queue').value) ? ' · now under Completed' : '';
+    const history = status === 'open' ? '' : ' · in History';
+    formStatus('outcome', `Outcome saved · ${words}${hammer}${history}${moved}`, status === 'open' ? {} : { action: { label: 'Open', run: () => { routeChangeFromNav = false; location.hash = '#history'; setRoute(); } } });
+  };
 
   function resetEditor(editor) {
     const form = $(`${editor}-form`);
@@ -1284,7 +1504,23 @@ async function initWorkspace() {
       populateEditor(editor);
     }
   }
+  // The popup's session median, followed while this page is open; nothing of it is written anywhere.
+  let sessionMedians = [];
+  followSessionMedians((found) => { sessionMedians = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
   function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
+  // On a wide screen the detail panel is never an empty "Select a coin": the coin the queue puts first is opened on
+  // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
+  const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };
+  const openFirstCoin = () => {
+    // A coin the address names (the popup's Open, "#watchlist?lot=<id>") is the one to open, never the queue's first.
+    if (selection.selectedLotId || lotDraftId || routeFromHash(location.hash) !== 'watchlist' || /[?&]lot=/.test(location.hash) || !wideScreen()) return;
+    const queued = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    const needing = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
+    const first = queued.find((lot) => needing.has(lot.id)) ?? queued[0];
+    if (!first) return;
+    selectLot(first.id, { focus: false });
+    selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list';
+  };
   // The popup opens a queue by name ("#watchlist?queue=needs-outcome"); a name the Queue select does not list is ignored.
   const namedQueue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
   if (namedQueue && [...$('lot-queue').options].some((option) => option.value === namedQueue)) $('lot-queue').value = namedQueue;
@@ -1299,11 +1535,13 @@ async function initWorkspace() {
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
-      else if (!acceptIncoming(initialized.value)) announce(LOADED);
+      else acceptIncoming(initialized.value);
       await loadRouteDraft();
       // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.
       const namedLot = /[?&]lot=([\w-]+)/.exec(location.hash)?.[1];
       if (namedLot && (snapshot.lots ?? []).some(({ id }) => id === namedLot)) selectLot(namedLot, { focus: false });
+      // Only then the queue's first coin, and only while nothing is open: a named coin always wins.
+      else if (!namedLot) openFirstCoin();
     } catch (error) {
       console.error(error);
       announce('The workspace could not finish loading. Reload this page to try again.', true);

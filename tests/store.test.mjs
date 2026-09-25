@@ -2423,3 +2423,79 @@ test('an entry that drifted from its corrected won lot before 0.36 follows it on
   assert.equal(other.ok, true, other.message);
   assert.deepEqual(storage.read().collectionEntries[0].hammer, { currency: 'EUR', minor: 131000 }, 'the next write persists it');
 });
+
+// Q-04: the usual import VAT for a sale in another currency is an optional preference: saved as a rate, taken off by
+// null, refused out of range, and left alone by a save that does not name it.
+test('the import VAT preference is saved, cleared by null, refused out of range and kept by other saves', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', { preferences: { currency: 'GBP' } })).snapshot;
+  state = reduce(state, command('preferences.save', { expectedRevision: 0, preferences: { currency: 'GBP', importVatBps: 500 } })).snapshot;
+  assert.equal(state.preferences.importVatBps, 500);
+  state = reduce(state, command('preferences.save', { expectedRevision: 1, preferences: { currency: 'EUR' } })).snapshot;
+  assert.equal(state.preferences.importVatBps, 500, 'a save that does not name it keeps it');
+  state = reduce(state, command('preferences.save', { expectedRevision: 2, preferences: { currency: 'EUR', importVatBps: null } })).snapshot;
+  assert.equal(Object.hasOwn(state.preferences, 'importVatBps'), false);
+  const refused = applyCommand(state, command('preferences.save', { expectedRevision: 3, preferences: { currency: 'EUR', importVatBps: 10001 } }), context());
+  assert.equal(refused.ok, false);
+});
+
+// G-07: Undo of Remove coin puts back exactly the coin a lot.delete removed, read from that command's reply in the
+// request ledger - never a record the page supplies - with its auction and group where they still exist.
+test('lot.restore puts back the coin a delete removed, from the ledger, and only once', () => {
+  let state = createEmptySnapshot(NOW);
+  const group = reduce(state, command('group.save', { expectedRevision: null, group: { name: 'One of these' } }));
+  state = group.snapshot;
+  const saved = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Nero', sourceLinks: [] } }));
+  state = reduce(saved.snapshot, command('group.reorder', {
+    groupId: group.value.id, expectedRevision: 0, orderedLotIds: [saved.value.id],
+    expectedGroupRevisions: { [group.value.id]: 0 }, expectedLotRevisions: { [saved.value.id]: 0 },
+  })).snapshot;
+  state = reduce(state, command('bid.plan', { lotId: saved.value.id, expectedRevision: 1, plannedBid: { amount: { currency: 'EUR', minor: 5000 } } })).snapshot;
+  const removal = command('lot.delete', { lotId: saved.value.id, expectedRevision: 2 });
+  state = reduce(state, removal).snapshot;
+  assert.equal(state.lots.length, 0);
+  const restored = reduce(state, command('lot.restore', { deleteRequestId: removal.requestId }));
+  const [back] = restored.snapshot.lots;
+  assert.equal(back.id, saved.value.id);
+  assert.equal(back.revision, 3);
+  assert.deepEqual(back.plannedBid, { amount: { currency: 'EUR', minor: 5000 } });
+  assert.equal(back.alternativeGroupId, group.value.id);
+  assert.equal(back.priority, 1);
+  const again = applyCommand(restored.snapshot, command('lot.restore', { deleteRequestId: removal.requestId }), context());
+  assert.equal(again.ok, false, 'a coin already back is not put back twice');
+  const unknown = applyCommand(state, command('lot.restore', { deleteRequestId: 'not-a-delete' }), context());
+  assert.equal(unknown.error.path, 'deleteRequestId');
+  // A group removed meanwhile: the coin comes back on its own.
+  const withoutGroup = reduce(state, command('group.delete', { groupId: group.value.id, expectedRevision: state.alternativeGroups[0].revision })).snapshot;
+  const alone = reduce(withoutGroup, command('lot.restore', { deleteRequestId: removal.requestId })).snapshot.lots[0];
+  assert.equal(Object.hasOwn(alone, 'alternativeGroupId'), false);
+  assert.equal(Object.hasOwn(alone, 'priority'), false);
+});
+
+// Q-01: the Outcome form's terms reach the store through lot.outcome.set on a lot with no bid, and the store works the
+// cost out from them; a cost the caller sends beside them is never read.
+test('a won coin with no bid is costed by the store from the outcome terms it is sent', () => {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Floor bid', sourceLinks: [] } }));
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 };
+  const won = reduce(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 90000 }, terms: { buyerPremiumBps: 2000, costEstimate: fees }, cost: { total: { currency: 'EUR', minor: 1 } } },
+  }));
+  assert.equal(won.value.outcome.cost.total.minor, 90000 + 18000 + 3420 + 1500);
+  assert.deepEqual(won.value.outcome.terms, { buyerPremiumBps: 2000, costEstimate: fees });
+  const refused = applyCommand(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'lost', hammer: { currency: 'EUR', minor: 90000 }, terms: { buyerPremiumBps: 2000 } },
+  }), context());
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'outcome.terms');
+});
+
+// Fix round, Minor 4: only a lot.delete's own reply is put back - the reply of any other command that holds a lot
+// (a lot.save here) is refused.
+test('lot.restore refuses the request id of a command that was not a delete', () => {
+  const save = command('lot.save', { expectedRevision: null, lot: { title: 'Nero', sourceLinks: [] } });
+  const saved = reduce(createEmptySnapshot(NOW), save);
+  const removed = reduce(saved.snapshot, command('lot.delete', { lotId: saved.value.id, expectedRevision: 0 })).snapshot;
+  const refused = applyCommand(removed, command('lot.restore', { deleteRequestId: save.requestId }), context());
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'deleteRequestId');
+});

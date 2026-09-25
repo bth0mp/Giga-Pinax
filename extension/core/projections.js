@@ -16,12 +16,16 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  */
 /**
  * What the open bids in one currency add up to: hammers, hammers with the premium where it is known,
- * how many bids, and how many carry no premium.
+ * how many bids, and how many carry no premium; and what leaves the account if every one of them wins -
+ * hammer, premium and the fees saved beside the bid - for the bids whose premium is known and whose fee
+ * sheet is in the bid's own currency, with how many those are.
  * @typedef {object} ExposureTotals
  * @property {number} hammerMinor
  * @property {number} knownHammerPlusBpMinor
  * @property {number} bindingCount
  * @property {number} unknownPremiumCount
+ * @property {number} knownTotalMinor
+ * @property {number} totalCount
  */
 /** @typedef {ExposureTotals & { byEvent: Record<string, ExposureTotals> }} CurrencyExposure */
 /**
@@ -38,8 +42,9 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  * @property {number | null} hammerMinor
  * @property {number} invoiceCount
  * @property {number | null} invoiceMinor
- * @property {number} costCount entries whose worked-out cost is complete
+ * @property {number} costCount entries with a total shown: a complete cost, or hammer and premium with no fees recorded
  * @property {number | null} costMinor
+ * @property {number} costNoFeesCount of those, the ones whose fees were never recorded (counted as none)
  * @property {number | null} firstYear
  * @property {number | null} lastYear
  */
@@ -58,23 +63,50 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  */
 export const COST_GAPS = Object.freeze(['hammer', 'premium-rate', 'fees', 'fee-currency']);
 const COST_PARTS = Object.freeze(['premium', 'premiumVat', 'platformFee', 'shipping', 'paymentFee']);
-export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'shipping', 'paymentFee']);
+export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'importVat', 'shipping', 'paymentFee']);
 
-// The buyer's premium rate the coin was won on: the bid that was settled as won, else the plan the collector made
-// for it. A plan revised after the last win - a coin re-opened and planned again - is newer than that win, so its
-// rate is the one the coin is won on now.
-function wonPremiumRate(lot) {
+// The buyer's premium rate on the coin's bids: the last bid settled or re-opened that carries a rate (settled won, or
+// settled lost and then corrected to won, which is the same bid), else the plan the collector made for it. A plan
+// revised after that entry - a coin re-opened and planned again - is newer, so its rate is the one it is won on now.
+// A lot's fee sheet as fees: a grid-only sheet (an increment and minimum saved with a bid, no fee typed) records no
+// fees, so it is none here.
+/**
+ * @param {import('./types.js').CostEstimate | null | undefined} estimate
+ * @returns {import('./types.js').CostEstimate | undefined}
+ */
+export const feeSheetOf = (estimate) => (estimate && !estimate.gridOnly ? estimate : undefined);
+const SETTLED_ACTIONS = new Set(['settled-won', 'settled-lost', 'reopened-active', 'reopened-inactive']);
+/**
+ * @param {Lot | null | undefined} lot
+ * @returns {number | null}
+ */
+export function bidPremiumRate(lot) {
   const history = lot?.bidHistory ?? [];
-  const lastIndex = (action) => history.findLastIndex((entry) => entry.action === action);
-  const settled = history[lastIndex('settled-won')];
-  const plan = Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? lot.plannedBid.buyerPremiumBps : null;
-  if (plan !== null && lastIndex('planned-revised') > lastIndex('settled-won')) return plan;
-  return Number.isInteger(settled?.buyerPremiumBps) ? settled.buyerPremiumBps : plan;
+  const settledIndex = history.findLastIndex((entry) => SETTLED_ACTIONS.has(entry.action) && Number.isInteger(entry.buyerPremiumBps));
+  const plan = Number.isInteger(lot?.plannedBid?.buyerPremiumBps) ? /** @type {number} */ (lot?.plannedBid?.buyerPremiumBps) : null;
+  if (plan !== null && history.findLastIndex((entry) => entry.action === 'planned-revised') > settledIndex) return plan;
+  return settledIndex >= 0 ? /** @type {number} */ (history[settledIndex].buyerPremiumBps) : plan;
+}
+
+// The terms a won coin is costed on: the premium rate and fee sheet its outcome states (the Outcome form's, for a coin
+// won without a recorded bid or on other terms than its bid), else its bid's rate and the fee sheet saved with the lot.
+/**
+ * @param {Lot | null | undefined} lot
+ * @returns {{ rate: number | null, estimate: import('./types.js').CostEstimate | undefined, noFees: boolean }}
+ */
+export function wonTerms(lot) {
+  const terms = lot?.outcome?.terms;
+  const rate = Number.isInteger(terms?.buyerPremiumBps) ? /** @type {number} */ (terms?.buyerPremiumBps) : bidPremiumRate(lot);
+  // `costEstimate: null` in the outcome's terms is the collector saying no fees were charged beyond the premium: none,
+  // over any sheet saved with the bid. Absent, the lot's own sheet applies.
+  const noFees = Boolean(terms) && OWN(terms, 'costEstimate') && terms?.costEstimate === null;
+  return { rate, estimate: noFees ? undefined : terms?.costEstimate ?? feeSheetOf(lot?.costEstimate), noFees };
 }
 
 /**
  * What a won coin really cost, worked out from what the collector recorded for it and nothing else: the hammer, the
- * premium at the rate on its bid, and the fees saved with the lot (VAT on the premium, a platform's fee on the hammer,
+ * premium at the rate its outcome states or else the rate on its bid, and the fees its outcome states or else the ones
+ * saved with the lot (VAT on the premium, a platform's fee on the hammer,
  * shipping and the payment fee), all in the hammer's currency. A figure that was never recorded is not estimated: the
  * cost then keeps what could be worked out and names every gap, and it has no total. A fee sheet saved without VAT or
  * a platform fee charges none, as the calculator that saved it did. `null` only for a sum too large to hold exactly.
@@ -84,14 +116,15 @@ function wonPremiumRate(lot) {
  */
 export function deriveWonCost(lot, hammer) {
   const hasHammer = validateMoney(hammer).ok;
-  const rate = wonPremiumRate(lot);
-  const estimate = lot?.costEstimate;
+  const { rate, estimate: sheet, noFees } = wonTerms(lot);
+  // No fees charged is a fee sheet of nothing, in the hammer's currency.
+  const estimate = noFees && hasHammer ? { currency: hammer?.currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } : sheet;
   /** @type {CostGap[]} */
   const missing = [];
   if (!hasHammer) missing.push('hammer');
   if (rate === null) missing.push('premium-rate');
-  if (!estimate) missing.push('fees');
-  else if (hasHammer && estimate.currency !== hammer?.currency) missing.push('fee-currency');
+  if (!estimate && !noFees) missing.push('fees');
+  else if (estimate && hasHammer && estimate.currency !== hammer?.currency) missing.push('fee-currency');
   if (!hasHammer || rate === null) return { missing };
   const money = /** @type {Money} */ (hammer);
   const fees = /** @type {import('./types.js').CostEstimate} */ (estimate);
@@ -101,12 +134,15 @@ export function deriveWonCost(lot, hammer) {
   }
   const worked = calculateBidCost(money, rate, {
     shippingMinor: fees.shippingMinor, paymentFeeBps: fees.paymentFeeBps, paymentFeeMinor: fees.paymentFeeMinor,
-    premiumVatBps: fees.premiumVatBps ?? 0, platformFeeBps: fees.platformFeeBps ?? 0,
+    premiumVatBps: fees.premiumVatBps ?? 0, platformFeeBps: fees.platformFeeBps ?? 0, importVatBps: fees.importVatBps ?? 0,
   });
   if (!worked.ok) return null;
   const cost = { buyerPremiumBps: rate };
   for (const part of COST_PARTS) cost[part] = worked.value[part];
-  cost.total = worked.value.total;
+  // The stored total is the hammer and the five parts, as 0.36.0 checks it; import VAT, where the fee sheet has a rate
+  // for it, is kept beside it (costTotal adds it).
+  cost.total = { currency: money.currency, minor: worked.value.total.minor - worked.value.importVat.minor };
+  if (OWN(fees, 'importVatBps')) cost.importVat = worked.value.importVat;
   return cost;
 }
 
@@ -123,7 +159,7 @@ export function lotCost(lot) {
 }
 
 /**
- * The fees of a worked-out cost as one amount: VAT on the premium, platform fee, shipping and payment fee.
+ * The fees of a worked-out cost as one amount: VAT on the premium, platform fee, import VAT, shipping and payment fee.
  * @param {import('./types.js').WonCost | null | undefined} cost
  * @returns {Money | null}
  */
@@ -134,14 +170,39 @@ export function costFees(cost) {
   return { currency: cost.total.currency, minor };
 }
 
+/**
+ * Everything a complete cost adds up to: its stored total (hammer, premium and the house's, the carrier's and the
+ * payment fees) and the import VAT kept beside it. Null for an incomplete cost or a sum too large to hold exactly.
+ * @param {import('./types.js').WonCost | null | undefined} cost
+ * @returns {Money | null}
+ */
+export function costTotal(cost) {
+  if (!cost?.total) return null;
+  const minor = BigInt(cost.total.minor) + BigInt(cost.importVat?.minor ?? 0);
+  return minor > BigInt(Number.MAX_SAFE_INTEGER) ? null : { currency: cost.total.currency, minor: Number(minor) };
+}
+
+/**
+ * The total a won coin is shown with (G-05). A complete cost shows its own. A fee sheet never saved means no fees were
+ * recorded, not that the total is unknowable: with only that missing, the total shown is the hammer and premium, and
+ * `partial` says so; the stored cost still names the gap, and nothing is estimated in the data. Any other gap - no
+ * hammer, no premium rate, fees in another currency - leaves no total at all.
+ * @param {import('./types.js').WonCost | null | undefined} cost
+ * @param {Money | null | undefined} hammer
+ * @returns {{ total: Money | null, partial: boolean }}
+ */
+export function shownCostTotal(cost, hammer) {
+  if (cost?.total) return { total: costTotal(cost), partial: false };
+  const onlyFees = cost?.missing?.length === 1 && cost.missing[0] === 'fees';
+  if (!onlyFees || !cost?.premium || !validateMoney(hammer).ok || hammer?.currency !== cost.premium.currency) return { total: null, partial: false };
+  const minor = BigInt(/** @type {Money} */ (hammer).minor) + BigInt(cost.premium.minor);
+  if (minor > BigInt(Number.MAX_SAFE_INTEGER)) return { total: null, partial: false };
+  return { total: { currency: cost.premium.currency, minor: Number(minor) }, partial: true };
+}
+
+const emptyTotals = () => ({ hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, knownTotalMinor: 0, totalCount: 0 });
 function emptyExposure() {
-  return {
-    hammerMinor: 0,
-    knownHammerPlusBpMinor: 0,
-    bindingCount: 0,
-    unknownPremiumCount: 0,
-    byEvent: {},
-  };
+  return { ...emptyTotals(), byEvent: {} };
 }
 
 function addSafe(left, right) {
@@ -163,12 +224,7 @@ export function projectExposure(snapshot) {
     const currency = lot.activeBid.amount.currency;
     const eventId = lot.auctionEventId ?? 'unassigned';
     byCurrency[currency] ??= emptyExposure();
-    byCurrency[currency].byEvent[eventId] ??= {
-      hammerMinor: 0,
-      knownHammerPlusBpMinor: 0,
-      bindingCount: 0,
-      unknownPremiumCount: 0,
-    };
+    byCurrency[currency].byEvent[eventId] ??= emptyTotals();
     const totals = [byCurrency[currency], byCurrency[currency].byEvent[eventId]];
     for (const total of totals) {
       total.hammerMinor = addSafe(total.hammerMinor, lot.activeBid.amount.minor);
@@ -185,6 +241,15 @@ export function projectExposure(snapshot) {
         total.knownHammerPlusBpMinor,
         premium.value.hammerPlusPremium.minor,
       );
+    }
+    // All in, from the fee sheet saved beside the bid, only where it is in the bid's currency: never converted.
+    const sheet = feeSheetOf(lot.costEstimate);
+    if (sheet?.currency !== currency) continue;
+    const allIn = calculateBidCost(lot.activeBid.amount, lot.activeBid.buyerPremiumBps, sheet);
+    if (!allIn.ok) continue;
+    for (const total of totals) {
+      total.knownTotalMinor = addSafe(total.knownTotalMinor, allIn.value.total.minor);
+      total.totalCount += 1;
     }
   }
   /** @type {Record<string, CurrencyExposure>} */
@@ -272,13 +337,14 @@ export function projectCollection(snapshot) {
     // Only the amounts validateMoney accepts are left, so each is read as Money.
     const lot = lots.get(entry.lotId);
     const cost = lotCost(lot);
-    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['cost', cost?.total], ['invoice', entry.actualInvoice]]
+    const shown = shownCostTotal(cost, lot?.outcome?.hammer);
+    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['cost', shown.total], ['invoice', entry.actualInvoice]]
       .filter(([, money]) => validateMoney(money).ok));
     const currencies = new Set(amounts.map(([, money]) => money.currency));
     if (!currencies.size) { unpriced.entryCount += 1; spreadYears(unpriced, year); }
     for (const currency of currencies) {
       const totals = byCurrency[currency] ??= {
-        entryCount: 0, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
+        entryCount: 0, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
       };
       totals.entryCount += 1;
       spreadYears(totals, year);
@@ -287,6 +353,7 @@ export function projectCollection(snapshot) {
       const totals = byCurrency[money.currency];
       totals[`${kind}Count`] += 1;
       totals[`${kind}Minor`] = addMinor(totals[`${kind}Minor`], money.minor);
+      if (kind === 'cost' && shown.partial) totals.costNoFeesCount += 1;
     }
     const currency = amounts[0]?.[1].currency ?? null;
     const reference = String(lot?.reference ?? '').trim();

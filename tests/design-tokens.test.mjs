@@ -129,17 +129,17 @@ test('the palette keeps WCAG AA contrast in light and dark', () => {
   }
 });
 
-// W-09 (styling part): "Compare coins" repeated the coin list as a second list of two-line checkbox rows. The picker is a bounded box of
-// one-line choices, the chosen ones marked by more than the tick, and an empty picker takes no room.
-test('the comparison picker is a short box of one-line choices with the chosen ones marked', () => {
+// W-09 / G-14: "Compare coins" repeated the coin list as a second list of checkbox rows. The box sits at the left of each
+// coin row instead, shown on hover or focus and while any coin is ticked (always on a touch screen), and a ticked row is
+// marked by more than the tick.
+test('the compare box sits in each coin row, shows while comparing, and marks the ticked rows', () => {
   const workspace = rules(read('workspace.css'));
   const body = (selector) => workspace.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
-  assert.match(body('#comparison-picker'), /max-height:\d+px/);
-  assert.match(body('#comparison-picker'), /overflow:auto/);
-  assert.match(body('.compare-choice'), /white-space:nowrap/);
-  assert.match(body('.compare-choice'), /text-overflow:ellipsis/);
-  assert.match(body('.compare-choice:has(:checked)'), /background:var\(--accent-soft\)/);
-  assert.match(body('#comparison-picker:empty'), /margin:0;padding:0/);
+  assert.match(body('.compare-box'), /position:absolute/);
+  assert.match(body('.compare-box'), /opacity:0/);
+  assert.match(body('.coin-row-wrap:hover .compare-box,.compare-box:focus-visible,.comparing .compare-box'), /opacity:1/);
+  assert.match(body('.coin-row-wrap:has(.compare-box:checked) .coin-row'), /background:var\(--accent-soft\)/);
+  assert.equal(workspace.some((rule) => /#comparison-picker|\.compare-choice/.test(rule.selector)), false, 'no second list is styled');
 });
 
 // S-01 (what was left): Settings on the shared scale. Its section headings are the workspace's panel headings (16, subsections 14), its prose
@@ -172,4 +172,23 @@ test('at phone width the sticky action bar spans the coin panel and no further',
   const base = bars.findIndex((rule) => /position:sticky/.test(rule.body));
   const phone = bars.findIndex((rule) => /margin-right:-16px/.test(rule.body));
   assert.ok(base >= 0 && phone > base, `phone rule ${phone}, base rule ${base}`);
+});
+
+// Fix round, Minor 7: the "hammer + premium" hint under a partial total must not lift the Total label off the other
+// three: it hangs under its cell, out of the row's flow, and the row makes room for it.
+test('the money line keeps its four labels on one line when the total carries a hint', () => {
+  const workspace = rules(read('workspace.css'));
+  const body = (selector) => workspace.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('.money-hint'), /position:absolute/);
+  assert.match(body('.money-cell'), /position:relative/);
+  assert.match(body('.money-line:has(.money-hint)'), /padding-bottom:\d+px/);
+});
+
+// Fix round, Minor 6: in the popup the calculation and currency share a row, as do hammer and premium, so the answer's
+// figure stays on screen at 600 px with two medians offered above.
+test('the compact calculator puts its fields two to a row', () => {
+  const css = rules(read('bid-tools.css'));
+  const body = (selector) => css.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('.bid-calculator.compact .bid-calculator-fields'), /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(body('.bid-calculator-wide'), /grid-column:1\/-1/);
 });

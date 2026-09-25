@@ -142,7 +142,12 @@ function costEstimateResult(value, path) {
     integerResult(value.paymentFeeMinor, `${path}.paymentFeeMinor`),
     integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
     integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
-    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path),
+    bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path), bpsResult(value, 'importVatBps', path),
+    // A grid-only sheet: the bid's increment and minimum, no fee recorded.
+    OWN(value, 'gridOnly') && value.gridOnly !== true ? failure('invalid-boolean', 'A grid-only sheet says so with true.', `${path}.gridOnly`) : { ok: true },
+    // ...and holds no fee: a sheet with a fee is a fee sheet, never a grid alone.
+    OWN(value, 'gridOnly') && ['shippingMinor', 'paymentFeeBps', 'paymentFeeMinor', 'premiumVatBps', 'platformFeeBps', 'importVatBps'].some((key) => (value[key] ?? 0) !== 0)
+      ? failure('invalid-cost-estimate', 'A grid-only sheet holds no fee.', `${path}.gridOnly`) : { ok: true },
   );
 }
 
@@ -211,8 +216,37 @@ function outcomeResult(outcome, path) {
       outcome.verification !== 'personal-unverified') {
     return failure('missing-verification', 'User-entered outcome prices require a verification label.', `${path}.verification`);
   }
+  if (OWN(outcome, 'terms')) {
+    if (outcome.status !== 'won') return failure('invalid-outcome-terms', 'Only a won outcome carries premium and fee terms.', `${path}.terms`);
+    const terms = outcomeTermsResult(outcome.terms, `${path}.terms`, outcome.hammer?.currency);
+    if (!terms.ok) return terms;
+  }
   if (OWN(outcome, 'cost')) return wonCostResult(outcome, `${path}.cost`);
   return { ok: true, value: outcome };
+}
+
+// The premium rate and fee sheet a won coin's outcome states (Q-01): an object with either or both, the fee sheet in
+// the hammer's currency, since a cost is never converted.
+/** @returns {Result<any>} */
+function outcomeTermsResult(terms, path, hammerCurrency) {
+  const object = objectResult(terms, path); if (!object.ok) return object;
+  if (!OWN(terms, 'buyerPremiumBps') && !OWN(terms, 'costEstimate')) {
+    return failure('invalid-outcome-terms', 'Outcome terms name a premium rate, a fee sheet or both.', path);
+  }
+  const checks = firstFailure(
+    bpsResult(terms, 'buyerPremiumBps', path),
+    // `null` is "no fees were charged beyond the premium" (the Outcome tab's checkbox).
+    OWN(terms, 'costEstimate') && terms.costEstimate !== null ? costEstimateResult(terms.costEstimate, `${path}.costEstimate`) : { ok: true },
+  );
+  if (!checks.ok) return checks;
+  // The fees an outcome states are fees: a grid alone belongs to a bid, not to what a coin cost.
+  if (OWN(terms, 'costEstimate') && terms.costEstimate !== null && OWN(terms.costEstimate, 'gridOnly')) {
+    return failure('invalid-outcome-terms', 'An outcome’s fees are a fee sheet, not a bid grid alone.', `${path}.costEstimate.gridOnly`);
+  }
+  if (OWN(terms, 'costEstimate') && terms.costEstimate !== null && hammerCurrency && terms.costEstimate.currency !== hammerCurrency) {
+    return failure('invalid-outcome-terms', 'Fees are recorded in the hammer’s currency; nothing is converted.', `${path}.costEstimate.currency`);
+  }
+  return { ok: true, value: terms };
 }
 
 const COST_GAP_SET = new Set(COST_GAPS);
@@ -233,8 +267,9 @@ function wonCostResult(outcome, path) {
     const gaps = arrayResult(cost.missing, `${path}.missing`, COST_GAPS.length); if (!gaps.ok) return gaps;
     cost.missing.forEach((gap, index) => checks.push(enumResult(gap, COST_GAP_SET, `${path}.missing[${index}]`)));
   }
+  if (OWN(cost, 'importVat')) checks.push(moneyResult(cost.importVat, `${path}.importVat`));
   const shapes = firstFailure(...checks); if (!shapes.ok) return shapes;
-  for (const key of [...COST_MONEY, 'total']) {
+  for (const key of [...COST_MONEY, 'total', 'importVat']) {
     if (OWN(cost, key) && cost[key].currency !== outcome.hammer?.currency) {
       return failure('invalid-cost', 'A cost is kept in its hammer’s currency.', `${path}.${key}`);
     }
@@ -244,6 +279,9 @@ function wonCostResult(outcome, path) {
   if (OWN(cost, 'total') === gapCount > 0) {
     return failure('invalid-cost', 'A cost has a total or names what is missing, never both or neither.', path);
   }
+  // Import VAT (Q-04) is kept beside a complete cost's total, not in it: the total stays the hammer and the five parts
+  // 0.36.0 checks, so a backup from this version still imports there.
+  if (OWN(cost, 'importVat') && !OWN(cost, 'total')) return failure('invalid-cost', 'Import VAT belongs to a complete cost.', `${path}.importVat`);
   if (!OWN(cost, 'total')) return { ok: true, value: outcome };
   if (!OWN(cost, 'buyerPremiumBps') || !COST_MONEY.every((key) => OWN(cost, key))) {
     return failure('invalid-cost', 'A complete cost carries every part.', path);
@@ -583,6 +621,7 @@ function preferencesResult(preferences, path) {
     typeof preferences.desktopAlertsEnabled === 'boolean'
       ? { ok: true, value: preferences.desktopAlertsEnabled }
       : failure('invalid-boolean', 'Expected a boolean.', `${path}.desktopAlertsEnabled`),
+    bpsResult(preferences, 'importVatBps', path),
   );
   if (!common.ok) return common;
   if (!OWN(preferences, 'housePremiumPresets')) return { ok: true, value: preferences };
@@ -1332,6 +1371,14 @@ export function setOutcome(lot, outcomeDraft, now) {
     const invoice = moneyResult(outcomeDraft.actualInvoice, 'outcome.actualInvoice');
     if (!invoice.ok) return invoice;
   }
+  // The terms a won coin is costed on when its bids carry none, or other ones (Q-01). Stated again, they replace the
+  // ones kept; `null` takes them off; left out of a won correction, the ones kept stand.
+  const statesTerms = OWN(outcomeDraft, 'terms') && outcomeDraft.terms !== null;
+  if (statesTerms) {
+    if (outcomeDraft.status !== 'won') return failure('invalid-outcome-terms', 'Only a won outcome carries premium and fee terms.', 'outcome.terms');
+    const terms = outcomeTermsResult(outcomeDraft.terms, 'outcome.terms', outcomeDraft.hammer?.currency);
+    if (!terms.ok) return terms;
+  }
 
   const reopeningSettled = outcomeDraft.status === 'open' &&
     (lot.outcome.status === 'won' || lot.outcome.status === 'lost');
@@ -1357,6 +1404,14 @@ export function setOutcome(lot, outcomeDraft, now) {
   const nextOutcome = { status: outcomeDraft.status, ...prices };
   if (Object.keys(prices).length > 0) nextOutcome.verification = 'personal-unverified';
   if (lot.outcome.status !== 'open') nextOutcome.correctedAt = now;
+  if (statesTerms) {
+    nextOutcome.terms = {
+      ...(OWN(outcomeDraft.terms, 'buyerPremiumBps') ? { buyerPremiumBps: outcomeDraft.terms.buyerPremiumBps } : {}),
+      ...(OWN(outcomeDraft.terms, 'costEstimate') ? { costEstimate: structuredClone(outcomeDraft.terms.costEstimate) } : {}),
+    };
+  } else if (!OWN(outcomeDraft, 'terms') && outcomeDraft.status === 'won' && lot.outcome.status === 'won' && lot.outcome.terms) {
+    nextOutcome.terms = structuredClone(lot.outcome.terms);
+  }
   next.outcome = nextOutcome;
 
   if ((outcomeDraft.status === 'won' || outcomeDraft.status === 'lost') && OWN(next, 'activeBid')) {

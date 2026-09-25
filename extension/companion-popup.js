@@ -269,7 +269,7 @@ export function buildWatchlistSummary(snapshot, now = new Date().toISOString()) 
   const projected = projectExposure({ lots: snapshot?.lots ?? [] });
   const exposure = {};
   for (const currency of CURRENCIES) exposure[currency] = projected[currency] ?? {
-    hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, byEvent: {},
+    hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, knownTotalMinor: 0, totalCount: 0, byEvent: {},
   };
   return { nextEvent: events[0] ?? null, dueAuctionCount: dueEventIds.size, missedAuctionCount: missedEventIds.size, exposure };
 }
@@ -288,14 +288,6 @@ export function nextEventText(event, { now = new Date().toISOString(), locale = 
   return [event.name, day, relative].filter(Boolean).join(' · ');
 }
 
-// An amount with the narrow symbol ("$", not "US$"), read from its minor units in the two places every stored amount has, as formatMoney reads them.
-export function narrowMoney(money, locale = 'en-US') {
-  const minor = BigInt(money.minor);
-  const absolute = minor < 0n ? -minor : minor;
-  const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: money.currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const fraction = String(absolute % 100n).padStart(2, '0');
-  return formatter.formatToParts(minor < 0n ? -(absolute / 100n) : absolute / 100n).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
-}
 
 // The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
 export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
@@ -478,7 +470,7 @@ async function initCompanionPopup() {
     });
   }
 
-  const calculator = mountBidCalculator($('companion-bid-calculator'), { compact: true });
+  const calculator = mountBidCalculator($('companion-bid-calculator'), { compact: true, remember: true });
 
   // Current source starts folded; it opens by itself where there is a page to capture - the active tab a web page the extension may read, which the
   // toolbar popup's click grants - so it is one line everywhere else.
@@ -519,7 +511,9 @@ async function initCompanionPopup() {
       name.textContent = currency;
       const amount = document.createElement('strong');
       amount.id = `companion-exposure-${currency}`;
-      amount.textContent = `${narrowMoney({ currency, minor: item.hammerMinor }, locale)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
+      // Q-11: beside the hammers, what leaves the account if every bid wins, from the fees saved with the bids.
+      const allIn = item.totalCount ? ` · all-in ${formatMoney({ currency, minor: item.knownTotalMinor }, locale, { narrow: true })} (${item.totalCount} of ${item.bindingCount} with fees)` : '';
+      amount.textContent = `${formatMoney({ currency, minor: item.hammerMinor }, locale, { narrow: true })}${allIn}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
       row.append(name, amount);
       return row;
     }) : [Object.assign(document.createElement('li'), { className: 'companion-none', textContent: 'No active bids' })]));

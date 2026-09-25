@@ -263,3 +263,17 @@ test('a coin won before costs were stored is costed from its own records, and sa
   assert.equal(athens.total_cost, '');
   assert.equal(athens.total_cost_missing, 'premium-rate fees');
 });
+
+// Q-04: import VAT is its own column in the lots table, part of `fees`, and part of `total_cost`.
+test('a won coin’s import VAT is its own column, and the total cost includes it', () => {
+  const snapshot = fullSnapshot();
+  const chf = (minor) => ({ currency: 'CHF', minor });
+  snapshot.lots[1].outcome.cost = {
+    buyerPremiumBps: 2000, premium: chf(24000), premiumVat: chf(0), platformFee: chf(0), shipping: chf(1500), paymentFee: chf(0),
+    total: chf(145500), importVat: chf(7275),
+  };
+  const [, athens] = table(csvFiles(snapshot).lots);
+  assert.deepEqual(['import_vat', 'fees', 'total_cost'].map((key) => athens[key]), ['72.75', '87.75', '1527.75']);
+  const [entry] = table(csvFiles(snapshot).collection);
+  assert.equal(entry.total_cost, '1527.75');
+});

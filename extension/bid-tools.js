@@ -72,6 +72,65 @@ const HOUSE_CHARGES = Object.freeze([
 const optionalPercent = (text, locale, subject) => (typeof text === 'string' && text.trim()
   ? parsePercent(text, locale, subject) : { ok: true, value: null });
 
+// The fee sheet a lot's cost is worked out with, the one set of fields the calculator, the workspace's Bid tab and its
+// Outcome tab all show, in this order. Each names the key a cost estimate stores it under; VAT on the premium and a
+// platform fee are written only when typed, so an estimate without them keeps the shape earlier versions saved.
+export const FEE_SHEET_FIELDS = Object.freeze([
+  { name: 'premiumVat', label: 'VAT on premium %', key: 'premiumVatBps', kind: 'percent', subject: 'VAT on premium', optional: true },
+  { name: 'platformFee', label: 'Platform fee % on hammer', key: 'platformFeeBps', kind: 'percent', subject: 'Platform fee on hammer', optional: true },
+  { name: 'importVat', label: 'Import VAT / duty %', key: 'importVatBps', kind: 'percent', subject: 'Import VAT', optional: true },
+  { name: 'shipping', label: 'Shipping', key: 'shippingMinor', kind: 'money' },
+  { name: 'paymentPercent', label: 'Payment fee %', key: 'paymentFeeBps', kind: 'percent', subject: 'Payment fee' },
+  { name: 'paymentFixed', label: 'Fixed payment fee', key: 'paymentFeeMinor', kind: 'money' },
+]);
+
+// The collector's preset for a house, by the house's name as a lot records it: the same name, case and spacing set
+// aside, and nothing else - a name that merely looks alike proposes no terms.
+export function housePresetFor(presets, houseName) {
+  const key = presetKey(houseName);
+  return key ? (presets ?? []).find((item) => presetKey(item?.name) === key) ?? null : null;
+}
+
+// A fee sheet read from its fields, in the currency of the amount it goes with. Every field blank is no fee sheet at
+// all (null): the fees were not recorded, which is not the same as fees of nothing. Once one fee is typed, a blank one
+// is none. An error names the field it belongs to.
+/**
+ * @param {Record<string, *>} [texts]
+ * @param {{ currency?: string, locale?: string, incrementMinor?: number, minimumBidMinor?: number }} [options]
+ * @returns {{ ok: true, value: Record<string, *> | null } | { ok: false, error: { code?: string, message: string, field: string } }}
+ */
+export function feeSheetEstimate(texts = {}, { currency, locale = 'en-US', incrementMinor = 1, minimumBidMinor = 0 } = {}) {
+  if (FEE_SHEET_FIELDS.every(({ name }) => !String(texts[name] ?? '').trim())) return { ok: true, value: null };
+  const estimate = { currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor, minimumBidMinor };
+  for (const { name, key, kind, subject, optional } of FEE_SHEET_FIELDS) {
+    const text = String(texts[name] ?? '');
+    if (kind === 'money') {
+      if (!text.trim()) continue;
+      const parsed = parseMoney(text, currency, locale);
+      if (!parsed.ok) return { ok: false, error: { ...parsed.error, field: name } };
+      estimate[key] = parsed.value.minor;
+    } else {
+      const parsed = optionalPercent(text, locale, subject);
+      if (!parsed.ok) return { ok: false, error: { ...parsed.error, field: name } };
+      if (parsed.value !== null) estimate[key] = parsed.value;
+      else if (!optional) estimate[key] = 0;
+    }
+  }
+  return { ok: true, value: estimate };
+}
+
+// A saved fee sheet written back into its fields; a key the estimate does not hold leaves its field blank. A fee of
+// nothing reads blank too, as blank reads back as nothing - except on a sheet whose every fee is nothing, which keeps
+// one 0.00 (shipping) so that saving it again keeps it recorded rather than taking it off.
+export function feeSheetTexts(estimate) {
+  const anyFee = FEE_SHEET_FIELDS.some(({ key }) => estimate?.[key] > 0);
+  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key }) => {
+    const value = estimate?.[key];
+    if (value === 0 && (anyFee || name !== 'shipping')) return [name, ''];
+    return [name, formatMinorInput(value)];
+  }));
+}
+
 // The house preset behind one row of the presets editor. It names the field its error belongs to so
 // the page can show the message beside that field rather than in a page-wide status line. VAT on the
 // premium and a platform fee are written only when typed, so a row without them saves the shape an
@@ -214,7 +273,8 @@ export function buildBidCalculation(input) {
   const minimum = optionalMoney(input.minimumText, 0);
   const premiumVat = optionalPercent(input.premiumVatText, input.locale, 'VAT on premium');
   const platformFee = optionalPercent(input.platformFeeText, input.locale, 'Platform fee on hammer');
-  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]
+  const importVat = optionalPercent(input.importVatText, input.locale, 'Import VAT');
+  const failed = [amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]
     .find((entry) => !entry.ok);
   if (failed) return failed;
   if (increment.value.minor <= 0) return { ok: false, error: { code: 'invalid-increment', message: 'Enter an increment greater than zero.' } };
@@ -225,6 +285,7 @@ export function buildBidCalculation(input) {
   // Written only when typed, so an estimate without them keeps the shape earlier versions saved.
   if (premiumVat.value !== null) costEstimate.premiumVatBps = premiumVat.value;
   if (platformFee.value !== null) costEstimate.platformFeeBps = platformFee.value;
+  if (importVat.value !== null) costEstimate.importVatBps = importVat.value;
   const options = { ...costEstimate };
   delete options.currency;
   // A house ladder belongs to the house, not to this lot, so it drives the calculation without
@@ -247,6 +308,101 @@ export function buildBidCalculation(input) {
     ladderNotice: ladder.notice,
     nextValidBid: next.ok ? { currency: input.currency, minor: next.value } : calculated.value.hammer,
   };
+}
+
+// The one line under the calculator's figure: what makes it up, the premium with its rate, each fee that is not
+// nothing in the fee sheet's order ("no fees" when there is none), and the next valid bid where the hammer is off the
+// grid. In budget mode the figure is the hammer, so the line starts with what it costs all in.
+export function calculationLine(calculated, mode, locale = 'en-US') {
+  const value = calculated.value;
+  const money = (amount) => formatMoney(amount, locale);
+  const fees = [['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]
+    .filter(([key]) => value[key]?.minor > 0).map(([key, words]) => `${words} ${money(value[key])}`);
+  const rate = Number.isInteger(calculated.buyerPremiumBps) ? ` (${calculated.buyerPremiumBps / 100}%)` : '';
+  const next = calculated.nextValidBid && calculated.nextValidBid.minor !== value.hammer.minor ? [`next valid bid ${money(calculated.nextValidBid)}`] : [];
+  const lead = mode === 'budget' ? `All-in ${money(value.total)}` : `Hammer ${money(value.hammer)}`;
+  return [lead, `premium ${money(value.premium)}${rate}`, ...(fees.length ? fees : ['no fees']), ...next].join(' · ');
+}
+
+// The medians the popup has on screen, as it leaves them in the browser's session storage for this session only (G-04,
+// P1's key): one entry per provider, `{ acsearch?: E, coinarchives?: E }`, each `E = { reference, provider, currency,
+// median, count, at }` with the median in minor units and `at` in epoch milliseconds. They are read defensively - the
+// calculator and a coin's Bid tab only offer them - so an entry that is not exactly that shape, filed under another
+// provider than its own, from a provider this tool does not search, without a real count and time, is no median at
+// all. Each provider stays its own line: never pooled. Nothing here stores them.
+export const SESSION_MEDIAN_KEY = 'giga-pinax-session-median';
+const MEDIAN_PROVIDERS = Object.freeze({ acsearch: 'acsearch', coinarchives: 'CoinArchives' });
+function sessionMedianEntry(entry, provider, now) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.provider !== provider) return null;
+  const { reference, currency, count } = entry;
+  if (typeof reference !== 'string' || !reference.trim() || reference.length > 200 || !CURRENCIES.includes(currency)) return null;
+  const minor = Number.isSafeInteger(entry.median) ? entry.median
+    : entry.median?.currency === currency && Number.isSafeInteger(entry.median?.minor) ? entry.median.minor : null;
+  if (minor === null || minor <= 0 || !Number.isSafeInteger(count) || count < 1) return null;
+  const at = Number.isSafeInteger(entry.at) ? entry.at : typeof entry.at === 'string' ? Date.parse(entry.at) : NaN;
+  if (!Number.isFinite(at) || at > now + 5 * 60000) return null;
+  return { reference: reference.trim(), provider, providerLabel: MEDIAN_PROVIDERS[provider], currency, median: { currency, minor }, count, at };
+}
+export function readSessionMedians(record, now = Date.now()) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+  return Object.keys(MEDIAN_PROVIDERS).map((provider) => sessionMedianEntry(record[provider], provider, now)).filter(Boolean);
+}
+
+// How long ago the popup drew it, in the words the evidence strip uses.
+export function sessionMedianAge(at, now = Date.now()) {
+  const minutes = Math.max(0, Math.floor((now - at) / 60000));
+  if (minutes < 1) return 'seen just now';
+  if (minutes < 60) return `seen ${minutes} min ago`;
+  return `seen ${Math.floor(minutes / 60)} h ago`;
+}
+
+// The session area, where the browser has one, and a way to hear of its changes; nothing where it has none.
+function sessionStorageArea(storage) {
+  try {
+    const area = storage?.session;
+    if (!area?.get) return null;
+    const listen = (listener) => {
+      const own = (changes) => { if (Object.hasOwn(changes ?? {}, SESSION_MEDIAN_KEY)) listener(changes[SESSION_MEDIAN_KEY].newValue); };
+      if (area.onChanged?.addListener) { area.onChanged.addListener(own); return () => area.onChanged.removeListener?.(own); }
+      const any = (changes, areaName) => { if (areaName === 'session') own(changes); };
+      storage.onChanged?.addListener?.(any);
+      return () => storage.onChanged?.removeListener?.(any);
+    };
+    return { get: () => Promise.resolve(area.get(SESSION_MEDIAN_KEY)).then((items) => items?.[SESSION_MEDIAN_KEY]), listen };
+  } catch {
+    return null;
+  }
+}
+
+// Reads the popup's session medians now and on every change, handing each reading (a list, perhaps empty) to `apply`.
+// Returns what stops listening. A page hands in its own extension storage; by default, this realm's.
+export function followSessionMedians(apply, storage = (globalThis.browser ?? globalThis.chrome)?.storage) {
+  const area = sessionStorageArea(storage);
+  if (!area) return () => {};
+  void area.get().then((record) => apply(readSessionMedians(record))).catch(() => {});
+  return area.listen((record) => apply(readSessionMedians(record)));
+}
+
+// What the popup's calculator had typed in it, kept in the browser's session storage so a popup opened again within 30
+// minutes shows it again (G-01, beside the popup's last answer): the calculation, the currency and each field's text.
+// Read defensively - an old, future or out-of-shape record restores nothing - and never written anywhere else.
+export const CALCULATOR_MEMORY_KEY = 'giga-pinax-calculator-v1';
+export const CALCULATOR_MEMORY_MS = 30 * 60000;
+export const CALCULATOR_FIELDS = Object.freeze(['amount', 'premium', 'shipping', 'paymentPercent', 'paymentFixed', 'increment', 'minimum', 'premiumVat', 'platformFee', 'importVat']);
+export function readCalculatorMemory(record, now = Date.now()) {
+  if (!record || typeof record !== 'object' || Array.isArray(record) || record.version !== 1) return null;
+  if (!Number.isSafeInteger(record.at) || record.at > now + 60000 || now - record.at > CALCULATOR_MEMORY_MS) return null;
+  if (!['total', 'budget'].includes(record.mode) || !CURRENCIES.includes(record.currency)) return null;
+  const texts = record.texts;
+  if (!texts || typeof texts !== 'object' || Array.isArray(texts)) return null;
+  const read = {};
+  for (const field of CALCULATOR_FIELDS) {
+    const value = texts[field] ?? '';
+    if (typeof value !== 'string' || value.length > 32) return null;
+    read[field] = value;
+  }
+  if (!CALCULATOR_FIELDS.some((field) => read[field].trim())) return null;
+  return { mode: record.mode, currency: record.currency, texts: read };
 }
 
 export function snapshotSupersedes(incoming, accepted) {
@@ -279,8 +435,13 @@ export function createPreferenceRevisionGate(apply, isActive = () => true) {
   };
 }
 
-export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total', locale = 'en-US' } = {}) {
-  if (values.lotId !== undefined && values.lotId === loadedLotId) return null;
+// A caller's values are loaded again only under another `key` (G-24): what the collector typed in the calculator stays
+// while the page hands it the same terms. The key is whatever names those terms for the caller - a coin and its saved
+// bid, say; a caller that gives none keys by `lotId`, as earlier callers did.
+export const calculatorKey = (values = {}) => values.key ?? values.lotId;
+export function calculatorInputsForLot(values = {}, { loadedKey, loadedLotId, mode = 'total', locale = 'en-US' } = {}) {
+  const loaded = loadedKey ?? loadedLotId;
+  if (calculatorKey(values) !== undefined && calculatorKey(values) === loaded) return null;
   const estimate = values.costEstimate ?? {};
   const inputs = {
     currency: values.currency ?? null,
@@ -292,6 +453,7 @@ export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total
     minimum: formatMinorInput(estimate.minimumBidMinor, locale),
     premiumVat: formatMinorInput(estimate.premiumVatBps, locale),
     platformFee: formatMinorInput(estimate.platformFeeBps, locale),
+    importVat: formatMinorInput(estimate.importVatBps, locale),
     // A house's tiers belong to that house, not to whichever lot is on screen: leaving them
     // selected would compute this lot's premium and minimum on the last house's schedule. The lot's
     // own saved increment applies until the collector picks a house again.
@@ -306,11 +468,10 @@ export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total
 
 export function mountBidCalculator(
   container,
-  { currency = 'USD', onUseHammer = null, compact = false } = {},
+  { currency = 'USD', onUseHammer = null, compact = false, remember = false } = {},
 ) {
   if (!container?.replaceChildren) throw new TypeError('Calculator container is required.');
   const root = el('section', { className: `bid-calculator${compact ? ' compact' : ''}` });
-  const title = el('h3', { textContent: 'Bid calculator' });
   const mode = el('select');
   mode.append(
     el('option', { value: 'total', textContent: 'Total cost from hammer' }),
@@ -330,8 +491,12 @@ export function mountBidCalculator(
   const minimum = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0.00' });
   const premiumVat = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
   const platformFee = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
+  const importVat = el('input', { type: 'text', inputMode: 'decimal', placeholder: '0' });
   const preset = el('select');
   const fields = el('div', { className: 'bid-calculator-fields' });
+  // The median the Research tab last drew, offered above the fields (G-04): "acsearch median $240 (2 sales) for RIC 306 ·
+  // Use as hammer". Using it puts the median in the hammer, in the median's own currency.
+  const medianLine = el('div', { className: 'bid-calculator-median', hidden: true });
   const label = (text, control) => {
     const node = el('label');
     const caption = el('span', { textContent: text });
@@ -343,6 +508,7 @@ export function mountBidCalculator(
   const amountField = label('Hammer price', amount);
   const premiumField = label('Buyer premium %', premium);
   const presetField = label('House preset', preset);
+  presetField.node.className = 'bid-calculator-wide';
   fields.append(
     modeField.node, currencyField.node, amountField.node, premiumField.node, presetField.node,
   );
@@ -350,15 +516,20 @@ export function mountBidCalculator(
   const feeFields = el('div', { className: 'bid-fees-fields' });
   feeFields.append(
     label('VAT on premium %', premiumVat).node, label('Platform fee % on hammer', platformFee).node,
-    label('Shipping', shipping).node, label('Payment fee %', paymentPercent).node,
+    label('Import VAT / duty %', importVat).node, label('Shipping', shipping).node, label('Payment fee %', paymentPercent).node,
     label('Fixed payment fee', paymentFixed).node, label('Bid increment', increment).node,
     label('Minimum bid', minimum).node);
   fees.append(el('summary', { textContent: 'Fees and bid increments' }), feeFields);
+  // The answer is a stat block, as the median is (G-15): what it is, the figure, and one line of what makes it up.
+  const answer = el('div', { className: 'bid-calculator-answer' });
+  const answerLabel = el('p', { className: 'bid-calculator-label', textContent: 'All-in total' });
+  const figure = el('p', { className: 'bid-calculator-figure', hidden: true });
   const output = el('p', {
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
+  answer.append(answerLabel, figure, output);
   const note = el('p', {
-    className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer and import taxes are excluded.',
+    className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Import VAT or duty, when the coin crosses a border, is charged on hammer, premium and shipping and paid to the carrier or customs, so no payment fee is added to it; Settings can start it at your usual rate for a house in another currency than your default. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer is excluded, and nothing is estimated where a field is blank.',
   });
   // The explanation folds under its own summary, so the figures above it lead.
   const about = el('details', { className: 'bid-calculator-about' });
@@ -381,13 +552,13 @@ export function mountBidCalculator(
   });
   editor.append(editorSummary, presetName, save);
   actions.append(use);
-  root.append(title, fields, fees, output, ladderNote, about, actions, editor, status);
+  root.append(medianLine, fields, answer, ladderNote, fees, about, actions, editor, status);
   container.replaceChildren(root);
 
   let result = null;
   let preferences = null;
   let destroyed = false;
-  let loadedLotId;
+  let loadedKey;
   let ladder = null;
   const showError = (message) => {
     status.textContent = message;
@@ -446,6 +617,7 @@ export function mountBidCalculator(
   const takePreferences = createPreferenceRevisionGate((incoming) => {
     preferences = incoming;
     renderPresets();
+    offerImportVat();
     if (selectLadder()) calculate();
   }, () => !destroyed);
   const calculate = () => {
@@ -459,9 +631,11 @@ export function mountBidCalculator(
     const calculated = buildBidCalculation({ mode: mode.value, amountText: amount.value, premiumText: premium.value,
       shippingText: shipping.value, paymentPercentText: paymentPercent.value, paymentFixedText: paymentFixed.value,
       incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.record ?? null,
-      premiumVatText: premiumVat.value, platformFeeText: platformFee.value,
+      premiumVatText: premiumVat.value, platformFeeText: platformFee.value, importVatText: importVat.value,
       currency: currencyControl.value, locale: language() });
+    answerLabel.textContent = mode.value === 'budget' ? 'Maximum hammer' : 'All-in total';
     if (!calculated.ok) {
+      figure.hidden = true;
       output.textContent = 'Enter an amount and buyer premium.';
       if (!untouched) showError(calculated.error.message);
       return;
@@ -469,23 +643,98 @@ export function mountBidCalculator(
     const hammer = calculated.value.hammer;
     const locale = language();
     renderLadder(calculated);
-    const next = calculated.nextValidBid.minor === hammer.minor
-      ? '' : ` · Next valid bid ${formatMoney(calculated.nextValidBid, locale)}`;
-    // VAT and a platform fee are named only when entered, so a house without them reads as before.
-    const estimate = calculated.costEstimate;
-    const vat = Object.hasOwn(estimate, 'premiumVatBps') ? ` + VAT ${formatMoney(calculated.value.premiumVat, locale)}` : '';
-    const platform = Object.hasOwn(estimate, 'platformFeeBps') ? ` · Platform fee ${formatMoney(calculated.value.platformFee, locale)}` : '';
-    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)}${vat}${platform} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
+    figure.textContent = formatMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
+    figure.hidden = false;
+    output.textContent = calculationLine(calculated, mode.value, locale);
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
   mode.addEventListener('change', () => {
     amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Hammer price';
+    showMedian();
     calculate();
   });
-  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee]) {
+  let sessionMedians = [];
+  // A median is a hammer, so it is offered only while the calculator works from a hammer; each provider on its own line.
+  const showMedian = () => {
+    medianLine.hidden = !sessionMedians.length || mode.value === 'budget';
+    // The reference once, then one short line per provider: two medians leave the answer in view (Fix round, Minor 6).
+    const references = [...new Set(sessionMedians.map((found) => found.reference))];
+    const caption = el('p', { className: 'bid-calculator-median-for', textContent: `For ${references.join(' · ')}` });
+    medianLine.replaceChildren(caption, ...sessionMedians.map((found) => {
+      const row = el('p', { className: 'bid-calculator-median-row' });
+      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
+      const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
+      use.addEventListener('click', () => {
+        currencyControl.value = found.currency;
+        amount.value = formatMinorInput(found.median.minor);
+        offerImportVat(); calculate();
+        amount.focus?.();
+      });
+      row.append(words, use);
+      return row;
+    }));
+  };
+  // A new median follows into the currency select while the hammer is still empty; one the collector is already
+  // working in is left alone.
+  const takeSessionMedians = (found) => {
+    const first = found[0];
+    const fresh = Boolean(first) && !sessionMedians.some((item) => item.provider === first.provider && item.at === first.at);
+    sessionMedians = found;
+    if (fresh && amount.value.trim() === '' && mode.value !== 'budget' && currencyControl.value !== first.currency) {
+      // The lookup's currency is the collector's context now: the preferred-currency default arriving later does not
+      // undo it (the calculator counts as touched).
+      currencyControl.value = first.currency; touched = true; rememberTyped(); offerImportVat(); calculate();
+    }
+    showMedian();
+  };
+  const stopFollowingMedian = followSessionMedians(takeSessionMedians);
+  for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]) {
     control.addEventListener('input', calculate);
   }
+  // A calculator that remembers (the popup's) keeps what was typed in session storage, and puts it back when it opens
+  // again within 30 minutes. Once the collector has typed, or something was put back, a caller's bare default - the
+  // preferred currency arriving - no longer resets the fields.
+  let touched = false;
+  const controlsByField = { amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat };
+  const sessionArea = () => { try { return (globalThis.browser ?? globalThis.chrome)?.storage?.session ?? null; } catch { return null; } };
+  const rememberTyped = () => {
+    if (!remember) return;
+    const texts = Object.fromEntries(CALCULATOR_FIELDS.map((field) => [field, controlsByField[field].value]));
+    const record = { version: 1, at: Date.now(), mode: mode.value === 'budget' ? 'budget' : 'total', currency: currencyControl.value, texts };
+    try { void Promise.resolve(sessionArea()?.set({ [CALCULATOR_MEMORY_KEY]: record })).catch(() => {}); } catch { /* nothing kept */ }
+  };
+  for (const control of [mode, currencyControl, ...Object.values(controlsByField)]) {
+    control.addEventListener(control === mode ? 'change' : 'input', () => { touched = true; rememberTyped(); });
+  }
+  if (remember) {
+    try {
+      void Promise.resolve(sessionArea()?.get(CALCULATOR_MEMORY_KEY)).then((items) => {
+        const kept = readCalculatorMemory(items?.[CALCULATOR_MEMORY_KEY]);
+        if (!kept || touched || destroyed) return;
+        touched = true;
+        mode.value = kept.mode;
+        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Hammer price';
+        currencyControl.value = kept.currency;
+        for (const field of CALCULATOR_FIELDS) controlsByField[field].value = kept.texts[field];
+        importVatOffered = kept.texts.importVat ? null : importVatOffered;
+        showMedian();
+        calculate();
+      }).catch(() => {});
+    } catch { /* no session storage: nothing to put back */ }
+  }
+  // Settings' usual import VAT starts the field for a house in another currency than the collector's default, and
+  // leaves it again for one in the default; a rate the collector typed or cleared is theirs and is never replaced.
+  let importVatOffered = null;
+  const offerImportVat = () => {
+    if (importVatOffered !== null && importVat.value !== importVatOffered) importVatOffered = null;
+    const rate = preferences?.importVatBps;
+    const foreign = Number.isSafeInteger(rate) && preferences?.currency && currencyControl.value !== preferences.currency;
+    if (foreign && importVat.value.trim() === '') { importVat.value = formatMinorInput(rate); importVatOffered = importVat.value; }
+    else if (!foreign && importVatOffered !== null) { importVat.value = ''; importVatOffered = null; }
+  };
+  importVat.addEventListener('input', () => { importVatOffered = null; });
+  currencyControl.addEventListener('input', () => { offerImportVat(); calculate(); });
   preset.addEventListener('change', () => {
     const item = selectedPreset();
     if (preset.value !== '' && !item) return;
@@ -568,23 +817,28 @@ export function mountBidCalculator(
   try { unsubscribe = subscribeToSnapshots(takePreferences); } catch { /* standalone calculator has no extension storage */ }
   return {
     setValues(values = {}) {
-      const inputs = calculatorInputsForLot(values, { loadedLotId, mode: mode.value, locale: language() });
+      // A bare default (no key) never wipes what the collector typed or what was put back.
+      if (touched && calculatorKey(values) === undefined) return;
+      const inputs = calculatorInputsForLot(values, { loadedKey, mode: mode.value, locale: language() });
       if (!inputs) return;
-      loadedLotId = values.lotId;
+      loadedKey = calculatorKey(values);
       if (inputs.currency) currencyControl.value = inputs.currency;
       preset.value = inputs.preset;
       ladder = inputs.ladder;
       if (Object.hasOwn(inputs, 'amount')) amount.value = inputs.amount;
       for (const [control, key] of [[premium, 'premium'], [shipping, 'shipping'], [paymentPercent, 'paymentPercent'],
         [paymentFixed, 'paymentFixed'], [increment, 'increment'], [minimum, 'minimum'],
-        [premiumVat, 'premiumVat'], [platformFee, 'platformFee']]) {
+        [premiumVat, 'premiumVat'], [platformFee, 'platformFee'], [importVat, 'importVat']]) {
         control.value = inputs[key];
       }
+      importVatOffered = null;
+      offerImportVat();
       calculate();
     },
     destroy() {
       destroyed = true;
       unsubscribe?.();
+      stopFollowingMedian();
       container.replaceChildren();
     },
   };

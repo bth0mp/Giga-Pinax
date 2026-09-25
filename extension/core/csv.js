@@ -12,7 +12,7 @@
 // byte order mark, which is what makes Excel read the file as UTF-8 rather than mangle an accented title.
 
 import { FRACTION_DIGITS as MINOR_DIGITS } from './money.js';
-import { costFees, lotCost } from './projections.js';
+import { costFees, costTotal, lotCost } from './projections.js';
 /**
  * @typedef {import('./types.js').Money} Money
  * @typedef {import('./types.js').Snapshot} Snapshot
@@ -69,8 +69,8 @@ function csvText(columns, records) {
 // else what was missing, by the names the store keeps them under.
 /** @type {Array<[string, (lot: *) => string]>} */
 const COST_COLUMNS = [
-  ['total_cost', (lot) => decimalAmount(lotCost(lot)?.total)],
-  ['total_cost_currency', (lot) => currencyOf(lotCost(lot)?.total)],
+  ['total_cost', (lot) => decimalAmount(costTotal(lotCost(lot)))],
+  ['total_cost_currency', (lot) => currencyOf(costTotal(lotCost(lot)))],
   ['total_cost_missing', (lot) => (Array.isArray(lotCost(lot)?.missing) ? lotCost(lot)?.missing?.join(' ') : '')],
 ];
 
@@ -101,6 +101,7 @@ const LOT_COLUMNS = [
   ['invoice_currency', ({ lot }) => currencyOf(lot.outcome?.actualInvoice)],
   ['premium', ({ lot }) => decimalAmount(lotCost(lot)?.premium)],
   ['fees', ({ lot }) => decimalAmount(costFees(lotCost(lot)))],
+  ['import_vat', ({ lot }) => decimalAmount(lotCost(lot)?.importVat)],
   ...COST_COLUMNS.map(([name, read]) => [name, ({ lot }) => read(lot)]),
   ['notes', ({ lot }) => lot.notes],
   ['created_at', ({ lot }) => lot.createdAt],

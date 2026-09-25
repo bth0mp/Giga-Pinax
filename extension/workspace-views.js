@@ -3,9 +3,10 @@
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
-import { costFees, eventTiming, lotCost, projectExposure } from './core/projections.js';
+import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
+import { parseReference } from './lookup.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').AuctionEvent} AuctionEvent
@@ -196,12 +197,13 @@ export function comparisonRows(lots, selectedIds) {
     const bid = terminal ? null : lot.activeBid ?? lot.plannedBid ?? null;
     const amount = terminal ? lot.outcome?.hammer ?? null : bid?.amount ?? null;
     const amountRole = terminal ? 'Final hammer' : lot.activeBid ? 'Active maximum' : lot.plannedBid ? 'Planned maximum' : 'Saved amount';
-    const estimate = lot.costEstimate;
+    const estimate = feeSheetOf(lot.costEstimate);
     const estimateLabel = terminal ? '' : !estimate ? 'No saved fee estimate' : !amount || estimate.currency !== amount.currency
       ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
       : [`${estimate.currency} fees: shipping ${((estimate.shippingMinor ?? 0) / 100).toFixed(2)} + fixed ${((estimate.paymentFeeMinor ?? 0) / 100).toFixed(2)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
         estimate.premiumVatBps ? `VAT ${(estimate.premiumVatBps / 100).toFixed(2)}% on the premium` : '',
-        estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : ''].filter(Boolean).join(' · ');
+        estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : '',
+        estimate.importVatBps ? `import VAT ${(estimate.importVatBps / 100).toFixed(2)}% on hammer, premium and shipping` : ''].filter(Boolean).join(' · ');
     let totalLabel = terminal ? '' : Number.isInteger(bid?.buyerPremiumBps) ? 'Estimated total unknown; recalculate fees' : 'Estimated total unknown; buyer premium not recorded';
     if (!terminal && amount && Number.isInteger(bid?.buyerPremiumBps) && estimate?.currency === amount.currency) {
       const calculated = calculateBidCost(amount, bid.buyerPremiumBps, estimate);
@@ -222,22 +224,25 @@ function lineFigure(money, locale) {
   catch { format = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   return format.formatToParts(whole).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
 }
+// The gaps that leave a won coin with no total, in words; fees never recorded are not one of them (G-05).
 const COST_GAP_WORDS = Object.freeze({
   hammer: 'no hammer recorded',
-  'premium-rate': 'no buyer’s premium rate on its bid',
-  fees: 'no fees were saved with this coin',
+  'premium-rate': 'no buyer’s premium rate',
   'fee-currency': 'its fees were saved in another currency, and are never converted',
 });
-const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
+const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
 
 /**
  * A won coin's money line, as its History card and its collection entry show it: Hammer · Premium · Fees · Total in
  * the hammer's currency, named once. The cost is the one kept with the outcome (or, for a coin won before costs were
- * kept, the same working from its records). A total that could not be worked out reads "Incomplete", and the note
- * says which figure was never recorded; the detail line gives the premium rate and each fee that is not zero.
+ * kept, the same working from its records). With no fees recorded the total is the hammer and premium, said so, and
+ * the line offers to add them; a total that cannot be worked out at all reads "Incomplete" in the warning tone, and the
+ * note says which figure was never recorded. `fix` is the one field that would complete the line - on the coin's
+ * Outcome tab - and the words for the link to it. The detail line gives the premium rate and each fee that is not zero.
  * @param {Lot | null | undefined} lot
  * @param {string} [locale]
- * @returns {{ currency: string, cells: Array<{ label: string, figure: string }>, detail: string, note: string } | null}
+ * @returns {{ currency: string, cells: Array<{ label: string, figure: string, hint?: string }>, detail: string, note: string,
+ *   tone: '' | 'warning', fix: { field: 'hammer' | 'premium' | 'fees', label: string } | null } | null}
  */
 export function wonCostLine(lot, locale = 'en-US') {
   if (lot?.outcome?.status !== 'won') return null;
@@ -245,16 +250,29 @@ export function wonCostLine(lot, locale = 'en-US') {
   const hammer = lot.outcome.hammer;
   const figure = (money) => (money ? lineFigure(money, locale) : '—');
   const fees = costFees(cost);
+  const missing = cost?.missing ?? [];
+  const shown = shownCostTotal(cost, hammer);
+  const currency = hammer?.currency ?? cost?.premium?.currency ?? '';
+  const totalCell = shown.total
+    ? { label: 'Total', figure: figure(shown.total), ...(shown.partial ? { hint: 'hammer + premium' } : {}) }
+    : { label: 'Total', figure: 'Incomplete' };
   const cells = [
     { label: 'Hammer', figure: figure(hammer) }, { label: 'Premium', figure: figure(cost?.premium) },
-    { label: 'Fees', figure: figure(fees) }, { label: 'Total', figure: cost?.total ? figure(cost.total) : 'Incomplete' },
+    { label: 'Fees', figure: fees ? figure(fees) : missing.includes('fees') ? 'not recorded' : '—' }, totalCell,
   ];
   const rate = Number.isInteger(cost?.buyerPremiumBps) ? `Premium ${Number(/** @type {number} */ (cost?.buyerPremiumBps) / 100)}%` : '';
-  const detail = cost?.total ? [rate, ...FEE_WORDS.filter(([key]) => cost[key]?.minor > 0)
-    .map(([key, words]) => `${words} ${figure(cost[key])}`)].filter(Boolean).join(' · ') : '';
-  const gaps = (cost?.missing ?? []).map((gap) => COST_GAP_WORDS[gap] ?? gap).join('; ');
-  const note = cost?.total ? '' : cost ? `Total incomplete: ${gaps}.` : 'Total not worked out: the amounts are too large to add exactly.';
-  return { currency: hammer?.currency ?? cost?.premium?.currency ?? '', cells, detail, note };
+  const detail = cost?.total
+    ? [rate, ...FEE_WORDS.filter(([key]) => cost[key]?.minor > 0).map(([key, words]) => `${words} ${figure(cost[key])}`)].filter(Boolean).join(' · ')
+    : shown.partial ? [rate, 'fees not recorded'].filter(Boolean).join(' · ') : '';
+  const gaps = missing.filter((gap) => COST_GAP_WORDS[gap]).map((gap) => COST_GAP_WORDS[gap]).join('; ');
+  const note = shown.total ? '' : cost ? `Total incomplete: ${gaps || 'no fees recorded'}.` : 'Total not worked out: the amounts are too large to add exactly.';
+  /** @type {{ field: 'hammer' | 'premium' | 'fees', label: string } | null} */
+  let fix = null;
+  if (missing.includes('hammer')) fix = { field: 'hammer', label: 'Add the hammer' };
+  else if (missing.includes('premium-rate')) fix = { field: 'premium', label: 'Add the premium rate' };
+  else if (missing.includes('fee-currency')) fix = { field: 'fees', label: `Enter the fees in ${currency}` };
+  else if (missing.includes('fees')) fix = { field: 'fees', label: 'Add fees' };
+  return { currency, cells, detail, note, tone: shown.total ? '' : 'warning', fix };
 }
 
 /**
@@ -289,6 +307,100 @@ export function lotStatusTone(lot) {
 export function lotRowAmount(lot) {
   if (lot?.outcome?.status && lot.outcome.status !== 'open') return lot.outcome.hammer ?? null;
   return lot?.activeBid?.amount ?? lot?.plannedBid?.amount ?? null;
+}
+
+/**
+ * Whether two written references name the same catalogue entry: both read by the lookup's own rules, and every part of
+ * the reading - catalogue, volume, section, number - the same, so "RIC I (second edition) Nero 306" and "RIC I² Nero 306"
+ * agree while "RIC I² Nero 306a" does not. Text either reading cannot parse matches nothing.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+export function sameReference(left, right) {
+  const read = (text) => { try { return parseReference(String(text ?? '')); } catch { return null; } };
+  const one = read(left); const other = read(right);
+  if (!one || !other) return false;
+  return ['catalogue', 'volume', 'section', 'number'].every((key) => String(one[key] ?? '') === String(other[key] ?? ''));
+}
+
+/**
+ * What a settled coin is and where it was won, as a ledger's first line (Q-12): its reference, the house, sale and lot
+ * number, and the day of its auction - "RIC II Trajan 253 · Künker 341, lot 1234 · Sat 20 Sept 2026" - each part only
+ * where it was recorded.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function historyLine(lot, event, locale = 'en-US') {
+  /** @type {Record<string, *>} */
+  const context = lot?.auctionContext ?? {};
+  const sale = [context.house, context.saleId].filter(Boolean).join(' ');
+  const lotNumber = context.lotNumber ?? lot?.lotNumber;
+  const where = [sale, lotNumber ? `lot ${lotNumber}` : ''].filter(Boolean).join(', ');
+  const day = event?.localDate ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate) : '';
+  return [String(lot?.reference ?? '').trim(), where, day].filter(Boolean).join(' · ');
+}
+
+/**
+ * The bid that decided a settled coin, in place of a count of bid changes (Q-12): "Won on a €6,500.00 maximum (25%)",
+ * "Lost · your bid €500.00, hammer €650.00", "Passed". The bid is the last one settled with the outcome.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function decidingBidLine(lot, format) {
+  const status = lot?.outcome?.status;
+  const settled = (lot?.bidHistory ?? []).findLast((entry) => entry.action === 'settled-won' || entry.action === 'settled-lost');
+  // A coin never placed here may still have been planned: the plan is named as a plan, never as a bid.
+  const plan = settled ? null : lot?.plannedBid;
+  const terms = settled ?? plan;
+  const rate = Number.isInteger(terms?.buyerPremiumBps) ? ` (${/** @type {number} */ (terms?.buyerPremiumBps) / 100}%)` : '';
+  const hammer = lot?.outcome?.hammer ? format(lot.outcome.hammer) : '';
+  if (status === 'won') return settled?.amount ? `Won on a ${format(settled.amount)} maximum${rate}` : plan?.amount ? `Won · your plan was ${format(plan.amount)}${rate}` : 'Won · no bid recorded here';
+  if (status === 'lost') return ['Lost', [settled?.amount ? `your bid ${format(settled.amount)}` : plan?.amount ? `your plan ${format(plan.amount)}` : '', hammer ? `hammer ${hammer}` : ''].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  if (status === 'passed') return 'Passed';
+  return '';
+}
+
+/**
+ * The settled coins newest first: by when their outcome was last recorded, else when they were last written.
+ * @param {Lot[] | null | undefined} lots
+ * @returns {Lot[]}
+ */
+export function settledNewestFirst(lots) {
+  const at = (lot) => String(lot.outcomeHistory?.at(-1)?.recordedAt ?? lot.updatedAt ?? '');
+  return (lots ?? []).filter((lot) => lot?.outcome?.status && lot.outcome.status !== 'open').sort((left, right) => at(right).localeCompare(at(left)));
+}
+
+/**
+ * The amount a coin row shows, in words where one figure would hide a record: a plan saved beside the bid in force is
+ * named after it ("Placed £1,300.00 · plan £1,500.00", Q-10); otherwise the one amount lotRowAmount gives.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function lotRowAmountLabel(lot, format) {
+  const amount = lotRowAmount(lot);
+  if (!amount) return '';
+  const open = !lot?.outcome?.status || lot.outcome.status === 'open';
+  if (open && lot?.activeBid && lot.plannedBid) return `Placed ${format(lot.activeBid.amount)} · plan ${format(lot.plannedBid.amount)}`;
+  return format(amount);
+}
+
+/**
+ * The plan saved beside the bid in force, which the Bid tab shows the placed terms of (Q-10): "Plan to raise to
+ * €1,500.00 (20%)". Empty when there is no such plan.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function raisePlanLine(lot, format) {
+  if (!lot?.activeBid || !lot.plannedBid || (lot.outcome?.status && lot.outcome.status !== 'open')) return '';
+  const bps = lot.plannedBid.buyerPremiumBps;
+  const rate = Number.isInteger(bps) ? ` (${/** @type {number} */ (bps) / 100}%)` : '';
+  return `Plan to raise to ${format(lot.plannedBid.amount)}${rate}`;
 }
 
 /**
@@ -332,6 +444,24 @@ export function reminderLabel(reminder) {
 }
 
 export const DETAIL_TABS = Object.freeze(['details', 'bid', 'reminders', 'outcome']);
+
+/**
+ * The tab a coin opens on, the one its state calls for (G-20): Outcome when its sale ended with no outcome recorded,
+ * Bid when it closes within 48 hours with no bid planned or placed, else the tab the collector last chose this session,
+ * else Details.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string | null} [remembered]
+ * @param {string} [now]
+ * @returns {string}
+ */
+export function openingTab(lot, event, remembered = null, now = new Date().toISOString()) {
+  const open = !lot?.outcome?.status || lot.outcome.status === 'open';
+  const state = eventTiming(event, now).state;
+  if (open && event && state === 'ended') return 'outcome';
+  if (open && state === 'soon' && !lot?.activeBid && !lot?.plannedBid) return 'bid';
+  return remembered && DETAIL_TABS.includes(remembered) ? remembered : 'details';
+}
 /**
  * @param {string} active
  * @param {string} key
