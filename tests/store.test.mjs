@@ -3106,6 +3106,27 @@ test('X-03: a set-aside coin with two bad fields goes back with both corrected, 
   assert.deepEqual(stuck.read().quarantine, [entry]);
 });
 
+// Review Minor 6: a save keeps a coin's text as a correction does, spaces at either end trimmed.
+test('lot.save trims its text as a set-aside correction does', async () => {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null,
+    lot: { title: '  Nero denarius  ', reference: ' RIC I 60 ', lotNumber: ' 12 ', notes: '  padded  ', sourceLinks: [] },
+  }));
+  assert.deepEqual([saved.value.title, saved.value.reference, saved.value.lotNumber, saved.value.notes], ['Nero denarius', 'RIC I 60', '12', 'padded']);
+  const blank = reduce(saved.snapshot, command('lot.save', {
+    expectedRevision: 0, lot: { id: saved.value.id, title: 'Nero denarius', notes: '   ', sourceLinks: [] },
+  }));
+  assert.equal(blank.value.notes, '');
+
+  const entry = { collection: 'lots', record: plainLot(uuid(), { title: 42 }), reason: 'invalid-string', quarantinedAt: NOW };
+  const storage = memoryStorage(setAsideRoot([entry], []));
+  const restored = await createCommandWriter(storage, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: '  Nero denarius  ' }],
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(storage.read().lots[0].title, saved.value.title, 'the same text either way');
+});
+
 // Review Minor 1: near the ceiling a small removal was refused with the reminders sentence, because the reconcile the
 // removal leads to writes a ledger entry of its own. A removal only ever drops alerts, so its schedule is not judged by
 // the bound, and it is never refused in words about reminders.
