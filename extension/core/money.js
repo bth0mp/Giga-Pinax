@@ -267,10 +267,47 @@ export function formatMoney(money, locale = 'en-US', { narrow = false } = {}) {
   return exactParts(money.minor, digits, new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: money.currency,
-    ...(narrow ? { currencyDisplay: 'narrowSymbol' } : {}),
+    ...(narrow ? { currencyDisplay: narrowDisplay(money.currency, locale) } : {}),
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }));
+}
+
+// A currency's sign in a locale, as a display writes it.
+/**
+ * @param {string} currency
+ * @param {string} locale
+ * @param {'symbol' | 'narrowSymbol'} display
+ * @returns {string}
+ */
+const currencySign = (currency, locale, display) => new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: display })
+  .formatToParts(0).find((part) => part.type === 'currency')?.value ?? '';
+
+// The narrow sign is written only where it names one currency for the reader. "$" is the narrow sign of four dollars
+// here: in en-US it is the US dollar's own sign, so the Australian, Canadian and Hong Kong dollars keep "A$", "CA$" and
+// "HK$"; in en-AU it is the Australian dollar's, so the US dollar keeps its standard sign. Where the locale gives a
+// shared sign to none of them, it stays with the one of the four currencies every earlier version knew that has it -
+// the US dollar keeps "$" in en-GB, as it always did - and a sign none of those has ("kr" in en-US) names no one.
+/** @type {Map<string, 'symbol' | 'narrowSymbol'>} */
+const narrowDisplays = new Map();
+/**
+ * @param {string} currency
+ * @param {string} locale
+ * @returns {'symbol' | 'narrowSymbol'}
+ */
+function narrowDisplay(currency, locale) {
+  const key = `${locale}
+${currency}`;
+  const known = narrowDisplays.get(key);
+  if (known) return known;
+  const sign = currencySign(currency, locale, 'narrowSymbol');
+  const sharing = CURRENCIES.filter((code) => currencySign(code, locale, 'narrowSymbol') === sign);
+  const owner = sharing.length === 1 ? currency
+    : sharing.find((code) => currencySign(code, locale, 'symbol') === sign) ?? sharing.find((code) => CURRENCIES.indexOf(code) < 4);
+  /** @type {'symbol' | 'narrowSymbol'} */
+  const display = owner === currency ? 'narrowSymbol' : 'symbol';
+  narrowDisplays.set(key, display);
+  return display;
 }
 
 // The locale's formatter lays out the whole units, and the places are written in from the stored count itself, so

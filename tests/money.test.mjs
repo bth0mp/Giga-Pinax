@@ -643,3 +643,25 @@ test('the four currencies earlier versions knew convert exactly as they did', ()
   assert.equal(parseMoney('1200.505', 'USD').ok, false);
   assert.equal(parsePremiumPercent('22.505').ok, false);
 });
+
+// The narrow symbol is shown only where it names one currency: "$" is the US dollar to an en-US reader, so the
+// Australian, Canadian and Hong Kong dollars keep "A$", "CA$" and "HK$", and a "kr" no locale here gives to one crown
+// keeps the code.
+test('the narrow symbol is used only where it names one currency for the locale', () => {
+  const narrow = (currency, locale = 'en-US') => formatMoney({ currency, minor: 120000 }, locale, { narrow: true });
+  assert.deepEqual(['USD', 'AUD', 'CAD', 'HKD', 'EUR', 'GBP', 'CHF'].map((code) => narrow(code)),
+    ['$1,200.00', 'A$1,200.00', 'CA$1,200.00', 'HK$1,200.00', '€1,200.00', '£1,200.00', 'CHF 1,200.00']);
+  for (const code of ['DKK', 'NOK', 'SEK']) assert.equal(narrow(code), `${code} 1,200.00`, code);
+  // A sign only one listed currency has is narrow as before.
+  assert.equal(narrow('PLN'), 'zł 1,200.00');
+  assert.equal(narrow('CZK'), 'Kč 1,200.00');
+  assert.equal(formatMoney({ currency: 'JPY', minor: 1200000 }, 'en-US', { narrow: true }), '¥1,200,000');
+  // Where the locale gives "$" to its own dollar, that dollar has it and the others do not.
+  assert.equal(narrow('AUD', 'en-AU'), '$1,200.00');
+  assert.equal(narrow('USD', 'en-AU'), 'USD 1,200.00');
+  assert.equal(narrow('CAD', 'en-CA'), '$1,200.00');
+  assert.equal(narrow('SEK', 'sv-SE'), '1 200,00 kr');
+  // Where no listed currency has "$" as its own sign, it stays with the US dollar, as every earlier version showed it.
+  assert.equal(narrow('USD', 'en-GB'), '$1,200.00');
+  assert.equal(narrow('AUD', 'en-GB'), 'A$1,200.00');
+});
