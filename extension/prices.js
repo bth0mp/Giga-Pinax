@@ -1015,10 +1015,13 @@ export async function boundedText(response, maxBytes, { fatal = true } = {}) {
 // The most of an acsearch reply read at all: twice the results text extractLots reads, and several times a real result page.
 export const ACSEARCH_MAX_BYTES = 4 * 1024 * 1024;
 
+// X-06: signal is the collector's Cancel. A search the deadline stopped is "timeout" and one he cancelled "cancelled": neither is a failed connection.
 export async function fetchPrices({ term, currency, category }, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES } = options;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES, signal: cancel } = options;
+  const deadline = AbortSignal.timeout(timeoutMs);
   try {
-    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
+    const signal = cancel ? AbortSignal.any([deadline, cancel]) : deadline;
+    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal, credentials: 'include', cache: 'no-store' });
     if (!response.ok) { void recordFetchFailure('acsearch', response); return { status: 'network' }; }
     let html;
     try { html = await boundedText(response, maxBytes, { fatal: false }); }
@@ -1040,6 +1043,8 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };
   } catch (error) {
+    if (cancel?.aborted) return { status: 'cancelled' };
+    if (deadline.aborted) { void recordFetchFailure('acsearch', deadline.reason ?? error); return { status: 'timeout' }; }
     void recordFetchFailure('acsearch', error);
     return { status: 'network' };
   }

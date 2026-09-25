@@ -214,13 +214,14 @@ test('lookupType reports candidates, none, network and timeout outcomes', async 
   assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: fakeFetch({}) }), { status: 'network' });
 
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
-  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+  // Loop 6 (X-06): the deadline is a timeout, never a failed connection.
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'timeout' });
 
   const search = fakeFetch({ 'pella/apis/search': fixture('pella-search-price-23.xml') });
   const hangRecord = (url, init) => (url.includes('.jsonld') ? hang(url, init) : search(url, init));
   assert.deepEqual(
     await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hangRecord, cache: new Map(), timeoutMs: 20 }),
-    { status: 'network' },
+    { status: 'timeout' },
   );
 });
 
@@ -370,7 +371,7 @@ test('the plain-search fallback shares the lookup deadline', { timeout: 5000 }, 
     if (url.includes('?q=%22')) return Promise.resolve({ ok: true, status: 200, text: async () => '<feed></feed>' });
     return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   };
-  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'network' });
+  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'timeout' });
   assert.equal(signals.length, 2);
   assert.equal(signals[0], signals[1]);
 });
@@ -1011,9 +1012,9 @@ test('Bop lookups distinguish an unavailable search from failed or timed-out ver
   const search = fakeFetch(BIGR_ROUTES);
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   const hangGroup = (url, init) => (url.includes('/apis/getNuds') ? hang(url, init) : search(url, init));
-  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: hangGroup, timeoutMs: 20 }), { status: 'network' });
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: hangGroup, timeoutMs: 20 }), { status: 'timeout' });
   const hangXml = (url, init) => (url.endsWith('.xml') ? hang(url, init) : search(url, init));
-  assert.deepEqual(await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: hangXml, cache: new Map(), timeoutMs: 20 }), { status: 'network' });
+  assert.deepEqual(await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: hangXml, cache: new Map(), timeoutMs: 20 }), { status: 'timeout' });
   // No hits, nothing to verify: no request, and the miss is reported as one.
   const empty = fakeFetch({ 'bigr/apis/search': '<feed></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'Bop', section: '', number: '9D' }, { fetchImpl: empty }), { status: 'none', corpus: 'bigr', query: 'Bopearachchi 9D' });
@@ -1849,4 +1850,19 @@ test('a first-edition RIC citation is answered before any request, and a failed 
   const none = { lookupType: async () => ({ status: 'none' }) };
   const offline = await lookupType(parseReference('RIC I² Nero 9999'), { localProvider: none, fetchImpl: async () => { throw new TypeError('offline'); } });
   assert.deepEqual(offline, { status: 'network', localStatus: 'none' });
+});
+
+// Loop 6 (X-06): a lookup the collector cancels stops its request and answers "cancelled", never a failed connection.
+test('lookupType and lookupById stop on the caller\'s cancel signal', async () => {
+  const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+  const stop = new AbortController();
+  const pending = lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 5000, cancel: stop.signal });
+  stop.abort();
+  assert.deepEqual(await pending, { status: 'cancelled' });
+  const byId = new AbortController();
+  const card = lookupById('pella', 'price.23', { fetchImpl: hang, timeoutMs: 5000, cancel: byId.signal });
+  byId.abort();
+  assert.deepEqual(await card, { status: 'cancelled' });
+  // Real fetch rejects with the signal's own reason: the deadline's is a TimeoutError.
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 10 }), { status: 'timeout' });
 });

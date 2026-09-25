@@ -296,6 +296,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .secondary-button[disabled] {cursor:progress;}
 /* "Check online" sits under the lookup error it answers. */
 .online-fallback {margin-top:6px;}
+/* X-06: a wait past a few seconds says so, with Cancel beside it. */
+.lookup-wait {margin:0; padding-top:8px; font-size:12px; line-height:1.5; color:var(--muted);}
+.lookup-wait .text-button,.sale-strength .text-button,.prices-error-retry {padding:0 2px; font-size:inherit;}
 /* K-02: free words answered with a search the collector starts, the examples and the spellings the box reads. */
 .free-text {margin-top:6px;}
 .free-text .phrase-search {max-width:100%; min-height:var(--control-h-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}

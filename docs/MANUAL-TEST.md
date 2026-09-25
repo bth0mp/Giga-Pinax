@@ -335,3 +335,10 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     for those words. Paste `https://www.cngcoins.com/Lot.aspx?LOT_ID=1`. *Expected:* "That’s a web address…", **Capture
     the lot page you’re on** opened, and no acsearch request. Type `RIC XI Nero 1`. *Expected:* "Couldn’t read that
     reference…" as before.
+
+37. **A site that hangs.** In the browser's developer tools, throttle the network so that acsearch takes over 15 seconds
+    to answer, then look up `Price 23`. *Expected:* after about four seconds the median block reads "Still waiting for
+    acsearch… Cancel"; **Cancel** stops the request and says the search was cancelled. Look up `Price 23` again and wait.
+    *Expected:* "acsearch didn’t answer within 15 seconds. It may be slow or down. Try again", never "Couldn’t reach
+    acsearch". Look up `Bop Euthydemus I 24A` the same way. *Expected:* "Still waiting for numismatics.org… Cancel" under
+    the box after four seconds, and "numismatics.org didn’t answer within 15 seconds…" at the deadline.

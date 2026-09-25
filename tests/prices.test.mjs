@@ -305,7 +305,12 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
     const alive = setTimeout(resolve, 1000);
     signal.addEventListener('abort', () => { clearTimeout(alive); reject(new Error('aborted')); });
   });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+  // Loop 6 (X-06): the deadline is a timeout, and the collector's Cancel a cancelled search; neither is a failed connection.
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'timeout' });
+  const stop = new AbortController();
+  const cancelled = fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 5000, signal: stop.signal });
+  stop.abort();
+  assert.deepEqual(await cancelled, { status: 'cancelled' });
 });
 
 // 0.32: "no counted price plus a star" also describes a signed-in collector whose only hits are lots not yet sold, and he was told to sign in again.

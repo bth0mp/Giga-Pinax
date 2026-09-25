@@ -11,6 +11,7 @@ import { openWantsFor, ricSectionKey, wantBadgeText, wantPillText } from './core
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
+  ACSEARCH_CANCELLED, ACSEARCH_TIMEOUT_MESSAGE, ACSEARCH_WAITING, LOOKUP_CANCELLED, LOOKUP_WAITING,
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
@@ -20,6 +21,12 @@ import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotT
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
 
 const LABELS_KEY = 'giga-pinax-labels-v1';
+// X-06: how long a lookup or a price search runs before it says it is still waiting and offers Cancel. The deadline itself is the fetch's (15 s).
+const STILL_WAITING_MS = 4000;
+// The lookup under way, for its Cancel: every lookup a run starts is handed this signal.
+let lookupCancel = new AbortController();
+// The acsearch search under way, for its Cancel; a newer search or a cleared panel stops it.
+let priceCancel = null;
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -89,12 +96,12 @@ async function localFirstType(reference) {
   if (local.status !== 'online-required') return local;
   const granted = await hasHostAccess([...HOST_ORIGINS]);
   if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
-  if (granted) return lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true });
-  return { ...local, retry: () => lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+  if (granted) return lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal });
+  return { ...local, retry: () => lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal }) };
 }
 
 async function localFirstId(corpus, id) {
-  if (localCatalogue?.serves(corpus) !== true) return lookupById(corpus, id, { cache: labelCache });
+  if (localCatalogue?.serves(corpus) !== true) return lookupById(corpus, id, { cache: labelCache, cancel: lookupCancel.signal });
   const ticket = requestId;
   const context = researchContext;
   const local = await lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: false });
@@ -102,8 +109,8 @@ async function localFirstId(corpus, id) {
   if (local.status !== 'online-required') return local;
   const granted = await hasHostAccess([...HOST_ORIGINS]);
   if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
-  if (granted) return lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true });
-  return { ...local, retry: () => lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+  if (granted) return lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal });
+  return { ...local, retry: () => lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal }) };
 }
 
 // A Number or Ruler/King pasted from a dealer page can carry the hidden characters parseReference drops ("23" plus a soft hyphen is no Price 23), so the
@@ -217,6 +224,9 @@ function offerCoinArchives(filled) {
 
 function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
+  // A search this replaces is stopped, not left to run out its deadline.
+  priceCancel?.abort();
+  priceCancel = null;
   offerCoinArchives(false);
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
@@ -286,6 +296,7 @@ const saleDay = (text) => listDay(text, { year: true });
 function clearOutput() {
   requestId += 1;
   setBusy(false);
+  hideLookupWait();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
   $('candidates').hidden = true;
@@ -658,7 +669,7 @@ async function openLotReference(found, rulers, button, note = '') {
     if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue, cancel: lookupCancel.signal });
   }, note);
 }
 
@@ -1234,10 +1245,32 @@ function showPricesNote(message, withSignIn) {
   $('announcement').textContent = message;
 }
 
-function showPricesError(message) {
+// retry: a search that ran out of time ends with the verb that gets out of it, the same search again (X-06).
+function showPricesError(message, retry = false) {
   $('price-search').open = true;
-  $('prices-error').textContent = message;
+  if (retry) {
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'text-button prices-error-retry';
+    again.textContent = 'Try again';
+    again.addEventListener('click', () => $('prices-form').requestSubmit());
+    $('prices-error').replaceChildren(`${message} `, again);
+  } else $('prices-error').textContent = message;
   $('prices-error').hidden = false;
+}
+
+// X-06: a search or a lookup still running after a few seconds says so where its answer will be, with Cancel beside it.
+function cancelButton(label, cancel) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'text-button';
+  button.textContent = 'Cancel';
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', () => cancel.abort());
+  return button;
+}
+function hideLookupWait() {
+  $('lookup-wait').hidden = true;
 }
 
 // A RIC number with no volume, no section and no single ruler names a type in every volume ("RIC 237" is Caracalla's denarius, Vespasian's aureus and
@@ -1281,11 +1314,25 @@ async function run(perform, note = '', failedReference = null) {
   lotNote = note;
   const id = ++requestId;
   const revision = referenceRevision;
+  const cancel = new AbortController();
+  lookupCancel = cancel;
   setBusy(true);
+  // X-06: a lookup still running after a few seconds (numismatics.org is slow) says so under the box, with Cancel.
+  const waiting = setTimeout(() => {
+    if (id !== requestId || !$('lookup-button').disabled) return;
+    $('lookup-wait-text').textContent = LOOKUP_WAITING;
+    $('lookup-cancel').onclick = () => cancel.abort();
+    $('lookup-wait').hidden = false;
+  }, STILL_WAITING_MS);
   let outcome;
   try { outcome = await perform(); }
   catch { outcome = { status: 'network' }; }
-  finally { if (id === requestId) setBusy(false); }
+  finally {
+    clearTimeout(waiting);
+    if (id === requestId) { setBusy(false); hideLookupWait(); }
+  }
+  // Cancelled by the collector: said once, and the box is his again.
+  if (outcome.status === 'cancelled' && cancel.signal.aborted && id === requestId) { forgetPendingReference(); showError(LOOKUP_CANCELLED); return; }
   // A lookup another has replaced: nobody is waiting for this answer, and the reference it was kept for has been typed over.
   if (id !== requestId) { forgetPendingReference(); return; }
   if (outcome.status !== 'cancelled') { answered = true; renderFirstRun(); }
@@ -1396,12 +1443,22 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   $('prices-restored').hidden = true;
   clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
+  const cancel = new AbortController();
+  priceCancel = cancel;
   setPricesBusy(true);
   showPricesLoading(term, context);
+  // X-06: still loading after a few seconds, the panel says so where the median will be, with Cancel.
+  const waiting = setTimeout(() => {
+    if (id !== priceRequestId || $('prices-panel').dataset.state !== 'loading') return;
+    $('sale-strength').replaceChildren(`${ACSEARCH_WAITING} `, cancelButton('Cancel the acsearch search', cancel));
+  }, STILL_WAITING_MS);
   let outcome;
-  try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }); }
+  try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }, { signal: cancel.signal }); }
   catch { outcome = { status: 'network' }; }
-  finally { if (id === priceRequestId) setPricesBusy(false); }
+  finally {
+    clearTimeout(waiting);
+    if (id === priceRequestId) { setPricesBusy(false); priceCancel = null; }
+  }
   if (id !== priceRequestId || context !== researchContext) return;
   if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealPrices(); return; }
   // No median to hold a place for: the note below says why, and the filter row drawn for the search goes unless something on show still needs it.
@@ -1410,6 +1467,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   pendingPrices = null;
   renderPriceFilters();
   offerCoinArchives(true);
+  if (outcome.status === 'cancelled') { showPricesNote(ACSEARCH_CANCELLED, false); return; }
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced' && outcome.hidden) showPricesNote(hiddenPricesMessage(upcomingLots(outcome.lots ?? [], new Date()).length > 0), true);
@@ -1417,6 +1475,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
+  else if (outcome.status === 'timeout') showPricesError(ACSEARCH_TIMEOUT_MESSAGE, true);
   else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
   // A page without a counted price still lists the lots not sold yet; the note is said first, then how many are coming up.
   if (outcome.lots) {
@@ -1791,7 +1850,7 @@ $('reference-form').addEventListener('submit', async (event) => {
     if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
       runPrices(context.term, context.currency, { remember: false, context });
     }
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue, cancel: lookupCancel.signal });
   });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);

@@ -3147,3 +3147,76 @@ test('a first-edition citation and a number the bundle lacks are not called a co
   await settle();
   assert.equal(popup.element('form-error').textContent, 'Not in the bundled RIC I² (checked offline). numismatics.org couldn’t be reached to look further. You can still search auction results below.');
 });
+
+// Loop 6 (X-06): acsearch or numismatics.org hanging showed "Fetching acsearch…" or "Looking up…" for fifteen seconds with no way out, then called
+// the deadline a connection failure. After four seconds each wait says so with Cancel, which stops the request; the deadline says it was the wait.
+test('a slow acsearch search says it is still waiting, can be cancelled, and its deadline is not called a connection failure', async () => {
+  const timers = [];
+  const searches = [];
+  let answer = 'hang';
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, lookupTypeImpl: async () => ({ status: 'none', corpus: 'pella', query: 'Price 23' }),
+    priceFetch: (request, options = {}) => {
+      searches.push(options.signal);
+      if (answer === 'timeout') return Promise.resolve({ status: 'timeout' });
+      return new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' })));
+    } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('sale-strength').textContent, 'Fetching acsearch…');
+  for (const run of timers.splice(0)) run();
+  const [waiting, cancel] = popup.element('sale-strength').children;
+  assert.equal(waiting, 'Still waiting for acsearch… ');
+  assert.equal(cancel.textContent, 'Cancel');
+  assert.ok(searches[0], 'the search is handed a signal to stop it by');
+  await cancel.emit('click');
+  await settle();
+  assert.equal(searches[0].aborted, true, 'Cancel stops the request');
+  assert.equal(popup.element('prices-note-text').textContent, 'The acsearch search was cancelled. Select “Get prices” to search again.');
+  assert.equal(popup.element('prices-button').disabled, false);
+
+  answer = 'timeout';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  const [message, again] = popup.element('prices-error').children;
+  assert.equal(message, 'acsearch didn’t answer within 15 seconds. It may be slow or down. ');
+  assert.equal(again.textContent, 'Try again');
+  const before = searches.length;
+  await again.emit('click');
+  await settle();
+  assert.equal(searches.length, before + 1, 'Try again searches again');
+});
+
+test('a slow lookup says it is still waiting for numismatics.org, can be cancelled, and its deadline is not called a connection failure', async () => {
+  const timers = [];
+  let answer = 'hang';
+  let asked = null;
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: (reference, options = {}) => {
+      asked = options.cancel;
+      if (answer === 'timeout') return Promise.resolve({ status: 'timeout' });
+      return new Promise((resolve) => options.cancel?.addEventListener('abort', () => resolve({ status: 'cancelled' })));
+    } });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 24A';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('lookup-wait').hidden, true);
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('lookup-wait').hidden, false);
+  assert.equal(popup.element('lookup-wait-text').textContent, 'Still waiting for numismatics.org…');
+  popup.element('lookup-cancel').onclick();
+  await settle();
+  assert.equal(asked.aborted, true, 'Cancel stops the request');
+  assert.equal(popup.element('lookup-wait').hidden, true);
+  assert.equal(popup.element('form-error').textContent, 'Lookup cancelled. Select “Look up” to try again.');
+  assert.equal(popup.element('lookup-button').disabled, false);
+
+  answer = 'timeout';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('form-error').textContent, /^numismatics\.org didn’t answer within 15 seconds\. It may be slow or down\./);
+  assert.doesNotMatch(popup.element('form-error').textContent, /Couldn’t connect/);
+  // A wait that has ended says nothing more when its timer comes round.
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('lookup-wait').hidden, true);
+});

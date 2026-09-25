@@ -8,6 +8,13 @@ const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the 
 const BARE_RIC_HINT = 'Type a ruler or volume to search auction results.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
+// X-06: a wait has deadlines the collector can see: "still waiting" with Cancel after a few seconds, and after the fifteen-second deadline a
+// sentence that says it was the wait, not the connection.
+const ACSEARCH_WAITING = 'Still waiting for acsearch…';
+const ACSEARCH_TIMEOUT_MESSAGE = 'acsearch didn’t answer within 15 seconds. It may be slow or down.';
+const ACSEARCH_CANCELLED = 'The acsearch search was cancelled. Select “Get prices” to search again.';
+const LOOKUP_WAITING = 'Still waiting for numismatics.org…';
+const LOOKUP_CANCELLED = 'Lookup cancelled. Select “Look up” to try again.';
 const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 // K-11: a newcomer does not know that acsearch is a subscription archive, nor that the CoinArchives block below is free and needs no account.
@@ -69,9 +76,11 @@ function catalogueFailureMessage(outcome, hasFallback, bareRic = false, bundled 
   if (bundled) {
     const further = outcome.status === 'unavailable' ? `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}), so nothing further was checked.`
       : outcome.status === 'rate-limited' ? `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}), so nothing further was checked.`
-        : 'numismatics.org couldn’t be reached to look further.';
+        : outcome.status === 'timeout' ? 'numismatics.org didn’t answer within 15 seconds to look further.'
+          : 'numismatics.org couldn’t be reached to look further.';
     return `Not in the bundled ${bundled} (checked offline). ${further}${searches}`;
   }
+  if (outcome.status === 'timeout') return `numismatics.org didn’t answer within 15 seconds. It may be slow or down. Select “Look up” to try again.${searches}`;
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
@@ -95,6 +104,7 @@ function coinArchivesFailure(outcome, currency) {
 }
 
 export {
+  ACSEARCH_CANCELLED, ACSEARCH_TIMEOUT_MESSAGE, ACSEARCH_WAITING, LOOKUP_CANCELLED, LOOKUP_WAITING,
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,

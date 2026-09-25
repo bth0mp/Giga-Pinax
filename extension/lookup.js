@@ -637,15 +637,23 @@ async function getJson(url, fetchImpl, signal) {
   return JSON.parse(await boundedText(response));
 }
 
-function withTimeout(ms) {
+// X-06: the deadline aborts with a TimeoutError of its own, so a lookup that ran out of time is told apart from one whose connection failed; a caller's
+// cancel signal stops it too, with its own reason.
+function withTimeout(ms, cancel) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return { signal: controller.signal, done: () => clearTimeout(timer) };
+  const timer = setTimeout(() => controller.abort(new DOMException('No answer within the lookup deadline.', 'TimeoutError')), ms);
+  const stop = () => controller.abort(new DOMException('The lookup was cancelled.', 'AbortError'));
+  if (cancel?.aborted) stop();
+  cancel?.addEventListener?.('abort', stop);
+  return { signal: controller.signal, done: () => { clearTimeout(timer); cancel?.removeEventListener?.('abort', stop); } };
 }
 
-const failureOutcome = (error) => error?.status === 429 ? { status: 'rate-limited', httpStatus: 429 }
-  : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
-    : { status: 'network' };
+// A request the deadline or a cancel stopped is said as that (X-06): "timeout" and "cancelled", never a failed connection.
+const failureOutcome = (error, signal) => (signal?.aborted ? { status: signal.reason?.name === 'TimeoutError' ? 'timeout' : 'cancelled' }
+  : error?.status === 429 ? { status: 'rate-limited', httpStatus: 429 }
+    : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
+      : { status: 'network' });
+const stoppedByCaller = (signal) => signal?.aborted && signal.reason?.name !== 'TimeoutError';
 
 // unreachable, when given, collects the slugs nomisma.org did not answer for (a failed connection, an outage, the deadline), as against a concept it
 // answered for without an English name (404, or no label), which falls back to its slug as it always did.
@@ -703,14 +711,14 @@ export async function lookupById(corpus, id, options = {}) {
     if (local.status === 'ok') return local;
     if (!online) return { status: 'online-required', localStatus: local.status, corpus, id };
   }
-  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
-  const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation, cancel } = options;
+  const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs, cancel);
   try {
     const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
     return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal, citation });
   } catch (error) {
-    void recordFetchFailure('lookup', error);
-    return failureOutcome(error);
+    if (!stoppedByCaller(timer.signal)) void recordFetchFailure('lookup', timer.signal.aborted ? timer.signal.reason : error);
+    return failureOutcome(error, timer.signal);
   } finally {
     timer.done();
   }
@@ -1033,7 +1041,7 @@ async function lookupOneType(given, options = {}) {
   // left as it was.
   const mint = ricMintSection(given.section);
   const reference = mint ? { ...given, section: mint } : given;
-  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, cancel } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
   const { localProvider, online = true } = options;
@@ -1046,7 +1054,7 @@ async function lookupOneType(given, options = {}) {
     if (local.status === 'ok' || local.status === 'candidates' || local.status === 'too-many') return local;
     if (!online) return { status: 'online-required', localStatus: local.status, corpus, query };
   }
-  const timer = withTimeout(timeoutMs);
+  const timer = withTimeout(timeoutMs, cancel);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
   // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text. A mint is no ruler's
@@ -1118,9 +1126,9 @@ async function lookupOneType(given, options = {}) {
     }
     return found;
   } catch (error) {
-    void recordFetchFailure('lookup', error);
+    if (!stoppedByCaller(timer.signal)) void recordFetchFailure('lookup', timer.signal.aborted ? timer.signal.reason : error);
     // X-04: what the bundle said before the request failed goes with the failure: "not in the bundle" is an answer the connection did not change.
-    return local ? { ...failureOutcome(error), localStatus: local.status } : failureOutcome(error);
+    return local ? { ...failureOutcome(error, timer.signal), localStatus: local.status } : failureOutcome(error, timer.signal);
   } finally {
     timer.done();
   }
