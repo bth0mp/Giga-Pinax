@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- Money is written one way in the popup and the calculator: in your browser's language, with the short sign only where it names one currency there. The calculator's figure, its line, its ladder note and its session median, the acsearch and CoinArchives price panels and the card's saved line now read `¥1,410,000` where they read `JP¥1,410,000`, `$1,200.00` for the US dollar in British English, and `1.300,00 €` in a German browser, as the **Watchlist** tab already did; a crown or a franc keeps its code (`SEK 12,500.00`, `CHF 1,200.00`). The price panels keep their whole-unit figures (`£700`), and a field you type in still shows the plain amount in the currency's own places.
+
 ## [0.38.0] - 2026-09-25
 
 ### Added

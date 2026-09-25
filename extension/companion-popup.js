@@ -201,7 +201,7 @@ export function savedLineText(lots, snapshot, { now = new Date().toISOString(), 
   if (!lot) return '';
   const status = lot.outcome?.status ?? 'open';
   const parts = [status === 'open' ? 'On your watchlist' : status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
-  const money = (amount) => { try { return formatMoney(amount, locale); } catch { return ''; } };
+  const money = (amount) => { try { return formatMoney(amount, locale, { narrow: true }); } catch { return ''; } };
   if (status === 'open' && lot.activeBid?.amount) parts.push(`Bid active ${money(lot.activeBid.amount)}`);
   else if (status === 'open' && lot.plannedBid?.amount) parts.push(`Bid planned ${money(lot.plannedBid.amount)}`);
   const event = lot.auctionEventId ? (snapshot?.auctionEvents ?? []).find(({ id }) => id === lot.auctionEventId) : null;

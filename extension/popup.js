@@ -6,7 +6,7 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
-import { minorDigits } from './core/money.js';
+import { formatMoney, minorDigits } from './core/money.js';
 import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
@@ -833,6 +833,16 @@ function renderPriceFilters() {
   $('price-filters').hidden = !citing && !denomination;
 }
 
+// The panels' figures are hammer prices in whole units, as acsearch and CoinArchives print them, and medians rounded to the unit. They are written
+// by the one page rule, formatMoney in the browser's language with the narrow sign, and keep no places a rounded figure does not have. A figure
+// that is no amount at all writes a dash rather than taking the panel down.
+function panelMoney(currency) {
+  const scale = 10 ** (minorDigits(currency) ?? 2);
+  return (value) => {
+    try { return formatMoney({ currency, minor: Math.round(value) * scale }, navigator.language, { narrow: true, whole: true }); } catch { return '—'; }
+  };
+}
+
 // Draws the chosen period from the page's lots, with no request, as of the collector's own date: everything on the panel follows the period
 // except the trend and the last sale, which come from the whole page. A period without a counted sale keeps only the buttons, the trend and the
 // last sale. The announcement names a period other than All, and All too when the collector has just chosen it (named).
@@ -840,7 +850,7 @@ function renderPriceFilters() {
 // verifies it a moment later, and Copy summary must head the text with that label.
 function renderPrices(lots, currency, term, named = false, context = shownPrices?.context ?? researchContext, card = priceCard(context)) {
   if (!context) return;
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const money = { format: panelMoney(currency) };
   const now = localDay(new Date());
   const period = PERIODS.find((entry) => entry.value === preferences.period);
   const reference = context.reference;
@@ -1016,7 +1026,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   const used = coinArchivesCuration.included(periodLots);
   const summary = summarise(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = used;
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const money = { format: panelMoney(currency) };
   const median = summary.count ? money.format(summary.median) : '—';
   for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
   $('coinarchives-median').textContent = summary.count ? median : '';

@@ -7,6 +7,9 @@ import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './
 
 const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
 const language = () => globalThis.navigator?.language ?? 'en-US';
+// Every amount the calculator shows is written by the one page rule: the collector's locale, and the narrow sign only
+// where it names one currency there (¥, not JP¥; SEK 12,500.00, not kr).
+const pageMoney = (amount, locale = language(), options = {}) => formatMoney(amount, locale, { narrow: true, ...options });
 const presetKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
 // A saved amount written back into a field the collector saves again, so it is written the one way
@@ -217,12 +220,7 @@ export function parseHousePresets(text) {
 }
 
 // An amount on a house's schedule, in whole units when it is a whole amount, as schedules are printed.
-function tierMoney(minor, currency, locale) {
-  const scale = 10n ** BigInt(minorDigits(currency) ?? 2);
-  if (BigInt(minor) % scale !== 0n) return formatMoney({ currency, minor }, locale);
-  return new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
-    .format(BigInt(minor) / scale);
-}
+const tierMoney = (minor, currency, locale) => pageMoney({ currency, minor }, locale, { whole: true });
 
 // The tier of a house's ladder a bid stands on, and its step: "on the €1,000–€2,000 tier, steps of
 // €100". The top tier has no end. Nothing when there is no ladder or no bid to place on it.
@@ -316,7 +314,7 @@ export function buildBidCalculation(input) {
 // grid. In budget mode the figure is the hammer, so the line starts with what it costs all in.
 export function calculationLine(calculated, mode, locale = 'en-US') {
   const value = calculated.value;
-  const money = (amount) => formatMoney(amount, locale);
+  const money = (amount) => pageMoney(amount, locale);
   const fees = [['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]
     .filter(([key]) => value[key]?.minor > 0).map(([key, words]) => `${words} ${money(value[key])}`);
   const rate = Number.isInteger(calculated.buyerPremiumBps) ? ` (${calculated.buyerPremiumBps / 100}%)` : '';
@@ -599,7 +597,7 @@ export function mountBidCalculator(
       const locale = language();
       const onGrid = calculated.nextValidBid.minor === calculated.value.hammer.minor;
       const bid = onGrid ? calculated.value.hammer : calculated.nextValidBid;
-      ladderNote.textContent = `${tiers} ${onGrid ? 'The hammer' : 'The next valid bid'}, ${formatMoney(bid, locale)}, is ${ladderTierText(applied.tiers, bid.minor, bid.currency, locale)}.`;
+      ladderNote.textContent = `${tiers} ${onGrid ? 'The hammer' : 'The next valid bid'}, ${pageMoney(bid, locale)}, is ${ladderTierText(applied.tiers, bid.minor, bid.currency, locale)}.`;
     } else {
       ladderNote.textContent = `${tiers} Bids follow those tiers, not the fixed increment.`;
     }
@@ -655,7 +653,7 @@ export function mountBidCalculator(
     const hammer = calculated.value.hammer;
     const locale = language();
     renderLadder(calculated);
-    figure.textContent = formatMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
+    figure.textContent = pageMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
     figure.hidden = false;
     output.textContent = calculationLine(calculated, mode.value, locale);
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
@@ -675,7 +673,7 @@ export function mountBidCalculator(
     const caption = el('p', { className: 'bid-calculator-median-for', textContent: `For ${references.join(' · ')}` });
     medianLine.replaceChildren(caption, ...sessionMedians.map((found) => {
       const row = el('p', { className: 'bid-calculator-median-row' });
-      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
+      const words = el('span', { textContent: `${found.providerLabel} median ${pageMoney(found.median)} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
       const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
       use.addEventListener('click', () => {
         currencyControl.value = found.currency;

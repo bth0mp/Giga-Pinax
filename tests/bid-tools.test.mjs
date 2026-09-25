@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import * as money from '../extension/core/money.js';
 import { FakeDocument, browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
 import {
-  buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
+  buildBidCalculation, calculationLine, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
   formatMinorInput, housePresetsText, ladderTierText, parseHousePresets, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
 } from '../extension/bid-tools.js';
 
@@ -311,7 +311,7 @@ test('preset save has a synchronous pending guard and disables its control', () 
 
 // The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
 // by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
-async function mountCalculator({ snapshot, session = null, options = {} }) {
+async function mountCalculator({ snapshot, session = null, options = {}, language = 'en-US' }) {
   const document = new FakeDocument();
   const container = document.createElement('div');
   const commands = [];
@@ -322,7 +322,7 @@ async function mountCalculator({ snapshot, session = null, options = {} }) {
     newRequestId: () => `request-${commands.length + 1}`,
     subscribeToSnapshots: () => () => {},
     ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), set: async (items) => { Object.assign(session, structuredClone(items)); }, onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
-    ...browserGlobals(document),
+    ...browserGlobals(document, { language }),
     Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
   };
   sandbox.globalThis = sandbox;
@@ -743,4 +743,30 @@ test('a calculator mounted in yen shows whole-yen placeholders before anything i
   assert.equal(calculator.field('Currency').value, 'JPY');
   assert.deepEqual(['Hammer price', 'Shipping', 'Fixed payment fee', 'Minimum bid', 'Bid increment'].map((caption) => calculator.field(caption).placeholder),
     ['0', '0', '0', '0', '1']);
+});
+
+// H-04 (cycle 5): the calculator writes money by the one page rule, formatMoney(money, the browser's language,
+// { narrow: true }) - the same yen reads ¥ here as on the workspace's coin row and the popup's Watchlist tab, never JP¥.
+test('the calculator writes every amount in the browser locale with the narrow sign where it names one currency', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'JPY', housePremiumPresets: [] } } }, language: 'en-GB', options: { currency: 'JPY' } });
+  const amount = calculator.container.querySelector('input');
+  amount.value = '1200000';
+  calculator.premium.value = '17.5';
+  await calculator.premium.emit('input');
+  assert.equal(calculator.figure.textContent, '¥1,410,000');
+  assert.equal(calculator.output.textContent, 'Hammer ¥1,200,000 · premium ¥210,000 (17.5%) · no fees');
+  const currency = calculator.field('Currency');
+  currency.value = 'SEK'; amount.value = '12500'; await currency.emit('input');
+  assert.equal(calculator.figure.textContent.replace(/ /g, ' '), 'SEK 14,687.50');
+  currency.value = 'USD'; await currency.emit('input');
+  assert.equal(calculator.figure.textContent, '$14,687.50', 'en-GB reads "$" as the US dollar, not "US$"');
+});
+
+test('the calculator line, the ladder tier and the session median follow the one page rule', async () => {
+  const line = buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '20', currency: 'USD', locale: 'en-GB' });
+  assert.equal(calculationLine(line, 'total', 'en-GB'), 'Hammer $1,000.00 · premium $200.00 (20%) · no fees');
+  assert.equal(ladderTierText([{ from: 0, step: 5000 }, { from: 100000, step: 10000 }], 120000, 'USD', 'en-GB'), 'on the tier from $1,000, steps of $100');
+  const session = { 'giga-pinax-session-median': { acsearch: { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'USD', median: 24000, count: 2, at: Date.now() } } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session, language: 'en-GB' });
+  assert.equal(calculator.container.querySelector('.bid-calculator-median').children[1].children[0].textContent, 'acsearch median $240.00 · 2 sales');
 });

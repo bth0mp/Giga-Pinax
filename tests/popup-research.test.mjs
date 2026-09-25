@@ -90,7 +90,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl, language = undefined }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -151,7 +151,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       setItem: (key, value) => { stored.set(key, String(value)); },
     },
     location: { search, href: `moz-extension://test/popup.html${search}` },
-    navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
+    navigator: { language, clipboard: { writeText: async (text) => { clipboard.push(text); } } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
@@ -290,6 +290,23 @@ test('an answered lookup keeps no reference, and access already granted was neve
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.deepEqual(popup.writes, ['Price 23']);
+});
+
+// H-04 (cycle 5): the price panels write money by the one page rule, in the browser's language with the narrow sign, never in
+// a hard-coded en-US; a median or a sale is a whole-unit figure, so it keeps no places it does not have.
+test('the acsearch and CoinArchives panels write their figures in the browser locale', async () => {
+  const popup = await loadPopup({ language: 'de-DE', permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const spaced = (text) => text.replace(/ /g, ' ');
+  assert.equal(spaced(popup.element('median-amount').textContent), '120 $');
+  assert.equal(popup.element('median-currency').textContent, 'USD');
+  assert.equal(spaced(popup.element('sale-list').children[0].children[1].textContent), '120 $');
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(spaced(popup.element('coinarchives-median').textContent), '150 $');
 });
 
 // A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the

@@ -252,22 +252,39 @@ export function parsePremiumPercent(text, locale = 'en-US') {
   return parsePercent(text, locale, 'Buyer premium');
 }
 
+// A locale as Intl reads it: the browser's language passes through, and a tag Intl refuses is written in en-US, as
+// every amount was before pages passed their own, rather than taking the page down.
+/** @type {(locale: *) => string} */
+function readableLocale(locale) {
+  try {
+    new Intl.NumberFormat(locale);
+    return locale;
+  } catch {
+    return 'en-US';
+  }
+}
+
 /**
- * An amount in the collector's locale. `narrow` writes the narrow symbol ("$", not "US$"), where only one currency is in
- * view and the code is named beside it.
+ * An amount in the collector's locale: the one way every page writes money, as formatMoney(money, the page's locale,
+ * { narrow: true }). `narrow` writes the narrow sign ("$", not "US$") only where it names one currency for that locale;
+ * elsewhere the standard sign or the code ("SEK 12,500.00"). `whole` leaves the places off an amount that has none to
+ * show (£1,000, not £1,000.00), as a house prints its increments and the price panel its rounded medians; an amount
+ * with pence keeps them.
  * @param {Money} money
  * @param {string} [locale]
- * @param {{ narrow?: boolean }} [options]
+ * @param {{ narrow?: boolean, whole?: boolean }} [options]
  * @returns {string}
  */
-export function formatMoney(money, locale = 'en-US', { narrow = false } = {}) {
+export function formatMoney(money, locale = 'en-US', { narrow = false, whole = false } = {}) {
   const checked = validateMoney(money);
   if (!checked.ok) throw new TypeError(checked.error.message);
-  const digits = /** @type {number} */ (minorDigits(money.currency));
-  return exactParts(money.minor, digits, new Intl.NumberFormat(locale, {
+  const tag = readableLocale(locale);
+  const own = /** @type {number} */ (minorDigits(money.currency));
+  const digits = whole && BigInt(money.minor) % 10n ** BigInt(own) === 0n ? 0 : own;
+  return exactParts(digits === own ? money.minor : Number(BigInt(money.minor) / 10n ** BigInt(own)), digits, new Intl.NumberFormat(tag, {
     style: 'currency',
     currency: money.currency,
-    ...(narrow ? { currencyDisplay: narrowDisplay(money.currency, locale) } : {}),
+    ...(narrow ? { currencyDisplay: narrowDisplay(money.currency, tag) } : {}),
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }));

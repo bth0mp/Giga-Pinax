@@ -1408,3 +1408,12 @@ test('a Bopearachchi card of a wanted type says so under it, from the reading th
   page.card(bopCard);
   assert.equal(line.hidden, true, 'without a reading the label reads as nothing');
 });
+
+// H-04 (cycle 5): the card's saved line writes its bid by the one page rule - the browser's language, the narrow sign
+// where it names one currency - as the Watchlist tab beside it does: ¥, never JP¥.
+test('the saved line writes the bid in the browser locale with the narrow sign', () => {
+  const lot = { reference: 'RIC I² Nero 306', activeBid: { amount: { currency: 'JPY', minor: 1200000 } } };
+  assert.equal(savedLineText([lot], {}, { locale: 'en-GB' }), 'On your watchlist · Bid active ¥1,200,000');
+  const sek = { reference: 'RIC I² Nero 306', plannedBid: { amount: { currency: 'SEK', minor: 1250000 } } };
+  assert.equal(savedLineText([sek], {}, { locale: 'en-GB' }).replace(/\u00a0/g, ' '), 'On your watchlist · Bid planned SEK 12,500.00');
+});
