@@ -42,6 +42,8 @@ function labelFor(values, cache) {
 }
 
 const PEOPLE_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person.name]));
+// The one man Nomisma names twice, before and after 27 BC; a closed pair, never a spelling.
+const SAME_MAN = Object.freeze({ octavian: 'augustus', augustus: 'octavian' });
 // The checked-in Nomisma snapshot was filtered against OCRE's own authority and portrait concepts, so it names RIC's
 // people and nobody else's; only OCRE reads it. It outranks the bundled Nomisma labels for those concepts because it is
 // the narrower, checked list; the two are Nomisma's own English names either way and agree about all 214 people, so the
@@ -237,6 +239,18 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   };
   const pickRic = (list, reference) => pickRicHits(list.map((entry) => ({ entry, hit: reading(entry) })), reference);
   const hasPerson = (record, ids) => [...(record?.a ?? []), ...(record?.o?.p ?? [])].some((id) => ids.has(id));
+  // A heading names whose coin it is, which is the man on it (lead, review M4): OCRE's authority for a tetrarchic or Constantinian mint issue is the
+  // emperor under whom the mint struck ("Constantine I" on a follis of Maximinus). The people the obverse portrays count; a god or a
+  // personification is no one's portrait, and a record with none is its authority's coin. '' where the heading names someone on the coin, else the
+  // reason it is offered rather than opened: "struck under Constantine I for Maximinus Daia".
+  // Nomisma names one man twice: Octavian and Augustus (lot.js FILED_UNDER reads the same pair), so a portrait of either is the other's too.
+  const portrayed = (record) => (record?.o?.p ?? []).filter((id) => PEOPLE_BY_ID.has(id));
+  const notOnCoin = (record, ids) => {
+    const shown = portrayed(record);
+    if (shown.length === 0 || shown.some((id) => ids.has(id) || ids.has(SAME_MAN[id]))) return '';
+    const under = (record?.a ?? []).filter((id) => ids.has(id)).map((id) => PEOPLE_BY_ID.get(id));
+    return under.length ? `struck under ${under.join(' and ')} for ${shown.map((id) => PEOPLE_BY_ID.get(id)).join(' and ')}` : '';
+  };
   const citationReference = (reference) => ({ ...reference, section: isRicPerson(reference.section) ? '' : reference.section, id: undefined, rulers: undefined });
   // "Nero. RIC I 306" names no edition, and OCRE holds RIC I, II.1 and II.3 in their second alone. A dealer citing the 1923 first edition's numbers
   // means another coin, so the one type there is never opened on it: it is offered, labelled with why the collector has to take it himself.
@@ -308,11 +322,16 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.
         // Nor is a coin from another RIC VI–IX mint than the one the heading names beside the ruler: his number there is not the dealer's coin.
-        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title) && headed.length === 0 && !strayMint(reference, final.entry.title)) {
+        // Only a heading's ruler is held to the portrait: a section typed is RIC's own title, and names the type whoever is on it.
+        const fromHeading = !isRicPerson(reference.section) && Array.isArray(reference.rulers) && reference.rulers.length > 0;
+        const reason = final.status === 'ok' && fromHeading ? notOnCoin(await recordById(final.entry.id), people) : '';
+        if (final.status === 'ok' && !reason && !otherVolumePart(reference, final.entry.title) && headed.length === 0 && !strayMint(reference, final.entry.title)) {
           return await listedById('ocre', final.entry.id);
         }
         if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
-        return local(editionOffer(final, reference), 'ocre', query);
+        const offered = editionOffer(final, reference);
+        if (reason) offered.candidates = offered.candidates.map((entry) => ({ ...entry, note: [entry.note, reason].filter(Boolean).join('; ') }));
+        return local(offered, 'ocre', query);
       }
       return { status: 'candidates', candidates: entries.map((entry) => ({ ...entry, source: 'local' })), partial: true, personMismatch: true, corpus: 'ocre', query };
     }

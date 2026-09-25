@@ -1119,6 +1119,12 @@ async function lookupOneType(given, options = {}) {
       if (![found.card.authority, found.card.portrait].some((name) => asked.includes(norm(name)))) {
         return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
       }
+      // A heading names the man on the coin (lead, review M4): named as the authority alone, with another person on the obverse, the coin is offered
+      // with the reason and not opened, as the bundle offers it.
+      const { authority, portrait } = found.card;
+      if (portrait && isRicPerson(portrait) && !asked.includes(norm(portrait)) && asked.includes(norm(authority))) {
+        return { status: 'candidates', candidates: [{ ...picked.entry, note: `struck under ${authority} for ${portrait}` }], partial: true, corpus, query: shown };
+      }
     }
     // A coin from another ruler opens only when the card says why it is filed there AND the portrait it names is the ruler that was typed: the portrait
     // facet carries reverse portraits too, so a hit can be a third ruler's coin whose obverse happens to head the section. Anything else is offered.

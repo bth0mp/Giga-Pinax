@@ -1881,3 +1881,16 @@ test('a cancel or the deadline during the names stops the lookup rather than dra
   assert.deepEqual(await pending, { status: 'cancelled' });
   assert.deepEqual(await lookupById('ocre', 'ric.1(2).ner.306', { fetchImpl: hangingNames, cache: new Map(), timeoutMs: 30 }), { status: 'timeout' });
 });
+
+// Loop 6 fix round (lead, review M4), online as in the bundle: a heading names the man on the coin. Vespasian's 972 portrays Titus as Caesar, so a
+// Vespasian heading is offered it with the reason, and a Titus heading opens it.
+test('online, a heading that names the authority but not the portrait is offered the coin with the reason', async () => {
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  const vespasian = JSON.stringify({ '@graph': [{ '@id': 'nm:vespasian', 'skos:prefLabel': [{ '@value': 'Vespasian', '@language': 'en' }] }] });
+  const routes = { 'ocre/apis/search': fixture('ocre-search-titus-972.xml'), 'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'),
+    'nomisma.org/id/titus.jsonld': titus, 'nomisma.org/id/vespasian.jsonld': vespasian };
+  const offered = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Vespasian'] }, { fetchImpl: fakeFetch(routes), cache: new Map() });
+  assert.equal(offered.status, 'candidates');
+  assert.deepEqual(offered.candidates.map(({ id, note }) => [id, note]), [['ric.2_1(2).ves.972', 'struck under Vespasian for Titus']]);
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl: fakeFetch(routes), cache: new Map() })).card?.id, 'ric.2_1(2).ves.972');
+});

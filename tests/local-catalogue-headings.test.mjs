@@ -3,10 +3,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { answer, headingOpens as openedOver, lotReference, peopleOn, skip } from './helpers/bundle.mjs';
+import { answer, headingOpens as openedOver, lotReference, peopleOn, portraitsOn, skip } from './helpers/bundle.mjs';
+import { RIC_PEOPLE } from '../extension/ric-people.js';
 
-const opensOnly = (opened, ids, heading) => {
-  for (const hit of opened) assert.ok(peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`);
+// Loop 6 fix round (lead, review M4): a heading opens a coin only where one of the people it names is on it - the obverse's portrait, or the authority
+// where the obverse portrays no person.
+const PERSON = new Set(RIC_PEOPLE.map(({ id }) => id));
+const opensOnly = (opened, ids, heading, section = false) => {
+  for (const hit of opened) {
+    // A heading that is RIC's own section name ("Philip I") is read as that section, as a typed section is, and names the type whoever is on it.
+    if (section) { assert.ok(peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`); continue; }
+    const shown = portraitsOn(hit.card.id).filter((id) => PERSON.has(id));
+    assert.ok(shown.length ? shown.some((id) => ids.includes(id)) : peopleOn(hit.card.id).some((id) => ids.includes(id)), `${heading}: ${hit.card.id}`);
+  }
 };
 
 test('over the bundled catalogue, a heading that is one man\'s own name opens his coins and nobody else\'s', { skip }, async () => {
@@ -16,8 +25,9 @@ test('over the bundled catalogue, a heading that is one man\'s own name opens hi
   assert.deepEqual(germanicus.map(({ number }) => number), [35, 43, 50, 57, 59, 60, 61, 62, 105, 106]);
   opensOnly(germanicus, ['germanicus'], 'Germanicus');
   // Licinius is Gallienus's own nomen, so widening cost the heading every one of its answers. It opens what it always opened, and each coin is his.
+  // Loop 6 fix round: 64 of the 88 were struck under Licinius for another man (Constantine, Maximinus, Licinius II), and are offered now.
   const licinius = await openedOver('Licinius');
-  assert.equal(licinius.length, 88);
+  assert.equal(licinius.length, 24);
   opensOnly(licinius, ['licinius'], 'Licinius');
   // A dealer usually writes the father with his numeral; it must reach the same coins, not fall back into the widened set.
   assert.deepEqual((await openedOver('Licinius I')).map(({ card }) => card.id), licinius.map(({ card }) => card.id));
@@ -27,11 +37,12 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
   // A name no person carries alone names nobody: none of these headings may pick one man out of the several it could mean.
   for (const heading of ['Sept. Severus', 'Maximinus', 'Drusus']) assert.deepEqual(await openedOver(heading), [], heading);
   // A shared spelling keeps every owner, and a coin only opens where one of them is on it.
-  // "Domitianus" is Domitian's own Latin name too, so his 290 numbers open and the six that were a stranger's become a choice.
+  // "Domitianus" is Domitian's own Latin name too, so his numbers open and the six that were a stranger's become a choice. Loop 6 fix round: 21 of
+  // his 290 portray Domitia or Julia Titi, and are offered; so are Valerian's joint-reign coins of Gallienus, Valens's of others, Maximus's two.
   const opens = new Map();
-  for (const [heading, count, owners] of [['Valerianus', 83, ['valerian', 'valerian_ii']],
-    ['Domitianus', 290, ['domitian_ii', 'domitian', 'domitius_domitianus']],
-    ['Valens', 12, ['valens']], ['Romulus', 12, ['romulus']], ['Maximus', 18, ['gaius_julius_verus_maximus']]]) {
+  for (const [heading, count, owners] of [['Valerianus', 1, ['valerian', 'valerian_ii']],
+    ['Domitianus', 269, ['domitian_ii', 'domitian', 'domitius_domitianus']],
+    ['Valens', 7, ['valens']], ['Romulus', 12, ['romulus']], ['Maximus', 16, ['gaius_julius_verus_maximus']]]) {
     const opened = await openedOver(heading);
     assert.equal(opened.length, count, heading);
     opensOnly(opened, owners, heading);
@@ -44,7 +55,7 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
   // A heading RIC heads a section with is that section, and its number opens the one coin.
   const philip = await openedOver('Philip I');
   assert.equal(philip.find(({ number }) => number === 16)?.card.id, 'ric.4.ph_i.16');
-  opensOnly(philip, ['philip_the_arab'], 'Philip I');
+  opensOnly(philip, ['philip_the_arab'], 'Philip I', true);
 });
 
 // Loop V-07: a Spanish house's heading opens exactly the coins the English name opens, over RIC numbers 1 to 400, and no other.
@@ -96,4 +107,26 @@ test('over the bundled catalogue, a multi-coin lot opens no row under another ci
       assert.notEqual(result.status, 'ok', `${text}: ${row.text} opened ${result.card?.id}`);
     }
   }
+});
+
+// Loop 6 fix round (lead's decision on review M4): a heading names whose coin it is, which is the man on it. OCRE's authority for a tetrarchic or
+// Constantinian mint issue is the emperor under whom the mint struck, so "Constantine I. Follis. RIC 117a." opened a follis of Maximinus. A
+// heading-driven single opens only where the ruler it names is the coin's portrait, or its authority where the record portrays no person; named as
+// the authority alone, the coin is offered with the reason, and nothing opens. A typed section is RIC's own title and still opens.
+test('over the bundled catalogue, a heading opens a coin only where the ruler it names is on it', { skip }, async () => {
+  const london = await answer(lotReference('Constantine I. Follis. RIC 117a.'));
+  assert.equal(london.status, 'candidates');
+  assert.deepEqual(london.candidates.map(({ id, note }) => [id, note]), [['ric.6.lon.117a', 'struck under Constantine I for Maximinus Daia']]);
+  assert.equal((await answer(lotReference('Augustus. Denarius. RIC 235.'))).candidates?.[0]?.note, 'struck under Augustus for Tiberius');
+  // The ruler on the coin still opens it, and so does a coin whose obverse portrays a god rather than a person.
+  assert.equal((await answer(lotReference('Diocletian. Antoninianus. RIC 378.'))).card?.id, 'ric.6.tri.378');
+  assert.equal((await answer(lotReference('Nero. As. RIC 306.'))).card?.id, 'ric.1(2).ner.306');
+  assert.equal((await answer(lotReference('Trajan. Denarius. RIC II 701.'))).card?.id, 'ric.2.tr.701');
+  // Nomisma names Augustus twice, as Octavian too: his portrait under either name is his.
+  assert.equal((await answer(lotReference('Augustus. Denarius. RIC I² 252.'))).card?.id, 'ric.1(2).aug.252');
+  assert.equal((await answer(lotReference('Tiberius. Denarius. RIC I² 235.'))).card?.id, 'ric.1(2).aug.235');
+  // RIC's own title, typed, is the type it names.
+  const { parseReference } = await import('../extension/lookup.js');
+  assert.equal((await answer(parseReference('RIC VI Londinium 117a'))).card?.id, 'ric.6.lon.117a');
+  assert.equal((await answer(parseReference('RIC I² Augustus 235'))).card?.id, 'ric.1(2).aug.235');
 });
