@@ -2437,3 +2437,36 @@ test('the import VAT preference is saved, cleared by null, refused out of range 
   const refused = applyCommand(state, command('preferences.save', { expectedRevision: 3, preferences: { currency: 'EUR', importVatBps: 10001 } }), context());
   assert.equal(refused.ok, false);
 });
+
+// G-07: Undo of Remove coin puts back exactly the coin a lot.delete removed, read from that command's reply in the
+// request ledger - never a record the page supplies - with its auction and group where they still exist.
+test('lot.restore puts back the coin a delete removed, from the ledger, and only once', () => {
+  let state = createEmptySnapshot(NOW);
+  const group = reduce(state, command('group.save', { expectedRevision: null, group: { name: 'One of these' } }));
+  state = group.snapshot;
+  const saved = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Nero', sourceLinks: [] } }));
+  state = reduce(saved.snapshot, command('group.reorder', {
+    groupId: group.value.id, expectedRevision: 0, orderedLotIds: [saved.value.id],
+    expectedGroupRevisions: { [group.value.id]: 0 }, expectedLotRevisions: { [saved.value.id]: 0 },
+  })).snapshot;
+  state = reduce(state, command('bid.plan', { lotId: saved.value.id, expectedRevision: 1, plannedBid: { amount: { currency: 'EUR', minor: 5000 } } })).snapshot;
+  const removal = command('lot.delete', { lotId: saved.value.id, expectedRevision: 2 });
+  state = reduce(state, removal).snapshot;
+  assert.equal(state.lots.length, 0);
+  const restored = reduce(state, command('lot.restore', { deleteRequestId: removal.requestId }));
+  const [back] = restored.snapshot.lots;
+  assert.equal(back.id, saved.value.id);
+  assert.equal(back.revision, 3);
+  assert.deepEqual(back.plannedBid, { amount: { currency: 'EUR', minor: 5000 } });
+  assert.equal(back.alternativeGroupId, group.value.id);
+  assert.equal(back.priority, 1);
+  const again = applyCommand(restored.snapshot, command('lot.restore', { deleteRequestId: removal.requestId }), context());
+  assert.equal(again.ok, false, 'a coin already back is not put back twice');
+  const unknown = applyCommand(state, command('lot.restore', { deleteRequestId: 'not-a-delete' }), context());
+  assert.equal(unknown.error.path, 'deleteRequestId');
+  // A group removed meanwhile: the coin comes back on its own.
+  const withoutGroup = reduce(state, command('group.delete', { groupId: group.value.id, expectedRevision: state.alternativeGroups[0].revision })).snapshot;
+  const alone = reduce(withoutGroup, command('lot.restore', { deleteRequestId: removal.requestId })).snapshot.lots[0];
+  assert.equal(Object.hasOwn(alone, 'alternativeGroupId'), false);
+  assert.equal(Object.hasOwn(alone, 'priority'), false);
+});

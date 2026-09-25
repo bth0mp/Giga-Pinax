@@ -189,16 +189,32 @@ async function initWorkspace() {
   for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
   $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
 
-  const LOADED = 'Local records loaded.';
+  // The page's own notice line: page-level events only (a conflict, the worker, storage, an import); loading is not said
+  // at all (G-06), and a form says what happened to it in its own action bar (G-07).
   const announce = (message, error = false) => {
     $('workspace-status').textContent = message;
     $('workspace-status').classList.toggle('error', error);
     $('announcement').textContent = '';
     requestAnimationFrame(() => { $('announcement').textContent = message; });
-    // Loading is said and then let go, so it is not a standing line above every route; the status line keeps its
-    // height, and a message said since is left alone.
-    if (message === LOADED) setTimeout(() => { if ($('workspace-status').textContent === LOADED) $('workspace-status').textContent = ''; }, 3000);
   };
+  // Committed data read again: a failure it answers, or a save still said to be under way, is no longer true.
+  const settleNotice = () => {
+    const status = $('workspace-status');
+    if (status.classList.contains('error') || status.textContent === 'Saving…') { status.textContent = ''; status.classList.remove('error'); }
+  };
+  // Feedback lives in the action bar of the form that was submitted (G-07): the lot, bid and outcome forms each say what
+  // happened to them, with the figure, and the page's own status line keeps only page-level notices. A button - Open,
+  // Undo - may follow the words.
+  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status' };
+  const formStatus = (editor, message, { error = false, action = null } = {}) => {
+    const line = $(FORM_STATUS[editor]);
+    line.replaceChildren(document.createTextNode(message));
+    if (action) { const button = text('button', action.label, 'quiet'); button.type = 'button'; button.addEventListener('click', action.run); line.append(document.createTextNode(' '), button); }
+    line.classList.toggle('error', error);
+    $('announcement').textContent = '';
+    requestAnimationFrame(() => { $('announcement').textContent = message; });
+  };
+  const clearFormStatus = (...editors) => { for (const editor of editors) { $(FORM_STATUS[editor]).replaceChildren(); $(FORM_STATUS[editor]).classList.remove('error'); } };
   // Only the collector's own use of the nav moves the focus there; when the page navigates itself
   // it is on its way to a field, and stealing the focus back would undo that.
   let routeChangeFromNav = false;
@@ -308,7 +324,7 @@ async function initWorkspace() {
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
     beforeRender?.(reply.value);
     const removed = acceptIncoming(reply.value);
-    if (!removed) announce(LOADED);
+    if (!removed) settleNotice();
     return { ok: true, value: reply.value, removed };
   };
   const send = async (command, editor, previousAttempt = null) => {
@@ -335,7 +351,8 @@ async function initWorkspace() {
       if (!refreshed.ok) commit(value, snapshot, false);
       return refreshed;
     };
-    announce('Saving…');
+    const say = (message, error = false) => (FORM_STATUS[editor] ? formStatus(editor, message, { error }) : announce(message, error));
+    say('Saving…');
     if (editor) savesInFlight.add(editor);
     // The flag is held until the commit has been applied: a subscription snapshot arriving between
     // the reply and the refresh carries this page's own write, which is no conflict with the form
@@ -383,14 +400,15 @@ async function initWorkspace() {
         return reply;
       }
       released();
-      if (!removed) announce(reply.message, true);
+      // The lot form has named the refused field in its own line already.
+      if (!removed && editor !== 'lot') say(reply.message, true);
       return reply;
     }
     const refreshed = await commitAndRefresh(reply.value);
     if (editor === 'lot') $('lot-action-status').classList.remove('error');
     // A failed refresh has already said the worker is unreachable, and a coin that went missing
     // during the save has already said so too; "Saved." would bury either.
-    if (refreshed.ok && !refreshed.removed) announce(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
+    if (refreshed.ok && !refreshed.removed) say(preserved ? 'Saved. Newer edits remain in the form for review.' : 'Saved.');
     return { ...reply, editorPreserved: preserved };
   };
 
@@ -539,6 +557,10 @@ async function initWorkspace() {
   function renderCoinList() {
     const list = $('lot-list'); list.replaceChildren();
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    // The coin open in the editor stays in its list until another is chosen, even once its outcome moved it to another
+    // queue: a list that drops the coin beside its own editor reads as a coin lost (G-07).
+    const open = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
+    if (open && !queuedLots.includes(open)) queuedLots.push(open);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
@@ -622,6 +644,7 @@ async function initWorkspace() {
     lotDraftId = null;
     if (lotId !== selection.selectedLotId) lotInteractionGeneration += 1;
     for (const editor of ['lot', 'bid', 'outcome']) { dirtyEditors.delete(editor); editorBases.delete(editor); }
+    clearFormStatus('lot', 'bid', 'outcome');
     selection = chooseSelectedLot(selection, lotId, snapshot.lots ?? []);
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
     showDetailTab('details');
@@ -808,9 +831,31 @@ async function initWorkspace() {
     const basis = editorBases.get('lot');
     if (!basis?.id || !confirm(`Remove “${basis.record.title}”?`)) return;
     removedHere = basis.id;
-    void send({ type: 'lot.delete', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'lot')
-      .then((reply) => { removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply); });
+    const deleteRequestId = requestId();
+    void send({ type: 'lot.delete', requestId: deleteRequestId, lotId: basis.id, expectedRevision: basis.revision }, 'lot')
+      .then((reply) => {
+        removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply);
+        if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
+      });
   });
+  // "Removed · Undo" on the page for ten seconds: Undo asks the store to put back the very coin that delete removed.
+  let undoRemoveTimer = null;
+  const offerUndoRemove = (title, deleteRequestId) => {
+    const status = $('workspace-status'); clearTimeout(undoRemoveTimer);
+    status.replaceChildren(document.createTextNode(`Removed “${title}” · `)); status.classList.remove('error');
+    const undo = text('button', 'Undo', 'quiet'); undo.type = 'button'; undo.id = 'undo-remove';
+    undo.addEventListener('click', () => {
+      clearTimeout(undoRemoveTimer);
+      void send({ type: 'lot.restore', requestId: requestId(), deleteRequestId }).then((reply) => {
+        if (!reply?.ok) return;
+        announce(`Put back “${title}”.`);
+        if (reply.value?.id) selectLot(reply.value.id, { focus: false });
+      });
+    });
+    status.append(undo);
+    $('announcement').textContent = `Removed ${title}. Undo is available for ten seconds.`;
+    undoRemoveTimer = setTimeout(() => { if (status.contains(undo)) status.replaceChildren(); }, 10000);
+  };
   $('group-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('group') ?? { id: null, revision: null }; void send({ type: 'group.save', requestId: requestId(), expectedRevision: basis.revision, group: { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim() } }, 'group'); });
 
   const bidMoney = (form) => {
@@ -927,10 +972,14 @@ async function initWorkspace() {
     const estimate = bidEstimateToSend(basis.record, bidValues(), navigator.language);
     if (!estimate.ok) { const details = f[estimate.error.field]?.closest('details'); if (details) details.open = true; f[estimate.error.field]?.focus(); return announce(estimate.error.message, true); }
     const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return;
-    void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid');
+    void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid').then((reply) => {
+      if (!reply?.ok || reply.editorPreserved) return;
+      const rate = Number.isInteger(parsed.value.buyerPremiumBps) ? ` · ${parsed.value.buyerPremiumBps / 100}%` : '';
+      formStatus('bid', action === 'place' ? `Placed bid recorded · ${formatMoney(parsed.value.amount)}${rate}` : `Plan saved · ${formatMoney(parsed.value.amount)} max${rate}`);
+    });
   });
-  $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid'); });
-  $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
+  $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Plan cleared'); }); });
+  $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Cancellation recorded · the bid is no longer active'); }); });
 
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
@@ -1312,7 +1361,18 @@ async function initWorkspace() {
     populateOutcomeForm(lot);
   };
   $('outcome-form').addEventListener('change', (event) => { if (event.target.name === 'lotId') loadOutcomeEditor(); else if (event.target.name === 'status') updateOutcomeVisibility(); });
-  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'won') { const terms = outcomeTermsFromForm(lot, Object.fromEntries(['premium', 'hammerCurrency', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value])), navigator.language); if (!terms.ok) { if (terms.error.field !== 'premium') $('outcome-fees').open = true; f[terms.error.field]?.focus?.(); return announce(terms.error.message, true); } if (terms.value !== undefined) outcome.terms = terms.value; } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; const adding = status === 'won' && !lot.collectionEntryId && f.addToCollection.checked; if (adding && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (adding) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
+  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'won') { const terms = outcomeTermsFromForm(lot, Object.fromEntries(['premium', 'hammerCurrency', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value])), navigator.language); if (!terms.ok) { if (terms.error.field !== 'premium') $('outcome-fees').open = true; f[terms.error.field]?.focus?.(); return announce(terms.error.message, true); } if (terms.value !== undefined) outcome.terms = terms.value; } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; const adding = status === 'won' && !lot.collectionEntryId && f.addToCollection.checked; if (adding && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (adding) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome').then((reply) => { if (reply?.ok && !reply.editorPreserved) sayOutcomeSaved(reply.value); }); });
+  // "Outcome saved · Won at €240.00 · in History [Open]", and where the coin now sits when the open queue no longer
+  // lists it.
+  const sayOutcomeSaved = (lot) => {
+    const status = lot?.outcome?.status;
+    if (!status) return;
+    const words = { won: 'Won', lost: 'Lost', passed: 'Passed', open: 'open again' }[status];
+    const hammer = lot.outcome.hammer ? ` at ${formatMoney(lot.outcome.hammer)}` : '';
+    const moved = status !== 'open' && !['completed', 'all-coins'].includes($('lot-queue').value) ? ' · now under Completed' : '';
+    const history = status === 'open' ? '' : ' · in History';
+    formStatus('outcome', `Outcome saved · ${words}${hammer}${history}${moved}`, status === 'open' ? {} : { action: { label: 'Open', run: () => { routeChangeFromNav = false; location.hash = '#history'; setRoute(); } } });
+  };
 
   function resetEditor(editor) {
     const form = $(`${editor}-form`);
@@ -1401,7 +1461,7 @@ async function initWorkspace() {
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
-      else if (!acceptIncoming(initialized.value)) announce(LOADED);
+      else acceptIncoming(initialized.value);
       await loadRouteDraft();
     } catch (error) {
       console.error(error);

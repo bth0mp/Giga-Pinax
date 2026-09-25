@@ -18,7 +18,7 @@ const SCHEDULER_ALARM = 'auction-companion:scheduler';
 const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
-  'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set',
+  'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set',
   'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import', 'quarantine.restore',
 ]);
 let reconcileQueue = Promise.resolve();

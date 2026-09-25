@@ -41,7 +41,7 @@ export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
 export const COMMAND_TYPES = new Set([
   'snapshot.get', 'snapshot.raw',
   'preferences.migrateIfAbsent', 'preferences.save',
-  'lot.save', 'lot.delete',
+  'lot.save', 'lot.delete', 'lot.restore',
   'group.save', 'group.delete', 'group.reorder',
   'bid.plan', 'bid.place', 'bid.cancel',
   'lot.outcome.set', 'collection.review.resolve', 'collection.update',
@@ -52,7 +52,7 @@ export const COMMAND_TYPES = new Set([
   'backup.import', 'quarantine.restore',
 ]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
-  'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.outcome.set', 'backup.import',
+  'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set', 'backup.import',
   'quarantine.restore',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
@@ -180,6 +180,34 @@ function mutation(snapshot, command, context) {
           group.updatedAt = now;
         }
       }
+      break;
+    }
+    // Undo of a removal (G-07): the coin a lot.delete of this store removed, read from that command's own reply in the
+    // request ledger - never a record a page supplies - put back with its bids and outcome. Its auction and group come
+    // back where they still exist; it joins the end of its group.
+    case 'lot.restore': {
+      const deleted = snapshot.recentCommands.find(({ requestId, commandType }) => requestId === command.deleteRequestId && commandType === 'lot.delete');
+      const removed = deleted?.reply?.value;
+      if (!removed?.id) return fail('validation', 'This coin can no longer be put back.', 'deleteRequestId');
+      if (next.lots.some(({ id }) => id === removed.id)) return fail('conflict', 'This coin is already back.', 'deleteRequestId');
+      value = clone(removed);
+      value.revision += 1;
+      value.updatedAt = now;
+      if (value.auctionEventId && !next.auctionEvents.some(({ id }) => id === value.auctionEventId)) delete value.auctionEventId;
+      if (value.alternativeGroupId) {
+        const group = next.alternativeGroups.find(({ id }) => id === value.alternativeGroupId);
+        if (group) {
+          value.priority = next.lots.filter((lot) => lot.alternativeGroupId === group.id).length + 1;
+          group.revision += 1;
+          group.updatedAt = now;
+        } else {
+          delete value.alternativeGroupId;
+          delete value.priority;
+        }
+      }
+      const duplicate = findDuplicateLot(next.lots, value);
+      if (duplicate) return fail('duplicate', 'This auction lot is already saved.', undefined, duplicate.id);
+      next.lots.push(value);
       break;
     }
     case 'group.save': {

@@ -897,21 +897,18 @@ test('the saved comparables say plainly what they hold', async () => {
   assert.ok(page.$('evidence-list').textContent.includes('Mar 1, 2024'), 'dates are written in the browser’s language');
 });
 
-// W-08: "Local records loaded." is said, then cleared after a moment, so it is not a permanent line above every route;
-// a message that replaced it in the meantime stays.
-test('the loaded notice clears itself, and a later message is left standing', async () => {
+// G-06 (was W-08): loading is not said at all - the page line is for page-level notices - and a form's save answers in
+// the form's own action bar, leaving the page's notice alone (G-07).
+test('nothing is said on loading, and a form save answers in its own bar, not the page line', async () => {
   const background = await backgroundWithCoins('Nero, denarius');
   const page = await mountWorkspace({ background, hash: '#watchlist' });
-  assert.equal(page.status(), 'Local records loaded.');
-  assert.ok(page.timers.some((timer) => timer.ms === 3000));
-  page.runTimers();
   assert.equal(page.status(), '');
   await page.openCoin('Nero, denarius');
   await page.typeDetails('notes', 'Toned');
+  page.$('workspace-status').textContent = 'Stored records could not be verified.';
   await page.saveDetails();
-  assert.equal(page.status(), 'Saved.');
-  page.runTimers();
-  assert.equal(page.status(), 'Saved.', 'only the loaded notice clears itself');
+  assert.equal(page.$('lot-action-status').textContent, 'Details saved. You can undo this edit until the coin changes again.', 'a form answers in its own action bar');
+  assert.equal(page.status(), 'Stored records could not be verified.', 'a form save leaves the page’s notice alone');
 });
 
 // N7: a coin whose auction ended with no outcome is flagged on its row and in its heading and has a queue of its own;
@@ -1358,4 +1355,45 @@ test('the Outcome tab adds a first win to the collection by default and names an
   await page.click('outcome-edit-entry');
   assert.equal(page.location.hash, '#history');
   assert.ok(page.$('entry-edit-form'), 'the entry opens for correction');
+});
+
+// G-07: Save plan and Save outcome answer in their own action bar with the figure; a settled coin stays in the list
+// beside its editor until another coin is chosen; Remove coin offers Undo, which puts the very coin back.
+test('the Bid and Outcome forms say what was saved in their action bar, and the coin stays in its list', async () => {
+  const background = await backgroundWithCoins('Nero, denarius', 'Trajan, sestertius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.type('bid-form', 'amount', '260');
+  await page.type('bid-form', 'currency', 'USD');
+  await page.type('bid-form', 'premium', '20');
+  await page.submit('bid-form', { value: 'plan' });
+  assert.equal(page.$('bid-action-status').textContent, 'Plan saved · $260.00 max · 20%');
+  await page.submit('bid-form', { value: 'place' });
+  assert.equal(page.$('bid-action-status').textContent, 'Placed bid recorded · $260.00 · 20%');
+  await page.type('outcome-form', 'hammer', '240');
+  await page.submit('outcome-form');
+  assert.equal(page.$('outcome-action-status').textContent, 'Outcome saved · Won at $240.00 · in History · now under Completed Open');
+  const rows = () => page.$('lot-list').children.map((row) => row.textContent);
+  assert.ok(rows().some((row) => row.includes('Nero, denarius') && row.includes('Won')), 'the won coin is still listed, re-pilled');
+  await page.openCoin('Trajan, sestertius');
+  assert.ok(!rows().some((row) => row.includes('Nero, denarius')), 'gone from All open once another coin is chosen');
+  assert.equal(page.$('outcome-action-status').textContent, '', 'another coin starts with a clean action bar');
+});
+
+test('Remove coin says so on the page with Undo, which puts back the coin with its bids', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const lot = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.plan', lotId: lot.id, expectedRevision: 0, plannedBid: { amount: { currency: 'EUR', minor: 50000 } } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('delete-lot');
+  assert.equal(background.root().lots.length, 0);
+  assert.equal(page.status(), 'Removed “Nero, denarius” · Undo');
+  assert.ok(page.timers.some((timer) => timer.ms === 10000), 'Undo is offered for ten seconds');
+  await page.click('undo-remove');
+  const [back] = background.root().lots;
+  assert.equal(back.id, lot.id, 'the very coin');
+  assert.deepEqual(back.plannedBid.amount, { currency: 'EUR', minor: 50000 });
+  assert.equal(page.status(), 'Put back “Nero, denarius”.');
+  assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
 });
