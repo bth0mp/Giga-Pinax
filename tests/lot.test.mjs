@@ -1580,3 +1580,30 @@ test('a Spanish heading names its emperor, and a lower-case word or another nume
   assert.deepEqual(rulers('Constantino II como César. Follis. RIC VII 12.'), ['Constantine II']);
   assert.deepEqual(rulers('Tiberio come Augusto. Asse. RIC 12.'), ['Tiberius']);
 });
+
+// Loop V-09: three provenance shapes the audit found. Sincona's hammer bracket after the lot was glued into the source; the Italian houses' "Provenienza:
+// Asta Artemide XLV, 2016, lotto 234" read as nothing; and "acquired from X in 1988" kept the verb and the "in" inside the source.
+test('provenance drops a trailing remark bracket, reads the Italian houses, and reads "acquired from X in YEAR" as X', () => {
+  assert.deepEqual(readProvenance('Ex Sincona 40, 23 October 2017, lot 1023 (hammer CHF 3,200).'),
+    [{ text: 'Ex Sincona 40, 23 October 2017, lot 1023 (hammer CHF 3,200)', source: 'Sincona 40', year: 2017, lot: '1023' }]);
+  assert.deepEqual(readProvenance('Ex NAC 27, 2004, lot 312 (realised 1,200 CHF).').map(({ source }) => source), ['NAC 27']);
+  assert.deepEqual(readProvenance('Provenienza: Asta Artemide XLV, 2016, lotto 234; ex NAC 27, 2004, 312.'), [
+    { text: 'Asta Artemide XLV, 2016, lotto 234', source: 'Asta Artemide XLV', year: 2016, lot: '234' },
+    { text: 'ex NAC 27, 2004, 312', source: 'NAC 27', year: 2004, lot: '312' },
+  ]);
+  assert.deepEqual(readProvenance('Asta Bertolami 12, 2015, lotto 45.'), [{ text: 'Asta Bertolami 12, 2015, lotto 45', source: 'Asta Bertolami 12', year: 2015, lot: '45' }]);
+  assert.deepEqual(readProvenance('From the collection of a Swiss lawyer, acquired from Münzen & Medaillen AG Basel in 1988.'), [
+    { text: 'From the collection of a Swiss lawyer', source: 'the collection of a Swiss lawyer' },
+    { text: 'acquired from Münzen & Medaillen AG Basel in 1988', source: 'Münzen & Medaillen AG Basel', year: 1988 },
+  ]);
+  // What was read before still is: a bracket inside the source, a place in brackets, the comma-year purchase sentence, a German purchase.
+  assert.deepEqual(readProvenance("Ex Hunt collection (part II), Sotheby's 1991.").map(({ source }) => source), ["Hunt collection (part II), Sotheby's"]);
+  assert.deepEqual(readProvenance('Ex NAC 27 (Zurich), 2004.').map(({ source }) => source), ['NAC 27 (Zurich)']);
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Erworben 1998 bei Lanz.'), [{ text: 'Erworben 1998 bei Lanz', source: 'Erworben bei Lanz', year: 1998 }]);
+  // "Asta" is also the spear a type is described with: only a house's name behind it at the start of a sentence makes it a sale.
+  assert.deepEqual(readProvenance('Minerva stante con asta e scudo. Asta e scudo. RIC 12.'), []);
+  assert.deepEqual(findReferences('Minerva con asta. Asta e scudo. RIC 12.').references.map(({ text }) => text), ['RIC 12']);
+  // An Italian provenance is no reference: its sale's number is never read as one.
+  assert.deepEqual(findReferences('Traiano. Denario. RIC 118. Provenienza: Asta Artemide XLV, 2016, lotto 234.').references.map(({ text }) => text), ['RIC 118']);
+});

@@ -106,8 +106,9 @@ const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\
 // The German, Italian, Spanish and French houses open one with their own words ("Exemplar der Auktion …", "Aus Sammlung …", "Erworben 1998 bei …",
 // "Provenienz: …", "Provient de la vente …", "Proviene da asta …"), each at the start of its sentence and with its capital, as "Ex" is.
 // CNG and the American houses say how the coin came instead ("Acquired from Spink, 1998", "Purchased from Harlan J. Berk", "Privately purchased
-// from …", "Bought from Seaby"), and those open one the same way.
-const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Privately purchased|Acquired|Purchased|Bought|Ex|From`;
+// from …", "Bought from Seaby"), and those open one the same way. The Italian houses label it "Provenienza:" or open on the sale ("Asta Artemide
+// XLV, 2016, lotto 234"); "Asta" is also the spear a type is described with ("Asta e scudo"), so only a house's capital behind it makes it a sale.
+const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienza|Provenienz|Provenance|Provient de|Proviene|Asta(?= [A-Z])|Privately purchased|Acquired|Purchased|Bought|Ex|From`;
 const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MARKERS})\b)`);
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
@@ -157,7 +158,7 @@ const PROVENANCE_ENTRIES = 10;
 const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
 const PURCHASE_END_ALL = new RegExp(PURCHASE_END.source, 'gu');
-const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
+const PROVENANCE_LABEL = /^(?:provenance|provenienza?) ?:? ?/i;
 // The words that only introduce the owner: "Ex", "From", "Exemplar der", "Aus (der)", "Provient de", "Proviene da". "Erworben" is kept, since
 // "Erworben bei Lanz" says how the coin came, as "privately purchased from" does.
 const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|proviene(?: d[a-z']*)?)\b\.? ?:? ?/i;
@@ -172,6 +173,12 @@ const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n\.?[°º]|n\.) ?(\d{1,6}[a-z]?)(?![
 const PROVENANCE_TRAILING = /, (\d{1,6}[a-z]?)$/i;
 // A grade or description quoted from the earlier sale is no part of the source ("lot 1234 (there described as EF)"); the entry's text keeps it.
 const PROVENANCE_REMARK = /\s*\((?:there|where|previously|formerly)\s+(?:described|catalogued|cataloged|graded|offered|listed)\b[^()]*\)/gi;
+// So is a bracket closing the entry that is a remark on the sale rather than part of its name: one that opens in lower case or names an amount
+// ("lot 1023 (hammer CHF 3,200)", "(realised 1,200 CHF)"). A name's own bracket stays ("Hunt collection (part II)", "NAC 27 (Zurich)").
+const PROVENANCE_ASIDE = /\s*\((?:\p{Ll}|[^()]*(?:[$€£]|\b(?:CHF|EUR|USD|GBP)\b))[^()]*\)$/u;
+// CNG writes how an earlier owner came by the coin behind that owner's name ("From the collection of a Swiss lawyer, acquired from Münzen & Medaillen
+// AG Basel in 1988"): the firm it came from is that entry's source, with the year; the verb and its "in" are no part of the firm's name.
+const ACQUIRED_IN = /^acquired from (.+?),? in (?=(?:1[6-9]\d\d|20\d\d)(?![\d.,]\d))/i;
 // A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
 const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
 // The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
@@ -232,6 +239,7 @@ function provenanceEntry(piece) {
   const entry = { text: text.slice(0, 300) };
   const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working) ?? trailingLot(working) ?? bracketLot(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
+  working = working.replace(ACQUIRED_IN, '$1 ');
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
   for (let found; (found = PROVENANCE_YEAR.exec(working));) year = found;
@@ -244,7 +252,7 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ',')).slice(0, 120);
+  const source = trimEnds(trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ',')).replace(PROVENANCE_ASIDE, '')).slice(0, 120);
   if (/\p{L}/u.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];
@@ -253,7 +261,7 @@ function provenanceEntry(piece) {
 
 // Where one sentence holds several owners: a ";", a comma before another "ex", and a full stop before another marker that the sentence ran past at an
 // initial ("Aus Sammlung Dr. X. Erworben 1998 bei …").
-const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )| and (?=[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
+const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )| and (?=[Ee][Xx] )|,(?= acquired from )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
 export function readProvenance(text) {
   if (typeof text !== 'string') return [];
   const entries = [];
