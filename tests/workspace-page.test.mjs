@@ -9,6 +9,7 @@ import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { csvFiles } from '../extension/core/csv.js';
+import { formatMoney } from '../extension/core/money.js';
 import { deriveReminderTriggers } from '../extension/core/reminders.js';
 
 async function backgroundWithCoins(...titles) {
@@ -379,7 +380,8 @@ test('the History route says so when there is no collection yet', async () => {
   await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Watched only', sourceLinks: [] } });
   const page = await mountWorkspace({ background, hash: '#history' });
   assert.equal(page.$('collection-totals'), null);
-  assert.ok(page.$('collection-list').textContent.includes('No collection entries yet.'));
+  assert.equal(page.$('collection-list').closest('.panel').hidden, true, 'no collection, no panel to say so');
+  assert.equal(page.$('history-list').querySelector('.empty-state').querySelector('h3').textContent, 'Nothing settled yet');
 });
 
 // The harness answers only what the background worker answers: a command type the worker does not
@@ -917,7 +919,7 @@ test('a date-only auction’s reminders show 09:00 your time in the Reminders ta
 test('the saved comparables say plainly what they hold', async () => {
   const background = await createWorkspaceBackground();
   const empty = await mountWorkspace({ background, hash: '#search' });
-  assert.equal(empty.$('statistics-output').textContent, 'No saved comparables yet. Add a sale you found under Add a comparable manually.');
+  assert.equal(empty.$('statistics-output').textContent, 'No saved comparablesSales you record by hand, kept apart from acsearch.');
   const queryId = '00000000-0000-4000-9000-000000000099';
   for (const [lotNumber, minor, auctionDate] of [[1, 15000, '2024-03-01'], [2, 18000, '2025-05-10'], [3, 30000, '2026-02-11'], [4, 99900, '2026-02-12']]) {
     const reply = await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'RIC 27b', source: 'manual', auctionHouse: 'Test House', auctionDate,
@@ -1639,4 +1641,442 @@ test('a JPY 1,200,000 hammer is whole yen in the bid form, the money line, the C
   const read = validateBackup(file.value);
   assert.equal(read.ok, true, read.error?.message);
   assert.deepEqual(read.value.lots.find((item) => item.title === 'Taisei lot 88').outcome.hammer, { currency: 'JPY', minor: 1200000 });
+});
+
+// --- Loop cycle 5: a load never speaks first (H-01, H-03) --------------------------------------------
+
+// A page whose first snapshot is held until the test lets it land, as a slow worker or a busy laptop holds it.
+async function mountBeforeSnapshot(background, options = {}) {
+  const snapshot = background.holdReply('snapshot.get');
+  const page = await mountWorkspace({ background, ...options });
+  await snapshot.written;
+  return Object.assign(page, { async land() { snapshot.release(); await settle(); } });
+}
+const typeFilter = async (page, value) => { page.$('lot-filter').value = value; await page.$('lot-filter').emit('input', { target: page.$('lot-filter') }); };
+const STORE_CONTROLS = ['new-lot', 'new-event', 'new-want', 'new-group', 'enable-notifications'];
+
+test('on every route, no control that reads the store acts before the first snapshot has landed', async () => {
+  for (const hash of ['#search', '#watchlist', '#auctions', '#bids', '#history', '#wants']) {
+    const background = await backgroundWithCoins('Nero, denarius');
+    const page = await mountBeforeSnapshot(background, { hash, wide: true });
+    for (const id of STORE_CONTROLS) assert.equal(page.$(id).disabled, true, `${id} waits on ${hash}`);
+    assert.equal(page.$('evidence-form').querySelector('button[type="submit"]').disabled, true, `Save comparable waits on ${hash}`);
+    await page.land();
+    for (const id of STORE_CONTROLS) assert.equal(page.$(id).disabled, false, `${id} is ready on ${hash}`);
+    assert.equal(page.$('evidence-form').querySelector('button[type="submit"]').disabled, false);
+    assert.deepEqual(page.prompts, [], `nothing is asked on ${hash}`);
+  }
+});
+
+test('a filter typed before the snapshot is kept: the wide workspace opens the first coin it lists, and asks nothing', async () => {
+  const background = await backgroundWithCoins('Hadrian, denarius', 'Nero, denarius');
+  const page = await mountBeforeSnapshot(background, { hash: '#watchlist', wide: true });
+  await typeFilter(page, 'Nero');
+  await page.land();
+  assert.equal(page.$('lot-filter').value, 'Nero');
+  assert.equal(page.$('selected-title').textContent, 'Nero, denarius', 'the coin the filtered list puts first');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a coin form the collector opened is never replaced by the queue’s first coin, typed in or not', async () => {
+  for (const typed of ['', 'My own coin']) {
+    const background = await backgroundWithCoins('Hadrian, denarius');
+    const page = await mountWorkspace({ background, hash: '#watchlist', wide: true });
+    await page.click('new-lot');
+    if (typed) await page.typeDetails('title', typed);
+    // The collector comes back to the route from another, and another view writes: the queue's first coin is not opened over the form.
+    await page.navigate('#auctions');
+    await page.navigate('#watchlist');
+    await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan, sestertius', sourceLinks: [] } });
+    await settle();
+    assert.equal(page.$('selected-title').textContent, 'Add coin');
+    assert.equal(page.$('lot-form').elements.title.value, typed);
+    assert.deepEqual(page.prompts, [], 'and nothing is asked');
+  }
+});
+
+test('a wide workspace opens the first coin only where nothing is open: never over an editor with unsaved input', async () => {
+  const background = await backgroundWithCoins('Hadrian, denarius');
+  const page = await mountWorkspace({ background, hash: '#wants', wide: true });
+  await page.click('new-want');
+  await page.type('want-form', 'notes', 'Half a thought');
+  await page.navigate('#watchlist');
+  assert.equal(page.$('coin-editor').hidden, true, 'the detail panel waits for the collector');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a captured lot that arrives after the collector started a coin is offered beside it, never loaded over it', async () => {
+  const { background, hash } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.click('new-lot');
+  await page.typeDetails('title', 'My own title');
+  draft.release();
+  await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'My own title', 'what the collector typed stands');
+  assert.equal(page.$('lot-action-status').textContent, 'A captured lot is waiting: Load it · Keep what I typed');
+  assert.deepEqual(page.prompts, []);
+  const [load] = page.$('lot-action-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'Captured coin', 'Load it puts the captured lot in the form');
+  assert.equal(page.$('lot-action-status').textContent, '');
+  await page.saveDetails();
+  assert.deepEqual(background.root().drafts, [], 'the save that adds it consumes the draft');
+});
+
+test('a captured lot waiting beside a coin the collector opened is left when they keep their own', async () => {
+  const { background, hash, draftId } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.openCoin('Kept coin');
+  draft.release();
+  await settle();
+  assert.equal(page.$('selected-title').textContent, 'Kept coin', 'the coin they opened stays open');
+  const [, keep] = page.$('lot-action-status').querySelectorAll('button');
+  await keep.click(); await settle();
+  assert.equal(page.$('lot-action-status').textContent, '');
+  assert.equal(page.$('lot-form').elements.title.value, 'Kept coin');
+  assert.deepEqual(background.root().drafts.map(({ id }) => id), [draftId], 'the draft is still there for another time');
+});
+
+test('an untouched Add coin form is filled by the captured lot that arrives after it', async () => {
+  const { background, hash } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.click('new-lot');
+  draft.release();
+  await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'Captured coin');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a captured auction that arrives over an auction form the collector typed in is offered, not loaded', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'draft.save', kind: 'auction-capture', payload: { rawText: 'Roma Numismatics Auction 31, 15 October', pageUrl: 'https://house.example/auction/31' } });
+  assert.equal(saved.ok, true, saved.message);
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash: `#event-draft=${saved.value.id}` });
+  await draft.written;
+  await page.click('new-event');
+  await page.type('event-form', 'name', 'My own auction');
+  draft.release();
+  await settle();
+  assert.equal(page.$('event-form').elements.name.value, 'My own auction');
+  assert.equal(page.$('event-action-status').textContent, 'A captured auction is waiting: Load it · Keep what I typed');
+  const [load] = page.$('event-action-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('event-form').elements.name.value, 'Roma Numismatics Auction 31, 15 October');
+});
+
+test('captured research text never replaces a query the collector typed', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'draft.save', kind: 'research-highlight', payload: { rawText: 'Nero As RIC 306' } });
+  assert.equal(saved.ok, true, saved.message);
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash: `#research-draft=${saved.value.id}` });
+  await draft.written;
+  page.$('research-query').value = 'Trajan denarius';
+  draft.release();
+  await settle();
+  assert.equal(page.$('research-query').value, 'Trajan denarius');
+  // Review Minor 3: the offer has a line of its own under the query, which the page's passing notices do not overwrite.
+  assert.equal(page.$('research-action-status').textContent, 'Captured research text is waiting: Load it · Keep what I typed');
+  assert.equal(page.status(), '');
+  await page.click('launch-ac');
+  assert.equal(page.$('research-action-status').textContent, 'Captured research text is waiting: Load it · Keep what I typed', 'a notice leaves it standing');
+  const [load] = page.$('research-action-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('research-query').value, 'Nero As RIC 306');
+});
+
+// H-03 / V-11: a want's currency is the collector's default, never the list's first currency written because the settings
+// had not arrived; and a form nobody has touched follows a default changed in another view, while typing keeps its own.
+test('Add want waits for the settings, opens on the default currency, and an untouched form follows a new default', async () => {
+  const background = await createWorkspaceBackground();
+  const created = await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+  assert.equal(created.ok, true, created.message);
+  const page = await mountBeforeSnapshot(background, { hash: '#wants' });
+  assert.equal(page.$('new-want').disabled, true, 'Add want waits for the settings');
+  await page.land();
+  await page.click('new-want');
+  assert.equal(page.$('want-form').elements.currency.value, 'GBP');
+  const euro = await background.send({ type: 'preferences.save', expectedRevision: created.value.revision, preferences: { ...created.value, currency: 'EUR' } });
+  assert.equal(euro.ok, true, euro.message);
+  await settle();
+  assert.equal(page.$('want-form').elements.currency.value, 'EUR', 'an untouched form follows the new default');
+  await page.type('want-form', 'maxPrice', '800');
+  const franc = await background.send({ type: 'preferences.save', expectedRevision: euro.value.revision, preferences: { ...euro.value, currency: 'CHF' } });
+  assert.equal(franc.ok, true, franc.message);
+  await settle();
+  assert.equal(page.$('want-form').elements.currency.value, 'EUR', 'a form the collector typed in keeps its currency');
+  assert.equal(page.$('want-form').elements.maxPrice.value, '800');
+});
+
+// H-04 / V-10: one money rule on every workspace screen - the collector's language, and the short sign only where it names
+// one currency there - so a coin row never reads "€1,300.00" beside "1.300,00 €" in the form, nor "¥" beside "JP¥".
+test('every amount in the workspace is written in the collector’s language, with the short sign only where it names one currency', async () => {
+  for (const [language, currency, minor, expected] of [['de-DE', 'EUR', 130000, '1.300,00 €'], ['en-GB', 'JPY', 1200000, '¥1,200,000'], ['en-GB', 'SEK', 1250000, 'SEK 12,500.00']]) {
+    const said = (amount) => formatMoney(amount, language, { narrow: true });
+    assert.equal(said({ currency, minor }).replace(/[\u00a0\u202f]/g, ' '), expected, 'the rule itself');
+    const background = await backgroundWithCoins('Taisei lot 88', 'Won coin');
+    const coin = storedLot(background, 'Taisei lot 88');
+    const placed = await background.send({ type: 'bid.place', lotId: coin.id, expectedRevision: coin.revision, activeBid: { amount: { currency, minor }, buyerPremiumBps: 1750 } });
+    assert.equal(placed.ok, true, placed.message);
+    const won = storedLot(background, 'Won coin');
+    assert.equal((await background.send({ type: 'lot.outcome.set', lotId: won.id, expectedRevision: won.revision, outcome: { status: 'won', hammer: { currency, minor }, terms: { buyerPremiumBps: 2000 } } })).ok, true);
+    const page = await mountWorkspace({ background, hash: '#watchlist', language });
+    const row = page.$('lot-list').querySelectorAll('.coin-row').find((item) => item.textContent.includes('Taisei lot 88'));
+    assert.equal(row.querySelector('.coin-row-amount').textContent, said({ currency, minor }), `${language} coin row`);
+    await page.openCoin('Taisei lot 88');
+    assert.match(page.$('bid-live').textContent, new RegExp(`^≈ ${said({ currency, minor: minor * 1.175 }).replace(/[$.]/g, '\\$&')} all-in`), `${language} Bid tab line`);
+    await page.navigate('#bids');
+    assert.equal(page.$('exposure-list').querySelector('.exposure-total').textContent, said({ currency, minor }), `${language} Active bids`);
+    await page.navigate('#history');
+    assert.match(page.$('history-list').textContent, new RegExp(`Lost|Won`));
+    assert.equal(page.$('collection-list').textContent.includes('$') && currency !== 'USD', false, 'no dollar sign where there is no dollar');
+    // The Compare dialog writes its figures by the same rule, and a won coin's total cost as History works it out.
+    await page.navigate('#watchlist');
+    page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change');
+    for (const box of page.$('lot-list').querySelectorAll('.compare-box')) { box.checked = true; await box.emit('change'); }
+    await page.click('open-comparison');
+    const text = page.$('comparison-grid').textContent;
+    assert.ok(text.includes(`Active maximum ${said({ currency, minor })}`), `${language} Compare: ${text}`);
+    assert.ok(text.includes(`Final hammer ${said({ currency, minor })}`), `${language} Compare final hammer`);
+    assert.ok(text.includes(`Total cost ${said({ currency, minor: minor * 1.2 })} (hammer + premium)`), `${language} Compare total cost`);
+  }
+});
+
+// H-06: the heading a route greets the collector with is the word they pressed in the nav.
+test('every route is headed by its nav word', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground() });
+  for (const link of page.document.querySelector('.workspace-nav').querySelectorAll('[data-route]')) {
+    const heading = page.$(`route-${link.dataset.route}`).querySelector('h2');
+    assert.equal(heading.textContent, link.textContent, link.dataset.route);
+  }
+  assert.deepEqual(page.document.querySelectorAll('.section-heading').filter((heading) => heading.querySelector('p')), [], 'no intro line sits in a heading to be cut');
+});
+
+// H-17: Alternatives is folded under the coin list, closed until a group exists, its count in the summary.
+test('Alternatives is folded until a group exists, and says how many there are', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(page.$('group-fold').open, false);
+  assert.equal(page.$('group-summary').textContent, 'Alternatives (0)');
+  await page.click('new-group');
+  assert.equal(page.$('group-fold').open, true, 'Add group opens it');
+  await page.type('group-form', 'name', 'One Nero as');
+  await page.submit('group-form');
+  assert.equal(page.$('group-summary').textContent, 'Alternatives (1)');
+  const later = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(later.$('group-fold').open, true, 'a page with a group opens it');
+});
+
+// H-15: the zones of the houses a collector bids at come first, by their place; every zone follows.
+test('the auction form lists the houses’ zones first, a saved auction’s own at the top, then every zone', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Taisei 70', eventKind: 'auction-day', precision: 'date-only', localDate: '2027-10-11', timeZone: 'Asia/Tokyo', reminderScope: 'standalone', reminders: [] } });
+  const page = await mountWorkspace({ background, hash: '#auctions', language: 'en-GB' });
+  await page.click('new-event');
+  const select = page.$('event-form').elements.timeZoneChoice;
+  const [houses, all] = select.children;
+  assert.equal(houses.getAttribute('label'), 'Auction houses’ zones');
+  assert.deepEqual(houses.children.map((option) => option.value).slice(0, 4), ['Asia/Tokyo', 'Europe/London', 'Europe/Zurich', 'Europe/Berlin']);
+  assert.match(houses.children[2].textContent, /^Zurich \(CES?T\)$/);
+  assert.match(houses.children[3].textContent, /^Berlin, Munich \(/);
+  assert.equal(all.getAttribute('label'), 'All zones');
+  assert.equal(all.children[0].value, 'Africa/Abidjan');
+  assert.equal(select.children.at(-1).value, 'other');
+  select.value = 'Europe/Zurich';
+  await page.$('event-form').emit('change', { target: select });
+  assert.equal(page.$('event-form').elements.timeZone.value, 'Europe/Zurich');
+});
+
+// H-13: one When for an auction's kind and precision, a heading with one action, and Remove auction.
+test('the auction form asks When once, shows a time only for a timed sale, and keeps a saved auction’s own pair', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  assert.deepEqual(page.$('route-auctions').querySelector('.section-heading').querySelectorAll('button').map((button) => button.id), ['new-event']);
+  assert.equal(page.$('enable-notifications').closest('details').querySelector('summary').textContent, 'How reminders are delivered');
+  await page.click('new-event');
+  const f = page.$('event-form').elements;
+  assert.deepEqual(f.when.options.map((option) => option.textContent), ['Auction starts at', 'Lots close at', 'Sale day (date only)']);
+  assert.equal(page.$('event-time-label').hidden, false);
+  f.when.value = 'auction-day';
+  await page.$('event-form').emit('change', { target: f.when });
+  assert.equal(page.$('event-time-label').hidden, true, 'a sale day has no time to ask for');
+  await page.type('event-form', 'name', 'Taisei 70');
+  await page.type('event-form', 'localDate', '2030-10-11');
+  assert.match(page.$('event-summary').textContent, /^Sale day /);
+  await page.submit('event-form');
+  const [day] = background.root().auctionEvents;
+  assert.deepEqual([day.eventKind, day.precision], ['auction-day', 'date-only']);
+  await page.click('new-event');
+  f.when.value = 'lot-closes';
+  await page.$('event-form').emit('change', { target: f.when });
+  await page.type('event-form', 'name', 'Roma E-Sale 130');
+  await page.type('event-form', 'localDate', '2030-10-15');
+  await page.type('event-form', 'localTime', '15:00');
+  await page.submit('event-form');
+  const closes = background.root().auctionEvents.find(({ name }) => name === 'Roma E-Sale 130');
+  assert.deepEqual([closes.eventKind, closes.precision], ['lot-closes', 'timed']);
+  assert.equal(page.$('delete-event').textContent, 'Remove auction');
+  // An auction an older form saved as a lot closing on a date only keeps that pair through an edit of its name.
+  const odd = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Odd pair', eventKind: 'lot-closes', precision: 'date-only', localDate: '2030-11-01', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  await settle();
+  await page.$('event-list').querySelectorAll('.event-row').find((row) => row.textContent.includes('Odd pair')).click(); await settle();
+  assert.equal(f.when.value, 'auction-day');
+  await page.type('event-form', 'name', 'Odd pair, renamed');
+  await page.submit('event-form');
+  const kept = background.root().auctionEvents.find(({ id }) => id === odd.value.id);
+  assert.deepEqual([kept.name, kept.eventKind, kept.precision], ['Odd pair, renamed', 'lot-closes', 'date-only']);
+});
+
+// H-12: one filled button per form - the form's own save - and the rest secondary or quiet.
+test('each workspace form has one filled button, its own save, and the search launchers are secondary', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const filled = (root) => root.querySelectorAll('button').filter((button) => !['quiet', 'secondary', 'danger'].some((kind) => button.classList.contains(kind))).map((button) => button.textContent);
+  assert.deepEqual(filled(page.$('research-form')), [], 'the launchers open a site; the page’s save is the comparable’s');
+  assert.deepEqual(filled(page.$('evidence-form')), ['Save comparable']);
+  assert.deepEqual(filled(page.$('bid-form')), ['Save plan']);
+  for (const form of ['lot-form', 'outcome-form', 'event-form', 'want-form', 'group-form']) assert.equal(filled(page.$(form)).length, 1, form);
+});
+
+// H-14: the Search route as the coin sees it - the set named in the heading, the filters folded until one is set, a source
+// nobody has kept out of sight, and the add form opened from a coin in the coin's bid currency.
+test('the Search route names the set, folds its filters, and records a comparable in the coin’s currency', async () => {
+  const background = await backgroundWithCoins('Taisei lot 88');
+  const coin = storedLot(background, 'Taisei lot 88');
+  await background.send({ type: 'lot.save', expectedRevision: coin.revision, lot: { id: coin.id, title: coin.title, reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  const saved = storedLot(background, 'Taisei lot 88');
+  await background.send({ type: 'bid.plan', lotId: saved.id, expectedRevision: saved.revision, plannedBid: { amount: { currency: 'JPY', minor: 1200000 } } });
+  const page = await mountWorkspace({ background, hash: '#search' });
+  assert.deepEqual([page.$('launch-ac').textContent, page.$('launch-ca').textContent], ['acsearch \u2197', 'CoinArchives \u2197']);
+  assert.equal(page.$('evidence-filter-fold').open, false, 'no filter is set, so none is shown');
+  assert.equal(page.$('authorized-source').hidden, true, 'a source nobody has is not offered');
+  assert.equal(page.$('statistics-heading').textContent, 'Saved comparables');
+  await page.navigate('#watchlist');
+  await page.openCoin('Taisei lot 88');
+  await page.click('bid-add-comparable');
+  assert.equal(page.location.hash, '#search');
+  assert.equal(page.$('evidence-form').elements.currency.value, 'JPY', 'the sale is recorded in the bid’s currency');
+  assert.equal(page.$('evidence-currency').value, 'JPY');
+  // The fake DOM's select starts blank where a browser's starts on its first option, Hammer.
+  page.$('evidence-form').elements.priceBasis.value = 'hammer';
+  for (const [field, value] of [['auctionHouse', 'Taisei'], ['auctionDate', '2026-06-01'], ['lotNumber', '12'], ['amount', '900000']]) await page.type('evidence-form', field, value);
+  await page.submit('evidence-form');
+  assert.deepEqual(background.root().evidence[0].observations[0].amount, { currency: 'JPY', minor: 900000 });
+  assert.equal(page.$('statistics-heading').textContent, 'Saved comparables · RIC I² Nero 306 (1)');
+  page.$('evidence-from').value = '2020-01-01';
+  await page.$('evidence-filters').emit('input', { target: page.$('evidence-from') });
+  assert.equal(page.$('evidence-filter-fold').open, true, 'a filter that is set is shown');
+});
+
+// H-07: one empty state on every page - a serif heading of three words, one sentence, the page's Add button - and a
+// watchlist with no coin is its list alone, with no "Select a coin" beside it.
+test('every workspace page with nothing in it says so in one empty state', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#watchlist', wide: true });
+  const state = (root) => { const box = root.querySelector('.empty-state'); return box && [box.querySelector('h3').textContent, box.querySelector('p').textContent, box.querySelector('button')?.textContent ?? '']; };
+  assert.deepEqual(state(page.$('lot-list')), ['No coins yet', 'Save a coin from the popup, or add one here.', 'Add coin']);
+  assert.equal(page.$('coin-workspace').dataset.empty, 'true', 'no detail panel beside it');
+  assert.deepEqual(state(page.$('event-list')), ['No auctions yet', 'An auction keeps a sale’s date, time zone and reminders for the coins attached to it.', 'Add auction']);
+  assert.deepEqual(state(page.$('exposure-list')), ['No active bids', 'A bid you record as placed counts here, per currency.', '']);
+  assert.deepEqual(state(page.$('history-list')), ['Nothing settled yet', 'A coin whose outcome you record appears here.', '']);
+  assert.deepEqual(state(page.$('want-list')), ['No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', 'Add want']);
+  assert.deepEqual(state(page.$('statistics-output')), ['No saved comparables', 'Sales you record by hand, kept apart from acsearch.', '']);
+  await page.$('lot-list').querySelector('.empty-state').querySelector('button').click(); await settle();
+  assert.equal(page.$('coin-workspace').dataset.empty, 'false', 'Add coin opens the coin form beside the list');
+  assert.equal(page.$('selected-title').textContent, 'Add coin');
+});
+
+// H-09: one word for one thing - buyer's premium, hammer, comparable, auction - on every workspace page.
+test('the workspace says buyer’s premium, comparable and auction, never BP, evidence or event', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const coin = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.place', lotId: coin.id, expectedRevision: coin.revision, activeBid: { amount: { currency: 'EUR', minor: 50000 } } });
+  const page = await mountWorkspace({ background, hash: '#bids' });
+  await page.openCoin('Nero, denarius');
+  const shown = (root) => root.querySelectorAll('label, legend, button, h2, h3, h4, p, summary, option, span').map((node) => node.textContent).join(' \u00b7 ');
+  const everything = shown(page.document.querySelector('main'));
+  for (const word of [/\bBP\b/, /[Bb]uyer premium/, /\bevidence\b/i, /\bevent\b/i]) assert.doesNotMatch(everything, word);
+  assert.match(page.$('exposure-list').textContent, /Known hammer \+ buyer’s premium/);
+  assert.match(page.$('exposure-list').textContent, /Incomplete — buyer’s premium unknown for 1 bid/);
+  assert.equal(page.$('lot-form').elements.lotNumber.closest('label').childNodes[0].textContent, 'Lot number shown ');
+});
+
+// --- Fix round (s2-review) ---------------------------------------------------------------------------
+
+// Important 1: a second click on a form's save while its first is in flight sends nothing, so a sale is never saved twice
+// into the collector's own median, nor a coin added twice.
+test('a second submit while the first save is in flight sends nothing more, on every form that saves through the page', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#search' });
+  page.$('evidence-form').elements.priceBasis.value = 'hammer';
+  page.$('evidence-form').elements.currency.value = 'EUR';
+  for (const [field, value] of [['auctionHouse', 'Roma'], ['auctionDate', '2026-06-01'], ['lotNumber', '12'], ['amount', '600']]) await page.type('evidence-form', field, value);
+  await Promise.all([page.startSubmit('evidence-form'), page.startSubmit('evidence-form')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'evidence.add').length, 1, 'one comparable');
+  assert.equal(background.root().evidence.length, 1);
+
+  await page.navigate('#watchlist');
+  await page.click('new-lot');
+  await page.typeDetails('title', 'Double coin');
+  await Promise.all([page.startSubmit('lot-form'), page.startSubmit('lot-form')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'lot.save').length, 1, 'one coin');
+  assert.equal(background.root().lots.filter(({ title }) => title === 'Double coin').length, 1);
+
+  // The bid, outcome, auction and want forms go through the same send.
+  await page.openCoin('Nero, denarius');
+  await page.type('bid-form', 'amount', '250');
+  const plan = { value: 'plan' };
+  await Promise.all([page.startSubmit('bid-form', plan), page.startSubmit('bid-form', plan)]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'bid.plan').length, 1, 'one plan');
+  await page.navigate('#auctions');
+  await page.click('new-event');
+  for (const [field, value] of [['name', 'Roma 31'], ['localDate', '2030-10-15'], ['localTime', '14:00']]) await page.type('event-form', field, value);
+  await Promise.all([page.startSubmit('event-form'), page.startSubmit('event-form')]);
+  await settle();
+  assert.equal(background.root().auctionEvents.length, 1, 'one auction');
+});
+
+// Important 1: an entry form saved twice sends one correction.
+test('a collection entry form saved twice while its save is in flight sends one correction', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Won coin', sourceLinks: [] } });
+  await background.send({ type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 10000 } }, addToCollection: { title: 'Won coin', acquisitionDate: '2026-09-01', sourceLinks: [] } });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  await page.$('history-list').querySelectorAll('button').find((button) => button.textContent === 'Edit entry').click(); await settle();
+  const form = page.$('entry-edit-form');
+  form.elements.notes.value = 'Bought from Roma'; await form.emit('input', { target: form.elements.notes });
+  await Promise.all([form.emit('submit'), form.emit('submit')]);
+  await settle();
+  assert.equal(page.commands.filter(({ type }) => type === 'collection.update').length, 1);
+});
+
+// Minor 2: the Search route's two currencies start on the collector's default, from every way in, and a choice stands.
+test('the Search filter and the add form start on the default currency from every way in, until the collector chooses', async () => {
+  const background = await createWorkspaceBackground();
+  const created = await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+  const currencies = (page) => [page.$('evidence-currency').value, page.$('evidence-form').elements.currency.value];
+  const direct = await mountWorkspace({ background, hash: '#search' });
+  assert.deepEqual(currencies(direct), ['GBP', 'GBP'], 'opened on Search');
+  const viaNav = await mountWorkspace({ background, hash: '#watchlist' });
+  await viaNav.navigate('#search');
+  assert.deepEqual(currencies(viaNav), ['GBP', 'GBP'], 'reached from the nav');
+  const late = await mountBeforeSnapshot(background, { hash: '#search' });
+  await late.land();
+  assert.deepEqual(currencies(late), ['GBP', 'GBP'], 'with the snapshot late');
+  direct.$('evidence-currency').value = 'CHF';
+  await direct.$('evidence-filters').emit('input', { target: direct.$('evidence-currency') });
+  const euro = await background.send({ type: 'preferences.save', expectedRevision: created.value.revision, preferences: { ...created.value, currency: 'EUR' } });
+  assert.equal(euro.ok, true, euro.message);
+  await settle();
+  assert.deepEqual(currencies(direct), ['CHF', 'EUR'], 'the filter the collector chose stands; the untouched form follows the new default');
 });

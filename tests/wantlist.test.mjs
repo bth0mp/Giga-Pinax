@@ -11,11 +11,13 @@ import { exportBackup, importChangeLines, previewImport, validateBackup } from '
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
-  namesOneType, openWantsFor, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
+  cardReference, namesOneType, openWantsFor, resolveWantReference, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantPillText, wantReferenceProblem, wantTermsText, wantedReading,
+  watchedLotsFor, wonCoinsFor,
 } from '../extension/core/wantlist.js';
 import { MINT_SPELLINGS, RIC_SECTIONS, ricMintSection, rulerKey } from '../extension/catalogues.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
+import { bundle, skip } from './helpers/bundle.mjs';
 
 const NOW = '2026-09-25T12:00:00.000Z';
 const WANT_ID = '11111111-1111-4111-8111-111111111111';
@@ -356,7 +358,12 @@ test('the open wants of a type are the ones not yet found; a stored want no rule
   assert.equal(wantBadgeText(openWantsFor(wants, 'RIC I² Nero 306')), 'On your want list · up to €800.00 · VF or better');
   assert.equal(wantBadgeText([makeWant()]), 'On your want list');
   assert.equal(wantBadgeText([]), '');
-  assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'Fine or better');
+  // H-05: the pill's short words, as the popup's card and Upcoming rows write them.
+  assert.equal(wantPillText(openWantsFor(wants, 'RIC I² Nero 306')), 'Wanted · up to €800.00 · VF+');
+  assert.equal(wantPillText([makeWant()]), 'Wanted');
+  assert.equal(wantPillText([makeWant({ minGrade: 'F' })]), 'Wanted · F+');
+  assert.equal(wantPillText([]), '');
+  assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'F or better');
   assert.equal(wantTermsText(makeWant({ maxPrice: { currency: 'CHF', minor: 120000 } })), `up to ${formatMoney({ currency: 'CHF', minor: 120000 }, 'en-US', { narrow: true })}`);
 });
 
@@ -374,8 +381,10 @@ test('the Want list form is read into a want, or names the field that stops it',
   const wants = [makeWant(), makeWant({ id: OTHER_WANT, reference: 'Price 112', foundLotId: LOT_ID, foundAt: NOW })];
   assert.deepEqual(wantFromForm({ reference: ' RIC I² Nero 306 ', maxPrice: '1,200.50', currency: 'GBP', minGrade: 'EF', notes: 'Dark tone' }, { wants }),
     { ok: true, value: { reference: 'RIC I² Nero 306', maxPrice: { currency: 'GBP', minor: 120050 }, minGrade: 'EF', notes: 'Dark tone' } });
-  assert.deepEqual(wantFromForm({ reference: 'Price 112', maxPrice: '', currency: 'EUR', minGrade: '', notes: '  ' }, { wants }),
-    { ok: true, value: { reference: 'Price 112' } }, 'a found want of the type does not stop a new one');
+  assert.deepEqual(wantFromForm({ reference: 'Price 23', maxPrice: '', currency: 'EUR', minGrade: '', notes: '  ' }, { wants }),
+    { ok: true, value: { reference: 'Price 23' } }, 'blank fields are left off');
+  assert.deepEqual(wantFromForm({ reference: 'Price 112' }, { wants }),
+    { ok: false, field: 'reference', message: 'Price 112 is already on your want list, marked found. Choose Want again on it to look for another.' }, 'a found want of the type stops a new one (V-08)');
   assert.deepEqual(wantFromForm({ id: WANT_ID, reference: 'ric ii trajan 253' }, { wants }).ok, true, 'an edit keeps its own reference');
   assert.deepEqual(wantFromForm({ reference: 'RIC II Trajan 253' }, { wants }),
     { ok: false, field: 'reference', message: 'RIC II Trajan 253 is already on your want list.' });
@@ -402,7 +411,7 @@ test('the Want list page says what it is for when empty, and adds a want the col
   const page = await mountWorkspace({ background, hash: '#wants' });
   assert.equal(page.$('route-wants').hidden, false);
   assert.equal(page.document.querySelector('[data-route="wants"]').textContent, 'Want list');
-  assert.match(page.$('want-list').textContent, /^No wants yet\. Add a reference you are looking for/);
+  assert.equal(page.$('want-list').querySelector('.empty-state').textContent, 'No wants yetA type you are looking for; a card, an upcoming lot or a captured lot of it says so.Add want');
   assert.deepEqual(page.$('want-form').elements.currency.options.map((option) => option.value), [...CURRENCIES], 'every currency money.js lists');
   assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.value), ['', 'F', 'VF', 'EF', 'AU']);
 
@@ -476,7 +485,7 @@ test('a won coin of the wanted type is offered as what found it, and Want again 
   await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'ric ii trajan 253' } });
   const page = await mountWorkspace({ background, hash: '#wants' });
   const card = cardFor(page, 'ric ii trajan 253');
-  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found: Trajan denarius, Künker 341', 'Edit', 'Remove'],
+  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found: Trajan denarius, Künker 341', 'Look up ↗', 'Search acsearch ↗', 'Edit', 'Remove'],
     'only the coin of the type is offered');
   await buttonIn(card, 'Mark found: Trajan denarius, Künker 341').click(); await settle();
   const [want] = background.root().wants;
@@ -497,8 +506,13 @@ test('a captured lot citing a wanted type is marked in its draft, and one that d
   const page = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
   assert.equal(page.$('lot-form').elements.reference.value, 'RIC I (second edition) Nero 306');
   assert.equal(page.$('lot-want-match').hidden, false);
-  assert.equal(page.$('lot-want-match').textContent, 'On your want list · up to £650.00 · VF or better');
-  assert.equal(page.$('lot-want-match').querySelector('.pill').textContent, 'On your want list');
+  // H-05: the draft's badge is the popup's Wanted pill, its whole terms the tooltip.
+  const pill = page.$('lot-want-match').querySelector('.want-pill');
+  assert.equal(pill.tagName, 'mark');
+  assert.equal(pill.className, 'pill want-pill');
+  assert.equal(pill.textContent, 'Wanted · up to £650.00 · VF+');
+  assert.equal(pill.title, 'On your want list · up to £650.00 · VF or better');
+  assert.equal(page.$('lot-want-match').textContent, 'Wanted · up to £650.00 · VF+');
   // Typed to a neighbour, the mark goes; typed back, it returns.
   await page.typeDetails('reference', 'RIC I² Nero 306a');
   assert.equal(page.$('lot-want-match').hidden, true);
@@ -606,4 +620,241 @@ test('a yen maximum is read, said and written in whole yen', () => {
   assert.equal(validateWant(makeWant({ maxPrice: read.value.maxPrice })).ok, true);
   const [, row] = csvFiles({ ...createEmptySnapshot(NOW), wants: [makeWant({ maxPrice: read.value.maxPrice })] }).wants.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
   assert.match(row, /^"[^"]+","RIC II Trajan 253","1200000","JPY",/);
+});
+
+// --- Loop cycle 5: a want no card can match is not saved (V-02) ----------------------------------------
+
+test('a RIC number is one number whether OCRE splits it by denomination or not', () => {
+  for (const [left, right] of [
+    ['RIC II Trajan 253', 'RIC II Trajan 253 (aureus)'],
+    ['RIC II Trajan 253', 'RIC II Trajan 253 (denarius)'],
+    ['RIC II Trajan 253 (aureus)', 'ric ii trajan 253 (Aureus)'],
+  ]) assert.equal(sameWantedType(left, right), true, `${left} = ${right}`);
+  for (const [left, right] of [
+    ['RIC II Trajan 253 (aureus)', 'RIC II Trajan 253 (denarius)'],
+    ['RIC II Trajan 253', 'RIC II Trajan 2530 (aureus)'],
+    ['RIC II Trajan 253', 'RIC II Hadrian 253 (aureus)'],
+  ]) assert.equal(sameWantedType(left, right), false, `${left} ≠ ${right}`);
+  // The form's own example now finds the card a collector opens for it.
+  assert.deepEqual(openWantsFor([makeWant()], 'RIC II Trajan 253 (aureus)').map(({ id }) => id), [WANT_ID]);
+  assert.equal(cardReference('RIC I (second edition) Nero 306'), 'RIC I² Nero 306');
+  assert.equal(cardReference('RIC II, Part 3 (second edition) Hadrian 2140'), 'RIC II.3² Hadrian 2140');
+  assert.equal(cardReference('RIC V Probus 157'), 'RIC V Probus 157');
+});
+
+test('a want is saved as the bundled catalogue titles it, or refused where no card could ever match it', { skip }, async () => {
+  const lookup = (reading) => bundle.lookupType(reading);
+  const saved = async (reference) => {
+    const resolved = await resolveWantReference(reference, lookup);
+    assert.equal(resolved.ok, true, `${reference}: ${resolved.message}`);
+    return resolved.reference;
+  };
+  for (const reference of ['RIC II Trajan 253', 'RIC II Trajan 253 (aureus)', 'RIC I² Nero 306', 'RIC I (second edition) Nero 306', 'RIC VII Trier 12',
+    'RRC 44/5', 'Price 23', 'SC 1', 'Newell Demetrius 45', 'Bopearachchi Menander I 13A']) {
+    assert.equal(await saved(reference), reference, `${reference} is kept as written`);
+  }
+  assert.deepEqual(await resolveWantReference('RIC I Nero 306', lookup),
+    { ok: true, reference: 'RIC I² Nero 306', note: 'you wrote RIC I Nero 306; this is how the catalogue titles it' });
+  assert.equal(await saved('RIC V.2 Probus 157'), 'RIC V Probus 157');
+  assert.equal(await saved('RIC II.3 Hadrian 2140'), 'RIC II.3² Hadrian 2140');
+  const refused = await resolveWantReference('RIC II Trajan 99999', lookup);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.message, 'RIC II Trajan 99999 is not in the catalogue bundled with Giga Pinax, so no card could ever match this want. Check the volume, the ruler or mint and the number.');
+});
+
+test('a want the catalogue holds in several volumes is offered as a choice, and one it cannot check is kept as written', async () => {
+  const twoVolumes = async () => ({ status: 'candidates', candidates: [{ title: 'RIC V Probus 157' }, { title: 'RIC VI Probus 157' }, { title: 'RIC V Carus 157' }] });
+  assert.deepEqual(await resolveWantReference('RIC IV Probus 157', twoVolumes), {
+    ok: false, message: 'The catalogue holds RIC IV Probus 157 in 2 volumes or editions. Choose the one you want:', choices: ['RIC V Probus 157', 'RIC VI Probus 157'],
+  });
+  for (const lookup of [null, async () => null, async () => ({ status: 'unavailable' }), async () => { throw new Error('damaged bundle'); }]) {
+    assert.deepEqual(await resolveWantReference('RIC II Trajan 253', lookup), { ok: true, reference: 'RIC II Trajan 253', note: '' });
+  }
+});
+
+test('the Want list form saves a want as the catalogue titles it and says so, and refuses one no card could match', { skip }, async () => {
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#wants', catalogue: bundle });
+  await addWant(page, { reference: 'RIC I Nero 306' });
+  assert.deepEqual(background.root().wants.map(({ reference }) => reference), ['RIC I² Nero 306']);
+  assert.equal(page.$('want-action-status').textContent, 'Want saved · RIC I² Nero 306 · you wrote RIC I Nero 306; this is how the catalogue titles it');
+  await addWant(page, { reference: 'RIC II Trajan 99999' });
+  assert.match(page.$('want-form-status').textContent, /^RIC II Trajan 99999 is not in the catalogue bundled with Giga Pinax/);
+  assert.equal(page.$('want-form').hidden, false, 'the form stays open to correct');
+  await page.type('want-form', 'reference', 'RIC I Nero 306');
+  await page.submit('want-form');
+  assert.equal(page.$('want-form-status').textContent, 'RIC I² Nero 306 is already on your want list.', 'the twin check reads the catalogue’s title');
+  assert.equal(background.root().wants.length, 1);
+  assert.equal(page.commands.filter(({ type }) => type === 'want.save').length, 1, 'nothing refused reached the store');
+});
+
+// --- Loop cycle 5: one want per type, in the store as in the form (V-08) --------------------------------
+
+test('want.save refuses a second want of a type, open or found, in the form’s own sentence; an edit keeps its own type', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Nero', reference: 'RIC I² Nero 306', sourceLinks: [] } }));
+  const lot = state.value;
+  state = reduce(state.snapshot, command('lot.outcome.set', { lotId: lot.id, expectedRevision: 0, outcome: { status: 'won' } }));
+  state = reduce(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } }));
+  const want = state.value;
+  const twin = applyCommand(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I (second edition) Nero 306' } }), context());
+  assert.equal(twin.ok, false);
+  assert.equal(twin.error.code, 'duplicate');
+  assert.equal(twin.error.message, 'RIC I² Nero 306 is already on your want list.');
+  assert.equal(twin.error.path, 'want.reference');
+  state = reduce(state.snapshot, command('want.found', { wantId: want.id, expectedRevision: 0, lotId: lot.id }));
+  const foundTwin = applyCommand(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } }), context());
+  assert.equal(foundTwin.error.message, 'RIC I² Nero 306 is already on your want list, marked found. Choose Want again on it to look for another.');
+  // An edit of the want itself is never its own twin.
+  assert.equal(applyCommand(state.snapshot, command('want.save', { expectedRevision: 1, want: { id: want.id, reference: 'RIC I (second edition) Nero 306', notes: 'Found' } }), context()).ok, true);
+  // Another want may not become this one's type.
+  state = reduce(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'Price 112' } }));
+  const becoming = applyCommand(state.snapshot, command('want.save', { expectedRevision: 0, want: { id: state.value.id, reference: 'RIC I² Nero 306' } }), context());
+  assert.equal(becoming.error.code, 'duplicate');
+});
+
+test('twins an older version left behind can still be edited and found, but a found one is not wanted again beside an open twin', () => {
+  const root = { ...createEmptySnapshot(NOW), wants: [makeWant({ reference: 'RIC I² Nero 306', foundLotId: LOT_ID, foundAt: NOW }), makeWant({ id: OTHER_WANT, reference: 'RIC I² Nero 306' })] };
+  assert.equal(applyCommand(root, command('want.save', { expectedRevision: 0, want: { id: WANT_ID, reference: 'RIC I² Nero 306', notes: 'An edit keeps its type' } }), context()).ok, true);
+  assert.equal(applyCommand(root, command('want.save', { expectedRevision: 0, want: { id: OTHER_WANT, reference: 'RIC I² Nero 306', minGrade: 'VF' } }), context()).ok, true);
+  const again = applyCommand(root, command('want.found', { wantId: WANT_ID, expectedRevision: 0, lotId: null }), context());
+  assert.equal(again.ok, false);
+  assert.equal(again.error.message, 'RIC I² Nero 306 is already on your want list.');
+  // The form holds the same rules before anything is sent.
+  assert.equal(wantFromForm({ id: WANT_ID, reference: 'RIC I² Nero 306', notes: 'Kept' }, { wants: root.wants }).ok, true);
+  assert.equal(wantFromForm({ reference: 'RIC I² Nero 306' }, { wants: [root.wants[0]] }).message, 'RIC I² Nero 306 is already on your want list, marked found. Choose Want again on it to look for another.');
+});
+
+// V-13: Newell's Demetrius wants are accepted and matched, so the form names them too.
+test('the want form names Newell Demetrius where it lists what can be wanted, and says how to write one', async () => {
+  assert.equal(wantReferenceProblem('Newell Demetrius 45'), '');
+  assert.equal(wantReferenceProblem('Newell 45'), 'A Newell reference names Demetrius, as a card does: Newell Demetrius 45.');
+  assert.equal(wantReferenceProblem('SNG Cop 123'), '“SNG Cop 123” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE, Newell Demetrius or Bopearachchi reference, such as RIC I² Nero 306, RRC 44/5 or Newell Demetrius 45.');
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#wants' });
+  assert.match(page.$('want-reference-note').textContent, /Newell Demetrius/);
+});
+
+// --- Loop cycle 5: the want list as a hunting board (H-08, H-18) ------------------------------------------
+
+test('a want card shows the watched coins of its type, since when it is wanted, and where to look for it', async () => {
+  const background = await createWorkspaceBackground();
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma E-Sale 130', eventKind: 'lot-closes', precision: 'timed', localDate: '2027-03-13', localTime: '15:00', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  const nero = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, Roma 130', reference: 'RIC I (second edition) Nero 306', sourceLinks: [], auctionEventId: event.value.id } })).value;
+  await background.send({ type: 'bid.place', lotId: nero.id, expectedRevision: nero.revision, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'A neighbour', reference: 'RIC I² Nero 306a', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306', minGrade: 'VF' } });
+  const page = await mountWorkspace({ background, hash: '#wants', language: 'en-GB' });
+  const card = cardFor(page, 'RIC I² Nero 306');
+  assert.equal(card.querySelector('.want-since').textContent, 'wanted since 12 Sept 2026');
+  assert.equal(card.querySelector('.want-terms').textContent, 'VF or better', 'the grade as every page writes it');
+  const rows = card.querySelectorAll('.want-coin');
+  assert.equal(rows.length, 1, 'the coin of the type, not its neighbour');
+  assert.equal(rows[0].querySelector('.want-coin-reference').textContent, 'RIC I (second edition) Nero 306');
+  assert.equal(rows[0].querySelector('.want-coin-amount').textContent, '£650.00');
+  assert.equal(rows[0].querySelector('.status-pill').textContent, 'Bid active');
+  assert.match(rows[0].querySelector('.want-coin-when').textContent, /^Closes Sat 13 Mar, /);
+  await buttonIn(card, 'Look up ↗').click(); await settle();
+  assert.deepEqual(page.opened, [{ url: 'popup.html?panel=1&reference=RIC%20I%C2%B2%20Nero%20306', target: '_blank', features: 'noopener' }]);
+  const tabs = [];
+  page.browser.tabs = { create: async (options) => { tabs.push(options.url); } };
+  await buttonIn(card, 'Search acsearch ↗').click(); await settle();
+  assert.equal(tabs.length, 1);
+  assert.equal(new URL(tabs[0]).searchParams.get('term'), 'RIC I² Nero 306');
+  await rows[0].click(); await settle();
+  assert.equal(page.location.hash, '#watchlist');
+  assert.equal(page.$('selected-title').textContent, 'Nero As, Roma 130', 'the row opens its coin');
+  assert.deepEqual(page.commands.filter(({ type }) => !['snapshot.get'].includes(type)), [], 'nothing was written or fetched through the store');
+});
+
+test('a win of a wanted type offers to mark the want found from the outcome’s own line', async () => {
+  const background = await createWorkspaceBackground();
+  const lot = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As', reference: 'RIC I² Nero 306', sourceLinks: [] } })).value;
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero As');
+  page.$('outcome-form').elements.status.value = 'won';
+  await page.type('outcome-form', 'hammer', '240');
+  await page.type('outcome-form', 'premium', '20');
+  page.$('outcome-form').elements.addToCollection.checked = false;
+  await page.submit('outcome-form');
+  const line = page.$('outcome-action-status');
+  assert.equal(line.textContent, 'Outcome saved · Won at $240.00 · in History · now under Completed Open Mark found on your want list');
+  await line.querySelectorAll('button').find((button) => button.textContent === 'Mark found on your want list').click(); await settle();
+  assert.equal(background.root().wants[0].foundLotId, lot.id);
+  assert.equal(page.$('outcome-action-status').textContent, 'Found on your want list · RIC I² Nero 306');
+  // A win of a type nobody wants offers nothing more.
+  const other = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan', reference: 'RIC II Trajan 254', sourceLinks: [] } })).value;
+  await settle();
+  page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change');
+  await page.openCoin('Trajan');
+  page.$('outcome-form').elements.status.value = 'won';
+  page.$('outcome-form').elements.addToCollection.checked = false;
+  await page.submit('outcome-form');
+  assert.equal(background.root().lots.find(({ id }) => id === other.id).outcome.status, 'won');
+  assert.equal(page.$('outcome-action-status').querySelectorAll('button').map((button) => button.textContent).join(), 'Open');
+});
+
+test('the want form lists grades by their abbreviation first, as the card and the badge write them', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#wants' });
+  assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.textContent), ['Any grade', 'F · Fine', 'VF · Very Fine', 'EF · Extremely Fine', 'AU · About Uncirculated']);
+  assert.equal(wantTermsText(makeWant({ minGrade: 'AU' })), 'AU or better');
+});
+
+// --- Fix round (s2-review) ---------------------------------------------------------------------------
+
+// Minor 1: a hunt row is a button in a list, announced as the button it is.
+test('the watched coins of a want are plain buttons in a list', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As', reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const list = cardFor(page, 'RIC I² Nero 306').querySelector('.want-coins');
+  assert.equal(list.tagName, 'ul');
+  assert.equal(list.getAttribute('role'), null);
+  const [item] = list.children;
+  assert.equal(item.tagName, 'li');
+  const [row] = item.children;
+  assert.equal(row.tagName, 'button');
+  assert.equal(row.getAttribute('role'), null, 'no role replaces the button’s own');
+});
+
+// Minor 4 (lead's decision): an unedited "RIC I" names no edition - S1's V-06 reads it as ambiguous - so a coin saved as
+// "RIC I Nero 306" is not the RIC I² want's type: no badge, no hunt row, no Mark found.
+test('a coin saved as an unedited RIC I is not counted as a RIC I² want', async () => {
+  const want = makeWant({ reference: 'RIC I² Nero 306' });
+  const coin = { id: LOT_ID, reference: 'RIC I Nero 306', outcome: { status: 'open' } };
+  assert.equal(sameWantedType('RIC I Nero 306', 'RIC I² Nero 306'), false);
+  assert.deepEqual(openWantsFor([want], 'RIC I Nero 306'), []);
+  assert.deepEqual(watchedLotsFor(want, [coin]), []);
+  assert.deepEqual(wonCoinsFor(want, [{ ...coin, outcome: { status: 'won' } }]), []);
+  const background = await createWorkspaceBackground();
+  const saved = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, CNG', reference: 'RIC I Nero 306', sourceLinks: [] } })).value;
+  await background.send({ type: 'lot.outcome.set', lotId: saved.id, expectedRevision: 0, outcome: { status: 'won' } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, Roma', reference: 'RIC I Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const card = cardFor(page, 'RIC I² Nero 306');
+  assert.equal(card.querySelector('.want-coins'), null, 'no hunt row for the unedited coin');
+  assert.equal(card.querySelectorAll('button').some((button) => button.textContent.startsWith('Mark found')), false);
+});
+
+// Minor 6: while the catalogue is read the want form waits, as Settings' editors wait for their load (#46), so nothing typed
+// in that moment is dropped by a save that was already under way.
+test('the want form is disabled while the catalogue is read, and saves what it held when it was submitted', async () => {
+  let answer;
+  const catalogue = { lookupType: () => new Promise((resolve) => { answer = resolve; }) };
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#wants', catalogue });
+  await page.click('new-want');
+  await page.type('want-form', 'reference', 'RIC I² Nero 306');
+  const saving = page.startSubmit('want-form');
+  await settle();
+  const controls = page.$('want-form').querySelectorAll('input, select, textarea, button');
+  assert.equal(controls.every((control) => control.disabled), true, 'every control waits');
+  assert.equal(page.$('want-form-status').textContent, 'Checking the catalogue…');
+  answer({ status: 'ok', card: { label: 'RIC I (second edition) Nero 306' } });
+  await saving; await settle();
+  assert.deepEqual(background.root().wants.map(({ reference }) => reference), ['RIC I² Nero 306']);
+  await page.click('new-want');
+  assert.equal(page.$('want-form').elements.reference.disabled, false, 'the form is usable again');
+  assert.equal(page.$('cancel-want').disabled, false);
 });
