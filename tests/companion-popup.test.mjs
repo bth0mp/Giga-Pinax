@@ -366,20 +366,28 @@ test('a retained retry belongs to its own coin, and an answerless send is not re
 // Nothing that arrives after a failed start-up may put the save buttons back: the note stays true until the page is opened again.
 test('a companion start-up that cannot reach storage leaves its save buttons disabled for good', async () => {
   const snapshot = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const unreachable = 'Giga Pinax can’t reach its records in this browser, so nothing can be saved here.';
   const cases = [
-    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, 'Storage is blocked.'],
-    ['a background that answers nothing', { sendMessage: async () => undefined }, 'Extension storage is unavailable.'],
+    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, unreachable],
+    ['a background that answers nothing', { sendMessage: async () => undefined }, unreachable],
+    ['a stored root that cannot be read', { sendMessage: async () => ({ ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.' }) },
+      'Your records can’t be read, so nothing can be saved here.'],
   ];
   for (const [name, options, announced] of cases) {
     const page = await loadCompanion(options);
-    assert.equal(page.element('storage-note').hidden, false, name);
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
     assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
-    // A reply nobody could read names no reason a collector could act on, so it is never shown as one. It is said in the storage note, which is there
-    // for exactly this, never over the panel.
-    assert.equal(page.element('storage-note').textContent, announced, name);
+    // X-12: the reason is not the preferences note under the capture section, out of view at 600 px. It is said in the Watchlist tab and under
+    // the card's Watch, in words, with the way to Settings; the store's own words stay out.
+    assert.equal(page.element('storage-note').hidden, true, name);
+    assert.equal(page.element('companion-empty').hidden, false, name);
+    assert.equal(page.element('companion-empty-title').textContent, 'Records unavailable', name);
+    assert.equal(page.element('companion-empty-text').textContent, announced, name);
+    assert.equal(page.element('companion-empty-settings').hidden, false, name);
 
     page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+    assert.equal(lineParts(page.element('companion-save-hint')), `${announced} · [Open Settings]`, name);
+    assert.doesNotMatch(lineParts(page.element('companion-save-hint')), /Stored data is invalid|Storage is blocked/, name);
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
     page.element('companion-capture-ruler').value = 'Nero';
     await page.element('companion-capture-ruler').emit('input');
@@ -389,6 +397,8 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
   // With storage answering, the same card is saveable: the flag is what disabled the others, not the page failing to start at all.
   const working = await loadCompanion({ sendMessage: async () => snapshot });
   assert.equal(working.element('storage-note').hidden, true);
+  assert.equal(working.element('companion-empty-title').textContent, 'No coins yet');
+  assert.equal(working.element('companion-empty-settings').hidden, true);
   working.card({ title: 'Nero denarius', reference: 'RIC 306' });
   assert.equal(working.element('companion-save-watchlist').disabled, false);
   working.element('companion-capture-ruler').value = 'Nero';
@@ -476,7 +486,8 @@ test('a stored currency the research select already shows disturbs nothing', asy
 // never reached the background owes the collector is the reason it goes no further than that.
 test('a currency change after a failed start-up is explained once rather than dropped in silence', async () => {
   const page = await loadCompanion({ sendMessage: async () => undefined });
-  assert.equal(page.element('storage-note').textContent, 'Extension storage is unavailable.');
+  // X-12: the records' reason is said in the Watchlist tab and under Watch; the storage note keeps to the preferences, the currency among them.
+  assert.equal(page.element('storage-note').hidden, true);
 
   page.element('currency').value = 'CHF';
   await page.element('currency').emit('change');
@@ -1230,7 +1241,7 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
   const panel = markup.getElementById('companion-panel-watchlist');
   assert.equal(markup.getElementById('companion-open-workspace'), null, 'no second way to the same place');
   assert.equal(panel.querySelectorAll('.companion-intro').length, 0);
-  assert.equal(panel.querySelectorAll('button').filter((button) => !button.closest('.companion-needs-outcome')).length, 1);
+  assert.equal(panel.querySelectorAll('button').filter((button) => !button.closest('.companion-needs-outcome') && !button.closest('.companion-empty')).length, 1);
   const now = new Date();
   const inDays = (days) => new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
   const cng = { id: 'cng', name: 'CNG Feature Auction 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };

@@ -430,6 +430,12 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// X-12: why nothing can be saved, in words, from the reason the store gave: its own "Stored data is invalid: …" is records that cannot be read, and
+// anything else (a blocked or missing storage, a background that never answered) is records the popup cannot reach. The store's own words stay out.
+export function recordsProblem(message) {
+  return /^Stored data is invalid/.test(String(message ?? '')) ? 'Your records can’t be read, so nothing can be saved here.'
+    : 'Giga Pinax can’t reach its records in this browser, so nothing can be saved here.';
+}
 // How long a message stands in a hint line before the line's own words come back.
 const SAID_FOR_MS = 8000;
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
@@ -595,8 +601,12 @@ async function initCompanionPopup() {
       return item;
     }));
     $('companion-coins').hidden = coins.length === 0;
-    // With no coin saved at all, the tab says how one gets here (H-07); its values below stay as they are.
-    $('companion-empty').hidden = (snapshot.lots ?? []).length > 0;
+    // With no coin saved at all, the tab says how one gets here (H-07); its values below stay as they are. Records that cannot be read are no empty
+    // list (X-12): the tab says so, and where to go.
+    $('companion-empty').hidden = !recordsDown && (snapshot.lots ?? []).length > 0;
+    $('companion-empty-title').textContent = recordsDown ? 'Records unavailable' : 'No coins yet';
+    $('companion-empty-text').textContent = recordsDown || 'Watch a coin from Research, or add one in the workspace.';
+    $('companion-empty-settings').hidden = !recordsDown;
     const held = CURRENCIES.filter((currency) => summary.exposure[currency].hammerMinor > 0 || summary.exposure[currency].bindingCount > 0);
     $('companion-exposure-list').replaceChildren(...(held.length ? held.map((currency) => {
       const item = summary.exposure[currency];
@@ -613,6 +623,16 @@ async function initCompanionPopup() {
     }) : [Object.assign(document.createElement('li'), { className: 'companion-none', textContent: 'No active bids' })]));
   };
 
+  // X-12: the reason nothing can be saved, once the store has refused to be read ('' while it can be). It is said under the card's Watch and in the
+  // Watchlist tab, each time with the way to Settings; the storage note under the capture section keeps to the preferences.
+  let recordsDown = '';
+  const toSettings = (anchor) => void navigate(() => openSettings(), 'Couldn’t open Settings.', anchor);
+  const sayRecordsDown = () => {
+    if (!recordsDown || !safeCard) return;
+    const hint = $('companion-save-hint');
+    fillLine(hint, [recordsDown, { label: 'Open Settings', name: 'Open Settings to see your records', action: () => toSettings('companion-save-hint') }]);
+    hint.classList.toggle('said-error', true);
+  };
   // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
   const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
   // The card's status row (H-05) shows while either of its two lines has something to say.
@@ -734,6 +754,7 @@ async function initCompanionPopup() {
     renderCardSaved();
     cardReference = readingOfCard(event.detail);
     renderCardWanted();
+    if (event.detail) sayRecordsDown();
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
@@ -1071,6 +1092,7 @@ async function initCompanionPopup() {
     if (!result.ok) announce(result.message, true, anchor);
   };
   $('companion-open-watchlist').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
+  $('companion-empty-settings').addEventListener('click', () => toSettings('companion-runtime-note'));
   $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
     'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-workspace').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the workspace.'));
@@ -1115,8 +1137,14 @@ async function initCompanionPopup() {
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
-      showStorageUnavailable();
-      announce(reply?.message || STORAGE_UNAVAILABLE, true);
+      // X-12: the saves go, and why is said where they were, not in the preferences note below the capture section.
+      storageUnavailable = true;
+      for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) $(id).disabled = true;
+      recordsDown = recordsProblem(reply?.message);
+      speak(recordsDown);
+      renderSummary();
+      sayRecordsDown();
+      if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     }
     snapshotRead();
     bridge.subscribeToSnapshots((incoming) => {
