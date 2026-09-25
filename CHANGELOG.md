@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- The citation filter now counts the sales of houses that glue their separator to the number (`RIC-118`, `Price-112`, `RIC II-118`, `RIC: 118`, `RIC#118`), as Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album write it. A spaced dash (`RIC - 118`) still reads as "not in RIC", and `Price:` before a number is still a sale's amount.
+
 ## [0.36.0] - 2026-09-25
 
 ### Added

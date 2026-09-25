@@ -411,10 +411,18 @@ function volumeParts(volume) {
 // second edition of volume I spaced out as volume II.
 const ROMAN_NUMERALS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
 const publishedInParts = (numeral) => ['1', '2', '3'].some((part) => realVolumePart(numeral, part));
+// The houses that glue their separator to the number: a hyphen at Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album ("RIC-118", "Price-112"),
+// a hash ("RIC#118") and a colon ("RIC:118", "RIC: 118"). One mark, straight behind the key and straight in front of the number, so a spaced dash
+// ("RIC - 118") still says "not in RIC" and "RIC -; BMC -" cites nothing. Price takes no colon: "Price: 1,200" is a sale's amount, never PELLA's type,
+// as lookup.js reads it.
+const glued = (catalogue) => `(?:[-–#]${catalogue === 'Price' ? '' : String.raw`|:\s?`})${String.raw`(?=\p{Lu}?\d)`}`;
+// Behind a volume numeral the same mark may also open the volume's part ("RIC IV-1 266"), which is one figure: so there the number behind it must be
+// two figures at least ("RIC II-118"), and a single one is left to the part and its guard, as before.
+const GLUED_VOLUME = String.raw`(?:[-–#]|:\s?)(?=\d{2})`;
 function between({ catalogue, volume }) {
   // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
-  if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
-  if (catalogue !== 'RIC') return SEP;
+  if (catalogue === 'Bop') return `(?:${glued(catalogue)}|${SEP}(?:[Ss][ée]rie${SEP})?)`;
+  if (catalogue !== 'RIC') return `(?:${glued(catalogue)}|${SEP})`;
   const text = squash(volume);
   const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
   const part = partPattern(volumeParts(text));
@@ -428,7 +436,7 @@ function between({ catalogue, volume }) {
   // part and the last number the type, as before, so it cites VI 53 and never VI 1.
   const parted = !numeral || publishedInParts(numeral);
   const guard = parted ? String.raw`(?![-/]\d|\.\d(?!\d))` : String.raw`(?![-/]\d|\.\d+\s+\d)`;
-  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}${guard}${SEP})?${RULERS}`;
+  return `${EDITION}(?:${glued(catalogue)}|${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}(?:${GLUED_VOLUME}|${part}${EDITION}${guard}${SEP}${RULERS})|${RULERS}))`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.

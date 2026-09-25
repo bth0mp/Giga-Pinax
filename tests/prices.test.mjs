@@ -1629,3 +1629,30 @@ test('citesReference reads a hyphen for Crawford’s slash, an Arabic volume wit
     assert.equal(citesReference(cited, { catalogue: 'RIC', number: '53', volume }), true, `${cited} as ${volume} 53`);
   }
 });
+
+// Loop Q-02: Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album glue a hyphen to the number, and a few houses a colon or a hash. With the
+// citation filter on, which is the default, every one of their sales left the median as "not citing" the card.
+test('citesReference reads a hyphen, colon or hash glued to the number, and never a spaced dash or another key behind it', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC-118.', 'RIC-118; Cal-1015; RSC-462a.', 'RIC II-118.', 'RIC: 118.', 'RIC:118.', 'RIC#118.', 'RIC–118.', 'RIC-117-118.']) {
+    assert.equal(citesReference(`Trajano. Denario. ${cited}`, trajan), true, cited);
+  }
+  for (const other of ['RIC - 118.', 'RIC -; BMC -.', 'RIC -, cf. 118.', 'RIC-1180.', 'RIC-118a.', 'RIC-; Cohen 118.', 'RIC -118.', 'RIC--118.',
+    'RIC-118.5 g', 'Cohen-118.']) {
+    assert.equal(citesReference(`Trajano. Denario. ${other}`, trajan), false, other);
+  }
+  // Only the card's own volume: "RIC II-118" is not volume I's 118.
+  assert.equal(citesReference('RIC II-118.', { catalogue: 'RIC', number: '118', volume: 'I (2nd edition)' }), false);
+  // Behind a volume the mark still opens a part, which is one figure: "RIC IV-1 266" is IV 266 and never IV 1.
+  assert.equal(citesReference('RIC IV-1 266.', { catalogue: 'RIC', number: '266', volume: 'IV' }), true);
+  assert.equal(citesReference('RIC IV-1 266.', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  assert.equal(citesReference('RIC IV-1.', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  const price = { catalogue: 'Price', number: '112' };
+  for (const cited of ['Price-112.', 'Price#112.', 'Price 111-112.']) assert.equal(citesReference(cited, price), true, cited);
+  // "Price:" is the word in front of a sale's amount, never PELLA's type, and a longer number is another type.
+  for (const other of ['Price: 112.', 'Price:112', 'Price-1120.', 'Price - 112.', 'Starting Price-112 EUR']) assert.equal(citesReference(other, price), false, other);
+  assert.equal(citesReference('Cr-44/5.', { catalogue: 'RRC', number: '44/5' }), true);
+  assert.equal(citesReference('SC-1266.2.', { catalogue: 'SC', number: '1266.2' }), true);
+  assert.equal(citesReference('CPE-B549.', { catalogue: 'CPE', number: 'B549' }), true);
+  assert.equal(citesReference('Bopearachchi-24A.', { catalogue: 'Bop', number: '24A' }), true);
+});
