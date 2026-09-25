@@ -18,7 +18,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Fixed
 
-- When your records fill the 4.9 MB Giga Pinax keeps for them in this browser, removing a coin, acknowledging or snoozing a reminder and changing the currency work again: only a change that makes your records bigger is refused, and the refusal says what grew and the way out (`Saving this coin would take your records to 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.`). A removal that could not also keep a copy for **Undo** says so instead of offering it. A record put back from the set-aside list no longer counts as growth, since it was already stored.
+- When your records fill the 4.9 MB Giga Pinax keeps for them in this browser, removing a coin, acknowledging or snoozing a reminder and changing the currency work again: only a change that makes your records bigger is refused, and the refusal says what grew and the way out (`Saving this coin would take your records to 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.`). A removal that could not also keep a copy for **Undo** says so instead of offering it. A record put back from the set-aside list no longer counts as growth, since it was already stored. If you go back to 0.39.0 while Settings shows your records at 4.9 MB or more, 0.39.0 may refuse every change there, as it did before this fix, until you update again; nothing is lost. 0.39.0's **Undo** of a removal made here without a copy answers with a validator message instead of putting the coin back.
 
 ## [0.39.0] - 2026-09-25
 
