@@ -1524,3 +1524,21 @@ test('a yen coin reads in whole yen in its form fields, the comparison and its m
   assert.deepEqual(line.cells.map((cell) => cell.figure), ['1,200,000', '210,000', '3,000', '1,413,000']);
   assert.equal(wonCostLine(won, 'de-DE').cells[3].figure, '1.413.000');
 });
+
+// A browser whose ICU gives every currency no places: the places of a currency money.js lists come from its table, and
+// only a currency it does not list is read from Intl.
+function withPlacelessIntl(run) {
+  const real = globalThis.Intl.NumberFormat;
+  globalThis.Intl.NumberFormat = class extends real {
+    resolvedOptions() { const options = super.resolvedOptions(); return options.style === 'currency' ? { ...options, maximumFractionDigits: 0 } : options; }
+  };
+  try { run(); } finally { globalThis.Intl.NumberFormat = real; }
+}
+
+test('an estimate note in a listed currency takes its places from the table, whatever the browser says', () => {
+  withPlacelessIntl(() => {
+    assert.equal(estimateNoteText({ minor: 95000, currency: 'HUF' }), 'Estimate from page: HUF 950.00');
+    assert.equal(estimateNoteText({ minor: 500000, currency: 'JPY' }), 'Estimate from page: JPY 500000');
+    assert.equal(estimateNoteText({ minor: 5, currency: 'KWD' }), 'Estimate from page: KWD 5');
+  });
+});

@@ -3,7 +3,7 @@
 // read into form fields and back, a page's draft read into the coin editor and the auction it offers,
 // and an auction's reminders read into their two controls and back.
 import { FEE_SHEET_FIELDS, buildBidCalculation, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
-import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent, plainAmount } from './core/money.js';
+import { calculateBidCost, formatMoney, minorDigits, parseMoney, parsePremiumPercent, plainAmount } from './core/money.js';
 import { bidPremiumRate, feeSheetOf } from './core/projections.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -267,7 +267,8 @@ export function estimateNoteText(estimate) {
   if (!Number.isSafeInteger(estimate?.minor) || estimate.minor <= 0 || typeof estimate.currency !== 'string' || !/^[A-Z]{3}$/.test(estimate.currency)) return '';
   /** @type {number} a currency format always resolves its fraction digits */
   let places;
-  try { places = /** @type {number} */ (new Intl.NumberFormat('en', { style: 'currency', currency: estimate.currency }).resolvedOptions().maximumFractionDigits); }
+  // A currency money.js lists has its places from its table; any other a page states, from the browser.
+  try { places = minorDigits(estimate.currency) ?? /** @type {number} */ (new Intl.NumberFormat('en', { style: 'currency', currency: estimate.currency }).resolvedOptions().maximumFractionDigits); }
   catch { return ''; }
   const digits = String(estimate.minor).padStart(places + 1, '0');
   const figure = places ? `${digits.slice(0, -places)}.${digits.slice(-places)}` : digits;

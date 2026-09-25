@@ -400,3 +400,23 @@ test('the lot’s provenance is read from its description and its text, once eac
   assert.equal(Object.hasOwn(draftOf(injected(page({ nodes: [node('Reference: RIC 306')] }), { href: 'https://auction.test/1' })), 'provenance'), false);
   assert.equal(Object.hasOwn(draftOf({ pageUrl: 'about:blank', rawText: 'Ex Leu 7 (1973).', candidates: {} }), 'provenance'), false);
 });
+
+// A browser whose ICU gives every currency no places: the places of a currency money.js lists come from its table, and
+// only a currency it does not list is read from Intl.
+function withPlacelessIntl(run) {
+  const real = globalThis.Intl.NumberFormat;
+  globalThis.Intl.NumberFormat = class extends real {
+    resolvedOptions() { const options = super.resolvedOptions(); return options.style === 'currency' ? { ...options, maximumFractionDigits: 0 } : options; }
+  };
+  try { run(); } finally { globalThis.Intl.NumberFormat = real; }
+}
+
+test('an estimate in a listed currency takes its places from the table, whatever the browser says', () => {
+  withPlacelessIntl(() => {
+    assert.deepEqual(pageEstimate('950', 'HUF'), { minor: 95000, currency: 'HUF' });
+    assert.deepEqual(pageEstimate('950.50', 'SEK'), { minor: 95050, currency: 'SEK' });
+    assert.deepEqual(pageEstimate('500000', 'JPY'), { minor: 500000, currency: 'JPY' });
+    // A currency the table does not list is read as the browser has it.
+    assert.deepEqual(pageEstimate('1200', 'KWD'), { minor: 1200, currency: 'KWD' });
+  });
+});

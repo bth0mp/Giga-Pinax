@@ -12,6 +12,7 @@ import * as lot from '../extension/lot.js';
 import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
+import * as money from '../extension/core/money.js';
 import { parseHtml, runPage } from './helpers/dom.mjs';
 
 // No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
@@ -88,7 +89,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -134,7 +135,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   window.open = () => {};
   window.close = () => {};
   const sandbox = {
-    ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue, ...coinArchivesPrices,
+    ...money, ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue, ...coinArchivesPrices,
     createLocalCatalogue: () => localProvider,
     fetchPrices: priceFetch,
     fetchCoinArchivesPrices: coinArchivesFetch,
@@ -154,7 +155,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
     CustomEvent: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
-    URL, URLSearchParams, Intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set, AbortController,
+    URL, URLSearchParams, Intl: intl, Date, Object, String, Math, JSON, Promise, WeakMap, WeakSet, Set, AbortController,
     // Timers never run unless a test asks to hold them (timers: []) and run them itself.
     setTimeout: (callback) => { timers?.push(callback); return 0; },
     clearTimeout() {},
@@ -2735,4 +2736,19 @@ test('a dotted-letter lot row searches no prices and shows no plain term until a
   assert.deepEqual(fetched, []);
   assert.equal(popup.element('price-search-term').textContent, '');
   assert.equal(popup.element('lot-list').children[0].children[0].textContent, 'RIC IV 27 b. · Philip I');
+});
+
+// The median kept for the workspace is Money the workspace formats through money.js's table, so its minor units come from
+// that table too, never from what the browser's ICU says a currency's places are.
+test('the median kept for the workspace is in the table’s minor units, whatever the browser says', async () => {
+  const session = new Map();
+  const intl = Object.assign(Object.create(Intl), { NumberFormat: class extends Intl.NumberFormat {
+    resolvedOptions() { const options = super.resolvedOptions(); return options.style === 'currency' ? { ...options, maximumFractionDigits: 0 } : options; }
+  } });
+  const popup = await loadPopup({ session, intl, permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(session.get('giga-pinax-session-median').acsearch.median, 12000);
 });
