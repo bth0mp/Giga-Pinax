@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- A date-only sale day's **Auction day** reminder could go off after the sale was over for a sale east of you: a New York collector's reminder for a Tokyo sale day rang at 09:00 New York, 22:00 in Tokyo, and a Zurich one five hours into the sale. It now goes off before the sale's morning where the auction is, between the start of the sale day there and 09:00 there: at its time on your clock where that falls inside, else at the latest minute between 08:00 and 21:00 your time, else at 09:00 in the auction's time zone. The Tokyo sale day now reaches the New York collector at 20:00 the evening before (09:00 Tokyo), the Zurich one at 21:00 the evening before (03:00 Zurich); a London collector at a New York sale still gets 09:00 London. The **Previous day** reminder keeps its time. This applies to reminders set in 0.38.0 as well; one that already went off and was dismissed does not go off again because its time moved. Reminders saved before 0.38.0 keep their times until you change their auction's sale day, time zone or reminders. Back in 0.38.0, an **Auction day** reminder that went off here goes off once more at 0.38.0's later time.
+
 ## [0.38.0] - 2026-09-25
 
 ### Added

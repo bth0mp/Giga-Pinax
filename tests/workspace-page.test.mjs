@@ -905,7 +905,7 @@ test('a date-only auction’s reminders show 09:00 your time in the Reminders ta
   assert.match(onTheDay, /^\S.* \(your time\)( · \S+ \S+ \d+ ([1-8]:\d\d|9:00) AM Kiritimati)?$/);
   // The auction form says whose clock new reminders ring on, and where each one's time is shown: true of an older
   // auction's untouched reminders too, which keep the auction's clock (review Minor 4).
-  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock; the Reminders tab shows each one's time.");
+  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock, the Auction day one before the sale's morning where it is; the Reminders tab shows each one's time.");
 });
 
 // W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle
