@@ -718,6 +718,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     import('../../extension/core/fields.js'), import('../../extension/bid-tools.js'), import('../../extension/lookup.js'),
   ]);
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
+  const wantlist = await import('../../extension/core/wantlist.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
@@ -732,7 +733,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
-    sameZone, zonePlace, parseReference: lookup.parseReference,
+    sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},

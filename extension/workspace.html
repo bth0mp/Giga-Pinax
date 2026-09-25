@@ -20,6 +20,7 @@
       <a href="#auctions" data-route="auctions">Auctions</a>
       <a href="#bids" data-route="bids">Active bids</a>
       <a href="#history" data-route="history">History</a>
+      <a href="#wants" data-route="wants">Want list</a>
     </nav>
     <span class="local-mark">Stored on this device</span><div id="source-menu"></div>
     <button id="open-settings" class="nav-action" type="button" aria-label="Settings" title="Settings"><svg class="nav-action-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span class="nav-action-label">Settings</span></button>
@@ -95,6 +96,7 @@
               <input type="hidden" name="id"><div id="lot-page-values" class="page-values" hidden></div>
               <label>Title<input name="title" required data-limit="title"></label>
               <div class="field-pair"><label>Reference<input name="reference" data-limit="shortText"></label><label>Display lot number<input name="lotNumber" data-limit="shortText"></label></div>
+              <p id="lot-want-match" class="want-match" hidden></p>
               <div class="form-actions selected-links"><a id="open-auction" class="button-link" target="_blank" rel="noopener noreferrer">Open auction</a><button id="research-reference" class="quiet" type="button">Research reference</button></div>
               <label>Auction page URL<input name="auctionPageUrl" type="url" maxlength="2048"></label>
               <label>Notes<textarea name="notes" data-limit="notes" placeholder="Attribution or questions"></textarea></label>
@@ -144,6 +146,20 @@
     <section id="route-history" class="route" aria-labelledby="history-heading" hidden>
       <div class="section-heading"><div><h2 id="history-heading">Outcomes and history</h2><p>Final prices are your own unverified records, never comparable evidence.</p></div></div>
       <div class="history-layout"><div id="history-list" class="record-list"></div><section class="panel"><div id="collection-list" class="record-list"></div></section></div>
+    </section>
+
+    <section id="route-wants" class="route" aria-labelledby="wants-heading" hidden>
+      <div class="section-heading"><h2 id="wants-heading">Want list</h2><div class="form-actions heading-actions"><button id="new-want" class="secondary btn-sm" type="button">Add want</button></div></div>
+      <p id="want-action-status" class="action-status" role="status"></p>
+      <div class="split-layout"><div id="want-list" class="record-list"></div><form id="want-form" class="panel" data-editor="want" hidden>
+        <h3 id="want-form-heading">Add a want</h3><input type="hidden" name="id">
+        <label>Reference<input name="reference" required data-limit="shortText" placeholder="RIC II Trajan 253" aria-describedby="want-reference-note"></label>
+        <p id="want-reference-note" class="field-note">One type, as a card names it: RIC with its volume and ruler or mint, RRC, Price, SC, CPE or Bopearachchi.</p>
+        <div class="field-pair"><label>Maximum price <span class="optional">optional</span><input name="maxPrice" inputmode="decimal"></label><label>Currency<select name="currency"></select></label></div>
+        <label>Lowest grade <span class="optional">optional</span><select name="minGrade"><option value="">Any grade</option></select></label>
+        <label>Notes <span class="optional">optional</span><textarea name="notes" data-limit="notes"></textarea></label>
+        <div class="form-actions"><button type="submit" data-needs-runtime>Save want</button><button id="cancel-want" class="quiet" type="button">Cancel</button></div>
+      </form></div>
     </section>
   </main>
   <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
