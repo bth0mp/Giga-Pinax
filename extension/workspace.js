@@ -10,7 +10,7 @@ import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedian
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
-  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
+  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, outcomeFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
@@ -170,7 +170,8 @@ async function initWorkspace() {
   };
   const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };
   // A control's own label, without the hints and counts beside it, and the folded section it sits in.
-  const fieldLabel = (control) => [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
+  // A group of radio buttons is named by its fieldset's legend.
+  const fieldLabel = (control) => (control?.type === 'radio' ? control.closest('fieldset')?.querySelector('legend')?.textContent : '') || [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
   const sectionOf = (control) => control?.closest('details');
   const where = (control) => { const section = sectionOf(control); return section ? `${fieldLabel(control)} under ${section.querySelector('summary')?.textContent ?? 'its section'}` : fieldLabel(control); };
   // A value the browser refuses stops the submit before the page hears of it. The first refused control of a submit
@@ -349,11 +350,14 @@ async function initWorkspace() {
   const editorFormValues = {
     lot: (record) => lotFormValues(record),
     bid: (record) => bidFormValues(record, navigator.language, snapshot.preferences?.currency ?? 'USD'),
+    // Read by Reload committed data only (X-07): a commit never merges the Outcome tab, whose fields only its own save writes.
+    outcome: (record) => outcomeFormValues(record, navigator.language, { defaultCurrency: snapshot.preferences?.currency ?? 'USD', event: eventsById.get(record?.auctionEventId) ?? null, today: localToday(), presets: snapshot.preferences?.housePremiumPresets ?? [] }),
   };
+  const MERGED_ON_COMMIT = new Set(['lot', 'bid']);
   // A dirty form cannot be repopulated, but leaving it on the record it was populated from lets its
   // next save undo the commit: each field the collector has not touched follows the new record.
   const mergeRebasedEditor = (editor, previousRecord, incoming) => {
-    const readValues = editorFormValues[editor];
+    const readValues = MERGED_ON_COMMIT.has(editor) ? editorFormValues[editor] : null;
     const record = editorBases.get(editor)?.record;
     if (!readValues || !record || !previousRecord) return;
     const elements = $(`${editor}-form`).elements;
@@ -566,14 +570,15 @@ async function initWorkspace() {
       const plan = rebaseTypedFields(editorFormValues[editor](basis.record), editorFormValues[editor](record), values);
       const elements = $(`${editor}-form`).elements;
       for (const field of plan.kept) elements[field].value = values[field];
-      const kept = plan.kept.map((field) => fieldLabel(elements[field]));
+      const kept = plan.kept.map((field) => fieldLabel($(`${editor}-form`).querySelector(`[name="${field}"]`)));
       // Sourced provenance is a list of its own: kept as typed where the other view left it alone.
       if (editor === 'lot' && JSON.stringify(basis.record.provenanceNotes ?? []) === JSON.stringify(record.provenanceNotes ?? [])
         && JSON.stringify(provenance) !== JSON.stringify(provenanceFromRecord(basis.record))) {
         $('provenance-editor').replaceChildren(); for (const entry of provenance ?? []) appendProvenanceEditor(entry);
         kept.push('Sourced provenance');
       }
-      const updated = plan.updated.map((field) => fieldLabel(elements[field]));
+      if (editor === 'outcome') updateOutcomeVisibility();
+      const updated = plan.updated.map((field) => fieldLabel($(`${editor}-form`).querySelector(`[name="${field}"]`)));
       if (kept.length) { dirtyEditors.add(editor); editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1); if (editor === 'lot') { openFilledGroups(record.id); refreshCounts($('lot-form')); renderLotWantMatch(); } }
       if (FORM_STATUS[editor] && (kept.length || updated.length)) formStatus(editor, rebaseSentence(updated, kept));
     }

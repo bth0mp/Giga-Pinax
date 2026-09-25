@@ -2404,3 +2404,25 @@ test('unreadable records are said in the Watchlist with Open Settings', async ()
   assert.match(box.querySelector('p').textContent, /^Stored data is invalid: .+ Open Settings to download the stored data or recover it\.$/);
   assert.equal(box.querySelector('button').textContent, 'Open Settings');
 });
+
+// Fix round, Important 1 (X-07): Reload keeps the Outcome tab's typing the other window did not touch, and says so.
+test('reload after a conflict keeps what was typed on the Outcome tab, and says so there', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const tabA = await mountWorkspace({ background, hash: '#watchlist' });
+  const tabB = await mountWorkspace({ background, hash: '#watchlist' });
+  await tabA.openCoin('Nero, denarius'); await tabB.openCoin('Nero, denarius');
+  await tabA.type('outcome-form', 'hammer', '1234');
+  await tabA.type('outcome-form', 'premium', '22.5');
+  await tabA.type('outcome-form', 'status', 'lost');
+  await tabB.typeDetails('title', 'Nero, denarius (corrected)');
+  await tabB.saveDetails(); await settle();
+  assert.equal(tabA.conflictBanner(), 'Committed data changed while the outcome form has unsaved input.');
+  await tabA.click('reload-snapshot');
+  const outcome = tabA.$('outcome-form').elements;
+  assert.equal(outcome.hammer.value, '1234');
+  assert.equal(outcome.premium.value, '22.5');
+  assert.equal(outcome.status.value, 'lost');
+  assert.equal(tabA.$('outcome-action-status').textContent, 'What you typed in Result, Hammer and Buyer’s premium % is kept.');
+  assert.equal(tabA.$('selected-title').textContent, 'Nero, denarius (corrected)');
+  assert.equal(tabA.blocksUnload(), true, 'the kept typing is still unsaved');
+});

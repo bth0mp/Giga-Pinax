@@ -453,6 +453,22 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
   };
 }
 
+/**
+ * The Outcome tab's typed fields as a record fills them (outcomeDraftForLot), so a reload can tell the collector's typing
+ * from a change made in another window (X-07).
+ * @param {*} lot
+ * @param {string} [locale]
+ * @param {Parameters<typeof outcomeDraftForLot>[2]} [options]
+ * @returns {Record<string, string>}
+ */
+export function outcomeFormValues(lot, locale = 'en-US', options = {}) {
+  const draft = outcomeDraftForLot(lot, locale, options);
+  return {
+    status: draft.status, hammer: draft.hammer, hammerCurrency: draft.hammerCurrency, invoice: draft.invoice,
+    invoiceCurrency: draft.invoiceCurrency, premium: draft.premium, ...draft.fees, acquisitionDate: draft.acquisitionDate,
+  };
+}
+
 // The rate the store would cost a won coin on from its bids alone: the bid in force, else the last settled one or the
 // plan.
 const recordsPremiumRate = (lot) => (Number.isInteger(lot?.activeBid?.buyerPremiumBps) ? lot?.activeBid?.buyerPremiumBps : bidPremiumRate(lot));
