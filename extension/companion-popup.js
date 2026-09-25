@@ -308,19 +308,47 @@ export function nextEventText(event, { now = new Date().toISOString(), locale = 
 }
 
 
-// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
-// Each is said as a workspace row says a coin (H-16): its reference first, then its title, then when.
-export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
+const openLot = (lot) => (lot?.outcome?.status ?? 'open') === 'open';
+// The open coins whose auction is still to come or under way, with that auction and when it is.
+function comingLots(snapshot, now) {
   const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
-  const row = (lot, when) => ({ lot, reference: displayReference(lot.reference ?? ''), title: String(lot.title ?? ''), when });
-  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => row(lot, 'ended, record the outcome'));
-  const coming = (snapshot?.lots ?? [])
-    .filter((lot) => (lot?.outcome?.status ?? 'open') === 'open' && events.has(lot.auctionEventId))
+  return (snapshot?.lots ?? [])
+    .filter((lot) => openLot(lot) && events.has(lot.auctionEventId))
     .map((lot) => ({ lot, event: events.get(lot.auctionEventId), timing: eventTiming(events.get(lot.auctionEventId), now) }))
-    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state))
+    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state));
+}
+
+// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first,
+// then (K-01) the open coins with no auction at all, newest first, so a coin saved from the card is never missing from the tab named Watchlist. The coin
+// the popup has just saved (first) leads the list whatever its state. Each is said as a workspace row says a coin (H-16): its reference first, then its
+// title, then when; a coin with no sale says so, and noSale marks it for the row's Add.
+export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5, first = '' } = {}) {
+  const row = (lot, when, noSale = false) => ({ lot, reference: displayReference(lot.reference ?? ''), title: String(lot.title ?? ''), when, ...(noSale ? { noSale } : {}) });
+  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => row(lot, 'ended, record the outcome'));
+  const coming = comingLots(snapshot, now)
     .sort((left, right) => (left.timing.sortMs ?? Infinity) - (right.timing.sortMs ?? Infinity))
     .map(({ lot, event }) => row(lot, eventWhen(event, { now, locale }).relative));
-  return [...ended, ...coming].slice(0, limit);
+  const newest = (lot) => String(lot.createdAt ?? lot.updatedAt ?? '');
+  const unscheduled = (snapshot?.lots ?? [])
+    .filter((lot) => openLot(lot) && !lot.auctionEventId)
+    .sort((left, right) => newest(right).localeCompare(newest(left)))
+    .map((lot) => row(lot, 'no sale date', true));
+  const rows = [...ended, ...coming, ...unscheduled];
+  const saved = first ? (snapshot?.lots ?? []).find((lot) => lot?.id === first) : null;
+  if (!saved) return rows.slice(0, limit);
+  const own = rows.find((entry) => entry.lot.id === first) ?? row(saved, openLot(saved) ? 'just saved' : '');
+  return [own, ...rows.filter((entry) => entry !== own)].slice(0, limit);
+}
+
+// What the Watchlist tab holds, in one line over it (K-01): "3 coins on your watchlist · 1 with a sale coming". Empty for a store with no coin at all,
+// which has its own empty state.
+export function watchlistCountText(snapshot, now = new Date().toISOString()) {
+  const lots = snapshot?.lots ?? [];
+  if (!lots.length) return '';
+  const open = lots.filter(openLot).length;
+  if (!open) return 'No coins on your watchlist';
+  const coming = comingLots(snapshot, now).length;
+  return [`${open} ${open === 1 ? 'coin' : 'coins'} on your watchlist`, coming ? `${coming} with a sale coming` : ''].filter(Boolean).join(' · ');
 }
 
 function openExtensionPage(path) {
@@ -511,8 +539,12 @@ async function initCompanionPopup() {
     const ended = lotsNeedingOutcome(snapshot).length;
     $('companion-needs-outcome').hidden = ended === 0;
     $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
-    const coins = coinsToWatch(snapshot, { now, locale });
-    $('companion-coin-list').replaceChildren(...coins.map(({ lot, reference, title, when }) => {
+    // K-01: what the list holds, over it, and every open coin can be one of its rows.
+    const count = watchlistCountText(snapshot, now);
+    $('companion-count').textContent = count;
+    $('companion-count').hidden = !count;
+    const coins = coinsToWatch(snapshot, { now, locale, first: savedThisSession });
+    $('companion-coin-list').replaceChildren(...coins.map(({ lot, reference, title, when, noSale }) => {
       const item = document.createElement('li');
       const button = document.createElement('button');
       button.type = 'button';
@@ -527,6 +559,17 @@ async function initCompanionPopup() {
       button.disabled = !bridge;
       button.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
       item.append(button);
+      // A coin with no sale is one click from giving it one: Add opens it in the workspace, where its auction is chosen or added.
+      if (noSale) {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'text-button coin-add';
+        add.textContent = 'Add';
+        add.setAttribute('aria-label', `Add a sale date to ${title || reference || 'this coin'} in the workspace`);
+        add.disabled = !bridge;
+        add.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
+        item.append(add);
+      }
       return item;
     }));
     $('companion-coins').hidden = coins.length === 0;
@@ -609,6 +652,8 @@ async function initCompanionPopup() {
   // coin as stored and the auction attached to it, if any.
   let justSaved = null;
   const UNDO_FOR_MS = 10000;
+  // K-01: the coin this popup saved last leads the Watchlist tab's list for as long as the popup is open, whatever its state.
+  let savedThisSession = '';
   // The card says whether its reference is already saved, and then offers that coin rather than a second one: Save gives way to the line.
   const renderCardSaved = () => {
     const line = $('companion-saved-line');
@@ -758,6 +803,8 @@ async function initCompanionPopup() {
     if (entry.event) await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: entry.event.id, expectedRevision: entry.event.revision });
     justSaved = null;
     snapshot = { ...snapshot, lots: (snapshot.lots ?? []).filter(({ id }) => id !== entry.lot.id) };
+    if (savedThisSession === entry.lot.id) savedThisSession = '';
+    renderSummary();
     fillLine(line, []);
     announce('Removed from your watchlist.', false, anchor);
     renderCardSaved();
@@ -766,6 +813,8 @@ async function initCompanionPopup() {
   const confirmSaved = (entry, line, anchor, extra = []) => {
     if (justSaved && justSaved !== entry) clearTimeout(justSaved.timer);
     justSaved = entry;
+    savedThisSession = entry.lot.id;
+    renderSummary();
     // What the line under it said of an earlier save (a failure, a removal) is over.
     const hint = $(anchor);
     if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }

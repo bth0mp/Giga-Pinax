@@ -268,7 +268,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows a **Watching** pill instead of
     **Save** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
     *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
-    saved lot, and **Undo** then takes back both.
+    saved lot, and **Undo** then takes back both. Open the **Watchlist** tab. *Expected:* "1 coin on your watchlist" (or
+    the count you have) over the list, and the coin you just saved as its first row; a coin with no auction ends its row
+    with "no sale date" and **Add**, which opens that coin in the workspace.
 
 31. **The popup's last answer.** Look up `RIC I² Nero 306` in the toolbar popup and wait for the median. Click the
     page so the popup closes, then open it again.

@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- A coin saved from the popup's card now shows in the popup's **Watchlist** tab. The tab opens with what the list holds (`3 coins on your watchlist · 1 with a sale coming`), lists open coins that have no auction yet after those with a sale, newest first, each ending **no sale date · Add** (Add opens the coin in the workspace), and the coin you have just saved leads the list while the popup is open.
+
 ## [0.39.0] - 2026-09-25
 
 ### Added

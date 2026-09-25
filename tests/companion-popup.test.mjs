@@ -62,6 +62,7 @@ const {
   savedPillText,
   savedLineText,
   dueText,
+  watchlistCountText,
 } = await import('../extension/companion-popup.js');
 const { wantPillText } = await import('../extension/core/wantlist.js');
 
@@ -1464,4 +1465,60 @@ test('a status pill writes its amount whole where exact and in full otherwise, a
   const css = readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8');
   assert.match(css, /\.status-row \{[^}]*flex-wrap:wrap/);
   assert.doesNotMatch(css, /text-overflow:ellipsis/);
+});
+
+// Loop 6 (K-01): a coin saved from the card has no auction, and the tab named Watchlist listed only coins with one, so the newcomer's first save
+// vanished from it. The tab says what the list holds, lists open coins with no sale (newest first, "no sale date · Add"), and the coin just saved
+// leads the list for as long as the popup is open.
+test('the Watchlist tab lists a coin with no auction, and the coin just saved leads it', async () => {
+  const now = new Date();
+  const inDays = (days) => new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const cng = { id: 'cng', name: 'CNG 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: zone };
+  const lots = [
+    { id: 'old', title: 'Older coin', reference: 'Price 23', outcome: { status: 'open' }, createdAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'new', title: 'Newer coin', reference: 'RIC I (second edition) Nero 306', outcome: { status: 'open' }, createdAt: '2026-02-01T00:00:00.000Z' },
+    { id: 'sale', title: 'Coin with a sale', reference: 'Crawford 44/5', auctionEventId: 'cng', outcome: { status: 'open' } },
+    { id: 'won', title: 'Won coin', reference: 'Price 24', outcome: { status: 'won' } },
+  ];
+  const snapshot = { lots, auctionEvents: [cng] };
+  const rows = coinsToWatch(snapshot, { locale: 'en-GB' });
+  assert.deepEqual(rows.map(({ lot, when, noSale }) => [lot.id, when, Boolean(noSale)]),
+    [['sale', 'in 20 days', false], ['new', 'no sale date', true], ['old', 'no sale date', true]]);
+  assert.deepEqual(coinsToWatch(snapshot, { first: 'old' }).map(({ lot }) => lot.id), ['old', 'sale', 'new']);
+  assert.equal(watchlistCountText(snapshot), '3 coins on your watchlist · 1 with a sale coming');
+  assert.equal(watchlistCountText({ lots: [lots[0]] }), '1 coin on your watchlist');
+  assert.equal(watchlistCountText({ lots: [lots[3]] }), 'No coins on your watchlist');
+  assert.equal(watchlistCountText({ lots: [] }), '', 'a store with no coin keeps its own empty state');
+
+  const background = await createWorkspaceBackground();
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background) });
+    assert.equal(page.element('companion-count').hidden, true);
+    assert.equal(page.element('companion-empty').hidden, false);
+    page.card(neroCard);
+    await page.click('companion-save-watchlist');
+    await settleAll();
+    const [saved] = background.root().lots;
+    assert.equal(page.element('companion-count').textContent, '1 coin on your watchlist');
+    assert.equal(page.element('companion-count').hidden, false);
+    assert.equal(page.element('companion-empty').hidden, true);
+    assert.equal(page.element('companion-coins').hidden, false);
+    const [item] = page.element('companion-coin-list').children;
+    const [row, add] = item.children;
+    assert.equal(row.children.map((part) => (typeof part === 'string' ? part : part.textContent)).join(''), 'RIC I² Nero 306 · Nero · As · Rome · AD 62–68 · no sale date');
+    assert.equal(add.textContent, 'Add');
+    assert.equal(add['aria-label'], 'Add a sale date to Nero · As · Rome · AD 62–68 in the workspace');
+    await add.emit('click');
+    await settleAll();
+    assert.deepEqual(opened, [`moz-extension://test/workspace.html#watchlist?lot=${saved.id}`]);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
 });

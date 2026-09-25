@@ -40,8 +40,12 @@
 .companion-empty p {margin:0; color:var(--muted); font-size:var(--text-body); line-height:1.5;}
 /* The coins that want the collector now: each a row that opens the workspace on that coin. */
 .companion-coin-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
-.companion-coin-list li {border-bottom:1px solid var(--line);}
-.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:400; color:var(--muted); overflow-wrap:anywhere;}
+.companion-coin-list li {display:flex; align-items:baseline; gap:8px; border-bottom:1px solid var(--line);}
+.companion-coin-list .text-button {display:block; flex:1 1 auto; min-width:0; padding:8px 0; text-align:left; font-weight:400; color:var(--muted); overflow-wrap:anywhere;}
+/* A coin with no sale ends its row with Add (K-01), which opens it where its auction is chosen. */
+.companion-coin-list .coin-add {flex:none; width:auto; font-weight:650; color:var(--accent);}
+/* What the list holds, over it (K-01): "3 coins on your watchlist · 1 with a sale coming". */
+.companion-count {margin:-4px 0 12px; color:var(--muted); font-size:var(--text-body);}
 /* A coin to watch leads with its reference in serif, as every workspace row does (H-16); then its title, muted; then when, in the accent. */
 .companion-coin-list .coin-reference {font-family:var(--font-serif); font-size:var(--text-input); font-weight:600; color:var(--ink);}
 .companion-coin-list .coin-when {font-weight:650; color:var(--accent);}
