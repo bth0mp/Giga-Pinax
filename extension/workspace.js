@@ -1731,15 +1731,16 @@ async function initWorkspace() {
       if (want.notes) card.append(text('p', want.notes, 'want-notes'));
       // The hunt so far (H-08): the coins of the type on the watchlist, each as its Watchlist row reads, and opening it.
       if (watched.length) {
-        const coins = text('div', '', 'want-coins'); coins.setAttribute('role', 'list'); coins.setAttribute('aria-label', `Watched coins of ${want.reference}`);
+        const coins = text('ul', '', 'want-coins'); coins.setAttribute('aria-label', `Watched coins of ${want.reference}`);
         for (const lot of watched) {
-          const row = text('button', '', 'want-coin'); row.type = 'button'; row.setAttribute('role', 'listitem');
+          const item = document.createElement('li');
+          const row = text('button', '', 'want-coin'); row.type = 'button'; item.append(row);
           row.append(text('span', lot.reference || lot.title, 'want-coin-reference'));
           const amount = lotRowAmountLabel(lot, money); if (amount) row.append(text('span', amount, 'want-coin-amount'));
           row.append(eventLine(eventsById.get(lot.auctionEventId), 'want-coin-when', 'span', false), statusPill(lot));
           row.title = lot.title;
           row.addEventListener('click', () => openCoin(lot.id));
-          coins.append(row);
+          coins.append(item);
         }
         card.append(coins);
       }

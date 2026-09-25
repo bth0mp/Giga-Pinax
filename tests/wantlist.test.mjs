@@ -798,3 +798,21 @@ test('the want form lists grades by their abbreviation first, as the card and th
   assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.textContent), ['Any grade', 'F · Fine', 'VF · Very Fine', 'EF · Extremely Fine', 'AU · About Uncirculated']);
   assert.equal(wantTermsText(makeWant({ minGrade: 'AU' })), 'AU or better');
 });
+
+// --- Fix round (s2-review) ---------------------------------------------------------------------------
+
+// Minor 1: a hunt row is a button in a list, announced as the button it is.
+test('the watched coins of a want are plain buttons in a list', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As', reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const list = cardFor(page, 'RIC I² Nero 306').querySelector('.want-coins');
+  assert.equal(list.tagName, 'ul');
+  assert.equal(list.getAttribute('role'), null);
+  const [item] = list.children;
+  assert.equal(item.tagName, 'li');
+  const [row] = item.children;
+  assert.equal(row.tagName, 'button');
+  assert.equal(row.getAttribute('role'), null, 'no role replaces the button’s own');
+});
