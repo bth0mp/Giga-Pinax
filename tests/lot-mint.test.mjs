@@ -302,7 +302,7 @@ test('over the bundled catalogue, a category or a find-spot never opens the coin
   // The mint behind the ruler narrows to his coin there. Loop 6 fix round (lead, review M4): Siscia 42 portrays Divus Constantius Chlorus, struck
   // under Constantine, so the heading's Constantine is not the man on it: it is offered, with the reason, and not opened.
   const siscia = await lookup('Rome Roman Empire. Constantine I. Follis. Siscia mint. RIC VII 42.');
-  assert.deepEqual(siscia.candidates?.map(({ id, note }) => [id, note]), [['ric.7.sis.42', 'struck under Constantine I for Constantius Chlorus']]);
+  assert.deepEqual(siscia.candidates?.map(({ id, note }) => [id, note]), [['ric.7.sis.42', "filed under Constantine I; OCRE\'s obverse portrait: Constantius Chlorus"]]);
 });
 
 // Loop S1 review, Important 3: the edition a lot writes after the number is the edition it cites. Written second, the one bundled type opens; written

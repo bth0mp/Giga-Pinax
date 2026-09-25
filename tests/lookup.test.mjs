@@ -1891,6 +1891,6 @@ test('online, a heading that names the authority but not the portrait is offered
     'nomisma.org/id/titus.jsonld': titus, 'nomisma.org/id/vespasian.jsonld': vespasian };
   const offered = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Vespasian'] }, { fetchImpl: fakeFetch(routes), cache: new Map() });
   assert.equal(offered.status, 'candidates');
-  assert.deepEqual(offered.candidates.map(({ id, note }) => [id, note]), [['ric.2_1(2).ves.972', 'struck under Vespasian for Titus']]);
+  assert.deepEqual(offered.candidates.map(({ id, note }) => [id, note]), [['ric.2_1(2).ves.972', "filed under Vespasian; OCRE\'s obverse portrait: Titus"]]);
   assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl: fakeFetch(routes), cache: new Map() })).card?.id, 'ric.2_1(2).ves.972');
 });

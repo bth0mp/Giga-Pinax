@@ -1122,8 +1122,10 @@ async function lookupOneType(given, options = {}) {
       // A heading names the man on the coin (lead, review M4): named as the authority alone, with another person on the obverse, the coin is offered
       // with the reason and not opened, as the bundle offers it.
       const { authority, portrait } = found.card;
-      if (portrait && isRicPerson(portrait) && !asked.includes(norm(portrait)) && asked.includes(norm(authority))) {
-        return { status: 'candidates', candidates: [{ ...picked.entry, note: `struck under ${authority} for ${portrait}` }], partial: true, corpus, query: shown };
+      // A restoration names its restorer in the legend and RIC files it under him, so it opens under his name (review R2), as the bundle does.
+      const restored = /\bREST(?:ITVIT)?\b/.test(`${found.card.obverse?.legend ?? ''} ${found.card.reverse?.legend ?? ''}`);
+      if (!restored && portrait && isRicPerson(portrait) && !asked.includes(norm(portrait)) && asked.includes(norm(authority))) {
+        return { status: 'candidates', candidates: [{ ...picked.entry, note: `filed under ${authority}; OCRE's obverse portrait: ${portrait}` }], partial: true, corpus, query: shown };
       }
     }
     // A coin from another ruler opens only when the card says why it is filed there AND the portrait it names is the ruler that was typed: the portrait

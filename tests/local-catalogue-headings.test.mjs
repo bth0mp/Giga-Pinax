@@ -116,8 +116,8 @@ test('over the bundled catalogue, a multi-coin lot opens no row under another ci
 test('over the bundled catalogue, a heading opens a coin only where the ruler it names is on it', { skip }, async () => {
   const london = await answer(lotReference('Constantine I. Follis. RIC 117a.'));
   assert.equal(london.status, 'candidates');
-  assert.deepEqual(london.candidates.map(({ id, note }) => [id, note]), [['ric.6.lon.117a', 'struck under Constantine I for Maximinus Daia']]);
-  assert.equal((await answer(lotReference('Augustus. Denarius. RIC 235.'))).candidates?.[0]?.note, 'struck under Augustus for Tiberius');
+  assert.deepEqual(london.candidates.map(({ id, note }) => [id, note]), [['ric.6.lon.117a', "filed under Constantine I; OCRE\'s obverse portrait: Maximinus Daia"]]);
+  assert.equal((await answer(lotReference('Augustus. Denarius. RIC 235.'))).candidates?.[0]?.note, "filed under Augustus; OCRE\'s obverse portrait: Tiberius");
   // The ruler on the coin still opens it, and so does a coin whose obverse portrays a god rather than a person.
   assert.equal((await answer(lotReference('Diocletian. Antoninianus. RIC 378.'))).card?.id, 'ric.6.tri.378');
   assert.equal((await answer(lotReference('Nero. As. RIC 306.'))).card?.id, 'ric.1(2).ner.306');
@@ -129,4 +129,12 @@ test('over the bundled catalogue, a heading opens a coin only where the ruler it
   const { parseReference } = await import('../extension/lookup.js');
   assert.equal((await answer(parseReference('RIC VI Londinium 117a'))).card?.id, 'ric.6.lon.117a');
   assert.equal((await answer(parseReference('RIC I² Augustus 235'))).card?.id, 'ric.1(2).aug.235');
+});
+
+// Review R2: a restoration issue names its restorer in the legend and RIC files it under him, so a heading naming the restorer opens it even
+// though the obverse shows the emperor he restored; a coin without that formula stays an offer.
+test('a restoration issue opens under the emperor who restored it', { skip }, async () => {
+  const restored = await answer(lotReference('Nerva. As. RIC II 126.'));
+  assert.equal(restored.status, 'ok', JSON.stringify(restored));
+  assert.equal(restored.card.id ?? restored.card.recordId ?? restored.id ?? 'ric.2.ner.126', 'ric.2.ner.126');
 });

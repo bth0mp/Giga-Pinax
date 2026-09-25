@@ -242,14 +242,19 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   // A heading names whose coin it is, which is the man on it (lead, review M4): OCRE's authority for a tetrarchic or Constantinian mint issue is the
   // emperor under whom the mint struck ("Constantine I" on a follis of Maximinus). The people the obverse portrays count; a god or a
   // personification is no one's portrait, and a record with none is its authority's coin. '' where the heading names someone on the coin, else the
-  // reason it is offered rather than opened: "struck under Constantine I for Maximinus Daia".
+  // reason it is offered rather than opened: "filed under Constantine I; OCRE's obverse portrait: Maximinus Daia".
   // Nomisma names one man twice: Octavian and Augustus (lot.js FILED_UNDER reads the same pair), so a portrait of either is the other's too.
   const portrayed = (record) => (record?.o?.p ?? []).filter((id) => PEOPLE_BY_ID.has(id));
+  // A restoration names its restorer in the legend (REST, RESTITVIT) and RIC files it under him, so a heading naming the restorer opens it although
+  // the obverse shows the emperor restored (review R2). The note says only what OCRE records, never whose coin it "was for": OCRE's obverse field
+  // is sometimes wrong (review R1: Antioch folles of Maximinus Daia filed with Galerius's portrait), and the offer stays safe either way.
+  const RESTORED = /\bREST(?:ITVIT)?\b/;
   const notOnCoin = (record, ids) => {
     const shown = portrayed(record);
     if (shown.length === 0 || shown.some((id) => ids.has(id) || ids.has(SAME_MAN[id]))) return '';
     const under = (record?.a ?? []).filter((id) => ids.has(id)).map((id) => PEOPLE_BY_ID.get(id));
-    return under.length ? `struck under ${under.join(' and ')} for ${shown.map((id) => PEOPLE_BY_ID.get(id)).join(' and ')}` : '';
+    if (under.length && RESTORED.test(`${record?.o?.l ?? ''} ${record?.r?.l ?? ''}`)) return '';
+    return under.length ? `filed under ${under.join(' and ')}; OCRE's obverse portrait: ${shown.map((id) => PEOPLE_BY_ID.get(id)).join(' and ')}` : '';
   };
   const citationReference = (reference) => ({ ...reference, section: isRicPerson(reference.section) ? '' : reference.section, id: undefined, rulers: undefined });
   // "Nero. RIC I 306" names no edition, and OCRE holds RIC I, II.1 and II.3 in their second alone. A dealer citing the 1923 first edition's numbers
