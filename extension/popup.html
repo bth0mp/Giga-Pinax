@@ -19,13 +19,14 @@
     <header class="popup-header">
       <a id="skip-to-research" class="skip-link" href="#quick-reference">Skip to research</a>
       <img class="brand-icon" src="icons/icon-48.png" width="32" height="32" alt="">
-      <div><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
+      <div class="brand-name"><h1>Giga Pinax</h1><p>Ancient coin reference</p></div>
       <div class="header-actions">
-        <button id="open-panel" class="header-action" type="button">Panel</button>
+        <button id="open-workspace" class="header-action" type="button" data-companion-runtime>Workspace</button>
         <div id="sources-menu"></div>
         <button id="open-settings" class="header-action" type="button">Settings</button>
       </div>
       <button id="pop-out" type="button" hidden aria-hidden="true" tabindex="-1">Open in a window</button>
+      <button id="open-panel" class="icon-button header-icon" type="button" aria-label="Keep the popup open beside the page (side panel)" title="Keep the popup open beside the page (side panel)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15"/></svg></button>
       <button id="theme-toggle" class="icon-button header-icon" type="button" aria-label="Dark theme" aria-pressed="false"><span id="icon-moon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg></span><span id="icon-sun" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg></span></button>
     </header>
     <nav id="companion-tabs" class="companion-tabs" role="tablist" aria-label="Giga Pinax tools">
@@ -40,7 +41,8 @@
           <label for="quick-reference">Reference</label>
           <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus aria-keyshortcuts="Control+K Meta+K" placeholder="Reference or pasted lot text" aria-describedby="form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
-          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices from acsearch follow the lookup.</p></div>
+          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices from acsearch follow the lookup.</p><p id="workspace-help" class="field-hint">Save a coin to track its auction, bid and outcome in the workspace.</p></div>
+          <nav id="recent" class="recent" aria-label="Recent lookups" hidden><span class="field-hint recent-label">Recent</span><ul id="recent-list" class="recent-list"></ul><button id="recent-more" class="text-button recent-more" type="button" aria-expanded="false" aria-controls="recent-list" hidden>More</button></nav>
         </div>
         <div class="reference-body">
         <p id="form-error" class="form-error" role="alert" hidden></p><button id="online-fallback" class="secondary-button online-fallback" type="button" hidden>Check online</button>
@@ -65,23 +67,23 @@
         </div>
       </form>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
-        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a></div>
-        <details id="sides-details" class="sides-details"><summary><span>Obverse and reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><div class="type-actions"><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a><button id="companion-save-watchlist" class="secondary-button companion-save-watchlist" type="button" data-companion-runtime disabled aria-label="Save to watchlist" title="Saves the reference and its type page to your watchlist. Session acsearch prices stay in this view.">Save</button></div></div>
+        <p id="companion-saved-line" class="saved-line" role="status" hidden></p>
+        <p id="companion-save-hint" class="field-hint save-hint" hidden></p>
+        <details id="sides-details" class="sides-details"><summary><span id="sides-summary">Obverse · reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
           <div><dt>Reverse</dt><dd><span id="reverse-legend" class="legend"></span><span id="reverse-description"></span></dd></div>
-        </dl></details>
-        <section id="specimens" class="specimens" aria-labelledby="specimens-title" hidden><h3 id="specimens-title" class="specimens-title">Specimens</h3><ul id="specimen-list" class="specimen-list"></ul><p id="specimens-credit" class="field-hint">Museum coins of this type, found through Nomisma.org. Photos load from each collection’s own site.</p></section>
-        <button id="companion-save-watchlist" class="companion-save-watchlist" type="button" data-companion-runtime disabled>Save reference to watchlist</button>
-        <p id="companion-save-hint" class="field-hint">Saves the reference and type-page link for review. Session acsearch prices stay in this view.</p>
+        </dl>
+        <section id="specimens" class="specimens" aria-labelledby="specimens-title" hidden><h3 id="specimens-title" class="specimens-title">Specimens</h3><ul id="specimen-list" class="specimen-list"></ul><p id="specimens-credit" class="field-hint">Museum coins of this type, found through Nomisma.org. Photos load from each collection’s own site.</p></section></details>
       </section>
       <section id="research-prices" class="research-prices card" aria-labelledby="research-prices-title" hidden>
-        <div class="research-heading"><h2 id="research-prices-title">Auction research</h2>
-        <fieldset id="period" class="period source-period"><legend class="sr-only">Sales period for auction sources</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset></div>
+        <div class="research-heading"><h2 id="research-prices-title" class="sr-only">Auction research</h2>
+        <fieldset id="period" class="period source-period"><legend class="sr-only">Sales period for auction sources</legend><label><input type="radio" name="period" value="all"> All</label><label><input type="radio" name="period" value="5y"> Last 5 years</label><label><input type="radio" name="period" value="2y"> Last 2 years</label></fieldset>
         <div id="price-filters" class="price-filters" hidden>
-          <label id="citing-row" class="denomination-row" hidden><input type="checkbox" id="citing-filter" checked><span id="citing-label"></span></label>
-          <label id="denomination-row" class="denomination-row" hidden><input type="checkbox" id="denomination-filter"><span id="denomination-label"></span></label>
-        </div>
-        <div class="provider-heading"><h3 class="price-source-title">acsearch</h3><a id="acsearch-link" class="provider-link" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="acsearch results, opens a new tab">results <span aria-hidden="true">↗</span></a></div>
+          <label id="citing-row" class="filter-pill" hidden><input type="checkbox" id="citing-filter" checked><span id="citing-label"></span></label>
+          <label id="denomination-row" class="filter-pill" hidden><input type="checkbox" id="denomination-filter"><span id="denomination-label"></span></label>
+        </div></div>
+        <div class="provider-heading"><h3 class="price-source-title">acsearch</h3><p id="prices-restored" class="prices-restored" hidden><span id="prices-restored-text"></span> · <button id="refresh-prices" class="text-button" type="button" aria-label="Refresh acsearch prices">Refresh</button></p><a id="acsearch-link" class="provider-link" href="https://www.acsearch.info/" target="_blank" rel="noopener noreferrer" aria-label="acsearch results, opens a new tab">results <span aria-hidden="true">↗</span></a></div>
         <section id="prices-panel" class="prices-panel" aria-label="acsearch hammer prices" hidden>
           <div class="median-block"><p class="metric-label">Recorded hammer median</p><div id="median-line" class="median-line"><strong id="median-amount"></strong><span id="median-currency"></span></div><p id="stat-sales" class="stat-meta"><span id="sale-strength" class="sale-strength"></span><span id="last-sale" class="last-sale" hidden></span></p><p id="stat-counts" class="stat-meta"><span id="cited-count" class="sale-filtered" hidden></span><span id="sale-period" class="sale-period"></span></p></div>
           <div id="range-block" class="range-block"><div><p class="metric-label">Middle 50% of sales</p><p class="range-line"><strong id="range-amount"></strong><span id="range-all" class="range-all"></span></p></div><div class="range-visual" aria-hidden="true"><span class="range-whisker"></span><span id="range-box" class="range-box"></span><span id="range-median" class="range-median"></span><span id="range-check" class="range-check" hidden></span></div></div>
@@ -101,7 +103,8 @@
           <p id="upcoming-filtered" class="sale-filtered" hidden></p>
           <p id="upcoming-status" class="form-error" hidden></p>
           <ol id="upcoming-list" class="sale-list"></ol>
-          <p id="upcoming-note" class="price-basis">Not sold yet, by sale date. Watch opens the lot in the workspace for you to review and save, with its sale day offered as an auction day.</p>
+          <p id="upcoming-saved" class="saved-line" role="status" hidden></p>
+          <p id="upcoming-note" class="price-basis">Not sold yet, by sale date. Watch saves the lot to your watchlist and offers its sale day as an auction to add.</p>
         </section>
         <details id="price-search" class="price-search"><summary><span>Change search</span><span id="price-search-term" class="price-search-term"></span><span class="chevron" aria-hidden="true">⌄</span></summary>
         <form id="prices-form" class="prices">
@@ -140,7 +143,6 @@
           </div>
         </div>
       </details>
-      <nav id="recent" class="recent" aria-label="Recent lookups" hidden><p class="field-hint">Recent</p><ul id="recent-list" class="recent-list"></ul></nav>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
     </div>
@@ -151,19 +153,15 @@
     </section>
     <section id="companion-panel-watchlist" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-watchlist" hidden>
       <div class="companion-card">
-        <div class="companion-heading-row"><div><h2>Watchlist</h2><p class="companion-intro">Auction dates, active exposure, and saved comparables.</p></div><button id="companion-open-workspace" class="icon-button" type="button" data-companion-runtime aria-label="Open full workspace" title="Open full workspace"><span aria-hidden="true">↗</span></button></div>
+        <h2>Watchlist</h2>
         <dl class="companion-summary">
           <div><dt>Next auction</dt><dd id="companion-next-event">No upcoming auction</dd></div>
-          <div><dt>Auctions due</dt><dd id="companion-due-count">0</dd></div>
+          <div><dt>Auctions due</dt><dd id="companion-due-count">None due</dd></div>
         </dl>
         <p id="companion-needs-outcome" class="companion-needs-outcome" hidden><button id="companion-open-needs-outcome" class="text-button" type="button" data-companion-runtime></button></p>
-        <h3>Externally active exposure</h3>
-        <ul class="companion-exposure-list">
-          <li><span>USD</span><strong id="companion-exposure-USD">$0.00</strong></li>
-          <li><span>EUR</span><strong id="companion-exposure-EUR">€0.00</strong></li>
-          <li><span>GBP</span><strong id="companion-exposure-GBP">£0.00</strong></li>
-          <li><span>CHF</span><strong id="companion-exposure-CHF">CHF 0.00</strong></li>
-        </ul>
+        <section id="companion-coins" class="companion-coins" aria-labelledby="companion-coins-title" hidden><h3 id="companion-coins-title">Coins to watch</h3><ul id="companion-coin-list" class="companion-coin-list"></ul></section>
+        <h3>Active bids</h3>
+        <ul id="companion-exposure-list" class="companion-exposure-list"><li class="companion-none">No active bids</li></ul>
         <button id="companion-open-watchlist" class="primary-button companion-full-button" type="button" data-companion-runtime>Open auction workspace</button>
         <p id="companion-runtime-note" class="storage-note" hidden>Durable watchlist features require the installed extension. The calculator still works here.</p>
       </div>

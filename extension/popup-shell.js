@@ -50,6 +50,16 @@ function reveal(id) {
   setTimeout(markScroll, 700);
 }
 
+// An answer drawn at start-up (the last one, kept in the session) is put where a lookup would have brought it, at once: the popup is only now being
+// painted, so there is no movement to watch and none is animated.
+/** @type {(id: string) => void} */
+const placeAtTop = (id) => {
+  const top = scroller.getBoundingClientRect().top + $('quick-search').getBoundingClientRect().height;
+  const target = scroller.scrollTop + $(id).getBoundingClientRect().top - top;
+  if (target > 0) scroller.scrollTo({ top: target, behavior: 'instant' });
+  markScroll();
+};
+
 // A change the tool made to the guided fields by itself: shown under those fields for everyone, and said once — #ric-note is no live region, so a
 // screen reader hears the announcement alone. It lasts until the next edit.
 /**
@@ -101,5 +111,5 @@ function chooseTheme(theme) {
 }
 
 export {
-  $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, revealAgain, ricChanged, shownTheme, syncThemeButton,
+  $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton,
 };

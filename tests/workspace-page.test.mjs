@@ -1497,3 +1497,16 @@ test('coins are compared from boxes in their own rows, two to four at a time', a
   assert.equal(box('Nero, denarius').checked, true);
   assert.equal(page.$('open-comparison').textContent, 'Compare (4)');
 });
+
+// Merge with P1: the coin the popup's Open names wins over the queue's first coin on a wide screen.
+test('a wide workspace opened on a named coin opens that coin, not the queue’s first', async () => {
+  const background = await backgroundWithCoins('Nero, denarius', 'Trajan, sestertius');
+  await settle(40);
+  const trajan = storedLot(background, 'Trajan, sestertius');
+  const page = await mountWorkspace({ background, hash: `#watchlist?lot=${trajan.id}`, wide: true });
+  await settle(10);
+  assert.equal(page.$('selected-title').textContent, 'Trajan, sestertius');
+  const unknown = await mountWorkspace({ background, hash: '#watchlist?lot=00000000-0000-4000-8000-999999999999', wide: true });
+  await settle(10);
+  assert.equal(unknown.$('coin-editor').hidden, true, 'an id the store no longer holds opens nothing');
+});

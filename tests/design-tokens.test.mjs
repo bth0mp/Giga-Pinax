@@ -86,10 +86,11 @@ test('record lists and the house-name box stay inside their column', () => {
   assert.match(preset, new RegExp(String.raw`width:min\(260px,\s*100%${right ? String.raw`\s*-\s*${right}px` : ''}\)`));
 });
 
-// Fix round (review Minor 4): the layer's labels are 650; the popup's checkbox rows, sentences rather than field names, keep the 600 they had.
-test('the popup’s checkbox labels keep their 600 weight', () => {
+// Fix round (review Minor 4): the layer's labels are 650; the popup's filter checkboxes are not field names. Loop 3 (G-03) made them pills in the
+// sales period's row, drawn at the pills' own 400 weight.
+test('the popup’s filter checkboxes are not drawn as field labels', () => {
   const popup = rules(read('popup.css'));
-  assert.match(popup.filter((rule) => rule.selector === '.denomination-row').map((rule) => rule.body).join(';'), /font-weight:600/);
+  assert.match(popup.filter((rule) => rule.selector === '.filter-pill').map((rule) => rule.body).join(';'), /font-weight:400/);
 });
 
 test('every class a workspace or Settings button carries is styled by a stylesheet the page loads', () => {

@@ -44,7 +44,9 @@ class TestElement {
     this.style = {};
     this.children = [];
     this.listeners = new Map();
-    this.classList = { toggle() {} };
+    const classes = new Set();
+    this.classList = { toggle(name, force = !classes.has(name)) { if (force) classes.add(name); else classes.delete(name); return force; },
+      add(name) { classes.add(name); }, remove(name) { classes.delete(name); }, contains: (name) => classes.has(name) };
   }
   addEventListener(type, listener) {
     const listeners = this.listeners.get(type) ?? [];
@@ -86,7 +88,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -121,8 +123,8 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     windows: { getCurrent: async () => ({ id: 7 }) },
     storage: sessionArea ? {
       session: {
-        get: async (key) => { if (sessionGate) await sessionGate; return session.has(key) ? { [key]: session.get(key) } : {}; },
-        set: async (items) => { for (const [key, value] of Object.entries(items)) { writes.push(value); session.set(key, String(value)); } },
+        get: async (keys) => { if (sessionGate) await sessionGate; return Object.fromEntries([keys].flat().filter((key) => session.has(key)).map((key) => [key, structuredClone(session.get(key))])); },
+        set: async (items) => { for (const [key, value] of Object.entries(items)) { if (key === 'giga-pinax-pending-reference-v1') writes.push(value); session.set(key, structuredClone(value)); } },
         remove: async (key) => { session.delete(key); },
       },
     } : {},
@@ -156,12 +158,17 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     // Timers never run unless a test asks to hold them (timers: []) and run them itself.
     setTimeout: (callback) => { timers?.push(callback); return 0; },
     clearTimeout() {},
+    // Intervals never run either; a test that holds them (intervals: []) runs them itself.
+    setInterval: (callback) => { intervals?.push(callback); return intervals ? intervals.length : 0; },
+    clearInterval: (handle) => { if (intervals && handle) intervals[handle - 1] = () => {}; },
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
     // with the card still on screen at the time, so what the other half would have seen is what this records.
     dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent, detail: event?.detail }); return true; },
     console,
   };
   sandbox.globalThis = sandbox;
+  // A clock a test can move: Date.now() reads it, and every other use of Date is the real one.
+  if (clock) sandbox.Date = class extends Date { static now() { return clock.now; } };
 
   runPage(vm.createContext(sandbox), new URL('../extension/popup.js', import.meta.url));
   return { element, document, window, writes, clipboard, stored, dispatched };
@@ -243,9 +250,12 @@ test('a reference typed before a permission prompt is waiting when the popup ope
   assert.ok(reopened.element('quick-reference').focused);
   await reopened.element('reference-form').emit('submit');
   await settle();
+  assert.equal(session.has('giga-pinax-pending-reference-v1'), false);
+  // Loop 3 (G-01): the next popup opens on that lookup's answer, drawn again from the session, not on the reference kept for the prompt.
   const afterLookup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   await settle();
-  assert.equal(afterLookup.element('quick-reference').value, '');
+  assert.equal(afterLookup.element('result-reference').textContent, 'Price 23');
+  assert.equal(afterLookup.element('result').hidden, false);
 });
 
 // The store answers after the popup has opened, so a reference left over from the prompt must never land on top of what is being typed now.
@@ -291,7 +301,9 @@ test('the price buttons keep no reference, so the next popup opens with an empty
   await settle();
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
-  assert.equal(session.size, 0);
+  assert.equal(session.has('giga-pinax-pending-reference-v1'), false);
+  // Loop 3 (G-01): what the next popup finds is the last answer, never a reference kept for a prompt.
+  session.delete('giga-pinax-last-answer-v1');
   const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   await settle();
   assert.equal(reopened.element('quick-reference').value, '');
@@ -576,8 +588,37 @@ test('RIC local hit neither requests nor waits for ANS permission', async () => 
   await settle();
   assert.equal(requested, 0);
   assert.equal(remote, 0);
-  assert.equal(popup.element('result-reference').textContent, card.label);
-  assert.equal(popup.element('result-source').textContent, 'Local OCRE catalogue');
+  // Loop 3 (G-08): the heading writes the short canonical form; the long edition name stays in the source line.
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
+  assert.equal(popup.element('result-source').textContent, 'Local OCRE catalogue · RIC I, second edition');
+});
+
+// Loop 3 (G-08): one reference in one spelling everywhere the popup writes it - the card, the Recent chip and the coin a save would make - and the
+// coin's name is the card's summary line (without the metal), never the reference again.
+test('the card, its Recent chip and its watchlist coin write the reference one way, and name the coin by its summary', async () => {
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', source: 'local', authority: 'Nero', denomination: 'As', mint: 'Rome', material: 'Bronze', portrait: null, dates: 'AD 62–68', obverse: { legend: 'NERO', description: 'Head' }, reverse: { legend: null, description: 'Temple' } };
+  const popup = await loadPopup({
+    permissionRequest: async () => true, permissionContains: async () => false,
+    priceFetch: async () => ({ status: 'empty', term: 'Nero 306' }),
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
+  });
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
+  const chip = popup.element('recent-list').children[0].children[0];
+  assert.equal(chip.textContent, 'RIC I² Nero 306');
+  const saved = popup.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail;
+  assert.equal(saved.reference, 'RIC I² Nero 306');
+  assert.equal(saved.title, 'Nero · As · Rome · AD 62–68');
+  // Other editions and catalogues keep their own short forms.
+  assert.equal(companion.displayReference('RIC II, Part 3 (second edition) Hadrian 12'), 'RIC II.3² Hadrian 12');
+  assert.equal(companion.displayReference('RIC II, Part 1 (second edition) Titus 5'), 'RIC II.1² Titus 5');
+  assert.equal(companion.displayReference('RIC III Antoninus Pius 1000'), 'RIC III Antoninus Pius 1000');
+  assert.equal(companion.displayReference('RRC 44/5'), 'RRC 44/5');
+  assert.equal(companion.displayReference('Price 23'), 'Price 23');
+  // The short form reads back as the same reference.
+  assert.deepEqual(lookup.parseReference('RIC II.3² Hadrian 12'), lookup.parseReference('RIC II, Part 3 (second edition) Hadrian 12'));
 });
 
 test('RIC local miss offers an explicit online permission button', async () => {
@@ -807,7 +848,9 @@ test('the citation filter is named, checked by default and can be switched off',
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
+  // Loop 3 (G-03): the pill is short; its tooltip is the whole sentence.
+  assert.equal(popup.element('citing-row').title, 'Only results citing Price 23');
   assert.equal(popup.element('citing-filter').checked, true);
   assert.match(popup.element('median-amount').textContent, /100/);
   popup.element('citing-filter').checked = false;
@@ -930,7 +973,7 @@ test('the denomination toggle is offered by the verified card and filters on its
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “tetradrachm”');
   assert.equal(popup.element('denomination-filter').checked, false);
   assert.match(popup.element('median-amount').textContent, /200/);
   popup.element('denomination-filter').checked = true;
@@ -955,7 +998,7 @@ test('a card found under a mint’s other English name is still this reference�
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “solidus”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “solidus”');
   await popup.element('copy-summary').emit('click');
   assert.match(popup.clipboard[0], /numismatics\.org\/ocre\/id\/ric\.7\.tri\.12/);
 });
@@ -993,7 +1036,7 @@ test('prices that arrive before the card are drawn again once it does', async ()
   await submission;
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “tetradrachm”');
   await popup.element('copy-summary').emit('click');
   assert.match(popup.clipboard[0], /numismatics\.org\/pella\/id\/price\.23/);
 });
@@ -1683,7 +1726,8 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   assert.equal(watch.textContent, 'Watch');
   // The list says what Watch does, and no longer that the day stays behind.
   const basis = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  assert.match(basis, /Watch opens the lot in the workspace for you to review and save, with its sale day offered as an auction day\./);
+  // Loop 3 (G-02): Watch saves in one step, and its sale day waits for Add.
+  assert.match(basis, /Watch saves the lot to your watchlist and offers its sale day as an auction to add\./);
   assert.doesNotMatch(basis, /add its auction there to be reminded/);
   assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
   popup.dispatched.length = 0;
@@ -1930,7 +1974,7 @@ test('a slow specimen query never delays the card, and a late answer for a card 
     lookupTypeImpl: async () => ((lookups += 1) === 1 ? { status: 'ok', card: { ...neroCard } } : { status: 'none', corpus: 'ocre', query: 'RIC 1' }) });
   assert.equal(asked.length, 1);
   assert.equal(popup.element('result').hidden, false, 'the card is on screen while the query waits');
-  assert.equal(popup.element('result-reference').textContent, neroCard.label);
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
   assert.equal(popup.element('specimens').hidden, true);
   assert.equal(signals[0]?.aborted, false, 'the query carries a signal of its own');
   // The collector looks up something else before Nomisma answers, and that lookup finds nothing.
@@ -2272,11 +2316,11 @@ test('the filter row is drawn while acsearch answers, so its arrival moves nothi
   assert.equal(popup.element('prices-panel').dataset.state, 'loading');
   assert.equal(popup.element('price-filters').hidden, false);
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
   answer.resolve(mixedSales);
   await settle();
   assert.equal(popup.element('price-filters').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
 });
 
 test('a search that is not the reference\'s own draws no filter row while it loads', async () => {
@@ -2357,4 +2401,309 @@ test('the coverage line names future-dated lots apart from uncounted prices', as
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('sale-period').textContent, '3 matches on acsearch · 1 future-dated lot not counted');
+});
+
+// Loop 3 (G-03): in the 600 px popup the median was on the bottom edge. What stood above it takes less room without losing anything: Save is a small
+// button in the card's heading row beside Type, its hint a tooltip; the sides and the specimens fold into one line; the citing and denomination
+// switches are pills in the sales period's row, and the section's name is said to a screen reader only.
+test('the card and the filter row give the median room: Save in the heading, one fold, the filters among the period pills', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const save = markup.getElementById('companion-save-watchlist');
+  assert.ok(save.closest('.type-heading'), 'Save stands in the heading row');
+  assert.match(save.className, /secondary-button/);
+  assert.equal(save.textContent.trim(), 'Save');
+  assert.match(save.getAttribute('title'), /^Saves the reference/);
+  assert.equal(markup.getElementById('specimens').closest('details')?.id, 'sides-details');
+  assert.equal(markup.getElementById('sides-summary').textContent, 'Obverse · reverse');
+  for (const id of ['citing-row', 'denomination-row']) assert.ok(markup.getElementById(id).closest('.research-heading'), id);
+  assert.match(markup.getElementById('research-prices-title').className, /sr-only/);
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.result \{margin:0 16px; padding:12px 0;/);
+  assert.match(css, /\.sides-details > summary \{min-height:28px;\}/);
+});
+
+test('specimens found fold under the sides, and the fold says so', async () => {
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    stored: new Map([['giga-pinax-specimen-photos-v1', 'on']]),
+    specimenFetch: async () => [{ page: 'https://example.org/1', collection: 'Museum', obverse: 'https://example.org/o.jpg', reverse: 'https://example.org/r.jpg' }],
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  for (let turn = 0; turn < 10; turn += 1) await settle();
+  assert.equal(popup.element('specimens').hidden, false);
+  assert.equal(popup.element('sides-summary').textContent, 'Obverse · reverse · specimens');
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('sides-summary').textContent, 'Obverse · reverse');
+});
+
+// Loop 3 (G-21): Recent was the last thing before the footer, under a 1,215 px answer. It stands under the Reference row, steps aside while a new
+// reference is typed, and comes back with the answer.
+test('Recent stands under the Reference row, steps aside while typing, and comes back with the answer', async () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.ok(markup.getElementById('recent').closest('.quick-row'), 'Recent is in the Reference row');
+  assert.equal(markup.getElementById('recent-more').hidden, true);
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', obverse: {}, reverse: {} };
+  const stored = new Map([[preferences.STORAGE_KEY, JSON.stringify({ recent: [{ corpus: 'pella', id: 'price.24', label: 'Price 24' }] })]]);
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), stored,
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  assert.equal(popup.element('recent').hidden, false);
+  popup.element('quick-reference').value = 'Price';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('recent').hidden, true, 'hidden while typing');
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('recent').hidden, false, 'back with the answer');
+  popup.element('quick-reference').value = '';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('recent').hidden, false, 'an emptied box shows it');
+});
+
+// Loop 3 (G-13): the Research tab named nothing of the workspace, and "Panel" said nothing of what it gives. The header opens the workspace by name;
+// the side panel is an icon whose name says what it is for; first run says that a saved coin is tracked there.
+test('the header opens the workspace by name and the side panel is an icon that says what it keeps', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const actions = [...markup.querySelector('.header-actions').children];
+  assert.equal(actions[0].id, 'open-workspace');
+  assert.equal(actions[0].textContent.trim(), 'Workspace');
+  const panel = markup.getElementById('open-panel');
+  assert.match(panel.className, /icon-button/);
+  assert.equal(panel.getAttribute('aria-label'), 'Keep the popup open beside the page (side panel)');
+  assert.equal(panel.textContent.trim(), '');
+  assert.equal(panel.parentElement.className, 'popup-header');
+  assert.match(markup.getElementById('first-run').textContent, /Save a coin to track its auction, bid and outcome in the workspace\./);
+});
+
+// Loop 3 (G-01): a toolbar popup closes with every click on the page, and used to open again empty, asking acsearch again for the answer it had a
+// minute before. The last answer is kept in the extension's session area and drawn again at once, with its age and Refresh; no site is asked.
+const priceCard23 = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+async function answered(session, { priceFetch = async () => oneSale } = {}) {
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  return popup;
+}
+function counting() {
+  const calls = { prices: 0, lookups: 0 };
+  return { calls, priceFetch: async () => { calls.prices += 1; return oneSale; }, lookupTypeImpl: async () => { calls.lookups += 1; return { status: 'ok', card: priceCard23 }; } };
+}
+
+test('a popup opened with nothing typed draws the last answer again from the session, and asks no site for it', async () => {
+  const session = new Map();
+  await answered(session);
+  const kept = session.get('giga-pinax-last-answer-v1');
+  assert.equal(kept.query, 'Price 23');
+  assert.equal(kept.card.label, 'Price 23');
+  assert.equal(kept.lots.length, 1);
+  const { calls, priceFetch, lookupTypeImpl } = counting();
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch, lookupTypeImpl });
+  await settle(); await settle();
+  assert.deepEqual(calls, { prices: 0, lookups: 0 });
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
+  assert.equal(reopened.element('result').hidden, false);
+  assert.equal(reopened.element('result-reference').textContent, 'Price 23');
+  assert.equal(reopened.element('prices-panel').hidden, false);
+  assert.match(reopened.element('median-amount').textContent, /120/);
+  assert.equal(reopened.element('prices-restored').hidden, false);
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of just now');
+  // Refresh is the collector's own click: it asks acsearch again, and the line goes.
+  await reopened.element('refresh-prices').emit('click');
+  await settle(); await settle();
+  assert.equal(calls.prices, 1);
+  assert.equal(reopened.element('prices-restored').hidden, true);
+  assert.equal(calls.lookups, 0);
+});
+
+test('an old, torn or other-currency answer is not drawn as prices, and a prompt reference wins over it', async () => {
+  const session = new Map();
+  await answered(session);
+  const kept = session.get('giga-pinax-last-answer-v1');
+  for (const stale of [{ ...kept, shownAt: Date.now() - 31 * 60 * 1000 }, { ...kept, card: null }, { ...kept, version: 2 }, 'text']) {
+    const reopened = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', stale]]), permissionRequest: async () => true, priceFetch: async () => oneSale });
+    await settle(); await settle();
+    assert.equal(reopened.element('quick-reference').value, '');
+    assert.equal(reopened.element('result-reference').textContent, '', 'nothing drawn');
+  }
+  // Drawn in another currency than the one now chosen: the card comes back, its prices wait for Refresh.
+  const euro = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', { ...kept, currency: 'EUR' }]]), permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(euro.element('result-reference').textContent, 'Price 23');
+  assert.notEqual(euro.element('prices-panel').dataset.state, 'ready');
+  assert.equal(euro.element('prices-restored').hidden, false);
+  // A reference kept over a permission prompt is the next Look up, and the answer before it stays away.
+  const prompt = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', kept], ['giga-pinax-pending-reference-v1', 'RRC 44/5']]),
+    permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(prompt.element('quick-reference').value, 'RRC 44/5');
+  assert.equal(prompt.element('result-reference').textContent, '');
+});
+
+test('a new lookup forgets the last answer, and a currency arriving for a drawn-again answer fetches nothing', async () => {
+  const session = new Map();
+  await answered(session);
+  const { calls, priceFetch, lookupTypeImpl } = counting();
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch, lookupTypeImpl });
+  await settle(); await settle();
+  assert.equal(reopened.element('prices-panel').dataset.state, 'ready', 'the answer is drawn again');
+  reopened.element('currency').value = 'EUR';
+  await reopened.element('currency').emit('change');
+  await settle(); await settle();
+  assert.equal(calls.prices, 0);
+  assert.equal(reopened.element('prices-panel').hidden, true);
+  assert.equal(reopened.element('prices-restored').hidden, false, 'Refresh stays for the new currency');
+  const pending = deferred();
+  const later = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: () => pending.promise });
+  await settle();
+  later.element('quick-reference').value = 'RRC 44/5';
+  await later.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.has('giga-pinax-last-answer-v1'), false);
+});
+
+// Loop 3 (G-04, popup side): the workspace's bid evidence offers the median the popup is showing. It is kept in the session area only, one entry per
+// provider, while it is on show: { reference, provider, currency, median (minor units), count, at }.
+test('a median on show is kept in the session for the workspace, one entry per provider, and goes with its panel', async () => {
+  const session = new Map();
+  const stored = new Map();
+  const popup = await loadPopup({ session, stored, permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  const kept = () => session.get('giga-pinax-session-median');
+  assert.deepEqual(Object.keys(kept()), ['acsearch']);
+  const { at, ...acsearch } = kept().acsearch;
+  assert.deepEqual(acsearch, { reference: 'Price 23', provider: 'acsearch', currency: 'USD', median: 12000, count: 1 });
+  assert.ok(Math.abs(Date.now() - at) < 60000);
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle(); await settle();
+  const { at: when, ...coinArchives } = kept().coinarchives;
+  assert.deepEqual(coinArchives, { reference: 'Price 23', provider: 'coinarchives', currency: 'USD', median: 15000, count: 1 });
+  assert.ok(Number.isFinite(when));
+  assert.equal(kept().acsearch.median, 12000, 'the providers are never pooled');
+  // Never in local storage.
+  assert.equal([...stored.keys()].some((key) => /median/i.test(key)), false);
+  // Typing a new reference takes the medians off with the panels.
+  popup.element('quick-reference').value = 'Price 2';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(session.has('giga-pinax-session-median'), false);
+});
+
+test('the kept median names the reference in the short spelling a saved coin carries', async () => {
+  const session = new Map();
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', source: 'local', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: [{ id: 's1', title: 'Lot', date: '2025-01-01', price: '240', description: 'Nero. As. RIC 306.' }] }),
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(session.get('giga-pinax-session-median').acsearch.reference, 'RIC I² Nero 306');
+});
+
+// Loop 3 (G-10): an online-only reference that failed with no network scrolled its own error away - acsearch had been searched for it anyway, and its
+// prices, drawn under no card, were brought into view. A Bopearachchi reference's prices wait for its card, and a failed lookup brings its error into
+// view, never the prices.
+test('a Bopearachchi lookup that fails searches nothing, and brings its error into view', async () => {
+  let searched = 0;
+  const timers = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true, timers,
+    priceFetch: async () => { searched += 1; return oneSale; }, lookupTypeImpl: async () => ({ status: 'network' }) });
+  popup.element('popup-scroll').height = 400;
+  popup.element('quick-search').height = 50;
+  popup.element('form-error').top = 320;
+  popup.element('research-prices').top = 600;
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(searched, 0, 'no acsearch search without its card');
+  assert.equal(popup.element('form-error').hidden, false);
+  for (const run of timers.splice(0)) run();
+  const scrolled = popup.element('popup-scroll').scrolledTo ?? [];
+  assert.equal(scrolled.length, 1);
+  assert.equal(scrolled[0].top, 270, 'the error, just under the Reference row');
+});
+
+test('a Bopearachchi card that answers is priced from itself', async () => {
+  let searched = null;
+  const card = { id: 'bop.9c', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', bop: { series: '9C', king: 'Euthydemus I', citation: '9C' }, obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true,
+    priceFetch: async ({ term }) => { searched = term; return oneSale; }, lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.ok(searched, 'searched once the card arrived');
+  assert.equal(popup.element('prices-panel').dataset.state, 'ready');
+});
+
+test('a sales period, a filter or a sale excluded redraws in place and scrolls nothing', async () => {
+  const timers = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, timers,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  timers.splice(0);
+  const before = (popup.element('popup-scroll').scrolledTo ?? []).length;
+  await popup.element('period').emit('change', { target: { value: '2y' } });
+  await popup.element('citing-filter').emit('change');
+  await popup.element('denomination-filter').emit('change');
+  for (const run of timers.splice(0)) run();
+  assert.equal((popup.element('popup-scroll').scrolledTo ?? []).length, before);
+});
+
+test('controls ease their colours and what arrives later fades in, all under the reduced-motion guard', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.primary-button,[^{]*\.period label,\.filter-pill[^{]*\{transition:background-color \.12s,border-color \.12s,color \.12s/);
+  assert.match(css, /@keyframes gp-fade-in/);
+  assert.match(css, /\.prices-panel\[data-state="ready"\] \.median-block[^{]*\{animation:gp-fade-in \.18s ease-out;\}/);
+  assert.match(readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8'), /\.companion-tabs button \{transition:color \.12s,border-color \.12s;\}/);
+  // The guard every page loads: a collector who asks for less motion gets none.
+  assert.match(readFileSync(new URL('../extension/design-tokens.css', import.meta.url), 'utf8'),
+    /@media\(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{[^}]*transition-duration:\.01ms!important;animation-duration:\.01ms!important/);
+});
+
+// Fix round (review I1): the line a Watch left under the Upcoming list goes with the lookup it belongs to.
+test('a new lookup, or typing, takes the Upcoming saved line away', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('upcoming-saved').hidden = false;
+  popup.element('upcoming-saved').children = ['Saved to your watchlist'];
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('upcoming-saved').hidden, true);
+  assert.deepEqual(popup.element('upcoming-saved').children, []);
+});
+
+// Fix round (review M1, M6): Less folds Recent even while it has the keyboard; More and Refresh say what they act on.
+test('Recent folds on Less with the button focused, and More and Refresh name what they act on', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.recent-list:focus-within \{max-height:none;\}/);
+  assert.doesNotMatch(css, /\.recent:focus-within/);
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('recent-more').getAttribute('aria-controls'), 'recent-list');
+  assert.equal(markup.getElementById('refresh-prices').getAttribute('aria-label'), 'Refresh acsearch prices');
+  // Each saved line is a status the screen reader hears once, from the line itself.
+  for (const id of ['companion-saved-line', 'upcoming-saved']) assert.equal(markup.getElementById(id).getAttribute('role'), 'status', id);
+});
+
+// Fix round (review M3): an answer drawn again says its age as the minutes pass, for as long as the line is on show.
+test('the age of an answer drawn again keeps up with the clock', async () => {
+  const session = new Map();
+  await answered(session);
+  const clock = { now: Date.now() };
+  const intervals = [];
+  const reopened = await loadPopup({ session, clock, intervals, permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of just now');
+  assert.equal(intervals.length, 1);
+  clock.now += 3 * 60000;
+  intervals[0]();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of 3 min ago');
+  reopened.element('prices-restored').hidden = true;
+  clock.now += 60000;
+  intervals[0]();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of 3 min ago', 'a hidden line is left alone');
 });

@@ -3,13 +3,17 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
-import { lotsNeedingOutcome } from './core/projections.js';
+import { eventTiming, lotsNeedingOutcome } from './core/projections.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
 import { mountBidCalculator } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openResearchPanel, openSettings, openWorkspace } from './navigation.js';
+import { parseReference } from './lookup.js';
+import { validateDraftPayload } from './core/drafts.js';
+import { buildWorkspaceLotDraft, lotDraftToEditor, lotFormValues, offeredEventFromDraft } from './workspace-forms.js';
+import { eventWhen } from './workspace-views.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
 const bounded = (value, maximum) => typeof value === 'string'
@@ -23,6 +27,27 @@ export function documentMode(search = '') {
   // Only the lookup window takes a right-click's reference: the panel fallback stands in for a sidebar the browser wouldn't open, and a lookup sent to
   // it would land beside the page it was meant to leave.
   return { panel, windowed, acceptsLookupMessages: windowed && !panel };
+}
+
+// One spelling of a reference wherever the popup writes one (the card, a Recent chip, the coin a save makes): the short canonical form a collector
+// types. OCRE titles a second edition in words ("RIC I (second edition) Nero 306", "RIC II, Part 3 (second edition) Hadrian 12"); the short form is
+// "RIC I² Nero 306" and "RIC II.3² Hadrian 12", which parseReference reads back as the same reference. Every other label is already short.
+const SECOND_EDITION = /^RIC (X|IX|VIII|VII|VI|V|IV|III|II|I)(?:, Part (\d))? \((?:second|2nd) edition\) (\S.*)$/;
+export function displayReference(label) {
+  const text = String(label ?? '');
+  const match = SECOND_EDITION.exec(text);
+  return match ? `RIC ${match[1]}${match[2] ? `.${match[2]}` : ''}² ${match[3]}` : text;
+}
+// The edition a short form leaves out, said once in the card's source line: "RIC I, second edition".
+export function editionName(label) {
+  const match = SECOND_EDITION.exec(String(label ?? ''));
+  return match ? `RIC ${match[1]}${match[2] ? `, part ${match[2]}` : ''}, second edition` : '';
+}
+// A coin's name is its card's summary line without the metal ("Nero · As · Rome · AD 62–68"), never the reference again; a card with none of
+// those (a reference kept only for its prices) is named by its reference.
+export function cardName(card) {
+  const summary = [card?.authority, card?.denomination, card?.mint, card?.dates].filter(Boolean).join(' · ');
+  return summary || displayReference(card?.label);
 }
 
 // A list of types stands outside Refine (popup.html), so it opens nothing: only a reference that needs a ruler typed, or a guided field in error, does.
@@ -149,6 +174,63 @@ export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: sen
   };
 }
 
+// A reference as the watchlist compares it: the fields parseReference reads from it, so "RIC I² Nero 306" and "RIC I (second edition) Nero 306" are one
+// coin; text that reads as no reference is compared as written, spacing and case aside.
+const squash = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+export function referenceKey(reference) {
+  const parsed = String(reference ?? '').trim() ? parseReference(String(reference)) : null;
+  if (!parsed) return squash(reference);
+  return [parsed.catalogue, parsed.volume, parsed.section, parsed.number].map(squash).join('|');
+}
+
+// The saved coins a card's reference names, the open ones first and the newest of each first.
+export function savedLotsFor(snapshot, reference) {
+  const key = referenceKey(reference);
+  if (!key) return [];
+  const open = (lot) => (lot.outcome?.status ?? 'open') === 'open';
+  return (snapshot?.lots ?? []).filter((lot) => lot?.reference && referenceKey(lot.reference) === key)
+    .sort((left, right) => Number(open(right)) - Number(open(left)) || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
+}
+
+const OUTCOME_WORDS = Object.freeze({ lost: 'Lost', withdrawn: 'Withdrawn', unsold: 'Unsold' });
+// What the card says of a coin already saved under its reference: where it stands, the bid in force or planned, and its auction and when.
+export function savedLineText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
+  const lot = lots?.[0];
+  if (!lot) return '';
+  const status = lot.outcome?.status ?? 'open';
+  const parts = [status === 'open' ? 'On your watchlist' : status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
+  const money = (amount) => { try { return formatMoney(amount, locale); } catch { return ''; } };
+  if (status === 'open' && lot.activeBid?.amount) parts.push(`Bid active ${money(lot.activeBid.amount)}`);
+  else if (status === 'open' && lot.plannedBid?.amount) parts.push(`Bid planned ${money(lot.plannedBid.amount)}`);
+  const event = lot.auctionEventId ? (snapshot?.auctionEvents ?? []).find(({ id }) => id === lot.auctionEventId) : null;
+  if (event?.name) parts.push(event.name);
+  if (event && status === 'open') { const { relative } = eventWhen(event, { now, locale }); if (relative) parts.push(relative); }
+  if (lots.length > 1) parts.push(`${lots.length} coins saved`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+// A bare reference (a card, or an acsearch lot's Watch) is saved in one step: validated as the workspace validates the draft it would have opened,
+// read into the coin exactly as the workspace's details form reads that draft, and saved by the command its Save details sends. What a captured
+// page stated (an estimate, a closing time, a photo, provenance, its auction) still goes to the workspace for review, which is where it earns one.
+export const DIRECT_SAVE_FIELDS = Object.freeze(['target', 'title', 'reference', 'pageUrl', 'closesAt']);
+export function savesDirectly(payload) {
+  return Boolean(payload && typeof payload === 'object' && Object.keys(payload).every((key) => DIRECT_SAVE_FIELDS.includes(key)));
+}
+export function directLotFromPayload(payload) {
+  const { closesAt, ...kept } = payload ?? {};
+  const checked = validateDraftPayload('current-lot', kept);
+  if (!checked.ok) return { ok: false, message: checked.error.message };
+  const values = lotDraftToEditor(checked.value);
+  // The details form asks for a title; a card always gives one, and a reference alone is named by itself.
+  const title = values.title || values.reference;
+  if (!title) return { ok: false, message: 'There is nothing to save: this card has no reference.' };
+  return { ok: true, lot: buildWorkspaceLotDraft(null, { title, reference: values.reference, sourceUrl: values.sourceUrl, notes: '' }, undefined) };
+}
+// The sale day of a Watched lot, offered as the date-only auction the workspace would have offered, to attach once the collector says so.
+export function offeredSaleDay(closesAt, pageUrl, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(closesAt ?? '')) ? offeredEventFromDraft({ closesAt, pageUrl }, timeZone) : null;
+}
+
 export function canSaveWatchlist(hasRuntime, payload) {
   return Boolean(hasRuntime && (payload?.title || payload?.reference));
 }
@@ -177,15 +259,55 @@ export function buildWatchlistSummary(snapshot, now = new Date().toISOString()) 
       ? event.startsAt >= now
       : event.localDate >= localDateAtInstant(event.timeZone, now))
     .sort((left, right) => (left.startsAt ?? left.localDate).localeCompare(right.startsAt ?? right.localDate));
-  const dueEventIds = new Set((snapshot?.alerts ?? [])
-    .filter((alert) => ['due', 'claimed', 'delivered'].includes(alert.status) && alert.eventId)
+  // Auctions with a reminder going off now, and those with one that went off while the browser was closed: a missed reminder is no less owed an
+  // answer, so it is counted too, and named apart.
+  const eventsWith = (statuses) => new Set((snapshot?.alerts ?? [])
+    .filter((alert) => statuses.includes(alert.status) && alert.eventId)
     .map((alert) => alert.eventId));
+  const dueEventIds = eventsWith(['due', 'claimed', 'delivered']);
+  const missedEventIds = eventsWith(['missed']);
   const projected = projectExposure({ lots: snapshot?.lots ?? [] });
   const exposure = {};
   for (const currency of CURRENCIES) exposure[currency] = projected[currency] ?? {
     hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, byEvent: {},
   };
-  return { nextEvent: events[0] ?? null, dueAuctionCount: dueEventIds.size, exposure };
+  return { nextEvent: events[0] ?? null, dueAuctionCount: dueEventIds.size, missedAuctionCount: missedEventIds.size, exposure };
+}
+
+// "1 due · 1 missed", or "None due".
+export function dueText(summary) {
+  const parts = [summary?.dueAuctionCount ? `${summary.dueAuctionCount} due` : '', summary?.missedAuctionCount ? `${summary.missedAuctionCount} missed` : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'None due';
+}
+
+// The next auction as the workspace's rows say it: "CNG Feature Auction 130 · sale day Wed 14 Oct · in 20 days".
+export function nextEventText(event, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
+  if (!event) return 'No upcoming auction';
+  const { when, relative } = eventWhen(event, { now, locale });
+  const day = when && when !== 'Time unknown' ? `${when.charAt(0).toLocaleLowerCase(locale)}${when.slice(1)}` : '';
+  return [event.name, day, relative].filter(Boolean).join(' · ');
+}
+
+// An amount with the narrow symbol ("$", not "US$"), read from its minor units in the two places every stored amount has, as formatMoney reads them.
+export function narrowMoney(money, locale = 'en-US') {
+  const minor = BigInt(money.minor);
+  const absolute = minor < 0n ? -minor : minor;
+  const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: money.currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fraction = String(absolute % 100n).padStart(2, '0');
+  return formatter.formatToParts(minor < 0n ? -(absolute / 100n) : absolute / 100n).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
+}
+
+// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
+export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
+  const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
+  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => ({ lot, text: `${lot.title} · ended, record the outcome` }));
+  const coming = (snapshot?.lots ?? [])
+    .filter((lot) => (lot?.outcome?.status ?? 'open') === 'open' && events.has(lot.auctionEventId))
+    .map((lot) => ({ lot, event: events.get(lot.auctionEventId), timing: eventTiming(events.get(lot.auctionEventId), now) }))
+    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state))
+    .sort((left, right) => (left.timing.sortMs ?? Infinity) - (right.timing.sortMs ?? Infinity))
+    .map(({ lot, event }) => ({ lot, text: [lot.title, eventWhen(event, { now, locale }).relative].filter(Boolean).join(' · ') }));
+  return [...ended, ...coming].slice(0, limit);
 }
 
 function openExtensionPage(path) {
@@ -364,29 +486,106 @@ async function initCompanionPopup() {
     .then((tabs) => { if (capturableTab(tabs)) $('companion-current-lot').open = true; })
     .catch(() => { /* no tab to read: it stays folded */ });
 
+  // The Watchlist tab: the next auction and when, the auctions with a reminder going off or missed, the coins that want the collector now (each opening
+  // the workspace on that coin), and the bids in force, only in the currencies that hold one.
   const renderSummary = () => {
-    const summary = buildWatchlistSummary(snapshot);
-    $('companion-next-event').textContent = summary.nextEvent?.name ?? 'No upcoming auction';
-    $('companion-due-count').textContent = String(summary.dueAuctionCount);
+    const now = new Date().toISOString();
+    const locale = navigator.language;
+    const summary = buildWatchlistSummary(snapshot, now);
+    $('companion-next-event').textContent = nextEventText(summary.nextEvent, { now, locale });
+    $('companion-due-count').textContent = dueText(summary);
     // Lots whose auction has ended with no outcome recorded, and the way to the workspace queue that lists them.
     const ended = lotsNeedingOutcome(snapshot).length;
     $('companion-needs-outcome').hidden = ended === 0;
     $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
-    for (const currency of CURRENCIES) {
+    const coins = coinsToWatch(snapshot, { now, locale });
+    $('companion-coin-list').replaceChildren(...coins.map(({ lot, text }) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'text-button';
+      button.textContent = text;
+      button.disabled = !bridge;
+      button.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
+      item.append(button);
+      return item;
+    }));
+    $('companion-coins').hidden = coins.length === 0;
+    const held = CURRENCIES.filter((currency) => summary.exposure[currency].hammerMinor > 0 || summary.exposure[currency].bindingCount > 0);
+    $('companion-exposure-list').replaceChildren(...(held.length ? held.map((currency) => {
       const item = summary.exposure[currency];
-      $('companion-exposure-' + currency).textContent = `${formatMoney({ currency, minor: item.hammerMinor }, navigator.language)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
-    }
+      const row = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = currency;
+      const amount = document.createElement('strong');
+      amount.id = `companion-exposure-${currency}`;
+      amount.textContent = `${narrowMoney({ currency, minor: item.hammerMinor }, locale)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
+      row.append(name, amount);
+      return row;
+    }) : [Object.assign(document.createElement('li'), { className: 'companion-none', textContent: 'No active bids' })]));
   };
 
   // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
   const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
+  // A line of words and buttons, "Saved to your watchlist · Open · Undo": what happened, and what can be done about it, where it happened.
+  const fillLine = (line, parts) => {
+    const shown = parts.filter(Boolean);
+    line.replaceChildren();
+    shown.forEach((part, index) => {
+      if (index) line.append(' · ');
+      if (typeof part === 'string') { line.append(part); return; }
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'text-button';
+      button.textContent = part.label;
+      if (part.name) button.setAttribute('aria-label', part.name);
+      button.addEventListener('click', part.action);
+      line.append(button);
+    });
+    line.hidden = shown.length === 0;
+  };
+  const openLot = (lotId, anchor) => void navigate(() => openWorkspace('watchlist', undefined, '', lotId), 'Couldn’t open the workspace.', anchor);
+  const openAction = (lotId, anchor) => ({ label: 'Open', name: 'Open this coin in the workspace', action: () => openLot(lotId, anchor) });
+  // The coin a save from this page made a moment ago, which Undo takes back for ten seconds: where it was saved (the card or the Upcoming list), the
+  // coin as stored and the auction attached to it, if any.
+  let justSaved = null;
+  const UNDO_FOR_MS = 10000;
+  // The card says whether its reference is already saved, and then offers that coin rather than a second one: Save gives way to the line.
+  const renderCardSaved = () => {
+    const line = $('companion-saved-line');
+    const save = $('companion-save-watchlist');
+    if (justSaved?.where === 'card') { save.hidden = true; return; }
+    const lots = safeCard?.reference ? savedLotsFor(snapshot, safeCard.reference) : [];
+    if (!lots.length) { fillLine(line, []); save.hidden = false; return; }
+    fillLine(line, [savedLineText(lots, snapshot, { locale: navigator.language }), openAction(lots[0].id, 'companion-save-hint')]);
+    // A coin still open takes Save's place; owning one example (or losing one) is no reason not to watch another lot of the type.
+    save.hidden = lots.some((lot) => (lot.outcome?.status ?? 'open') === 'open');
+  };
+  const forgetJustSaved = (where) => {
+    // What the line under Save said of the last card (a removal, a refusal) is not about the next one.
+    if (where === 'card') { $('companion-save-hint').textContent = ''; $('companion-save-hint').hidden = true; }
+    if (justSaved?.where !== where) return;
+    clearTimeout(justSaved.timer);
+    justSaved = null;
+  };
+  // The research half's output cleared (typing, a new lookup): what Watch said under its Upcoming list goes with that list, and its Undo with it.
+  const clearUpcomingSaved = () => {
+    forgetJustSaved('upcoming');
+    fillLine($('upcoming-saved'), []);
+  };
   const clearCard = () => {
     safeCard = null;
     $('companion-save-watchlist').disabled = true;
+    forgetJustSaved('card');
+    clearUpcomingSaved();
+    renderCardSaved();
   };
   addEventListener('giga-pinax-card', (event) => {
+    if (!event.detail) clearUpcomingSaved();
     safeCard = buildWatchlistDraftPayload({ ...event.detail, auctionContext: researchAuctionContext });
     $('companion-save-watchlist').disabled = !canSave(safeCard);
+    forgetJustSaved('card');
+    renderCardSaved();
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
@@ -402,34 +601,153 @@ async function initCompanionPopup() {
     sendCommand: bridge.sendCommand,
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
-  let draftSavePending = false;
-  // anchor: the hint line under the control the save came from (null: the caller says it elsewhere).
-  const saveWatchlistDraft = async (payload, leftOff = [], anchor = 'companion-save-hint') => {
-    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true, anchor); return { ok: false, message: STORAGE_UNAVAILABLE }; }
-    // The two save buttons are disabled while a save is pending, so only a Watch in the research half reaches this: refused aloud, not dropped.
-    if (draftSavePending) return { ok: false, message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' };
-    draftSavePending = true;
+  let savePending = false;
+  const PENDING_MESSAGE = 'Another lot is still being saved to the watchlist. Try again in a moment.';
+  const holdSaveButtons = () => {
     $('companion-save-watchlist').disabled = true;
     $('companion-capture-watchlist').disabled = true;
+  };
+  const releaseSaveButtons = () => {
+    $('companion-save-watchlist').disabled = !canSave(safeCard);
+    $('companion-capture-watchlist').disabled = !canSave(watchlistPayloadFromCapture(reviewedCapture()));
+  };
+  // anchor: the hint line under the control the save came from.
+  const saveWatchlistDraft = async (payload, leftOff = [], anchor = 'companion-save-hint') => {
+    if (!bridge || storageUnavailable || !payload) { announce(STORAGE_UNAVAILABLE, true, anchor); return { ok: false, message: STORAGE_UNAVAILABLE }; }
+    if (savePending) { announce(PENDING_MESSAGE, true, anchor); return { ok: false, message: PENDING_MESSAGE }; }
+    savePending = true;
+    holdSaveButtons();
     try {
       const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
-      if (!saved.ok) { announce(saved.message, true, anchor === 'upcoming-note' ? null : anchor); return saved; }
+      if (!saved.ok) { announce(saved.message, true, anchor); return saved; }
       // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
       announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.',
         false, anchor);
+      return saved;
     } finally {
-      draftSavePending = false;
-      $('companion-save-watchlist').disabled = !canSave(safeCard);
-      const currentCapturePayload = watchlistPayloadFromCapture(reviewedCapture());
-      $('companion-capture-watchlist').disabled = !canSave(currentCapturePayload);
+      savePending = false;
+      releaseSaveButtons();
     }
   };
-  $('companion-save-watchlist').addEventListener('click', () => void saveWatchlistDraft(safeCard));
-  // Watch on an upcoming acsearch lot (popup.js): the same draft path, for that lot and its own acsearch page. No captured page rides along, since the
-  // lot is acsearch's, not the page captured here. A failure is handed back too, to be said beside the list Watch was pressed in.
+  // What the store answered is what this page shows until its next snapshot arrives with it, so the lines never wait on the subscription.
+  const keepInView = (lot, event = null) => {
+    snapshot = { ...snapshot, lots: [...(snapshot.lots ?? []).filter(({ id }) => id !== lot?.id), lot].filter(Boolean),
+      ...(event ? { auctionEvents: [...(snapshot.auctionEvents ?? []).filter(({ id }) => id !== event.id), event] } : {}) };
+  };
+  // One request per coin until the store has answered it: a save whose reply was lost is sent again under the same request, and the store answers it
+  // from its ledger rather than saving the coin twice.
+  let directRequest = null;
+  const NO_ANSWER = 'The watchlist did not answer. Try again.';
+  const sendDirect = async (command) => {
+    try { return (await bridge.sendCommand(command)) ?? { ok: false, outcome: 'unknown', message: NO_ANSWER }; }
+    catch (error) { return { ok: false, outcome: 'unknown', message: error?.message || NO_ANSWER }; }
+  };
+  const saveDirect = async (payload, anchor) => {
+    const refuse = (message) => { if (anchor) announce(message, true, anchor); return { ok: false, message }; };
+    if (!bridge || storageUnavailable || !payload) return refuse(STORAGE_UNAVAILABLE);
+    if (savePending) return refuse(PENDING_MESSAGE);
+    const built = directLotFromPayload(payload);
+    if (!built.ok) return refuse(built.message);
+    const identity = draftIdentity(payload);
+    if (directRequest?.identity !== identity) directRequest = { identity, requestId: bridge.newRequestId() };
+    savePending = true;
+    holdSaveButtons();
+    try {
+      const reply = await sendDirect({ type: 'lot.save', requestId: directRequest.requestId, expectedRevision: null, lot: built.lot });
+      if (!reply.ok) {
+        if ((reply.outcome ?? reply.error?.outcome) !== 'unknown') directRequest = null;
+        return refuse(reply.message || reply.error?.message || 'Couldn’t save this coin to the watchlist.');
+      }
+      directRequest = null;
+      keepInView(reply.value);
+      return { ok: true, lot: reply.value };
+    } finally {
+      savePending = false;
+      releaseSaveButtons();
+    }
+  };
+  // Undo takes the coin back, and the auction a Watch attached to it; a coin changed since in a way the store will not delete (a bid placed on it)
+  // is refused by the store, and the line says why.
+  const undoSave = async (entry, line, anchor) => {
+    if (justSaved !== entry) return;
+    clearTimeout(entry.timer);
+    const current = (snapshot.lots ?? []).find(({ id }) => id === entry.lot.id) ?? entry.lot;
+    const reply = await sendDirect({ type: 'lot.delete', requestId: bridge.newRequestId(), lotId: entry.lot.id, expectedRevision: current.revision });
+    if (!reply.ok) { announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor); return; }
+    if (entry.event) await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: entry.event.id, expectedRevision: entry.event.revision });
+    justSaved = null;
+    snapshot = { ...snapshot, lots: (snapshot.lots ?? []).filter(({ id }) => id !== entry.lot.id) };
+    fillLine(line, []);
+    announce('Removed from your watchlist.', false, anchor);
+    renderCardSaved();
+  };
+  // Saved: the line says so, with Open and Undo; after ten seconds Undo goes, and the line says where the coin stands.
+  const confirmSaved = (entry, line, anchor, extra = []) => {
+    if (justSaved && justSaved !== entry) clearTimeout(justSaved.timer);
+    justSaved = entry;
+    // What the line under it said of an earlier save (a failure, a removal) is over.
+    const hint = $(anchor);
+    if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
+    const words = entry.event ? 'Saved to your watchlist with its sale day' : 'Saved to your watchlist';
+    // The line is a status region: it says the save once.
+    fillLine(line, [words, openAction(entry.lot.id, anchor), { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
+    entry.timer = setTimeout(() => {
+      if (justSaved !== entry) return;
+      justSaved = null;
+      if (entry.where === 'card') renderCardSaved();
+      else fillLine(line, ['On your watchlist', openAction(entry.lot.id, anchor)]);
+    }, UNDO_FOR_MS);
+  };
+  $('companion-save-watchlist').addEventListener('click', async () => {
+    const payload = safeCard;
+    // A card carrying a captured page's values goes to the workspace for review, as before.
+    if (!savesDirectly(payload)) { void saveWatchlistDraft(payload); return; }
+    const saved = await saveDirect(payload, 'companion-save-hint');
+    if (!saved.ok || safeCard !== payload) return;
+    confirmSaved({ where: 'card', lot: saved.lot, event: null, timer: 0 }, $('companion-saved-line'), 'companion-save-hint');
+    $('companion-save-watchlist').hidden = true;
+  });
+  // Watch on an upcoming acsearch lot (popup.js): saved in one step with the lot's title, the card's reference and the lot's own acsearch page, said
+  // under the list with Open and Undo, and its sale day offered as a date-only auction to attach with Add. Nothing opens by itself. No captured page
+  // rides along, since the lot is acsearch's. A failure is handed back, to be shown beside the list Watch was pressed in.
+  const attachSaleDay = async (entry, offer, line) => {
+    if (justSaved !== entry || entry.event) return;
+    clearTimeout(entry.timer);
+    entry.offerRequest ??= bridge.newRequestId();
+    const eventReply = await sendDirect({ type: 'event.save', requestId: entry.offerRequest, expectedRevision: null, event: { ...offer, name: entry.lot.title.slice(0, 300) } });
+    if (!eventReply.ok) { announce(eventReply.message || 'Couldn’t add the auction.', true, 'upcoming-note'); confirmSaved(entry, line, 'upcoming-note'); return; }
+    const values = lotFormValues(entry.lot);
+    const lot = buildWorkspaceLotDraft(entry.lot, { ...values, auctionEventId: eventReply.value.id }, values.sourceUrl);
+    const lotReply = await sendDirect({ type: 'lot.save', requestId: bridge.newRequestId(), expectedRevision: entry.lot.revision, lot });
+    if (!lotReply.ok) {
+      // The auction goes with the attachment that failed, so nothing is left behind that the collector did not see saved.
+      await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: eventReply.value.id, expectedRevision: eventReply.value.revision });
+      announce(lotReply.message || 'Couldn’t attach the auction to this coin.', true, 'upcoming-note');
+      confirmSaved(entry, line, 'upcoming-note');
+      return;
+    }
+    keepInView(lotReply.value, eventReply.value);
+    confirmSaved({ ...entry, lot: lotReply.value, event: eventReply.value }, line, 'upcoming-note');
+  };
   addEventListener('giga-pinax-watch', async (event) => {
-    const saved = await saveWatchlistDraft(buildWatchlistDraftPayload(event.detail), [], 'upcoming-note');
-    if (saved?.ok === false) dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
+    const payload = buildWatchlistDraftPayload(event.detail);
+    const line = $('upcoming-saved');
+    // A lot already saved from its acsearch page is offered, not saved twice.
+    const existing = payload.pageUrl ? (snapshot.lots ?? []).find((lot) => lot.sourceLinks?.some(({ url }) => url === payload.pageUrl)) : null;
+    if (existing) { fillLine(line, ['Already on your watchlist', openAction(existing.id, 'upcoming-note')]); return; }
+    const saved = await saveDirect(payload, null);
+    if (!saved.ok) {
+      speak(saved.message);
+      dispatchEvent(new CustomEvent('giga-pinax-watch-failed', { detail: { message: saved.message } }));
+      return;
+    }
+    const entry = { where: 'upcoming', lot: saved.lot, event: null, timer: 0 };
+    const offer = offeredSaleDay(payload.closesAt, payload.pageUrl);
+    // The day as the Watchlist tab writes one ("sale day Thu, Jun 1"), in the browser's language.
+    const when = offer ? eventWhen(offer, { locale: navigator.language }).when : '';
+    const day = when ? `${when.charAt(0).toLocaleLowerCase()}${when.slice(1)}` : '';
+    const extra = offer ? [`add its ${day} as an auction?`, { label: 'Add', name: `Add the ${day} as an auction`, action: () => void attachSaleDay(entry, offer, line) }] : [];
+    confirmSaved(entry, line, 'upcoming-note', extra);
   });
 
   const reviewedCapture = () => {
@@ -568,11 +886,10 @@ async function initCompanionPopup() {
     const result = await runVisibleAction(action, fallback);
     if (!result.ok) announce(result.message, true, anchor);
   };
-  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) {
-    $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
-  }
+  $('companion-open-watchlist').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
     'Couldn’t open the watchlist.', 'companion-runtime-note'));
+  $('open-workspace').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the workspace.'));
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
@@ -600,13 +917,24 @@ async function initCompanionPopup() {
       // nothing for it to write back.
       applyPreferredCurrency($('currency'), currency);
       renderSummary();
+      renderCardSaved();
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
       showStorageUnavailable();
       announce(reply?.message || STORAGE_UNAVAILABLE, true);
     }
-    bridge.subscribeToSnapshots((incoming) => { snapshot = incoming; renderSummary(); });
+    bridge.subscribeToSnapshots((incoming) => {
+      snapshot = incoming;
+      // A coin just saved and since removed elsewhere (a workspace tab) takes its line, and its Undo, with it.
+      if (justSaved && !(snapshot.lots ?? []).some(({ id }) => id === justSaved.lot.id)) {
+        const where = justSaved.where;
+        forgetJustSaved(where);
+        fillLine($(where === 'card' ? 'companion-saved-line' : 'upcoming-saved'), []);
+      }
+      renderSummary();
+      renderCardSaved();
+    });
   }
   // Registered whether or not the snapshot could be read: the research half has already cached the
   // choice for the next window, so what a failed start-up owes the collector is the reason it will

@@ -49,7 +49,9 @@ export function openSettings(section = '', api = apiDefault()) {
   return openPage(`settings.html${fragment}`, api);
 }
 
-// queue names a Watchlist queue to open on ("needs-outcome"); the workspace ignores a name its Queue select does not list.
-export function openWorkspace(route = 'watchlist', api = apiDefault(), queue = '') {
-  return openPage(`workspace.html#${encodeURIComponent(route)}${queue ? `?queue=${encodeURIComponent(queue)}` : ''}`, api);
+// queue names a Watchlist queue to open on ("needs-outcome"); the workspace ignores a name its Queue select does not list. lot names a coin to open
+// ("#watchlist?lot=<id>"), which the workspace selects when it holds it.
+export function openWorkspace(route = 'watchlist', api = apiDefault(), queue = '', lot = '') {
+  const query = [queue ? `queue=${encodeURIComponent(queue)}` : '', lot ? `lot=${encodeURIComponent(lot)}` : ''].filter(Boolean).join('&');
+  return openPage(`workspace.html#${encodeURIComponent(route)}${query ? `?${query}` : ''}`, api);
 }
