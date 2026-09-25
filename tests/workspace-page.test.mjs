@@ -379,7 +379,8 @@ test('the History route says so when there is no collection yet', async () => {
   await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Watched only', sourceLinks: [] } });
   const page = await mountWorkspace({ background, hash: '#history' });
   assert.equal(page.$('collection-totals'), null);
-  assert.ok(page.$('collection-list').textContent.includes('No collection entries yet.'));
+  assert.equal(page.$('collection-list').closest('.panel').hidden, true, 'no collection, no panel to say so');
+  assert.equal(page.$('history-list').querySelector('.empty-state').querySelector('h3').textContent, 'Nothing settled yet');
 });
 
 // The harness answers only what the background worker answers: a command type the worker does not
@@ -907,7 +908,7 @@ test('a date-only auction’s reminders show 09:00 your time in the Reminders ta
 test('the saved comparables say plainly what they hold', async () => {
   const background = await createWorkspaceBackground();
   const empty = await mountWorkspace({ background, hash: '#search' });
-  assert.equal(empty.$('statistics-output').textContent, 'No saved comparables yet. Add a sale you found under Add a comparable manually.');
+  assert.equal(empty.$('statistics-output').textContent, 'No saved comparablesSales you record by hand, kept apart from acsearch.');
   const queryId = '00000000-0000-4000-9000-000000000099';
   for (const [lotNumber, minor, auctionDate] of [[1, 15000, '2024-03-01'], [2, 18000, '2025-05-10'], [3, 30000, '2026-02-11'], [4, 99900, '2026-02-12']]) {
     const reply = await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'RIC 27b', source: 'manual', auctionHouse: 'Test House', auctionDate,
@@ -1958,4 +1959,21 @@ test('the Search route names the set, folds its filters, and records a comparabl
   page.$('evidence-from').value = '2020-01-01';
   await page.$('evidence-filters').emit('input', { target: page.$('evidence-from') });
   assert.equal(page.$('evidence-filter-fold').open, true, 'a filter that is set is shown');
+});
+
+// H-07: one empty state on every page - a serif heading of three words, one sentence, the page's Add button - and a
+// watchlist with no coin is its list alone, with no "Select a coin" beside it.
+test('every workspace page with nothing in it says so in one empty state', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#watchlist', wide: true });
+  const state = (root) => { const box = root.querySelector('.empty-state'); return box && [box.querySelector('h3').textContent, box.querySelector('p').textContent, box.querySelector('button')?.textContent ?? '']; };
+  assert.deepEqual(state(page.$('lot-list')), ['No coins yet', 'Save a coin from the popup, or add one here.', 'Add coin']);
+  assert.equal(page.$('coin-workspace').dataset.empty, 'true', 'no detail panel beside it');
+  assert.deepEqual(state(page.$('event-list')), ['No auctions yet', 'An auction keeps a sale’s date, time zone and reminders for the coins attached to it.', 'Add auction']);
+  assert.deepEqual(state(page.$('exposure-list')), ['No active bids', 'A bid you record as placed counts here, per currency.', '']);
+  assert.deepEqual(state(page.$('history-list')), ['Nothing settled yet', 'A coin whose outcome you record appears here.', '']);
+  assert.deepEqual(state(page.$('want-list')), ['No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', 'Add want']);
+  assert.deepEqual(state(page.$('statistics-output')), ['No saved comparables', 'Sales you record by hand, kept apart from acsearch.', '']);
+  await page.$('lot-list').querySelector('.empty-state').querySelector('button').click(); await settle();
+  assert.equal(page.$('coin-workspace').dataset.empty, 'false', 'Add coin opens the coin form beside the list');
+  assert.equal(page.$('selected-title').textContent, 'Add coin');
 });

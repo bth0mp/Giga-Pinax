@@ -94,6 +94,13 @@ async function initWorkspace() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return String(iso ?? '');
     try { return new Intl.DateTimeFormat(navigator.language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`)); } catch { return day; }
   };
+  // One empty state for every page (H-07): three words in the serif, one sentence of what the page will hold, and the
+  // page's own Add button where it has one.
+  const emptyState = (title, sentence, action = null) => {
+    const box = text('div', '', 'empty-state'); box.append(text('h3', title), text('p', sentence));
+    if (action) { const button = text('button', action.label, 'secondary'); button.type = 'button'; button.addEventListener('click', action.run); box.append(button); }
+    return box;
+  };
   const statusPill = (lot) => { const pill = text('span', lotStatusLabel(lot), 'status-pill'); pill.dataset.tone = lotStatusTone(lot); return pill; };
   // What a lot draft's page stated about its sale, offered until the drafted coin is saved or the form is left: the closing, and the auction
   // written for it once the collector has ticked it.
@@ -532,7 +539,9 @@ async function initWorkspace() {
     const stats = computeStatistics(evidenceRows, filters);
     const output = $('statistics-output');
     output.replaceChildren();
-    if (stats.validationError && evidenceRows.length) output.append(text('p', stats.validationError.message));
+    output.classList.toggle('is-empty', !evidenceRows.length);
+    if (!evidenceRows.length) output.append(emptyState('No saved comparables', 'Sales you record by hand, kept apart from acsearch.'));
+    else if (stats.validationError) output.append(text('p', stats.validationError.message));
     else {
       const { headline, leftOut } = comparableSummary(evidenceRows, stats, money);
       output.append(text('p', headline, 'metric-headline'));
@@ -615,7 +624,11 @@ async function initWorkspace() {
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
-    if (!visibleLots.length) list.append(text('p', (snapshot.lots ?? []).length ? 'No coins match this filter.' : 'No coins yet. Add the first coin to begin.', 'empty-row'));
+    // With no coin at all the list is the page: its empty state, and no detail panel beside it to say "Select a coin".
+    const none = !(snapshot.lots ?? []).length;
+    $('coin-workspace').dataset.empty = String(none && selection.mode !== 'detail');
+    if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
+    else if (!visibleLots.length) list.append(text('p', 'No coins match this filter.', 'empty-row'));
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
       const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
@@ -1064,7 +1077,7 @@ async function initWorkspace() {
     const list = $('event-list'); list.replaceChildren();
     const coinCounts = new Map();
     for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
-    if (!(snapshot.auctionEvents ?? []).length) list.append(text('p', 'No auctions yet. Add one to keep its date, time zone and reminders; the line under Save auction says what will be saved.', 'empty-row'));
+    if (!(snapshot.auctionEvents ?? []).length) list.append(emptyState('No auctions yet', 'An auction keeps a sale\u2019s date, time zone and reminders for the coins attached to it.', { label: 'Add auction', run: () => $('new-event').click() }));
     for (const event of snapshot.auctionEvents ?? []) {
       const row = text('button', '', 'event-row'); row.type = 'button';
       const top = text('span', '', 'event-row-top'); top.append(text('strong', event.name, 'event-row-name'), text('span', 'Edit', 'event-row-edit'));
@@ -1258,7 +1271,7 @@ async function initWorkspace() {
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
   $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 
-  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', money({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${money({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.totalCount) card.append(text('p', `All-in if every bid wins ${money({ currency: section.currency, minor: section.knownTotalMinor })} (${section.totalCount} of ${section.bindingCount} with fees)`, 'exposure-all-in')); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${money({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
+  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(emptyState('No active bids', 'A bid you record as placed counts here, per currency.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', money({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${money({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.totalCount) card.append(text('p', `All-in if every bid wins ${money({ currency: section.currency, minor: section.knownTotalMinor })} (${section.totalCount} of ${section.bindingCount} with fees)`, 'exposure-all-in')); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${money({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
 
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
@@ -1468,10 +1481,11 @@ async function initWorkspace() {
       appendEntry(card, entry, viewByEntry.get(entry.id), lot);
       root.append(card);
     }
-    if (!root.children.length) root.append(text('p', 'No settled coins yet. A coin whose outcome you record appears here.', 'empty-row'));
+    if (!root.children.length) root.append(emptyState('Nothing settled yet', 'A coin whose outcome you record appears here.'));
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Your collection'));
-    if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
-    else {
+    // No entries, no collection panel: the empty state beside it says what the page is for.
+    collection.closest('.panel').hidden = !view.entries.length;
+    if (view.entries.length) {
       collection.append(text('p', 'From your own records: not an appraisal or a valuation, and no amount is converted between currencies.', 'field-note collection-note'));
       const why = document.createElement('details'); why.className = 'why';
       why.append(text('summary', 'Why'), text('p', 'The amounts are the ones you entered and the comparables the ones you saved. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin with no fees recorded counts as having none, and one missing its hammer or premium rate is counted as incomplete, never estimated.', 'field-note'));
@@ -1694,7 +1708,7 @@ async function initWorkspace() {
     const list = $('want-list'); list.replaceChildren();
     const rows = wantListRows(snapshot, navigator.language);
     if (!rows.length) {
-      list.append(text('p', 'No wants yet. Add a reference you are looking for, such as RIC II Trajan 253: a card, an upcoming acsearch lot or a captured lot of that type then says “On your want list”. Nothing is searched for you, and nothing leaves this device.', 'empty-row'));
+      list.append(emptyState('No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', { label: 'Add want', run: () => $('new-want').click() }));
       return;
     }
     for (const { want, terms, found, foundStatus, wonCoins, watched } of rows) {

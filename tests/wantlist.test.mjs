@@ -406,7 +406,7 @@ test('the Want list page says what it is for when empty, and adds a want the col
   const page = await mountWorkspace({ background, hash: '#wants' });
   assert.equal(page.$('route-wants').hidden, false);
   assert.equal(page.document.querySelector('[data-route="wants"]').textContent, 'Want list');
-  assert.match(page.$('want-list').textContent, /^No wants yet\. Add a reference you are looking for/);
+  assert.equal(page.$('want-list').querySelector('.empty-state').textContent, 'No wants yetA type you are looking for; a card, an upcoming lot or a captured lot of it says so.Add want');
   assert.deepEqual(page.$('want-form').elements.currency.options.map((option) => option.value), [...CURRENCIES], 'every currency money.js lists');
   assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.value), ['', 'F', 'VF', 'EF', 'AU']);
 
