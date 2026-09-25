@@ -630,6 +630,7 @@ export function mountBidCalculator(
     for (const control of [amount, shipping, paymentFixed, minimum]) control.placeholder = zero;
     increment.placeholder = digits ? `0.${'1'.padStart(digits, '0')}` : '1';
   };
+  showPlaceholders();
   const calculate = () => {
     showPlaceholders();
     status.textContent = '';

@@ -737,3 +737,10 @@ test('the calculator offers every currency and prices a JPY 1,200,000 hammer in 
   currency.value = 'SEK'; await currency.emit('input');
   assert.deepEqual([calculator.field('Total budget').placeholder, increment.placeholder], ['0.00', '0.01']);
 });
+
+test('a calculator mounted in yen shows whole-yen placeholders before anything is typed or loaded', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: false, message: 'No settings here.' }, options: { currency: 'JPY' } });
+  assert.equal(calculator.field('Currency').value, 'JPY');
+  assert.deepEqual(['Hammer price', 'Shipping', 'Fixed payment fee', 'Minimum bid', 'Bid increment'].map((caption) => calculator.field(caption).placeholder),
+    ['0', '0', '0', '0', '1']);
+});
