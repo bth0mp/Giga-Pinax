@@ -479,8 +479,9 @@ const TITLE_CASE_RIC = String.raw`(?<=\()Ric|Ric(?=[.\-–])`;
 const CITATION_LIMIT = 10000;
 
 // Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
-// has no citation to look for, so their rows all count and the panel offers no filter to switch off.
-export const filtersCitations = (reference) => Boolean(citationKeys(reference)) && Boolean(citationNumber(reference));
+// has no citation to look for, so their rows all count and the panel offers no filter to switch off. So does a reference the reader could not place
+// ("RIC XI 5"): its term names no citation, and a filter the panel cannot name ("No result text names , so …") is no filter.
+export const filtersCitations = (reference) => Boolean(citationKeys(reference)) && Boolean(citationNumber(reference)) && referenceName(reference) !== '';
 
 // Whether a lot's description cites the searched reference: the catalogue key in any spelling, at most a volume and a ruler between, then the number
 // as a whole token — not inside a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" are not sales of Price 23 or RIC 306,

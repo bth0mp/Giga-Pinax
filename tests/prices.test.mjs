@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, filtersCitations, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
 import { readFileSync as readSource } from 'node:fs';
 
@@ -1786,4 +1786,17 @@ test('citesReference reads the title-case Ric glued to its number or volume, in 
   for (const cited of ['(Ric-I 306). (Wcn-275).', 'Ric. 306', '(Ric-306)']) assert.equal(citesReference(cited, nero), true, cited);
   const pius = { catalogue: 'RIC', number: '772', volume: 'III', section: 'Antoninus Pius' };
   assert.equal(citesReference('(Ric-III 772). (Bmcre-1655).', pius), true);
+});
+
+// Loop V-15: a RIC row the reader could not place ("RIC XI 5", or Tauler's "Ric-II 118" before it was read) has no citation to name, and the panel
+// said "No result text names , so all 4 results are counted" round the blank. With nothing to name there is no filter to switch off: every row counts,
+// and no line is written.
+test('a reference with no citation to name filters nothing', () => {
+  for (const reference of [{ catalogue: 'RIC', number: 'XI 5', volume: '', section: '' }, { catalogue: 'RIC', number: 'II 118', volume: '', section: '' }]) {
+    assert.equal(referenceName(reference), '', reference.number);
+    assert.equal(filtersCitations(reference), false, reference.number);
+  }
+  // A reference with a name is filtered as before.
+  assert.equal(filtersCitations({ catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' }), true);
+  assert.equal(filtersCitations({ catalogue: 'Price', number: '23', volume: '', section: '' }), true);
 });
