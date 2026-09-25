@@ -259,6 +259,24 @@ async function initWorkspace() {
   const clearSelectedEditors = () => {
     for (const editor of SELECTED_LOT_EDITORS) { dirtyEditors.delete(editor); editorBases.delete(editor); resetEditor(editor); }
   };
+  // A control whose form reads the store - a default currency, a remembered zone, the queue it adds to - waits for the
+  // first snapshot, as Settings' editors do (H-01, H-03): before it, nothing it opened could be right.
+  let loadedOnce = false;
+  const enableLoadedControls = () => {
+    if (loadedOnce) return;
+    loadedOnce = true;
+    for (const control of document.querySelectorAll('[data-until-loaded]')) control.disabled = false;
+  };
+  // A draft that arrives after the collector has started on the form it would fill is offered in that form's own line,
+  // never loaded over what they typed or opened (H-01).
+  const offerDraft = (line, words, load) => {
+    const take = text('button', 'Load it', 'quiet'); take.type = 'button';
+    const keep = text('button', 'Keep what I typed', 'quiet'); keep.type = 'button';
+    take.addEventListener('click', () => { line.replaceChildren(); load(); });
+    keep.addEventListener('click', () => { line.replaceChildren(); });
+    line.replaceChildren(document.createTextNode(`${words}: `), take, document.createTextNode(' · '), keep);
+    line.classList.remove('error');
+  };
   // The coin this page is deleting: any snapshot that drops it, including one that arrives before
   // the reply does, clears its editors without the "removed in another view" notice.
   let removedHere = null;
@@ -267,6 +285,7 @@ async function initWorkspace() {
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
   const acceptIncoming = (incoming) => {
     snapshot = incoming;
+    enableLoadedControls();
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
     const selected = selectionAfterSnapshot(selection, snapshot);
     const clearedInput = removedCoinNotice(selection, selected, dirtyEditors, removedHere);
@@ -789,7 +808,9 @@ async function initWorkspace() {
     $('comparison-dialog').showModal();
   });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
-  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  // An empty coin form, as Add coin opens it and a captured lot fills it.
+  const startNewCoin = () => { lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; delete $('selected-status').dataset.tone; renderCoinList(); };
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; startNewCoin(); $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
   $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
@@ -1050,7 +1071,7 @@ async function initWorkspace() {
   }
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
-  const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
+  const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-action-status').replaceChildren(); $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
@@ -1463,7 +1484,7 @@ async function initWorkspace() {
     form.reset();
     if (editor === 'lot' || editor === 'event') form.elements.id.value = '';
     if (editor === 'lot') clearPageValues();
-    if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); form.hidden = true; }
+    if (editor === 'event') { $('event-action-status').replaceChildren(); eventReturnLot = null; lastEventPrecision = form.elements.precision.value; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
     if (editor === 'lot') renderLotWantMatch();
     if (editor === 'want') { form.elements.id.value = ''; form.hidden = true; editingWant = null; }
@@ -1478,43 +1499,55 @@ async function initWorkspace() {
     if (!reply.ok) return announce(reply.message, true);
     const draft = reply.value;
     if (match[1] === 'event-draft') {
-      eventDraftId = draft.id; beginEditor('event', { id: null, revision: null, record: null });
-      $('event-form').hidden = false;
-      populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'standalone', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-      dirtyEditors.add('event');
-      announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
+      // An auction form the collector opened on a saved auction, or typed in, is theirs: the capture waits beside it.
+      const started = !$('event-form').hidden && (dirtyEditors.has('event') || Boolean(editorBases.get('event')?.id));
+      if (started) offerDraft($('event-action-status'), 'A captured auction is waiting', () => loadEventDraft(draft));
+      else loadEventDraft(draft);
     } else if (match[1] === 'lot-draft') {
       if (draft.kind !== 'current-lot' || draft.payload?.target !== 'watchlist') return announce('This draft cannot be used for a watchlist lot.', true);
-      lotInteractionGeneration += 1;
-      lotDraftId = draft.id;
-      const values = lotDraftToEditor(draft.payload);
-      const form = $('lot-form');
-      selection = { selectedLotId: null, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false;
-      form.reset();
-      form.elements.id.value = '';
-      form.elements.title.value = values.title;
-      form.elements.reference.value = values.reference;
-      form.elements.sourceUrl.value = values.sourceUrl;
-      form.elements.auctionPageUrl.value = values.auctionContext?.pageUrl ?? '';
-      form.elements.auctionCanonicalUrl.value = values.auctionContext?.canonicalUrl ?? '';
-      form.elements.auctionHouse.value = values.auctionContext?.house ?? '';
-      form.elements.auctionSaleId.value = values.auctionContext?.saleId ?? '';
-      form.elements.auctionLotNumber.value = values.auctionContext?.lotNumber ?? '';
-      if (values.photoUrl) form.elements.photoUrl1.value = values.photoUrl;
-      if (values.estimateNote) form.elements.notes.value = values.estimateNote;
-      $('provenance-editor').replaceChildren();
-      clearPageValues();
-      showPageValues(values, values.auctionContext?.pageUrl || values.sourceUrl);
-      for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
-      beginEditor('lot', { id: null, revision: null, record: null });
-      dirtyEditors.add('lot');
-      openFilledGroups(); updateDirtyMarks();
-      form.elements.title.focus();
-      announce('Reference draft loaded. Review the lot details, then save to add it to the watchlist.');
+      // A coin the collector opened, or a new coin they typed in, is theirs; an untouched Add coin form is the draft's to fill.
+      if (dirtyEditors.has('lot') || selection.selectedLotId) offerDraft($('lot-action-status'), 'A captured lot is waiting', () => loadLotDraft(draft));
+      else loadLotDraft(draft);
     } else {
-      researchDraftId = draft.id; $('research-query').value = draft.payload.rawText ?? ''; activeQuery = { id: requestId(), text: $('research-query').value.trim() }; selectedQueryId = activeQuery.id; renderEvidence(); $('research-query').focus();
-      announce('Captured research text loaded. Edit it before opening a source or saving evidence.');
+      const typed = $('research-query').value.trim();
+      if (typed && typed !== String(draft.payload.rawText ?? '').trim()) {
+        const status = $('workspace-status');
+        offerDraft(status, 'Captured research text is waiting', () => { status.classList.remove('error'); loadResearchDraft(draft); });
+      } else loadResearchDraft(draft);
     }
+  }
+  function loadEventDraft(draft) {
+    eventDraftId = draft.id; zoneChosen = false; beginEditor('event', { id: null, revision: null, record: null });
+    $('event-form').hidden = false; $('delete-event').hidden = true;
+    populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'standalone', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+    dirtyEditors.add('event');
+    announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
+  }
+  function loadLotDraft(draft) {
+    startNewCoin();
+    lotDraftId = draft.id;
+    const values = lotDraftToEditor(draft.payload);
+    const form = $('lot-form');
+    form.elements.title.value = values.title;
+    form.elements.reference.value = values.reference;
+    form.elements.sourceUrl.value = values.sourceUrl;
+    form.elements.auctionPageUrl.value = values.auctionContext?.pageUrl ?? '';
+    form.elements.auctionCanonicalUrl.value = values.auctionContext?.canonicalUrl ?? '';
+    form.elements.auctionHouse.value = values.auctionContext?.house ?? '';
+    form.elements.auctionSaleId.value = values.auctionContext?.saleId ?? '';
+    form.elements.auctionLotNumber.value = values.auctionContext?.lotNumber ?? '';
+    if (values.photoUrl) form.elements.photoUrl1.value = values.photoUrl;
+    if (values.estimateNote) form.elements.notes.value = values.estimateNote;
+    showPageValues(values, values.auctionContext?.pageUrl || values.sourceUrl);
+    for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
+    dirtyEditors.add('lot');
+    renderLotWantMatch(); openFilledGroups(); updateDirtyMarks();
+    form.elements.title.focus();
+    announce('Reference draft loaded. Review the lot details, then save to add it to the watchlist.');
+  }
+  function loadResearchDraft(draft) {
+    researchDraftId = draft.id; $('research-query').value = draft.payload.rawText ?? ''; activeQuery = { id: requestId(), text: $('research-query').value.trim() }; selectedQueryId = activeQuery.id; renderEvidence(); $('research-query').focus();
+    announce('Captured research text loaded. Edit it before opening a source or saving evidence.');
   }
   // The Want list (G-22): references the collector is looking for, each with what it asks beyond its type, added, edited
   // and removed here, and marked found by a won coin of its type. Nothing is searched for: a card, an upcoming lot or a
@@ -1622,9 +1655,13 @@ async function initWorkspace() {
   // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
   const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };
   const openFirstCoin = () => {
-    // A coin the address names (the popup's Open, "#watchlist?lot=<id>") is the one to open, never the queue's first.
-    if (selection.selectedLotId || lotDraftId || routeFromHash(location.hash) !== 'watchlist' || /[?&]lot=/.test(location.hash) || !wideScreen()) return;
-    const queued = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    // A coin the address names (the popup's Open, "#watchlist?lot=<id>") is the one to open, never the queue's first. Nor is
+    // anything the collector opened or typed in taken over, and nothing is asked (H-01): a coin form of any kind open, or any
+    // editor with unsaved input, and the page leaves the detail panel as it is.
+    if (selection.selectedLotId || selection.mode === 'detail' || lotDraftId || editorBases.has('lot') || dirtyEditors.size) return;
+    if (routeFromHash(location.hash) !== 'watchlist' || /[?&]lot=/.test(location.hash) || !wideScreen()) return;
+    // The first of the coins the list shows: the queue chosen and the filter typed, even before the list was drawn.
+    const queued = filterWorkspaceLots(auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot), $('lot-filter').value);
     const needing = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
     const first = queued.find((lot) => needing.has(lot.id)) ?? queued[0];
     if (!first) return;
@@ -1635,7 +1672,7 @@ async function initWorkspace() {
   const namedQueue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
   if (namedQueue && [...$('lot-queue').options].some((option) => option.value === namedQueue)) $('lot-queue').value = namedQueue;
   setRoute();
-  if (!bridge) { $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
+  if (!bridge) { enableLoadedControls(); $('runtime-note').hidden = false; document.querySelectorAll('[data-needs-runtime]').forEach((item) => { item.disabled = true; }); renderAll(); announce('Standalone preview: durable features are unavailable.'); }
   else {
     // Only the calls into the background worker mean "unreachable"; a failure while rendering is a
     // defect in this page and has to be visible rather than dressed up as a worker outage.

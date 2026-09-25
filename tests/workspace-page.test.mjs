@@ -1629,3 +1629,148 @@ test('a JPY 1,200,000 hammer is whole yen in the bid form, the money line, the C
   assert.equal(read.ok, true, read.error?.message);
   assert.deepEqual(read.value.lots.find((item) => item.title === 'Taisei lot 88').outcome.hammer, { currency: 'JPY', minor: 1200000 });
 });
+
+// --- Loop cycle 5: a load never speaks first (H-01, H-03) --------------------------------------------
+
+// A page whose first snapshot is held until the test lets it land, as a slow worker or a busy laptop holds it.
+async function mountBeforeSnapshot(background, options = {}) {
+  const snapshot = background.holdReply('snapshot.get');
+  const page = await mountWorkspace({ background, ...options });
+  await snapshot.written;
+  return Object.assign(page, { async land() { snapshot.release(); await settle(); } });
+}
+const typeFilter = async (page, value) => { page.$('lot-filter').value = value; await page.$('lot-filter').emit('input', { target: page.$('lot-filter') }); };
+const STORE_CONTROLS = ['new-lot', 'new-event', 'new-want', 'new-group', 'enable-notifications'];
+
+test('on every route, no control that reads the store acts before the first snapshot has landed', async () => {
+  for (const hash of ['#search', '#watchlist', '#auctions', '#bids', '#history', '#wants']) {
+    const background = await backgroundWithCoins('Nero, denarius');
+    const page = await mountBeforeSnapshot(background, { hash, wide: true });
+    for (const id of STORE_CONTROLS) assert.equal(page.$(id).disabled, true, `${id} waits on ${hash}`);
+    assert.equal(page.$('evidence-form').querySelector('button[type="submit"]').disabled, true, `Save comparable waits on ${hash}`);
+    await page.land();
+    for (const id of STORE_CONTROLS) assert.equal(page.$(id).disabled, false, `${id} is ready on ${hash}`);
+    assert.equal(page.$('evidence-form').querySelector('button[type="submit"]').disabled, false);
+    assert.deepEqual(page.prompts, [], `nothing is asked on ${hash}`);
+  }
+});
+
+test('a filter typed before the snapshot is kept: the wide workspace opens the first coin it lists, and asks nothing', async () => {
+  const background = await backgroundWithCoins('Hadrian, denarius', 'Nero, denarius');
+  const page = await mountBeforeSnapshot(background, { hash: '#watchlist', wide: true });
+  await typeFilter(page, 'Nero');
+  await page.land();
+  assert.equal(page.$('lot-filter').value, 'Nero');
+  assert.equal(page.$('selected-title').textContent, 'Nero, denarius', 'the coin the filtered list puts first');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a coin form the collector opened is never replaced by the queue’s first coin, typed in or not', async () => {
+  for (const typed of ['', 'My own coin']) {
+    const background = await backgroundWithCoins('Hadrian, denarius');
+    const page = await mountWorkspace({ background, hash: '#watchlist', wide: true });
+    await page.click('new-lot');
+    if (typed) await page.typeDetails('title', typed);
+    // The collector comes back to the route from another, and another view writes: the queue's first coin is not opened over the form.
+    await page.navigate('#auctions');
+    await page.navigate('#watchlist');
+    await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan, sestertius', sourceLinks: [] } });
+    await settle();
+    assert.equal(page.$('selected-title').textContent, 'Add coin');
+    assert.equal(page.$('lot-form').elements.title.value, typed);
+    assert.deepEqual(page.prompts, [], 'and nothing is asked');
+  }
+});
+
+test('a wide workspace opens the first coin only where nothing is open: never over an editor with unsaved input', async () => {
+  const background = await backgroundWithCoins('Hadrian, denarius');
+  const page = await mountWorkspace({ background, hash: '#wants', wide: true });
+  await page.click('new-want');
+  await page.type('want-form', 'notes', 'Half a thought');
+  await page.navigate('#watchlist');
+  assert.equal(page.$('coin-editor').hidden, true, 'the detail panel waits for the collector');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a captured lot that arrives after the collector started a coin is offered beside it, never loaded over it', async () => {
+  const { background, hash } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.click('new-lot');
+  await page.typeDetails('title', 'My own title');
+  draft.release();
+  await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'My own title', 'what the collector typed stands');
+  assert.equal(page.$('lot-action-status').textContent, 'A captured lot is waiting: Load it · Keep what I typed');
+  assert.deepEqual(page.prompts, []);
+  const [load] = page.$('lot-action-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'Captured coin', 'Load it puts the captured lot in the form');
+  assert.equal(page.$('lot-action-status').textContent, '');
+  await page.saveDetails();
+  assert.deepEqual(background.root().drafts, [], 'the save that adds it consumes the draft');
+});
+
+test('a captured lot waiting beside a coin the collector opened is left when they keep their own', async () => {
+  const { background, hash, draftId } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.openCoin('Kept coin');
+  draft.release();
+  await settle();
+  assert.equal(page.$('selected-title').textContent, 'Kept coin', 'the coin they opened stays open');
+  const [, keep] = page.$('lot-action-status').querySelectorAll('button');
+  await keep.click(); await settle();
+  assert.equal(page.$('lot-action-status').textContent, '');
+  assert.equal(page.$('lot-form').elements.title.value, 'Kept coin');
+  assert.deepEqual(background.root().drafts.map(({ id }) => id), [draftId], 'the draft is still there for another time');
+});
+
+test('an untouched Add coin form is filled by the captured lot that arrives after it', async () => {
+  const { background, hash } = await backgroundWithDraft();
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash });
+  await draft.written;
+  await page.click('new-lot');
+  draft.release();
+  await settle();
+  assert.equal(page.$('lot-form').elements.title.value, 'Captured coin');
+  assert.deepEqual(page.prompts, []);
+});
+
+test('a captured auction that arrives over an auction form the collector typed in is offered, not loaded', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'draft.save', kind: 'auction-capture', payload: { rawText: 'Roma Numismatics Auction 31, 15 October', pageUrl: 'https://house.example/auction/31' } });
+  assert.equal(saved.ok, true, saved.message);
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash: `#event-draft=${saved.value.id}` });
+  await draft.written;
+  await page.click('new-event');
+  await page.type('event-form', 'name', 'My own auction');
+  draft.release();
+  await settle();
+  assert.equal(page.$('event-form').elements.name.value, 'My own auction');
+  assert.equal(page.$('event-action-status').textContent, 'A captured auction is waiting: Load it · Keep what I typed');
+  const [load] = page.$('event-action-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('event-form').elements.name.value, 'Roma Numismatics Auction 31, 15 October');
+});
+
+test('captured research text never replaces a query the collector typed', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'draft.save', kind: 'research-highlight', payload: { rawText: 'Nero As RIC 306' } });
+  assert.equal(saved.ok, true, saved.message);
+  const draft = background.holdReply('draft.get');
+  const page = await mountWorkspace({ background, hash: `#research-draft=${saved.value.id}` });
+  await draft.written;
+  page.$('research-query').value = 'Trajan denarius';
+  draft.release();
+  await settle();
+  assert.equal(page.$('research-query').value, 'Trajan denarius');
+  assert.equal(page.status(), 'Captured research text is waiting: Load it · Keep what I typed');
+  const [load] = page.$('workspace-status').querySelectorAll('button');
+  await load.click(); await settle();
+  assert.equal(page.$('research-query').value, 'Nero As RIC 306');
+});
