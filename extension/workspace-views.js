@@ -2,12 +2,21 @@
 // What the workspace (workspace.js) shows, worked out from the records: its routes and detail tabs,
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
-import { calculateBidCost, formatAmount, plainAmount } from './core/money.js';
+//
+// One word for one thing, on every page (H-09):
+// - buyer’s premium: never "BP" or "buyer premium";
+// - hammer: "Maximum hammer" where the collector sets a bid's figure, "Hammer" in an outcome and in History;
+// - comparable: a sale the collector records to compare with, never "evidence" on the page;
+// - auction: never "event" on the page ("Add auction", "Remove auction", "When");
+// - want: a type on the want list;
+// - collection: the coins the collector keeps; "Lot number shown" is the coin row's number, "Lot number" the house's.
+// Money is written by formatMoney(amount, locale, { narrow: true }) (H-04), grades by their abbreviation ("VF or better").
+
+import { calculateBidCost, formatAmount, formatMoney } from './core/money.js';
 import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
-import { moneyInputText } from './workspace-forms.js';
 import { parseReference } from './lookup.js';
-import { wantTermsText, wonCoinsFor } from './core/wantlist.js';
+import { wantTermsText, watchedLotsFor, wonCoinsFor } from './core/wantlist.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').AuctionEvent} AuctionEvent
@@ -187,31 +196,40 @@ export function comparisonProvenanceRows(notes) {
 }
 
 /**
+ * The Compare dialog's figures for each chosen coin, every amount written by the one money rule (V-10): the hammer or the
+ * bid in force, the fee sheet saved with a bid and the total it works out to, and for a settled coin the invoice and the
+ * total cost worked out with its outcome, as History shows it.
  * @param {*} lots
  * @param {string[] | null | undefined} selectedIds
- * @returns {Array<Lot & { amountLabel: string, estimateLabel: string, totalLabel: string, actualTotalLabel: string }>}
+ * @param {string} [locale]
+ * @returns {Array<Lot & { amountLabel: string, estimateLabel: string, totalLabel: string, actualTotalLabel: string, costLabel: string }>}
  */
-export function comparisonRows(lots, selectedIds) {
+export function comparisonRows(lots, selectedIds, locale = 'en-US') {
   const byId = new Map((lots ?? []).map((lot) => [lot.id, lot]));
+  const money = (amount) => formatMoney(amount, locale, { narrow: true });
   return (selectedIds ?? []).map((id) => byId.get(id)).filter(Boolean).map((lot) => {
     const terminal = Boolean(lot.outcome?.status && lot.outcome.status !== 'open');
     const bid = terminal ? null : lot.activeBid ?? lot.plannedBid ?? null;
     const amount = terminal ? lot.outcome?.hammer ?? null : bid?.amount ?? null;
     const amountRole = terminal ? 'Final hammer' : lot.activeBid ? 'Active maximum' : lot.plannedBid ? 'Planned maximum' : 'Saved amount';
     const estimate = feeSheetOf(lot.costEstimate);
+    const inEstimate = (minor) => money({ currency: /** @type {string} */ (estimate?.currency), minor: minor ?? 0 });
     const estimateLabel = terminal ? '' : !estimate ? 'No saved fee estimate' : !amount || estimate.currency !== amount.currency
       ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
-      : [`${estimate.currency} fees: shipping ${plainAmount({ currency: estimate.currency, minor: estimate.shippingMinor ?? 0 })} + fixed ${plainAmount({ currency: estimate.currency, minor: estimate.paymentFeeMinor ?? 0 })} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
+      : [`Fees: shipping ${inEstimate(estimate.shippingMinor)} + fixed ${inEstimate(estimate.paymentFeeMinor)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
         estimate.premiumVatBps ? `VAT ${(estimate.premiumVatBps / 100).toFixed(2)}% on the premium` : '',
         estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : '',
         estimate.importVatBps ? `import VAT ${(estimate.importVatBps / 100).toFixed(2)}% on hammer, premium and shipping` : ''].filter(Boolean).join(' · ');
-    let totalLabel = terminal ? '' : Number.isInteger(bid?.buyerPremiumBps) ? 'Estimated total unknown; recalculate fees' : 'Estimated total unknown; buyer premium not recorded';
+    let totalLabel = terminal ? '' : Number.isInteger(bid?.buyerPremiumBps) ? 'Estimated total unknown; recalculate fees' : 'Estimated total unknown; buyer’s premium not recorded';
     if (!terminal && amount && Number.isInteger(bid?.buyerPremiumBps) && estimate?.currency === amount.currency) {
       const calculated = calculateBidCost(amount, bid.buyerPremiumBps, estimate);
-      if (calculated.ok) totalLabel = `Estimated total ${calculated.value.total.currency} ${moneyInputText(calculated.value.total, 'en-US')}`;
+      if (calculated.ok) totalLabel = `Estimated total ${money(calculated.value.total)}`;
     }
-    const actualTotalLabel = terminal && lot.outcome?.actualInvoice ? `Actual invoice ${lot.outcome.actualInvoice.currency} ${moneyInputText(lot.outcome.actualInvoice, 'en-US')}` : '';
-    return { ...lot, amountLabel: amount ? `${amountRole} ${amount.currency} ${moneyInputText(amount, 'en-US')}` : terminal ? 'Final hammer not recorded' : 'No saved amount', estimateLabel, totalLabel, actualTotalLabel };
+    const actualTotalLabel = terminal && lot.outcome?.actualInvoice ? `Actual invoice ${money(lot.outcome.actualInvoice)}` : '';
+    // A won coin's total is the one History shows: hammer, premium and fees, or hammer and premium where no fees were recorded.
+    const shown = lot.outcome?.status === 'won' ? shownCostTotal(lotCost(lot), lot.outcome.hammer) : { total: null, partial: false };
+    const costLabel = shown.total ? `Total cost ${money(shown.total)}${shown.partial ? ' (hammer + premium)' : ''}` : '';
+    return { ...lot, amountLabel: amount ? `${amountRole} ${money(amount)}` : terminal ? 'Final hammer not recorded' : 'No saved amount', estimateLabel, totalLabel, actualTotalLabel, costLabel };
   });
 }
 
@@ -322,10 +340,10 @@ export function sameReference(left, right) {
  * The Want list page's rows (G-22): the wants still wanted first, then the found ones, each in the order it was added,
  * with what it asks beyond its type, the coin that found it (null when that coin is no longer saved here) and where that
  * coin's outcome now stands - an outcome corrected away from won means the want is due again - and the won
- * coins of its type it could be marked found by.
+ * coins of its type it could be marked found by; and, for a want still wanted, the open coins of its type on the watchlist (H-08).
  * @param {Partial<Snapshot> | null | undefined} snapshot
  * @param {string} [locale]
- * @returns {Array<{ want: import('./core/types.js').Want, terms: string, found: Lot | null, foundStatus: string | null, wonCoins: Lot[] }>}
+ * @returns {Array<{ want: import('./core/types.js').Want, terms: string, found: Lot | null, foundStatus: string | null, wonCoins: Lot[], watched: Lot[] }>}
  */
 export function wantListRows(snapshot, locale = 'en-US') {
   const lots = snapshot?.lots ?? [];
@@ -335,6 +353,7 @@ export function wantListRows(snapshot, locale = 'en-US') {
     found: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId) ?? null : null,
     foundStatus: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId)?.outcome?.status ?? null : null,
     wonCoins: want.foundLotId ? [] : wonCoinsFor(want, lots),
+    watched: want.foundLotId ? [] : watchedLotsFor(want, lots),
   }));
   return [...rows.filter(({ want }) => !want.foundLotId), ...rows.filter(({ want }) => want.foundLotId)];
 }

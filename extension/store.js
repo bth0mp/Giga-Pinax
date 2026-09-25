@@ -16,6 +16,7 @@ import {
 } from './store-builders.js';
 import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
 import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
+import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
 /**
  * @typedef {import('./core/types.js').Snapshot} Snapshot
  * @typedef {import('./core/types.js').Command} Command
@@ -766,6 +767,11 @@ function mutation(snapshot, command, context) {
         ...Object.fromEntries(['notes', 'maxPrice', 'minGrade'].filter(given).map((key) => [key, clone(draft[key])])),
       };
       const wants = next.wants ?? [];
+      // One want per type, open or found (V-08), read by the catalogue rules the page reads it with: a second open twin
+      // would split the badge, and a found want could no longer be edited beside it.
+      const editing = command.expectedRevision === null ? null : wants.find(({ id }) => id === draft.id) ?? null;
+      const twin = wantTwin(wants, fields.reference, editing);
+      if (twin) return fail('duplicate', wantTwinMessage(twin), 'want.reference');
       if (command.expectedRevision === null) {
         if (own(draft, 'id')) return fail('validation', 'New wants cannot supply a durable ID.', 'want.id');
         value = baseRecord(fields, context);
@@ -801,6 +807,9 @@ function mutation(snapshot, command, context) {
       const want = found.value.record;
       if (command.lotId === null) {
         if (!own(want, 'foundLotId')) return fail('validation', 'This want is not marked found.', 'lotId');
+        // Wanted again beside an open want of its type, which an older version let in, it would be its twin.
+        const open = (next.wants ?? []).find((other) => other.id !== want.id && !other.foundLotId && sameWantedType(other.reference, want.reference));
+        if (open) return fail('duplicate', wantTwinMessage(open), 'wantId');
         delete want.foundLotId;
         delete want.foundAt;
       } else {
