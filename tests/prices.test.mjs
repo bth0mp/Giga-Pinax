@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
+import { ACSEARCH_MAX_BYTES, buildSearchUrl, citationPhrases, citesReference, extractLots, filterableDenomination, filtersCitations, GRADE_BUCKETS, gradeMedians, gradeOf, gradeText, namesDenomination, parsePrice, defaultTerm, referenceName, searchesReference, signedOutPage, coinArchivesTerm, coinArchivesSection, futureText, coinArchivesUrl, searchCategory, summarise, fetchPrices, summaryText, greekName, chooseTerm, priceCheck, saleDate, PERIODS, lotsInPeriod, localDay, trendOf, lastSale, trendText, createPriceCuration, stableResultId, pricePanelVisibility, ungradedText, upcomingLots, upcomingText, isoDay, mediansByYear, yearText, yearsSentence } from '../extension/prices.js';
 import { BIGR_KINGS } from '../extension/catalogues.js';
+import { formatMoney, minorDigits } from '../extension/core/money.js';
 import { readFileSync as readSource } from 'node:fs';
+
+// An amount as Copy summary writes it: the one money rule (formatMoney, the narrow sign, whole units as the panel rounds them), its no-break spaces
+// plain, as the copy's are.
+const copied = (units, currency = 'USD', locale = 'en-US') => formatMoney({ currency, minor: units * 10 ** minorDigits(currency) }, locale,
+  { narrow: true, whole: true }).replace(/[  ]/g, ' ');
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -362,14 +368,14 @@ test('summaryText produces a shareable plain-text summary', () => {
   const summary = summarise(amounts.map((price, i) => lot(price, `01.01.${2020 + (i % 4)}`, String(i))).concat([lot('1.200,- €')]), 'USD');
   assert.equal(summaryText({ label: 'Price 23', corpus: 'pella', id: 'price.23' }, summary, 'USD', 'Price 23'), [
     'Price 23',
-    'Median hammer $180 · middle 50% $135–$245 · range $90–$450 · 9 recorded sales matching “Price 23” · 2020–2023',
+    `Median hammer ${copied(180)} · middle 50% ${copied(135)}–${copied(245)} · range ${copied(90)}–${copied(450)} · 9 recorded sales matching “Price 23” · 2020–2023`,
     'Not counted: “1.200,- €”',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   const one = summarise([lot('500', '01.01.2024')], 'CHF');
   assert.equal(summaryText({ label: 'RRC 1/1', corpus: 'crro', id: 'rrc-1.1' }, one, 'CHF', 'Crawford 1/1'), [
     'RRC 1/1',
-    'Median hammer CHF 500 · middle 50% CHF 500–CHF 500 · range CHF 500–CHF 500 · 1 recorded sale matching “Crawford 1/1” · 2024',
+    `Median hammer ${copied(500, 'CHF')} · middle 50% ${copied(500, 'CHF')}–${copied(500, 'CHF')} · range ${copied(500, 'CHF')}–${copied(500, 'CHF')} · 1 recorded sale matching “Crawford 1/1” · 2024`,
     'https://numismatics.org/crro/id/rrc-1.1',
   ].join('\n'));
 });
@@ -378,7 +384,7 @@ test('summaryText has no type link for a reference without type data', () => {
   const summary = summarise([lot('100', '01.01.2025'), lot('300', '01.01.2026'), lot('')], 'USD');
   assert.equal(summaryText({ label: 'HGC 4, 1218', corpus: 'other', id: 'HGC 4, 1218' }, summary, 'USD', '"HGC 4, 1218"'), [
     'HGC 4, 1218',
-    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 2 recorded sales matching "HGC 4, 1218" · 2025–2026',
+    `Median hammer ${copied(200)} · middle 50% ${copied(150)}–${copied(250)} · range ${copied(100)}–${copied(300)} · 2 recorded sales matching "HGC 4, 1218" · 2025–2026`,
   ].join('\n'));
 });
 
@@ -392,7 +398,7 @@ test('summaryText labels an unverified price query without inventing a type link
   const summary = summarise([{ price: '200', date: '2026-01-01' }], 'USD');
   assert.equal(summaryText({ label: 'RIC 972' }, summary, 'USD', 'RIC 972'), [
     'RIC 972',
-    'Median hammer $200 · middle 50% $200–$200 · range $200–$200 · 1 recorded sale matching “RIC 972” · 2026',
+    `Median hammer ${copied(200)} · middle 50% ${copied(200)}–${copied(200)} · range ${copied(200)}–${copied(200)} · 1 recorded sale matching “RIC 972” · 2026`,
   ].join('\n'));
 });
 
@@ -647,24 +653,27 @@ test('summaryText names a period other than All, then adds the last sale and the
   const extras = { period: PERIODS[2], last: lastSale(summarise(lots, 'USD')), trend: trendOf(lots, 'USD', NOW) };
   assert.equal(summaryText(card, summarise(lotsInPeriod(lots, '2y', NOW), 'USD'), 'USD', 'Price 23', extras), [
     'Price 23',
-    'Median hammer $250 (last 2 years) · middle 50% $225–$275 · range $200–$300 · 3 recorded sales matching “Price 23” · 2024–2026',
-    'Last sale 28.07.2026 14:00 · $250',
-    'Last 2 years: $250 median, up 67% on earlier sales ($150)',
+    `Median hammer ${copied(250)} (last 2 years) · middle 50% ${copied(225)}–${copied(275)} · range ${copied(200)}–${copied(300)} · 3 recorded sales matching “Price 23” · 2024–2026`,
+    `Last sale Jul 28, 2026 · ${copied(250)}`,
+    `Last 2 years: ${copied(250)} median, up 67% on earlier sales (${copied(150)})`,
     'Not counted: “200 EUR”',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
-  assert.ok(summaryText(card, summarise(lotsInPeriod(lots, '5y', NOW), 'USD'), 'USD', 'Price 23', { ...extras, period: PERIODS[1] }).includes('\nMedian hammer $200 (last 5 years) · '));
+  assert.ok(summaryText(card, summarise(lotsInPeriod(lots, '5y', NOW), 'USD'), 'USD', 'Price 23', { ...extras, period: PERIODS[1] }).includes(`\nMedian hammer ${copied(200)} (last 5 years) · `));
   // All is not named, and without a trend there is no trend line.
   assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', { ...extras, period: PERIODS[0], trend: null }), [
     'Price 23',
-    'Median hammer $250 · middle 50% $175–$750 · range $100–$5,000 · 7 recorded sales matching “Price 23” · 2020–2026',
-    'Last sale 28.07.2026 14:00 · $250',
+    `Median hammer ${copied(250)} · middle 50% ${copied(175)}–${copied(750)} · range ${copied(100)}–${copied(5000)} · 7 recorded sales matching “Price 23” · 2020–2026`,
+    `Last sale Jul 28, 2026 · ${copied(250)}`,
     'Not counted: “200 EUR”',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   // A copied line never splits, whatever whitespace the page put in a date.
   const split = { period: PERIODS[0], last: { ...extras.last, date: '28.07.2026\n14:00' }, trend: null };
-  assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', split).split('\n')[2], 'Last sale 28.07.2026 14:00 · $250');
+  assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', split).split('\n')[2], `Last sale Jul 28, 2026 · ${copied(250)}`);
+  // A date the reader cannot place is written as the page gave it, squashed.
+  const unread = { period: PERIODS[0], last: { ...extras.last, date: 'Summer\n2026' }, trend: null };
+  assert.equal(summaryText(card, summarise(lots, 'USD'), 'USD', 'Price 23', unread).split('\n')[2], `Last sale Summer 2026 · ${copied(250)}`);
 });
 
 test('chooseTerm keeps a remembered term unless it is blank or the v0.12 Bop default', () => {
@@ -1427,8 +1436,8 @@ test('summaryText carries what the filters left out and the median of each grade
     ungraded: '27 of 39 results carry no grade' };
   assert.deepEqual(summaryText({ label: 'Price 23' }, summary, 'USD', '"Price 23"', extras).split('\n').slice(2), [
     '39 of 55 results cite Price 23',
-    'VF · $180 · 9 sales',
-    'EF · $400 · 3 sales',
+    `VF · ${copied(180)} · 9 sales`,
+    `EF · ${copied(400)} · 3 sales`,
     '27 of 39 results carry no grade',
   ]);
 });
@@ -1511,11 +1520,11 @@ test('upcomingLots keeps the unpriced lots dated today or later in the collector
   assert.deepEqual(upcomingLots([], now), []);
 });
 
-test('upcomingText counts the lots and names the first sale day, date only', () => {
+test('upcomingText counts the lots and names the first sale day, date only, in the locale it is given', () => {
   const now = new Date(2026, 8, 11, 12);
   const lots = upcomingLots([lot('*', '12.10.2026 14:00', 'a'), lot('*', '2026-09-30', 'b'), lot('*', '01.12.2026', 'c')], now);
-  assert.equal(upcomingText(lots), 'Upcoming: 3 lots, first on 2026-09-30');
-  assert.equal(upcomingText(lots.slice(-1)), 'Upcoming: 1 lot, first on 2026-12-01');
+  assert.equal(upcomingText(lots, 'en-US'), 'Upcoming: 3 lots, first on Wed, Sep 30, 2026');
+  assert.equal(upcomingText(lots.slice(-1), 'en-US'), 'Upcoming: 1 lot, first on Tue, Dec 1, 2026');
   assert.equal(upcomingText([]), '');
   assert.equal(isoDay('28.07.2026 14:00'), '2026-07-28');
   assert.equal(isoDay('n/a'), '');
@@ -1525,7 +1534,7 @@ test('summaryText adds the upcoming lots', () => {
   const card = { label: 'Price 23', corpus: 'pella', id: 'price.23' };
   const summary = summarise([lot('100', '01.01.2023', 'a')], 'USD');
   const upcoming = upcomingLots([lot('*', '12.10.2026', 'u1'), lot('*', '01.11.2026', 'u2')], new Date(2026, 8, 11, 12));
-  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming }).split('\n')[2], 'Upcoming: 2 lots, first on 2026-10-12');
+  assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming }).split('\n')[2], 'Upcoming: 2 lots, first on Mon, Oct 12, 2026');
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { upcoming: [] }).split('\n').length, 3);
 });
 test('mediansByYear gives a median per year of at least three counted sales, oldest first', () => {
@@ -1550,9 +1559,9 @@ test('summaryText adds the medians by year and the upcoming lots', () => {
   const text = summaryText(card, summary, 'USD', 'Price 23', { years: mediansByYear(lots, 'USD'), upcoming });
   assert.equal(text, [
     'Price 23',
-    'Median hammer $200 · middle 50% $150–$250 · range $100–$300 · 3 recorded sales matching “Price 23” · 2023',
-    '2023 · $200 · 3 sales',
-    'Upcoming: 2 lots, first on 2026-10-12',
+    `Median hammer ${copied(200)} · middle 50% ${copied(150)}–${copied(250)} · range ${copied(100)}–${copied(300)} · 3 recorded sales matching “Price 23” · 2023`,
+    `2023 · ${copied(200)} · 3 sales`,
+    'Upcoming: 2 lots, first on Mon, Oct 12, 2026',
     'https://numismatics.org/pella/id/price.23',
   ].join('\n'));
   assert.equal(summaryText(card, summary, 'USD', 'Price 23', { years: [], upcoming: [] }).split('\n').length, 3);
@@ -1768,4 +1777,65 @@ test('citesReference counts an ambiguous dotted-letter citation for neither card
   for (const text of ['RIC 306 a. Chr.', 'RIC 306 f. vz.', 'RIC 306 a. VF.', 'RIC 306 d. h. selten.', 'RIC 306 i. e. rare.', 'RIC 306 c. 300 AD.', 'RIC 306 a. C.']) {
     assert.equal(citesReference(text, nero), true, text);
   }
+});
+
+// Loop V-03: with Citing on, every Tauler & Fau, Áureo and Cayón row was counted as not citing the card: they write the key in title case, glued to
+// its number or volume ("(Ric-II 118)", "(Ric-118)") or with its stop ("Ric. 306"). That spelling of the key is read; a lower-case "ric" never is.
+test('citesReference reads the title-case Ric glued to its number or volume, in a bracket or with its stop, and never a lower-case ric', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['(Ric-II 118). (Bmcre-284).', '(Ric-118). (Rsc-74).', 'Ric-II-118.', 'Ric-118; Cal-1015.', 'Ric. 118.', '(Ric 118)', 'Ric.II 118.']) {
+    assert.equal(citesReference(`Trajan. Denarius. ${cited}`, trajan), true, cited);
+  }
+  for (const other of ['ric-118.', '(ric-II 118).', 'ric. 118.', 'Ric 118.', 'Eric-118.', 'Ric-1180.', 'Ric-II 1180.', 'Ric - 118.', 'Ric-118a.', 'Price-Ric 118']) {
+    assert.equal(citesReference(`Trajan. Denarius. ${other}`, trajan), false, other);
+  }
+  // Only the card's own volume.
+  assert.equal(citesReference('(Ric-II 118)', { ...trajan, volume: 'I (2nd edition)' }), false);
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['(Ric-I 306). (Wcn-275).', 'Ric. 306', '(Ric-306)']) assert.equal(citesReference(cited, nero), true, cited);
+  const pius = { catalogue: 'RIC', number: '772', volume: 'III', section: 'Antoninus Pius' };
+  assert.equal(citesReference('(Ric-III 772). (Bmcre-1655).', pius), true);
+});
+
+// Loop V-15: a RIC row the reader could not place ("RIC XI 5", or Tauler's "Ric-II 118" before it was read) has no citation to name, and the panel
+// said "No result text names , so all 4 results are counted" round the blank. With nothing to name there is no filter to switch off: every row counts,
+// and no line is written.
+test('a reference with no citation to name filters nothing', () => {
+  for (const reference of [{ catalogue: 'RIC', number: 'XI 5', volume: '', section: '' }, { catalogue: 'RIC', number: 'II 118', volume: '', section: '' }]) {
+    assert.equal(referenceName(reference), '', reference.number);
+    assert.equal(filtersCitations(reference), false, reference.number);
+  }
+  // A reference with a name is filtered as before.
+  assert.equal(filtersCitations({ catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' }), true);
+  assert.equal(filtersCitations({ catalogue: 'Price', number: '23', volume: '', section: '' }), true);
+});
+
+// Loop cycle 5, the money rule (lead, from S3): Copy summary wrote every amount in en-US ("$120") while the panel wrote the collector's own
+// ("120 $" in German), and its Upcoming line gave the sale day as an ISO date. Every amount is formatMoney's, in the locale the caller passes, with
+// the narrow sign and whole units as the panel rounds them; every day is written in that language, with its year, since a pasted summary outlives
+// the popup that wrote it.
+test('summaryText writes money and days in the locale it is given', () => {
+  const money = (currency, units, locale) => formatMoney({ currency, minor: units * 10 ** minorDigits(currency) }, locale, { narrow: true, whole: true })
+    .replace(/[\u00a0\u202f]/g, ' ');
+  const lots = [lot('100', '01.01.2024', 'a'), lot('300', '01.06.2025', 'b'), lot('', '12.10.2026', 'c')];
+  const summary = summarise(lots, 'USD', new Date('2026-09-25T12:00:00Z'));
+  const extras = { last: lastSale(summary), grades: [{ bucket: 'VF', median: 180, count: 9 }], upcoming: [lots[2]] };
+  const german = summaryText({ label: 'Price 23' }, summary, 'USD', 'Price 23', extras, 'de-DE');
+  const [, stats, last, grade, upcoming] = german.split('\n');
+  assert.equal(stats, `Median hammer ${money('USD', 200, 'de-DE')} · middle 50% ${money('USD', 150, 'de-DE')}–${money('USD', 250, 'de-DE')}`
+    + ` · range ${money('USD', 100, 'de-DE')}–${money('USD', 300, 'de-DE')} · 2 recorded sales matching “Price 23” · 2024–2025`);
+  assert.match(stats, /Median hammer 200 \$ /);
+  assert.ok(!german.includes('$200') && !german.includes('$300'), german);
+  assert.equal(last, `Last sale 1. Juni 2025 · ${money('USD', 300, 'de-DE')}`);
+  assert.equal(grade, `VF · ${money('USD', 180, 'de-DE')} · 9 sales`);
+  assert.equal(upcoming, 'Upcoming: 1 lot, first on Mo., 12. Okt. 2026');
+  // In US English, as before, and the day written out rather than as an ISO date.
+  const english = summaryText({ label: 'Price 23' }, summary, 'USD', 'Price 23', extras, 'en-US').split('\n');
+  assert.match(english[1], /^Median hammer \$200(?:\.00)? · /);
+  assert.equal(english[2], `Last sale Jun 1, 2025 · ${money('USD', 300, 'en-US')}`);
+  assert.equal(english[4], 'Upcoming: 1 lot, first on Mon, Oct 12, 2026');
+  const british = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date('2026-10-12T12:00:00Z'));
+  assert.equal(upcomingText([lots[2]], 'en-GB'), `Upcoming: 1 lot, first on ${british}`);
+  // A figure that is no amount is a dash, never a thrown summary.
+  assert.match(summaryText({ label: 'X' }, { ...summary, lowerQuartile: Number.NaN }, 'USD', 'X', {}, 'de-DE'), /middle 50% —–/);
 });

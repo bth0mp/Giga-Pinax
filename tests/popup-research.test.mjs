@@ -1098,7 +1098,7 @@ test('a median per grade appears once a bucket rests on three sales', async () =
   assert.equal(popup.element('grade-medians').hidden, false);
   assert.deepEqual(popup.element('grade-medians').children.map((line) => line.textContent), ['VF · $200 · 3 sales']);
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\nVF · \$200 · 3 sales/);
+  assert.match(popup.clipboard[0], /\nVF · \$200(?:\.00)? · 3 sales/);
 });
 
 test('a redraw takes the verified card, so Copy summary heads the text with its label', async () => {
@@ -1219,7 +1219,7 @@ test('the grade medians say how much of the sample carries no grade', async () =
   assert.equal(popup.element('ungraded-count').hidden, false);
   assert.equal(popup.element('ungraded-count').textContent, '1 of 4 results carry no grade');
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\nVF · \$200 · 3 sales\n1 of 4 results carry no grade/);
+  assert.match(popup.clipboard[0], /\nVF · \$200(?:\.00)? · 3 sales\n1 of 4 results carry no grade/);
 });
 
 // A public row the filter leaves out is still a sale the collector may know is his type: it stays listed, and counting it is one click, as on acsearch.
@@ -1745,7 +1745,10 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
   assert.equal(popup.element('upcoming-filtered').textContent, '2 of 3 results cite Price 23');
   assert.equal(popup.element('upcoming-filtered').hidden, false);
   await popup.element('copy-summary').emit('click');
-  assert.ok(popup.clipboard[0].split('\n').includes('Upcoming: 2 lots, first on 2099-10-12'));
+  // The copy writes the day in the browser's language too, with its year (loop S1).
+  const copiedDay = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date('2099-10-12T12:00:00Z'));
+  assert.ok(popup.clipboard[0].split('\n').includes(`Upcoming: 2 lots, first on ${copiedDay}`), popup.clipboard[0]);
   // The one toggle governs the list too.
   popup.element('citing-filter').checked = false;
   await popup.element('citing-filter').emit('change');
@@ -1780,7 +1783,7 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
 // A search whose only hits are lots not sold yet has no median to show, and those lots are exactly what the collector may want to know about.
 test('a page without a counted price still lists its upcoming lots', async () => {
   const lots = withUpcoming.lots.slice(1);
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  const popup = await loadPopup({ language: 'de-DE', permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1790,7 +1793,8 @@ test('a page without a counted price still lists its upcoming lots', async () =>
   assert.equal(popup.element('upcoming-list').children.length, 2);
   // The toggle stands for the list as it does for a median.
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.match(popup.element('announcement').textContent, /Upcoming: 2 lots, first on 2099-10-12\.$/);
+  // The day is written in the page's language, as the copy writes it (loop S1 review, Minor 8).
+  assert.match(popup.element('announcement').textContent, /Upcoming: 2 lots, first on Mo\., 12\. Okt\. 2099\.$/);
   popup.element('citing-filter').checked = false;
   await popup.element('citing-filter').emit('change');
   assert.equal(popup.element('upcoming-list').children.length, 3);
@@ -1832,7 +1836,7 @@ test('the median by year is drawn under the range from the counted sales, with i
   const texts = nodes.filter((node) => node.tag === 'text').map((node) => node.textContent);
   for (const text of ['2023', '2024', '3 sales']) assert.ok(texts.includes(text), text);
   await popup.element('copy-summary').emit('click');
-  assert.match(popup.clipboard[0], /\n2023 · \$200 · 3 sales\n2024 · \$500 · 3 sales/);
+  assert.match(popup.clipboard[0], /\n2023 · \$200(?:\.00)? · 3 sales\n2024 · \$500(?:\.00)? · 3 sales/);
   // A sale left out by hand leaves 2024 on two: the year goes.
   await popup.element('sale-list').children[3].children[2].emit('click');
   assert.deepEqual(popup.element('year-lines').children.map((line) => line.textContent), ['2023 · $200 · 3 sales']);
@@ -2333,6 +2337,26 @@ test('a short list of types keeps no filter and no volume headings', async () =>
   assert.equal(popup.element('candidates-count').textContent, '3 types, local catalogue');
   assert.deepEqual(popup.element('candidate-list').children.map((item) => item.children[0]['aria-label']),
     ['RIC I (second edition) Augustus 237', 'RIC I (second edition) Galba 237', 'RIC I (second edition) Nero 237']);
+});
+
+// Loop V-06 (S1): an unedited "RIC I 306" may be the first edition's number, so its one bundled type is offered, never opened, and the row says why.
+test('a type offered because the lot named no edition says so, and one click opens it', async () => {
+  const opened = [];
+  const note = 'the lot says RIC I without an edition; the second edition is the one bundled';
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'candidates', corpus: 'ocre', partial: true, candidates: [
+      { id: 'ric.1(2).ner.306', title: 'RIC I (second edition) Nero 306', source: 'local', label: 'RIC I² Nero 306', note }] }),
+    localProvider: { serves: () => true, lookupById: async (corpus, id) => { opened.push(id); return { status: 'ok', card: { id, corpus, label: 'RIC I (second edition) Nero 306', obverse: {}, reverse: {} } }; } } });
+  popup.element('quick-reference').value = 'Nero. As. RIC I 306; WCN 275.';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [item] = popup.element('candidate-list').children;
+  const row = item.children[0];
+  assert.equal(row.textContent, `RIC I² Nero 306 — ${note}`);
+  assert.equal(row['aria-label'], `RIC I² Nero 306 — ${note}`);
+  await row.emit('click');
+  await settle();
+  assert.deepEqual(opened, ['ric.1(2).ner.306']);
 });
 
 test('the list of types stands outside the Refine form', () => {

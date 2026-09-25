@@ -3,6 +3,7 @@ import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase, DOTTED_TAIL } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
+import { formatMoney, minorDigits } from './core/money.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -471,12 +472,17 @@ function between({ catalogue, volume }) {
   return `${EDITION}(?:${glued(catalogue)}|[-–](?=[IVX])${volumed}|${SEP}(?:${volumed}|${RULERS}))`;
 }
 
+// Tauler & Fau, Áureo and Cayón write RIC in title case, glued to its number or volume with a hyphen ("(Ric-II 118)", "(Ric-118)"), with its own stop
+// ("Ric. 306") or inside a bracket ("(Ric 306)"). Only there: a bare "Ric 306" may be a forename, and a lower-case "ric" is never the key.
+const TITLE_CASE_RIC = String.raw`(?<=\()Ric|Ric(?=[.\-–])`;
+
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
 const CITATION_LIMIT = 10000;
 
 // Whether there is anything to judge a row by at all: an Other reference is already searched as the exact citation, and a reference without a number
-// has no citation to look for, so their rows all count and the panel offers no filter to switch off.
-export const filtersCitations = (reference) => Boolean(citationKeys(reference)) && Boolean(citationNumber(reference));
+// has no citation to look for, so their rows all count and the panel offers no filter to switch off. So does a reference the reader could not place
+// ("RIC XI 5"): its term names no citation, and a filter the panel cannot name ("No result text names , so …") is no filter.
+export const filtersCitations = (reference) => Boolean(citationKeys(reference)) && Boolean(citationNumber(reference)) && referenceName(reference) !== '';
 
 // Whether a lot's description cites the searched reference: the catalogue key in any spelling, at most a volume and a ruler between, then the number
 // as a whole token — not inside a longer number, a weight or a measurement. "Price 3014", "RIC 3061" and "4.23 g" are not sales of Price 23 or RIC 306,
@@ -491,6 +497,7 @@ export function citesReference(description, reference) {
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
+  if (reference.catalogue === 'RIC') spellings.push(TITLE_CASE_RIC);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
     + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`
     + (reference.catalogue === 'RIC' ? SPACED_LETTER : '');
@@ -539,10 +546,11 @@ const BARE_FINE = { Fine: FINE, Fair: FINE };
 // Class 4. The two-letter marks. Both edges, because each of them is also a monogram, a collection, a control mark or a pair of initials. The Spanish
 // (BC, MBC, EBC, SC: bien, muy bien, extraordinariamente bien conservada, sin circular) and the Dutch (ZF zeer fraai, PR prachtig) are marks too.
 // So are the other short spellings, for the same reason: the American "BU" and NGC's "Gem MS", the German "Stgl" (Stempelglanz), "prfr"
-// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash.
+// (prägefrisch) and "sge" (sehr gut erhalten, below schön), the Italian "Spl" and the Spanish "S/C", which is SC with its slash. Rauch writes
+// sehr schön "s.sch.".
 const MARKS = { ss: 'VF', vz: 'EF', st: MINT, BB: 'VF', MB: FINE, TB: FINE, MS: MINT, SPL: 'EF', SUP: 'EF', TTB: 'VF',
   BC: FINE, MBC: 'VF', EBC: 'EF', SC: MINT, ZF: 'VF', PR: 'EF',
-  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT };
+  BU: MINT, 'Gem MS': MINT, 'Gem BU': MINT, Stgl: MINT, prfr: MINT, Prfr: MINT, sge: FINE, Spl: 'EF', 'S/C': MINT, 's.sch.': 'VF', 's.sch': 'VF' };
 // Class 5. The foreign adjectives that are also ordinary praise. Both edges, and the phrase must start its clause: "Patina sehr schön" and "Ritratto
 // bellissimo" praise the coin, "Sehr schön." grades it.
 // "prägefrisch" is the Austrian trade's Stempelglanz, written in lower case mid-sentence as "vorzüglich" is.
@@ -588,7 +596,10 @@ const EDGE = 24;
 // A quote the dealer wrapped the grade in, the asterisk or star he footnotes it with, and the "though" his reservation opens with all close one too.
 // The weight, diameter or die axis a dealer prints behind the grade closes one too ("VF 3.41 g", "Fine 12 h."); the bare number that follows a grade
 // in "Slg. vz 12." is a lot number, and without one of those units nothing closes there.
-const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
+// So does the estimate Noonans prints straight behind the grade ("Very fine £80-£100", "Good fine £120-£150"): a currency's sign or code with its
+// figure. A sign with no figure behind it is no estimate.
+const ESTIMATE = String.raw`(?:US\$|[$€£¥]|(?:USD|EUR|GBP|CHF|AUD|CAD|HKD|JPY|SEK|DKK|NOK|CZK|PLN|HUF)(?![\p{L}]))\s?\d`;
+const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}|^\s${ESTIMATE}`
   + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // "AU" is the chemical symbol for gold as often as it is "About Uncirculated", so a gold lot that never graded anything was counted in the top
 // bucket. Three shapes say the metal is meant: the weight or diameter printed behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g.", "AU. 4.45g."), the
@@ -644,6 +655,11 @@ const PLACE_COMMA = /(?<![\p{L}\d])(?:field|exergue|ex|left|right|below|above|be
 // a comma opening an adjective and its noun ("Fine, high-relief portrait", "of Fine, elegant workmanship").
 const FINE_PROSE = /^(?:\s+and(?![\p{L}\d])|[-\s][Ss]tyle(?![\p{L}\d])|,\s+\p{Ll}+[- ]\p{Ll}+)/u;
 const CAPITAL = /\p{Lu}/u;
+// Spink runs the grade on behind the citations in lower case, with no qualifier: "…, 4.42g (RIC VII 22; Depeyrot 17/3), extremely fine, very rare".
+// Straight behind a bracket that opens on a catalogue key with its number, and a comma, a spelled grade is the grade: prose does not stand there.
+// Only there — everywhere else a lower-case "very fine" is still the adjective — and the closing edge is still needed.
+const CITATIONS_BEFORE = /\((?:cf\.\s*)?(?:RIC|RSC|RPC|RRC|BMCRE|BMCRR|BMC|Crawford|Craw|Cr|Sydenham|Syd|Cohen|C|Sear|SGCV|SG|SNG|HGC|Price|SC|CPE|Calic[oó]|Depeyrot|LRBC|DOC|MIB|SB)\.?\s?[IVX\d][^()]*\)\s*,\s*$/u;
+const CITATION_WINDOW = 160;
 // "SC" is also the senate's mark on a Roman bronze ("Rev. SC, legend around.", "Minerva standing right; SC."), so as the Spanish sin circular it must
 // open the text or a sentence (never one a side label opens, nor one behind a sentence ending in a lower-case word, which is the type described:
 // "Rev. Spes advancing left. SC.", "Rev.: Roma sentada. SC."), or stand behind a qualifier, a grade label or another grade it joins. A spaced dash
@@ -720,12 +736,13 @@ export function gradeOf(description) {
     const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
+    const cited = () => quals === '' && CITATIONS_BEFORE.test(text.slice(Math.max(0, start - CITATION_WINDOW), start));
     let read = false;
     if (kind === 'abbreviation') read = true;
     // A qualifier stands in for the capitals: a dealer who writes "otherwise very fine" or "nearly extremely fine" all in lower case is grading the
     // coin, where the bare lower-case "very fine" is the ordinary adjective. The closing edge still has to be there.
-    else if (kind === 'name') read = capital || quals !== '';
-    else if (kind === 'bare-fine') read = capital && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
+    else if (kind === 'name') read = capital || quals !== '' || cited();
+    else if (kind === 'bare-fine') read = (capital || cited()) && !FINE_PROSE.test(rest) && (opened || ranged || sided || FINE_QUALIFIERS.test(quals));
     else if (kind === 'mark') read = (opened || ranged || sided || quals !== '') && !(before.endsWith('(') && rest.startsWith(')')) && !LOWER_COLON.test(before)
       && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
@@ -880,11 +897,20 @@ export function upcomingLots(lots, now) {
     .map(({ entry }) => entry);
 }
 
+// A day as the copy writes it, in the reader's language ("Mon, Oct 12, 2026", "Mo., 12. Okt. 2026"), the weekday for a sale still to come. The
+// year is always written: a pasted summary is read long after the popup that wrote it. No locale is the browser's own; one Intl refuses is en-GB,
+// as the popup's lists fall back.
+function writtenDay(day, locale, weekday = false) {
+  const options = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC', ...(weekday ? { weekday: 'short' } : {}) };
+  const date = new Date(`${day}T12:00:00Z`);
+  try { return new Intl.DateTimeFormat(locale, options).format(date); } catch { return new Intl.DateTimeFormat('en-GB', options).format(date); }
+}
+
 // How many lots are coming up and the first day one is sold, as the copy says it. Nothing when none is.
-export function upcomingText(lots) {
+export function upcomingText(lots, locale) {
   if (!lots.length) return '';
-  const first = lots.map((entry) => isoDay(entry.date)).sort()[0];
-  return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first}`;
+  const first = lots.map((entry) => isoDay(entry.date)).filter(Boolean).sort()[0];
+  return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first ? writtenDay(first, locale, true) : ''}`;
 }
 
 const YEAR_MIN = 3;
@@ -1027,8 +1053,11 @@ export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', years = [], upcoming = [] } = {}) {
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+// Every amount is written by the one page rule, formatMoney in the caller's locale with the narrow sign, rounded to the unit as the panel rounds
+// its medians (whole: the unit's places are left off); a figure that is no amount is a dash.
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', years = [], upcoming = [] } = {}, locale = 'en-US') {
+  const scale = 10 ** (minorDigits(currency) ?? 2);
+  const money = { format: (value) => { try { return formatMoney({ currency, minor: Math.round(value) * scale }, locale, { narrow: true, whole: true }); } catch { return '—'; } } };
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
@@ -1037,12 +1066,13 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   // What the filters left out, then the sales themselves, then the median of each grade the panel shows.
   const lines = [card.label, stats, ...filters];
   // The date is page text, squashed so a copied line never splits.
-  if (last) lines.push(`Last sale ${squash(last.date)} · ${money.format(last.amount)}`);
+  // A date that does not read is written as the page gave it, squashed so a copied line never splits.
+  if (last) lines.push(`Last sale ${isoDay(last.date) ? writtenDay(isoDay(last.date), locale) : squash(last.date)} · ${money.format(last.amount)}`);
   if (trend) lines.push(trendText(trend, money.format));
   lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
   if (ungraded) lines.push(ungraded);
   lines.push(...years.map((year) => yearText(year, money.format)));
-  if (upcoming.length) lines.push(upcomingText(upcoming));
+  if (upcoming.length) lines.push(upcomingText(upcoming, locale));
   if (summary.future) lines.push(futureText(summary));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.

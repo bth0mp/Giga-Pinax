@@ -1682,3 +1682,53 @@ test('lookupType never opens the plain coin of a dotted letter when the lettered
     '223c': { status: 'candidates', partial: true, personMismatch: true, corpus: 'ocre', candidates: [{ id: 'ric.5.gall(1).223c', title: 'RIC V Gallienus 223c' }] } }) });
   assert.equal(stranger.card?.id, 'ric.4.tr_d.223');
 });
+
+// Loop V-03: Tauler & Fau write every citation as "(Ric-II 118)", "(Ric-I 306)": the key in title case with its volume hyphenated on. It read as
+// nothing, so the popup went online for a coin the bundle holds. The hyphen is the glued separator "RIC-118" has always been read with.
+test('parseReference reads a hyphen between RIC or Ric and its volume, never behind a lower-case key', () => {
+  for (const [text, number, volume] of [['Ric-II 118', '118', 'II'], ['(Ric-II 118)', '118', 'II'], ['Ric-I 306', '306', 'I'], ['Ric-III 772', '772', 'III'],
+    ['RIC-II 118', '118', 'II'], ['Ric–VII 42', '42', 'VII'], ['Ric-IV-1 266', '266', 'IV, Part 1']]) {
+    assert.deepEqual(parseReference(text), { catalogue: 'RIC', number, volume, section: '' }, text);
+  }
+  for (const text of ['ric-II 118', 'Ric-XI 118', 'Ric-IIa 118', 'Ric-Illyricum 5', 'Ric-II', 'RIc-II 118']) assert.equal(parseReference(text), null, text);
+  // The hyphen with a number behind it is read as before.
+  assert.deepEqual(parseReference('Ric-118'), { catalogue: 'RIC', number: '118', volume: '', section: '' });
+});
+
+// Loop V-12: Rauch and Frühwald mark RIC I's second edition in German behind the number ("RIC 306 (2. Aufl.)"), and a French house in French
+// ("(2e éd.)"). Only the English "(2nd ed.)" was read as the remark on the book, so the number was "306 (2. Aufl.)" and the lookup found nothing.
+test('parseReference drops the German and French edition remark behind the number', () => {
+  for (const text of ['RIC 306 (2. Aufl.)', 'RIC 306 (2. Auflage)', 'RIC 306 2. Aufl.', 'RIC 306 (2e éd.)', 'RIC 306 (2. Aufl.).', 'RIC 306 (2nd ed.)']) {
+    assert.deepEqual(parseReference(text), { catalogue: 'RIC', number: '306', volume: '', section: '' }, text);
+  }
+  // Only at the end of the reference, and only an edition: a bracket of another kind is left as it was written.
+  assert.deepEqual(parseReference('RIC 306 (2. Jh.)'), { catalogue: 'RIC', number: '306 (2. Jh.)', volume: '', section: '' });
+  assert.equal(parseReference('RIC 306 Aufl.'), null);
+  assert.deepEqual(parseReference('RIC 306 (1. Aufl.)'), { catalogue: 'RIC', number: '306 (1. Aufl.)', volume: '', section: '' });
+  assert.deepEqual(parseReference('Price 23 (2. Aufl.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+});
+
+// Loop S1 review, Important 3 and Minor 7: a lot that writes RIC I's edition after the number ("RIC I 306 (2nd ed.)", Rauch's "(2. Aufl.)", the French
+// "(2e éd.)") had it stripped before the volume was read, and was then told it named no edition. A second-edition mark on a volume OCRE holds in its
+// second edition alone is that volume's edition; a first-edition mark stays on a RIC number, which then finds nothing, since the bundle holds the
+// second edition's numbers. And the unbracketed "2. Aufl." needs its space: "RIC 3062. Aufl." is not RIC 306.
+test('parseReference carries a second-edition mark onto RIC I, II.1 and II.3, and keeps a first-edition mark on the number', () => {
+  for (const [text, volume, section] of [['RIC I 306 (2nd ed.)', 'I (2nd edition)', ''], ['RIC I Nero 306 (2nd ed.)', 'I (2nd edition)', 'Nero'],
+    ['RIC I 306 (2. Aufl.)', 'I (2nd edition)', ''], ['RIC I 306 2. Aufl.', 'I (2nd edition)', ''], ['RIC I 306 (2e éd.)', 'I (2nd edition)', ''],
+    ['RIC II.3 2140 (2nd ed.)', 'II, Part 3 (2nd edition)', ''], ['RIC II.1 Vespasian 772 (2. Auflage)', 'II, Part 1 (2nd edition)', 'Vespasian']]) {
+    const read = parseReference(text);
+    assert.equal(read?.volume, volume, text);
+    assert.equal(read.section, section, text);
+    assert.equal(read.number, text.includes('2140') ? '2140' : text.includes('772') ? '772' : '306', text);
+  }
+  // A volume with more than one edition on its shelf, or none written, keeps the mark off as before.
+  assert.deepEqual(parseReference('RIC II 118 (2nd ed.)'), { catalogue: 'RIC', number: '118', volume: 'II', section: '' });
+  assert.deepEqual(parseReference('RIC 306 (2nd ed.)'), { catalogue: 'RIC', number: '306', volume: '', section: '' });
+  // A first-edition mark stays on the number.
+  assert.deepEqual(parseReference('RIC I 306 (1st ed.)'), { catalogue: 'RIC', number: '306 (1st ed.)', volume: 'I', section: '' });
+  assert.deepEqual(parseReference('RIC 306 (1st ed.)'), { catalogue: 'RIC', number: '306 (1st ed.)', volume: '', section: '' });
+  // Another book's edition is still a remark on it.
+  assert.deepEqual(parseReference('Price 23 (1st ed.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+  assert.notEqual(parseReference('RIC 3062. Aufl.')?.number, '306');
+  assert.notEqual(parseReference('RIC II.3 3062.Aufl.')?.number, '306');
+});

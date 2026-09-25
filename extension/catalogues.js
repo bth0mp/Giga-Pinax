@@ -214,6 +214,24 @@ export const EXTRA_SPELLINGS = Object.freeze([
   ['konstantin der große', 'constantine_i'], ['constantin ier', 'constantine_i'], ['constantin i', 'constantine_i'],
   ['costantino i', 'constantine_i'], ['constantino i', 'constantine_i'], ['konstantin ii', 'constantine_ii'], ['constantin ii', 'constantine_ii'],
   ['costantino ii', 'constantine_ii'], ['constantino ii', 'constantine_ii'],
+  // The Spanish houses (Soler y Llach, Áureo, Tauler & Fau) head a lot with these, in capitals; the accent is folded away, so "Cómodo" is "comodo".
+  ['augusto', 'augustus'], ['tiberio', 'tiberius'], ['claudio', 'claudius'], ['tito', 'titus'], ['domiciano', 'domitian'],
+  ['antonino pio', 'antoninus_pius'], ['marco aurelio', 'marcus_aurelius'], ['comodo', 'commodus'], ['septimio severo', 'septimius_severus'],
+  ['juliano ii', 'julian_the_apostate'],
+  // The emperors a Spanish or Italian heading names by an epithet or a full name that opens with one of the names above: "Claudio" is Claudius, so
+  // Claudius Gothicus needs his own longer spellings (read first, longest first, and blanked), and so do the men whose names open "Marco Aurelio"
+  // and "Domiciano". The other epithets RIC's people carry are read the same way.
+  ['claudio gotico', 'claudius_ii_gothicus'], ['claudio el gotico', 'claudius_ii_gothicus'], ['claudio il gotico', 'claudius_ii_gothicus'],
+  ['claudio ii', 'claudius_ii_gothicus'],
+  ['juliano el apostata', 'julian_the_apostate'], ['juliano apostata', 'julian_the_apostate'], ["giuliano l'apostata", 'julian_the_apostate'],
+  ['giuliano l’apostata', 'julian_the_apostate'], ['giuliano apostata', 'julian_the_apostate'], ['giuliano ii', 'julian_the_apostate'],
+  ['filipo el arabe', 'philip_the_arab'], ["filippo l'arabo", 'philip_the_arab'], ['filippo l’arabo', 'philip_the_arab'], ['filippo arabo', 'philip_the_arab'],
+  ['maximino el tracio', 'maximinus_thrax'], ['massimino il trace', 'maximinus_thrax'],
+  ['constantino el grande', 'constantine_i'], ['constantino magno', 'constantine_i'], ['costantino il grande', 'constantine_i'],
+  ['costantino magno', 'constantine_i'],
+  ['teodosio el grande', 'theodosius_i'], ['teodosio il grande', 'theodosius_i'], ['teodosio i', 'theodosius_i'],
+  ['marco aurelio probo', 'probus'], ['marco aurelio caro', 'carus'], ['marco aurelio numeriano', 'numerian'], ['marco aurelio carino', 'carinus'],
+  ['domicio domiciano', 'domitius_domitianus'],
 ].map((entry) => Object.freeze(entry)));
 const PERSON_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person]));
 for (const [spelling, id] of EXTRA_SPELLINGS) if (PERSON_BY_ID.has(id)) own(spelling, PERSON_BY_ID.get(id));

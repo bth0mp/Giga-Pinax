@@ -113,7 +113,7 @@ test('a mint-volume lot keeps its RIC citation clean and carries a strict matchi
   assert.equal(lot.references.length, 1);
   assert.equal(lot.references[0].text, 'RIC VII 287');
   assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
-    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: ['Rome', 'Londinium'],
+    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: ['Londinium'],
   });
   assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC VII 287 · Constantine II');
 });
@@ -1074,8 +1074,8 @@ test('a mint named beside a volume of its own is that section, and one beside an
   // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
   assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri', headingMint: true });
   assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium', headingMint: true });
-  // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
-  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome', headingMint: true });
+  // A house whose name opens on a mint spelling ("Roma Numismatics") names no mint (loop S1 re-review, Minor 1): the volume's numbers are offered.
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: '' });
 });
 
 test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
@@ -1304,14 +1304,14 @@ test('a provenance sentence runs past a dated day and a "no." to its real end', 
 // "lote", "n°" or "Provient de" at all.
 test('the provenance reader reads German, Italian, Spanish and French provenance', () => {
   for (const [text, entries] of [
-    ['Ex Slg. Dr. X, erworben 1988 bei Lanz.', [{ text: 'Ex Slg. Dr. X, erworben 1988 bei Lanz', source: 'Slg. Dr. X, erworben bei Lanz', year: 1988 }]],
+    ['Ex Slg. Dr. X, erworben 1988 bei Lanz.', [{ text: 'Ex Slg. Dr. X', source: 'Slg. Dr. X' }, { text: 'erworben 1988 bei Lanz', source: 'Lanz', year: 1988 }]],
     ['Ex Lanz 145, 5. Januar 2009, Nr. 1234.', [{ text: 'Ex Lanz 145, 5. Januar 2009, Nr. 1234', source: 'Lanz 145', year: 2009, lot: '1234' }]],
     ['Ex Auktion Leu 79, Zürich 2000, Nr. 12.', [{ text: 'Ex Auktion Leu 79, Zürich 2000, Nr. 12', source: 'Auktion Leu 79, Zürich', year: 2000, lot: '12' }]],
     ['Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234.',
       [{ text: 'Exemplar der Auktion NAC 78, Zürich 2014, Nr. 1234', source: 'Auktion NAC 78, Zürich', year: 2014, lot: '1234' }]],
     ['Aus Sammlung Dr. X. Erworben 1998 bei Münzen und Medaillen AG Basel.', [
       { text: 'Aus Sammlung Dr. X', source: 'Sammlung Dr. X' },
-      { text: 'Erworben 1998 bei Münzen und Medaillen AG Basel', source: 'Erworben bei Münzen und Medaillen AG Basel', year: 1998 }]],
+      { text: 'Erworben 1998 bei Münzen und Medaillen AG Basel', source: 'Münzen und Medaillen AG Basel', year: 1998 }]],
     ['Provenienz: Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456.',
       [{ text: 'Sammlung X, Auktion Gorny & Mosch 250, 2017, Los 456', source: 'Sammlung X, Auktion Gorny & Mosch 250', year: 2017, lot: '456' }]],
     ['Ex asta Nomisma 50, 2014, lotto 123.', [{ text: 'Ex asta Nomisma 50, 2014, lotto 123', source: 'asta Nomisma 50', year: 2014, lot: '123' }]],
@@ -1414,9 +1414,9 @@ test('the provenance reader takes a bare lot number behind the date, splits at "
   for (const text of ['Ex Spink and Son, 1998.', 'Ex Bank Leu and Münzen und Medaillen 25, 1980, 12.', 'Ex Baldwin and Exeter collection, 2001.']) {
     assert.equal(readProvenance(text).length, 1, text);
   }
-  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Spink', year: 1998 }]);
   assert.deepEqual(readProvenance('Nero. Denarius. RIC 53. Purchased from Harlan J. Berk, 2005. Privately purchased from Frank Kovacs, 1999.')
-    .map(({ source, year }) => [source, year]), [['Purchased from Harlan J. Berk', 2005], ['Privately purchased from Frank Kovacs', 1999]]);
+    .map(({ source, year }) => [source, year]), [['Harlan J. Berk', 2005], ['Frank Kovacs', 1999]]);
   assert.deepEqual(readProvenance('Bought from Seaby, 1965.').map(({ year }) => year), [1965]);
   assert.deepEqual(texts('Purchased from CNG, 2005. RIC 53.'), ['RIC 53']);
   // Only at the start of a sentence and with its capital, as "Ex" is: the verb in the middle of prose is no marker.
@@ -1484,7 +1484,7 @@ test('a purchase sentence gives up the citation behind it, and a bracketed year 
     assert.equal(texts(text)[0], 'RIC 53', text);
     assert.equal(readProvenance(text).length, 1, text);
   }
-  assert.deepEqual(readProvenance('Acquired from Spink, 1998; RIC 53.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998; RIC 53.'), [{ text: 'Acquired from Spink, 1998', source: 'Spink', year: 1998 }]);
   // "Ex" keeps its own rule, as it always has.
   assert.deepEqual(texts('Ex Spink, 1998; RIC 53.'), []);
   assert.deepEqual(readProvenance('Ex Triton VIII (2005, 1132).'), [{ text: 'Ex Triton VIII (2005, 1132)', source: 'Triton VIII', year: 2005, lot: '1132' }]);
@@ -1540,8 +1540,149 @@ test('a purchase sentence gives up a citation behind a spaced dash, a bracket or
     assert.equal(texts(text)[0], 'RIC 53', text);
     assert.equal(readProvenance(text).length, 1, text);
   }
-  assert.deepEqual(readProvenance('Purchased from Seaby, 1965 (RIC 53).').map(({ source, year }) => [source, year]), [['Purchased from Seaby', 1965]]);
+  assert.deepEqual(readProvenance('Purchased from Seaby, 1965 (RIC 53).').map(({ source, year }) => [source, year]), [['Seaby', 1965]]);
   // "Ex" keeps its own rule, and a purchase sentence without a citation behind it is whole.
   assert.deepEqual(texts('Ex Spink, 1998 - RIC 53.'), []);
   assert.deepEqual(readProvenance('Purchased from Spink - London, 1998.').map(({ text }) => text), ['Purchased from Spink - London, 1998']);
+});
+
+// Loop V-03: Tauler & Fau's lot reads its RIC row with the volume, so the heading's ruler finds the card offline.
+test('a Tauler & Fau lot reads "(Ric-II 118)" as RIC II 118', () => {
+  const lot = findReferences('Trajan. Denarius. 103-111 AD. Rome. (Ric-II 118). (Bmcre-284). (Rsc-74). Ag. 3,32 g. Choice VF. Est...100.');
+  assert.deepEqual(lot.references[0].reference, ric('118', 'II'));
+  assert.equal(lot.references[0].text, 'Ric-II 118');
+  assert.deepEqual(lot.rulers, ['Trajan']);
+  assert.deepEqual(findReferences('Nero. As. 62-68 AD. Rome. (Ric-I 306). (Wcn-275).').references[0].reference, ric('306', 'I'));
+  assert.deepEqual(findReferences('Antoninus Pius. Sestertius. 145-161 AD. Rome. (Ric-III 772). (Bmcre-1655).').references[0].reference, ric('772', 'III'));
+});
+
+// Loop V-07: Soler y Llach, Áureo and Tauler & Fau head their lots with the Spanish name, in capitals ("AUGUSTO. Denario. … Lugdunum. (RIC 207;
+// RSC 43)"). Ten of RIC's emperors were read by nobody, so the mint alone was the section and an Augustus denarius was offered as RIC VI–VIII
+// Lugdunum 207. Each spelling names its one person, with its accent or without, in capitals or in title case, never in lower case.
+test('a Spanish heading names its emperor, and a lower-case word or another numeral names nobody', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [heading, expected] of [
+    ['AUGUSTO', ['Augustus']], ['Augusto', ['Augustus']], ['TIBERIO', ['Tiberius']], ['CLAUDIO', ['Claudius']], ['TITO', ['Titus']],
+    ['DOMICIANO', ['Domitian']], ['ANTONINO PÍO', ['Antoninus Pius']], ['ANTONINO PIO', ['Antoninus Pius']], ['Antonino Pío', ['Antoninus Pius']],
+    ['MARCO AURELIO', ['Marcus Aurelius']], ['CÓMODO', ['Commodus']], ['COMODO', ['Commodus']], ['Cómodo', ['Commodus']],
+    ['SEPTIMIO SEVERO', ['Septimius Severus']], ['JULIANO II', ['Julian the Apostate']],
+  ]) assert.deepEqual(rulers(`${heading}. Denario. (Ar. 3,73g/19mm). Roma. (RIC 12; RSC 43).`), expected, heading);
+  assert.deepEqual(rulers('AUGUSTO. Denario. (Ar. 3,73g/19mm). 2 a.C.-4 d.C. Lugdunum. (RIC 207; RSC 43). Anv: Cabeza laureada de Augusto a derecha.'),
+    ['Augustus']);
+  // Another emperor's numeral makes him someone else, a lower-case word is the adjective, and the title he holds is no second ruler.
+  assert.deepEqual(rulers('CLAUDIO II. Antoniniano. RIC 12.'), ['Claudius II Gothicus']);
+  assert.deepEqual(rulers('JULIANO. Denario. RIC 12.'), []);
+  assert.deepEqual(rulers('Retrato augusto. Denario. RIC 12.'), []);
+  for (const spelling of ['augusto', 'tiberio', 'claudio', 'tito', 'domiciano', 'antonino pio', 'marco aurelio', 'comodo', 'septimio severo', 'juliano ii']) {
+    assert.deepEqual(rulers(`Denario, ${spelling}. RIC 12.`), [], spelling);
+  }
+  assert.deepEqual(rulers('CONSTANTINO I como Augusto. Follis. RIC VII 12.'), ['Constantine I']);
+  assert.deepEqual(rulers('Constantino II como César. Follis. RIC VII 12.'), ['Constantine II']);
+  assert.deepEqual(rulers('Tiberio come Augusto. Asse. RIC 12.'), ['Tiberius']);
+});
+
+// Loop V-09: three provenance shapes the audit found. Sincona's hammer bracket after the lot was glued into the source; the Italian houses' "Provenienza:
+// Asta Artemide XLV, 2016, lotto 234" read as nothing; and "acquired from X in 1988" kept the verb and the "in" inside the source.
+test('provenance drops a trailing remark bracket, reads the Italian houses, and reads "acquired from X in YEAR" as X', () => {
+  assert.deepEqual(readProvenance('Ex Sincona 40, 23 October 2017, lot 1023 (hammer CHF 3,200).'),
+    [{ text: 'Ex Sincona 40, 23 October 2017, lot 1023 (hammer CHF 3,200)', source: 'Sincona 40', year: 2017, lot: '1023' }]);
+  assert.deepEqual(readProvenance('Ex NAC 27, 2004, lot 312 (realised 1,200 CHF).').map(({ source }) => source), ['NAC 27']);
+  assert.deepEqual(readProvenance('Provenienza: Asta Artemide XLV, 2016, lotto 234; ex NAC 27, 2004, 312.'), [
+    { text: 'Asta Artemide XLV, 2016, lotto 234', source: 'Asta Artemide XLV', year: 2016, lot: '234' },
+    { text: 'ex NAC 27, 2004, 312', source: 'NAC 27', year: 2004, lot: '312' },
+  ]);
+  assert.deepEqual(readProvenance('Asta Bertolami 12, 2015, lotto 45.'), [{ text: 'Asta Bertolami 12, 2015, lotto 45', source: 'Asta Bertolami 12', year: 2015, lot: '45' }]);
+  assert.deepEqual(readProvenance('From the collection of a Swiss lawyer, acquired from Münzen & Medaillen AG Basel in 1988.'), [
+    { text: 'From the collection of a Swiss lawyer', source: 'the collection of a Swiss lawyer' },
+    { text: 'acquired from Münzen & Medaillen AG Basel in 1988', source: 'Münzen & Medaillen AG Basel', year: 1988 },
+  ]);
+  // What was read before still is: a bracket inside the source, a place in brackets, the comma-year purchase sentence, a German purchase.
+  assert.deepEqual(readProvenance("Ex Hunt collection (part II), Sotheby's 1991.").map(({ source }) => source), ["Hunt collection (part II), Sotheby's"]);
+  assert.deepEqual(readProvenance('Ex NAC 27 (Zurich), 2004.').map(({ source }) => source), ['NAC 27 (Zurich)']);
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Erworben 1998 bei Lanz.'), [{ text: 'Erworben 1998 bei Lanz', source: 'Lanz', year: 1998 }]);
+  // "Asta" is also the spear a type is described with: only a house's name behind it at the start of a sentence makes it a sale.
+  assert.deepEqual(readProvenance('Minerva stante con asta e scudo. Asta e scudo. RIC 12.'), []);
+  assert.deepEqual(findReferences('Minerva con asta. Asta e scudo. RIC 12.').references.map(({ text }) => text), ['RIC 12']);
+  // An Italian provenance is no reference: its sale's number is never read as one.
+  assert.deepEqual(findReferences('Traiano. Denario. RIC 118. Provenienza: Asta Artemide XLV, 2016, lotto 234.').references.map(({ text }) => text), ['RIC 118']);
+});
+
+// Loop V-12: Rauch's German edition remark is no part of the number.
+test('a lot row drops "(2. Aufl.)" behind the number', () => {
+  const lot = findReferences('RÖMISCHE KAISERZEIT. Nero 54-68. As, Rom, 62-68. 10,80g. RIC 306 (2. Aufl.), WCN 275. ss/vz');
+  assert.deepEqual(lot.references[0].reference, ric('306'));
+  assert.equal(lot.references[0].text, 'RIC 306');
+  assert.deepEqual(findReferences('Nero. As. RIC 306 (2e éd.); WCN 275.').references[0].reference, ric('306'));
+  assert.deepEqual(findReferences('Nero. As. RIC 306 2. Aufl., WCN 275.').references.map(({ reference }) => reference), [ric('306')]);
+  // The first edition's numbers are not the bundle's: that remark stays on the number, and nothing is opened on it.
+  assert.notDeepEqual(findReferences('Nero. As. RIC 306 (1. Aufl.), WCN 275.').references[0].reference, ric('306'));
+  assert.notDeepEqual(findReferences('Nero. As. RIC 306 1. Aufl., WCN 275.').references[0].reference, ric('306'));
+});
+
+// Loop S1 review, Important 2 and Minor 4: "Claudio" is Claudius, so a Spanish or Italian heading naming Claudius Gothicus by his epithet
+// ("CLAUDIO GÓTICO", "Claudio il Gotico") opened Claudius I's as of AD 41 for an antoninianus of 268, and "Marco Aurelio" swallowed the emperors whose
+// full names open with it (Probus, Carus, Numerian, Carinus). The long forms name their own man, the epithets of the other emperors RIC files under
+// one (the Apostate, the Arab, the Thracian, the Great) are read the same way, and "Marco Aurelio" with a further name is nobody it can be sure of.
+test('a Spanish or Italian heading naming an emperor by his epithet or his full name names him', () => {
+  const rulers = (text) => findReferences(`${text}. Antoniniano. Roma. (RIC 12).`).rulers;
+  for (const [heading, expected] of [
+    ['CLAUDIO GÓTICO', 'Claudius II Gothicus'], ['Claudio Gótico, 268-270', 'Claudius II Gothicus'], ['Claudio el Gótico', 'Claudius II Gothicus'],
+    ['Claudio il Gotico', 'Claudius II Gothicus'], ['CLAUDIO II', 'Claudius II Gothicus'], ['CLAUDIO II EL GÓTICO', 'Claudius II Gothicus'], ['Claudio II il Gotico', 'Claudius II Gothicus'],
+    ['JULIANO EL APÓSTATA', 'Julian the Apostate'], ['Juliano Apóstata', 'Julian the Apostate'], ["Giuliano l'Apostata", 'Julian the Apostate'],
+    ['Giuliano l’Apostata', 'Julian the Apostate'], ['GIULIANO II', 'Julian the Apostate'],
+    ['FILIPO EL ÁRABE', 'Philip the Arab'], ["Filippo l'Arabo", 'Philip the Arab'], ['Filippo l’Arabo', 'Philip the Arab'],
+    ['MAXIMINO EL TRACIO', 'Maximinus Thrax'], ['Massimino il Trace', 'Maximinus Thrax'],
+    ['CONSTANTINO EL GRANDE', 'Constantine I'], ['Costantino il Grande', 'Constantine I'], ['Costantino Magno', 'Constantine I'],
+    ['TEODOSIO EL GRANDE', 'Theodosius I'], ['Teodosio il Grande', 'Theodosius I'], ['Teodosio I', 'Theodosius I'],
+    ['MARCO AURELIO PROBO', 'Probus'], ['Marco Aurelio Caro', 'Carus'], ['Marco Aurelio Numeriano', 'Numerian'], ['MARCO AURELIO CARINO', 'Carinus'],
+    ['DOMICIO DOMICIANO', 'Domitius Domitianus'],
+  ]) assert.deepEqual(rulers(heading), [expected], heading);
+  // Claudius himself is still Claudius, and Marcus Aurelius himself still Marcus Aurelius; with a further name "Marco Aurelio" is nobody.
+  assert.deepEqual(rulers('CLAUDIO'), ['Claudius']);
+  assert.deepEqual(rulers('MARCO AURELIO'), ['Marcus Aurelius']);
+  assert.ok(rulers('Marco Aurelio y Lucio Vero').includes('Marcus Aurelius'));
+  assert.deepEqual(rulers('MARCO AURELIO ANTONINO'), []);
+  assert.deepEqual(rulers('Marco Aurelio César'), []);
+  assert.deepEqual(rulers('Teodosio II'), []);
+});
+
+// Loop S1 review, V-09's one rule and Minors 5 and 6: the source is the firm. The verb a house writes how the coin came with ("Acquired from",
+// "Purchased from", "Bought from", "Erworben … bei") and the "in" in front of a year are no part of it, wherever they stand, and a comma before
+// any of the verbs starts the next owner's entry; the entry's text keeps every word. A name's own "(part II)" stays in the source, and a remark
+// bracket no longer hides a trailing lot.
+test('a provenance source is the firm, whatever verb the house writes it with', () => {
+  const read = (text) => readProvenance(text).map(({ text: words, source, year, lot }) => [words, source, year, lot]);
+  assert.deepEqual(read('Acquired from Spink in 1998.'), [['Acquired from Spink in 1998', 'Spink', 1998, undefined]]);
+  assert.deepEqual(read('Purchased from Spink in 1998.'), [['Purchased from Spink in 1998', 'Spink', 1998, undefined]]);
+  assert.deepEqual(read('Bought from Seaby in 1965.'), [['Bought from Seaby in 1965', 'Seaby', 1965, undefined]]);
+  assert.deepEqual(read('Privately purchased from Frank Kovacs in 1999.'), [['Privately purchased from Frank Kovacs in 1999', 'Frank Kovacs', 1999, undefined]]);
+  assert.deepEqual(read('From the Hunt collection, acquired from Spink, 1998.'),
+    [['From the Hunt collection', 'the Hunt collection', undefined, undefined], ['acquired from Spink, 1998', 'Spink', 1998, undefined]]);
+  assert.deepEqual(read('Ex Hunt collection, purchased from Spink in 1998.'),
+    [['Ex Hunt collection', 'Hunt collection', undefined, undefined], ['purchased from Spink in 1998', 'Spink', 1998, undefined]]);
+  assert.deepEqual(read('Ex Hunt collection, bought from Seaby in 1965.').map(([, source]) => source), ['Hunt collection', 'Seaby']);
+  assert.deepEqual(read('Aus der Sammlung eines Salzburger Juristen; erworben 1979 bei Frühwald.').map(([, source, year]) => [source, year]),
+    [['Sammlung eines Salzburger Juristen', undefined], ['Frühwald', 1979]]);
+  // A bare verb names no firm: the entry keeps its words and its year, and no source.
+  assert.deepEqual(read('Acquired 1998.'), [['Acquired 1998', undefined, 1998, undefined]]);
+  // "in" is only dropped in front of a year: a place stays.
+  assert.deepEqual(read('Acquired from Spink in London, 1998.').map(([, source]) => source), ['Spink in London']);
+  // Minor 5: a name's own bracket closing the entry stays.
+  assert.deepEqual(read('Ex Hunt collection (part II).').map(([, source]) => source), ['Hunt collection (part II)']);
+  assert.deepEqual(read("Ex Sotheby's 1991, Hunt collection (part II).").map(([, source]) => source), ["Sotheby's, Hunt collection (part II)"]);
+  // Minor 6: the Swiss trailing lot behind a remark bracket is still the lot.
+  assert.deepEqual(read('Ex Leu 7, 1973, 123 (hammer CHF 3,200).'), [['Ex Leu 7, 1973, 123 (hammer CHF 3,200)', 'Leu 7', 1973, '123']]);
+  assert.deepEqual(read('Ex Sincona 40, 2017, 1023 (hammer CHF 3,200).').map(([, source, year, lot]) => [source, year, lot]), [['Sincona 40', 2017, '1023']]);
+  // A remark bracket holding the year is read for its year, as before.
+  assert.deepEqual(read('Ex Hunt collection (sold 1991).').map(([, source, year]) => [source, year]), [['Hunt collection', 1991]]);
+});
+
+// Loop S1 re-review, Minor 4: the verb in its other order, and the German article behind "bei", are no part of the firm either.
+test('a provenance source drops "purchased privately from" and the article after "bei"', () => {
+  assert.deepEqual(readProvenance('Purchased privately from Spink in 1998.').map(({ source, year }) => [source, year]), [['Spink', 1998]]);
+  assert.deepEqual(readProvenance('Erworben im Jahr 1998 bei der Münzhandlung Lanz.').map(({ source, year }) => [source, year]), [['Münzhandlung Lanz', 1998]]);
+  assert.deepEqual(readProvenance('Erworben 1979 bei dem Münzhaus Frühwald.').map(({ source }) => source), ['Münzhaus Frühwald']);
+  // "der" that opens a name after another word stays.
+  assert.deepEqual(readProvenance('Ex Sammlung der Stadt Wien.').map(({ source }) => source), ['Sammlung der Stadt Wien']);
 });

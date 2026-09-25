@@ -1,4 +1,4 @@
-import { buildQuery, eitherReading, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, strayMint } from './lookup.js';
+import { buildQuery, eitherReading, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, soleEditionOffer, strayMint } from './lookup.js';
 import { isMintOnly, isRicPerson, isSectionOnly, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -238,6 +238,13 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
   const pickRic = (list, reference) => pickRicHits(list.map((entry) => ({ entry, hit: reading(entry) })), reference);
   const hasPerson = (record, ids) => [...(record?.a ?? []), ...(record?.o?.p ?? [])].some((id) => ids.has(id));
   const citationReference = (reference) => ({ ...reference, section: isRicPerson(reference.section) ? '' : reference.section, id: undefined, rulers: undefined });
+  // "Nero. RIC I 306" names no edition, and OCRE holds RIC I, II.1 and II.3 in their second alone. A dealer citing the 1923 first edition's numbers
+  // means another coin, so the one type there is never opened on it: it is offered, labelled with why the collector has to take it himself.
+  const editionOffer = (picked, reference) => {
+    if (picked.status !== 'candidates' || picked.candidates?.length !== 1) return picked;
+    const offer = soleEditionOffer(reference, picked.candidates[0].title);
+    return offer ? { ...picked, candidates: [{ ...picked.candidates[0], ...offer }] } : picked;
+  };
   const local = (picked, name, query) => ({ ...picked, candidates: picked.candidates?.map((entry) => ({ ...entry, source: 'local' })), corpus: name, query });
 
   // A RIC reference is matched against OCRE's titles, which carry the volume and the section a collector typed as well
@@ -288,7 +295,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       }
       if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       if (matched.length > 0) {
-        let final = pickRic(matched, citationRef);
+        // A late-Roman heading names the mint beside the ruler ("Constantine I. Follis, Treveri. RIC VII 42."), and the ruler alone has the number at
+        // every mint of the volume. Where one of his coins is at a mint the heading names, his coins at the mints it does not name go: one left is
+        // the answer, the ruler and the mint both agreeing. A coin filed under his own name stays beside it, since RIC V lists his coins of that mint
+        // there too. Two mints named may be a category and the mint ("Rome Roman Empire. … Siscia mint."), so a coin narrowed to by them is offered.
+        const struck = [].concat(reference.struckAt ?? []).filter((name) => typeof name === 'string' && name !== '');
+        const atNamedMint = (entry) => isMintOnly(reading(entry)?.section ?? '') && !strayMint(reference, entry.title);
+        const here = struck.length > 0 && matched.some(atNamedMint) ? matched.filter((entry) => !strayMint(reference, entry.title)) : matched;
+        let final = pickRic(here, citationRef);
+        if (final.status === 'ok' && here.length < matched.length && struck.length > 1) final = { status: 'candidates', candidates: [final.entry], partial: true };
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.
@@ -297,7 +312,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
           return await listedById('ocre', final.entry.id);
         }
         if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
-        return local(final, 'ocre', query);
+        return local(editionOffer(final, reference), 'ocre', query);
       }
       return { status: 'candidates', candidates: entries.map((entry) => ({ ...entry, source: 'local' })), partial: true, personMismatch: true, corpus: 'ocre', query };
     }
@@ -311,7 +326,7 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
     if (picked.status === 'none' && reference.section) { picked = pickRic(await candidateEntries(), { ...reference, section: '' }); broadened = picked.status !== 'none'; }
     const struck = !reference.volume && isMintOnly(reference.section);
     if (picked.status === 'ok' && (broadened || reference.rulers?.length || reference.headingMint || struck)) picked = { status: 'candidates', candidates: [picked.entry], partial: true };
-    if (picked.status !== 'ok') return local(picked, 'ocre', squash(`RIC ${reference.volume} ${reference.section} ${reference.number}`));
+    if (picked.status !== 'ok') return local(editionOffer(picked, reference), 'ocre', squash(`RIC ${reference.volume} ${reference.section} ${reference.number}`));
     return await listedById('ocre', picked.entry.id);
   }
 

@@ -1,4 +1,4 @@
-import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
+import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, SECOND_EDITION, sectionBracket, sgNumber, VARIANT, withEdition, withRange } from './lookup.js';
 import { EXTRA_SPELLINGS, isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -106,8 +106,9 @@ const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\
 // The German, Italian, Spanish and French houses open one with their own words ("Exemplar der Auktion …", "Aus Sammlung …", "Erworben 1998 bei …",
 // "Provenienz: …", "Provient de la vente …", "Proviene da asta …"), each at the start of its sentence and with its capital, as "Ex" is.
 // CNG and the American houses say how the coin came instead ("Acquired from Spink, 1998", "Purchased from Harlan J. Berk", "Privately purchased
-// from …", "Bought from Seaby"), and those open one the same way.
-const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Privately purchased|Acquired|Purchased|Bought|Ex|From`;
+// from …", "Bought from Seaby"), and those open one the same way. The Italian houses label it "Provenienza:" or open on the sale ("Asta Artemide
+// XLV, 2016, lotto 234"); "Asta" is also the spear a type is described with ("Asta e scudo"), so only a house's capital behind it makes it a sale.
+const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienza|Provenienz|Provenance|Provient de|Proviene|Asta(?= [A-Z])|Privately purchased|Acquired|Purchased|Bought|Ex|From`;
 const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MARKERS})\b)`);
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
@@ -157,7 +158,7 @@ const PROVENANCE_ENTRIES = 10;
 const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
 const PURCHASE_END_ALL = new RegExp(PURCHASE_END.source, 'gu');
-const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
+const PROVENANCE_LABEL = /^(?:provenance|provenienza?) ?:? ?/i;
 // The words that only introduce the owner: "Ex", "From", "Exemplar der", "Aus (der)", "Provient de", "Proviene da". "Erworben" is kept, since
 // "Erworben bei Lanz" says how the coin came, as "privately purchased from" does.
 const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|proviene(?: d[a-z']*)?)\b\.? ?:? ?/i;
@@ -172,6 +173,17 @@ const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n\.?[°º]|n\.) ?(\d{1,6}[a-z]?)(?![
 const PROVENANCE_TRAILING = /, (\d{1,6}[a-z]?)$/i;
 // A grade or description quoted from the earlier sale is no part of the source ("lot 1234 (there described as EF)"); the entry's text keeps it.
 const PROVENANCE_REMARK = /\s*\((?:there|where|previously|formerly)\s+(?:described|catalogued|cataloged|graded|offered|listed)\b[^()]*\)/gi;
+// So is a bracket closing the entry that is a remark on the sale rather than part of its name: one that names an amount ("lot 1023 (hammer CHF
+// 3,200)", "(realised 1,200 CHF)"), or opens in lower case, unless it is a name's own part, volume or lot ("Hunt collection (part II)") or holds the
+// year, which the year's own reading takes out. A name's capitalised bracket stays too ("NAC 27 (Zurich)"). It goes before the lot is read, so a
+// Swiss trailing lot behind it is still the lot ("Leu 7, 1973, 123 (hammer CHF 3,200)").
+const PROVENANCE_ASIDE = /\s*\((?:(?!(?:part|vol|lot)\b)(?![^()]*(?<!\d)(?:1[6-9]\d\d|20\d\d)(?!\d))\p{Ll}[^()]*|[^()]*(?:[$€£]|\b(?:CHF|EUR|USD|GBP)\b)[^()]*)\)$/u;
+// The source is the firm. The words a house says how the coin came with ("Acquired from Spink", "Purchased from", "Bought from", "Privately
+// purchased from", "Erworben 1998 bei Lanz") are no part of its name wherever they stand, and nor is the "in" in front of a year ("in 1988"); the
+// entry's text keeps every word. A verb with no firm behind it ("Acquired 1998") leaves the entry no source.
+const PROVENANCE_IN_YEAR = /,?\s+in\s+(?=(?:1[6-9]\d\d|20\d\d)(?![\d.,]\d))/i;
+const PROVENANCE_VERB = /(?<![\p{L}\d])(?:privately purchased from|purchased privately from|acquired from|purchased from|bought from|erworben\b[^,;()]{0,40}?\bbei(?:\s+(?:der|dem|den))?)\s+/giu;
+const PROVENANCE_BARE_VERB = /^(?:privately purchased|acquired|purchased|bought|erworben)$/i;
 // A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
 const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
 // The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
@@ -227,11 +239,12 @@ function bracketLot(working) {
 
 function provenanceEntry(piece) {
   const text = trimEnds(piece.replace(PROVENANCE_LABEL, ''));
-  let working = trimEnds(text.replace(PROVENANCE_MARKER, '').replace(PROVENANCE_REMARK, ''));
+  let working = trimEnds(trimEnds(text.replace(PROVENANCE_MARKER, '').replace(PROVENANCE_REMARK, '')).replace(PROVENANCE_ASIDE, ''));
   if (!/[\p{L}\d]/u.test(working)) return null;
   const entry = { text: text.slice(0, 300) };
   const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working) ?? trailingLot(working) ?? bracketLot(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
+  working = working.replace(PROVENANCE_IN_YEAR, ' ');
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
   for (let found; (found = PROVENANCE_YEAR.exec(working));) year = found;
@@ -244,8 +257,9 @@ function provenanceEntry(piece) {
     else if (date) from = at - (Math.min(at, 30) - date.index);
     working = working.slice(0, from) + working.slice(to);
   }
-  const source = trimEnds(working.replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ',')).slice(0, 120);
-  if (/\p{L}/u.test(source)) entry.source = source;
+  const source = trimEnds(working.replace(/  +/g, ' ').replace(PROVENANCE_VERB, '').replace(/, ?(?=,)/g, '').replace(/  +/g, ' ').replace(/ ,/g, ','))
+    .slice(0, 120);
+  if (/\p{L}/u.test(source) && !PROVENANCE_BARE_VERB.test(source)) entry.source = source;
   if (year) entry.year = Number(year[0]);
   if (lot) entry.lot = lot[1];
   return entry;
@@ -253,7 +267,7 @@ function provenanceEntry(piece) {
 
 // Where one sentence holds several owners: a ";", a comma before another "ex", and a full stop before another marker that the sentence ran past at an
 // initial ("Aus Sammlung Dr. X. Erworben 1998 bei …").
-const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )| and (?=[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
+const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )| and (?=[Ee][Xx] )|,(?= (?:(?:[Pp]rivately purchased|[Aa]cquired|[Pp]urchased|[Bb]ought) from|[Ee]rworben) )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
 export function readProvenance(text) {
   if (typeof text !== 'string') return [];
   const entries = [];
@@ -334,8 +348,11 @@ const depths = (text) => {
   });
 };
 
-// Invisible characters out, en and em dashes as "-", spaces squashed with the line breaks kept, at most 3,000 characters.
-const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
+// Invisible characters out, en and em dashes as "-", spaces squashed with the line breaks kept, at most 3,000 characters. The German second-edition
+// remark a house writes unbracketed behind a number ("RIC 306 2. Aufl., WCN 275") is bracketed: its full stop would otherwise split the citation,
+// and bracketed it is lookup.js's EDITION, which carries it onto RIC I, II.1 and II.3.
+const AUFLAGE = /(?<=\d)[^\S\n]+2\.[^\S\n]?Aufl(?:\.|age)?(?![\p{L}\d])/gu;
+const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(AUFLAGE, ' (2. Aufl.)').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
 // A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
@@ -371,8 +388,12 @@ for (const name of sectionPeople) {
 // "Jovian" is also an English adjective, so before a lower-case word ("Jovian eagle") it is that adjective, even where it opens a sentence.
 const EXTRA = new Set(EXTRA_SPELLINGS.map(([label]) => label));
 const ADJECTIVES = new Set(['jovian']);
+// "Marco Aurelio" opens the full names of Probus, Carus, Numerian and Carinus, and of Caracalla and Elagabalus ("Marco Aurelio Antonino"): with a
+// further name of three letters or more behind it, it is whoever that is, and a name the table does not hold is nobody rather than Marcus Aurelius.
+const NAME_OPENS = new Set(['marco aurelio']);
 const namePattern = (label) => (EXTRA.has(label) && !fromSection.has(label)
-  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}` : anyCase(label));
+  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}${NAME_OPENS.has(label) ? String.raw`(?!\s+\p{Lu}\p{L}{2})` : ''}`
+  : anyCase(label));
 const RULERS = Object.freeze([...labelGroups.entries()]
   .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${namePattern(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
   .sort((a, b) => b[1].length - a[1].length));
@@ -382,37 +403,56 @@ const LABELS = new Set(labelGroups.keys());
 // left out: a man's name is his, and the ruler path has always had it. The mints are kept out of LABELS above as well, so what counts as a legend is
 // exactly what counted before — a heading that opens "ROMA AETERNA" is read as the coin's words, not as the mint's name.
 const MINTS = Object.freeze(MINT_SPELLINGS.filter(([label]) => !LABELS.has(label))
-  .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'u'), label.split(' ')[0]]))
+  .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'gu'), label.split(' ')[0]]))
   .sort((a, b) => b[1].source.length - a[1].source.length));
 // The city a commemorative honours is no mint: "Urbs Roma" and "VRBS ROMA" always, and "Constantinopolis" where the heading says it is the
 // commemorative ("Constantinopolis commemorative", "for Constantinopolis", "Commemorative Series. Constantinopolis") rather than the mint's own
 // Latin name. They are blanked before the mints are read, as the god Elagabal is before the rulers.
 const COMMEMORATED = /\b[uv]rbs\s+roma\b|\b(?:for|commemorative(?:\s+series)?)[\s.,:]+(?:the\s+)?constantinopolis\b|\bconstantinopolis(?=[\s,]+(?:commemorative|series|type|issue)\b)/gi;
-// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Rome Roman
-// Empire. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
-// the same fold, so a heading written "Trèves" is compared as the table holds it.
-function headingMints(text) {
+// Where a coin was found is no more where it was struck than a category is: a place with a hoard or a find behind it ("the Lyon hoard", "Trier
+// find", "Hort"), or "found near", "found at", "hoard of" in front of it ("Found near London", "Aus dem Hort von Trier"). A closed list, read on the
+// folded heading.
+const FINDS = String.raw`hoard|find|treasure|schatzfund|schatz|hort|fund|ripostiglio|tesoro|tresor|cache|deposit`;
+const FIND_AFTER = new RegExp(String.raw`^\s+(?:${FINDS})(?!\p{L})`, 'iu');
+const FIND_BEFORE = new RegExp(String.raw`(?:(?:found|discovered|unearthed|excavated|gefunden|trouvee?|rinvenut[oa]|hallad[oa])\s+(?:near|at|in|close\s+to|bei|pres\s+de|a|vicino\s+a|cerca\s+de|en)|(?:${FINDS})\s+(?:of|von|de|di|du))\s+(?:the\s+|dem\s+|la\s+|le\s+)?$`, 'iu');
+// Nor is a mint word that is part of a house's or firm's name, wherever it stands: one a firm's word follows ("London Coins Auction 12", "Roma
+// Numismatics", "Trier Numismatik", "Lyon Auktionen", "London Ltd", "& Co") or one that "Sold by", "Ex", "From" or "bei" opens the clause of
+// ("Sold by Baldwin's of London"). A closed list, read in the mint's own clause.
+const FIRM_AFTER = /^\s*(?:coins|numismatics|numismatik|numismatica|auctions?|auktion(?:en)?|ltd|limited|gmbh|&\s*co)(?!\p{L})/iu;
+const FIRM_BEFORE = /(?<!\p{L})(?:sold\s+by|ex|from|bei)(?!\p{L})[^.;:,]*$/iu;
+// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Roman Empire,
+// Rome. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
+// the same fold, so a heading written "Trèves" is compared as the table holds it. Only a name standing after `from` counts: a mint word in front
+// of the ruler is the house's category or name ("Rome Roman Empire. Diocletian. …", "London Coins Auction 180. …"), not where his coin was struck.
+function headingMints(text, from = -1) {
   const rest = fold(text).replace(COMMEMORATED, (match) => ' '.repeat(match.length));
   const lower = rest.toLowerCase();
   const found = [];
   for (const [section, pattern, probe] of MINTS) {
     if (!lower.includes(probe)) continue;
-    const at = pattern.exec(rest);
-    if (at) found.push({ index: at.index, section });
+    for (const at of rest.matchAll(pattern)) {
+      const end = at.index + at[0].length;
+      const after = rest.slice(end, end + 24), before = rest.slice(Math.max(0, at.index - 40), at.index);
+      if (at.index <= from || FIND_AFTER.test(after) || FIND_BEFORE.test(before) || FIRM_AFTER.test(after) || FIRM_BEFORE.test(before)) continue;
+      found.push({ index: at.index, section });
+      break;
+    }
   }
   return [...new Set(found.sort((a, b) => a.index - b.index).map(({ section }) => section))];
 }
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
-// a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
+// a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here). The Spanish and Italian houses
+// write the title their own way ("como Augusto", "come Cesare"), where "Augusto" is also Augustus's own name.
 // Elagabal is also the god of Emesa, whose sacred stone the coins of Elagabalus and of Uranius Antoninus show: "the stone of Elagabal", "Stein des
 // Elagabal", "la pierre d'Élagabal", "Sol Elagabal", "Stein des Gottes Elagabal", "Piedra sagrada de Elagabal" name the god, and the man they would
 // name is then someone else's coin. One word may stand between the noun and its preposition ("sacred", "sagrada"). "Elagabal in quadriga" is left
 // the emperor's: he rides one on his own coins as often as the stone does.
 const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|gottes|dieu|dio|dios|deus|sol|temple|tempel|tempio|templo)(?:\s+[a-z]+)?\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:(?:god|gott|gottes|dieu|dio|dios|deus)\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
 function rulersIn(text) {
-  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
+  const blank = (match) => ' '.repeat(match.length);
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\b(?:as|como|come)\s+(?:Caesar|Cesare?|Augustus|Augusto)\b/gi, blank).replace(/\baugust(?:us|a)\b/g, blank).replace(GOD, blank);
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
   // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
   const lower = rest.toLowerCase();
@@ -421,7 +461,8 @@ function rulersIn(text) {
     if (!lower.includes(probe)) continue;
     rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
   }
-  return [...new Set(found.sort((a, b) => a[0] - b[0]).flatMap(([, name]) => [name, ...(FILED_UNDER[name] ?? [])]))];
+  const sorted = found.sort((a, b) => a[0] - b[0]);
+  return { names: [...new Set(sorted.flatMap(([, name]) => [name, ...(FILED_UNDER[name] ?? [])]))], first: sorted[0]?.[0] ?? -1 };
 }
 // The one ruler RIC files under another's name: RIC I² heads no section with Octavian and lists every coin of his under Augustus, so a heading naming
 // him ("Octavian as Augustus, 27 BC – 14 AD") names Augustus beside him for the lookup, as the card's own filing note says. A closed table from RIC's
@@ -571,7 +612,10 @@ function normalise(stopped, spelled, cf) {
   const written = stopped.replace(RIC_STOPS, 'RIC ');
   const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
-  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  // A RIC citation's edition mark other than the second stays on its number, as lookup.js's clean-up keeps it (the bundle holds the second's numbers).
+  const ricKey = /^RIC/i.test(key);
+  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, (mark) => (ricKey && !SECOND_EDITION.test(mark) ? mark : ''))
+    .replace(CORRECTION, ''));
   // Áureo puts the edition year of Calicó in front of the number ("Cal. 2008, 1015", "Cal-2019-123"): the year is the book's, not the coin's.
   if (CALICO_KEY.test(spelled)) text = text.replace(/^Cal\.?[\s.:#-]*(?:(?:19|20)\d\d\s*[,-]\s*(?=\d))?/i, 'Calicó ');
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
@@ -587,7 +631,8 @@ function normalise(stopped, spelled, cf) {
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
   // The row's own text has had its remarks, edition, variety and correction taken off already, so the reference is read from it with the shared
   // clean-up switched off: each row is cleaned once, not once here and again inside parseReference.
-  const parsed = withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false));
+  // A second-edition mark it wrote after the number is carried onto RIC I, II.1 or II.3 (lookup.js withEdition).
+  const parsed = withEdition(withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false)), written);
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
   // A RIC key cites RIC whatever follows it, so its row is a RIC row even where the words are no reference this extension can place ("RIC 1,2" is two
@@ -649,12 +694,12 @@ export function findReferences(input) {
     return !seen.has(id) && seen.add(id);
   });
   const headline = heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length));
-  const rulers = rulersIn(headline);
+  const { names: rulers, first } = rulersIn(headline);
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
   // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the
   // lookup never opens his coin from a mint of RIC VI–IX that is none of them. A heading with no ruler is the section of the first mint it names.
-  const named = headingMints(headline);
+  const named = headingMints(headline, rulers.length > 0 ? first : -1);
   const mint = rulers.length === 0 ? named[0] ?? '' : '';
   const mark = mint ? { mint } : named.length ? { struckAt: named } : null;
   return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
