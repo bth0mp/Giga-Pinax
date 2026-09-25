@@ -68,6 +68,13 @@ export const COST_FEE_PARTS = Object.freeze(['premiumVat', 'platformFee', 'impor
 // The buyer's premium rate on the coin's bids: the last bid settled or re-opened that carries a rate (settled won, or
 // settled lost and then corrected to won, which is the same bid), else the plan the collector made for it. A plan
 // revised after that entry - a coin re-opened and planned again - is newer, so its rate is the one it is won on now.
+// A lot's fee sheet as fees: a grid-only sheet (an increment and minimum saved with a bid, no fee typed) records no
+// fees, so it is none here.
+/**
+ * @param {import('./types.js').CostEstimate | null | undefined} estimate
+ * @returns {import('./types.js').CostEstimate | undefined}
+ */
+export const feeSheetOf = (estimate) => (estimate && !estimate.gridOnly ? estimate : undefined);
 const SETTLED_ACTIONS = new Set(['settled-won', 'settled-lost', 'reopened-active', 'reopened-inactive']);
 /**
  * @param {Lot | null | undefined} lot
@@ -93,7 +100,7 @@ export function wonTerms(lot) {
   // `costEstimate: null` in the outcome's terms is the collector saying no fees were charged beyond the premium: none,
   // over any sheet saved with the bid. Absent, the lot's own sheet applies.
   const noFees = Boolean(terms) && OWN(terms, 'costEstimate') && terms?.costEstimate === null;
-  return { rate, estimate: noFees ? undefined : terms?.costEstimate ?? lot?.costEstimate, noFees };
+  return { rate, estimate: noFees ? undefined : terms?.costEstimate ?? feeSheetOf(lot?.costEstimate), noFees };
 }
 
 /**
@@ -236,8 +243,9 @@ export function projectExposure(snapshot) {
       );
     }
     // All in, from the fee sheet saved beside the bid, only where it is in the bid's currency: never converted.
-    if (lot.costEstimate?.currency !== currency) continue;
-    const allIn = calculateBidCost(lot.activeBid.amount, lot.activeBid.buyerPremiumBps, lot.costEstimate);
+    const sheet = feeSheetOf(lot.costEstimate);
+    if (sheet?.currency !== currency) continue;
+    const allIn = calculateBidCost(lot.activeBid.amount, lot.activeBid.buyerPremiumBps, sheet);
     if (!allIn.ok) continue;
     for (const total of totals) {
       total.knownTotalMinor = addSafe(total.knownTotalMinor, allIn.value.total.minor);

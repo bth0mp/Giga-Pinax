@@ -4,7 +4,7 @@
 // and an auction's reminders read into their two controls and back.
 import { FEE_SHEET_FIELDS, buildBidCalculation, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
 import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { bidPremiumRate } from './core/projections.js';
+import { bidPremiumRate, feeSheetOf } from './core/projections.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').Money} Money
@@ -120,7 +120,7 @@ export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
 export function bidFeeFields(lot, currency) {
   const estimate = lot?.costEstimate?.currency === currency ? lot.costEstimate : null;
   return {
-    ...feeSheetTexts(estimate),
+    ...feeSheetTexts(feeSheetOf(estimate)),
     increment: estimate && estimate.incrementMinor !== 1 ? moneyInputText({ currency, minor: estimate.incrementMinor }) : '',
     minimum: estimate?.minimumBidMinor ? moneyInputText({ currency, minor: estimate.minimumBidMinor }) : '',
   };
@@ -146,14 +146,19 @@ const gridMinor = (text, currency, locale, fallback) => {
 export function bidEstimateToSend(lot, values, locale = 'en-US') {
   const currency = String(values.currency);
   const shown = lot?.costEstimate?.currency === currency ? lot.costEstimate : null;
-  const increment = gridMinor(values.increment, currency, locale, shown?.incrementMinor ?? 1);
+  // The form shows the saved grid, so a blank box is the default grid, not the saved one.
+  const increment = gridMinor(values.increment, currency, locale, 1);
   if (!increment.ok) return { ok: false, error: { message: increment.error.message, field: 'increment' } };
   if (increment.value < 1) return { ok: false, error: { message: 'Enter an increment greater than zero.', field: 'increment' } };
-  const minimum = gridMinor(values.minimum, currency, locale, shown?.minimumBidMinor ?? 0);
+  const minimum = gridMinor(values.minimum, currency, locale, 0);
   if (!minimum.ok) return { ok: false, error: { message: minimum.error.message, field: 'minimum' } };
   const fees = feeSheetEstimate(values, { currency, locale, incrementMinor: increment.value, minimumBidMinor: minimum.value });
   if (!fees.ok) return { ok: false, error: { message: fees.error.message, field: fees.error.field } };
   if (fees.value) return { ok: true, value: /** @type {import('./core/types.js').CostEstimate} */ (fees.value) };
+  // An increment or minimum with no fee is kept as a grid only: never as fees of nothing (Fix round, Minor 1).
+  if (increment.value !== 1 || minimum.value !== 0) {
+    return { ok: true, value: { currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: increment.value, minimumBidMinor: minimum.value, gridOnly: true } };
+  }
   return { ok: true, value: shown ? null : undefined };
 }
 
@@ -423,7 +428,7 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
   else if ((preset = housePresetFor(presets, lot?.auctionContext?.house))) { rate = preset.buyerPremiumBps; premiumSource = `from your ${preset.name} preset`; }
   // "No fees were charged beyond the premium" is the outcome's `costEstimate: null`: ticked, with no sheet shown.
   const noFees = Boolean(terms) && Object.hasOwn(terms, 'costEstimate') && terms?.costEstimate === null;
-  const saved = noFees ? null : terms?.costEstimate ?? lot?.costEstimate;
+  const saved = noFees ? null : terms?.costEstimate ?? feeSheetOf(lot?.costEstimate);
   const estimate = saved?.currency === hammerCurrency ? saved : null;
   const fees = estimate || noFees ? feeSheetTexts(estimate) : feeSheetTexts(preset ? { premiumVatBps: preset.premiumVatBps, platformFeeBps: preset.platformFeeBps } : null);
   return {
@@ -480,7 +485,7 @@ export function outcomeTermsFromForm(lot, values, locale = 'en-US') {
   // Ticked, there were no fees beyond the premium, whatever the fields hold; blank, the sheet saved with the bid applies;
   // typed, the typed sheet overrides it.
   if (values.noFees) terms.costEstimate = null;
-  else if (fees.value && !sameFeeSheet(fees.value, lot?.costEstimate)) terms.costEstimate = fees.value;
+  else if (fees.value && !sameFeeSheet(fees.value, feeSheetOf(lot?.costEstimate))) terms.costEstimate = fees.value;
   if (Object.keys(terms).length) return { ok: true, value: terms };
   return { ok: true, value: lot?.outcome?.terms ? null : undefined };
 }

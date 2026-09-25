@@ -546,7 +546,7 @@ test('a fee sheet read from its fields is null when blank, and names the field a
   assert.equal(feeSheetEstimate({ shipping: 'ten' }, { currency: 'EUR' }).error.field, 'shipping');
   assert.equal(feeSheetEstimate({ importVat: '120' }, { currency: 'EUR' }).error.field, 'importVat');
   assert.deepEqual(feeSheetTexts({ shippingMinor: 1500, paymentFeeBps: 0, importVatBps: 500 }),
-    { premiumVat: '', platformFee: '', importVat: '5.00', shipping: '15.00', paymentPercent: '0.00', paymentFixed: '' });
+    { premiumVat: '', platformFee: '', importVat: '5.00', shipping: '15.00', paymentPercent: '', paymentFixed: '' });
 });
 
 // G-15: the answer is a stat block like the median's - what it is, the figure, one line of what makes it up with the

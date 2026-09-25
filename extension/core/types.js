@@ -111,6 +111,7 @@
  * @property {number} [premiumVatBps] VAT charged on the buyer's premium alone
  * @property {number} [platformFeeBps] a live-bidding platform's fee on the hammer alone
  * @property {number} [importVatBps] import VAT or duty on hammer + premium + shipping, paid when the coin crosses a border
+ * @property {true} [gridOnly] only the bid's increment and minimum were saved: no fee is recorded
  */
 
 /**

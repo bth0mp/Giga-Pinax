@@ -1445,3 +1445,14 @@ test('outcome terms with no fee sheet cost the coin at hammer and premium alone,
   const blank = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
   assert.equal(blank.value.outcome.cost.total.minor, 100000 + 20000 + 3800 + 1500, 'no terms: the bid’s sheet applies');
 });
+
+// Fix round, Minor 1: a grid-only sheet (increment and minimum, no fee recorded) is no fee sheet for a coin's cost.
+test('a grid-only sheet records no fees: the won cost names the gap, and gridOnly is true or absent', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 10000, gridOnly: true };
+  const lot = makeLot(IDS.lotEur, { plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000 }, costEstimate: grid });
+  const won = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.deepEqual(won.value.outcome.cost.missing, ['fees']);
+  assert.equal(validateSnapshot(snapshotWith(won.value)).ok, true);
+  const broken = structuredClone(won.value); broken.costEstimate.gridOnly = false;
+  assert.equal(validateSnapshot(snapshotWith(broken)).error.path, 'lots[0].costEstimate.gridOnly');
+});

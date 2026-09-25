@@ -1,7 +1,7 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { eventTiming, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
+import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
@@ -878,7 +878,8 @@ async function initWorkspace() {
     const plan = raisePlanLine(lot, formatMoney);
     $('bid-plan-text').textContent = plan; $('bid-plan-line').hidden = !plan;
     f.preset.value = ''; f.budget.value = '';
-    $('bid-fees').open = Boolean(lot?.costEstimate && lot.costEstimate.currency === f.currency.value);
+    $('bid-fees').open = Boolean(feeSheetOf(lot?.costEstimate) && lot?.costEstimate?.currency === f.currency.value);
+    $('bid-budget').open = Boolean(lot?.costEstimate?.gridOnly && lot.costEstimate.currency === f.currency.value);
     updateBidAnswers();
   }
   const bidValues = () => {

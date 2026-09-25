@@ -119,9 +119,16 @@ export function feeSheetEstimate(texts = {}, { currency, locale = 'en-US', incre
   return { ok: true, value: estimate };
 }
 
-// A saved fee sheet written back into its fields; a key the estimate does not hold leaves its field blank.
+// A saved fee sheet written back into its fields; a key the estimate does not hold leaves its field blank. A fee of
+// nothing reads blank too, as blank reads back as nothing - except on a sheet whose every fee is nothing, which keeps
+// one 0.00 (shipping) so that saving it again keeps it recorded rather than taking it off.
 export function feeSheetTexts(estimate) {
-  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key }) => [name, formatMinorInput(estimate?.[key])]));
+  const anyFee = FEE_SHEET_FIELDS.some(({ key }) => estimate?.[key] > 0);
+  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key }) => {
+    const value = estimate?.[key];
+    if (value === 0 && (anyFee || name !== 'shipping')) return [name, ''];
+    return [name, formatMinorInput(value)];
+  }));
 }
 
 // The house preset behind one row of the presets editor. It names the field its error belongs to so

@@ -930,9 +930,11 @@ test('the Bid tab holds the calculator’s fee sheet and budget, and no second c
 
 test('the bid form reads its fee sheet, its live line and its budget with the calculator’s arithmetic', () => {
   const eur = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, premiumVatBps: 1900 };
-  assert.deepEqual(bidFeeFields({ costEstimate: eur }, 'EUR'), { premiumVat: '19.00', platformFee: '', importVat: '', shipping: '15.00', paymentPercent: '0.00', paymentFixed: '0.00', increment: '10.00', minimum: '' });
+  assert.deepEqual(bidFeeFields({ costEstimate: eur }, 'EUR'), { premiumVat: '19.00', platformFee: '', importVat: '', shipping: '15.00', paymentPercent: '', paymentFixed: '', increment: '10.00', minimum: '' }, 'a fee of nothing reads blank, as blank reads back');
+  // A sheet whose every fee is nothing still shows one 0.00, so saving it again keeps it recorded.
+  assert.equal(bidFeeFields({ costEstimate: { ...eur, shippingMinor: 0, premiumVatBps: undefined } }, 'EUR').shipping, '0.00');
   assert.equal(bidFeeFields({ costEstimate: eur }, 'CHF').shipping, '', 'a sheet in another currency is not this bid’s');
-  assert.deepEqual(bidEstimateToSend({ costEstimate: eur }, { currency: 'EUR', shipping: '15', premiumVat: '19' }).value, eur);
+  assert.deepEqual(bidEstimateToSend({ costEstimate: eur }, { currency: 'EUR', shipping: '15', premiumVat: '19', increment: '10' }).value, eur);
   assert.equal(bidEstimateToSend({ costEstimate: eur }, { currency: 'EUR' }).value, null, 'cleared: taken off');
   assert.equal(bidEstimateToSend({ costEstimate: eur }, { currency: 'CHF' }).value, undefined, 'never shown: left alone');
   assert.equal(bidEstimateToSend({}, { currency: 'EUR', increment: '0' }).error.field, 'increment');
@@ -1494,4 +1496,14 @@ test('the outcome form keeps the bid’s sheet when blank, says none with its ch
   assert.equal(draft.noFees, true);
   assert.equal(draft.fees.shipping, '', 'no sheet is shown under the checkbox');
   assert.equal(outcomeDraftForLot(lot).noFees, false);
+});
+
+// Fix round, Minor 1: a bid grid typed in the budget fold with no fee is kept - as a grid, never as fees of nothing.
+test('an increment and minimum typed without a fee are saved as a grid only, and read back', () => {
+  const sent = bidEstimateToSend({}, { currency: 'EUR', increment: '25', minimum: '100' });
+  assert.deepEqual(sent.value, { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 10000, gridOnly: true });
+  const fields = bidFeeFields({ costEstimate: sent.value }, 'EUR');
+  assert.deepEqual([fields.increment, fields.minimum, fields.shipping, fields.paymentPercent], ['25.00', '100.00', '', ''], 'the grid comes back; no fee is shown');
+  assert.equal(bidEstimateToSend({}, { currency: 'EUR' }).value, undefined, 'nothing typed: nothing sent');
+  assert.equal(bidEstimateToSend({ costEstimate: sent.value }, { currency: 'EUR' }).value, null, 'the grid cleared: taken off');
 });

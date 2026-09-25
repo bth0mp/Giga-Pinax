@@ -3,7 +3,7 @@
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
-import { costFees, eventTiming, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
+import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
 import { parseReference } from './lookup.js';
@@ -197,7 +197,7 @@ export function comparisonRows(lots, selectedIds) {
     const bid = terminal ? null : lot.activeBid ?? lot.plannedBid ?? null;
     const amount = terminal ? lot.outcome?.hammer ?? null : bid?.amount ?? null;
     const amountRole = terminal ? 'Final hammer' : lot.activeBid ? 'Active maximum' : lot.plannedBid ? 'Planned maximum' : 'Saved amount';
-    const estimate = lot.costEstimate;
+    const estimate = feeSheetOf(lot.costEstimate);
     const estimateLabel = terminal ? '' : !estimate ? 'No saved fee estimate' : !amount || estimate.currency !== amount.currency
       ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
       : [`${estimate.currency} fees: shipping ${((estimate.shippingMinor ?? 0) / 100).toFixed(2)} + fixed ${((estimate.paymentFeeMinor ?? 0) / 100).toFixed(2)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,

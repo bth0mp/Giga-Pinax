@@ -714,9 +714,9 @@ test('the Bid tab works out the all-in cost, the preset and the budget in one fo
   assert.deepEqual(saved.costEstimate, { currency: 'CHF', shippingMinor: 2000, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 });
   assert.equal(f.shipping.value, '20.00', 'the saved fee sheet is what the form shows again');
   assert.equal(f.increment.value, '10.00');
-  assert.equal(f.paymentPercent.value, '0.00', 'a fee recorded as none reads 0, not blank');
-  // Clearing the sheet it shows takes it off the lot.
-  for (const name of ['shipping', 'paymentPercent', 'paymentFixed']) await page.type('bid-form', name, '');
+  assert.equal(f.paymentPercent.value, '', 'a fee of nothing beside a real one reads blank (Fix round, Minor 5)');
+  // Clearing the sheet and the grid it shows takes it off the lot.
+  for (const name of ['shipping', 'increment']) await page.type('bid-form', name, '');
   await page.submit('bid-form', { value: 'plan' });
   assert.equal(Object.hasOwn(storedLot(background, 'Nero, denarius'), 'costEstimate'), false);
 });

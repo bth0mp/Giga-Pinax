@@ -143,6 +143,8 @@ function costEstimateResult(value, path) {
     integerResult(value.incrementMinor, `${path}.incrementMinor`, { minimum: 1 }),
     integerResult(value.minimumBidMinor, `${path}.minimumBidMinor`),
     bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path), bpsResult(value, 'importVatBps', path),
+    // A grid-only sheet: the bid's increment and minimum, no fee recorded.
+    OWN(value, 'gridOnly') && value.gridOnly !== true ? failure('invalid-boolean', 'A grid-only sheet says so with true.', `${path}.gridOnly`) : { ok: true },
   );
 }
 
