@@ -127,6 +127,7 @@ export function bidFeeFields(lot, currency) {
 }
 
 // The bid grid the budget fold types: blank is the fixed grid of one minor unit from nothing.
+/** @type {(text: *, currency: string, locale: string, fallback: number) => *} */
 const gridMinor = (text, currency, locale, fallback) => {
   if (!String(text ?? '').trim()) return { ok: true, value: fallback };
   const parsed = parseMoney(String(text), currency, locale);
@@ -152,7 +153,7 @@ export function bidEstimateToSend(lot, values, locale = 'en-US') {
   if (!minimum.ok) return { ok: false, error: { message: minimum.error.message, field: 'minimum' } };
   const fees = feeSheetEstimate(values, { currency, locale, incrementMinor: increment.value, minimumBidMinor: minimum.value });
   if (!fees.ok) return { ok: false, error: { message: fees.error.message, field: fees.error.field } };
-  if (fees.value) return { ok: true, value: fees.value };
+  if (fees.value) return { ok: true, value: /** @type {import('./core/types.js').CostEstimate} */ (fees.value) };
   return { ok: true, value: shown ? null : undefined };
 }
 
@@ -191,12 +192,12 @@ export function bidBudgetAnswer(values, ladder, locale = 'en-US') {
   if (!String(values.budget ?? '').trim()) return { text: 'Type the most you will pay in all, and the highest hammer it allows appears here.', hammer: null };
   if (!String(values.premium ?? '').trim()) return { text: 'Add the buyer’s premium first: the budget has to cover it.', hammer: null };
   const texts = Object.fromEntries(FEE_SHEET_FIELDS.map(({ name }) => [name, String(values[name] ?? '')]));
-  const calculated = buildBidCalculation({
+  const calculated = /** @type {*} */ (buildBidCalculation({
     mode: 'budget', amountText: String(values.budget), premiumText: String(values.premium), currency: String(values.currency), locale, ladder,
     shippingText: texts.shipping, paymentPercentText: texts.paymentPercent, paymentFixedText: texts.paymentFixed,
     premiumVatText: texts.premiumVat, platformFeeText: texts.platformFee, importVatText: texts.importVat,
     incrementText: String(values.increment ?? ''), minimumText: String(values.minimum ?? ''),
-  });
+  }));
   if (!calculated.ok) return { text: calculated.error.message, hammer: null };
   const text = `Maximum hammer ${formatMoney(calculated.value.hammer, locale)} · ${formatMoney(calculated.value.total, locale)} all-in${calculated.ladderNotice ? `. ${calculated.ladderNotice}` : ''}`;
   return { text, hammer: calculated.value.hammer };

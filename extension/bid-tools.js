@@ -94,6 +94,11 @@ export function housePresetFor(presets, houseName) {
 // A fee sheet read from its fields, in the currency of the amount it goes with. Every field blank is no fee sheet at
 // all (null): the fees were not recorded, which is not the same as fees of nothing. Once one fee is typed, a blank one
 // is none. An error names the field it belongs to.
+/**
+ * @param {Record<string, *>} [texts]
+ * @param {{ currency?: string, locale?: string, incrementMinor?: number, minimumBidMinor?: number }} [options]
+ * @returns {{ ok: true, value: Record<string, *> | null } | { ok: false, error: { code?: string, message: string, field: string } }}
+ */
 export function feeSheetEstimate(texts = {}, { currency, locale = 'en-US', incrementMinor = 1, minimumBidMinor = 0 } = {}) {
   if (FEE_SHEET_FIELDS.every(({ name }) => !String(texts[name] ?? '').trim())) return { ok: true, value: null };
   const estimate = { currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor, minimumBidMinor };

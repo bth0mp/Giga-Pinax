@@ -424,6 +424,7 @@
  * @property {string} currency
  * @property {boolean} desktopAlertsEnabled
  * @property {HousePremiumPreset[]} [housePremiumPresets]
+ * @property {number} [importVatBps] the usual import VAT or duty for a sale in another currency than `currency`; absent is off
  */
 
 /**
