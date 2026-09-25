@@ -737,7 +737,7 @@ test('a card whose reference is saved shows where that coin stands and opens it,
     globalThis.browser.runtime.getURL = getURL;
   }
   assert.deepEqual(savedLotsFor({ lots: [{ id: 'won', reference: 'RIC I² Nero 306', outcome: { status: 'won' } }, lot] }, 'RIC I² Nero 306').map(({ id }) => id), ['lot-1', 'won']);
-  assert.equal(savedLineText([{ reference: 'Price 23', outcome: { status: 'won' } }], {}), 'Saved · Won, in your collection');
+  assert.equal(savedLineText([{ reference: 'Price 23', outcome: { status: 'won' } }], {}), 'In your collection');
   assert.deepEqual(savedLotsFor({ lots: [lot] }, 'RIC I² Nero 307'), []);
 });
 
@@ -761,7 +761,9 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     assert.equal(Object.hasOwn(lot, 'auctionContext'), false, 'the captured page does not ride along');
     assert.equal(Object.hasOwn(lot, 'auctionEventId'), false, 'no auction until the collector asks');
     const line = page.element('upcoming-saved');
-    assert.equal(lineParts(line), 'Saved to your watchlist · [Open] · [Undo] · add its sale day 12 Oct 2099 as an auction? · [Add]');
+    // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language.
+    const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
+    assert.equal(lineParts(line), `Saved to your watchlist · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
     await lineButton(line, 'Add').emit('click');
     await settleAll();
     const [event] = background.root().auctionEvents;
@@ -1234,4 +1236,77 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
   assert.deepEqual([dueText({ dueAuctionCount: 0, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 2, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 0, missedAuctionCount: 1 })],
     ['None due', '2 due', '1 missed']);
   assert.equal(buildWatchlistSummary({ alerts: [{ eventId: 'x', status: 'missed' }, { eventId: 'x', status: 'missed' }, { eventId: 'y', status: 'acknowledged' }] }).missedAuctionCount, 1);
+});
+
+// Fix round (review I1): Undo acts only on the coin whose line is on screen. Once the lookup that Watch was pressed in is gone, the old Undo does
+// nothing, and the line goes with it.
+test('Undo can never act on a lot that is no longer on screen', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await loadCompanion({ sendMessage: storeReplies(background) });
+  page.watch({ title: 'Roma, Lot 11', reference: 'RIC I² Nero 306', pageUrl: 'https://www.acsearch.info/search.html?id=11', closesAt: '2099-10-12' });
+  await settleAll();
+  const line = page.element('upcoming-saved');
+  const undo = lineButton(line, 'Undo');
+  assert.ok(undo);
+  // The research half clears its output for the next lookup, and says so with an empty card.
+  page.card(null);
+  assert.equal(line.hidden, true);
+  await undo.emit('click');
+  await settleAll();
+  assert.equal(background.root().lots.length, 1, 'the coin off screen is kept');
+  // The same for a card's own line, once another card is on show.
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const cardUndo = lineButton(page.element('companion-saved-line'), 'Undo');
+  page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
+  await cardUndo.emit('click');
+  await settleAll();
+  assert.equal(background.root().lots.length, 2);
+});
+
+// Fix round (review M6): the saved line is a status region, so the save is said once, by the line.
+test('a save is announced once, by its line', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await loadCompanion({ sendMessage: storeReplies(background) });
+  page.card(neroCard);
+  page.element('announcement').textContent = '';
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  assert.equal(page.element('announcement').textContent, '');
+  assert.match(lineParts(page.element('companion-saved-line')), /^Saved to your watchlist/);
+});
+
+// Fix round (review M7): owning one example of a type is no reason not to watch another. A card whose every saved coin is settled keeps Save beside
+// the line; an open one still takes its place.
+test('a card whose saved coins are all settled still offers Save', async () => {
+  const won = { id: 'won-1', title: 'Nero as', reference: 'RIC I² Nero 306', outcome: { status: 'won' } };
+  const snapshot = { ok: true, value: { lots: [won], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const page = await loadCompanion({ sendMessage: async () => snapshot });
+  page.card(neroCard);
+  assert.equal(lineParts(page.element('companion-saved-line')), 'In your collection · [Open]');
+  assert.equal(page.element('companion-save-watchlist').hidden, false);
+  assert.equal(savedLineText([{ reference: 'Price 23', outcome: { status: 'lost' } }], {}), 'Saved · Lost');
+});
+
+// Fix round (review M8): a coin removed elsewhere (a workspace tab) inside the Undo window takes its "Saved" line with it.
+test('a coin removed elsewhere takes its saved line with it', async () => {
+  const background = await createWorkspaceBackground();
+  const listeners = [];
+  const onChanged = globalThis.browser.storage.onChanged;
+  globalThis.browser.storage.onChanged = { addListener: (listener) => listeners.push(listener), removeListener() {} };
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background) });
+    page.card(neroCard);
+    await page.click('companion-save-watchlist');
+    await settleAll();
+    const [lot] = background.root().lots;
+    await background.send({ type: 'lot.delete', lotId: lot.id, expectedRevision: lot.revision });
+    for (const listener of listeners) listener({ 'auctionCompanion:v1': { newValue: background.root() } }, 'local');
+    await settleAll();
+    assert.equal(page.element('companion-saved-line').hidden, true);
+    assert.equal(page.element('companion-save-watchlist').hidden, false);
+  } finally {
+    globalThis.browser.storage.onChanged = onChanged;
+  }
 });

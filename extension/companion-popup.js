@@ -192,13 +192,13 @@ export function savedLotsFor(snapshot, reference) {
     .sort((left, right) => Number(open(right)) - Number(open(left)) || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
 }
 
-const OUTCOME_WORDS = Object.freeze({ won: 'Won, in your collection', lost: 'Lost', withdrawn: 'Withdrawn', unsold: 'Unsold' });
+const OUTCOME_WORDS = Object.freeze({ lost: 'Lost', withdrawn: 'Withdrawn', unsold: 'Unsold' });
 // What the card says of a coin already saved under its reference: where it stands, the bid in force or planned, and its auction and when.
 export function savedLineText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
   const lot = lots?.[0];
   if (!lot) return '';
   const status = lot.outcome?.status ?? 'open';
-  const parts = [status === 'open' ? 'On your watchlist' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
+  const parts = [status === 'open' ? 'On your watchlist' : status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
   const money = (amount) => { try { return formatMoney(amount, locale); } catch { return ''; } };
   if (status === 'open' && lot.activeBid?.amount) parts.push(`Bid active ${money(lot.activeBid.amount)}`);
   else if (status === 'open' && lot.plannedBid?.amount) parts.push(`Bid planned ${money(lot.plannedBid.amount)}`);
@@ -558,7 +558,8 @@ async function initCompanionPopup() {
     const lots = safeCard?.reference ? savedLotsFor(snapshot, safeCard.reference) : [];
     if (!lots.length) { fillLine(line, []); save.hidden = false; return; }
     fillLine(line, [savedLineText(lots, snapshot, { locale: navigator.language }), openAction(lots[0].id, 'companion-save-hint')]);
-    save.hidden = true;
+    // A coin still open takes Save's place; owning one example (or losing one) is no reason not to watch another lot of the type.
+    save.hidden = lots.some((lot) => (lot.outcome?.status ?? 'open') === 'open');
   };
   const forgetJustSaved = (where) => {
     // What the line under Save said of the last card (a removal, a refusal) is not about the next one.
@@ -567,13 +568,20 @@ async function initCompanionPopup() {
     clearTimeout(justSaved.timer);
     justSaved = null;
   };
+  // The research half's output cleared (typing, a new lookup): what Watch said under its Upcoming list goes with that list, and its Undo with it.
+  const clearUpcomingSaved = () => {
+    forgetJustSaved('upcoming');
+    fillLine($('upcoming-saved'), []);
+  };
   const clearCard = () => {
     safeCard = null;
     $('companion-save-watchlist').disabled = true;
     forgetJustSaved('card');
+    clearUpcomingSaved();
     renderCardSaved();
   };
   addEventListener('giga-pinax-card', (event) => {
+    if (!event.detail) clearUpcomingSaved();
     safeCard = buildWatchlistDraftPayload({ ...event.detail, auctionContext: researchAuctionContext });
     $('companion-save-watchlist').disabled = !canSave(safeCard);
     forgetJustSaved('card');
@@ -681,8 +689,8 @@ async function initCompanionPopup() {
     const hint = $(anchor);
     if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
     const words = entry.event ? 'Saved to your watchlist with its sale day' : 'Saved to your watchlist';
+    // The line is a status region: it says the save once.
     fillLine(line, [words, openAction(entry.lot.id, anchor), { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
-    speak(`${words}.`);
     entry.timer = setTimeout(() => {
       if (justSaved !== entry) return;
       justSaved = null;
@@ -721,17 +729,12 @@ async function initCompanionPopup() {
     keepInView(lotReply.value, eventReply.value);
     confirmSaved({ ...entry, lot: lotReply.value, event: eventReply.value }, line, 'upcoming-note');
   };
-  const saleDayText = (localDate) => {
-    // Written as the popup writes a sale's day ("12 Oct 2099").
-    try { return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${localDate}T12:00:00Z`)); }
-    catch { return localDate; }
-  };
   addEventListener('giga-pinax-watch', async (event) => {
     const payload = buildWatchlistDraftPayload(event.detail);
     const line = $('upcoming-saved');
     // A lot already saved from its acsearch page is offered, not saved twice.
     const existing = payload.pageUrl ? (snapshot.lots ?? []).find((lot) => lot.sourceLinks?.some(({ url }) => url === payload.pageUrl)) : null;
-    if (existing) { fillLine(line, ['Already on your watchlist', openAction(existing.id, 'upcoming-note')]); speak('Already on your watchlist.'); return; }
+    if (existing) { fillLine(line, ['Already on your watchlist', openAction(existing.id, 'upcoming-note')]); return; }
     const saved = await saveDirect(payload, null);
     if (!saved.ok) {
       speak(saved.message);
@@ -740,8 +743,10 @@ async function initCompanionPopup() {
     }
     const entry = { where: 'upcoming', lot: saved.lot, event: null, timer: 0 };
     const offer = offeredSaleDay(payload.closesAt, payload.pageUrl);
-    const day = offer ? saleDayText(offer.localDate) : '';
-    const extra = offer ? [`add its sale day ${day} as an auction?`, { label: 'Add', name: `Add the sale day ${day} as an auction`, action: () => void attachSaleDay(entry, offer, line) }] : [];
+    // The day as the Watchlist tab writes one ("sale day Thu, Jun 1"), in the browser's language.
+    const when = offer ? eventWhen(offer, { locale: navigator.language }).when : '';
+    const day = when ? `${when.charAt(0).toLocaleLowerCase()}${when.slice(1)}` : '';
+    const extra = offer ? [`add its ${day} as an auction?`, { label: 'Add', name: `Add the ${day} as an auction`, action: () => void attachSaleDay(entry, offer, line) }] : [];
     confirmSaved(entry, line, 'upcoming-note', extra);
   });
 
@@ -919,7 +924,17 @@ async function initCompanionPopup() {
       showStorageUnavailable();
       announce(reply?.message || STORAGE_UNAVAILABLE, true);
     }
-    bridge.subscribeToSnapshots((incoming) => { snapshot = incoming; renderSummary(); renderCardSaved(); });
+    bridge.subscribeToSnapshots((incoming) => {
+      snapshot = incoming;
+      // A coin just saved and since removed elsewhere (a workspace tab) takes its line, and its Undo, with it.
+      if (justSaved && !(snapshot.lots ?? []).some(({ id }) => id === justSaved.lot.id)) {
+        const where = justSaved.where;
+        forgetJustSaved(where);
+        fillLine($(where === 'card' ? 'companion-saved-line' : 'upcoming-saved'), []);
+      }
+      renderSummary();
+      renderCardSaved();
+    });
   }
   // Registered whether or not the snapshot could be read: the research half has already cached the
   // choice for the next window, so what a failed start-up owes the collector is the reason it will

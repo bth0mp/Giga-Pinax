@@ -282,6 +282,9 @@ function clearOutput() {
   $('online-fallback').disabled = false;
   $('online-fallback').onclick = null;
   $('prices-restored').hidden = true;
+  // What a Watch said under the Upcoming list belongs to the list it was pressed in, which this clears.
+  $('upcoming-saved').hidden = true;
+  $('upcoming-saved').replaceChildren();
   clearSpecimens();
   // A note about the fields as they were must not outlive a lookup that rewrites them. Both writers announce after their own clearOutput(), so this
   // never erases a line just written.
@@ -1328,6 +1331,7 @@ const answerAge = (shownAt, now = Date.now()) => {
   return minutes < 1 ? 'just now' : `${minutes} min ago`;
 };
 
+let ageTimer = 0;
 async function restoreLastAnswer(ticket) {
   let stored;
   try { stored = await sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]); }
@@ -1358,6 +1362,12 @@ async function restoreLastAnswer(ticket) {
   if (answer.lots && answer.currency === $('currency').value) renderPrices(answer.lots, answer.currency, answer.term, false, researchContext, priceCard(researchContext));
   $('prices-restored-text').textContent = `as of ${answerAge(answer.shownAt)}`;
   $('prices-restored').hidden = false;
+  // The age keeps up with the clock for as long as the line is on show: a side panel may stay open for an hour.
+  clearInterval(ageTimer);
+  ageTimer = setInterval(() => {
+    if ($('prices-restored').hidden) return;
+    $('prices-restored-text').textContent = `as of ${answerAge(answer.shownAt)}`;
+  }, 60000);
   placeAtTop('result');
   announce(`Your last answer, from ${answerAge(answer.shownAt)}: ${displayReference(answer.card.label)}.`);
 }

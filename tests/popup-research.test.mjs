@@ -88,7 +88,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -158,12 +158,17 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     // Timers never run unless a test asks to hold them (timers: []) and run them itself.
     setTimeout: (callback) => { timers?.push(callback); return 0; },
     clearTimeout() {},
+    // Intervals never run either; a test that holds them (intervals: []) runs them itself.
+    setInterval: (callback) => { intervals?.push(callback); return intervals ? intervals.length : 0; },
+    clearInterval: (handle) => { if (intervals && handle) intervals[handle - 1] = () => {}; },
     // The page announces a received lookup on the window, for the companion half that is not loaded here. Each one is kept
     // with the card still on screen at the time, so what the other half would have seen is what this records.
     dispatchEvent: (event) => { dispatched.push({ type: event?.type, reference: element('result-reference').textContent, detail: event?.detail }); return true; },
     console,
   };
   sandbox.globalThis = sandbox;
+  // A clock a test can move: Date.now() reads it, and every other use of Date is the real one.
+  if (clock) sandbox.Date = class extends Date { static now() { return clock.now; } };
 
   runPage(vm.createContext(sandbox), new URL('../extension/popup.js', import.meta.url));
   return { element, document, window, writes, clipboard, stored, dispatched };
@@ -2658,4 +2663,47 @@ test('controls ease their colours and what arrives later fades in, all under the
   // The guard every page loads: a collector who asks for less motion gets none.
   assert.match(readFileSync(new URL('../extension/design-tokens.css', import.meta.url), 'utf8'),
     /@media\(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{[^}]*transition-duration:\.01ms!important;animation-duration:\.01ms!important/);
+});
+
+// Fix round (review I1): the line a Watch left under the Upcoming list goes with the lookup it belongs to.
+test('a new lookup, or typing, takes the Upcoming saved line away', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('upcoming-saved').hidden = false;
+  popup.element('upcoming-saved').children = ['Saved to your watchlist'];
+  popup.element('quick-reference').value = 'Price 24';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('upcoming-saved').hidden, true);
+  assert.deepEqual(popup.element('upcoming-saved').children, []);
+});
+
+// Fix round (review M1, M6): Less folds Recent even while it has the keyboard; More and Refresh say what they act on.
+test('Recent folds on Less with the button focused, and More and Refresh name what they act on', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.recent-list:focus-within \{max-height:none;\}/);
+  assert.doesNotMatch(css, /\.recent:focus-within/);
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('recent-more').getAttribute('aria-controls'), 'recent-list');
+  assert.equal(markup.getElementById('refresh-prices').getAttribute('aria-label'), 'Refresh acsearch prices');
+  // Each saved line is a status the screen reader hears once, from the line itself.
+  for (const id of ['companion-saved-line', 'upcoming-saved']) assert.equal(markup.getElementById(id).getAttribute('role'), 'status', id);
+});
+
+// Fix round (review M3): an answer drawn again says its age as the minutes pass, for as long as the line is on show.
+test('the age of an answer drawn again keeps up with the clock', async () => {
+  const session = new Map();
+  await answered(session);
+  const clock = { now: Date.now() };
+  const intervals = [];
+  const reopened = await loadPopup({ session, clock, intervals, permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of just now');
+  assert.equal(intervals.length, 1);
+  clock.now += 3 * 60000;
+  intervals[0]();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of 3 min ago');
+  reopened.element('prices-restored').hidden = true;
+  clock.now += 60000;
+  intervals[0]();
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of 3 min ago', 'a hidden line is left alone');
 });

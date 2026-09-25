@@ -269,6 +269,32 @@ test('the stat lines keep every count at 360 and 320, and one wrap moves nothing
   }
 });
 
+// Loop 3 fix round (review I2): the card's longest source line ("Local OCRE catalogue · RIC I, second edition") pushed
+// Save past the edge of the 320 px panel and the panel scrolled sideways. Nothing in the answer is wider than its panel.
+test('at 320 px the answer never scrolls sideways and Save stays whole', async () => {
+  const browser = await launch();
+  try {
+    for (const path of ['popup.html', 'popup.html?panel=1']) {
+      const page = await browser.context.newPage();
+      await page.setViewportSize({ width: 320, height: 900 });
+      await page.goto(browser.url(path));
+      await lookUp(page, 'RIC I² Nero 306');
+      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+      await page.locator('#result-source', { hasText: 'RIC I, second edition' }).waitFor({ timeout: 15000 });
+      const frame = await page.evaluate(() => {
+        const scroller = document.querySelector('.popup-scroll');
+        const save = document.getElementById('companion-save-watchlist').getBoundingClientRect();
+        return { scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth, saveRight: Math.round(save.right), panelRight: Math.round(scroller.getBoundingClientRect().right) };
+      });
+      assert.equal(frame.scrollWidth, frame.clientWidth, `${path}: ${JSON.stringify(frame)}`);
+      assert.ok(frame.saveRight <= frame.panelRight, `${path}: Save ends at ${frame.saveRight}, the panel at ${frame.panelRight}`);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 // Fix round 2 (re-review Important 2): what Save reference to watchlist says is said under its button, so the Reference box
 // stays uncovered and can be clicked straight away.
 test('after Save the coin is saved in one step, and the Reference box is still the thing under its own centre', async () => {

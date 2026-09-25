@@ -123,8 +123,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .recent-label {flex-shrink:0; margin:5px 0 0;}
 .recent .recent-list {flex:1 1 auto; min-width:0; margin:0;}
 .recent:not(.expanded) .recent-list {max-height:26px; overflow:hidden;}
-/* A chip the keyboard reaches is never one the fold hides. */
-.recent:focus-within .recent-list {max-height:none;}
+/* A chip the keyboard reaches is never one the fold hides; More and Less keep the keyboard without holding the list open. */
+.recent-list:focus-within {max-height:none;}
 .recent-more {flex-shrink:0; padding:5px 0;}
 .recent-list {list-style:none; margin:6px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
 .recent-list li {min-width:0; max-width:100%;}
@@ -133,6 +133,9 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .recent-list button:hover {border-color:var(--accent); color:var(--accent);}
 .result {margin:0 16px; padding:12px 0; background:transparent; border-bottom:1px solid var(--line);}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}
+/* The heading's words take what the actions leave, and the source line may wrap there: Type and Save always stay whole inside the panel. */
+.type-heading > div:first-child {flex:1 1 auto; min-width:0;}
+.type-heading .source-badge {white-space:normal;}
 .catalogue-code {font-family:var(--font-serif); font-size:var(--text-h3); line-height:1.3; font-weight:600; letter-spacing:0; color:var(--accent); overflow-wrap:anywhere;}
 /* The coin's identity is one strip: its code with the catalogue that answered beside it, then the ruler, denomination, mint, metal and dates. */
 .type-heading .catalogue-code {display:inline; margin-right:6px;}
