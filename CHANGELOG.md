@@ -14,7 +14,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - A page capture waits a day instead of half an hour, and the workspace lists every capture still waiting first on the page (`Captured an auction from leunumismatik.com 12 min ago · kept 23 h more · Use · Discard`), so one whose tab was closed or whose browser restarted is no longer lost unseen.
 - A right-click capture that could not be saved says why on the toolbar badge's tooltip (`…because your records fill the storage. Open Settings to make room.`, or `…can’t be read`), and the workspace says the same once, first on the page, the next time it opens, with **Open Settings**.
 - **Settings › Diagnostics** lists the last five failures under the count, newest first (`25 Sept, 07:12 · popup · acsearch · timed out`), so what just went wrong can be read without copying the list.
-- An import preview says before **Confirm** when the result would not fit (`This import would not fit: your records would take 5.3 MB, more than the 4.9 MB …`) and when a merge would change nothing (`Nothing to import: every record in this backup is already here, unchanged.`); **Confirm import** is not offered for either. It used to preview "Adds 0, updates 0" and refuse only after Confirm.
+- An import preview says before **Confirm** when the result would not fit (`This backup does not fit: with it your records would take 5.3 MB, more than the 4.9 MB …`), judged exactly as the import itself would be, reminders its auctions schedule included, and when a merge would change nothing (`Nothing to import: every record in this backup is already here, unchanged.`); **Confirm import** is not offered for either. It used to preview "Adds 0, updates 0" and refuse only after Confirm.
 
 ### Fixed
 

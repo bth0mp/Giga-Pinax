@@ -40,7 +40,7 @@ export const STORAGE_KEY = 'auctionCompanion:v1';
 export { MAX_ROOT_BYTES };
 // The commands the background worker answers from an extension page; any other message gets no reply.
 export const COMMAND_TYPES = new Set([
-  'snapshot.get', 'snapshot.raw', 'storage.usage',
+  'snapshot.get', 'snapshot.raw', 'storage.usage', 'backup.check',
   'preferences.migrateIfAbsent', 'preferences.save',
   'lot.save', 'lot.delete', 'lot.restore',
   'group.save', 'group.delete', 'group.reorder',
@@ -1029,7 +1029,7 @@ export function applyCommand(snapshot, command, context) {
 
 // The two commands that may run over records nothing can read: a Replace import that says it means to, and a fresh start.
 const recoversUnreadable = (command) => command.type === 'store.reset' ||
-  (command.type === 'backup.import' && command.mode === 'replace' && command.overUnreadable === true);
+  (['backup.import', 'backup.check'].includes(command.type) && command.mode === 'replace' && command.overUnreadable === true);
 
 // What a recovery runs over in place of records nothing can read: an empty root, counted on from the revision the rescue
 // copy reported, so a page that read that copy is the one whose command runs, and every open page hears of the change.
@@ -1171,7 +1171,17 @@ export function createCommandWriter(storageArea, context) {
     // command headroom without evicting public commands needed for retry idempotency.
     const working = clone(stored);
     working.recentCommands = working.recentCommands.filter(({ commandType }) => !INTERNAL_COMMANDS.has(commandType));
-    const applied = applyCommand(working, command, context);
+    // Whether an import would be kept is the store's own judgement, asked before Confirm (X-13, review Minor 3): the
+    // import is run exactly as it would be - its ledger entry, the reconcile after it and the reminders that reconcile
+    // schedules all counted - and nothing is written. Any other refusal is answered as the import would answer it.
+    const checking = command.type === 'backup.check';
+    const applied = applyCommand(working, checking ? { ...command, type: 'backup.import' } : command, context);
+    if (checking && (applied.ok || applied.error.code === 'storage-bound')) {
+      return {
+        ok: true, requestId: command.requestId, revision: stored.revision,
+        value: applied.ok ? { fits: true } : { fits: false, message: applied.error.message },
+      };
+    }
     if (!applied.ok) {
       if (applied.error.code === 'duplicate') return {
         ...errorReply(command, 'duplicate', 'not-committed', applied.error.message),

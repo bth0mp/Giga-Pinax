@@ -7,7 +7,7 @@ import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
   importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
   quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, setAsideCountText, validateBackup,
-  importFit, importNothingText,
+  importNothingText,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -1179,13 +1179,12 @@ test('a merge that corrects a won lot carries its hammer to the local entry that
   assert.equal(entry.revision, 1, 'a holder of the old row is asked again');
 });
 
-// X-13: what an import would do to the storage bound, and whether it would do anything at all, is known at the preview.
-test('X-13: a merge preview says when nothing would change, and whether the result fits the bound', () => {
+// X-13: whether an import would do anything at all is known at the preview (whether it fits is the store's backup.check).
+test('X-13: a merge preview says when nothing would change', () => {
   const current = createEmptySnapshot(NOW);
   current.lots.push(damagedLot());
   const same = previewImport(current, validateBackup(exportBackup(current, NOW).value).value, 'merge');
   assert.equal(importNothingText(same.value), 'Nothing to import: every record in this backup is already here, unchanged.');
-  assert.deepEqual(importFit(current, same.value), { ok: true, bytes: importFit(current, same.value).bytes, text: '' });
 
   const newer = structuredClone(current);
   newer.lots[0] = { ...newer.lots[0], title: 'Renamed', updatedAt: LATER };
@@ -1193,14 +1192,6 @@ test('X-13: a merge preview says when nothing would change, and whether the resu
   assert.equal(importNothingText(older.value), 'Nothing to import: every record in this backup is already here, and your own copies are kept.');
   const replace = previewImport(current, validateBackup(exportBackup(current, NOW).value).value, 'replace');
   assert.equal(importNothingText(replace.value), '', 'a Replace always does something');
-
-  const big = createEmptySnapshot(NOW);
-  for (let index = 0; index < 1100; index += 1) big.lots.push(damagedLot({ id: uuid(1000 + index), notes: 'n'.repeat(4900) }));
-  const heavy = previewImport(current, validateBackup(exportBackup(big, NOW).value).value, 'merge');
-  const fit = importFit(current, heavy.value);
-  assert.equal(fit.ok, false);
-  assert.match(fit.text, /^This import would not fit: your records would take (4\.9\d|5\.\d+) MB, more than the 4\.9 MB/);
-  assert.equal(importFit(null, heavy.value).ok, false, 'over unreadable records it is judged against none');
 });
 
 // Review Important 2 and Minor 5: every bad field is named at once, and only corrections a restore accepts are offered.

@@ -76,6 +76,8 @@ function loadSettings({
   hash = '',
   // What the store answers the gauge's storage.usage with (K-13); that read is kept out of `commands`, which list writes.
   usage = { ok: false },
+  // What the store answers an import preview's backup.check with (X-13); those asks are listed in `checks`, not `commands`.
+  check = { ok: true, value: { fits: true } },
 } = {}) {
   const copied = [];
   const closedTabs = [];
@@ -90,6 +92,7 @@ function loadSettings({
   };
 
   const commands = [];
+  const checks = [];
   const prompts = [];
   const blobs = [];
   const state = { snapshot: snapshotReply };
@@ -99,6 +102,10 @@ function loadSettings({
     getSnapshot: async () => state.snapshot,
     sendCommand: async (command) => {
       if (command.type === 'storage.usage') return typeof usage === 'function' ? usage() : usage;
+      if (command.type === 'backup.check') {
+        checks.push(structuredClone(command));
+        return typeof check === 'function' ? check(command) : check;
+      }
       // Copied out of the sandbox realm, so a test can compare it with objects of its own.
       commands.push(structuredClone(command));
       return reply(command, state);
@@ -162,6 +169,7 @@ function loadSettings({
     status: () => document.getElementById('settings-status').textContent,
     statusIsError: () => document.getElementById('settings-status').dataset.error,
     commands,
+    checks,
     prompts,
     downloads,
     stored,
@@ -1790,15 +1798,33 @@ test('X-13: a merge that would change nothing says so and offers no Confirm', as
   assert.equal(page.status(), 'Nothing to import: every record in this backup is already here, unchanged.');
 });
 
-test('X-13: an import that would not fit is refused in the preview, with the figure, before Confirm', async () => {
+test('X-13: whether an import fits is the store’s own answer, asked in the preview, and a refusal is said before Confirm', async () => {
   const current = snapshotWith({ lots: [lot(uuid(1))] });
-  // A backup whose coins carry notes enough to take the records past the 5 MB bound.
-  const big = snapshotWith({ lots: [lot(uuid(1)), ...Array.from({ length: 1100 }, (_, index) => lot(uuid(100 + index), { notes: 'n'.repeat(4900) }))] });
-  const page = await openSettings({ snapshot: current });
-  await preview(page, backupDocument(big));
+  const incoming = snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] });
+  // Review Minor 3: a file small in itself grows by the reminders its auctions schedule, which only the store counts.
+  const refusal = 'This backup does not fit: with it your records would take 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. ' +
+    'Import a backup with fewer records, or remove old coins or auctions here first.';
+  const page = await openSettings({ snapshot: current, check: { ok: true, value: { fits: false, message: refusal } } });
+  await preview(page, backupDocument(incoming));
+  assert.equal(page.checks.length, 1);
+  assert.equal(page.checks[0].mode, 'merge');
+  assert.equal(page.checks[0].expectedRevision, current.revision);
+  assert.equal(page.checks[0].document, backupDocument(incoming));
   assert.equal(page.element('confirm-import').disabled, true);
-  assert.match(page.status(), /^This import would not fit: your records would take (4\.9\d|5\.\d+) MB, more than the 4\.9 MB Giga Pinax can keep in this browser\./);
+  assert.equal(page.status(), refusal);
   assert.equal(page.statusIsError(), 'true');
+  assert.deepEqual(page.commands, [], 'nothing written');
+
+  const fits = await openSettings({ snapshot: current });
+  await preview(fits, backupDocument(incoming));
+  assert.equal(fits.element('confirm-import').disabled, false);
+  assert.equal(fits.status(), 'Review the import summary, then confirm.');
+
+  // A store that cannot answer is said as it is, and no Confirm is offered on a guess.
+  const failed = await openSettings({ snapshot: current, check: { ok: false, message: 'Local data changed after the import preview.' } });
+  await preview(failed, backupDocument(incoming));
+  assert.equal(failed.element('import-preview').hidden, true);
+  assert.equal(failed.status(), 'Local data changed after the import preview.');
 });
 
 // X-16: the last five failures are on the page, newest first, not only a count until they are copied.

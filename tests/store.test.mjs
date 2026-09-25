@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, storedBytes } from '../extension/core/records.js';
+import { LIMITS, RECORDS_LIMIT_BYTES, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, storedBytes } from '../extension/core/records.js';
 import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
@@ -3103,4 +3103,43 @@ test('X-01: a small removal a few bytes under the ceiling is kept, never refused
     assert.equal(removed.ok, true, `${under} B under: ${removed.message}`);
     assert.deepEqual(storage.read().lots, []);
   }
+});
+
+// Review Minor 3: whether an import fits is the store's own judgement, reconcile and ledger included, asked before
+// Confirm. A backup whose auctions carry reminders the file holds no alerts for grows by those alerts on import, which a
+// check of the previewed records alone missed.
+test('X-13: backup.check answers exactly what the import would, the reconcile\'s alerts included, and writes nothing', async () => {
+  const heavy = createEmptySnapshot(NOW);
+  const notes = 'n'.repeat(LIMITS.notes);
+  for (let index = 0; index < 60; index += 1) {
+    heavy.auctionEvents.push({
+      id: uuid(), revision: 0, dataClass: 'collector', name: `Sale ${index}`, eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-20', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-10-20T12:00:00.000Z', reminderScope: 'standalone',
+      reminders: Array.from({ length: 20 }, (_, reminder) => ({ id: uuid(), kind: 'offset', offsetMinutes: (reminder + 1) * 60 })),
+      createdAt: NOW, updatedAt: NOW,
+    });
+  }
+  // Records alone a little under the limit: the file itself fits, its schedule does not.
+  while (storedBytes(heavy) < RECORDS_LIMIT_BYTES - 200000) heavy.lots.push(plainLot(uuid(), { notes }));
+  const document = exportBackup(heavy, NOW).value;
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const check = await writer.commitCommand(command('backup.check', { expectedRevision: 0, mode: 'replace', document }));
+  assert.equal(check.ok, true, check.message);
+  assert.equal(check.value.fits, false);
+  const imported = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'replace', document }));
+  assert.equal(imported.ok, false);
+  assert.equal(check.value.message, imported.message, 'the same refusal, word for word');
+  assert.equal(storage.read().revision, 0, 'nothing written by either');
+
+  const small = exportBackup(createEmptySnapshot(NOW), NOW).value;
+  const fine = await writer.commitCommand(command('backup.check', { expectedRevision: 0, mode: 'merge', document: small }));
+  assert.deepEqual(fine.value, { fits: true });
+
+  // Over records nothing can read, the check runs as the Replace over them would.
+  const damaged = memoryStorage('damaged');
+  const over = await createCommandWriter(damaged, context())
+    .commitCommand(command('backup.check', { expectedRevision: 0, mode: 'replace', overUnreadable: true, document: small }));
+  assert.deepEqual(over.value, { fits: true });
+  assert.equal(damaged.read(), 'damaged', 'still untouched');
 });

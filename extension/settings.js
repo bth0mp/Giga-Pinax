@@ -1,5 +1,5 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importFit, importNothingText, megabytesText, RECORDS_LIMIT_TEXT,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importNothingText, megabytesText, RECORDS_LIMIT_TEXT,
   importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
@@ -826,6 +826,20 @@ $('import-form').addEventListener('submit', async (event) => {
     }
     const result = overUnreadable ? previewReplaceOverUnreadable(validated.value) : previewImport(latest.value, validated.value, mode);
     if (!result.ok) throw new Error(result.error.message);
+    // Said before Confirm, not after it (X-13): a merge that would change nothing, and an import that would not fit.
+    // Whether it fits is the store's own answer (review Minor 3): the import run as it would be, the request ledger and
+    // the reminders its auctions schedule counted, and nothing written.
+    const nothing = importNothingText(result.value);
+    let fit = { ok: true, text: '' };
+    if (result.value.snapshot && !nothing) {
+      const checked = await bridge.sendCommand({
+        type: 'backup.check', requestId: bridge.newRequestId(), expectedRevision, mode, document: documentText,
+        ...(overUnreadable ? { overUnreadable: true } : {}),
+      });
+      if (generation !== previewGeneration) return;
+      if (!checked?.ok) throw new Error(checked?.message || 'Could not check whether this backup fits.');
+      if (checked.value?.fits === false) fit = { ok: false, text: checked.value.message };
+    }
     pendingImport = {
       generation,
       document: documentText,
@@ -834,9 +848,6 @@ $('import-form').addEventListener('submit', async (event) => {
       expectedRevision,
       overUnreadable,
     };
-    // Said before Confirm, not after it (X-13): an import that would not fit, and a merge that would change nothing.
-    const nothing = importNothingText(result.value);
-    const fit = importFit(overUnreadable ? null : latest.value, result.value);
     $('import-counts').textContent = overUnreadable
       ? `${importCountsText(result.value).replace(/ Replaces everything local\.$/, '')} Replaces the records that can’t be read; a copy of them downloads first.`
       : importCountsText(result.value);

@@ -1,6 +1,6 @@
 // @ts-check
 import {
-  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
   quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
@@ -652,25 +652,6 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
  */
 export function previewReplaceOverUnreadable(incoming, now = new Date().toISOString()) {
   return previewImport(createEmptySnapshot(now), incoming, 'replace');
-}
-
-// Whether the root an import leaves fits the storage bound, judged before Confirm as the store judges it after (X-13):
-// the records the preview holds, with the request ledger a merge keeps, and the headroom every save leaves.
-/**
- * @param {Snapshot | null} current null for records nothing can read, which an import replaces as if there were none
- * @param {ImportPreview} preview
- * @returns {{ ok: boolean, bytes: number, text: string }}
- */
-export function importFit(current, preview) {
-  const before = current ?? createEmptySnapshot(preview.snapshot.updatedAt);
-  const after = { ...preview.snapshot, recentCommands: preview.mode === 'merge' ? before.recentCommands ?? [] : [] };
-  const verdict = boundVerdict(before, after, LIMITS.commandReplyBytes);
-  return {
-    ok: verdict.ok,
-    bytes: verdict.bytes,
-    text: verdict.ok ? '' : `This import would not fit: your records would take ${megabytesText(verdict.bytes)}, more than the ${RECORDS_LIMIT_TEXT} ` +
-      'Giga Pinax can keep in this browser. Remove old coins or auctions here first, or import a backup with fewer records.',
-  };
 }
 
 // A merge that would write nothing says so, rather than a row of zeros and a Confirm that changes nothing (X-13).
