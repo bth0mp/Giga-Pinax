@@ -836,3 +836,25 @@ test('a coin saved as an unedited RIC I is not counted as a RIC I² want', async
   assert.equal(card.querySelector('.want-coins'), null, 'no hunt row for the unedited coin');
   assert.equal(card.querySelectorAll('button').some((button) => button.textContent.startsWith('Mark found')), false);
 });
+
+// Minor 6: while the catalogue is read the want form waits, as Settings' editors wait for their load (#46), so nothing typed
+// in that moment is dropped by a save that was already under way.
+test('the want form is disabled while the catalogue is read, and saves what it held when it was submitted', async () => {
+  let answer;
+  const catalogue = { lookupType: () => new Promise((resolve) => { answer = resolve; }) };
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#wants', catalogue });
+  await page.click('new-want');
+  await page.type('want-form', 'reference', 'RIC I² Nero 306');
+  const saving = page.startSubmit('want-form');
+  await settle();
+  const controls = page.$('want-form').querySelectorAll('input, select, textarea, button');
+  assert.equal(controls.every((control) => control.disabled), true, 'every control waits');
+  assert.equal(page.$('want-form-status').textContent, 'Checking the catalogue…');
+  answer({ status: 'ok', card: { label: 'RIC I (second edition) Nero 306' } });
+  await saving; await settle();
+  assert.deepEqual(background.root().wants.map(({ reference }) => reference), ['RIC I² Nero 306']);
+  await page.click('new-want');
+  assert.equal(page.$('want-form').elements.reference.disabled, false, 'the form is usable again');
+  assert.equal(page.$('cancel-want').disabled, false);
+});

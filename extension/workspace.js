@@ -1691,10 +1691,19 @@ async function initWorkspace() {
     let read = wantFromForm(values, context);
     if (!read.ok) { formStatus('want', read.message, { error: true }); f[read.field]?.focus?.(); return; }
     const found = Boolean(editingWant && (snapshot.wants ?? []).find(({ id }) => id === editingWant.id)?.foundLotId);
-    const version = editorVersions.get('want') ?? 0;
-    const resolved = found ? { ok: true, reference: read.value.reference, note: '' } : await resolveWantReference(read.value.reference, (reading) => defaultLocalCatalogue?.lookupType(reading));
-    // The collector went on typing while the catalogue was read: what they typed now is what a save sends.
-    if ((editorVersions.get('want') ?? 0) !== version || wantForm.hidden) return;
+    // The form waits while the catalogue is read (review Minor 6), as Settings' editors wait for their load: nothing typed in
+    // that moment can be left out of a save already under way. Only what this wait disabled is enabled again.
+    const waiting = [...wantForm.querySelectorAll('input, select, textarea, button')].filter((control) => !control.disabled);
+    let resolved;
+    if (found) resolved = { ok: true, reference: read.value.reference, note: '' };
+    else {
+      for (const control of waiting) control.disabled = true;
+      formStatus('want', 'Checking the catalogue…');
+      try { resolved = await resolveWantReference(read.value.reference, (reading) => defaultLocalCatalogue?.lookupType(reading)); }
+      finally { for (const control of waiting) control.disabled = false; }
+      clearFormStatus('want');
+    }
+    if (wantForm.hidden) return;
     if (!resolved.ok) { wantChoices(resolved.message, resolved.choices); f.reference.focus(); return; }
     if (resolved.reference !== read.value.reference) {
       read = wantFromForm({ ...values, reference: resolved.reference }, context);
