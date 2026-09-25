@@ -309,11 +309,13 @@ async function initWorkspace() {
   // The coin this page is deleting: any snapshot that drops it, including one that arrives before
   // the reply does, clears its editors without the "removed in another view" notice.
   let removedHere = null;
+  // Why the stored records could not be read, while they cannot (X-12).
+  let storeProblem = '';
   // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
   // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
   const acceptIncoming = (incoming) => {
-    snapshot = incoming;
+    snapshot = incoming; storeProblem = '';
     enableLoadedControls();
     followDefaultCurrency();
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
@@ -798,7 +800,10 @@ async function initWorkspace() {
     // With no coin at all the list is the page: its empty state, and no detail panel beside it to say "Select a coin".
     const none = !(snapshot.lots ?? []).length;
     $('coin-workspace').dataset.empty = String(none && selection.mode !== 'detail');
-    if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
+    // Records that cannot be read are said where the coins would be, with the way to Settings, where they can be
+    // downloaded or started afresh (X-12); an empty store is not.
+    if (none && storeProblem) list.append(emptyState('Your records can’t be read', `${storeProblem.replace(/\.?$/, '.')} Open Settings to download the stored data or recover it.`, { label: 'Open Settings', run: () => void openSettings('from-workspace') }));
+    else if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
     else if (!visibleLots.length) list.append(text('p', 'No coins match this filter.', 'empty-row'));
     // A window of the list (K-06): the first rows, then more as the collector scrolls to the end, or asks. A queue or a
     // filter starts again at the first window, and a snapshot keeps the rows already shown. A coin open further down is
@@ -2162,7 +2167,7 @@ async function initWorkspace() {
     catch { initialized = null; }
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
-      else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
+      else if (!initialized.ok) { storeProblem = initialized.message || 'Stored data could not be read.'; renderAll(); announce(initialized.message, true); }
       else acceptIncoming(initialized.value);
       await loadRouteDraft();
       // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.

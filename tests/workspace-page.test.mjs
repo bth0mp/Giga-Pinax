@@ -2393,3 +2393,14 @@ test('a save whose message port closed offers the retry under its form', async (
   assert.equal(line.textContent, 'Saved.');
   assert.equal(storedLot(background, 'Nero, denarius').notes, 'Port closed');
 });
+
+// X-12: records that cannot be read are said where the coins would be, with the way to Settings, not only in a notice.
+test('unreadable records are said in the Watchlist with Open Settings', async () => {
+  const background = await createWorkspaceBackground();
+  await background.storage.set({ [STORAGE_KEY]: 'not a store' });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const box = page.$('lot-list').querySelector('.empty-state');
+  assert.equal(box.querySelector('h3').textContent, 'Your records can’t be read');
+  assert.match(box.querySelector('p').textContent, /^Stored data is invalid: .+ Open Settings to download the stored data or recover it\.$/);
+  assert.equal(box.querySelector('button').textContent, 'Open Settings');
+});
