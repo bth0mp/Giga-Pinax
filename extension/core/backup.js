@@ -57,12 +57,15 @@ const UNNAMED_FIELDS = new Set(['id', 'revision', 'updatedAt']);
 
 const COLLECTIONS = [
   'lots', 'auctionEvents', 'alternativeGroups', 'evidence',
-  'collectionEntries', 'alerts',
+  'collectionEntries', 'alerts', 'wants',
 ];
 // Preferences and alerts are never merged: the collector's own settings stay, and alerts are
 // re-derived from the merged events by the next reconcile. Lots come after the records they point
-// at, and collection entries after the lots they pair with.
-const MERGED_COLLECTIONS = ['auctionEvents', 'alternativeGroups', 'evidence', 'lots', 'collectionEntries'];
+// at, and collection entries after the lots they pair with; wants (G-22) after the lots they may
+// name as found.
+const MERGED_COLLECTIONS = ['auctionEvents', 'alternativeGroups', 'evidence', 'lots', 'collectionEntries', 'wants'];
+// The want list is the one collection a root may leave out (records.js): read as an empty list.
+const rowsOf = (snapshot, key) => snapshot[key] ?? [];
 const CONFLICT_SENTENCES = {
   'same-sale-collision': 'is the same sale with different numbers, kept local',
   'lot-not-merged': 'is attached to a lot this merge did not take, skipped',
@@ -190,7 +193,7 @@ function readBackup(document) {
 }
 
 function counts(snapshot) {
-  return Object.fromEntries(COLLECTIONS.map((key) => [key, snapshot[key].length]));
+  return Object.fromEntries(COLLECTIONS.map((key) => [key, rowsOf(snapshot, key).length]));
 }
 
 function equal(left, right) {
@@ -249,7 +252,7 @@ function fieldsText(names) {
 
 // Every line the collector reads names the record, not only the collection it came from.
 function recordLabel(record) {
-  for (const key of ['title', 'name']) {
+  for (const key of ['title', 'name', 'reference']) {
     if (typeof record?.[key] === 'string' && record[key].trim()) return record[key];
   }
   const sale = record?.saleIdentity;
@@ -359,6 +362,16 @@ function settleSkippedLotEvents(snapshot, skipped, localEventIds, conflicts, { a
     return false;
   });
   return orphaned.size;
+}
+
+// A want found by a coin this merge skipped as a duplicate names the local copy of that coin instead, which is the one
+// this install keeps; and a want list both sides left empty stays out of the root, as it was.
+function followSkippedLots(snapshot, skipped) {
+  const localOf = new Map(skipped.map(({ record, local }) => [record.id, local.id]));
+  for (const want of snapshot.wants ?? []) {
+    if (localOf.has(want.foundLotId)) want.foundLotId = localOf.get(want.foundLotId);
+  }
+  if (!snapshot.wants?.length) delete snapshot.wants;
 }
 
 // The identity of a trigger, rebuilt from the three things it is derived from, exactly as the reconcile rebuilds it.
@@ -482,7 +495,7 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
     fields: differingFields(local, record),
   });
   for (const key of MERGED_COLLECTIONS) {
-    const rows = snapshot[key];
+    const rows = (snapshot[key] ??= []);
     const counted = key === 'collectionEntries'
       ? (id, outcome) => entryOutcomes.set(id, outcome)
       : (id, outcome) => { tally[outcome] += 1; };
@@ -496,7 +509,7 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
     // Lots are merged before the entries that pair with them, so this map is already final.
     const lotsById = key === 'collectionEntries'
       ? new Map(snapshot.lots.map((lot) => [lot.id, lot])) : null;
-    for (const record of incoming[key]) {
+    for (const record of rowsOf(incoming, key)) {
       const at = indexById.get(record.id);
       if (at !== undefined) {
         const local = rows[at];
@@ -595,6 +608,7 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
     now,
   });
   repairCollectionPairs(snapshot, conflicts, entryReviews);
+  followSkippedLots(snapshot, skippedLots);
   const survivors = new Set(snapshot.collectionEntries.map(({ id }) => id));
   for (const [id, outcome] of entryOutcomes) {
     if (survivors.has(id)) tally[outcome] += 1;

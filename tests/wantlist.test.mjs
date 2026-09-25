@@ -7,6 +7,8 @@ import {
   LIMITS, createEmptySnapshot, quarantineEntryId, quarantineInvalidRecords, validateQuarantinedRecord, validateSnapshot, validateWant,
 } from '../extension/core/records.js';
 import { WANT_GRADES } from '../extension/core/fields.js';
+import { exportBackup, importChangeLines, previewImport, validateBackup } from '../extension/core/backup.js';
+import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 import { createWorkspaceBackground } from './helpers/dom.mjs';
 
@@ -191,4 +193,99 @@ test('the background worker answers the want commands, and a want set aside come
   const intoNone = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(bare.quarantine[0]) }));
   assert.equal(intoNone.ok, true, intoNone.message);
   assert.deepEqual(stored.get(STORAGE_KEY).wants.map(({ id }) => id), [WANT_ID]);
+});
+
+// --- Backups, merges and the CSV ------------------------------------------------------------------
+
+const LATER = '2026-09-26T12:00:00.000Z';
+const OTHER_WANT = '44444444-4444-4444-8444-444444444444';
+function wonLot(id, extra = {}) {
+  return {
+    id, revision: 1, dataClass: 'collector', title: 'Trajan denarius', reference: 'RIC II Trajan 253', sourceLinks: [], bidHistory: [],
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 70000 }, verification: 'personal-unverified' },
+    outcomeHistory: [], createdAt: NOW, updatedAt: NOW, ...extra,
+  };
+}
+const withWants = (...wants) => ({ ...createEmptySnapshot(NOW), wants });
+const exported = (snapshot) => {
+  const result = exportBackup(snapshot, LATER);
+  assert.equal(result.ok, true, result.error?.message);
+  return result.value;
+};
+
+test('a backup carries the want list, and a replace import brings it in whole', async () => {
+  const want = makeWant({ notes: 'Only with a good portrait', maxPrice: { currency: 'CHF', minor: 120000 }, minGrade: 'EF' });
+  const document = exported(withWants(want));
+  assert.deepEqual(JSON.parse(document).data.wants, [want]);
+  const incoming = validateBackup(document);
+  assert.equal(incoming.ok, true, incoming.error?.message);
+  const replaced = previewImport(createEmptySnapshot(NOW), incoming.value, 'replace', { now: LATER });
+  assert.deepEqual(replaced.value.snapshot.wants, [want]);
+  assert.equal(replaced.value.counts.incoming.wants, 1);
+  assert.equal(replaced.value.counts.outgoing.wants, 0);
+  // Through the store's own import, which copies only the root keys it knows.
+  const background = await createWorkspaceBackground();
+  const before = await background.send({ type: 'snapshot.get' });
+  const reply = await background.send({ type: 'backup.import', mode: 'replace', expectedRevision: before.revision, document });
+  assert.equal(reply.ok, true, reply.message);
+  assert.deepEqual(background.root().wants, [want]);
+  // A backup from before the want list replaces one that has it: replace is everything.
+  const older = exported(createEmptySnapshot(NOW));
+  const now = await background.send({ type: 'snapshot.get' });
+  assert.equal((await background.send({ type: 'backup.import', mode: 'replace', expectedRevision: now.revision, document: older })).ok, true);
+  assert.equal(Object.hasOwn(background.root(), 'wants'), false);
+});
+
+test('a merge takes new wants, settles one on both sides by its later write, and keeps the local list of an older backup', () => {
+  const local = withWants(makeWant({ notes: 'local' }));
+  const incoming = withWants(
+    makeWant({ notes: 'from the other install', revision: 3, updatedAt: LATER }),
+    makeWant({ id: OTHER_WANT, reference: 'Price 112' }),
+  );
+  const preview = previewImport(local, incoming, 'merge', { exportedAt: LATER, now: LATER });
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.deepEqual(preview.value.snapshot.wants.map(({ id, notes, revision }) => [id, notes ?? null, revision]),
+    [[WANT_ID, 'from the other install', 4], [OTHER_WANT, null, 0]]);
+  assert.equal(preview.value.counts.added, 1);
+  assert.equal(preview.value.counts.updated, 1);
+  assert.deepEqual(importChangeLines(preview.value), [
+    `wants: "RIC II Trajan 253" is replaced by the backup's copy (backup ${LATER}, local ${NOW}), differing in notes`,
+  ]);
+  // A backup from before the want list keeps the local one; neither side having one leaves none.
+  const older = previewImport(local, createEmptySnapshot(NOW), 'merge', { now: LATER });
+  assert.deepEqual(older.value.snapshot.wants, local.wants);
+  const none = previewImport(createEmptySnapshot(NOW), createEmptySnapshot(NOW), 'merge', { now: LATER });
+  assert.equal(Object.hasOwn(none.value.snapshot, 'wants'), false);
+  assert.equal(validateSnapshot(none.value.snapshot).ok, true);
+});
+
+test('a merged want found by a coin the merge skipped as a duplicate names the local copy of that coin', () => {
+  const localLot = wonLot(LOT_ID, { auctionContext: { pageUrl: 'https://house.test/lot/7' } });
+  const theirLot = wonLot('55555555-5555-4555-8555-555555555555', { auctionContext: { pageUrl: 'https://house.test/lot/7' } });
+  const local = { ...createEmptySnapshot(NOW), lots: [localLot] };
+  const incoming = { ...createEmptySnapshot(NOW), lots: [theirLot], wants: [makeWant({ foundLotId: theirLot.id, foundAt: NOW })] };
+  const preview = previewImport(local, incoming, 'merge', { now: LATER });
+  assert.equal(preview.ok, true, preview.error?.message);
+  assert.equal(preview.value.duplicates.length, 1, 'the coin is the same auction lot');
+  assert.equal(preview.value.snapshot.wants[0].foundLotId, LOT_ID);
+});
+
+test('the Want list CSV writes each want with its maximum in its own currency and the coin that found it', () => {
+  const snapshot = {
+    ...createEmptySnapshot(NOW),
+    lots: [wonLot(LOT_ID)],
+    wants: [
+      makeWant({ notes: '=HYPERLINK("x")', maxPrice: { currency: 'GBP', minor: 65050 }, minGrade: 'VF', foundLotId: LOT_ID, foundAt: LATER }),
+      makeWant({ id: OTHER_WANT, reference: 'Price 112' }),
+    ],
+  };
+  assert.deepEqual(CSV_TABLES.map(({ key }) => key), ['lots', 'collection', 'bids', 'outcomes', 'wants']);
+  assert.equal(CSV_TABLES.at(-1).label, 'Want list');
+  const lines = csvFiles(snapshot).wants.replace(/^﻿/, '').trimEnd().split('\r\n');
+  assert.deepEqual(lines, [
+    '"want_id","reference","max_price","max_price_currency","min_grade","status","found_lot_id","found_lot_title","found_at","notes","created_at","updated_at"',
+    `"${WANT_ID}","RIC II Trajan 253","650.50","GBP","Very Fine","Found","${LOT_ID}","Trajan denarius","${LATER}","'=HYPERLINK(""x"")","${NOW}","${NOW}"`,
+    `"${OTHER_WANT}","Price 112","","","","Wanted","","","","","${NOW}","${NOW}"`,
+  ]);
+  assert.equal(csvFiles(createEmptySnapshot(NOW)).wants.replace(/^﻿/, '').trimEnd().split('\r\n').length, 1, 'no wants, the header alone');
 });

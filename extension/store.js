@@ -824,7 +824,7 @@ function mutation(snapshot, command, context) {
       const rootKeys = [
         'schemaVersion', 'revision', 'updatedAt', 'preferences', 'scheduler', 'quarantine',
         'lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries',
-        'drafts', 'alerts', 'recentCommands',
+        'drafts', 'alerts', 'recentCommands', 'wants',
       ];
       for (const key of Object.keys(next)) delete next[key];
       for (const key of rootKeys) {
