@@ -71,7 +71,7 @@ async function initWorkspace() {
   };
   // Every currency select lists the currencies an amount may be recorded in, in money.js's order (G-23).
   for (const select of [$('evidence-currency'), $('evidence-form').elements.currency, $('bid-form').elements.currency,
-    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency]) {
+    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency, $('want-form').elements.currency]) {
     select.replaceChildren(...CURRENCIES.map((code) => { const option = text('option', code); option.value = code; return option; }));
   }
   const view = () => ({ locale: navigator.language });
@@ -1521,7 +1521,6 @@ async function initWorkspace() {
   // captured lot of the type says so where it turns up.
   let editingWant = null;
   const wantForm = $('want-form');
-  wantForm.elements.currency.replaceChildren(...CURRENCIES.map((currency) => Object.assign(text('option', currency), { value: currency })));
   wantForm.elements.minGrade.append(...WANT_GRADE_CHOICES.map(({ value, label }) => Object.assign(text('option', label), { value })));
   const openWantForm = (want = null) => {
     editingWant = want ? { id: want.id, revision: want.revision } : null;
