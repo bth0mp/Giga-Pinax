@@ -1256,3 +1256,18 @@ test('a won coin with no fees recorded shows hammer + premium, counts it in the 
   assert.equal(page.$('outcome-fees').open, true);
   assert.ok(page.document.activeElement === page.$('outcome-form').elements.premiumVat);
 });
+
+// Q-11: Active bids says what leaves the account if every bid wins, from the fees saved beside each bid.
+test('Active bids shows the all-in figure of the bids with a fee sheet, and how many those are', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Leu lot', sourceLinks: [] } });
+  await background.send({ type: 'bid.place', lotId: saved.value.id, expectedRevision: 0,
+    activeBid: { amount: { currency: 'CHF', minor: 130000 }, buyerPremiumBps: 2000 },
+    costEstimate: { currency: 'CHF', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 810 } });
+  const other = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nomos lot', sourceLinks: [] } });
+  await background.send({ type: 'bid.place', lotId: other.value.id, expectedRevision: 0, activeBid: { amount: { currency: 'CHF', minor: 50000 }, buyerPremiumBps: 2000 } });
+  const page = await mountWorkspace({ background, hash: '#bids' });
+  const card = page.$('exposure-list').children[0];
+  // 1,300 + 260 + 21.06 VAT on the premium + 15 shipping; the Nomos bid has no fee sheet.
+  assert.ok(card.textContent.includes('All-in if every bid wins CHF\u00a01,596.06 (1 of 2 with fees)'), card.textContent);
+});

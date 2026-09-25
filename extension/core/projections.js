@@ -16,12 +16,16 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  */
 /**
  * What the open bids in one currency add up to: hammers, hammers with the premium where it is known,
- * how many bids, and how many carry no premium.
+ * how many bids, and how many carry no premium; and what leaves the account if every one of them wins -
+ * hammer, premium and the fees saved beside the bid - for the bids whose premium is known and whose fee
+ * sheet is in the bid's own currency, with how many those are.
  * @typedef {object} ExposureTotals
  * @property {number} hammerMinor
  * @property {number} knownHammerPlusBpMinor
  * @property {number} bindingCount
  * @property {number} unknownPremiumCount
+ * @property {number} knownTotalMinor
+ * @property {number} totalCount
  */
 /** @typedef {ExposureTotals & { byEvent: Record<string, ExposureTotals> }} CurrencyExposure */
 /**
@@ -184,14 +188,9 @@ export function shownCostTotal(cost, hammer) {
   return { total: { currency: cost.premium.currency, minor: Number(minor) }, partial: true };
 }
 
+const emptyTotals = () => ({ hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, knownTotalMinor: 0, totalCount: 0 });
 function emptyExposure() {
-  return {
-    hammerMinor: 0,
-    knownHammerPlusBpMinor: 0,
-    bindingCount: 0,
-    unknownPremiumCount: 0,
-    byEvent: {},
-  };
+  return { ...emptyTotals(), byEvent: {} };
 }
 
 function addSafe(left, right) {
@@ -213,12 +212,7 @@ export function projectExposure(snapshot) {
     const currency = lot.activeBid.amount.currency;
     const eventId = lot.auctionEventId ?? 'unassigned';
     byCurrency[currency] ??= emptyExposure();
-    byCurrency[currency].byEvent[eventId] ??= {
-      hammerMinor: 0,
-      knownHammerPlusBpMinor: 0,
-      bindingCount: 0,
-      unknownPremiumCount: 0,
-    };
+    byCurrency[currency].byEvent[eventId] ??= emptyTotals();
     const totals = [byCurrency[currency], byCurrency[currency].byEvent[eventId]];
     for (const total of totals) {
       total.hammerMinor = addSafe(total.hammerMinor, lot.activeBid.amount.minor);
@@ -235,6 +229,14 @@ export function projectExposure(snapshot) {
         total.knownHammerPlusBpMinor,
         premium.value.hammerPlusPremium.minor,
       );
+    }
+    // All in, from the fee sheet saved beside the bid, only where it is in the bid's currency: never converted.
+    if (lot.costEstimate?.currency !== currency) continue;
+    const allIn = calculateBidCost(lot.activeBid.amount, lot.activeBid.buyerPremiumBps, lot.costEstimate);
+    if (!allIn.ok) continue;
+    for (const total of totals) {
+      total.knownTotalMinor = addSafe(total.knownTotalMinor, allIn.value.total.minor);
+      total.totalCount += 1;
     }
   }
   /** @type {Record<string, CurrencyExposure>} */

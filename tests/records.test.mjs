@@ -1002,12 +1002,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 12500,
       bindingCount: 1,
       unknownPremiumCount: 0,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventChf]: {
           hammerMinor: 10000,
           knownHammerPlusBpMinor: 12500,
           bindingCount: 1,
           unknownPremiumCount: 0,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1016,12 +1020,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 9600,
       bindingCount: 1,
       unknownPremiumCount: 0,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventEur]: {
           hammerMinor: 8000,
           knownHammerPlusBpMinor: 9600,
           bindingCount: 1,
           unknownPremiumCount: 0,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1030,12 +1038,16 @@ test('projects every open active bid by currency and event without planned or te
       knownHammerPlusBpMinor: 12500,
       bindingCount: 2,
       unknownPremiumCount: 1,
+      knownTotalMinor: 0,
+      totalCount: 0,
       byEvent: {
         [IDS.eventUsd]: {
           hammerMinor: 30000,
           knownHammerPlusBpMinor: 12500,
           bindingCount: 2,
           unknownPremiumCount: 1,
+          knownTotalMinor: 0,
+          totalCount: 0,
         },
       },
     },
@@ -1396,4 +1408,20 @@ test('a won coin’s import VAT is kept beside its total, and the full total add
   assert.equal(validateSnapshot(snapshotWith(noTotal)).error.code, 'invalid-cost', 'import VAT belongs to a complete cost');
   const badRate = structuredClone(won.value); badRate.costEstimate.importVatBps = 10001;
   assert.equal(validateSnapshot(snapshotWith(badRate)).error.path, 'lots[0].costEstimate.importVatBps');
+});
+
+// Q-11: what leaves the account if every active bid wins: hammer, premium and the fees saved beside each bid, in the
+// bid's currency, counted only where the premium is known and the fee sheet is in that currency - never converted.
+test('exposure adds the all-in total of the bids whose premium and fees are known in their own currency', () => {
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 };
+  const exposure = projectExposure(snapshotWith(
+    makeLot(IDS.lotEur, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: fees }),
+    makeLot(IDS.lotChf, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 10000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: { ...fees, currency: 'CHF' } }),
+    makeLot(IDS.lotPlanned, { auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 10000 }, placedAt: NOW }, costEstimate: fees }),
+  ));
+  // 1,300 + 260 premium + 49.40 VAT on it + 15 shipping.
+  assert.equal(exposure.EUR.knownTotalMinor, 130000 + 26000 + 4940 + 1500);
+  assert.equal(exposure.EUR.totalCount, 1, 'fees in francs and an unknown premium are left out, not guessed');
+  assert.equal(exposure.EUR.bindingCount, 3);
+  assert.equal(exposure.EUR.byEvent[IDS.eventEur].knownTotalMinor, 130000 + 26000 + 4940 + 1500);
 });
