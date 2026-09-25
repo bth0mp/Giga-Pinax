@@ -197,10 +197,11 @@ export function savedLotsFor(snapshot, reference) {
 const OUTCOME_WORDS = Object.freeze({ lost: 'Lost', withdrawn: 'Withdrawn', unsold: 'Unsold' });
 // What there is to say of the coins saved under a card's reference: where the newest open one stands, its bid in force or planned (written by
 // the one money rule), its auction and when.
-function savedFacts(lots, snapshot, { now, locale }) {
+// A pill's words write a whole amount without its places (whole), the sentence with them.
+function savedFacts(lots, snapshot, { now, locale, whole = false }) {
   const lot = lots[0];
   const status = lot.outcome?.status ?? 'open';
-  const money = (amount) => { try { return formatMoney(amount, locale, { narrow: true }); } catch { return ''; } };
+  const money = (amount) => { try { return formatMoney(amount, locale, { narrow: true, whole }); } catch { return ''; } };
   const bid = status !== 'open' ? null : lot.activeBid?.amount ? { kind: 'active', amount: money(lot.activeBid.amount) }
     : lot.plannedBid?.amount ? { kind: 'planned', amount: money(lot.plannedBid.amount) } : null;
   const event = lot.auctionEventId ? (snapshot?.auctionEvents ?? []).find(({ id }) => id === lot.auctionEventId) : null;
@@ -218,20 +219,21 @@ export function savedLineText(lots, snapshot, { now = new Date().toISOString(), 
   if (lots.length > 1) parts.push(`${lots.length} coins saved`);
   return parts.filter(Boolean).join(' · ');
 }
-// The same coin as the card's status pill says it (H-05), short enough to share one row with the want: "Watching · £650.00 bid · in 25 h".
+// The same coin as the card's status pill says it (H-05), short enough to share one row with the want: "Watching · £650 bid · in 25 h". The
+// amount is whole where it is exact and in full where it is not: a pill never cuts or rounds one.
 export function savedPillText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
   if (!lots?.[0]) return '';
-  const { status, bid, relative } = savedFacts(lots, snapshot, { now, locale });
+  const { status, bid, relative } = savedFacts(lots, snapshot, { now, locale, whole: true });
   if (status !== 'open') return status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`;
   return ['Watching', bid ? `${bid.amount} ${bid.kind === 'active' ? 'bid' : 'planned'}` : '', relative].filter(Boolean).join(' · ');
 }
-// A wanted type as its pill says it (H-05): "Wanted · up to £650.00 · VF+", from the first want of the type; wantBadgeText words the same in full
-// for its tooltip. '' when the type is on no want list.
+// A wanted type as its pill says it (H-05): "Wanted · up to £650 · VF+", from the first want of the type, the amount whole where it is exact;
+// wantBadgeText words the same in full for its tooltip and a screen reader. '' when the type is on no want list.
 export function wantPillText(matches, locale = 'en-US') {
   const want = matches?.[0];
   if (!want) return '';
   const parts = ['Wanted'];
-  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true })}`); } catch { /* not a price to say */ } }
+  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true, whole: true })}`); } catch { /* not a price to say */ } }
   if (Object.hasOwn(WANT_GRADE_LABELS, want.minGrade ?? '')) parts.push(`${want.minGrade}+`);
   return parts.join(' · ');
 }
@@ -563,16 +565,28 @@ async function initCompanionPopup() {
     const row = $('companion-status-row');
     if (row) row.hidden = $('companion-saved-line').hidden && $('companion-want-line').hidden;
   };
-  // A status pill: its short words and its whole sentence as the tooltip; where it leads somewhere, a button named by that sentence.
+  // A status pill: its short words and its whole sentence as the tooltip. Where it leads somewhere it is a button, named by its own words and then
+  // the sentence (so voice control can say what it sees); where it does not, the sentence is its text for a screen reader, which the status line
+  // announces, and the short words are hidden from it.
   const pillNode = (part) => {
     const node = document.createElement(part.action ? 'button' : 'mark');
     node.className = part.kind ? `pill ${part.kind}` : 'pill';
-    node.textContent = part.pill;
     if (part.title) node.title = part.title;
     if (part.action) {
       node.type = 'button';
-      node.setAttribute('aria-label', part.name ?? part.title ?? part.pill);
+      node.textContent = part.pill;
+      node.setAttribute('aria-label', part.name ? `${part.pill}: ${part.name}` : part.pill);
       node.addEventListener('click', part.action);
+    } else if (part.title && part.title !== part.pill) {
+      const shown = document.createElement('span');
+      shown.setAttribute('aria-hidden', 'true');
+      shown.textContent = part.pill;
+      const spoken = document.createElement('span');
+      spoken.className = 'sr-only';
+      spoken.textContent = part.title;
+      node.append(shown, spoken);
+    } else {
+      node.textContent = part.pill;
     }
     return node;
   };

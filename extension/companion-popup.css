@@ -54,14 +54,12 @@
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
 .companion-full-button {width:100%; margin-top:14px;}
 /* The status row (H-05): Watching, Saved and Wanted as pills on one row under the card's summary - or under the Upcoming list - with Open and
-   Undo beside a save, so a coin saved and wanted keeps the median where G-03 put it. On the card the row never wraps: a pill too long for it is
-   cut, its whole sentence in its tooltip and its name. The buttons keep the row's height, so it never jumps as they come and go. */
-.status-row {display:flex; align-items:center; gap:6px; min-height:24px; margin:6px 0 0; font-size:var(--text-body); line-height:1.4; color:var(--ink); white-space:nowrap;}
-.status-row-wrap {flex-wrap:wrap; row-gap:2px; white-space:normal;}
-.status-line {display:inline-flex; align-items:center; gap:4px; min-width:0; flex:0 1 auto;}
-/* Where the two do not fit, the want gives way first: the bid and its time are what the coin needs now. */
-.status-line + .status-line {flex-shrink:4;}
-.status-row .pill {min-width:0; overflow:hidden; text-overflow:ellipsis; padding:3px 10px; font-family:var(--font-ui); line-height:1.4;}
+   Undo beside a save, so a coin saved and wanted keeps the median where G-03 put it. Nothing in it is ever cut: two pills that do not fit take a
+   second row (long amounts at the side panel's widths), and a pill wider than the row wraps inside itself. The buttons keep the row's height,
+   so it never jumps as they come and go. */
+.status-row {display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-height:24px; margin:6px 0 0; font-size:var(--text-body); line-height:1.4; color:var(--ink);}
+.status-line {display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; max-width:100%;}
+.status-row .pill {max-width:100%; padding:3px 8px; font-family:var(--font-ui); line-height:1.4; white-space:normal;}
 .status-row .text-button {flex:none; padding:0 2px; font-size:var(--text-body); line-height:inherit;}
 .watch-pill {border-color:var(--accent); background:var(--accent-soft); color:var(--accent);}
 button.watch-pill {cursor:pointer;}

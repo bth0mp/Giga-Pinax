@@ -327,8 +327,9 @@ test('after Save the coin is saved in one step, and the Reference box is still t
 });
 
 // Cycle 5 (H-05): a coin saved with a bid and wanted too says both in one row of pills under the card, so the median keeps the place G-03 gave it
-// in the 600 px popup, and at 320 the row stays one row.
-test('a saved and wanted coin says both in one row, and the median stays in view', async () => {
+// in the 600 px popup. S3 fix round (review Important 1): a pill never cuts its amount. A whole amount is written whole ("£12,500"), and where two
+// pills with five-figure amounts do not fit the side panel's 360 or 320 px, the row takes a second line rather than cutting either.
+test('a saved and wanted coin says both in one row, the median stays in view, and no pill is cut', async () => {
   const browser = await launch();
   try {
     const seed = await browser.context.newPage();
@@ -339,34 +340,49 @@ test('a saved and wanted coin says both in one row, and the median stays in view
       const at = new Date(Date.now() + 25 * 3600e3).toISOString();
       const event = await send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma Numismatics E-Sale 130', eventKind: 'auction-starts',
         precision: 'timed', localDate: at.slice(0, 10), localTime: at.slice(11, 16), timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
-      const lot = await send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero · As · Rome · AD 62–68', reference: 'RIC I² Nero 306',
-        auctionEventId: event.value.id, notes: '', sourceLinks: [], outcome: { status: 'open' }, bidHistory: [] } });
-      const bid = await send({ type: 'bid.place', lotId: lot.value.id, expectedRevision: lot.value.revision,
-        activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } });
-      const want = await send({ type: 'want.save', expectedRevision: null,
-        want: { reference: 'RIC I² Nero 306', maxPrice: { currency: 'GBP', minor: 65000 }, minGrade: 'VF' } });
-      return [event, lot, bid, want].every((reply) => reply.ok);
+      const replies = [event];
+      for (const [reference, bid, max, grade] of [['RIC I² Nero 306', 65000, 65000, 'VF'], ['Price 23', 1250000, 1125000, 'EF']]) {
+        const lot = await send({ type: 'lot.save', expectedRevision: null, lot: { title: `${reference} lot`, reference,
+          auctionEventId: event.value.id, notes: '', sourceLinks: [], outcome: { status: 'open' }, bidHistory: [] } });
+        replies.push(lot, await send({ type: 'bid.place', lotId: lot.value.id, expectedRevision: lot.value.revision,
+          activeBid: { amount: { currency: 'GBP', minor: bid }, buyerPremiumBps: 2000 } }));
+        replies.push(await send({ type: 'want.save', expectedRevision: null, want: { reference, maxPrice: { currency: 'GBP', minor: max }, minGrade: grade } }));
+      }
+      return replies.every((reply) => reply.ok);
     });
     assert.equal(seeded, true);
     await seed.close();
-    for (const [path, width, height] of [['popup.html', 400, 600], ['popup.html?panel=1', 320, 700]]) {
-      const label = `${path} at ${width}`;
+    const cases = [
+      ['RIC I² Nero 306', 'popup.html', 400, 600, /^Watching · £650 bid · in \d+ h$/, 'Wanted · up to £650 · VF+'],
+      ['RIC I² Nero 306', 'popup.html?panel=1', 320, 700, /^Watching · £650 bid · in \d+ h$/, 'Wanted · up to £650 · VF+'],
+      ['Price 23', 'popup.html?panel=1', 360, 900, /^Watching · £12,500 bid · in \d+ h$/, 'Wanted · up to £11,250 · EF+'],
+      ['Price 23', 'popup.html?panel=1', 320, 700, /^Watching · £12,500 bid · in \d+ h$/, 'Wanted · up to £11,250 · EF+'],
+    ];
+    for (const [reference, path, width, height, saved, want] of cases) {
+      const label = `${reference} in ${path} at ${width}`;
       const page = await browser.context.newPage();
       await page.setViewportSize({ width, height });
       await page.goto(browser.url(path));
-      await lookUp(page, 'RIC I² Nero 306');
+      await lookUp(page, reference);
       await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
       await page.locator('#companion-want-line:not([hidden])').waitFor({ timeout: 15000 });
       await page.waitForTimeout(900);
       const frame = await page.evaluate(() => {
-        const box = (id) => document.getElementById(id).getBoundingClientRect();
-        return { median: Math.round(box('median-line').top), row: Math.round(box('companion-status-row').height),
-          saved: document.getElementById('companion-saved-line').textContent, want: document.getElementById('companion-want-line').textContent };
+        const box = (element) => element.getBoundingClientRect();
+        const row = document.getElementById('companion-status-row');
+        const pills = [...row.querySelectorAll('.pill')];
+        return { median: Math.round(box(document.getElementById('median-line')).top), row: Math.round(box(row).height),
+          saved: document.getElementById('companion-saved-line').textContent,
+          want: document.querySelector('#companion-want-line [aria-hidden="true"]').textContent,
+          cut: pills.filter((pill) => pill.scrollWidth > pill.clientWidth + 1 || box(pill).right > box(row).right + 1).map((pill) => pill.textContent) };
       });
-      assert.match(frame.saved, /^Watching · £650\.00 bid · in \d+ h$/, label);
-      assert.equal(frame.want, 'Wanted · up to £650.00 · VF+', label);
-      assert.ok(frame.row <= 28, `${label}: the status row is ${frame.row} px`);
-      if (height === 600) assert.ok(frame.median <= 400, `${label}: the median starts at ${frame.median}`);
+      assert.match(frame.saved, saved, label);
+      assert.equal(frame.want, want, label);
+      assert.deepEqual(frame.cut, [], `${label}: a pill is cut`);
+      if (height === 600) {
+        assert.ok(frame.row <= 28, `${label}: the status row is ${frame.row} px`);
+        assert.ok(frame.median <= 400, `${label}: the median starts at ${frame.median}`);
+      }
       await page.close();
     }
   } finally {

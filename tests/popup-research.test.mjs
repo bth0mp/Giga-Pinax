@@ -2851,7 +2851,7 @@ test('an upcoming lot citing a wanted type carries the want-list badge beside it
   const watch = row.children[1];
   // H-05: the same pill as under the card, short, with the want's whole terms as its tooltip.
   assert.equal(badge.className, 'pill want-pill');
-  assert.equal(badge.textContent, 'Wanted · up to $1,500.00 · VF+');
+  assert.equal(badge.textContent, 'Wanted · up to $1,500 · VF+');
   assert.equal(badge.title, 'On your want list · up to $1,500.00 · VF or better');
   assert.equal(watch.textContent, 'Watch');
   assert.equal(watch['aria-label'], `Watch Roma Numismatics, E-Sale 200, Lot u1, sale on ${dayWords('2099-10-12')}. On your want list · up to $1,500.00 · VF or better`);

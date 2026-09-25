@@ -59,6 +59,8 @@ const {
   savesDirectly,
   savedLotsFor,
   coinsToWatch,
+  savedPillText,
+  wantPillText,
   savedLineText,
   dueText,
 } = await import('../extension/companion-popup.js');
@@ -641,7 +643,11 @@ test('date-only next auctions use each event local calendar day and sort with ti
 // have saved from the same card: the same validation, the same reading into the details form, the same command.
 const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
 const storeReplies = (background, commands = []) => async (command) => { commands.push(structuredClone(command)); return background.send(command); };
-const lineParts = (line) => line.children.map((part) => (typeof part === 'string' ? part : `[${part.textContent}]`)).join('');
+// A line as it is seen: a pill by its shown words (a pill with a spoken sentence hides its short words from a screen reader).
+const shownWords = (part) => part.children?.find?.((child) => child['aria-hidden'] === 'true')?.textContent ?? part.textContent;
+const lineParts = (line) => line.children.map((part) => (typeof part === 'string' ? part : `[${shownWords(part)}]`)).join('');
+// A want pill's two parts: the short words (hidden from a screen reader) and the whole sentence (visually hidden).
+const pillParts = (pill) => pill.children.map((part) => [part['aria-hidden'] ?? part.className, part.textContent]);
 const lineButton = (line, label) => line.children.find((part) => typeof part !== 'string' && part.textContent === label);
 const settleAll = async () => { for (let tick = 0; tick < 30; tick += 1) await settle(); };
 const neroCard = { title: 'Nero · As · Rome · AD 62–68', reference: 'RIC I² Nero 306', pageUrl: 'https://numismatics.org/ocre/id/ric.1(2).ner.306' };
@@ -750,11 +756,12 @@ test('a card whose reference is saved shows where that coin stands and opens it,
     page.card(neroCard);
     const line = page.element('companion-saved-line');
     assert.equal(line.hidden, false);
-    // H-05: one short pill, whose click opens the coin; the whole sentence is its tooltip and its name.
-    assert.match(lineParts(line), /^\[Watching · £650\.00 bid · in \d+ days\]$/);
+    // H-05: one short pill, whose click opens the coin; the whole sentence is its tooltip and its name. Fix round: the amount is whole where
+    // it is exact, and the name begins with the pill's own words, so voice control can say what it sees.
+    assert.match(lineParts(line), /^\[Watching · £650 bid · in \d+ days\]$/);
     const pill = line.children[0];
     assert.match(pill.title, /^On your watchlist · Bid active £650\.00 · Roma E-Sale 130 · in \d+ days$/);
-    assert.equal(pill['aria-label'], `${pill.title} · Open this coin in the workspace`);
+    assert.equal(pill['aria-label'], `${pill.textContent}: ${pill.title} · Open this coin in the workspace`);
     assert.equal(page.element('companion-save-watchlist').hidden, true);
     await pill.emit('click');
     await settleAll();
@@ -1383,9 +1390,10 @@ test('a card of a wanted type says “On your want list” under it, and the res
     const line = page.element('companion-want-line');
     page.card(neroCard);
     assert.equal(line.hidden, false);
-    // H-05: the want is the row's second pill, short; its sentence is the tooltip.
+    // H-05: the want is the row's second pill, short; its sentence is the tooltip. Fix round: the sentence is also the pill's text for a screen
+    // reader, in a visually hidden part the status line announces, and the short words are hidden from it.
     assert.equal(line.children[0].className, 'pill want-pill');
-    assert.equal(lineParts(line), '[Wanted · up to £650.00 · VF+]');
+    assert.deepEqual(pillParts(line.children[0]), [['true', 'Wanted · up to £650 · VF+'], ['sr-only', 'On your want list · up to £650.00 · VF or better']]);
     assert.equal(line.children[0].title, 'On your want list · up to £650.00 · VF or better');
     assert.equal(page.element('companion-status-row').hidden, false);
     // A neighbouring type is not the want.
@@ -1426,7 +1434,7 @@ test('a Bopearachchi card of a wanted type says so under it, from the reading th
   const bopCard = { title: 'Euthydemus I · Tetradrachm', reference: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', pageUrl: 'https://numismatics.org/bigr/id/bop.9c' };
   page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus I' } });
   assert.equal(line.hidden, false);
-  assert.equal(lineParts(line), '[Wanted]');
+  assert.deepEqual(pillParts(line.children[0]), [['true', 'Wanted'], ['sr-only', 'On your want list']]);
   page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus II' } });
   assert.equal(line.hidden, true, 'another king is another type');
   page.card(bopCard);
@@ -1440,4 +1448,20 @@ test('the saved line writes the bid in the browser locale with the narrow sign',
   assert.equal(savedLineText([lot], {}, { locale: 'en-GB' }), 'On your watchlist · Bid active ¥1,200,000');
   const sek = { reference: 'RIC I² Nero 306', plannedBid: { amount: { currency: 'SEK', minor: 1250000 } } };
   assert.equal(savedLineText([sek], {}, { locale: 'en-GB' }).replace(/\u00a0/g, ' '), 'On your watchlist · Bid planned SEK 12,500.00');
+});
+
+// Fix round (review Important 1): a pill never cuts an amount. It writes a whole amount without its places, as the card's short words, and an
+// amount with pence in full; the row wraps rather than cutting a pill (companion-popup.css).
+test('a status pill writes its amount whole where exact and in full otherwise, and nothing cuts it', () => {
+  const bid = (minor) => [{ reference: 'Price 23', activeBid: { amount: { currency: 'GBP', minor } } }];
+  assert.equal(savedPillText(bid(1250000), {}, { locale: 'en-GB' }), 'Watching · £12,500 bid');
+  assert.equal(savedPillText(bid(1250050), {}, { locale: 'en-GB' }), 'Watching · £12,500.50 bid');
+  assert.equal(savedPillText([{ reference: 'Price 23', plannedBid: { amount: { currency: 'JPY', minor: 1200000 } } }], {}, { locale: 'en-GB' }), 'Watching · ¥1,200,000 planned');
+  assert.equal(wantPillText([{ maxPrice: { currency: 'GBP', minor: 1125000 }, minGrade: 'EF' }], 'en-GB'), 'Wanted · up to £11,250 · EF+');
+  assert.equal(wantPillText([{ maxPrice: { currency: 'SEK', minor: 1250000 } }], 'en-GB').replace(/ /g, ' '), 'Wanted · up to SEK 12,500');
+  // The full sentence keeps the places, as every other line does.
+  assert.equal(savedLineText(bid(1250000), {}, { locale: 'en-GB' }), 'On your watchlist · Bid active £12,500.00');
+  const css = readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.status-row \{[^}]*flex-wrap:wrap/);
+  assert.doesNotMatch(css, /text-overflow:ellipsis/);
 });
