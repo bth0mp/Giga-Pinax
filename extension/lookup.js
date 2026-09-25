@@ -285,7 +285,7 @@ function readClean(value) {
 // 1234 (temporary)", "RPC IV.2, 1234 (temporary)", "RPC IV 1234 (temp.)". Such a number is the volume's, whatever part it is filed in, and RPC Online's
 // own address for the type is the volume without the part (coins/4/1234 is the type URI of "RPC IV.2, 1234 (temporary)"). A capital letter behind the
 // number is a supplement's type of its own ("RPC I 2317A"); a "var." or "corr." remark links the type it stands on.
-const RPC_REFERENCE = /^RPC\s*(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./]|,?\s*part)\s*(\d)(?!\d))?\s*,?\s*(online\s*,?\s*)?(\d+)([a-z]?)((?:\s*(?:\((?:temporary|temp\.?)\)|var\.?|corr\.?)(?![a-z]))*)$/i;
+const RPC_REFERENCE = /^RPC\s*(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./]|,?\s*part)\s*(\d)(?!\d))?\s*,?\s*(online\s*,?\s*)?(\d+)([a-z]?)((?:\s*,?\s*(?:\((?:temporary|temp\.?)\)|var\.?|corr\.?)(?![a-z]))*)$/i;
 export function rpcReference(text) {
   const [, numeral, part = '', online, digits, letter, remarks] = String(text ?? '').trim().match(RPC_REFERENCE) ?? [];
   if (!digits || letter !== letter.toUpperCase()) return null;

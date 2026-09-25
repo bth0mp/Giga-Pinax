@@ -369,14 +369,20 @@ const citationKeys = (reference) => {
 // where it cannot be a range: in front of a lettered type ("344-1a"), or of one a shortened range would count down to ("385-4" would be 385 to 384).
 // "44-5" and "344-5" are how a dealer shortens 44–45 and 344–345, which may be two types, so they keep citing nothing.
 const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
-// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"): a single lower-case letter closing the citation — before its end, a ";", a
-// new sentence, a bracket or "var." — is the letter, so it cites RIC 27b and no longer RIC 27. A capital there is the next key ("RIC 27 C. 9"), and a letter a word or a
-// number follows is prose ("RIC 27 a rare variety", "RIC 27 e 28").
-const SPACED_LETTER_END = String.raw`(?:[.,:]?$|;|[.,]\s+\p{Lu}|[.,;:]?\s*\(|\s+var\b)`;
-const SPACED_LETTER = String.raw`(?!\s\p{Ll}${SPACED_LETTER_END})`;
+// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"), read exactly as lot.js reads it: a single letter of RIC's own alphabet (a–l)
+// closing the citation — the end of the text or of its line, a ",", ";" or ":", a bracket, "var.", or CGB's " - " and "=" — is the letter, so it
+// cites RIC 27b and no longer RIC 27. A letter with a full stop behind it is an abbreviation ("306 f." and following, "27 s." see, "u." and, "a. Chr."),
+// a capital the next key ("RIC 27 C. 9"), and a letter a word or a number follows prose ("RIC 27 a rare variety", "RIC 27 e 28"): those cite the
+// plain type. The text is squashed before it is read, so a line break behind a lone letter is marked as the "=" it stands for first.
+const SPACED_LETTER_END = String.raw`(?:$|[,;:]|\s*\(|\s+var\b|\s[-–=]\s)`;
+const SPACED_LETTER = String.raw`(?!\s[a-l]${SPACED_LETTER_END})`;
+const LETTER_AT_BREAK = /(\s[a-l])[^\S\n]*\n/g;
 function numberPattern(catalogue, number) {
   const [, digits, typeLetter] = (catalogue === 'RIC' && /^(\d+)([a-z])$/i.exec(number)) || [];
-  if (digits) return `${digits}(?:${eitherCase(typeLetter)}|\\s${typeLetter.toLowerCase()}(?=${SPACED_LETTER_END}))`;
+  if (digits) {
+    const spaced = /[a-l]/i.test(typeLetter) ? `|\\s${typeLetter.toLowerCase()}(?=${SPACED_LETTER_END})` : '';
+    return `${digits}(?:${eitherCase(typeLetter)}${spaced})`;
+  }
   const [, issue, type, letter] = (catalogue === 'RRC' && CRAWFORD.exec(number)) || [];
   if (!issue) return eitherCase(number);
   const shortened = Number(`${issue.slice(0, Math.max(0, issue.length - type.length))}${type}`);
@@ -436,8 +442,8 @@ const publishedInParts = (numeral) => ['1', '2', '3'].some((part) => realVolumeP
 // The houses that glue their separator to the number: a hyphen at Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album ("RIC-118", "Price-112"),
 // a hash ("RIC#118") and a colon ("RIC:118", "RIC: 118"). One mark, straight behind the key and straight in front of the number, so a spaced dash
 // ("RIC - 118") still says "not in RIC" and "RIC -; BMC -" cites nothing. Price takes no colon: "Price: 1,200" is a sale's amount, never PELLA's type,
-// as lookup.js reads it.
-const glued = (catalogue) => `(?:[-–#]${catalogue === 'Price' ? '' : String.raw`|:\s?`})${String.raw`(?=\p{Lu}?\d)`}`;
+// as lookup.js reads it. The French space the colon off the key ("RIC : 118"), and a dotted key keeps its stop in front of the mark ("Cr.-44/5").
+const glued = (catalogue) => String.raw`\.?(?:[-–#]${catalogue === 'Price' ? '' : String.raw`|\s?:\s?`})(?=\p{Lu}?\d)`;
 // Behind a volume numeral the same mark may also open the volume's part ("RIC IV-1 266"), which is one figure: so there the number behind it must be
 // two figures at least ("RIC II-118"), and a single one is left to the part and its guard, as before.
 const GLUED_VOLUME = String.raw`(?:[-–#]|:\s?)(?=\d{2})`;
@@ -458,7 +464,9 @@ function between({ catalogue, volume }) {
   // part and the last number the type, as before, so it cites VI 53 and never VI 1.
   const parted = !numeral || publishedInParts(numeral);
   const guard = parted ? String.raw`(?![-/]\d|\.\d(?!\d))` : String.raw`(?![-/]\d|\.\d+\s+\d)`;
-  return `${EDITION}(?:${glued(catalogue)}|${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}(?:${GLUED_VOLUME}|${part}${EDITION}${guard}${SEP}${RULERS})|${RULERS}))`;
+  // The same houses hyphenate the volume onto the key as well ("RIC-II 118", "RIC-II-118"); only a volume may follow that hyphen.
+  const volumed = `(?:[Vv]ol\\.?\\s?)?${written}${EDITION}(?:${GLUED_VOLUME}|${part}${EDITION}${guard}${SEP}${RULERS})`;
+  return `${EDITION}(?:${glued(catalogue)}|[-–](?=[IVX])${volumed}|${SEP}(?:${volumed}|${RULERS}))`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -476,7 +484,7 @@ export const filtersCitations = (reference) => Boolean(citationKeys(reference)) 
 // page simply says nothing to judge it by. Every repetition is bounded and no two of them may consume the same characters, so the pattern reads a
 // description once; the text is cut to CITATION_LIMIT first, as the grade reader cuts its own, so no page of literature is ever read whole.
 export function citesReference(description, reference) {
-  const text = squash(description).slice(0, CITATION_LIMIT);
+  const text = squash(String(description ?? '').slice(0, CITATION_LIMIT).replace(LETTER_AT_BREAK, '$1 = '));
   const keys = citationKeys(reference);
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
@@ -602,8 +610,9 @@ const PRAISE_OPENS = /[.;,:/]\s*$/;
 // A weight or a diameter ends the clause it stands in, whether the unit follows the figure ("4,03g", "3,21 g", "17,10 g") or leads it, as the Italian
 // houses write it ("g 17,10", "gr. 3,45"), bracketed or behind a dash: Jean Elsen, Bertolami and Heritage Europe grade straight behind it with no
 // stop ("3,21 g TTB.", "17,10 g BB.", "17.15 g - Zeer fraai"). So it opens a mark and a praise word as a full stop does. A die axis is not one of
-// them: "12 h" closes a grade in front of it, it does not open one behind it.
-const MEASURED = new RegExp(String.raw`(?:\d(?:[.,]\d+)?\s?(?:g|gr|gm|mm)\.?|(?<![\p{L}\d])(?:g|gr|gm)\.?\s?\d{1,3}(?:[.,]\d{1,3})?)\)?(?:\s[-–])?\s+$`, 'u');
+// them: "12 h" closes a grade in front of it, it does not open one behind it. A weight carries its decimals, as every house prints one; a bare
+// "12 g" is as likely a catalogue number or a lot beside a stray letter ("RIC 12 g BB", "Lot 12 g BB"). A diameter is whole millimetres.
+const MEASURED = new RegExp(String.raw`(?:\d[.,]\d+\s?(?:g|gr|gm)\.?|\d\s?mm\.?|(?<![\p{L}\d])(?:g|gr|gm)\.?\s?\d{1,3}[.,]\d{1,3})\)?(?:\s[-–])?\s+$`, 'u');
 // The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s", "Vz. ZF, Kz. PR"). The
 // Dutch voorzijde, "Vz.", is not one: it is spelled as the German grade vz.
 const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|dritto|rovescio)`;

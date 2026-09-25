@@ -125,14 +125,20 @@ const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MA
 const TYPED_NEXT = String.raw`RIC|R\.I\.C|RRC|Crawford|Craw|Cr|Price|Pr|SC|Seleucid Coins|Bopearachchi|Bop|CPE|Newell`;
 const BETWEEN = String.raw`\.?[²³]?(?:[\s.,:#-]*(?:vol\.?\s?)?[IVX]+(?:\s?[./-]\s?\d|,?\s*part\s*\d)?[²³]?,?)?(?:\s+(?:\p{Lu}[\p{L}'’]*\.?|\([^()]{1,40}\)),?){0,4}[\s.,:#-]*[PL]?`;
 const OTHER_NEXT = KEYS.filter((key) => key.length > 1).join('|');
-const CITED_NEXT = String.raw`\.(?=\s(?:[Cc]f\.?\s)?(?:(?:${TYPED_NEXT})${BETWEEN}\d|(?:${OTHER_NEXT})${BETWEEN}(?!(?:1[5-9]|20)\d\d(?!\d))\d))`;
+const citedAt = (mark) => String.raw`${mark}(?=\s(?:[Cc]f\.?\s)?(?:(?:${TYPED_NEXT})${BETWEEN}\d|(?:${OTHER_NEXT})${BETWEEN}(?!(?:1[5-9]|20)\d\d(?!\d))\d))`;
+const CITED_NEXT = citedAt(String.raw`\.`);
 const PROVENANCE_END = new RegExp(String.raw`${CITED_NEXT}|` + /(?<!\b\p{L})(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|St|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|Dez|Okt|[Nn]o|[Nn]r|[Vv]ol|[Pp]l|Slg|Smlg|Auk|Kat|Abb|Taf|Lot|Los))(?<!\b\d{1,2}(?=\.\s(?:Jan|Feb|Mär|Mar|Apr|Mai|May|Jun|Jul|Aug|Sep|Okt|Oct|Nov|Dez|Dec)\p{L}*\.?\s\d{4}))\.(?=\s)|\n|$/u.source, 'u');
+// A purchase sentence says how the coin came, and houses run the citation on behind it with a ";" or a comma ("Acquired from Spink, 1998; RIC 53"),
+// which "Ex" has never been read to do: there the sentence ends at a ";" or "," a citation follows, by the same rule a full stop ends it.
+const PURCHASE = /^(?:Privately purchased|Acquired|Purchased|Bought)$/;
+const PURCHASE_END = new RegExp(`${citedAt('[;,]')}|${PROVENANCE_END.source}`, 'u');
+const endOf = (marker) => (PURCHASE.test(marker) ? PURCHASE_END : PROVENANCE_END);
 const withoutProvenance = (text) => {
   let out = text;
   for (let cut = out.match(PROVENANCE); cut; cut = out.match(PROVENANCE)) {
     const start = cut.index + cut[0].length - cut[1].length;
     const rest = out.slice(start);
-    const end = rest.search(PROVENANCE_END);
+    const end = rest.search(endOf(cut[1]));
     out = out.slice(0, start) + rest.slice(end + 1);
   }
   return out;
@@ -147,6 +153,7 @@ const PROVENANCE_READ = 6000;
 const PROVENANCE_ENTRIES = 10;
 const PROVENANCE_ALL = new RegExp(PROVENANCE.source, 'g');
 const PROVENANCE_END_ALL = new RegExp(PROVENANCE_END.source, 'gu');
+const PURCHASE_END_ALL = new RegExp(PURCHASE_END.source, 'gu');
 const PROVENANCE_LABEL = /^(?:provenance|provenienz) ?:? ?/i;
 // The words that only introduce the owner: "Ex", "From", "Exemplar der", "Aus (der)", "Provient de", "Proviene da". "Erworben" is kept, since
 // "Erworben bei Lanz" says how the coin came, as "privately purchased from" does.
@@ -186,8 +193,9 @@ function provenanceSentences(text) {
   PROVENANCE_ALL.lastIndex = 0;
   for (let cut; sentences.length < PROVENANCE_ENTRIES * 2 && (cut = PROVENANCE_ALL.exec(source));) {
     const start = cut.index + cut[0].length - cut[1].length;
-    PROVENANCE_END_ALL.lastIndex = start;
-    const end = PROVENANCE_END_ALL.exec(source)?.index ?? source.length;
+    const ends = PURCHASE.test(cut[1]) ? PURCHASE_END_ALL : PROVENANCE_END_ALL;
+    ends.lastIndex = start;
+    const end = ends.exec(source)?.index ?? source.length;
     sentences.push(source.slice(start, end));
     PROVENANCE_ALL.lastIndex = Math.max(end, start + 1);
   }
@@ -204,13 +212,22 @@ function trailingLot(working) {
   for (let year; (year = PROVENANCE_YEAR.exec(head));) last = year;
   return last && last.index + last[0].length === head.length ? found : null;
 }
+// The same pair bracketed behind the sale, as CNG writes it ("Triton VIII (2005, 1132)"): the lot comes out of the bracket, the year with it.
+const PROVENANCE_BRACKET = /\(([^()]{1,60}), (\d{1,6}[a-z]?)\)/i;
+function bracketLot(working) {
+  const found = PROVENANCE_BRACKET.exec(working);
+  if (!found || !trailingLot(`${found[1]}, ${found[2]}`)) return null;
+  const lot = [`, ${found[2]}`, found[2]];
+  lot.index = found.index + 1 + found[1].length;
+  return lot;
+}
 
 function provenanceEntry(piece) {
   const text = trimEnds(piece.replace(PROVENANCE_LABEL, ''));
   let working = trimEnds(text.replace(PROVENANCE_MARKER, '').replace(PROVENANCE_REMARK, ''));
   if (!/[\p{L}\d]/u.test(working)) return null;
   const entry = { text: text.slice(0, 300) };
-  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working) ?? trailingLot(working);
+  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working) ?? trailingLot(working) ?? bracketLot(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
@@ -493,16 +510,22 @@ const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]\s*(?:part\s*)?\d|\s+par
 // A volume and a part written as two chunks ("RIC V, 2, 123"): the number is the chunk after them. The part is real or the row is not a reference,
 // by the one table the Reference box reads it by (realVolumePart), so a lot row and the box never disagree about the same words.
 const VOLUME_PART = /^\s*(?:vol\.?\s*)?([IVX]+)\s*,\s*(\d)\s*$/i;
-// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"): a single lower-case letter closing the reference — before its end, a
-// ";", a new sentence, a bracket or "var." — is glued back on, so the row is RIC 27b and never RIC 27, another coin. A capital is the next key ("RIC 27 C. 9"), and a letter
-// a word or a number follows is prose ("RIC 27 a rare variety", "RIC 27 e 28").
-const SPACED_LETTER = /^(.*\d) ([a-z])(?=[.,:]?$|;|[.,]\s+\p{Lu}|[.,:;]?\s*\(|\s+var\b)/u;
-function pieceAfter(raw, typed = false, lettered = false) {
+// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"): a single letter of RIC's own alphabet (a–l, the only type letters the
+// bundled RIC types carry) closing the citation is glued back on, so the row is RIC 27b and never RIC 27, another coin. Closing means the end of the
+// text or of its line, a ",", ";" or ":", a bracket, "var.", or the " - " and "=" CGB separates its citations with. It is read from the raw text,
+// never from the chunk the row is cut into, whose end is always a boundary. A letter with a full stop behind it is an abbreviation and never the
+// type letter: German "f." and "ff." (and following), "s." (see), "u." (and), "v. Chr.", Italian "a.C."; so is a capital (the next key, "RIC 27 C.
+// 9"), and a letter a word or a number follows is prose ("RIC 27 a rare variety", "RIC 27 e 28").
+const SPACED_LETTER = /^([^;\n]{0,80}?\d) ([a-l])(?=$|[,;:]|\s*\(|\s+var\b|\s[-–=]\s|[^\S\n]*\n)/u;
+const withSpacedLetter = (span, context) => {
+  const found = SPACED_LETTER.exec(context);
+  return found && found[1].length + 2 <= span.length ? `${found[1]}${found[2]}${span.slice(found[1].length + 2)}` : span;
+};
+function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
-  if (lettered) first.text = first.text.replace(SPACED_LETTER, '$1$2');
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
   let body = read, ended = typed && !VOLUME_ONLY.test(read), broken = stopped || first.text.slice(read.length).trim() !== '';
   for (const { sep, text } of broken ? [] : more) {
@@ -527,7 +550,8 @@ function normalise(stopped, spelled, cf) {
   const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
-  if (CALICO_KEY.test(spelled)) text = text.replace(/^Cal\.?[\s.:#-]*/i, 'Calicó ');
+  // Áureo puts the edition year of Calicó in front of the number ("Cal. 2008, 1015", "Cal-2019-123"): the year is the book's, not the coin's.
+  if (CALICO_KEY.test(spelled)) text = text.replace(/^Cal\.?[\s.:#-]*(?:(?:19|20)\d\d\s*[,-]\s*(?=\d))?/i, 'Calicó ');
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
   const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
   if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
@@ -572,11 +596,12 @@ export function findReferences(input) {
     // A bracket that opens on the next key is that key's: its "(" stays out of this reference ("HGC 9, 12 (SG 6829)" keeps ", 12") and still ends the run.
     const opens = Boolean(keys[index + 1]) && text[end - 1] === '(';
     const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
-    const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '')
-      : NUMBERED_KEY.test(match[2]) ? after.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : after;
-    // A letter the next key is glued to is no type letter: "RIC 27 a.C." is the Italian date's "a.C.", its C read as Cohen's key.
-    const lettered = RIC_KEY.test(match[2]) && (end === text.length || /[\s;(]$/.test(text.slice(0, end)));
-    const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]), lettered);
+    const respell = (value) => (DOTTED_KEY.test(match[2]) ? value.replace(/^\.(?=\s+\d)/, '')
+      : NUMBERED_KEY.test(match[2]) ? value.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : value);
+    // Both respell the start only, so the span stays the head of the rest of the text, which is what a spaced letter is judged by.
+    const plain = respell(after);
+    const span = RIC_KEY.test(match[2]) ? withSpacedLetter(plain, respell(text.slice(match.index + match[0].length))) : plain;
+    const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
     const number = unseparate(body);

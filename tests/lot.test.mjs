@@ -1453,7 +1453,7 @@ test('Cal. is Calicó, spelled out in the row, and a single spaced letter behind
   for (const text of ['Denarius. Calendar reform issue. RIC 118.', 'Found in Cal. 1998 hoard? RIC 118.', 'Denarius, cal 1015. RIC 118.', 'Cal. RIC 118.']) {
     assert.deepEqual(texts(text).filter((row) => /^Cal/.test(row)), [], text);
   }
-  for (const [text, number] of [['Philip I. Antoninianus. RIC 27 b.', '27b'], ['Philip I. RIC IV 27 b; C. 9.', '27b'], ['Philip I. RIC 27 b (Rome).', '27b'],
+  for (const [text, number] of [['Philip I. Antoninianus. RIC 27 b;', '27b'], ['Philip I. RIC IV 27 b; C. 9.', '27b'], ['Philip I. RIC 27 b (Rome).', '27b'],
     ['Philip I. RIC 27 b', '27b'], ['Philip I. RIC 27 b var.', '27b']]) {
     assert.equal(findReferences(text).references[0].reference.number, number, text);
   }
@@ -1461,5 +1461,39 @@ test('Cal. is Calicó, spelled out in the row, and a single spaced letter behind
   for (const [text, number] of [['Philip I. RIC 27 C. 9.', '27'], ['Philip I. RIC 27 a rare variety.', '27'], ['Philip I. RIC 27; C. 9.', '27'],
     ['Filippo I, 244-249 d.C. RIC 27 a.C.', '27']]) {
     assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+});
+
+// Loop P2 review, Important 1 and 2: the spaced letter was glued on wherever a lone lower-case letter closed the first chunk, so the German "335 f."
+// (and following) opened RIC 335f, and "s.", "u.", "v.", "n.", "p." lost the coin main found. It is decided from the raw text now: RIC's own
+// alphabet (a–l), never a letter with a full stop behind it, and CGB's own " - " separator, "=" and a line break close it.
+test('a spaced RIC letter is read only from the RIC alphabet, never with a full stop behind it, and CGB dash closes it', () => {
+  for (const [text, number] of [['Gallienus. Antoninian. RIC 335 f.', '335'], ['Nero. Denar. RIC 306 s.', '306'], ['Nero. Denar. RIC 306 v. Chr.', '306'],
+    ['Pescennius Niger. Denar. RIC 3 f.', '3'], ['Nero. Denar. RIC 306 ff.', '306'], ['Nero. Denar. RIC 306 f. Göbl 12.', '306'], ['Nero. RIC 306 m;', '306'],
+    ['Nero. RIC 306 a. Chr.', '306'], ['Philip I. RIC 27 f; C. 9.', '27f'], ['Philippe Ier. Antoninien. RIC.27 b - C.9 - RSC.9.', '27b'],
+    ['Philip I. RIC 27 b = C. 9.', '27b'], ['Philip I. RIC 27 b – C. 9.', '27b'], ['Philip I. RIC 27 b\nCohen 9.', '27b'], ['Philip I. RIC 27 b, C. 9.', '27b']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+  assert.deepEqual(texts('Nero. Denar. RIC 306 u. Cohen 12.'), ['RIC 306', 'Cohen 12']);
+});
+
+// Loop P2 review, Minor Q-07: a purchase sentence ends at a ";" or "," a citation follows, as it ends at a full stop; and a sale's bracketed date and
+// lot ("Triton VIII (2005, 1132)") give the lot.
+test('a purchase sentence gives up the citation behind it, and a bracketed year and lot give the lot', () => {
+  for (const text of ['Acquired from Spink, 1998; RIC 53; BMC 12.', 'Acquired from Spink, 1998, RIC 53.', 'Bought from Seaby; RIC 53.']) {
+    assert.equal(texts(text)[0], 'RIC 53', text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998; RIC 53.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  // "Ex" keeps its own rule, as it always has.
+  assert.deepEqual(texts('Ex Spink, 1998; RIC 53.'), []);
+  assert.deepEqual(readProvenance('Ex Triton VIII (2005, 1132).'), [{ text: 'Ex Triton VIII (2005, 1132)', source: 'Triton VIII', year: 2005, lot: '1132' }]);
+  for (const text of ['Ex Leu 7 (1973).', 'Ex Leu 7 (sale 1850, 12).', 'Ex Leu 7 (12, 1132).']) assert.equal(readProvenance(text)[0].lot, undefined, text);
+});
+
+// Loop P2 review, Minor Q-17 (a): Áureo writes the edition year of Calicó in front of the number ("Cal. 2008, 1015", "Cal-2019-123").
+test('the edition year of Calicó is not joined to the number', () => {
+  for (const [text, row] of [['Cal. 2008, 1015.', 'Calicó 1015'], ['Cal-2019-123.', 'Calicó 123'], ['Cal. 1015, 1016.', 'Calicó 1015, 1016'], ['Cal. 1015.', 'Calicó 1015']]) {
+    assert.equal(findReferences(`Felipe II. 8 reales. ${text} MBC.`).references[0]?.text, row, text);
   }
 });

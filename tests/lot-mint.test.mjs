@@ -109,3 +109,13 @@ test('over the bundled catalogue, an Octavian heading opens only the Augustus co
   }
   assert.ok(singles > 200, `${singles} single answers`);
 });
+
+// Loop P2 review, Important 1: the German "335 f." (and following) never opens the lettered type 335f.
+test('over the bundled catalogue, "RIC n f." never opens the f-type', { skip }, async () => {
+  const gallienus = await lookup('Gallienus. Antoninian. RIC 335 f.');
+  assert.ok(gallienus.status !== 'ok' || !/335f$/i.test(gallienus.card.id), gallienus.card?.id);
+  const niger = await lookup('Pescennius Niger. Denar. RIC 3 f.');
+  assert.ok(niger.status !== 'ok' || !/\.3f$/i.test(niger.card.id), niger.card?.id);
+  // What main found for the plain number is still found.
+  assert.equal((await lookup('Nero. Denar. RIC 306 s.')).card?.id, (await lookup('Nero. Denar. RIC 306.')).card?.id);
+});

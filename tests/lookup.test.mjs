@@ -1615,3 +1615,10 @@ test('a joint heading naming a section and a person asks for the section by titl
   assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('portrait_facet:"Otacilia Severa"')), fetchImpl.calls[0]);
   assert.ok(fetchImpl.calls[0].includes(encodeURIComponent('AND ("Philip I" OR ')) && !fetchImpl.calls[0].includes(encodeURIComponent('facet:"Philip I"')), fetchImpl.calls[0]);
 });
+
+// Loop P2 review, Minor Q-06: a remark behind a comma after the temporary mark.
+test('rpcUrl reads a remark behind a comma after "(temporary)"', () => {
+  assert.equal(rpcUrl('RPC IV.2 online 1234 (temporary), corr.'), 'https://rpc.ashmus.ox.ac.uk/coins/4/1234');
+  assert.equal(rpcUrl('RPC IV.2 online 1234, (temporary)'), 'https://rpc.ashmus.ox.ac.uk/coins/4/1234');
+  assert.equal(rpcUrl('RPC IV.2 online 1234 (temporary), (this coin)'), null);
+});

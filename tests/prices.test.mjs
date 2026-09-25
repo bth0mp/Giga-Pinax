@@ -1710,12 +1710,45 @@ test('citesReference reads Newell with Poliorcetes behind the key, and a spaced 
     assert.equal(citesReference(other, newell), false, other);
   }
   const lettered = { catalogue: 'RIC', number: '27b', volume: 'IV', section: 'Philip I' };
-  for (const cited of ['RIC 27 b.', 'RIC IV 27 b; C. 9.', 'RIC 27b.', 'RIC 27 b (Rome).', 'RIC 27 b']) assert.equal(citesReference(cited, lettered), true, cited);
+  for (const cited of ['RIC 27 b;', 'RIC IV 27 b; C. 9.', 'RIC 27b.', 'RIC 27 b (Rome).', 'RIC 27 b']) assert.equal(citesReference(cited, lettered), true, cited);
   for (const other of ['RIC 27 c.', 'RIC 27 B.', 'RIC 27.', 'RIC 27 bis.']) assert.equal(citesReference(other, lettered), false, other);
   // The plain type is no longer cited by its lettered sibling, and still by a number a word or another number follows.
   const plain = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
-  for (const other of ['RIC 27 b.', 'RIC IV 27 b; C. 9.', 'RIC 27 b (Rome).', 'RIC 27 a']) assert.equal(citesReference(other, plain), false, other);
+  for (const other of ['RIC 27 b;', 'RIC IV 27 b; C. 9.', 'RIC 27 b (Rome).', 'RIC 27 a']) assert.equal(citesReference(other, plain), false, other);
   for (const cited of ['RIC 27.', 'RIC 27 C. 9.', 'RIC 27 a rare variety.', 'RIC 27 e 28.', 'RIC 27 a.C.', 'RIC 27; C. 9.']) {
     assert.equal(citesReference(cited, plain), true, cited);
   }
+});
+
+// Loop P2 review, Important 1 and 2 on the filter side: the same rule as the lot row. A dotted letter is an abbreviation ("306 f." and following,
+// "27 s." see, "u." and, "a. Chr."), so it cites the plain type; CGB's " - ", "=" and a line break close a spaced letter.
+test('citesReference reads a spaced RIC letter exactly as the lot row does', () => {
+  const plain = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['RIC 306 f.', 'RIC 306 s.', 'RIC 306 u. Cohen 12.', 'RIC 306 a. Chr.', 'RIC 306 ff.', 'RIC 306 m;']) assert.equal(citesReference(cited, plain), true, cited);
+  assert.equal(citesReference('RIC 306 f.', { ...plain, number: '306f' }), false);
+  const philip = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  const lettered = { ...philip, number: '27b' };
+  for (const text of ['RIC.27 b - C.9 - RSC.9.', 'RIC 27 b = C. 9.', 'RIC 27 b – C. 9.', 'RIC 27 b\nCohen 9.', 'RIC 27 b, C. 9.']) {
+    assert.equal(citesReference(text, lettered), true, text);
+    assert.equal(citesReference(text, philip), false, text);
+  }
+  assert.equal(citesReference('RIC 27 f; C. 9.', { ...philip, number: '27f' }), true);
+  assert.equal(citesReference('RIC 27 f; C. 9.', philip), false);
+});
+
+// Loop P2 review, Minors Q-02 and Q-03.
+test('the glued separator reads a spaced colon, a hyphen before the volume and a dotted key; a figure needs its decimals to open a grade', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC : 118.', 'RIC-II 118.', 'RIC-II-118.']) assert.equal(citesReference(cited, trajan), true, cited);
+  assert.equal(citesReference('RIC-II 118.', { ...trajan, volume: 'I (2nd edition)' }), false);
+  assert.equal(citesReference('Cr.-44/5.', { catalogue: 'RRC', number: '44/5' }), true);
+  assert.equal(citesReference('Bop.-24A.', { catalogue: 'Bop', number: '24A' }), true);
+  assert.equal(citesReference('Price : 112.', { catalogue: 'Price', number: '112' }), false);
+  for (const text of ['RIC 12 g BB.', 'Lot 12 g BB.', 'Cohen 12 g BB.', 'g 12 BB.']) assert.equal(gradeOf(text), null, text);
+  for (const [text, bucket] of [['3,21 g TTB.', 'VF'], ['24 mm MBC.', 'VF'], ['g 17,10 BB.', 'VF']]) assert.equal(gradeOf(text), bucket, text);
+});
+
+test('an RPC temporary number with a remark behind a comma is searched in every spelling', () => {
+  assert.equal(defaultTerm({ catalogue: 'Other', number: 'RPC IV.2 online 1234 (temporary), corr.', section: '' }),
+    '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234")');
 });
