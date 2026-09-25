@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
-import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
+import { LIMITS, RECORDS_LIMIT_BYTES, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, storedBytes } from '../extension/core/records.js';
 import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
@@ -721,20 +722,31 @@ test('migrates preferences once and bounds shared drafts by expiry and count', (
   assert.equal(read.value.id, state.drafts[0].id);
 });
 
-// A capture draft is half-hour scratch holding page text, but only saving another draft ever cleared the expired ones:
+// A capture draft is a day's scratch holding page text, but only saving another draft ever cleared the expired ones:
 // a store that captured once kept that text for good.
 test('an expired draft is cleared by the next change of any kind', () => {
   let state = reduce(createEmptySnapshot(NOW), command('draft.save', {
     kind: 'auction-capture', payload: { rawText: 'Lot 12, Nero denarius' },
   })).snapshot;
   const fresh = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Soon after', sourceLinks: [] } }));
-  assert.equal(fresh.snapshot.drafts.length, 1, 'a draft still inside its half hour stays');
+  assert.equal(fresh.snapshot.drafts.length, 1, 'a draft still inside its day stays');
+  // X-08: a capture waits a day, not half an hour, for the collector to come back to it.
+  assert.equal(state.drafts[0].expiresAt, '2026-09-13T12:00:00.000Z');
+  const nextMorning = { now: () => '2026-09-13T11:59:00.000Z', newId: uuid };
+  assert.equal(applyCommand(state, command('draft.get', { draftId: state.drafts[0].id }), nextMorning).ok, true);
   const expired = state.drafts[0].expiresAt;
   const later = { now: () => expired, newId: uuid };
   const consumed = applyCommand(state, command('draft.consume', { draftId: state.drafts[0].id }), later);
   assert.equal(consumed.ok, false, 'an expired draft is not handed out');
   state = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Much later', sourceLinks: [] } }), later);
   assert.deepEqual(state.snapshot.drafts, [], 'and it is gone with the next write');
+});
+
+// Review Minor 4: nothing deletes an expired capture at the day's end; the next change does. PRIVACY says so.
+test('PRIVACY says an expired capture draft is dropped at the next change, as the store does', () => {
+  const policy = readFileSync(new URL('../docs/PRIVACY.md', import.meta.url), 'utf8');
+  assert.match(policy, /A capture draft is kept for a day, listed in the workspace until you use or discard it, and dropped at the next change to your records after that\./);
+  assert.doesNotMatch(policy, /A capture draft is kept for a day[^.]*and then deleted/);
 });
 
 test('saves bounded unique house premiums and preserves them for older callers', () => {
@@ -1112,7 +1124,7 @@ test('a set-aside record that still does not validate is refused and stays in th
   assert.equal(refused.ok, false);
   assert.equal(refused.code, 'validation');
   assert.equal(refused.outcome, 'not-committed');
-  assert.match(refused.message, /allowed set/i, 'the validator says what is wrong with it');
+  assert.equal(refused.message, 'This auction cannot go back as it is: its kind of sale holds a value Giga Pinax does not know. Correct it or remove it under Set-aside records.', 'it says which field and what is wrong with it, in plain words');
   const after = storage.read();
   assert.deepEqual(after.auctionEvents, []);
   assert.equal(after.quarantine.length, 1, 'nothing is lost by a refusal');
@@ -1315,11 +1327,11 @@ test('an entry the load-time repair set aside keeps its identity from one read t
   assert.equal(ids(first).length, 2);
   assert.deepEqual(ids(second), ids(first), 'the same entry is named the same way on every read');
 
-  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('collectionEntries'));
+  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('Collection entry'));
   const reply = await writer.commitCommand(command('quarantine.restore', { entryId: entryRow.id }));
   assert.equal(reply.ok, false);
   assert.doesNotMatch(reply.message, /no longer in the list/, 'the entry the page drew is found');
-  assert.match(reply.message, /allowed set/, 'and the restore is answered on its merits: its lot is still broken');
+  assert.match(reply.message, /^This coin cannot go back as it is: its outcome /, 'and the restore is answered on its merits: its lot is still broken');
 });
 
 // The fold behind an import and behind every load-time repair compared each entry and each cleared link
@@ -1390,7 +1402,8 @@ test('damaged settings, schedule, scratch or root counter no longer lock the sto
 
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
-  stored.lots = { id: 'not-a-uuid', title: 'Rescue me' };
+  delete stored.lots;
+  stored.alerts = { id: 'not-a-uuid', title: 'Rescue me' };
   stored.scheduler = 'corrupt';
   const storage = memoryStorage(stored);
   const writer = createCommandWriter(storage, context());
@@ -1403,6 +1416,7 @@ test('snapshot.raw returns an unusable stored root exactly as stored', async () 
     expectedRevision: null, lot: { title: 'New', sourceLinks: [] },
   }));
   assert.equal(blocked.code, 'storage');
+  assert.equal(blocked.reason, 'unreadable');
 });
 
 test('scheduler reconciliation persists occurrences and one next wake', () => {
@@ -1500,7 +1514,7 @@ test('writer atomically rejects an event whose fully materialized reminders exce
     },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.match(result.message, /reminders.*4\.9 MB/i);
   assert.equal(storage.read().auctionEvents.length, 499);
 });
 
@@ -1525,17 +1539,15 @@ test('an import over the storage bound is refused as an import, not as a reminde
   assert.match(result.error.message, /backup/i);
   assert.doesNotMatch(result.error.message, /reminder/i);
 
-  // Nor is a record coming back out of the bin: the way out of that is the records already saved.
+  // A record coming back out of the bin was already counted there, so at the bound it moves rather than grows (X-01).
   const stored = createEmptySnapshot(NOW);
   stored.lots.push(...incoming.lots);
   stored.quarantine = [{ collection: 'lots', record: fat(999999), reason: 'collection-limit', quarantinedAt: NOW }];
   const restore = applyCommand(stored, command('quarantine.restore', {
     entryId: quarantineEntryId(stored.quarantine[0]),
   }), context());
-  assert.equal(restore.ok, false);
-  assert.equal(restore.error.code, 'storage-bound');
-  assert.match(restore.error.message, /put(ting)? (this record )?back/i);
-  assert.doesNotMatch(restore.error.message, /reminder/i);
+  assert.equal(restore.ok, true, restore.error?.message);
+  assert.equal(restore.value.snapshot.quarantine, undefined);
 });
 
 // The reminder preflight ran before the command's own result had been judged, so a lot too many, or a
@@ -1560,7 +1572,7 @@ test('a schedule-changing command refused for its own sake does not blame remind
   }), context());
   assert.equal(bounded.ok, false);
   assert.equal(bounded.error.code, 'storage-bound');
-  assert.match(bounded.error.message, /5 MiB/);
+  assert.match(bounded.error.message, /^Saving this coin would take your records to 4\.9\d MB, more than the 4\.9 MB .* Export a backup, then remove old coins or auctions/);
   assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
 });
 
@@ -1587,7 +1599,7 @@ test('writer preflights linked reminders when a lot activates their event', asyn
     lot: { title: 'Final linked lot', auctionEventId: current.auctionEvents.at(-1).id, sourceLinks: [] },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.match(result.message, /reminders.*4\.9 MB/i);
   assert.equal(storage.read().lots.length, 499);
 });
 
@@ -2727,4 +2739,445 @@ test('lot.restore refuses the request id of a command that was not a delete', ()
   const refused = applyCommand(removed, command('lot.restore', { deleteRequestId: save.requestId }), context());
   assert.equal(refused.ok, false);
   assert.equal(refused.error.path, 'deleteRequestId');
+});
+
+// X-01: at the 5 MiB bound a change that grows the collector's data is refused, in words that say what grew and the way
+// out; one that shrinks it or leaves its size unchanged - a removal, an acknowledgement, a snooze, a currency of the
+// same length - is kept, so a full store can always be brought back under the bound.
+const HEADROOM = LIMITS.commandReplyBytes;
+// A store at the bound: a near-sale auction with two due reminders, a coin to remove, settings, and padding that takes
+// the whole root to `total` bytes against the bound.
+function storeAtTheBound(total = MAX_ROOT_BYTES - HEADROOM + 1) {
+  let state = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
+    preferences: { currency: 'EUR', housePremiumPresets: [] },
+  })).snapshot;
+  state = reduce(state, command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Near sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:10',
+      timeZone: 'UTC', reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 20 }, { kind: 'offset', offsetMinutes: 15 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  state.lots.push(plainLot(uuid(), { title: 'Fat coin', notes: 'n'.repeat(LIMITS.notes) }));
+  state.padding = '';
+  state.padding = 'p'.repeat(total - storedBytes(state));
+  assert.equal(storedBytes(state), total);
+  return state;
+}
+
+test('X-01: a change that grows the data is kept up to the bound and refused one byte past it, saying what grew', async () => {
+  const base = createEmptySnapshot(NOW);
+  base.padding = '';
+  // A save that schedules nothing, so its own root is the one the bound is judged on.
+  const save = command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const grown = storedBytes(applyCommand(base, save, context()).value.snapshot);
+  base.padding = 'p'.repeat(MAX_ROOT_BYTES - HEADROOM - grown);
+  const fits = applyCommand(base, save, context());
+  assert.equal(fits.ok, true, fits.error?.message);
+  assert.equal(storedBytes(fits.value.snapshot) + HEADROOM, MAX_ROOT_BYTES);
+
+  const over = structuredClone(base);
+  over.padding += 'p';
+  const storage = memoryStorage(over);
+  const reply = await createCommandWriter(storage, context()).commitCommand(save);
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error.code, 'storage-bound');
+  assert.equal(reply.message, 'Saving this want would take your records to 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
+  assert.deepEqual(storage.read(), over, 'nothing is written');
+});
+
+test('X-01: at the bound a coin can be removed, a reminder acknowledged or snoozed and the currency changed', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const [first, second] = full.alerts;
+  assert.equal(first.status, 'due');
+
+  // Growing is refused first, so this store really is at the bound.
+  const grow = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'One more', sourceLinks: [] } }));
+  assert.equal(grow.error?.code, 'storage-bound');
+
+  const removed = await writer.commitCommand(command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision }));
+  assert.equal(removed.ok, true, removed.message);
+  assert.equal(removed.value.title, 'Fat coin', 'the copy for Undo is kept while the headroom allows');
+  assert.equal(storage.read().lots.length, 0);
+
+  const acknowledged = await writer.commitCommand(command('alert.ack', { triggerIds: [first.triggerId] }));
+  assert.equal(acknowledged.ok, true, acknowledged.message);
+  const snoozed = await writer.commitCommand(command('alert.snooze', { triggerIds: [second.triggerId], snoozedUntil: LATER }));
+  assert.equal(snoozed.ok, true, snoozed.message);
+
+  const preferences = storage.read().preferences;
+  const currency = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: preferences.revision, preferences: { currency: 'USD', housePremiumPresets: [] },
+  }));
+  assert.equal(currency.ok, true, currency.message);
+  assert.equal(storage.read().preferences.currency, 'USD');
+});
+
+test('X-01: past the bound settings that grow are refused as settings, and a same-size change is not', async () => {
+  const full = storeAtTheBound(MAX_ROOT_BYTES + 10);
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const grown = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: full.preferences.revision,
+    preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Leu Numismatik', buyerPremiumBps: 2000 }] },
+  }));
+  assert.equal(grown.ok, false);
+  assert.match(grown.message, /^Saving these settings would take your records to 5\.\d+ MB, more than the 4\.9 MB Giga Pinax can keep in this browser\. Export a backup/);
+  const same = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: full.preferences.revision, preferences: { currency: 'CHF', housePremiumPresets: [] },
+  }));
+  assert.equal(same.ok, true, same.message);
+});
+
+test('X-01: past the headroom a removal gives up its Undo copy, says so, and Undo explains', async () => {
+  // A store whose ledger has spent the headroom and more: removing the coin would put its copy in the ledger past it.
+  const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM + 200);
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const deleteRequest = command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision });
+  const removed = await writer.commitCommand(deleteRequest);
+  assert.equal(removed.ok, true, removed.message);
+  assert.deepEqual(removed.value, { id: lot.id, undoAvailable: false });
+  assert.equal(storage.read().lots.length, 0);
+  assert.ok(storedBytes(storage.read()) < storedBytes(full), 'the store shrank');
+  // The same request again is answered from the ledger, still without the copy.
+  assert.deepEqual(await writer.commitCommand(deleteRequest), removed);
+
+  const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
+  assert.equal(undo.ok, false);
+  assert.equal(undo.message, 'This coin was removed while your records filled the storage, so no copy was kept to put back. A backup that holds it can bring it back.');
+});
+
+test('X-01: Undo of a removal at the bound is refused as putting the coin back', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const deleteRequest = command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision });
+  assert.equal((await writer.commitCommand(deleteRequest)).ok, true);
+  const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
+  assert.equal(undo.ok, false);
+  assert.match(undo.message, /^Putting this coin back would take your records to 4\.9\d MB, more than the 4\.9 MB/);
+});
+
+// X-02: records nothing can read stop every command but the ways out, and say so in a way a page can recognise. The
+// raw rescue copy always works; a Replace import that says it means to, and a fresh start, run over an empty root.
+const unreadableRoots = () => [
+  ['a newer version', { ...createEmptySnapshot(NOW), schemaVersion: 99, revision: 41, lots: [plainLot(uuid())] }],
+  ['a string', 'not a root'],
+  ['an empty object', {}],
+];
+
+test('X-02: an unreadable root answers every page with reason unreadable, and still gives its rescue copy', async () => {
+  for (const [label, raw] of unreadableRoots()) {
+    const storage = memoryStorage(raw);
+    const writer = createCommandWriter(storage, context());
+    const read = await writer.commitCommand(command('snapshot.get'));
+    assert.equal(read.ok, false, label);
+    assert.equal(read.reason, 'unreadable', label);
+    assert.equal(read.newerVersion, label === 'a newer version' ? true : undefined, label);
+    const save = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'New', sourceLinks: [] } }));
+    assert.equal(save.reason, 'unreadable', label);
+    const rescue = await writer.commitCommand(command('snapshot.raw'));
+    assert.equal(rescue.ok, true, label);
+    assert.deepEqual(rescue.value, raw, label);
+    // Neither a merge nor a Replace that does not say it means to replace unreadable records gets past.
+    const document = exportBackup(createEmptySnapshot(NOW), NOW).value;
+    for (const extra of [{ mode: 'merge', overUnreadable: true }, { mode: 'replace' }]) {
+      const refused = await writer.commitCommand(command('backup.import', { expectedRevision: rescue.revision, document, ...extra }));
+      assert.equal(refused.reason, 'unreadable', `${label} ${JSON.stringify(extra)}`);
+    }
+    assert.deepEqual(storage.read(), raw, `${label}: nothing written`);
+  }
+});
+
+test('X-02: a Replace import of a good backup is taken over an unreadable root', async () => {
+  const raw = { ...createEmptySnapshot(NOW), schemaVersion: 99, revision: 41, lots: [plainLot(uuid())] };
+  const storage = memoryStorage(raw);
+  const writer = createCommandWriter(storage, context());
+  const good = createEmptySnapshot(NOW);
+  good.lots.push(plainLot(uuid(), { title: 'From the backup' }));
+  const document = exportBackup(good, NOW).value;
+  const rescue = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(rescue.revision, 41);
+  // Counted from the revision the rescue copy reported: a page that read another is refused.
+  const stale = await writer.commitCommand(command('backup.import', { expectedRevision: 40, mode: 'replace', overUnreadable: true, document }));
+  assert.equal(stale.code, 'conflict');
+  const imported = await writer.commitCommand(command('backup.import', { expectedRevision: 41, mode: 'replace', overUnreadable: true, document }));
+  assert.equal(imported.ok, true, imported.message);
+  assert.equal(storage.read().revision, 42);
+  assert.deepEqual(storage.read().lots.map(({ title }) => title), ['From the backup']);
+  assert.equal((await writer.commitCommand(command('snapshot.get'))).ok, true);
+});
+
+test('X-02: start fresh resets only records nothing can read, counted on from the rescue copy', async () => {
+  const raw = 'not a root';
+  const storage = memoryStorage(raw);
+  const writer = createCommandWriter(storage, context());
+  const rescue = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(rescue.revision, 0);
+  const wrong = await writer.commitCommand(command('store.reset', { expectedRevision: 3 }));
+  assert.equal(wrong.code, 'conflict');
+  assert.equal(storage.read(), raw);
+  const reset = command('store.reset', { expectedRevision: 0 });
+  const done = await writer.commitCommand(reset);
+  assert.equal(done.ok, true, done.message);
+  assert.deepEqual(done.value, { reset: true });
+  const fresh = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.value.revision, 1);
+  assert.deepEqual(fresh.value.lots, []);
+  // The same request again is answered from the ledger, not refused as a reset over readable records.
+  assert.deepEqual(await writer.commitCommand(reset), done);
+  // A new one over records that can be read is refused, and nothing is written.
+  const saved = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'Kept', sourceLinks: [] } }));
+  assert.equal(saved.ok, true);
+  const before = storage.read();
+  const refused = await writer.commitCommand(command('store.reset', { expectedRevision: before.revision }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.message, 'Your records can be read, so nothing was reset.');
+  assert.deepEqual(storage.read(), before);
+  // Nor can applyCommand reset a root that holds anything.
+  const direct = applyCommand(before, command('store.reset', { expectedRevision: before.revision }), context());
+  assert.equal(direct.ok, false);
+});
+
+test('X-02: a collection that is no list is set aside whole, and the other records still open', async () => {
+  const kept = plainLot(uuid(), { title: 'Still here' });
+  const raw = { ...createEmptySnapshot(NOW), lots: [kept], auctionEvents: 'x' };
+  const storage = memoryStorage(raw);
+  const read = await createCommandWriter(storage, context()).commitCommand(command('snapshot.get'));
+  assert.equal(read.ok, true, read.message);
+  assert.deepEqual(read.value.lots.map(({ title }) => title), ['Still here']);
+  assert.deepEqual(read.value.auctionEvents, []);
+  assert.deepEqual(read.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['auctionEvents', 'x', 'unreadable-list']]);
+  // Review Minor 5: a list that is null is set aside as the list it is, not taken for a record other records pointed to.
+  const nulled = await createCommandWriter(memoryStorage({ ...createEmptySnapshot(NOW), lots: null }), context()).commitCommand(command('snapshot.get'));
+  assert.deepEqual(nulled.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['lots', null, 'unreadable-list']]);
+  assert.deepEqual(quarantineRows(nulled.value.quarantine).map(({ line, removable }) => [line, removable]), [['The coin list could not be read (set aside 2026-09-12)', true]]);
+  // And it can be removed from the list for good.
+  const writer = createCommandWriter(memoryStorage({ ...createEmptySnapshot(NOW), lots: null }), context());
+  const [row] = quarantineRows((await writer.commitCommand(command('snapshot.get'))).value.quarantine);
+  const removed = await writer.commitCommand(command('quarantine.remove', { entryId: row.id }));
+  assert.equal(removed.ok, true, removed.message);
+});
+
+// X-03: a set-aside coin can go back with the field that stopped it corrected or cleared, or be removed for good.
+test('X-03: a set-aside coin goes back with its field corrected, or cleared, and never with a bad correction', async () => {
+  const badTitle = plainLot(uuid(), { title: 42, reference: 'RIC IV Philip I 27b' });
+  const badNotes = plainLot(uuid(), { notes: 7 });
+  const stored = setAsideRoot([
+    { collection: 'lots', record: badTitle, reason: 'invalid-string', quarantinedAt: NOW },
+    { collection: 'lots', record: badNotes, reason: 'invalid-string', quarantinedAt: NOW },
+  ], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const [titleEntry, notesEntry] = stored.quarantine;
+
+  const plain = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry) }));
+  assert.equal(plain.message, 'This coin cannot go back as it is: its title is not text of up to 300 characters. Correct it or remove it under Set-aside records.');
+  for (const edit of [{ field: 'title', value: '   ' }, { field: 'id', value: 'x' }, { field: '__proto__', value: 'x' }, { field: 'title', value: 5 }]) {
+    const refused = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry), edit }));
+    assert.equal(refused.ok, false, JSON.stringify(edit));
+  }
+  const empty = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry), edit: { field: 'title', value: '' } }));
+  assert.match(empty.message, /its title is empty\./);
+  assert.deepEqual(storage.read().quarantine, stored.quarantine, 'a refused correction leaves the bin as it was');
+
+  const corrected = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(titleEntry), edit: { field: 'title', value: ' Philip I, antoninianus ' },
+  }));
+  assert.equal(corrected.ok, true, corrected.message);
+  assert.equal(storage.read().lots.find(({ id }) => id === badTitle.id).title, 'Philip I, antoninianus');
+
+  const cleared = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(notesEntry), edit: { field: 'notes', value: null },
+  }));
+  assert.equal(cleared.ok, true, cleared.message);
+  const back = storage.read().lots.find(({ id }) => id === badNotes.id);
+  assert.equal(Object.hasOwn(back, 'notes'), false);
+  assert.equal(storage.read().quarantine, undefined, 'the bin is empty and gone');
+});
+
+test('X-03: a set-aside record can be removed for good, and only the one named', async () => {
+  const stored = setAsideRoot([
+    { collection: 'lots', record: plainLot(uuid(), { title: 42 }), reason: 'invalid-string', quarantinedAt: NOW },
+    { collection: 'lots', record: plainLot(uuid(), { notes: 7 }), reason: 'invalid-string', quarantinedAt: NOW },
+  ], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const removed = await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(removed.ok, true, removed.message);
+  assert.deepEqual(removed.value, { collection: 'lots', id: stored.quarantine[0].record.id });
+  assert.deepEqual(storage.read().quarantine, [stored.quarantine[1]]);
+  const missing = await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(missing.ok, false);
+  assert.match(missing.message, /no longer in the list/);
+  assert.equal((await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[1]) }))).ok, true);
+  assert.equal(storage.read().quarantine, undefined);
+});
+
+// K-13: Settings asks how full the store is, measured as every write is judged, without a snapshot read paying for it.
+test('K-13: storage.usage answers the bytes a write is judged by, and writes nothing', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const reply = await createCommandWriter(storage, context()).commitCommand(command('storage.usage'));
+  assert.equal(reply.ok, true);
+  // The records alone, against what they may take: the bound less the headroom every save leaves (review Minor 2).
+  assert.deepEqual(reply.value, { bytes: storedBytes(full), limit: MAX_ROOT_BYTES - LIMITS.commandReplyBytes });
+  assert.deepEqual(storage.read(), full);
+  const unreadable = await createCommandWriter(memoryStorage('damaged'), context()).commitCommand(command('storage.usage'));
+  assert.equal(unreadable.reason, 'unreadable');
+});
+
+// Review Important 1: the revision the rescue copy reports is the one a reset and a Replace import are counted from,
+// whatever revision the unreadable root claims - or the handshake never closes and the records stay trapped.
+test('X-02: every hostile revision on unreadable records still lets a reset, and a Replace import, go through', async () => {
+  const hostile = [2 ** 52, LIMITS.usableRevision + 1, -3, Number.MAX_SAFE_INTEGER, 1.5, '7', null, 41];
+  const good = createEmptySnapshot(NOW);
+  good.lots.push(plainLot(uuid(), { title: 'From the backup' }));
+  const document = exportBackup(good, NOW).value;
+  for (const revision of hostile) {
+    for (const way of ['reset', 'replace']) {
+      const storage = memoryStorage({ ...createEmptySnapshot(NOW), schemaVersion: 99, revision });
+      const writer = createCommandWriter(storage, context());
+      const rescue = await writer.commitCommand(command('snapshot.raw'));
+      assert.equal(rescue.ok, true);
+      const reply = way === 'reset'
+        ? await writer.commitCommand(command('store.reset', { expectedRevision: rescue.revision }))
+        : await writer.commitCommand(command('backup.import', { expectedRevision: rescue.revision, mode: 'replace', overUnreadable: true, document }));
+      assert.equal(reply.ok, true, `${way} after revision ${String(revision)}: ${reply.message}`);
+      assert.equal((await writer.commitCommand(command('snapshot.get'))).ok, true);
+    }
+  }
+});
+
+// Review Important 2: a record with two bad fields. Corrections go together; one that is valid is kept even while
+// another field is still refused, so every round makes progress, and the reply names every field still wrong.
+test('X-03: a set-aside coin with two bad fields goes back with both corrected, or keeps each valid correction', async () => {
+  const broken = plainLot(uuid(), { title: 42, lotNumber: 9 });
+  const entry = { collection: 'lots', record: broken, reason: 'invalid-string', quarantinedAt: NOW };
+
+  const together = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const both = await createCommandWriter(together, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: 'Nero denarius' }, { field: 'lotNumber', value: '12' }],
+  }));
+  assert.equal(both.ok, true, both.message);
+  assert.deepEqual(together.read().lots.map(({ title, lotNumber }) => [title, lotNumber]), [['Nero denarius', '12']]);
+
+  const storage = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const writer = createCommandWriter(storage, context());
+  const plain = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(entry) }));
+  assert.equal(plain.message, 'This coin cannot go back as it is: its title is not text of up to 300 characters, and its lot number is not text of up to 120 characters. Correct them or remove it under Set-aside records.');
+
+  // A good title beside a lot number still refused: the title is kept in the bin, and the lot number is named.
+  const first = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: 'Nero denarius' }, { field: 'lotNumber', value: '' }],
+  }));
+  assert.equal(first.ok, true, first.message);
+  assert.equal(first.value.restored, false);
+  assert.deepEqual(first.value.corrected, ['title']);
+  assert.deepEqual(first.value.remaining, ['lot number is not text of up to 120 characters'], 'what the bin now holds');
+  const [kept] = storage.read().quarantine;
+  assert.equal(kept.record.title, 'Nero denarius');
+  assert.equal(kept.record.lotNumber, 9, 'the refused correction is not written');
+  assert.deepEqual(storage.read().lots, []);
+
+  const second = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(kept), edits: [{ field: 'lotNumber', value: '12' }],
+  }));
+  assert.equal(second.ok, true, second.message);
+  assert.notEqual(second.value.restored, false);
+  assert.deepEqual(storage.read().lots.map(({ title, lotNumber }) => [title, lotNumber]), [['Nero denarius', '12']]);
+  assert.equal(storage.read().quarantine, undefined);
+
+  // Corrections that change nothing wrong are refused, and the bin stays as it was.
+  const stuck = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const none = await createCommandWriter(stuck, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: '  ' }],
+  }));
+  assert.equal(none.ok, false);
+  assert.match(none.message, /its title is empty, and its lot number is not text/);
+  assert.deepEqual(stuck.read().quarantine, [entry]);
+});
+
+// Review Minor 6: a save keeps a coin's text as a correction does, spaces at either end trimmed.
+test('lot.save trims its text as a set-aside correction does', async () => {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', {
+    expectedRevision: null,
+    lot: { title: '  Nero denarius  ', reference: ' RIC I 60 ', lotNumber: ' 12 ', notes: '  padded  ', sourceLinks: [] },
+  }));
+  assert.deepEqual([saved.value.title, saved.value.reference, saved.value.lotNumber, saved.value.notes], ['Nero denarius', 'RIC I 60', '12', 'padded']);
+  const blank = reduce(saved.snapshot, command('lot.save', {
+    expectedRevision: 0, lot: { id: saved.value.id, title: 'Nero denarius', notes: '   ', sourceLinks: [] },
+  }));
+  assert.equal(blank.value.notes, '');
+
+  const entry = { collection: 'lots', record: plainLot(uuid(), { title: 42 }), reason: 'invalid-string', quarantinedAt: NOW };
+  const storage = memoryStorage(setAsideRoot([entry], []));
+  const restored = await createCommandWriter(storage, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: '  Nero denarius  ' }],
+  }));
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(storage.read().lots[0].title, saved.value.title, 'the same text either way');
+});
+
+// Review Minor 1: near the ceiling a small removal was refused with the reminders sentence, because the reconcile the
+// removal leads to writes a ledger entry of its own. A removal only ever drops alerts, so its schedule is not judged by
+// the bound, and it is never refused in words about reminders.
+test('X-01: a small removal a few bytes under the ceiling is kept, never refused as reminders', async () => {
+  for (const under of [20, 200, 300]) {
+    const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM - under);
+    full.lots = [plainLot(uuid(), { title: 'Small coin' })];
+    full.padding += 'p'.repeat(MAX_ROOT_BYTES + HEADROOM - under - storedBytes(full));
+    const storage = memoryStorage(full);
+    const lot = full.lots[0];
+    const removed = await createCommandWriter(storage, context()).commitCommand(command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision }));
+    assert.equal(removed.ok, true, `${under} B under: ${removed.message}`);
+    assert.deepEqual(storage.read().lots, []);
+  }
+});
+
+// Review Minor 3: whether an import fits is the store's own judgement, reconcile and ledger included, asked before
+// Confirm. A backup whose auctions carry reminders the file holds no alerts for grows by those alerts on import, which a
+// check of the previewed records alone missed.
+test('X-13: backup.check answers exactly what the import would, the reconcile\'s alerts included, and writes nothing', async () => {
+  const heavy = createEmptySnapshot(NOW);
+  const notes = 'n'.repeat(LIMITS.notes);
+  for (let index = 0; index < 60; index += 1) {
+    heavy.auctionEvents.push({
+      id: uuid(), revision: 0, dataClass: 'collector', name: `Sale ${index}`, eventKind: 'auction-starts', precision: 'timed',
+      localDate: '2026-10-20', localTime: '12:00', timeZone: 'UTC', startsAt: '2026-10-20T12:00:00.000Z', reminderScope: 'standalone',
+      reminders: Array.from({ length: 20 }, (_, reminder) => ({ id: uuid(), kind: 'offset', offsetMinutes: (reminder + 1) * 60 })),
+      createdAt: NOW, updatedAt: NOW,
+    });
+  }
+  // Records alone a little under the limit: the file itself fits, its schedule does not.
+  while (storedBytes(heavy) < RECORDS_LIMIT_BYTES - 200000) heavy.lots.push(plainLot(uuid(), { notes }));
+  const document = exportBackup(heavy, NOW).value;
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, context());
+  const check = await writer.commitCommand(command('backup.check', { expectedRevision: 0, mode: 'replace', document }));
+  assert.equal(check.ok, true, check.message);
+  assert.equal(check.value.fits, false);
+  const imported = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'replace', document }));
+  assert.equal(imported.ok, false);
+  assert.equal(check.value.message, imported.message, 'the same refusal, word for word');
+  assert.equal(storage.read().revision, 0, 'nothing written by either');
+
+  const small = exportBackup(createEmptySnapshot(NOW), NOW).value;
+  const fine = await writer.commitCommand(command('backup.check', { expectedRevision: 0, mode: 'merge', document: small }));
+  assert.deepEqual(fine.value, { fits: true });
+
+  // Over records nothing can read, the check runs as the Replace over them would.
+  const damaged = memoryStorage('damaged');
+  const over = await createCommandWriter(damaged, context())
+    .commitCommand(command('backup.check', { expectedRevision: 0, mode: 'replace', overUnreadable: true, document: small }));
+  assert.deepEqual(over.value, { fits: true });
+  assert.equal(damaged.read(), 'damaged', 'still untouched');
 });

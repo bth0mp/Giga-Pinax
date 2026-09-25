@@ -10,6 +10,7 @@ import * as diagnostics from '../extension/core/diagnostics.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
+import * as storeRecovery from '../extension/store-recovery.js';
 import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { GIGA_PREFERENCES_KEY } from '../extension/companion-preferences.js';
 import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
@@ -73,6 +74,10 @@ function loadSettings({
   clipboard: givenClipboard = null,
   getSelf = null,
   hash = '',
+  // What the store answers the gauge's storage.usage with (K-13); that read is kept out of `commands`, which list writes.
+  usage = { ok: false },
+  // What the store answers an import preview's backup.check with (X-13); those asks are listed in `checks`, not `commands`.
+  check = { ok: true, value: { fits: true } },
 } = {}) {
   const copied = [];
   const closedTabs = [];
@@ -87,6 +92,7 @@ function loadSettings({
   };
 
   const commands = [];
+  const checks = [];
   const prompts = [];
   const blobs = [];
   const state = { snapshot: snapshotReply };
@@ -95,6 +101,11 @@ function loadSettings({
     newRequestId: () => `request-${(requestIds += 1)}`,
     getSnapshot: async () => state.snapshot,
     sendCommand: async (command) => {
+      if (command.type === 'storage.usage') return typeof usage === 'function' ? usage() : usage;
+      if (command.type === 'backup.check') {
+        checks.push(structuredClone(command));
+        return typeof check === 'function' ? check(command) : check;
+      }
       // Copied out of the sandbox realm, so a test can compare it with objects of its own.
       commands.push(structuredClone(command));
       return reply(command, state);
@@ -116,8 +127,10 @@ function loadSettings({
   };
 
   const sandbox = {
-    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv,
+    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv, ...storeRecovery,
     diagnosticsText: diagnostics.diagnosticsText,
+    // The page's own lines, read in UTC here so a test reads the same times on every machine.
+    recentDiagnosticLines: (entries) => diagnostics.recentDiagnosticLines(entries, { timeZone: 'UTC' }),
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
@@ -156,6 +169,7 @@ function loadSettings({
     status: () => document.getElementById('settings-status').textContent,
     statusIsError: () => document.getElementById('settings-status').dataset.error,
     commands,
+    checks,
     prompts,
     downloads,
     stored,
@@ -1531,4 +1545,328 @@ test('Settings names the buyer’s premium in the glossary’s words', async () 
   assert.doesNotMatch(html, /buyer premium/i);
   const captions = [...page.document.querySelectorAll('span')].map((span) => span.textContent);
   assert.ok(captions.some((caption) => caption.startsWith('Buyer’s premium %')), JSON.stringify(captions));
+});
+
+// --- X-02: records nothing can read ------------------------------------------------------------------
+
+const UNREADABLE = { ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.', reason: 'unreadable' };
+// A store whose records cannot be read: every read says so, the rescue copy answers with what storage holds at
+// revision 41, and a reset or a Replace import brings a readable root back.
+function unreadableStore(extra = () => null) {
+  return (command, state) => {
+    const answered = extra(command, state);
+    if (answered) return answered;
+    if (command.type === 'snapshot.raw') return { ok: true, requestId: command.requestId, revision: 41, value: 'not a root' };
+    if (command.type === 'store.reset' || command.type === 'backup.import') {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, requestId: command.requestId, revision: 42, value: command.type === 'store.reset' ? { reset: true } : { mode: 'replace' } };
+    }
+    return UNREADABLE;
+  };
+}
+
+test('X-02: Settings over unreadable records puts the ways out at the top, not at the foot', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  const notice = page.element('store-recovery');
+  assert.ok(notice, 'the notice is drawn');
+  assert.equal(page.document.querySelector('main').children[0], notice, 'first in the page');
+  assert.equal(notice.getAttribute('role'), 'alert');
+  assert.equal(page.element('store-recovery-title').textContent, 'Your records can’t be read');
+  assert.match(notice.textContent, /They are damaged\. Nothing has been changed\./);
+  assert.equal(page.element('store-recovery-download').textContent, 'Download the stored data');
+  assert.equal(page.element('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
+  assert.match(notice.textContent, /import a backup below, under Backup and import, with Replace local records/);
+  assert.equal(page.status(), 'Your records can’t be read. The notice at the top of this page has the ways out.');
+});
+
+test('X-02: a newer version’s records say so', async () => {
+  const page = await openSettings({ snapshotReply: { ...UNREADABLE, newerVersion: true }, reply: unreadableStore() });
+  assert.match(page.element('store-recovery').textContent, /written by a newer version of Giga Pinax/);
+});
+
+test('X-02: Download the stored data hands the rescue file to the browser and changes nothing', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  await page.element('store-recovery-download').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-raw-.*\.json$/);
+  assert.equal(JSON.parse(file.text).data, 'not a root');
+  assert.deepEqual(page.commands.map(({ type }) => type).filter((type) => type !== 'snapshot.get'), ['snapshot.raw']);
+  assert.match(page.element('store-recovery-status').textContent, /^Download started: giga-pinax-raw-.*\. Keep it/);
+});
+
+test('X-02: Start fresh downloads the rescue file first, asks, resets at its revision, and loads again', async () => {
+  const order = [];
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => { order.push(command.type); return null; }),
+  });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-raw-/);
+  assert.equal(page.prompts.length, 1);
+  assert.match(page.prompts[0], new RegExp(`downloading as ${file.name.replace(/[.]/g, '\\.')}`));
+  assert.deepEqual(order.filter((type) => type !== 'snapshot.get' && type !== 'preferences.migrateIfAbsent'), ['snapshot.raw', 'store.reset']);
+  assert.equal(page.commands.find(({ type }) => type === 'store.reset').expectedRevision, 41);
+  assert.equal(page.element('store-recovery'), null, 'the page loaded again and the notice went');
+  assert.equal(page.element('save-settings').disabled, false);
+});
+
+test('X-02: Start fresh declined keeps the copy and resets nothing', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore(), confirmAnswers: [false] });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  assert.equal(page.downloads().length, 1);
+  assert.equal(page.commands.some(({ type }) => type === 'store.reset'), false);
+  assert.match(page.element('store-recovery-status').textContent, /^Download started: .*\. Nothing was reset\.$/);
+});
+
+test('X-02: a copy that cannot be made resets nothing', async () => {
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => (command.type === 'snapshot.raw' ? { ok: false, message: 'Unable to read local storage.' } : null)),
+  });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  assert.deepEqual(page.downloads(), []);
+  assert.deepEqual(page.prompts, []);
+  assert.equal(page.commands.some(({ type }) => type === 'store.reset'), false);
+  assert.equal(page.element('store-recovery-status').textContent, 'Unable to read local storage. Nothing was reset.');
+});
+
+test('X-02: a Replace import is taken over unreadable records, the rescue file going to disk first', async () => {
+  const order = [];
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => { order.push(command.type); return null; }),
+  });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(2))] })), 'replace');
+  assert.equal(page.element('import-preview').hidden, false);
+  assert.equal(page.element('import-counts').textContent, 'Local: 0 records. Backup: 1 records. Replaces the records that can’t be read; a copy of them downloads first.');
+  await page.element('confirm-import').click();
+  await settle();
+  const [copy] = page.downloads();
+  assert.match(copy.name, /^giga-pinax-raw-/);
+  const sent = page.commands.find(({ type }) => type === 'backup.import');
+  assert.equal(sent.mode, 'replace');
+  assert.equal(sent.overUnreadable, true);
+  assert.equal(sent.expectedRevision, 41);
+  assert.ok(order.indexOf('snapshot.raw') < order.indexOf('backup.import'));
+  assert.equal(page.element('store-recovery'), null, 'the page loaded the imported records');
+});
+
+test('X-02: a merge over unreadable records is refused with the one way that works', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(2))] })), 'merge');
+  assert.equal(page.element('import-preview').hidden, true);
+  assert.equal(page.status(), 'Your records can’t be read, so a backup can only replace them. Choose Replace local records, then Preview import.');
+});
+
+// --- X-03: a set-aside record can be fixed or removed -------------------------------------------------
+
+const damaged = (extra) => ({ collection: 'lots', record: lot(uuid(9), { reference: 'RIC IV Philip I 27b', ...extra }), reason: 'invalid-string', quarantinedAt: NOW });
+
+test('X-03: the set-aside card comes first on the page, and a damaged coin is named with its field', async () => {
+  const entry = damaged({ title: 42 });
+  const page = await openSettings({ snapshot: snapshotWith({ quarantine: [entry] }) });
+  assert.equal(page.document.querySelector('main').children[0], page.element('data-health'));
+  assert.equal(page.element('data-health-title').textContent, 'Set-aside records');
+  const [row] = page.element('quarantine-list').children;
+  assert.equal(row.querySelector('span').textContent, 'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters (set aside 2026-09-12)');
+  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Restore', 'Remove', 'Put back with this correction']);
+  assert.equal(row.querySelector('.set-aside-value').value, '42');
+});
+
+// Review Important 2: every bad field is offered at once, and one button sends every correction together.
+test('X-03: a coin with two bad fields offers both, and Put back sends both corrections together', async () => {
+  const two = damaged({ title: 42, lotNumber: 9 });
+  const notes = damaged({ notes: 7 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [two, notes] }),
+    reply: () => ({ ok: true, value: { collection: 'lots', id: uuid(9), restoredReferences: [], keptReferences: [] } }),
+  });
+  const [twoRow, notesRow] = page.element('quarantine-list').children;
+  assert.equal(twoRow.querySelector('span').textContent,
+    'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters; lot number is not text of up to 120 characters (set aside 2026-09-12)');
+  assert.deepEqual(twoRow.querySelectorAll('label').map((label) => label.textContent), ['Correct the title', 'Correct the lot number', 'Leave out the lot number']);
+  const [title, lotNumber] = twoRow.querySelectorAll('.set-aside-value');
+  title.value = 'Philip I, antoninianus';
+  lotNumber.value = '27';
+  await twoRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with these corrections').click();
+  await settle();
+  notesRow.querySelector('.set-aside-leave-out').checked = true;
+  await notesRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with this correction').click();
+  await settle();
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'quarantine.restore').map(({ entryId, edits }) => [entryId, edits]), [
+    [quarantineEntryId(two), [{ field: 'title', value: 'Philip I, antoninianus' }, { field: 'lotNumber', value: '27' }]],
+    [quarantineEntryId(notes), [{ field: 'notes', value: null }]],
+  ]);
+});
+
+test('X-03: corrections kept while another field is still wrong are said, with what is left', async () => {
+  const two = damaged({ title: 42, lotNumber: 9 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [two] }),
+    reply: () => ({ ok: true, value: { collection: 'lots', restored: false, corrected: ['title'], remaining: ['lot number is not text of up to 120 characters'] } }),
+  });
+  const [row] = page.element('quarantine-list').children;
+  row.querySelectorAll('.set-aside-value')[0].value = 'Philip I';
+  await row.querySelectorAll('button').find((button) => button.textContent === 'Put back with these corrections').click();
+  await settle();
+  assert.equal(page.status(), 'Your correction to the title was kept. Still to correct: lot number is not text of up to 120 characters.');
+});
+
+test('X-03: Remove asks first, names the coin, and takes it out of the list', async () => {
+  const entry = damaged({ title: 42 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [entry] }),
+    confirmAnswers: [false, true],
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, value: { collection: 'lots', id: uuid(9) } };
+    },
+  });
+  const remove = () => page.element('quarantine-list').children[0].querySelectorAll('button').find((button) => button.textContent === 'Remove');
+  await remove().click();
+  await settle();
+  assert.deepEqual(page.commands, [], 'declined: nothing sent');
+  await remove().click();
+  await settle();
+  assert.deepEqual(page.prompts, Array(2).fill('Remove this coin “RIC IV Philip I 27b” for good? Download set-aside records first if you may want it later.'));
+  assert.deepEqual(page.commands.map(({ type, entryId }) => [type, entryId]), [['quarantine.remove', quarantineEntryId(entry)]]);
+  assert.equal(page.status(), 'The coin “RIC IV Philip I 27b” was removed from the set-aside records.');
+  assert.equal(page.element('data-health').hidden, true);
+});
+
+// Review Minor 5: a whole list set aside has nothing to correct or put back, but can still be removed.
+test('X-03: a whole list set aside offers Remove alone, named as the list', async () => {
+  const entry = { collection: 'lots', record: 'x', reason: 'unreadable-list', quarantinedAt: '2026-09-12T12:00:00.000Z' };
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [entry] }),
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, value: { collection: 'lots' } };
+    },
+  });
+  const row = page.element('quarantine-list').children[0];
+  assert.equal(row.querySelector('span').textContent, 'The coin list could not be read (set aside 2026-09-12)');
+  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Remove']);
+  assert.equal(row.querySelectorAll('input').length, 0, 'nothing to correct');
+  await row.querySelectorAll('button')[0].click();
+  await settle();
+  assert.deepEqual(page.prompts, ['Remove this coin list for good? Download set-aside records first if you may want it later.']);
+  assert.deepEqual(page.commands.map(({ type, entryId }) => [type, entryId]), [['quarantine.remove', quarantineEntryId(entry)]]);
+  assert.equal(page.status(), 'The coin list was removed from the set-aside records.');
+});
+
+test('X-03: Settings opened for the set-aside records from the workspace keeps its way back', async () => {
+  const page = await openSettings({ hash: '#from-workspace%3Fdata-health' });
+  assert.equal(page.element('settings-return').textContent, 'Return to workspace');
+});
+
+// --- K-13 / X-09: how full the store is --------------------------------------------------------------
+
+const MiB = 1024 * 1024;
+const LIMIT = 5 * MiB - 100000;
+test('K-13: Settings shows how much of the 4.9 MB the records use, and warns from 80%', async () => {
+  const empty = await openSettings({ usage: { ok: true, value: { bytes: 600, limit: LIMIT } } });
+  assert.equal(empty.element('storage-used').textContent, 'under 0.1 MB of 4.9 MB used');
+  const quiet = await openSettings({ usage: { ok: true, value: { bytes: Math.round(1.6 * MiB), limit: LIMIT } } });
+  assert.equal(quiet.element('storage-gauge').hidden, false);
+  assert.equal(quiet.element('storage-used').textContent, '1.6 MB of 4.9 MB used');
+  assert.equal(quiet.element('storage-meter').getAttribute('value'), String(Math.round(1.6 * MiB)));
+  assert.equal(quiet.element('storage-meter').getAttribute('high'), String(Math.round(LIMIT * 0.8)));
+  assert.equal(quiet.element('storage-warning').hidden, true);
+
+  const filling = await openSettings({ usage: { ok: true, value: { bytes: Math.round(4.1 * MiB), limit: LIMIT } } });
+  assert.equal(filling.element('storage-used').textContent, '4.1 MB of 4.9 MB used');
+  assert.equal(filling.element('storage-warning').hidden, false);
+  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
+
+  const full = await openSettings({ usage: { ok: true, value: { bytes: LIMIT + 2000, limit: LIMIT } } });
+  assert.equal(full.element('storage-used').textContent, '4.91 MB of 4.9 MB used');
+  assert.match(full.element('storage-warning').textContent, /^Your records fill the 4\.9 MB .* only changes that make them smaller can be saved\./);
+
+  const unknown = await openSettings();
+  assert.equal(unknown.element('storage-gauge').hidden, true, 'no figure is shown that the store did not give');
+});
+
+test('K-13: Preview and Confirm say they are working while a large backup is read and imported', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  const page = await openSettings({ snapshot: current, reply: async () => { await held; return { ok: true }; } });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  assert.equal(page.element('preview-import').textContent, 'Preview import', 'back to its name once read');
+  const confirming = page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.element('confirm-import').textContent, 'Importing…');
+  release();
+  await confirming;
+  await settle();
+  assert.equal(page.element('confirm-import').textContent, 'Confirm import');
+});
+
+// --- X-13: said before Confirm, not after it ----------------------------------------------------------
+
+test('X-13: a merge that would change nothing says so and offers no Confirm', async () => {
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  const page = await openSettings({ snapshot: current });
+  await preview(page, backupDocument(current));
+  assert.equal(page.element('import-counts').textContent, 'Nothing to import: every record in this backup is already here, unchanged.');
+  assert.equal(page.element('confirm-import').disabled, true);
+  assert.equal(page.status(), 'Nothing to import: every record in this backup is already here, unchanged.');
+});
+
+test('X-13: whether an import fits is the store’s own answer, asked in the preview, and a refusal is said before Confirm', async () => {
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  const incoming = snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] });
+  // Review Minor 3: a file small in itself grows by the reminders its auctions schedule, which only the store counts.
+  const refusal = 'This backup does not fit: with it your records would take 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. ' +
+    'Import a backup with fewer records, or remove old coins or auctions here first.';
+  const page = await openSettings({ snapshot: current, check: { ok: true, value: { fits: false, message: refusal } } });
+  await preview(page, backupDocument(incoming));
+  assert.equal(page.checks.length, 1);
+  assert.equal(page.checks[0].mode, 'merge');
+  assert.equal(page.checks[0].expectedRevision, current.revision);
+  assert.equal(page.checks[0].document, backupDocument(incoming));
+  assert.equal(page.element('confirm-import').disabled, true);
+  assert.equal(page.status(), refusal);
+  assert.equal(page.statusIsError(), 'true');
+  assert.deepEqual(page.commands, [], 'nothing written');
+
+  const fits = await openSettings({ snapshot: current });
+  await preview(fits, backupDocument(incoming));
+  assert.equal(fits.element('confirm-import').disabled, false);
+  assert.equal(fits.status(), 'Review the import summary, then confirm.');
+
+  // A store that cannot answer is said as it is, and no Confirm is offered on a guess.
+  const failed = await openSettings({ snapshot: current, check: { ok: false, message: 'Local data changed after the import preview.' } });
+  await preview(failed, backupDocument(incoming));
+  assert.equal(failed.element('import-preview').hidden, true);
+  assert.equal(failed.status(), 'Local data changed after the import preview.');
+});
+
+// X-16: the last five failures are on the page, newest first, not only a count until they are copied.
+test('X-16: Diagnostics lists the last five failures, newest first, under the count', async () => {
+  const at = (minute) => `2026-09-25T07:${String(minute).padStart(2, '0')}:00.000Z`;
+  const entries = [
+    ...Array.from({ length: 5 }, (_, index) => ({ at: at(index), page: 'popup', area: 'lookup', code: 'network', version: '0.39.0' })),
+    { at: at(12), page: 'popup', area: 'acsearch', code: 'timeout', version: '0.39.0' },
+    { at: at(13), page: 'background', area: 'capture', code: 'storage', version: '0.39.0' },
+    { at: at(14), page: 'workspace', area: 'coinarchives', code: 'http', status: 503, version: '0.39.0' },
+  ];
+  const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: entries } });
+  assert.equal(page.element('diagnostics-count').textContent, '8 failures recorded on this device. The latest five:');
+  assert.deepEqual(page.element('diagnostics-recent').children.map((item) => item.textContent), [
+    '25 Sept, 07:14 · workspace · CoinArchives · HTTP error 503',
+    '25 Sept, 07:13 · background · page capture · storage failed',
+    '25 Sept, 07:12 · popup · acsearch · timed out',
+    '25 Sept, 07:04 · popup · catalogue lookup · could not connect',
+    '25 Sept, 07:03 · popup · catalogue lookup · could not connect',
+  ]);
+  await page.element('clear-diagnostics').click();
+  await settle();
+  assert.equal(page.element('diagnostics-recent').children.length, 0);
 });

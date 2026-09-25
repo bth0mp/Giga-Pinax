@@ -148,8 +148,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     ```
 
     The coin now no longer names its collection entry, which the next read of your data sets aside. Reload Settings.
-    *Expected:* **Backup and import** shows "1 record could not be read and was set aside." and a line
-    "collectionEntries: foreign-key (<today's date>)" with a **Restore** button. Reload the page twice more: the same
+    *Expected:* a **Set-aside records** card at the top of Settings shows "1 record could not be read and was set
+    aside." and a line "Collection entry “<its title>”: the record it belongs with is missing (set aside <today's date>)"
+    with **Restore** and **Remove** buttons. Reload the page twice more: the same
     line is there each time. Select **Restore**.
     *Expected:* "The record was put back into collectionEntries. 1 link was restored with it." The line and the
     set-aside summary go, and the coin shows its collection entry in the workspace again. At no point does Restore
@@ -348,3 +349,35 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* "acsearch didn’t answer within 15 seconds. It may be slow or down. Try again", never "Couldn’t reach
     acsearch". Look up `Bop Euthydemus I 24A` the same way. *Expected:* "Still waiting for numismatics.org… Cancel" under
     the box after four seconds, and "numismatics.org didn’t answer within 15 seconds…" at the deadline.
+
+38. **Records that can't be read.** Export a backup first. Open **Settings**, open the developer tools on that page and
+    run, in its console (`browser` in place of `chrome` in Firefox):
+
+    ```js
+    await chrome.storage.local.set({ 'auctionCompanion:v1': 'damaged' });
+    ```
+
+    Reload Settings, then open the workspace and the toolbar popup.
+    *Expected:* each shows "Your records can't be read" at the top, with **Download the stored data** and **Start fresh,
+    keeping a copy**; the workspace and the popup also link to **Import a backup in Settings**. Select **Download the
+    stored data**: a `giga-pinax-raw-….json` file downloads and nothing changes. In Settings preview the backup with
+    **Merge**: refused, asking for **Replace local records**. Preview it with **Replace** and confirm: the raw file
+    downloads first, then the backup's records are back and the notice goes. Damage the data again and select **Start
+    fresh, keeping a copy**: the raw file downloads, you are asked with its name, and on yes the page opens empty.
+
+39. **A coin set aside, fixed or removed.** Save a coin with a reference in the workspace. In Settings' developer-tools
+    console run (`browser` in place of `chrome` in Firefox):
+
+    ```js
+    const key = 'auctionCompanion:v1';
+    const root = (await chrome.storage.local.get(key))[key];
+    root.lots[0].title = 42;
+    await chrome.storage.local.set({ [key]: root });
+    ```
+
+    Reload the workspace.
+    *Expected:* under the coin count, "1 coin set aside: fix or remove"; **fix or remove** opens Settings, whose first
+    card, **Set-aside records**, names the coin by its reference and says "title is not text of up to 300 characters".
+    **Restore** is refused in the same plain words. Type a title in **Correct the title** and select **Put back with this
+    correction**: the coin is back in the workspace with that title, and the line under the count goes. Set it aside again
+    and select **Remove**: you are asked first, and on yes the card goes.

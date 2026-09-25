@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createWorkspaceBackground, mountWorkspace, parseHtmlFile, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
+import { quarantineEntryId } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { csvFiles } from '../extension/core/csv.js';
 import { formatMoney } from '../extension/core/money.js';
@@ -1452,6 +1453,105 @@ test('Remove coin says so on the page with Undo, which puts back the coin with i
   assert.deepEqual(back.plannedBid.amount, { currency: 'EUR', minor: 50000 });
   assert.equal(page.status(), 'Put back “Nero, denarius”.');
   assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
+});
+
+// X-01: past the storage bound the store removes the coin but keeps no copy to put back, and the page offers no Undo.
+test('Remove coin past the storage bound says Undo is not available instead of offering it', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const commit = background.writer.commitCommand;
+  background.writer.commitCommand = async (command) => {
+    const reply = await commit(command);
+    return command.type === 'lot.delete' && reply.ok ? { ...reply, value: { id: reply.value.id, undoAvailable: false } } : reply;
+  };
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('delete-lot');
+  assert.equal(background.root().lots.length, 0);
+  assert.equal(page.status(), 'Removed “Nero, denarius”. Undo is not available while your records fill the storage.');
+  assert.equal(page.$('undo-remove'), null);
+});
+
+// X-02: records nothing can read put the recovery notice at the top of the workspace, and its rescue copy works.
+test('the workspace over unreadable records offers the rescue copy and a fresh start at the top', async () => {
+  const background = await createWorkspaceBackground();
+  await background.storage.set({ [STORAGE_KEY]: 'not a root' });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  // The notice's module is loaded when it is needed, which takes the loader some turns.
+  for (let turn = 0; turn < 200 && !page.$('store-recovery'); turn += 1) await new Promise((resolve) => { setTimeout(resolve, 1); });
+  const notice = page.$('store-recovery');
+  assert.ok(notice, 'the notice is drawn');
+  assert.equal(page.document.querySelector('main').children[0], notice);
+  assert.equal(page.$('store-recovery-download').textContent, 'Download the stored data');
+  assert.equal(page.$('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
+  assert.equal(page.status(), '', 'no banner over the notice');
+});
+
+// X-03: a coin set aside is never silent: the watchlist says so under its count, with the way to fix or remove it.
+test('a set-aside coin is said under the coin count, with the way to fix or remove it', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const root = background.root();
+  const broken = { ...storedLot(background, 'Nero, denarius'), id: '00000000-0000-4000-8000-00000000abcd', title: 42 };
+  root.quarantine = [{ collection: 'lots', record: broken, reason: 'invalid-string', quarantinedAt: root.updatedAt }];
+  await background.storage.set({ [STORAGE_KEY]: root });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const line = page.$('set-aside-line');
+  assert.ok(line, 'the line is drawn');
+  assert.equal(line.textContent, '1 coin set aside: fix or remove');
+  assert.equal(page.$('lot-count').parentNode.children.indexOf(line), page.$('lot-count').parentNode.children.indexOf(page.$('lot-count')) + 1,
+    'right under the coin count');
+  await line.querySelector('button').click();
+  assert.deepEqual(page.opened.at(-1), { settings: 'from-workspace?data-health' });
+
+  await background.send({ type: 'quarantine.remove', entryId: quarantineEntryId(root.quarantine[0]) });
+  await settle(20);
+  assert.equal(page.$('set-aside-line'), null, 'gone once nothing is set aside');
+});
+
+// X-08: a page capture is never lost unseen: every one waiting is listed first on the page, with Use and Discard.
+test('captures waiting to be used are listed first, and Use opens one while Discard drops another', async () => {
+  // The page reads the browser's clock for how old a capture is, so the store here keeps the same one.
+  const background = await createWorkspaceBackground({ now: new Date().toISOString() });
+  const auction = await background.send({ type: 'draft.save', kind: 'auction-capture', payload: { rawText: 'Leu Web Auction 30', pageUrl: 'https://www.leunumismatik.com/en/auction/30' } });
+  const research = await background.send({ type: 'draft.save', kind: 'research-highlight', payload: { rawText: 'RIC 306', pageUrl: 'https://www.cngcoins.com/lot/1' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const list = page.$('waiting-captures');
+  assert.ok(list, 'the list is drawn');
+  assert.equal(page.document.querySelector('main').children[0], list);
+  const lines = () => page.$('waiting-captures')?.children.map((row) => row.textContent) ?? [];
+  assert.equal(lines().length, 2);
+  assert.match(lines()[0], /^Captured an auction from leunumismatik\.com (just now|\d+ min ago) · kept \d+ h more · Use Discard$/);
+  assert.match(lines()[1], /^Captured research text from cngcoins\.com/);
+
+  const discard = list.children[1].querySelectorAll('button').find((button) => button.textContent === 'Discard');
+  await discard.click();
+  await settle(20);
+  assert.deepEqual(background.root().drafts.map(({ id }) => id), [auction.value.id], 'discarded from the store');
+  assert.equal(lines().length, 1);
+  assert.ok(research.ok);
+
+  const use = page.$('waiting-captures').children[0].querySelectorAll('button').find((button) => button.textContent === 'Use');
+  await use.click();
+  await settle(20);
+  assert.equal(page.location.hash, `#event-draft=${auction.value.id}`);
+  assert.equal(page.$('event-form').elements.name.value, 'Leu Web Auction 30', 'the auction form holds the capture');
+  assert.ok(!page.$('waiting-captures'), 'the capture open in the form is not listed again');
+});
+
+// X-15: a capture the background could not save says why on the workspace's next load, once.
+test('a capture refused because the records are full is said once on the next workspace load', async () => {
+  const background = await createWorkspaceBackground();
+  await background.session.set({ 'gigaPinax:captureFailure': { reason: 'full', at: '2026-09-12T11:59:00.000Z' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await settle(20);
+  const line = page.$('capture-failure');
+  assert.ok(line, 'the line is drawn');
+  assert.equal(line.textContent, 'A page capture could not be saved because your records fill the storage. Open Settings to make room, then capture the page again. Open Settings');
+  assert.equal(background.session.read('gigaPinax:captureFailure'), undefined, 'said once');
+  await line.querySelector('button').click();
+  assert.deepEqual(page.opened.at(-1), { settings: 'from-workspace' });
+  const again = await mountWorkspace({ background, hash: '#watchlist' });
+  await settle(20);
+  assert.ok(!again.$('capture-failure'));
 });
 
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,

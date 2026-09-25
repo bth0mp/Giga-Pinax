@@ -75,6 +75,8 @@ ASSET_PATHS = (
     "source-menu.js",
     "store.js",
     "store-builders.js",
+    "store-form-drafts.js",
+    "store-recovery.js",
     "store-restore.js",
     "store-schedule.js",
     "workspace.css",

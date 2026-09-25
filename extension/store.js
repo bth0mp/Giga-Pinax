@@ -1,7 +1,7 @@
 // @ts-check
 import {
-  ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, healCollectionEntries,
-  migrateSnapshot, quarantineEntryId,
+  ENTRY_EDITABLE_FIELDS, LIMITS, MAX_ROOT_BYTES, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, foldQuarantine, followOutcome,
+  RECORDS_LIMIT_BYTES, RECORDS_LIMIT_TEXT, healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId, storedBytes,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot, validateWant,
 } from './core/records.js';
@@ -14,7 +14,7 @@ import {
   appendBidHistory, baseRecord, compactGroupPriorities, eventFromDraft, fail, findRecord, getId, getNow, lotFromDraft, ok,
   preferenceFields,
 } from './store-builders.js';
-import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
+import { editedEntry, keptCorrections, missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
 import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
 import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
 /**
@@ -37,10 +37,10 @@ import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
  */
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
-export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+export { MAX_ROOT_BYTES };
 // The commands the background worker answers from an extension page; any other message gets no reply.
 export const COMMAND_TYPES = new Set([
-  'snapshot.get', 'snapshot.raw',
+  'snapshot.get', 'snapshot.raw', 'storage.usage', 'backup.check',
   'preferences.migrateIfAbsent', 'preferences.save',
   'lot.save', 'lot.delete', 'lot.restore',
   'group.save', 'group.delete', 'group.reorder',
@@ -50,23 +50,48 @@ export const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import', 'quarantine.restore',
+  'backup.import', 'quarantine.restore', 'quarantine.remove', 'store.reset',
   'want.save', 'want.delete', 'want.found',
 ]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set', 'backup.import',
-  'quarantine.restore',
+  'quarantine.restore', 'store.reset',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
-const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
-// What a command that no longer fits in local storage says, where the reminder preflight's own
-// sentence would name the wrong thing: the message and the field it belongs to.
-const OVER_THE_BOUND = new Map([
-  ['backup.import', ['This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document']],
-  ['quarantine.restore', ['Putting this record back would exceed the 5 MiB local storage bound. Remove records you no longer need, then put it back.', 'entryId']],
+// How long a page capture waits to be used (X-08). Half an hour lost a capture whose tab was closed or whose browser
+// restarted before the collector came back to it; the workspace lists the ones waiting, so a day is long enough.
+export const DRAFT_LIFETIME_MS = 24 * 60 * 60 * 1000;
+// A removal whose reply carries the whole record, for Undo. Past the bound that copy is the one thing it may give up,
+// so the removal itself still happens (X-01).
+const REMOVALS = new Set(['lot.delete', 'event.delete', 'group.delete', 'want.delete']);
+// What grew, as the collector would say it, for a change the bound refuses.
+const WHAT_GREW = new Map([
+  ['lot.save', 'Saving this coin'], ['lot.restore', 'Putting this coin back'], ['event.save', 'Saving this auction'],
+  ['group.save', 'Saving this group'], ['group.reorder', 'Reordering this group'],
+  ['bid.plan', 'Saving this bid'], ['bid.place', 'Saving this bid'], ['bid.cancel', 'Saving this bid'],
+  ['lot.outcome.set', 'Saving this result'], ['collection.update', 'Saving this collection entry'],
+  ['collection.review.resolve', 'Saving this collection entry'],
+  ['evidence.add', 'Adding this comparable'], ['evidence.include', 'Saving this comparable'], ['evidence.resolve', 'Saving this comparable'],
+  ['draft.save', 'Keeping this page capture'], ['preferences.save', 'Saving these settings'],
+  ['preferences.migrateIfAbsent', 'Saving your settings'], ['want.save', 'Saving this want'], ['want.found', 'Marking this want found'],
 ]);
-// What any other command says when its own result, before any reminder it schedules, does not fit.
-const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
+const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or auctions you no longer need.';
+/**
+ * The refusal of a change that would grow the records past the bound: what grew, and the way out that works.
+ * @param {string} type
+ * @param {number} bytes
+ * @returns {[string, string]} the message and the field it belongs to
+ */
+function overTheBound(type, bytes) {
+  const size = `${megabytesText(bytes)}, more than the ${RECORDS_LIMIT_TEXT} Giga Pinax can keep in this browser`;
+  if (type === 'backup.import') {
+    return [`This backup does not fit: with it your records would take ${size}. Import a backup with fewer records, or remove old coins or auctions here first.`, 'document'];
+  }
+  if (type === 'quarantine.restore') {
+    return [`Putting this record back would take your records to ${size}. ${OUT_OF_THE_BOUND} Then put it back.`, 'entryId'];
+  }
+  return [`${WHAT_GREW.get(type) ?? 'This change'} would take your records to ${size}. ${OUT_OF_THE_BOUND}`, 'type'];
+}
 
 // The want a command names at the revision it was sent against, refused in a sentence of its own: "This want changed in another view."
 /**
@@ -87,21 +112,59 @@ function sameValue(left, right) {
   return left === right;
 }
 
+// A public command leaves the ledger headroom the background's own reminder writes spend after it; those spend it.
+const headroomFor = (type) => (INTERNAL_COMMANDS.has(type) ? 0 : LIMITS.commandReplyBytes);
+
+// The root a command leaves, judged against the bound, and then the schedule it leads to: null when both may be kept,
+// or the refusal. The command's own result is judged first: a lot too many or a store already at the bound is the
+// command's own refusal, in its own words, and was reported as reminders that could not be scheduled.
 /**
- * @param {Snapshot} snapshot
- * @param {boolean} [commandHeadroom]
- * @returns {number}
+ * @param {Snapshot} before
+ * @param {Snapshot} next
+ * @param {Command} command
+ * @param {string} now
+ * @param {number} headroom
+ * @returns {{ failure: CommandFailure | *, invalid?: true } | null}
  */
-function storageBytesWithReserve(snapshot, commandHeadroom = true) {
-  const reserved = clone(snapshot);
-  for (const alert of reserved.alerts) {
-    alert.revision = Number.MAX_SAFE_INTEGER;
-    alert.status = 'acknowledged';
-    for (const field of ['attemptedAt', 'claimedAt', 'deliveredAt', 'acknowledgedAt', 'snoozedUntil', 'missedAt']) {
-      alert[field] = RESERVED_INSTANT;
-    }
+function judgeTheBound(before, next, command, now, headroom) {
+  const fits = boundVerdict(before, next, headroom);
+  if (!fits.ok) {
+    const [message, path] = overTheBound(command.type, fits.bytes);
+    return { failure: fail('storage-bound', message, path) };
   }
-  return new TextEncoder().encode(JSON.stringify(reserved)).length + (commandHeadroom ? LIMITS.commandReplyBytes : 0);
+  if (!SCHEDULE_CHANGING_COMMANDS.has(command.type)) return null;
+  let projectedId = 0;
+  const projected = clone(next);
+  reconcileIntoSnapshot(projected, {
+    now: () => now,
+    newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
+  });
+  projected.revision += 1;
+  const reconcileRequestId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const reconcileValue = { nextWakeAt: projected.scheduler.nextWakeAt, dueEventCount: projected.alerts.filter(({ status }) => status === 'due').length };
+  projected.recentCommands.push({
+    requestId: reconcileRequestId, commandType: 'scheduler.reconcile', revision: projected.revision, committedAt: now,
+    reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
+  });
+  projected.recentCommands = projected.recentCommands.slice(-200);
+  // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
+  // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
+  // command itself has already passed, so what failed is the schedule it leads to.
+  const projectedValid = validateSnapshot(projected);
+  if (!projectedValid.ok) {
+    return { invalid: true, failure: fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path) };
+  }
+  // A removal's reconcile only ever drops alerts; the ledger entry it writes may not make it a refusal about reminders
+  // the collector never asked for (review Minor 1).
+  if (REMOVALS.has(command.type)) return null;
+  const scheduled = boundVerdict(before, projected, headroom);
+  if (scheduled.ok) return null;
+  // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back is
+  // answered by removing reminders, and each names what to change.
+  const [message, path] = ['backup.import', 'quarantine.restore'].includes(command.type)
+    ? overTheBound(command.type, scheduled.bytes)
+    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the ${RECORDS_LIMIT_TEXT} Giga Pinax can keep in this browser. Remove some reminders, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
+  return { failure: fail('storage-bound', message, path) };
 }
 
 /**
@@ -114,7 +177,7 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
-  // A capture draft is half-hour scratch holding the text of a page, and only saving another draft used to clear the
+  // A capture draft is a day's scratch holding the text of a page, and only saving another draft used to clear the
   // expired ones, so one capture kept its text for good. Every change clears them now; a read still leaves the root alone.
   next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
 
@@ -202,6 +265,9 @@ function mutation(snapshot, command, context) {
     case 'lot.restore': {
       const deleted = snapshot.recentCommands.find(({ requestId, commandType }) => requestId === command.deleteRequestId && commandType === 'lot.delete');
       const removed = deleted?.reply?.value;
+      if (removed?.undoAvailable === false) {
+        return fail('validation', 'This coin was removed while your records filled the storage, so no copy was kept to put back. A backup that holds it can bring it back.', 'deleteRequestId');
+      }
       if (!removed?.id) return fail('validation', 'This coin can no longer be put back.', 'deleteRequestId');
       if (next.lots.some(({ id }) => id === removed.id)) return fail('conflict', 'This coin is already back.', 'deleteRequestId');
       value = clone(removed);
@@ -585,7 +651,7 @@ function mutation(snapshot, command, context) {
         payload: clone(payload.value),
         createdAt: now,
         updatedAt: now,
-        expiresAt: new Date(Date.parse(now) + 30 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.parse(now) + DRAFT_LIFETIME_MS).toISOString(),
       });
       next.drafts.push(value);
       next.drafts.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -676,7 +742,28 @@ function mutation(snapshot, command, context) {
         return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
       }
       const chosen = entries[index];
-      const first = readyToRestore(next, chosen);
+      // The collector may correct, or clear, the one field that kept it out (X-03). The bin keeps the record as it was
+      // until the corrected copy is back, so a correction that is refused changes nothing.
+      let candidate = chosen;
+      let editedFields = [];
+      const edits = command.edits ?? (command.edit === undefined ? undefined : [command.edit]);
+      if (edits !== undefined) {
+        const edited = editedEntry(chosen, edits);
+        if (!edited.ok) return edited;
+        candidate = edited.value.entry;
+        editedFields = edited.value.fields;
+      }
+      const first = readyToRestore(next, candidate);
+      if (!first.ok && editedFields.length) {
+        // A correction that puts its field right is kept in the bin while another field is still wrong, and the reply
+        // names what is left, so every round makes progress (review Important 2).
+        const kept = keptCorrections(chosen, candidate, editedFields);
+        if (kept.corrected.length && kept.remaining.length) {
+          entries[index] = { ...chosen, record: kept.record };
+          value = { collection: chosen.collection, restored: false, corrected: kept.corrected, remaining: kept.remaining };
+          break;
+        }
+      }
       if (!first.ok) return first;
       const restoring = [{ entry: chosen, ...first.value }];
       const partner = missingPartner(next, chosen.collection, first.value.record);
@@ -750,6 +837,19 @@ function mutation(snapshot, command, context) {
           ? { alsoRestored: restoring.slice(1).map(({ entry, record }) => ({ collection: entry.collection, id: record.id })) }
           : {}),
       };
+      break;
+    }
+    // Removing a set-aside record for good, when the collector says it is not worth putting back (X-03). The page offers
+    // the set-aside download first; the store only takes it out of the bin.
+    case 'quarantine.remove': {
+      const entries = Array.isArray(next.quarantine) ? next.quarantine : [];
+      const index = entries.findIndex((entry) => quarantineEntryId(entry) === command.entryId);
+      if (index < 0) {
+        return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
+      }
+      const [removed] = entries.splice(index, 1);
+      if (!entries.length) delete next.quarantine;
+      value = { collection: removed.collection, ...(typeof removed.record?.id === 'string' ? { id: removed.record.id } : {}) };
       break;
     }
     // The want list (G-22). A want is what the collector wrote - the reference, and the notes, most they would pay and
@@ -859,6 +959,18 @@ function mutation(snapshot, command, context) {
       value = { mode: command.mode, counts: preview.value.counts };
       break;
     }
+    // A fresh start over records nothing could read (X-02): the writer runs it only over the empty root it put in their
+    // place, and only for the page that read the rescue copy at this revision. Anything holding records is refused.
+    case 'store.reset': {
+      if (command.expectedRevision !== snapshot.revision) {
+        return fail('conflict', 'The stored data changed after it was downloaded. Download it again, then start fresh.', 'expectedRevision');
+      }
+      const holding = ['lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries', 'alerts', 'wants', 'quarantine']
+        .some((key) => (snapshot[key]?.length ?? 0) > 0) || snapshot.preferences !== null;
+      if (holding) return fail('validation', 'Your records can be read, so nothing was reset.', 'type');
+      value = { reset: true };
+      break;
+    }
     default:
       return fail('unsupported', `Unsupported command: ${String(command.type)}`, 'type');
   }
@@ -880,41 +992,15 @@ function mutation(snapshot, command, context) {
   // be scheduled - with removing reminders offered as the way out.
   const validated = validateSnapshot(next);
   if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
-  if (SCHEDULE_CHANGING_COMMANDS.has(command.type)) {
-    // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back
-    // is answered by removing reminders, and each names what to change.
-    const overTheBound = OVER_THE_BOUND.get(command.type);
-    if (storageBytesWithReserve(next) > MAX_ROOT_BYTES) {
-      const bounded = overTheBound ?? [THIS_CHANGE_OVER_THE_BOUND, 'type'];
-      return fail('storage-bound', bounded[0], bounded[1]);
-    }
-    let projectedId = 0;
-    const projected = clone(next);
-    reconcileIntoSnapshot(projected, {
-      now: () => now,
-      newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
-    });
-    projected.revision += 1;
-    const reconcileRequestId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
-    const reconcileValue = { nextWakeAt: projected.scheduler.nextWakeAt, dueEventCount: projected.alerts.filter(({ status }) => status === 'due').length };
-    projected.recentCommands.push({
-      requestId: reconcileRequestId, commandType: 'scheduler.reconcile', revision: projected.revision, committedAt: now,
-      reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
-    });
-    projected.recentCommands = projected.recentCommands.slice(-200);
-    // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
-    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
-    // command itself has already passed, so what failed is the schedule it leads to.
-    const projectedValid = validateSnapshot(projected);
-    if (!projectedValid.ok) {
-      return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
-    }
-    if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      const bounded = overTheBound ??
-        ['These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders'];
-      return fail('storage-bound', bounded[0], bounded[1]);
-    }
+  const headroom = headroomFor(command.type);
+  let judged = judgeTheBound(snapshot, next, command, now, headroom);
+  // A removal past the bound gives up the copy its Undo would have put back, and the reply says so (X-01).
+  if (judged && !judged.invalid && REMOVALS.has(command.type) && value?.id) {
+    reply.value = { id: value.id, undoAvailable: false };
+    next.recentCommands[next.recentCommands.length - 1].reply = clone(reply);
+    judged = judgeTheBound(snapshot, next, command, now, headroom);
   }
+  if (judged) return judged.failure;
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
@@ -939,6 +1025,34 @@ export function applyCommand(snapshot, command, context) {
       : fail('validation', 'Draft was not found or expired.', 'draftId');
   }
   return mutation(snapshot, command, context);
+}
+
+// The two commands that may run over records nothing can read: a Replace import that says it means to, and a fresh start.
+const recoversUnreadable = (command) => command.type === 'store.reset' ||
+  (['backup.import', 'backup.check'].includes(command.type) && command.mode === 'replace' && command.overUnreadable === true);
+
+// What a recovery runs over in place of records nothing can read: an empty root, counted on from the revision the rescue
+// copy reported, so a page that read that copy is the one whose command runs, and every open page hears of the change.
+/**
+ * @param {*} raw
+ * @param {string} now
+ * @returns {Snapshot}
+ */
+function unreadableBase(raw, now) {
+  const base = createEmptySnapshot(now);
+  base.revision = recoveryRevision(raw);
+  return base;
+}
+
+// The revision the rescue copy reports and a recovery is counted from: the stored one where a write could have made it,
+// and 0 for anything else a damaged or hand-made root claims.
+/**
+ * @param {*} raw
+ * @returns {number}
+ */
+function recoveryRevision(raw) {
+  const revision = raw?.revision;
+  return Number.isSafeInteger(revision) && revision >= 0 && revision <= LIMITS.usableRevision ? revision : 0;
 }
 
 /**
@@ -984,11 +1098,14 @@ export function createCommandWriter(storageArea, context) {
       return {
         ok: true,
         requestId: command.requestId,
-        revision: Number.isSafeInteger(raw?.revision) ? raw.revision : 0,
+        // The revision a reset or a Replace import over these records is counted from: the one function both use, so
+        // the handshake closes whatever revision an unreadable root claims (review Important 1).
+        revision: recoveryRevision(raw),
         value: raw,
       };
     }
     let stored = migrateSnapshot(raw);
+    let recovering = false;
     // A revision above the usable ceiling has to be restarted before anything else looks at the root, because it is
     // valid: validation accepts it, so the repair pass below would never run, and the record would be locked at its
     // very next write. The scan walks the records already about to be validated, changes nothing when there is nothing
@@ -1012,8 +1129,19 @@ export function createCommandWriter(storageArea, context) {
       const rescued = current.error.code === 'unsupported-schema' && current.error.path === 'schemaVersion'
         ? current
         : quarantineInvalidRecords(stored, getNow(context));
-      if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
-      stored = rescued.value;
+      if (!rescued.ok) {
+        // Records nothing can read stop every command but the ways out of them (X-02): the rescue copy above, and a Replace
+        // import or a fresh start, which the page offers only once that copy is on disk. Both run over an empty root.
+        if (!recoversUnreadable(command)) {
+          return {
+            ...errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`),
+            reason: 'unreadable',
+            ...(Number.isSafeInteger(raw?.schemaVersion) && raw.schemaVersion > SCHEMA_VERSION ? { newerVersion: true } : {}),
+          };
+        }
+        stored = unreadableBase(raw, getNow(context));
+        recovering = true;
+      } else stored = rescued.value;
     }
 
     // An entry left behind by an outcome corrected before 0.36 follows its won lot from this read on; nothing is
@@ -1023,15 +1151,37 @@ export function createCommandWriter(storageArea, context) {
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };
     }
+    // How full the store is, measured as every write is judged: the records with their reminders reserved, against what
+    // they may take - the bound less the headroom a save leaves the background's own writes (K-13, X-09, review Minor 2). Asked for by Settings alone, so no snapshot read pays for it.
+    if (command.type === 'storage.usage') {
+      return {
+        ok: true, requestId: command.requestId, revision: stored.revision,
+        value: { bytes: storedBytes(stored), limit: RECORDS_LIMIT_BYTES },
+      };
+    }
     const prior = stored.recentCommands.find(({ requestId }) => requestId === command.requestId);
     if (prior) return prior.reply;
+    // A fresh start is only ever over records nothing can read; over readable ones it would be a removal of everything.
+    if (command.type === 'store.reset' && !recovering) {
+      return errorReply(command, 'validation', 'not-committed', 'Your records can be read, so nothing was reset.');
+    }
 
     // Internal delivery commands are reproducible from authoritative alert state. Drop their
     // older ledger entries before each new write so they can spend, then replenish, the
     // command headroom without evicting public commands needed for retry idempotency.
     const working = clone(stored);
     working.recentCommands = working.recentCommands.filter(({ commandType }) => !INTERNAL_COMMANDS.has(commandType));
-    const applied = applyCommand(working, command, context);
+    // Whether an import would be kept is the store's own judgement, asked before Confirm (X-13, review Minor 3): the
+    // import is run exactly as it would be - its ledger entry, the reconcile after it and the reminders that reconcile
+    // schedules all counted - and nothing is written. Any other refusal is answered as the import would answer it.
+    const checking = command.type === 'backup.check';
+    const applied = applyCommand(working, checking ? { ...command, type: 'backup.import' } : command, context);
+    if (checking && (applied.ok || applied.error.code === 'storage-bound')) {
+      return {
+        ok: true, requestId: command.requestId, revision: stored.revision,
+        value: applied.ok ? { fits: true } : { fits: false, message: applied.error.message },
+      };
+    }
     if (!applied.ok) {
       if (applied.error.code === 'duplicate') return {
         ...errorReply(command, 'duplicate', 'not-committed', applied.error.message),
@@ -1044,10 +1194,7 @@ export function createCommandWriter(storageArea, context) {
     if (!applied.value.mutated) {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: applied.value.value };
     }
-    const includeCommandHeadroom = !INTERNAL_COMMANDS.has(command.type);
-    if (storageBytesWithReserve(applied.value.snapshot, includeCommandHeadroom) > MAX_ROOT_BYTES) {
-      return errorReply(command, 'validation', 'not-committed', 'Local data plus reminder-delivery reserve exceeds the 5 MiB storage bound. Remove old auction events, reminders, or other saved data before retrying.');
-    }
+    // The bound was judged with the command itself (boundVerdict), against the data the store held before it.
     try {
       await storageArea.set({ [STORAGE_KEY]: applied.value.snapshot });
     } catch (error) {

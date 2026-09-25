@@ -101,6 +101,10 @@ function preferenceFields(value, includeAlerts = false) {
   return result;
 }
 
+// A coin's text is kept as a set-aside correction keeps it: spaces at either end trimmed (review Minor 6). Anything
+// else is left for the validator to refuse.
+const trimmed = (value) => (typeof value === 'string' ? value.trim() : value);
+
 /**
  * @param {*} draft
  * @param {Lot | null | undefined} existing
@@ -111,22 +115,22 @@ function lotFromDraft(draft, existing, context) {
   const now = getNow(context);
   const optional = ['reference', 'auctionEventId', 'lotNumber'];
   const lot = existing ? clone(existing) : baseRecord({
-    title: draft.title,
+    title: trimmed(draft.title),
     sourceLinks: clone(draft.sourceLinks ?? []),
     bidHistory: [],
     outcome: { status: 'open' },
     outcomeHistory: [],
   }, context);
-  lot.title = draft.title;
+  lot.title = trimmed(draft.title);
   lot.sourceLinks = clone(draft.sourceLinks ?? []);
-  if (own(draft, 'notes')) lot.notes = draft.notes;
+  if (own(draft, 'notes')) lot.notes = trimmed(draft.notes);
   for (const key of ['auctionContext', 'coinDetails', 'provenanceNotes', 'costEstimate']) {
     if (!own(draft, key)) continue;
     if (draft[key] === null) delete lot[key];
     else lot[key] = clone(draft[key]);
   }
   for (const key of optional) {
-    if (own(draft, key)) lot[key] = draft[key];
+    if (own(draft, key)) lot[key] = key === 'auctionEventId' ? draft[key] : trimmed(draft[key]);
     else delete lot[key];
   }
   if (existing) {

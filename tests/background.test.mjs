@@ -12,6 +12,7 @@ const listeners = {
 };
 const menus = [];
 const stored = {};
+const session = {};
 const badges = [];
 const titles = [];
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
@@ -52,6 +53,12 @@ globalThis.browser = {
         if (storageSetFails) throw new Error('storage is full');
         Object.assign(stored, structuredClone(items));
       },
+    },
+    // The session area the background notes a refused capture's reason in, for the workspace (X-15).
+    session: {
+      async get(key) { return Object.hasOwn(session, key) ? { [key]: structuredClone(session[key]) } : {}; },
+      async set(items) { Object.assign(session, structuredClone(items)); },
+      async remove(key) { delete session[key]; },
     },
   },
   alarms: {
@@ -441,7 +448,7 @@ test('a worker restarted after a failed capture leaves the warning standing', as
 test('a reconcile nobody asked for says so when it fails instead of stopping the reminders in silence', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
   // A root the repair cannot rescue: every command that reads it fails, including the reconcile.
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const logged = [];
   const realError = console.error;
   console.error = (...args) => { logged.push(args.map(String).join(' ')); };
@@ -479,7 +486,7 @@ test('a reconcile nobody asked for says so when it fails instead of stopping the
 // Each warning stands until its own condition is met, so answering one must not take the other off the toolbar.
 test('a capture failure under a standing reconcile failure leaves the reconcile warning up', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const realError = console.error;
   console.error = () => {};
   try {
@@ -491,7 +498,9 @@ test('a capture failure under a standing reconcile failure leaves the reconcile 
     });
     for (let index = 0; index < 8; index += 1) await flush();
     storageSetFails = false;
-    assert.equal(titles.at(-1), CAPTURE_FAILURE_TITLE, 'the newer failure is what the tooltip explains');
+    // The store could not read the records either, so the capture's tooltip says that (X-15).
+    assert.equal(titles.at(-1), 'Giga Pinax: the last page capture could not be saved because your records can’t be read. Open Settings to recover them.',
+      'the newer failure is what the tooltip explains');
 
     // The collector opens a page: the capture warning is answered, the reconcile's is not, so the badge stays.
     await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
@@ -566,7 +575,7 @@ test('an expired or already-used draft link is not recorded as a failure', async
 
 test('a failed reminder reconcile, a capture that cannot be shown and a lookup window that cannot open are recorded', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const realError = console.error;
   console.error = () => {};
   try {
@@ -607,3 +616,22 @@ test('a failed reminder reconcile, a capture that cannot be shown and a lookup w
 });
 
 test.after(() => { delete globalThis.browser; });
+
+// X-15: a capture the store refused for a reason the collector can act on says which, on the badge and to the workspace.
+test('a capture refused over unreadable records says why, and leaves the reason for the workspace', async () => {
+  const intact = structuredClone(stored[STORAGE_KEY]);
+  delete stored[STORAGE_KEY].lots;
+  try {
+    listeners.clicked[0]({ menuItemId: 'auction-companion:track-auction', selectionText: 'Leu 30', pageUrl: 'https://house.test/sale' });
+    for (let index = 0; index < 10; index += 1) await flush();
+  } finally {
+    stored[STORAGE_KEY] = intact;
+  }
+  assert.equal(badges.at(-1), '!');
+  assert.equal(titles.at(-1), 'Giga Pinax: the last page capture could not be saved because your records can’t be read. Open Settings to recover them.');
+  assert.equal(session['gigaPinax:captureFailure'].reason, 'unreadable');
+
+  listeners.clicked[0]({ menuItemId: 'auction-companion:research-selection', selectionText: 'Nero denarius', pageUrl: 'https://house.test/sale' });
+  for (let index = 0; index < 10; index += 1) await flush();
+  assert.equal(session['gigaPinax:captureFailure'], undefined, 'a capture that works takes the note away');
+});

@@ -627,6 +627,7 @@ export function memoryStorageArea() {
   const listeners = new Set();
   return {
     async get(key) { return stored.has(key) ? { [key]: structuredClone(stored.get(key)) } : {}; },
+    async remove(key) { stored.delete(key); },
     async set(items) {
       const changes = {};
       for (const [key, value] of Object.entries(items)) {
@@ -705,7 +706,7 @@ function loadBridge(browser) {
   const url = new URL('../../extension/browser-api.js', import.meta.url);
   const context = vm.createContext({ browser, crypto: { randomUUID: testUuid }, Promise, Error });
   vm.runInContext(pageSource(url), context, { filename: url.pathname });
-  return Object.fromEntries(['sendCommand', 'getSnapshot', 'subscribeToSnapshots', 'requestNotificationPermission']
+  return Object.fromEntries(['sendCommand', 'getSnapshot', 'subscribeToSnapshots', 'requestNotificationPermission', 'newRequestId']
     .map((name) => [name, context[name]]));
 }
 
@@ -720,6 +721,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   ]);
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
   const wantlist = await import('../../extension/core/wantlist.js');
+  // The store's notices (X-02, X-03): the recovery notice and the set-aside line, drawn into this page's document.
+  const { CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures } = await import('../../extension/store-recovery.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
@@ -735,12 +738,12 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
-    sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist,
+    sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist, CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures,
     // The bundled catalogue the want form asks what it holds (V-02); none unless a test hands one in, as outside the extension.
     defaultLocalCatalogue: catalogue,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
-    mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
+    mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings(section) { opened.push({ settings: section }); },
     ...browserGlobals(document, {
       language,
       confirm: (message) => { prompts.push(message); return confirmAnswers.length ? confirmAnswers.shift() : true; },

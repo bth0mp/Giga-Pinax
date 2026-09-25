@@ -1150,10 +1150,13 @@ async function initCompanionPopup() {
       storageUnavailable = true;
       for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) $(id).disabled = true;
       recordsDown = recordsProblem(reply?.message);
-      speak(recordsDown);
+      // Records nothing can read get the recovery notice under the header (X-02), not a raw sentence.
+      const unreadable = reply?.reason === 'unreadable';
+      speak(unreadable ? 'Your records can’t be read. The notice at the top of this window has the ways out.' : recordsDown);
       renderSummary();
       sayRecordsDown();
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
+      if (unreadable) void import('./store-recovery.js').then(({ mountRecovery }) => mountRecovery({ document, bridge, reply, after: document.querySelector('.popup-header') })).catch(() => {});
     }
     snapshotRead();
     bridge.subscribeToSnapshots((incoming) => {

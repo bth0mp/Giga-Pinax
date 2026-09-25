@@ -9,6 +9,7 @@ import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
+import { CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures } from './store-recovery.js';
 import {
   bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, outcomeFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
@@ -319,6 +320,12 @@ async function initWorkspace() {
   // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
   // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
+  // Captures waiting to be used are listed first on the page, so none is lost unseen (X-08); the one open is not.
+  const renderWaitingCaptures = () => mountWaitingCaptures({
+    document, drafts: snapshot.drafts, now: new Date().toISOString(), openId: /-draft=([^&]+)$/.exec(location.hash)?.[1] ?? null,
+    use: (draft) => { location.hash = `#${CAPTURE_ROUTES[draft.kind]}=${draft.id}`; renderWaitingCaptures(); void loadRouteDraft(); },
+    discard: (draft) => void send({ type: 'draft.consume', requestId: requestId(), draftId: draft.id }),
+  });
   const acceptIncoming = (incoming) => {
     snapshot = incoming; storeProblem = '';
     enableLoadedControls();
@@ -335,6 +342,9 @@ async function initWorkspace() {
     }
     updateConflictNote();
     renderAll();
+    // A record set aside is said where the collector already is, under the coin count, with the way to it (X-03).
+    mountSetAsideLine({ document, quarantine: snapshot.quarantine, open: () => void openSettings('from-workspace?data-health') });
+    renderWaitingCaptures();
     // The banner belongs to the editors that still exist; losing typed input is said out loud.
     if (clearedInput) announce(COIN_REMOVED_NOTICE, true);
     return clearedInput;
@@ -1169,7 +1179,9 @@ async function initWorkspace() {
     void send({ type: 'lot.delete', requestId: deleteRequestId, lotId: basis.id, expectedRevision: basis.revision }, 'lot')
       .then((reply) => {
         removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply);
-        if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
+        // Past the storage bound the store keeps no copy to put back (X-01), so no Undo is offered.
+        if (reply?.ok && reply.value?.undoAvailable === false) announce(`Removed “${basis.record.title}”. Undo is not available while your records fill the storage.`);
+        else if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
       });
   });
   // "Removed · Undo" on the page for ten seconds: Undo asks the store to put back the very coin that delete removed.
@@ -2208,8 +2220,17 @@ async function initWorkspace() {
     catch { initialized = null; }
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
-      else if (!initialized.ok) { storeProblem = initialized.message || 'Stored data could not be read.'; renderAll(); announce(initialized.message, true); }
+      else if (!initialized.ok) {
+        storeProblem = initialized.message || 'Stored data could not be read.';
+        renderAll();
+        // Records nothing can read get the recovery notice at the top of the page (X-02), an alert of its own, and no
+        // floating banner over it with the validator's sentence.
+        if (initialized.reason === 'unreadable') mountRecovery({ document, bridge, reply: initialized });
+        else announce(initialized.message, true);
+      }
       else acceptIncoming(initialized.value);
+      // A capture the background could not save says why, once, here (X-15).
+      void mountCaptureFailure({ document, session: (globalThis.browser ?? globalThis.chrome)?.storage?.session, open: () => void openSettings('from-workspace') });
       await loadRouteDraft();
       // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.
       const namedLot = /[?&]lot=([\w-]+)/.exec(location.hash)?.[1];

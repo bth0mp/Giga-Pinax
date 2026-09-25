@@ -195,6 +195,30 @@ function entryLine(entry) {
   return `${parts.join(' ')} (${entry.version})`;
 }
 
+// Each kind of failure as Settings says it on the page (X-16).
+const CODE_WORDS = Object.freeze({
+  http: 'HTTP error', network: 'could not connect', timeout: 'timed out', aborted: 'cancelled', 'too-large': 'reply too large',
+  parse: 'unreadable reply', redirect: 'redirected', 'content-type': 'unexpected reply', storage: 'storage failed',
+  validation: 'refused', conflict: 'changed elsewhere', unsupported: 'not supported', duplicate: 'duplicate', 'not-saved': 'not saved',
+  'not-opened': 'window not opened', failed: 'failed', other: 'failed',
+});
+const PAGE_WORDS = Object.freeze({ popup: 'popup', workspace: 'workspace', settings: 'Settings', background: 'background', other: 'other page' });
+
+/**
+ * The last few failures as lines for the page, newest first (X-16): when, on which page, in which part, what kind.
+ * @param {*} entries
+ * @param {{ count?: number, timeZone?: string, locale?: string }} [options]
+ * @returns {string[]}
+ */
+export function recentDiagnosticLines(entries, { count = 5, timeZone, locale = 'en-GB' } = {}) {
+  const kept = /** @type {DiagnosticEntry[]} */ ((Array.isArray(entries) ? entries : []).map(storedEntry).filter(Boolean));
+  const when = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) });
+  return kept.slice(-count).reverse().map((entry) => [
+    when.format(new Date(entry.at)), PAGE_WORDS[entry.page] ?? entry.page, AREA_NAMES[entry.area] ?? entry.area,
+    `${CODE_WORDS[entry.code] ?? entry.code}${entry.status !== undefined ? ` ${entry.status}` : ''}`,
+  ].join(' · '));
+}
+
 /**
  * @param {*} entries
  * @param {{ version?: *, now?: * }} [stamp]

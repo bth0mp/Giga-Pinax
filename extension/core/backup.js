@@ -1,9 +1,12 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot, quarantineEntryId,
-  unusableRevisions, validateSnapshot,
+  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, UNREADABLE_LIST, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
+
+// How much of the bound a store takes, as Settings says it (K-13).
+export { RECORDS_LIMIT_TEXT, megabytesText };
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 /**
@@ -640,6 +643,31 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
   };
 }
 
+// A Replace import over records nothing can read (X-02): there is nothing local to count or merge with, so the preview is
+// of the backup alone, as the store runs it over an empty root.
+/**
+ * @param {Snapshot} incoming
+ * @param {string} [now]
+ * @returns {Result<ImportPreview>}
+ */
+export function previewReplaceOverUnreadable(incoming, now = new Date().toISOString()) {
+  return previewImport(createEmptySnapshot(now), incoming, 'replace');
+}
+
+// A merge that would write nothing says so, rather than a row of zeros and a Confirm that changes nothing (X-13).
+/**
+ * @param {ImportPreview} preview
+ * @returns {string} empty when the merge would change something
+ */
+export function importNothingText(preview) {
+  const tally = preview?.counts;
+  if (preview?.mode !== 'merge' || !tally || tally.added || tally.updated || tally.quarantine) return '';
+  const differs = (preview.keptLocal?.length ?? 0) + (preview.conflicts?.length ?? 0) + (preview.duplicates?.length ?? 0);
+  return differs
+    ? 'Nothing to import: every record in this backup is already here, and your own copies are kept.'
+    : 'Nothing to import: every record in this backup is already here, unchanged.';
+}
+
 /**
  * @param {ImportPreview} preview
  * @returns {string}
@@ -773,14 +801,170 @@ export function quarantineSummaryText(entries) {
   return parts.length ? parts.join(' ') : 'Some links were cleared while repairing local data.';
 }
 
+// What a set-aside record is, as the collector calls it (X-03).
+const RECORD_NOUNS = {
+  lots: ['coin', 'coins'], auctionEvents: ['auction', 'auctions'], alternativeGroups: ['group', 'groups'],
+  evidence: ['comparable', 'comparables'], collectionEntries: ['collection entry', 'collection entries'],
+  alerts: ['reminder', 'reminders'], wants: ['want', 'wants'],
+};
+const recordNoun = (collection, count = 1) => (RECORD_NOUNS[collection] ?? ['record', 'records'])[count === 1 ? 0 : 1];
+// A field as the collector knows it, by the name the record keeps it under.
+const FIELD_WORDS = {
+  id: 'ID', revision: 'revision', dataClass: 'record kind', createdAt: 'creation time', updatedAt: 'last-change time',
+  title: 'title', name: 'name', reference: 'reference', lotNumber: 'lot number', notes: 'notes', sourceLinks: 'links',
+  bidHistory: 'bid history', outcome: 'outcome', outcomeHistory: 'outcome history', auctionEventId: 'auction link',
+  alternativeGroupId: 'group link', collectionEntryId: 'collection link', priority: 'place in its group',
+  plannedBid: 'planned bid', activeBid: 'active bid', auctionContext: 'auction details', coinDetails: 'coin details',
+  provenanceNotes: 'provenance', costEstimate: 'cost estimate', eventKind: 'kind of sale', precision: 'time precision',
+  localDate: 'date', localTime: 'time', timeZone: 'time zone', reminderScope: 'reminder setting', reminders: 'reminders',
+  lotId: 'coin link', acquisitionDate: 'acquisition date', hammer: 'hammer', actualInvoice: 'invoice paid',
+  maxPrice: 'maximum price', minGrade: 'lowest grade', observations: 'sales',
+};
+const fieldWords = (field) => FIELD_WORDS[field] ?? String(field).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+// What a validator said, in plain words: never its own sentence, which names shapes rather than what is wrong.
+function plainProblem(message, value) {
+  const text = String(message ?? '');
+  let match = /^Expected a string of at most (\d+) characters\.$/.exec(text);
+  if (match) return typeof value === 'string' && !value.trim() ? 'is empty' : `is not text of up to ${match[1]} characters`;
+  match = /^Expected an array with at most (\d+) entries\.$/.exec(text);
+  if (match) return `is not a list of up to ${match[1]}`;
+  if (/^Expected an integer/.test(text)) return 'is not a whole number in range';
+  if (/UUID/.test(text)) return 'is not a valid link';
+  if (/timestamp/i.test(text)) return 'is not a valid date and time';
+  if (/date/i.test(text)) return 'is not a real date';
+  if (/URL/.test(text)) return 'is not a web address';
+  if (/object/i.test(text)) return 'is not in the right shape';
+  if (/allowed set/.test(text)) return 'holds a value Giga Pinax does not know';
+  return 'is not valid';
+}
+// A field and what is wrong with it, as one phrase: "title is empty", "notes are not text of up to 5000 characters".
+const fieldProblem = (field, message, value) => {
+  const words = fieldWords(field);
+  const plain = plainProblem(message, value);
+  return `${words} ${/s$/.test(words) ? plain.replace(/^is /, 'are ') : plain}`;
+};
+// The record's own top-level field a validator's path names: `lots.sourceLinks[0].url` is the coin's links.
+const topField = (collection, path) => {
+  const rest = String(path ?? '').startsWith(`${collection}.`) ? String(path).slice(collection.length + 1) : '';
+  return /^[A-Za-z]+/.exec(rest)?.[0] ?? null;
+};
+const RECORD_REASONS = {
+  'foreign-key': 'the record it belongs with is missing',
+  'duplicate-id': 'another record has the same ID',
+  'collection-limit': 'its list was over its limit',
+};
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Fields a correction may never touch: what names the record and what counts its writes are the store's own.
+export const OWN_RECORD_FIELDS = Object.freeze(['id', 'revision', 'dataClass', 'createdAt', 'updatedAt']);
+// Values that stand in for a bad field while the rest of the record is judged, so each field wrong on its own is found.
+const STAND_INS = [undefined, 'x', [], {}, 0, false];
+
+/**
+ * Every top-level field of a record that is wrong on its own, in the order the validator reaches them (review Important
+ * 2): each with what is wrong in plain words, whether the record can go without it, and its value as text to correct.
+ * A record the validator refuses as a whole, rather than for one field, gives one entry with no field.
+ * @param {string} collection
+ * @param {*} record
+ * @returns {Array<{ field: string | null, fieldLabel: string, problem: string, clearable: boolean, editable: boolean, current: string }>}
+ */
+export function recordProblems(collection, record) {
+  const problems = [];
+  if (!isObject(record)) return [{ field: null, fieldLabel: '', problem: 'it is not in a shape Giga Pinax can read', clearable: false, editable: false, current: '' }];
+  let working = { ...record };
+  for (let round = 0; round < 40; round += 1) {
+    const checked = validateQuarantinedRecord(collection, working);
+    if (checked.ok) break;
+    const field = topField(collection, checked.error.path);
+    if (!field || problems.some((problem) => problem.field === field)) {
+      if (!problems.length) problems.push({ field: null, fieldLabel: '', problem: 'it is not in a shape Giga Pinax can read', clearable: false, editable: false, current: '' });
+      break;
+    }
+    const value = record[field];
+    let clearable = false;
+    let next = null;
+    for (const standIn of STAND_INS) {
+      const trial = { ...working };
+      if (standIn === undefined) delete trial[field];
+      else trial[field] = standIn;
+      const again = validateQuarantinedRecord(collection, trial);
+      if (again.ok || topField(collection, again.error.path) !== field) {
+        clearable = standIn === undefined;
+        next = trial;
+        break;
+      }
+    }
+    const editable = !OWN_RECORD_FIELDS.includes(field) &&
+      (value === undefined || value === null || ['string', 'number', 'boolean'].includes(typeof value));
+    problems.push({
+      field, fieldLabel: fieldWords(field), problem: fieldProblem(field, checked.error.message, value),
+      clearable: clearable && !OWN_RECORD_FIELDS.includes(field), editable,
+      current: editable && value !== undefined && value !== null ? String(value) : '',
+    });
+    if (!next) break;
+    working = next;
+  }
+  return problems;
+}
+
+/**
+ * What is wrong with a set-aside entry, in plain words, and what can be done about it (X-03): every field that stops it,
+ * each with whether the record goes back without it and its value as text where it has one to correct.
+ * @param {*} entry
+ * @returns {{ noun: string, label: string, problem: string, valid: boolean, problems: ReturnType<typeof recordProblems> }}
+ */
+export function quarantineProblem(entry) {
+  const collection = entry?.collection;
+  const record = entry?.record;
+  const noun = recordNoun(collection);
+  const label = isObject(record) ? (['title', 'name', 'reference']
+    .map((key) => record[key]).find((value) => typeof value === 'string' && value.trim()) ?? '') : '';
+  const checked = isRestorableCollection(collection) && record !== null && record !== undefined
+    ? validateQuarantinedRecord(collection, record) : null;
+  if (!checked || checked.ok) {
+    return { noun, label, problem: RECORD_REASONS[entry?.reason] ?? 'it could not be read', valid: Boolean(checked?.ok), problems: [] };
+  }
+  const problems = recordProblems(collection, record);
+  return { noun, label, problem: problems.map(({ problem }) => problem).join('; '), valid: false, problems };
+}
+
+/**
+ * A record that cannot go back as it is, in plain words: every field that is wrong, and what is wrong with each.
+ * @param {string} collection
+ * @param {*} record
+ * @returns {string}
+ */
+export function restoreRefusalText(collection, record) {
+  const problems = recordProblems(collection, record);
+  const noun = recordNoun(collection);
+  if (!problems.length || problems[0].field === null) return `This ${noun} cannot go back as it is: it is not in a shape Giga Pinax can read.`;
+  const phrases = problems.map(({ problem }) => `its ${problem}`);
+  const listed = phrases.length === 1 ? phrases[0] : `${phrases.slice(0, -1).join(', ')}, and ${phrases.at(-1)}`;
+  return `This ${noun} cannot go back as it is: ${listed}. Correct ${problems.length === 1 ? 'it' : 'them'} or remove it under Set-aside records.`;
+}
+
+// A list the repair set aside whole (review Minor 5).
+const isWholeList = (entry) => entry?.reason === UNREADABLE_LIST && isRestorableCollection(entry?.collection);
+
 function quarantineLine(entry) {
   const cleared = entry.clearedReferences?.length ?? 0;
   const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
-  const presets = presetCount(entry);
-  const name = isSetAsideSettings(entry)
-    ? `settings with ${presets ? presetsText(presets) : 'no house presets'}`
-    : entry.collection;
-  return `${name}: ${entry.reason} (${String(entry.quarantinedAt).slice(0, 10)})${links}`;
+  const date = String(entry.quarantinedAt).slice(0, 10);
+  if (isSetAsideSettings(entry)) {
+    const presets = presetCount(entry);
+    return `settings with ${presets ? presetsText(presets) : 'no house presets'}: ${entry.reason} (${date})${links}`;
+  }
+  if (entry?.collection === 'quarantine') return `An entry of this list that could not be read (set aside ${date})`;
+  if (isWholeList(entry)) return `The ${recordNoun(entry.collection)} list could not be read (set aside ${date})${links}`;
+  if (entry?.record === null || entry?.record === undefined) {
+    return `A missing ${recordNoun(entry?.collection)} other records pointed to (set aside ${date})${links}`;
+  }
+  const { noun, label, problem } = quarantineProblem(entry);
+  const named = label ? ` “${label}”` : '';
+  return `${noun[0].toUpperCase()}${noun.slice(1)}${named}: ${problem} (set aside ${date})${links}`;
 }
 
 /**
@@ -791,20 +975,46 @@ export function quarantineLines(entries) {
   return (Array.isArray(entries) ? entries : []).map(quarantineLine);
 }
 
-// One row per set-aside entry as the page draws it: the line to read, the identifier a restore names,
-// and whether the entry holds a record to put back at all. An entry with no record of its own exists
-// only to carry links the repair cleared, and there is nothing in it to restore; nor is there in one
+// One row per set-aside entry as the page draws it: the line to read, the identifier a restore names, whether the entry
+// holds a record to put back at all, and what can be done about the field that stops it (X-03). An entry with no record
+// of its own exists only to carry links the repair cleared, and there is nothing in it to restore; nor is there in one
 // set aside from somewhere no record goes back to, such as the settings.
 /**
  * @param {*} entries
- * @returns {Array<{ id: string, line: string, restorable: boolean }>}
+ * @returns {Array<{ id: string, line: string, restorable: boolean, problem: ReturnType<typeof quarantineProblem> | null }>}
  */
 export function quarantineRows(entries) {
-  return (Array.isArray(entries) ? entries : []).map((entry) => ({
-    id: quarantineEntryId(entry),
-    line: quarantineLine(entry),
-    restorable: entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection),
-  }));
+  return (Array.isArray(entries) ? entries : []).map((entry) => {
+    // A list set aside whole is no record to put back, but the collector can still take it out of the bin.
+    const list = isWholeList(entry);
+    const restorable = !list && entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection);
+    return {
+      id: quarantineEntryId(entry), line: quarantineLine(entry), restorable, removable: restorable || list,
+      noun: list ? `${recordNoun(entry.collection)} list` : recordNoun(entry?.collection), problem: restorable ? quarantineProblem(entry) : null,
+    };
+  });
+}
+
+/**
+ * The line a page shows where the collector already is while records are set aside: "1 coin set aside" (X-03).
+ * @param {*} entries
+ * @returns {string} empty while nothing is
+ */
+export function setAsideCountText(entries) {
+  const all = Array.isArray(entries) ? entries : [];
+  const lists = all.filter(isWholeList);
+  const records = all.filter((entry) => !isWholeList(entry) &&
+    entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection));
+  const count = records.length + lists.length;
+  if (!count) return '';
+  if (!records.length) {
+    const collections = new Set(lists.map(({ collection }) => collection));
+    return count === 1 ? `1 ${recordNoun(lists[0].collection)} list set aside`
+      : `${count} ${collections.size === 1 ? `${recordNoun([...collections][0])} lists` : 'lists'} set aside`;
+  }
+  const collections = new Set(records.map(({ collection }) => collection));
+  const noun = !lists.length && collections.size === 1 ? recordNoun([...collections][0], count) : (count === 1 ? 'record' : 'records');
+  return `${count} ${noun} set aside`;
 }
 
 // What the store answered a restore with, as a sentence: what went back, and what was left alone.
@@ -814,6 +1024,13 @@ export function quarantineRows(entries) {
  */
 export function quarantineRestoreText(value) {
   if (!value || typeof value !== 'object') return 'The record was put back.';
+  // Corrections kept in the bin while another field is still wrong (review Important 2).
+  if (value.restored === false) {
+    const fields = (value.corrected ?? []).map((field) => `the ${fieldWords(field)}`);
+    const named = fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)}` : fields[0] ?? 'the record';
+    return `Your correction${fields.length === 1 ? '' : 's'} to ${named} ${fields.length === 1 ? 'was' : 'were'} kept. ` +
+      `Still to correct: ${(value.remaining ?? []).join('; ')}.`;
+  }
   const restored = value.restoredReferences?.length ?? 0;
   const kept = value.keptReferences ?? [];
   const parts = [`The record was put back into ${value.collection}.`];

@@ -1,10 +1,11 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText,
-  importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineRestoreText,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importNothingText, megabytesText, RECORDS_LIMIT_TEXT,
+  importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
+import { isUnreadable, mountRecovery } from './store-recovery.js';
 import { CSV_TABLES, csvFiles } from './core/csv.js';
-import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
+import { clearDiagnostics, diagnosticsText, readDiagnostics, recentDiagnosticLines } from './core/diagnostics.js';
 import { CURRENCIES, parsePercent } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePresets, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
@@ -232,11 +233,11 @@ const PRESET_FIELD_CLASS = {
 
 // Putting a record back is a command like any other: the store decides whether it can go back, and
 // the page says what the reply says and reads the list again.
-async function restoreSetAside(entryId, button) {
+async function restoreSetAside(entryId, button, edits) {
   button.disabled = true;
   try {
     const reply = await bridge.sendCommand({
-      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId,
+      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId, ...(edits ? { edits } : {}),
     });
     if (!reply?.ok) {
       throw new Error(reply?.message || reply?.error?.message || 'That record could not be put back.');
@@ -252,25 +253,89 @@ async function restoreSetAside(entryId, button) {
   }
 }
 
+// Taking a set-aside record out of the list for good (X-03), once the collector has said so knowing the download exists.
+async function removeSetAside(row, button) {
+  const { noun, label } = row.problem ?? { noun: row.noun, label: '' };
+  const named = label ? ` “${label}”` : '';
+  if (!confirm(`Remove this ${noun}${named} for good? Download set-aside records first if you may want it later.`)) return;
+  button.disabled = true;
+  try {
+    const reply = await bridge.sendCommand({ type: 'quarantine.remove', requestId: bridge.newRequestId(), entryId: row.id });
+    if (!reply?.ok) throw new Error(reply?.message || 'That record could not be removed.');
+    status(`The ${noun}${named} was removed from the set-aside records.`);
+    await refreshDataHealth().catch((error) => status(`The ${noun} was removed. The list could not be read again: ${error.message}`, true));
+  } catch (error) {
+    button.disabled = false;
+    status(error.message || 'That record could not be removed.', true);
+  }
+}
+
 let quarantineRowSequence = 0;
 
-// Untrusted text from a repaired record, so the line is written as text and never as markup.
+// Untrusted text from a repaired record, so the line is written as text and never as markup. A record that does not
+// validate is offered its one field to correct, or to go back without it where that field is optional (X-03).
 function quarantineItem(row) {
   const item = document.createElement('li');
   const line = document.createElement('span');
   line.textContent = row.line;
   item.append(line);
-  if (!row.restorable) return item;
+  if (!row.removable) return item;
   quarantineRowSequence += 1;
   line.id = `quarantine-line-${quarantineRowSequence}`;
-  const restore = document.createElement('button');
-  restore.type = 'button';
-  restore.className = 'quiet';
-  restore.textContent = 'Restore';
-  // Every row carries a button of this name, so the line beside it is what tells them apart.
-  restore.setAttribute('aria-describedby', line.id);
+  const control = (text, kind = 'quiet') => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = kind;
+    button.textContent = text;
+    // Every row carries buttons of these names, so the line beside them is what tells them apart.
+    button.setAttribute('aria-describedby', line.id);
+    return button;
+  };
+  const remove = control('Remove');
+  remove.addEventListener('click', () => { void removeSetAside(row, remove); });
+  // A list set aside whole has nothing to put back or correct; it can only be removed (review Minor 5).
+  if (!row.restorable) {
+    item.append(' ', remove);
+    return item;
+  }
+  const restore = control('Restore');
   restore.addEventListener('click', () => { void restoreSetAside(row.id, restore); });
-  item.append(' ', restore);
+  item.append(' ', restore, ' ', remove);
+  // Every field that stops it is offered at once, and one button sends every correction together (review Important 2).
+  const fixable = (row.problem?.problems ?? []).filter(({ field, editable, clearable }) => field && (editable || clearable));
+  if (!fixable.length) return item;
+  const fix = document.createElement('div');
+  fix.className = 'set-aside-fix';
+  const readers = [];
+  for (const { field, fieldLabel, editable, clearable, current } of fixable) {
+    let input = null;
+    let leaveOut = null;
+    if (editable) {
+      const label = document.createElement('label');
+      const caption = document.createElement('span');
+      caption.textContent = `Correct the ${fieldLabel}`;
+      input = document.createElement('input');
+      input.className = 'set-aside-value';
+      input.value = current;
+      label.append(caption, input);
+      fix.append(label);
+    }
+    if (clearable) {
+      const label = document.createElement('label');
+      leaveOut = document.createElement('input');
+      leaveOut.type = 'checkbox';
+      leaveOut.className = 'set-aside-leave-out';
+      const caption = document.createElement('span');
+      caption.textContent = `Leave out the ${fieldLabel}`;
+      label.append(leaveOut, caption);
+      fix.append(label);
+    }
+    readers.push(() => ({ field, value: leaveOut?.checked || !input ? null : input.value }));
+  }
+  const put = control(`Put back with ${fixable.length === 1 ? 'this correction' : 'these corrections'}`, 'secondary');
+  put.addEventListener('click', () => { void restoreSetAside(row.id, put, readers.map((read) => read())); });
+  fix.append(put);
+  item.append(fix);
   return item;
 }
 
@@ -316,6 +381,29 @@ function formState({ theme = $('theme').value, specimenPhotos = $('specimen-phot
 const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency && (a.importVatBps ?? null) === (b.importVatBps ?? null) &&
   JSON.stringify(a.housePremiumPresets ?? []) === JSON.stringify(b.housePremiumPresets ?? []);
 
+// How full the store is (K-13, X-09): "1.6 MB of 4.9 MB used" over a thin meter, and from 80% the way to make room.
+const STORAGE_WARN_SHARE = 0.8;
+async function refreshStorageUsage() {
+  let reply = null;
+  try { reply = await bridge.sendCommand({ type: 'storage.usage', requestId: bridge.newRequestId() }); } catch { /* the gauge stays hidden */ }
+  const { bytes, limit } = reply?.ok && reply.value ? reply.value : {};
+  if (!Number.isFinite(bytes) || !Number.isFinite(limit) || limit <= 0) {
+    $('storage-gauge').hidden = true;
+    return;
+  }
+  $('storage-gauge').hidden = false;
+  $('storage-used').textContent = `${megabytesText(bytes)} of ${RECORDS_LIMIT_TEXT} used`;
+  const meter = $('storage-meter');
+  meter.setAttribute('max', String(limit));
+  meter.setAttribute('high', String(Math.round(limit * STORAGE_WARN_SHARE)));
+  meter.setAttribute('value', String(Math.min(bytes, limit)));
+  const warning = $('storage-warning');
+  warning.hidden = bytes < limit * STORAGE_WARN_SHARE;
+  warning.textContent = bytes > limit
+    ? 'Your records fill the 4.9 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or auctions you no longer need.'
+    : 'Your records are filling the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.';
+}
+
 // Data health read again on its own. The revision the page saves against follows the store only
 // while the store still holds the settings this page drew: presets another view saved since are not
 // overwritten by a page that never showed them, and that save is refused as a conflict instead.
@@ -323,6 +411,7 @@ async function refreshDataHealth() {
   const latest = await bridge.getSnapshot();
   if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
   renderDataHealth(latest.value.quarantine);
+  void refreshStorageUsage();
   if (sameSettings(latest.value.preferences, preferencesSnapshot?.preferences)) {
     preferencesSnapshot.preferences = latest.value.preferences;
   }
@@ -363,11 +452,28 @@ function collectPresets() {
   return { ok: true, value: values };
 }
 
+// Records nothing can read (X-02): the notice at the top of the page offers the rescue copy and a fresh start, and the
+// import form below takes a backup with Replace. Once either has worked the page loads again and the notice goes.
+const UNREADABLE_NOTE = 'Your records can’t be read. The notice at the top of this page has the ways out.';
+function showRecovery(reply) {
+  mountRecovery({
+    document, bridge, reply, download, confirm: (message) => confirm(message), importHint: 'below',
+    reload: () => { void load().then(() => status('Started fresh. Your settings are new; import a backup to bring your records back.')).catch((error) => status(error.message, true)); },
+  });
+}
+// What a page read that failed says: the recovery notice for records nothing can read, the store's own words otherwise.
+function readFailure(reply, fallback) {
+  if (isUnreadable(reply)) return new Error(UNREADABLE_NOTE);
+  return new Error(reply?.message || fallback);
+}
+
 async function load() {
   const reply = await initializeCompanionPreferences(bridge, siteStorage());
   if (!reply?.ok || !reply.value?.preferences) {
-    throw new Error(reply?.message || 'Could not load settings.');
+    if (isUnreadable(reply)) showRecovery(reply);
+    throw readFailure(reply, 'Could not load settings.');
   }
+  document.getElementById('store-recovery')?.remove();
   preferencesSnapshot = reply.value;
   behindStore = false;
   // Settings and the research popup share this origin's local storage, and the popup prices from the cache before the
@@ -375,6 +481,7 @@ async function load() {
   cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
   render();
   renderDataHealth(preferencesSnapshot.quarantine);
+  void refreshStorageUsage();
   // Drawing the saved rows replaces the list, so the editors wait for it (the markup starts them disabled): a house
   // added before the worker answered would otherwise be wiped by this render.
   for (const id of ['save-settings', 'currency', 'import-vat', 'add-premium', 'copy-presets', 'paste-presets']) $(id).disabled = false;
@@ -577,7 +684,7 @@ $('save-settings').addEventListener('click', async () => {
 $('export-backup').addEventListener('click', async () => {
   try {
     const latest = await bridge.getSnapshot();
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+    if (!latest?.ok) throw readFailure(latest, 'Could not read local records.');
     const result = exportBackup(latest.value, new Date().toISOString());
     if (!result.ok) throw new Error(result.error.message);
     download(result.value, `giga-pinax-${new Date().toISOString().slice(0, 10)}.json`);
@@ -605,7 +712,7 @@ $('export-csv').addEventListener('click', async () => {
   try {
     const table = CSV_TABLES.find(({ key }) => key === $('csv-table').value) ?? CSV_TABLES[0];
     const latest = await bridge.getSnapshot();
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+    if (!latest?.ok) throw readFailure(latest, 'Could not read local records.');
     const files = csvFiles(latest.value);
     download(files[table.key], `giga-pinax-${table.key}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
     status(`${table.label} exported as CSV.`);
@@ -622,7 +729,13 @@ function manifestVersion() {
 
 function showDiagnosticsCount(entries) {
   $('diagnostics-count').textContent = entries.length === 0 ? 'No failures recorded.'
-    : `${entries.length} ${entries.length === 1 ? 'failure' : 'failures'} recorded on this device.`;
+    : `${entries.length} ${entries.length === 1 ? 'failure' : 'failures'} recorded on this device.${entries.length > 5 ? ' The latest five:' : ''}`;
+  // The latest five, newest first, so what just failed is read without copying the list (X-16).
+  $('diagnostics-recent').replaceChildren(...recentDiagnosticLines(entries).map((line) => {
+    const item = document.createElement('li');
+    item.textContent = line;
+    return item;
+  }));
 }
 
 async function refreshDiagnostics() {
@@ -690,6 +803,9 @@ $('import-form').addEventListener('submit', async (event) => {
   const generation = previewGeneration;
   const file = $('import-file').files?.[0];
   if (!file) return status('Choose a backup file.', true);
+  // A large backup takes a second or more to read and compare, so the button says it is working (K-13).
+  $('preview-import').textContent = 'Reading…';
+  $('preview-import').disabled = true;
   try {
     // Reading a file far larger than any backup into memory is what the bound is there to prevent.
     if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup exceeds the 16 MiB limit.');
@@ -699,18 +815,47 @@ $('import-form').addEventListener('submit', async (event) => {
     if (!validated.ok) throw new Error(validated.error.message);
     const latest = await bridge.getSnapshot();
     if (generation !== previewGeneration) return;
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
-    const currentSnapshot = latest.value;
-    const result = previewImport(currentSnapshot, validated.value, mode);
+    // Over records nothing can read, a backup can only replace them, counted on from the revision the rescue copy reports
+    // (X-02); the copy that goes to disk first is that rescue file.
+    const overUnreadable = isUnreadable(latest);
+    if (overUnreadable && mode !== 'replace') {
+      throw new Error('Your records can’t be read, so a backup can only replace them. Choose Replace local records, then Preview import.');
+    }
+    if (!latest?.ok && !overUnreadable) throw new Error(latest?.message || 'Could not read local records.');
+    let expectedRevision = latest.value?.revision;
+    if (overUnreadable) {
+      const raw = await bridge.sendCommand({ type: 'snapshot.raw', requestId: bridge.newRequestId() });
+      if (generation !== previewGeneration) return;
+      if (!raw?.ok) throw new Error(raw?.message || 'Could not read local storage.');
+      expectedRevision = raw.revision;
+    }
+    const result = overUnreadable ? previewReplaceOverUnreadable(validated.value) : previewImport(latest.value, validated.value, mode);
     if (!result.ok) throw new Error(result.error.message);
+    // Said before Confirm, not after it (X-13): a merge that would change nothing, and an import that would not fit.
+    // Whether it fits is the store's own answer (review Minor 3): the import run as it would be, the request ledger and
+    // the reminders its auctions schedule counted, and nothing written.
+    const nothing = importNothingText(result.value);
+    let fit = { ok: true, text: '' };
+    if (result.value.snapshot && !nothing) {
+      const checked = await bridge.sendCommand({
+        type: 'backup.check', requestId: bridge.newRequestId(), expectedRevision, mode, document: documentText,
+        ...(overUnreadable ? { overUnreadable: true } : {}),
+      });
+      if (generation !== previewGeneration) return;
+      if (!checked?.ok) throw new Error(checked?.message || 'Could not check whether this backup fits.');
+      if (checked.value?.fits === false) fit = { ok: false, text: checked.value.message };
+    }
     pendingImport = {
       generation,
       document: documentText,
       mode,
       preview: result.value,
-      expectedRevision: currentSnapshot.revision,
+      expectedRevision,
+      overUnreadable,
     };
-    $('import-counts').textContent = importCountsText(result.value);
+    $('import-counts').textContent = overUnreadable
+      ? `${importCountsText(result.value).replace(/ Replaces everything local\.$/, '')} Replaces the records that can’t be read; a copy of them downloads first.`
+      : importCountsText(result.value);
     // Untrusted text from a backup file, so every line is written as text and never as markup.
     const lines = [...importChangeLines(result.value), ...importIssueLines(result.value)];
     $('import-conflicts').replaceChildren(...lines.map((line) => {
@@ -718,14 +863,18 @@ $('import-form').addEventListener('submit', async (event) => {
       item.textContent = line;
       return item;
     }));
-    $('confirm-import').disabled = !result.value.snapshot;
+    if (nothing) $('import-counts').textContent = nothing;
+    $('confirm-import').disabled = !result.value.snapshot || Boolean(nothing) || !fit.ok;
     $('import-preview').hidden = false;
-    status('Review the import summary, then confirm.');
+    status(nothing || fit.text || 'Review the import summary, then confirm.', !nothing && !fit.ok);
   } catch (error) {
     if (generation === previewGeneration) {
       clearPreview();
       status(error.message || 'Could not preview the backup.', true);
     }
+  } finally {
+    $('preview-import').textContent = 'Preview import';
+    $('preview-import').disabled = false;
   }
 });
 
@@ -736,6 +885,7 @@ $('confirm-import').addEventListener('click', async () => {
   // Disabled before anything is downloaded or sent, so a second click cannot issue a second copy
   // and a second command.
   $('confirm-import').disabled = true;
+  $('confirm-import').textContent = 'Importing…';
   // A merge that replaces even one record overwrites a body this install never saw, so it earns
   // the same copy on disk as a replace does.
   const overwrites = pending.mode === 'replace' || pending.preview.counts.updated > 0;
@@ -745,11 +895,12 @@ $('confirm-import').addEventListener('click', async () => {
     expectedRevision: pending.expectedRevision,
     mode: pending.mode,
     document: pending.document,
+    ...(pending.overUnreadable ? { overUnreadable: true } : {}),
   });
   let copied = '';
   try {
     const result = overwrites
-      ? await importWithSafetyCopy({ exportCopy: safetyCopyFile, exportRaw: rawFile, download, confirm, send })
+      ? await importWithSafetyCopy({ exportCopy: pending.overUnreadable ? rawFile : safetyCopyFile, exportRaw: rawFile, download, confirm, send })
       : { sent: true, copied: null, reply: await send() };
     // A page cannot see a download land, so the wording claims only what it did. It is written down
     // before anything can throw, so a command that failed still reports the copy that was made.
@@ -780,6 +931,8 @@ $('confirm-import').addEventListener('click', async () => {
   } catch (error) {
     clearPreview();
     status(`${copied}${error.message || 'Could not import the backup. Preview it again.'}`, true);
+  } finally {
+    $('confirm-import').textContent = 'Confirm import';
   }
 });
 
@@ -793,7 +946,8 @@ async function closeSettingsTab() {
   } catch { /* try the page's own close */ }
   try { globalThis.close?.(); } catch { /* nothing more a page can do */ }
 }
-if ((globalThis.location?.hash ?? '') !== '#from-workspace') {
+// The workspace may name what it opened Settings for after its own mark ("#from-workspace%3Fdata-health").
+if (!/^#from-workspace/.test(globalThis.location?.hash ?? '')) {
   $('settings-return').textContent = 'Close';
   $('settings-return').addEventListener('click', (event) => { event.preventDefault(); void closeSettingsTab(); });
 }
