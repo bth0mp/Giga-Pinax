@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-25
+
 ### Added
 
 - The Want list is a hunting board: each want says since when it is wanted, lists the coins of its type on your watchlist as rows with their bid, sale and status, each opening its coin, and offers **Look up ↗** (the popup's card and prices) and **Search acsearch ↗** for the type. Saving a coin's outcome as **Won** for a wanted type offers **Mark found on your want list** in the outcome's own line. Grades are written one way: `VF · Very Fine` in the form's list and `VF or better` on the card and the badge (`F or better`, where Fine was spelled out before).
@@ -534,7 +536,8 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
-[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.39.0
 [0.38.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.38.0
 [0.37.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.37.0
 [0.36.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.36.0
