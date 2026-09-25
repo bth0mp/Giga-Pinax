@@ -1435,3 +1435,44 @@ test('Settings opened from the popup offers Close, and from the workspace the wa
   assert.equal(fromWorkspace.element('settings-return').textContent, 'Return to workspace');
   assert.equal(fromWorkspace.element('settings-return').getAttribute('href'), 'workspace.html#watchlist');
 });
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+test('the default bid currency offers every currency, and one prices are not researched in leaves the popup’s own', async () => {
+  const stored = new Map();
+  const page = await openSettings({
+    stored,
+    reply: (command) => ({ ok: true, value: preferences({ revision: 4, currency: command.preferences.currency }) }),
+  });
+  const options = page.element('currency').querySelectorAll('option').map((option) => option.value);
+  assert.deepEqual(options, [...money.CURRENCIES]);
+  page.element('currency').value = 'SEK';
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.commands[0].preferences.currency, 'SEK');
+  assert.equal(JSON.parse(stored.get(GIGA_PREFERENCES_KEY)).currency, 'USD', 'the research popup keeps pricing in USD');
+  assert.equal(page.status(), 'Settings saved.');
+  // Each house's ladder currency offers them too.
+  await page.element('add-premium').click();
+  const ladderCurrency = page.document.querySelector('.premium-ladder-currency');
+  assert.deepEqual(ladderCurrency.querySelectorAll('option').map((option) => option.value), [...money.CURRENCIES]);
+});
+
+test('a yen ladder is drawn in whole yen and saves unchanged in every locale', async () => {
+  const saved = { name: 'Taisei', buyerPremiumBps: 1500, incrementLadder: { currency: 'JPY', tiers: [{ from: 0, step: 1000 }, { from: 100000, step: 5000 }] } };
+  for (const language of ['ar-EG', 'de-DE', 'ja-JP', 'en-US']) {
+    const page = await openSettings({
+      language,
+      snapshot: snapshotWith({ preferences: preferences({ currency: 'JPY', housePremiumPresets: [saved] }) }),
+      reply: () => ({ ok: true, value: preferences({ revision: 4, currency: 'JPY', housePremiumPresets: [saved] }) }),
+    });
+    assert.equal(page.element('currency').value, 'JPY', language);
+    const row = page.document.querySelector('.premium-row');
+    assert.equal(row.querySelector('.premium-ladder').value, '0: 1000\n100000: 5000', language);
+    assert.equal(row.querySelector('.premium-ladder-currency').value, 'JPY');
+    await page.element('save-settings').click();
+    assert.equal(page.commands.length, 1, language);
+    assert.deepEqual(page.commands[0].preferences.housePremiumPresets, [saved], language);
+    assert.equal(page.commands[0].preferences.currency, 'JPY');
+  }
+});
