@@ -1832,3 +1832,13 @@ test('every amount in the workspace is written in the collector’s language, wi
     assert.ok(text.includes(`Total cost ${said({ currency, minor: minor * 1.2 })} (hammer + premium)`), `${language} Compare total cost`);
   }
 });
+
+// H-06: the heading a route greets the collector with is the word they pressed in the nav.
+test('every route is headed by its nav word', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground() });
+  for (const link of page.document.querySelector('.workspace-nav').querySelectorAll('[data-route]')) {
+    const heading = page.$(`route-${link.dataset.route}`).querySelector('h2');
+    assert.equal(heading.textContent, link.textContent, link.dataset.route);
+  }
+  assert.deepEqual(page.document.querySelectorAll('.section-heading').filter((heading) => heading.querySelector('p')), [], 'no intro line sits in a heading to be cut');
+});

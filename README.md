@@ -4,7 +4,7 @@
 
 Giga Pinax is a Brave, Chrome and Firefox extension for researching ancient coin references and what they sell for. Type a catalogue reference or paste a whole lot description, and it resolves the type, fetches recent hammer prices — from acsearch using your own signed-in session, and from CoinArchives' public results using no session at all — works out what a bid really costs, and keeps the result in a local watchlist beside your own notes, photos and provenance. It has no account, no analytics and no server of its own, and it never places, changes or cancels a bid.
 
-![The Giga Pinax auction workspace, showing the workflow queue beside a selected coin](docs/store/assets/01-workspace-1280x800.png)
+![The Giga Pinax workspace, showing the Watchlist queue beside a selected coin](docs/store/assets/01-workspace-1280x800.png)
 
 ## What it does
 
