@@ -65,3 +65,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .coin-row-wrap:hover .compare-box,.compare-box:focus-visible,.comparing .compare-box{opacity:1}
 .coin-row-wrap:has(.compare-box:checked) .coin-row{box-shadow:inset 3px 0 0 var(--accent);background:var(--accent-soft)}
 @media(hover:none){.compare-box{opacity:1}}
+/* The sticky action bars read as bars: the hairline they had, and a shadow above them (G-10's workspace part). */
+.action-bar{box-shadow:0 -8px 16px -14px color-mix(in srgb,var(--ink) 55%,transparent)}

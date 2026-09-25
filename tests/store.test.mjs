@@ -2470,3 +2470,21 @@ test('lot.restore puts back the coin a delete removed, from the ledger, and only
   assert.equal(Object.hasOwn(alone, 'alternativeGroupId'), false);
   assert.equal(Object.hasOwn(alone, 'priority'), false);
 });
+
+// Q-01: the Outcome form's terms reach the store through lot.outcome.set on a lot with no bid, and the store works the
+// cost out from them; a cost the caller sends beside them is never read.
+test('a won coin with no bid is costed by the store from the outcome terms it is sent', () => {
+  const saved = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Floor bid', sourceLinks: [] } }));
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 };
+  const won = reduce(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0,
+    outcome: { status: 'won', hammer: { currency: 'EUR', minor: 90000 }, terms: { buyerPremiumBps: 2000, costEstimate: fees }, cost: { total: { currency: 'EUR', minor: 1 } } },
+  }));
+  assert.equal(won.value.outcome.cost.total.minor, 90000 + 18000 + 3420 + 1500);
+  assert.deepEqual(won.value.outcome.terms, { buyerPremiumBps: 2000, costEstimate: fees });
+  const refused = applyCommand(saved.snapshot, command('lot.outcome.set', {
+    lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'lost', hammer: { currency: 'EUR', minor: 90000 }, terms: { buyerPremiumBps: 2000 } },
+  }), context());
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'outcome.terms');
+});
