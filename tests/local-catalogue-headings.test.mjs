@@ -51,10 +51,15 @@ test('over the bundled catalogue, a spelling nobody is named outright still open
 test('over the bundled catalogue, a Spanish heading opens what the English name opens', { skip }, async () => {
   for (const [spanish, english] of [['AUGUSTO', 'Augustus'], ['TIBERIO', 'Tiberius'], ['CLAUDIO', 'Claudius'], ['TITO', 'Titus'], ['DOMICIANO', 'Domitian'],
     ['ANTONINO PÍO', 'Antoninus Pius'], ['MARCO AURELIO', 'Marcus Aurelius'], ['CÓMODO', 'Commodus'], ['SEPTIMIO SEVERO', 'Septimius Severus'],
-    ['JULIANO II', 'Julian II']]) {
+    ['JULIANO II', 'Julian II'],
+    // Loop S1 review, Important 2 and Minor 4: the epithets and full names, each against the English heading of the same man.
+    ['CLAUDIO GÓTICO', 'Claudius Gothicus'], ['Claudio il Gotico', 'Claudius Gothicus'], ['CLAUDIO II', 'Claudius Gothicus'],
+    ['JULIANO EL APÓSTATA', 'Julian II'], ['FILIPO EL ÁRABE', 'Philip the Arab'], ['MAXIMINO EL TRACIO', 'Maximinus Thrax'],
+    ['CONSTANTINO EL GRANDE', 'Constantine I'], ['TEODOSIO EL GRANDE', 'Theodosius I'], ['MARCO AURELIO PROBO', 'Probus'],
+    ['Marco Aurelio Caro', 'Carus'], ['Marco Aurelio Numeriano', 'Numerian'], ['MARCO AURELIO CARINO', 'Carinus']]) {
     const opened = (await openedOver(spanish)).map(({ card }) => card.id);
     assert.deepEqual(opened, (await openedOver(english)).map(({ card }) => card.id), spanish);
-    assert.ok(opened.length > 0 || spanish === 'JULIANO II', spanish);
+    assert.ok(opened.length > 0 || /^(?:JULIANO|CONSTANTINO|TEODOSIO)/.test(spanish), spanish);
   }
   // Soler y Llach's own lot: Augustus's denarius, not the Lugdunum 207 of RIC VI–VIII.
   const soler = await answer(lotReference('AUGUSTO. Denario. (Ar. 3,73g/19mm). 2 a.C.-4 d.C. Lugdunum. (RIC 207; RSC 43). Anv: Cabeza laureada de Augusto a derecha.'));

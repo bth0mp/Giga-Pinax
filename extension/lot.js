@@ -382,8 +382,12 @@ for (const name of sectionPeople) {
 // "Jovian" is also an English adjective, so before a lower-case word ("Jovian eagle") it is that adjective, even where it opens a sentence.
 const EXTRA = new Set(EXTRA_SPELLINGS.map(([label]) => label));
 const ADJECTIVES = new Set(['jovian']);
+// "Marco Aurelio" opens the full names of Probus, Carus, Numerian and Carinus, and of Caracalla and Elagabalus ("Marco Aurelio Antonino"): with a
+// further name of three letters or more behind it, it is whoever that is, and a name the table does not hold is nobody rather than Marcus Aurelius.
+const NAME_OPENS = new Set(['marco aurelio']);
 const namePattern = (label) => (EXTRA.has(label) && !fromSection.has(label)
-  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}` : anyCase(label));
+  ? `${label[0].toUpperCase()}${anyCase(label.slice(1))}${ADJECTIVES.has(label) ? String.raw`(?!\s+\p{Ll})` : ''}${NAME_OPENS.has(label) ? String.raw`(?!\s+\p{Lu}\p{L}{2})` : ''}`
+  : anyCase(label));
 const RULERS = Object.freeze([...labelGroups.entries()]
   .map(([label, names]) => [names, label, new RegExp(`(?<!\\p{L})(?:${namePattern(label)})(?!\\p{L})(?!\\s+[IVX]+\\b)`, 'gu'), label.split(' ')[0]])
   .sort((a, b) => b[1].length - a[1].length));

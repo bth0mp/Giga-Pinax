@@ -1570,7 +1570,7 @@ test('a Spanish heading names its emperor, and a lower-case word or another nume
   assert.deepEqual(rulers('AUGUSTO. Denario. (Ar. 3,73g/19mm). 2 a.C.-4 d.C. Lugdunum. (RIC 207; RSC 43). Anv: Cabeza laureada de Augusto a derecha.'),
     ['Augustus']);
   // Another emperor's numeral makes him someone else, a lower-case word is the adjective, and the title he holds is no second ruler.
-  assert.deepEqual(rulers('CLAUDIO II. Antoniniano. RIC 12.'), []);
+  assert.deepEqual(rulers('CLAUDIO II. Antoniniano. RIC 12.'), ['Claudius II Gothicus']);
   assert.deepEqual(rulers('JULIANO. Denario. RIC 12.'), []);
   assert.deepEqual(rulers('Retrato augusto. Denario. RIC 12.'), []);
   for (const spelling of ['augusto', 'tiberio', 'claudio', 'tito', 'domiciano', 'antonino pio', 'marco aurelio', 'comodo', 'septimio severo', 'juliano ii']) {
@@ -1618,4 +1618,31 @@ test('a lot row drops "(2. Aufl.)" behind the number', () => {
   // The first edition's numbers are not the bundle's: that remark stays on the number, and nothing is opened on it.
   assert.notDeepEqual(findReferences('Nero. As. RIC 306 (1. Aufl.), WCN 275.').references[0].reference, ric('306'));
   assert.notDeepEqual(findReferences('Nero. As. RIC 306 1. Aufl., WCN 275.').references[0].reference, ric('306'));
+});
+
+// Loop S1 review, Important 2 and Minor 4: "Claudio" is Claudius, so a Spanish or Italian heading naming Claudius Gothicus by his epithet
+// ("CLAUDIO GÓTICO", "Claudio il Gotico") opened Claudius I's as of AD 41 for an antoninianus of 268, and "Marco Aurelio" swallowed the emperors whose
+// full names open with it (Probus, Carus, Numerian, Carinus). The long forms name their own man, the epithets of the other emperors RIC files under
+// one (the Apostate, the Arab, the Thracian, the Great) are read the same way, and "Marco Aurelio" with a further name is nobody it can be sure of.
+test('a Spanish or Italian heading naming an emperor by his epithet or his full name names him', () => {
+  const rulers = (text) => findReferences(`${text}. Antoniniano. Roma. (RIC 12).`).rulers;
+  for (const [heading, expected] of [
+    ['CLAUDIO GÓTICO', 'Claudius II Gothicus'], ['Claudio Gótico, 268-270', 'Claudius II Gothicus'], ['Claudio el Gótico', 'Claudius II Gothicus'],
+    ['Claudio il Gotico', 'Claudius II Gothicus'], ['CLAUDIO II', 'Claudius II Gothicus'], ['CLAUDIO II EL GÓTICO', 'Claudius II Gothicus'], ['Claudio II il Gotico', 'Claudius II Gothicus'],
+    ['JULIANO EL APÓSTATA', 'Julian the Apostate'], ['Juliano Apóstata', 'Julian the Apostate'], ["Giuliano l'Apostata", 'Julian the Apostate'],
+    ['Giuliano l’Apostata', 'Julian the Apostate'], ['GIULIANO II', 'Julian the Apostate'],
+    ['FILIPO EL ÁRABE', 'Philip the Arab'], ["Filippo l'Arabo", 'Philip the Arab'], ['Filippo l’Arabo', 'Philip the Arab'],
+    ['MAXIMINO EL TRACIO', 'Maximinus Thrax'], ['Massimino il Trace', 'Maximinus Thrax'],
+    ['CONSTANTINO EL GRANDE', 'Constantine I'], ['Costantino il Grande', 'Constantine I'], ['Costantino Magno', 'Constantine I'],
+    ['TEODOSIO EL GRANDE', 'Theodosius I'], ['Teodosio il Grande', 'Theodosius I'], ['Teodosio I', 'Theodosius I'],
+    ['MARCO AURELIO PROBO', 'Probus'], ['Marco Aurelio Caro', 'Carus'], ['Marco Aurelio Numeriano', 'Numerian'], ['MARCO AURELIO CARINO', 'Carinus'],
+    ['DOMICIO DOMICIANO', 'Domitius Domitianus'],
+  ]) assert.deepEqual(rulers(heading), [expected], heading);
+  // Claudius himself is still Claudius, and Marcus Aurelius himself still Marcus Aurelius; with a further name "Marco Aurelio" is nobody.
+  assert.deepEqual(rulers('CLAUDIO'), ['Claudius']);
+  assert.deepEqual(rulers('MARCO AURELIO'), ['Marcus Aurelius']);
+  assert.ok(rulers('Marco Aurelio y Lucio Vero').includes('Marcus Aurelius'));
+  assert.deepEqual(rulers('MARCO AURELIO ANTONINO'), []);
+  assert.deepEqual(rulers('Marco Aurelio César'), []);
+  assert.deepEqual(rulers('Teodosio II'), []);
 });
