@@ -2,6 +2,7 @@ import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
+import { zonePlace } from './core/reminders.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -1031,7 +1032,11 @@ async function initWorkspace() {
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
-    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'reminderScope', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    // Reminders for each attached coin are the scope's "linked lots"; a sale kept to itself is "standalone" (G-19).
+    f.remindEachCoin.checked = (event.reminderScope ?? 'linked-lots') === 'linked-lots';
+    // What a page captured is shown folded, and only opened when there is something in it.
+    $('event-captured').open = Boolean(String(event.capturedText ?? '').trim() || String(event.capturedFromUrl ?? '').trim());
     $('delete-event').hidden = !event.id;
     setEventZone(event.timeZone ?? viewerTimeZone());
     f.precision.value = event.precision ?? 'timed';
@@ -1085,13 +1090,15 @@ async function initWorkspace() {
     return valid(controls.firstEnabled, controls.firstValue) && valid(controls.secondEnabled, controls.secondValue) ? controls : null;
   };
   const updatePrecision = () => { const f = $('event-form').elements; const dateOnly = f.precision.value === 'date-only'; $('event-time-label').hidden = dateOnly; f.localTime.required = !dateOnly; $('timed-reminders').hidden = dateOnly; f.reminderDayBefore.parentElement.hidden = !dateOnly; f.reminderDayOf.parentElement.hidden = !dateOnly; $('date-only-reminder-note').hidden = !dateOnly; };
-  // What Save auction will write, in words, where a confirm dialog used to ask.
+  // What Save auction will write, in words, where a confirm dialog used to ask - said once there is a day to say it of
+  // (G-19): "Auction starts Thu 1 Oct, 15:00 London · reminders 1 day and 1 hour before".
   function updateEventSummary() {
     const f = $('event-form').elements;
     const dateOnly = f.precision.value === 'date-only';
-    const kind = ({ 'auction-starts': 'auction starting', 'lot-closes': 'lot closing', 'auction-day': 'auction day' })[f.eventKind.value] ?? 'auction';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value)) { $('event-summary').textContent = ''; return; }
+    const kind = ({ 'auction-starts': 'Auction starts', 'lot-closes': 'Lot closes', 'auction-day': 'Auction day' })[f.eventKind.value] ?? 'Auction';
     const format = (options, date, fallback) => { try { return new Intl.DateTimeFormat(navigator.language, { ...options, timeZone: 'UTC' }).format(date); } catch { return fallback; } };
-    const day = /^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value) ? format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value) : 'no date yet';
+    const day = format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value);
     const time = dateOnly ? ', date only' : /^\d{2}:\d{2}$/.test(f.localTime.value) ? `, ${format({ hour: 'numeric', minute: '2-digit' }, new Date(`1970-01-01T${f.localTime.value}:00Z`), f.localTime.value)}` : '';
     let reminders;
     if (dateOnly) {
@@ -1102,7 +1109,10 @@ async function initWorkspace() {
       const parts = controls ? [[controls.firstEnabled, controls.firstValue], [controls.secondEnabled, controls.secondValue]].filter(([enabled]) => enabled).map(([, minutes]) => reminderLabel({ kind: 'offset', offsetMinutes: minutes }).replace(/ before$/, '')) : [];
       reminders = !controls ? 'a custom reminder still to fill in' : parts.length ? `reminders ${parts.join(' and ')} before` : 'no reminders';
     }
-    $('event-summary').textContent = `Saves “${f.name.value.trim() || 'this auction'}”: ${kind} ${day}${time} ${f.timeZone.value.trim() || '(no time zone)'}, with ${reminders}.`;
+    const zone = f.timeZone.value.trim();
+    let place = zone || '(no time zone)';
+    try { if (zone) place = zonePlace(zone); } catch { place = zone; }
+    $('event-summary').textContent = `${kind} ${day}${time} ${place} · ${reminders}`;
   }
   $('event-form').addEventListener('input', (event) => { if (event.target === $('event-form').elements.name) offerRememberedZone(); else if (event.target === $('event-form').elements.timeZone) zoneChosen = true; updateEventSummary(); });
   $('event-form').addEventListener('change', (event) => {
@@ -1127,7 +1137,7 @@ async function initWorkspace() {
     const timed = f.precision.value === 'date-only' ? null : timedReminderControls();
     if (f.precision.value !== 'date-only' && !timed) return announce('Enter the minutes before for a custom reminder: a whole number from 1.', true);
     const reminders = mergeEventReminders(basis.record?.reminders, f.precision.value, timed ?? { firstEnabled: f.reminderDayBefore.checked, firstValue: f.reminderDayBeforeTime.value, secondEnabled: f.reminderDayOf.checked, secondValue: f.reminderDayOfTime.value });
-    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.reminderScope.value, reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
+    const eventDraft = { ...(basis.id ? { id: basis.id } : {}), name: f.name.value.trim(), eventKind: f.eventKind.value, precision: f.precision.value, localDate: f.localDate.value, timeZone: f.timeZone.value.trim(), reminderScope: f.remindEachCoin.checked ? 'linked-lots' : 'standalone', reminders }; if (f.precision.value === 'timed') eventDraft.localTime = f.localTime.value; for (const key of ['capturedText', 'capturedFromUrl']) if (f[key].value) eventDraft[key] = f[key].value; const submittedReturnLot = eventReturnLot; const submittedEventVersion = editorVersions.get('event') ?? 0; void send({ type: 'event.save', requestId: requestId(), expectedRevision: basis.revision, event: eventDraft }, 'event').then((reply) => {
       if (!reply?.ok) return;
       if (eventDraftId) { const draftId = eventDraftId; eventDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
       const decision = eventAttachDecision({
@@ -1444,7 +1454,7 @@ async function initWorkspace() {
     if (match[1] === 'event-draft') {
       eventDraftId = draft.id; beginEditor('event', { id: null, revision: null, record: null });
       $('event-form').hidden = false;
-      populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'standalone', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'linked-lots', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       dirtyEditors.add('event');
       announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
     } else if (match[1] === 'lot-draft') {

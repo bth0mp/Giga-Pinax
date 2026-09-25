@@ -125,15 +125,14 @@
         <label>Time zone<select name="timeZoneChoice" aria-describedby="time-zone-note"></select></label>
         <label id="time-zone-other" hidden>Other time zone <span class="optional">an IANA name, such as Asia/Tokyo</span><input name="timeZone" required maxlength="100"></label>
         <p id="time-zone-note" class="field-note" hidden></p>
-        <label>Reminder scope<select name="reminderScope"><option value="standalone">Standalone auction</option><option value="linked-lots">Linked lots</option></select></label>
         <fieldset class="reminder-fieldset"><legend>Reminders</legend>
           <div id="timed-reminders" class="field-pair reminder-selects"><label>First reminder<select name="reminderFirst"><option value="off">No reminder</option><option value="1440" selected>1 day before</option><option value="60">1 hour before</option><option value="30">30 minutes before</option><option value="custom">Custom…</option></select></label><label>Second reminder<select name="reminderSecond"><option value="off">No reminder</option><option value="1440">1 day before</option><option value="60" selected>1 hour before</option><option value="30">30 minutes before</option><option value="custom">Custom…</option></select></label><label id="reminder-first-custom" hidden>First, minutes before<input name="reminderFirstMinutes" type="number" min="1" step="1"></label><label id="reminder-second-custom" hidden>Second, minutes before<input name="reminderSecondMinutes" type="number" min="1" step="1"></label></div>
           <label><input type="checkbox" name="reminderDayBefore" checked> Previous day at <input name="reminderDayBeforeTime" type="time" value="09:00"></label>
           <label><input type="checkbox" name="reminderDayOf" checked> Auction day at <input name="reminderDayOfTime" type="time" value="09:00"></label>
           <p id="date-only-reminder-note" class="field-note">A date-only auction's reminders go off at these times in the auction's time zone.</p>
+          <label><input type="checkbox" name="remindEachCoin" checked> Remind me for each coin attached to this auction</label>
         </fieldset>
-        <label>Captured text<textarea name="capturedText" maxlength="500"></textarea></label>
-        <label>Captured source URL<input name="capturedFromUrl" type="url" maxlength="2048"></label>
+        <details id="event-captured" class="form-group"><summary>Captured from a page</summary><div class="form-group-body"><label>Captured text<textarea name="capturedText" maxlength="500"></textarea></label><label>Captured source URL<input name="capturedFromUrl" type="url" maxlength="2048"></label></div></details>
         <div class="form-actions"><button type="submit" data-needs-runtime>Save auction</button><button id="delete-event" class="danger quiet" type="button" data-needs-runtime>Remove event</button></div>
         <p id="event-summary" class="field-note event-summary"></p>
       </form></div>
