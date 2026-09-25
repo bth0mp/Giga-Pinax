@@ -2449,3 +2449,30 @@ test('Search reached from a coin opens the saved set of its reference among fort
   assert.match(page.$('statistics-output').textContent, /^5 comparables · median /);
   assert.equal(page.$('evidence-list').querySelectorAll('.comparable-row').length, 5);
 });
+
+// Fix round, Minor 1 (K-09): the set the page opens by itself shows in its own currency, and chooses nothing for the
+// collector: where the set names no currency, the filter goes on following the default.
+test('a set Search opens by itself does not stop the filter following the default currency', async () => {
+  const background = await createWorkspaceBackground();
+  const created = await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+  const add = (queryId, queryLabel, observation) => background.send({ type: 'evidence.add', observation: { queryId, queryLabel, source: 'manual', auctionHouse: 'Nomos', auctionDate: '2024-05-01', ...observation } });
+  assert.equal((await add('00000000-0000-4000-9000-000000000601', 'RRC 44/5', { lotNumber: '1', priceBasis: 'hammer', amount: { currency: 'CHF', minor: 90000 } })).ok, true);
+  const chf = await mountWorkspace({ background, hash: '#search' });
+  assert.equal(chf.$('evidence-currency').value, 'CHF', 'the set opened is shown in its own currency');
+  assert.equal((await add('00000000-0000-4000-9000-000000000602', 'RRC 45/1', { lotNumber: '2', priceBasis: 'unsold' })).ok, true);
+  const page = await mountWorkspace({ background, hash: '#search' });
+  assert.equal(page.$('evidence-query').value, '00000000-0000-4000-9000-000000000602', 'the unsold set, added last');
+  assert.equal(page.$('evidence-currency').value, 'GBP');
+  const euro = await background.send({ type: 'preferences.save', expectedRevision: created.value.revision, preferences: { ...created.value, currency: 'EUR' } });
+  assert.equal(euro.ok, true, euro.message);
+  await settle();
+  assert.equal(page.$('evidence-currency').value, 'EUR', 'nothing was chosen, so the filter follows the new default');
+  assert.equal(chf.$('evidence-currency').value, 'CHF', 'the CHF set stays in CHF');
+  // A set opened from a coin keeps its currency through the next snapshot too.
+  assert.equal((await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Carthage', reference: 'RRC 44/5', sourceLinks: [] } })).ok, true);
+  const fromCoin = await mountWorkspace({ background, hash: '#watchlist' });
+  await fromCoin.openCoin('Carthage'); await fromCoin.navigate('#search');
+  assert.equal(fromCoin.$('evidence-currency').value, 'CHF');
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Another', sourceLinks: [] } }); await settle();
+  assert.equal(fromCoin.$('evidence-currency').value, 'CHF', 'still CHF after a snapshot');
+});

@@ -294,10 +294,13 @@ async function initWorkspace() {
   // The Search route's two currencies start on the collector's default, however the page was reached, and follow it
   // until the collector chooses one there or opens the route from a coin, which sets the coin's (review Minor 2).
   const currencyChosen = { filter: false, form: false };
+  // The currency of the set shown (K-09): followed in place of the default while that set is shown, and never counted as
+  // the collector's choice when the page opened the set by itself (review Minor 1).
+  let openedSetCurrency = null;
   const followDefaultCurrency = () => {
     const currency = snapshot.preferences?.currency;
     if (!CURRENCIES.includes(currency)) return;
-    if (!currencyChosen.filter) $('evidence-currency').value = currency;
+    if (!currencyChosen.filter) $('evidence-currency').value = openedSetCurrency ?? currency;
     if (!currencyChosen.form) $('evidence-form').elements.currency.value = currency;
   };
   // A draft that arrives after the collector has started on the form it would fill is offered in that form's own line,
@@ -654,7 +657,7 @@ async function initWorkspace() {
     const openReference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
     if (!lastSetOpened && !openReference && !$('research-query').value.trim() && !evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).length) {
       const last = lastAddedSet(snapshot.evidence);
-      if (last) { lastSetOpened = true; currencyChosen.filter = true; chooseSet(last); }
+      if (last) { lastSetOpened = true; chooseSet(last); }
     }
     const options = comparableSetOptions(snapshot.evidence, activeQuery);
     // A new set is always offered, last, even while a saved one is open.
@@ -744,14 +747,20 @@ async function initWorkspace() {
   // A comparable set chosen: its query in the box, and shown in the currency most of its sales were knocked down in; the
   // others stay out, never converted.
   function chooseSet(queryId) {
-    if (queryId === NEW_SET) { $('research-query').value = ''; activeQuery = { id: requestId(), text: '' }; selectedQueryId = activeQuery.id; return; }
+    if (queryId === NEW_SET) { openedSetCurrency = null; $('research-query').value = ''; activeQuery = { id: requestId(), text: '' }; selectedQueryId = activeQuery.id; return; }
     selectedQueryId = queryId;
     const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
     activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
     if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
-    const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
+    const common = setCurrency(queryId);
+    openedSetCurrency = common;
+    if (common) $('evidence-currency').value = common;
+  }
+  // The currency most of a set's sales were knocked down in, where the filter offers it.
+  function setCurrency(queryId) {
+    const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], queryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
     const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
-    if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
+    return common && [...$('evidence-currency').options].some((option) => option.value === common) ? common : null;
   }
   $('evidence-form').addEventListener('submit', (event) => {
     event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const basis = form.get('priceBasis');
