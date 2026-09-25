@@ -2586,7 +2586,8 @@ test('a restored answer waits for the store to be read, and a lookup does not', 
   const reopened = await loadPopup({ session, snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale });
   await settle(); await settle();
   assert.equal(reopened.element('result-reference').textContent, '', 'the card waits for the store');
-  assert.equal(reopened.element('quick-reference').value, '');
+  // Fix round (review Important 2): the box is settled as soon as the session answers, as in 0.38.0; only the card waits.
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
   await reopened.window.emit('giga-pinax-snapshot-ready');
   await settle(); await settle();
   assert.equal(reopened.element('result').hidden, false);
@@ -2597,6 +2598,23 @@ test('a restored answer waits for the store to be read, and a lookup does not', 
   await fresh.element('reference-form').emit('submit');
   await settle(); await settle();
   assert.equal(fresh.element('result').hidden, false, 'a lookup draws its card at once');
+});
+
+// Fix round (review Important 2): what the collector types while the store is being read is his. The restored card is not drawn over it, and
+// nothing is written into the box after the session has answered.
+test('typing while a reopened popup waits for the store keeps what was typed, and draws no restored card', async () => {
+  const session = new Map();
+  await answered(session);
+  for (const typed of ['Price 23 Nero', '']) {
+    const reopened = await loadPopup({ session, snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale });
+    await settle(); await settle();
+    reopened.element('quick-reference').value = typed;
+    await reopened.element('quick-reference').emit('input');
+    await reopened.window.emit('giga-pinax-snapshot-ready');
+    await settle(); await settle();
+    assert.equal(reopened.element('quick-reference').value, typed, JSON.stringify(typed));
+    assert.equal(reopened.element('result-reference').textContent, '', `${JSON.stringify(typed)}: no restored card`);
+  }
 });
 
 test('an old, torn or other-currency answer is not drawn as prices, and a prompt reference wins over it', async () => {

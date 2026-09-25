@@ -408,6 +408,49 @@ test('a popup opened again draws its last answer without asking acsearch', async
   }
 });
 
+// S3 fix round (review Important 2): a popup opened again writes its last answer into the Reference box as the session answers, never later,
+// even while the store is slow to answer (held back 1.5 s here); only the card waits for the store. Typed in at once, it looks up what was
+// typed, and the last answer's card is never drawn over the new lookup when the store answers after it.
+test('a popup opened again settles its box at once and, typed in at once, looks up what was typed', async () => {
+  const browser = await launch();
+  try {
+    const first = await browser.context.newPage();
+    await first.setViewportSize({ width: 400, height: 600 });
+    await first.goto(browser.url('popup.html'));
+    await lookUp(first, 'RIC I² Nero 306');
+    await first.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    // The answer is kept in the session as the prices are drawn; closed at once, the page could take that write with it.
+    await first.waitForTimeout(500);
+    await first.close();
+    // Every page opened from here reads the store 1.5 s late, as a slow worker or a busy laptop would.
+    await browser.context.addInitScript(() => {
+      const send = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = function sendLate(message, ...rest) {
+        if (message?.type !== 'snapshot.get') return send.call(this, message, ...rest);
+        setTimeout(() => send.call(chrome.runtime, message, ...rest), 1500);
+        return undefined;
+      };
+    });
+    for (let round = 0; round < 2; round += 1) {
+      const again = await browser.context.newPage();
+      await again.setViewportSize({ width: 400, height: 600 });
+      await again.goto(browser.url('popup.html'));
+      await again.waitForTimeout(400);
+      const restored = round === 0 ? 'RIC I² Nero 306' : 'Price 23';
+      assert.equal(await again.locator('#quick-reference').inputValue(), restored, `round ${round}: the box is settled while the store is still reading`);
+      assert.equal(await again.locator('#result-reference').textContent(), '', `round ${round}: the card waits for the store`);
+      await lookUp(again, 'Price 23');
+      await again.locator('#result-reference', { hasText: 'Price 23' }).waitFor({ timeout: 15000 });
+      await again.waitForTimeout(1800);
+      assert.equal(await again.locator('#quick-reference').inputValue(), 'Price 23', `round ${round}`);
+      assert.equal(await again.locator('#result-reference').textContent(), 'Price 23', `round ${round}`);
+      await again.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 // Loop 3 (G-10): an online-only reference whose card cannot be had searched acsearch anyway and scrolled its own error
 // away under a median for a query nobody checked. Its prices wait for its card; the error stands in view under the box.
 test('a Bopearachchi lookup that fails offline searches nothing and keeps its error in view', async () => {

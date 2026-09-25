@@ -1392,16 +1392,23 @@ const storeRead = () => (globalThis.gigaPinaxSnapshotReady ? Promise.resolve() :
   window.addEventListener('giga-pinax-snapshot-ready', () => resolve(), { once: true });
   setTimeout(resolve, SNAPSHOT_WAIT_MS);
 }));
+// Set by the collector's first keystroke in the Reference box: from then on the box is his, and no restore writes into it or draws over it.
+let typedSinceOpen = false;
 async function restoreLastAnswer(ticket) {
   let stored;
-  try { [stored] = await Promise.all([sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]), storeRead()]); }
+  try { stored = await sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]); }
   catch { return; }
   // A reference a permission prompt interrupted is the collector's next Look up, and wins over the answer before it.
   if (selectionQuery(stored?.[PENDING_KEY] ?? '')) return;
   const answer = readAnswer(stored?.[LAST_ANSWER_KEY]);
   // He may have started typing, or looked something up, while the area answered: what he did is his, and the old answer stays away.
-  if (!answer || ticket !== opening || $('quick-reference').value || currentCard || researchContext) return;
+  const his = () => ticket !== opening || typedSinceOpen || currentCard || researchContext;
+  if (!answer || his() || $('quick-reference').value) return;
+  // The box is settled at once, as soon as the session answers; only the card waits for the store, and it is drawn only if the box still holds
+  // the answer and nothing he did came in between.
   $('quick-reference').value = answer.query;
+  await storeRead();
+  if (his() || $('quick-reference').value !== answer.query) return;
   clearOutput();
   fillFields(answer.reference);
   answered = true;
@@ -1492,6 +1499,7 @@ $('quick-reference').addEventListener('keydown', (event) => {
 });
 // Typing begins a new reference, so neither an old catalogue answer nor its independent price research may arrive over it.
 $('quick-reference').addEventListener('input', () => {
+  typedSinceOpen = true;
   referenceRevision += 1;
   clearOutput();
   recalled = -1;
