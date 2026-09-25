@@ -34,6 +34,10 @@
 .companion-exposure-list li {display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px;}
 .companion-exposure-list strong {font-variant-numeric:tabular-nums; text-align:right;}
 .companion-exposure-list .companion-none {color:var(--muted);}
+/* The tab with no coin saved: three words and one sentence, in the workspace's empty-state voice (H-07). */
+.companion-empty {margin:14px 0 0;}
+.companion-empty h3 {margin:0 0 4px;}
+.companion-empty p {margin:0; color:var(--muted); font-size:var(--text-body); line-height:1.5;}
 /* The coins that want the collector now: each a row that opens the workspace on that coin. */
 .companion-coin-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .companion-coin-list li {border-bottom:1px solid var(--line);}

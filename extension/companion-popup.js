@@ -538,6 +538,8 @@ async function initCompanionPopup() {
       return item;
     }));
     $('companion-coins').hidden = coins.length === 0;
+    // With no coin saved at all, the tab says how one gets here (H-07); its values below stay as they are.
+    $('companion-empty').hidden = (snapshot.lots ?? []).length > 0;
     const held = CURRENCIES.filter((currency) => summary.exposure[currency].hammerMinor > 0 || summary.exposure[currency].bindingCount > 0);
     $('companion-exposure-list').replaceChildren(...(held.length ? held.map((currency) => {
       const item = summary.exposure[currency];

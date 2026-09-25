@@ -1253,6 +1253,7 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
     const unreferenced = coinsToWatch({ lots: [{ id: 'x', title: 'Unread coin', auctionEventId: 'cng', outcome: { status: 'open' } }], auctionEvents: [cng] });
     assert.deepEqual(unreferenced.map(({ reference, title, when }) => [reference, title, when]), [['', 'Unread coin', 'in 20 days']]);
     assert.equal(page.element('companion-coins').hidden, false);
+    assert.equal(page.element('companion-empty').hidden, true, 'a tab with coins says nothing of their absence');
     const exposure = page.element('companion-exposure-list').children;
     assert.equal(exposure.length, 1, 'only the currency that holds a bid');
     assert.equal(exposure[0].children[0].textContent, 'GBP');
@@ -1264,6 +1265,8 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
     assert.equal(empty.element('companion-due-count').textContent, 'None due');
     assert.equal(empty.element('companion-next-event').textContent, 'No upcoming auction');
     assert.equal(empty.element('companion-coins').hidden, true);
+    // H-07 (popup part): the tab with no coin at all says, once and in the workspace's voice, how one gets here.
+    assert.equal(empty.element('companion-empty').hidden, false);
     assert.deepEqual(empty.element('companion-exposure-list').children.map((item) => item.textContent), ['No active bids']);
   } finally {
     globalThis.browser.tabs.create = create;
