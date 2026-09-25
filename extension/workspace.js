@@ -24,7 +24,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  wantListRows, wonCostLine,
+  monthHeading, wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -659,6 +659,27 @@ async function initWorkspace() {
     for (const item of items) { const option = text('option', item.name ?? item.title); option.value = item.id; select.append(option); }
     if ([...select.options].some((option) => option.value === current)) select.value = current;
   }
+  const COIN_WINDOW = 60;
+  let coinWindow = { key: null, shown: COIN_WINDOW };
+  let coinMoreWatch = null;
+  function coinRow(lot, event, needingOutcome) {
+    const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id)); row.dataset.lotId = lot.id;
+    const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
+    const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
+    const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
+    const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
+    if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
+    if (event) status.append(text('span', event.name, 'coin-row-event'));
+    row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
+    row.addEventListener('click', () => selectLot(lot.id));
+    // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
+    const wrap = text('div', '', 'coin-row-wrap');
+    const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
+    box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
+    box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
+    wrap.append(box, row);
+    return wrap;
+  }
   function renderCoinList() {
     const list = $('lot-list'); list.replaceChildren();
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
@@ -676,25 +697,44 @@ async function initWorkspace() {
     $('coin-workspace').dataset.empty = String(none && selection.mode !== 'detail');
     if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
     else if (!visibleLots.length) list.append(text('p', 'No coins match this filter.', 'empty-row'));
-    for (const lot of visibleLots) {
-      const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id)); row.dataset.lotId = lot.id;
-      const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
-      const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
-      const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
-      const event = eventsById.get(lot.auctionEventId);
-      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
-      if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
-      if (event) status.append(text('span', event.name, 'coin-row-event'));
-      row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
-      row.addEventListener('click', () => selectLot(lot.id));
-      // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
-      const wrap = text('div', '', 'coin-row-wrap');
-      const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
-      box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
-      box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
-      wrap.append(box, row);
-      list.append(wrap);
-    }
+    // A window of the list (K-06): the first rows, then more as the collector scrolls to the end, or asks. A queue or a
+    // filter starts again at the first window, and a snapshot keeps the rows already shown. A coin open further down is
+    // shown in the detail panel, and its row is marked once the collector reaches it.
+    const windowKey = `${$('lot-queue').value}|${$('lot-filter').value}`;
+    if (coinWindow.key !== windowKey) coinWindow = { key: windowKey, shown: COIN_WINDOW };
+    // All coins and Completed span years: a month heading where the auction month changes gives the scroll landmarks.
+    const headed = ['all-coins', 'completed'].includes($('lot-queue').value);
+    let month = null;
+    const appendRows = (from, to) => {
+      for (const lot of visibleLots.slice(from, to)) {
+        const event = eventsById.get(lot.auctionEventId);
+        if (headed) {
+          const heading = monthHeading(event, navigator.language);
+          if (heading !== month) { month = heading; const line = text('p', heading, 'coin-month'); line.setAttribute('role', 'presentation'); list.append(line); }
+        }
+        list.append(coinRow(lot, event, needingOutcome));
+      }
+    };
+    appendRows(0, coinWindow.shown);
+    if (visibleLots.length > coinWindow.shown) {
+      const more = text('button', '', 'quiet coin-more'); more.type = 'button';
+      const label = () => { const left = visibleLots.length - coinWindow.shown; more.textContent = `Show ${Math.min(left, COIN_WINDOW)} more (${left} not shown)`; };
+      label();
+      const showMore = () => {
+        const from = coinWindow.shown; coinWindow.shown += COIN_WINDOW;
+        more.remove(); appendRows(from, coinWindow.shown);
+        if (visibleLots.length > coinWindow.shown) { label(); list.append(more); } else { coinMoreWatch?.disconnect(); coinMoreWatch = null; }
+        updateComparisonControls();
+      };
+      more.addEventListener('click', showMore);
+      list.append(more);
+      // Scrolling to the end of the list shows the next rows by itself, where the browser can tell.
+      coinMoreWatch?.disconnect(); coinMoreWatch = null;
+      if (typeof IntersectionObserver === 'function') {
+        coinMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(); }, { rootMargin: '200px' });
+        coinMoreWatch.observe(more);
+      }
+    } else { coinMoreWatch?.disconnect(); coinMoreWatch = null; }
     updateComparisonControls();
   }
   // Toggling a coin changes only the controls, never the checkbox the collector is standing on. The boxes show while any

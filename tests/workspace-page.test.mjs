@@ -2163,3 +2163,43 @@ test('choosing another coin moves the selection without drawing the list again',
   await page.openCoin('Hadrian, as');
   assert.equal(rows().some((row) => row.textContent.includes('Nero')), false, 'and leaves once another coin is chosen');
 });
+
+// K-06: a long list is drawn a window at a time, with its count, and All coins and Completed carry month headings.
+test('a long coin list draws sixty rows, shows more on request, and heads All coins by auction month', async () => {
+  const background = await createWorkspaceBackground();
+  const march = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma 40', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-03-10', localTime: '14:00', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  const october = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Nomos 34', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-10-20', localTime: '14:00', timeZone: 'Europe/Zurich', reminderScope: 'standalone', reminders: [] } });
+  for (let index = 1; index <= 130; index += 1) {
+    const auctionEventId = index <= 40 ? march.value.id : index <= 100 ? october.value.id : undefined;
+    const reply = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: `Coin ${String(index).padStart(3, '0')}`, sourceLinks: [], ...(auctionEventId ? { auctionEventId } : {}) } });
+    assert.equal(reply.ok, true, reply.message);
+  }
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const rows = () => page.$('lot-list').querySelectorAll('.coin-row');
+  const more = () => page.$('lot-list').querySelector('.coin-more');
+  assert.equal(page.$('lot-count').textContent, '130 of 130 coins');
+  assert.equal(rows().length, 60);
+  assert.equal(more().textContent, 'Show 60 more (70 not shown)');
+  assert.equal(page.$('lot-list').querySelectorAll('.coin-month').length, 0, 'the open queue has no month headings');
+  await more().click(); await settle();
+  assert.equal(rows().length, 120);
+  assert.equal(more().textContent, 'Show 10 more (10 not shown)');
+  await more().click(); await settle();
+  assert.equal(rows().length, 130);
+  assert.equal(more(), null);
+  // A queue starts again at its first window, and All coins is headed by month.
+  page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change'); await settle();
+  assert.equal(rows().length, 60);
+  assert.deepEqual(page.$('lot-list').querySelectorAll('.coin-month').map((line) => line.textContent), ['March 2026', 'October 2026']);
+  await more().click(); await more().click(); await settle();
+  assert.deepEqual(page.$('lot-list').querySelectorAll('.coin-month').map((line) => line.textContent), ['March 2026', 'October 2026', 'No sale date']);
+  // A coin opened by name further down is shown in the detail panel, and its row is marked once it is reached.
+  const last = storedLot(background, 'Coin 130');
+  const named = await mountWorkspace({ background, hash: `#watchlist?lot=${last.id}` });
+  const marked = () => named.$('lot-list').querySelectorAll('.coin-row').filter((row) => row.getAttribute('aria-selected') === 'true').map((row) => row.dataset.lotId);
+  assert.equal(named.$('selected-title').textContent, 'Coin 130');
+  assert.equal(named.$('lot-list').querySelectorAll('.coin-row').length, 60);
+  assert.deepEqual(marked(), []);
+  for (let round = 0; round < 2; round += 1) { await named.$('lot-list').querySelector('.coin-more').click(); await settle(); }
+  assert.deepEqual(marked(), [last.id]);
+});

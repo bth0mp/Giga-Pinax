@@ -13,7 +13,7 @@ import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
   filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash, wonCostLine,
-  decidingBidLine, historyLine, sameReference, settledNewestFirst,
+  decidingBidLine, historyLine, monthHeading, sameReference, settledNewestFirst,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
@@ -1547,4 +1547,12 @@ test('an estimate note in a listed currency takes its places from the table, wha
     assert.equal(estimateNoteText({ minor: 500000, currency: 'JPY' }), 'Estimate from page: JPY 500000');
     assert.equal(estimateNoteText({ minor: 5, currency: 'KWD' }), 'Estimate from page: KWD 5');
   });
+});
+
+// K-06: the landmark a long coin list puts where the auction month changes.
+test('a coin list month heading names the auction month and year, or says the coin has no sale date', () => {
+  assert.equal(monthHeading({ localDate: '2022-03-05' }, 'en-GB'), 'March 2022');
+  assert.equal(monthHeading({ localDate: '2026-10-31' }, 'de-DE'), 'Oktober 2026');
+  assert.equal(monthHeading(null), 'No sale date');
+  assert.equal(monthHeading({ localDate: 'soon' }), 'No sale date');
 });

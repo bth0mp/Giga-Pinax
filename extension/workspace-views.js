@@ -136,6 +136,18 @@ export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-
   return { when, relative, tone };
 }
 /**
+ * The month heading a long coin list puts where the auction month changes (K-06): "March 2026", or "No sale date" for a
+ * coin with no auction.
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function monthHeading(event, locale = 'en-US') {
+  if (!event?.localDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(event.localDate))) return 'No sale date';
+  return formatWith(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), String(event.localDate).slice(0, 7));
+}
+
+/**
  * @param {Partial<AuctionEvent> | null | undefined} event
  * @param {{ now?: string, locale?: string, timeZone?: string }} [view]
  * @returns {string}
