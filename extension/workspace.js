@@ -1,7 +1,7 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
-import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
+import { eventTiming, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
@@ -18,7 +18,7 @@ import {
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
-  DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
+  DETAIL_TABS, ROUTES, applyActiveRoute, openingTab, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
@@ -181,13 +181,15 @@ async function initWorkspace() {
   };
   const detailTabs = document.createElement('div'); detailTabs.className = 'detail-tabs'; detailTabs.setAttribute('role', 'tablist'); detailTabs.setAttribute('aria-label', 'Coin record sections');
   const tabButtons = new Map();
+  // The tab the collector last chose with the tabs themselves, remembered for this page's session (G-20).
+  let chosenDetailTab = null;
   const showDetailTab = (name, focus = false) => {
     if (!DETAIL_TABS.includes(name) || tabButtons.get(name)?.disabled) return;
     activeDetailTab = name;
     for (const tab of DETAIL_TABS) { const selected = tab === name; tabButtons.get(tab).setAttribute('aria-selected', String(selected)); tabButtons.get(tab).tabIndex = selected ? 0 : -1; detailPanels[tab].hidden = !selected; }
     if (focus) tabButtons.get(name).focus();
   };
-  for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => showDetailTab(name)); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
+  for (const name of DETAIL_TABS) { const button = text('button', ({ details: 'Details', bid: 'Bid', reminders: 'Reminders', outcome: 'Outcome' })[name], 'quiet'); button.type = 'button'; button.setAttribute('role', 'tab'); button.id = `detail-tab-${name}`; detailPanels[name].id ||= `detail-panel-${name}`; button.setAttribute('aria-controls', detailPanels[name].id); detailPanels[name].setAttribute('role', 'tabpanel'); detailPanels[name].setAttribute('aria-labelledby', button.id); button.addEventListener('click', () => { chosenDetailTab = name; showDetailTab(name); }); button.addEventListener('keydown', (event) => { const next = moveDetailTab(name, event.key); if (next !== name) { event.preventDefault(); chosenDetailTab = next; showDetailTab(next, true); } }); tabButtons.set(name, button); detailTabs.append(button); }
   $('coin-editor').querySelector('.detail-heading').after(detailTabs); showDetailTab('details');
 
   // The page's own notice line: page-level events only (a conflict, the worker, storage, an import); loading is not said
@@ -652,7 +654,8 @@ async function initWorkspace() {
     clearFormStatus('lot', 'bid', 'outcome');
     selection = chooseSelectedLot(selection, lotId, snapshot.lots ?? []);
     for (const tab of DETAIL_TABS) tabButtons.get(tab).disabled = false;
-    showDetailTab('details');
+    const chosen = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
+    showDetailTab(openingTab(chosen, eventsById.get(chosen?.auctionEventId), chosenDetailTab));
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
     renderLots(); updateDirtyMarks();
@@ -719,6 +722,10 @@ async function initWorkspace() {
       return;
     }
     reminders.append(eventLine(event, 'reminder-event', 'p'));
+    // A sale that has started or ended is past reminding: it says so, and offers no reminders to add (G-20).
+    const state = eventTiming(event).state;
+    const past = state === 'ended' || state === 'started';
+    if (past) reminders.append(text('p', `This auction has ${state === 'ended' ? 'ended' : 'started'}.`, 'field-note reminder-past'));
     const instants = reminderInstants(event);
     for (const reminder of event.reminders ?? []) {
       const row = text('div', '', 'reminder-row'); row.append(text('span', reminderLabel(reminder), 'reminder-when'));
@@ -726,7 +733,7 @@ async function initWorkspace() {
       if (instant) { const at = reminderAtLabel(instant, event.timeZone, view()); row.append(text('span', at.text, `reminder-at${at.tone ? ` when-${at.tone}` : ''}`)); }
       reminders.append(row);
     }
-    if ((event.reminders ?? []).length) return;
+    if ((event.reminders ?? []).length || past) return;
     reminders.append(text('p', 'No reminders set.', 'field-note'));
     const standard = createEventDraft(event.precision === 'date-only' ? 'date-only' : 'timed').reminders;
     const add = text('button', `Add the standard two (${event.precision === 'date-only' ? 'the day before and on the day, at 09:00' : '1 day and 1 hour before'})`, 'quiet');

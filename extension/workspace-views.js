@@ -441,6 +441,24 @@ export function reminderLabel(reminder) {
 }
 
 export const DETAIL_TABS = Object.freeze(['details', 'bid', 'reminders', 'outcome']);
+
+/**
+ * The tab a coin opens on, the one its state calls for (G-20): Outcome when its sale ended with no outcome recorded,
+ * Bid when it closes within 48 hours with no bid planned or placed, else the tab the collector last chose this session,
+ * else Details.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string | null} [remembered]
+ * @param {string} [now]
+ * @returns {string}
+ */
+export function openingTab(lot, event, remembered = null, now = new Date().toISOString()) {
+  const open = !lot?.outcome?.status || lot.outcome.status === 'open';
+  const state = eventTiming(event, now).state;
+  if (open && event && state === 'ended') return 'outcome';
+  if (open && state === 'soon' && !lot?.activeBid && !lot?.plannedBid) return 'bid';
+  return remembered && DETAIL_TABS.includes(remembered) ? remembered : 'details';
+}
 /**
  * @param {string} active
  * @param {string} key

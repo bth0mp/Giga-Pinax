@@ -1451,3 +1451,26 @@ test('an auction is a row that says when it is and how many coins it holds, and 
   assert.equal(page.$('event-form').hidden, false);
   assert.equal(page.$('event-form').elements.name.value, 'Roma E-Sale 130');
 });
+
+// G-20: a coin opens on the tab its state calls for - Outcome when its sale ended without one, Bid when it closes
+// within 48 hours with no bid - else the tab chosen last; a past auction offers no reminders to add.
+test('a coin opens on the tab its state calls for, and a past auction offers no reminders', async () => {
+  const background = await backgroundWithEndedSale();
+  const soon = new Date(Date.now() + 5 * 3600000);
+  const pad = (value) => String(value).padStart(2, '0');
+  const closing = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Leu Web 40', eventKind: 'lot-closes', precision: 'timed',
+    localDate: `${soon.getUTCFullYear()}-${pad(soon.getUTCMonth() + 1)}-${pad(soon.getUTCDate())}`, localTime: `${pad(soon.getUTCHours())}:${pad(soon.getUTCMinutes())}`, timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Closing soon', sourceLinks: [], auctionEventId: closing.value.id } });
+  await settle(40);
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const selected = () => ['details', 'bid', 'reminders', 'outcome'].find((tab) => page.$(`detail-tab-${tab}`).getAttribute('aria-selected') === 'true');
+  await page.openCoin('Athens, owl');
+  assert.equal(selected(), 'outcome', 'its sale ended without an outcome');
+  await page.click('detail-tab-reminders');
+  assert.ok(page.$('selected-reminders').textContent.includes('This auction has ended.'));
+  assert.equal(page.$('add-standard-reminders'), null, 'nothing to add to a sale that is over');
+  await page.openCoin('Closing soon');
+  assert.equal(selected(), 'bid', 'it closes within 48 hours and has no bid');
+  await page.openCoin('Watched, no sale');
+  assert.equal(selected(), 'reminders', 'otherwise the tab chosen last');
+});
