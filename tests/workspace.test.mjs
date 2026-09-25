@@ -1479,3 +1479,19 @@ test('two references are the same coin only when the catalogue rules read them a
   assert.equal(sameReference('', 'Price 23'), false);
   assert.equal(sameReference('not a reference', 'not a reference'), false, 'what the rules cannot read matches nothing');
 });
+
+// Fix round, Important 2: on the Outcome tab a blank fee keeps the fee sheet saved with the bid, "No fees were charged
+// beyond the premium" says there were none, and typed fees override the sheet.
+test('the outcome form keeps the bid’s sheet when blank, says none with its checkbox, and sends typed fees', () => {
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const fees = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 };
+  const lot = { outcome: { status: 'open' }, activeBid: { amount: eur(1000), buyerPremiumBps: 2000 }, bidHistory: [], costEstimate: fees };
+  const base = { hammerCurrency: 'EUR', premium: '20' };
+  assert.equal(outcomeTermsFromForm(lot, base).value, undefined, 'blank: the bid’s sheet applies, nothing is sent');
+  assert.deepEqual(outcomeTermsFromForm(lot, { ...base, noFees: true, shipping: '15' }).value, { costEstimate: null }, 'the checkbox: none, whatever the fields hold');
+  assert.deepEqual(outcomeTermsFromForm(lot, { ...base, shipping: '20' }).value.costEstimate.shippingMinor, 2000, 'typed fees override');
+  const draft = outcomeDraftForLot({ ...lot, outcome: { status: 'won', hammer: eur(900), terms: { costEstimate: null } } });
+  assert.equal(draft.noFees, true);
+  assert.equal(draft.fees.shipping, '', 'no sheet is shown under the checkbox');
+  assert.equal(outcomeDraftForLot(lot).noFees, false);
+});

@@ -230,10 +230,11 @@ function outcomeTermsResult(terms, path, hammerCurrency) {
   }
   const checks = firstFailure(
     bpsResult(terms, 'buyerPremiumBps', path),
-    OWN(terms, 'costEstimate') ? costEstimateResult(terms.costEstimate, `${path}.costEstimate`) : { ok: true },
+    // `null` is "no fees were charged beyond the premium" (the Outcome tab's checkbox).
+    OWN(terms, 'costEstimate') && terms.costEstimate !== null ? costEstimateResult(terms.costEstimate, `${path}.costEstimate`) : { ok: true },
   );
   if (!checks.ok) return checks;
-  if (OWN(terms, 'costEstimate') && hammerCurrency && terms.costEstimate.currency !== hammerCurrency) {
+  if (OWN(terms, 'costEstimate') && terms.costEstimate !== null && hammerCurrency && terms.costEstimate.currency !== hammerCurrency) {
     return failure('invalid-outcome-terms', 'Fees are recorded in the hammer’s currency; nothing is converted.', `${path}.costEstimate.currency`);
   }
   return { ok: true, value: terms };

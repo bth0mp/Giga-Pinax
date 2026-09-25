@@ -90,7 +90,10 @@ export function bidPremiumRate(lot) {
 export function wonTerms(lot) {
   const terms = lot?.outcome?.terms;
   const rate = Number.isInteger(terms?.buyerPremiumBps) ? /** @type {number} */ (terms?.buyerPremiumBps) : bidPremiumRate(lot);
-  return { rate, estimate: terms?.costEstimate ?? lot?.costEstimate };
+  // `costEstimate: null` in the outcome's terms is the collector saying no fees were charged beyond the premium: none,
+  // over any sheet saved with the bid. Absent, the lot's own sheet applies.
+  const noFees = Boolean(terms) && OWN(terms, 'costEstimate') && terms?.costEstimate === null;
+  return { rate, estimate: noFees ? undefined : terms?.costEstimate ?? lot?.costEstimate, noFees };
 }
 
 /**
@@ -106,13 +109,15 @@ export function wonTerms(lot) {
  */
 export function deriveWonCost(lot, hammer) {
   const hasHammer = validateMoney(hammer).ok;
-  const { rate, estimate } = wonTerms(lot);
+  const { rate, estimate: sheet, noFees } = wonTerms(lot);
+  // No fees charged is a fee sheet of nothing, in the hammer's currency.
+  const estimate = noFees && hasHammer ? { currency: hammer?.currency, shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } : sheet;
   /** @type {CostGap[]} */
   const missing = [];
   if (!hasHammer) missing.push('hammer');
   if (rate === null) missing.push('premium-rate');
-  if (!estimate) missing.push('fees');
-  else if (hasHammer && estimate.currency !== hammer?.currency) missing.push('fee-currency');
+  if (!estimate && !noFees) missing.push('fees');
+  else if (estimate && hasHammer && estimate.currency !== hammer?.currency) missing.push('fee-currency');
   if (!hasHammer || rate === null) return { missing };
   const money = /** @type {Money} */ (hammer);
   const fees = /** @type {import('./types.js').CostEstimate} */ (estimate);

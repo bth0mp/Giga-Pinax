@@ -421,9 +421,11 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
   if (Number.isInteger(terms?.buyerPremiumBps)) { rate = terms?.buyerPremiumBps; premiumSource = 'as recorded with this outcome'; }
   else if (Number.isInteger(recordsPremiumRate(lot))) { rate = recordsPremiumRate(lot); premiumSource = lot?.activeBid ? 'from your bid' : lot?.plannedBid && rate === lot.plannedBid.buyerPremiumBps ? 'from your plan' : 'from your last bid'; }
   else if ((preset = housePresetFor(presets, lot?.auctionContext?.house))) { rate = preset.buyerPremiumBps; premiumSource = `from your ${preset.name} preset`; }
-  const saved = terms?.costEstimate ?? lot?.costEstimate;
+  // "No fees were charged beyond the premium" is the outcome's `costEstimate: null`: ticked, with no sheet shown.
+  const noFees = Boolean(terms) && Object.hasOwn(terms, 'costEstimate') && terms?.costEstimate === null;
+  const saved = noFees ? null : terms?.costEstimate ?? lot?.costEstimate;
   const estimate = saved?.currency === hammerCurrency ? saved : null;
-  const fees = estimate ? feeSheetTexts(estimate) : feeSheetTexts(preset ? { premiumVatBps: preset.premiumVatBps, platformFeeBps: preset.platformFeeBps } : null);
+  const fees = estimate || noFees ? feeSheetTexts(estimate) : feeSheetTexts(preset ? { premiumVatBps: preset.premiumVatBps, platformFeeBps: preset.platformFeeBps } : null);
   return {
     status: settled ? String(lot?.outcome?.status) : 'won',
     hammer: moneyInputText(lot?.outcome?.hammer, locale),
@@ -440,7 +442,8 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
     premium: premiumInputText(rate),
     premiumSource,
     fees,
-    feesOpen: rate === null || !estimate,
+    feesOpen: rate === null || (!estimate && !noFees),
+    noFees,
   };
 }
 
@@ -474,7 +477,10 @@ export function outcomeTermsFromForm(lot, values, locale = 'en-US') {
   /** @type {Record<string, *>} */
   const terms = {};
   if (rate !== null && rate !== recordsPremiumRate(lot)) terms.buyerPremiumBps = rate;
-  if (fees.value && !sameFeeSheet(fees.value, lot?.costEstimate)) terms.costEstimate = fees.value;
+  // Ticked, there were no fees beyond the premium, whatever the fields hold; blank, the sheet saved with the bid applies;
+  // typed, the typed sheet overrides it.
+  if (values.noFees) terms.costEstimate = null;
+  else if (fees.value && !sameFeeSheet(fees.value, lot?.costEstimate)) terms.costEstimate = fees.value;
   if (Object.keys(terms).length) return { ok: true, value: terms };
   return { ok: true, value: lot?.outcome?.terms ? null : undefined };
 }

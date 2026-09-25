@@ -175,7 +175,7 @@
  * hammer is costed on them again. The fee sheet is in the hammer's currency.
  * @typedef {object} OutcomeTerms
  * @property {number} [buyerPremiumBps]
- * @property {CostEstimate} [costEstimate]
+ * @property {CostEstimate | null} [costEstimate] null: no fees were charged beyond the premium
  */
 
 /**

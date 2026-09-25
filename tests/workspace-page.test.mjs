@@ -1510,3 +1510,27 @@ test('a wide workspace opened on a named coin opens that coin, not the queue’s
   await settle(10);
   assert.equal(unknown.$('coin-editor').hidden, true, 'an id the store no longer holds opens nothing');
 });
+
+// Fix round, Important 2, on the page: blank keeps the bid's sheet, the checkbox says none, typed fees override.
+test('the Outcome tab’s fees: blank keeps the bid’s sheet, the checkbox charges none, typed fees override', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const lot = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.place', lotId: lot.id, expectedRevision: 0, activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000 },
+    costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0, premiumVatBps: 1900 } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const f = page.$('outcome-form').elements;
+  const total = () => storedLot(background, 'Nero, denarius').outcome.cost.total.minor;
+  assert.match(page.$('outcome-fees').textContent, /Left blank, the fees saved with the bid apply/);
+  await page.type('outcome-form', 'hammer', '1000');
+  for (const { name } of (await import('../extension/bid-tools.js')).FEE_SHEET_FIELDS) await page.type('outcome-form', name, '');
+  await page.submit('outcome-form');
+  assert.equal(total(), 100000 + 20000 + 3800 + 1500, 'blank: the bid’s sheet');
+  f.noFees.checked = true; await page.$('outcome-form').emit('input', { target: f.noFees });
+  await page.submit('outcome-form');
+  assert.equal(total(), 100000 + 20000, 'ticked: none beyond the premium');
+  assert.equal(f.noFees.checked, true, 'the form says so again');
+  f.noFees.checked = false; await page.type('outcome-form', 'shipping', '30');
+  await page.submit('outcome-form');
+  assert.equal(total(), 100000 + 20000 + 3000, 'typed: the typed sheet');
+});

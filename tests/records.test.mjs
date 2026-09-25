@@ -1425,3 +1425,23 @@ test('exposure adds the all-in total of the bids whose premium and fees are know
   assert.equal(exposure.EUR.bindingCount, 3);
   assert.equal(exposure.EUR.byEvent[IDS.eventEur].knownTotalMinor, 130000 + 26000 + 4940 + 1500);
 });
+
+// Fix round, Important 2: "No fees were charged beyond the premium" is `terms.costEstimate: null` - a complete cost of
+// hammer + premium, over the fee sheet saved with the bid; a correction that restates nothing keeps it.
+test('outcome terms with no fee sheet cost the coin at hammer and premium alone, over the bid’s sheet', () => {
+  const lot = makeLot(IDS.lotEur, {
+    activeBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000, placedAt: NOW },
+    bidHistory: [{ ...settledWon(150000, 2000), action: 'placed' }],
+    costEstimate: KUENKER_FEES,
+  });
+  const none = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { costEstimate: null } }, NOW);
+  assert.equal(none.ok, true, none.error?.message);
+  assert.equal(none.value.outcome.cost.total.minor, 100000 + 20000);
+  assert.equal(none.value.outcome.cost.shipping.minor, 0);
+  assert.deepEqual(none.value.outcome.terms, { costEstimate: null });
+  assert.equal(validateSnapshot(snapshotWith(none.value)).ok, true);
+  const corrected = setOutcome(none.value, { status: 'won', hammer: { currency: 'EUR', minor: 110000 } }, NOW);
+  assert.equal(corrected.value.outcome.cost.total.minor, 110000 + 22000, 'kept over a correction');
+  const blank = setOutcome(lot, { status: 'won', hammer: { currency: 'EUR', minor: 100000 } }, NOW);
+  assert.equal(blank.value.outcome.cost.total.minor, 100000 + 20000 + 3800 + 1500, 'no terms: the bid’s sheet applies');
+});
