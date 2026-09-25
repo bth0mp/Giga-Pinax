@@ -1021,16 +1021,18 @@ async function initWorkspace() {
     for (const label of ['Currency', 'Entries', 'Hammer', 'Total cost', 'Invoice paid', 'Acquired']) { const cell = text('th', label); cell.setAttribute('scope', 'col'); headRow.append(cell); }
     head.append(headRow);
     const years = (totals) => totals.firstYear === null ? '—' : totals.firstYear === totals.lastYear ? String(totals.firstYear) : `${totals.firstYear}–${totals.lastYear}`;
-    const total = (currency, minor, count, of, none = 'None recorded') => {
+    // A coin whose fees were never recorded counts as having none, and the cell says how many did (G-05).
+    const total = (currency, minor, count, of, none = 'None recorded', noFees = 0) => {
       if (!count) return none;
       const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
-      return count < of ? `${amount} (${count} of ${of})` : amount;
+      const parts = [count < of ? `${count} of ${of}` : '', noFees ? `${noFees} without fees` : ''].filter(Boolean);
+      return parts.length ? `${amount} (${parts.join(', ')})` : amount;
     };
     const body = document.createElement('tbody');
     const row = (cells) => { const tr = document.createElement('tr'); const [first, ...rest] = cells; const header = text('th', first); header.setAttribute('scope', 'row'); tr.append(header, ...rest.map((value) => text('td', value))); body.append(tr); };
     for (const [currency, totals] of Object.entries(view.byCurrency)) {
       row([currency, String(totals.entryCount), total(currency, totals.hammerMinor, totals.hammerCount, totals.entryCount),
-        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete'),
+        total(currency, totals.costMinor, totals.costCount, totals.entryCount, 'Incomplete', totals.costNoFeesCount),
         total(currency, totals.invoiceMinor, totals.invoiceCount, totals.entryCount), years(totals)]);
     }
     if (view.unpriced.entryCount) row(['No amount recorded', String(view.unpriced.entryCount), '—', '—', '—', years(view.unpriced)]);
@@ -1048,13 +1050,33 @@ async function initWorkspace() {
   };
   // A won coin's Hammer · Premium · Fees · Total, currency code once, then the premium rate and each fee, or what
   // stopped the total from being worked out.
-  const costLineParts = (line) => {
+  // The one figure that would complete it is a link to that field on the coin's Outcome tab.
+  const costLineParts = (line, lotId) => {
     const row = text('div', '', 'money-line'); row.append(text('span', line.currency, 'money-currency'));
-    for (const { label, figure } of line.cells) {
+    if (line.tone) row.dataset.tone = line.tone;
+    for (const { label, figure, hint } of line.cells) {
       const cell = text('span', '', 'money-cell'); cell.append(text('span', label, 'money-label'), document.createTextNode(' '), text('span', figure, 'money-figure'));
+      if (hint) cell.append(text('span', hint, 'money-hint'));
       row.append(cell);
     }
-    return [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+    const parts = [row, ...(line.detail ? [text('p', line.detail, 'money-detail')] : []), ...(line.note ? [text('p', line.note, 'money-note')] : [])];
+    if (line.fix && lotId) {
+      const fix = text('button', line.fix.label, 'quiet money-fix'); fix.type = 'button';
+      fix.addEventListener('click', () => openCoinField(lotId, line.fix.field));
+      parts.push(fix);
+    }
+    return parts;
+  };
+  // A coin opened on its Outcome tab with the keyboard on one field: the premium, the hammer, or the first fee with
+  // its fold open. A settled coin the open queue does not list is shown under Completed.
+  const openCoinField = (lotId, field) => {
+    routeChangeFromNav = false; location.hash = '#watchlist'; setRoute();
+    if (!auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).some(({ lot }) => lot.id === lotId)) $('lot-queue').value = 'completed';
+    selectLot(lotId, { focus: false });
+    if (selection.selectedLotId !== lotId) return;
+    showDetailTab('outcome');
+    const f = $('outcome-form').elements;
+    if (field === 'fees') { $('outcome-fees').open = true; f[FEE_SHEET_FIELDS[0].name].focus(); } else f[field]?.focus();
   };
   // The one collection entry being corrected in place, what it read when the form opened, and what has been typed
   // since: kept here, so a redraw of the route while the form is open never loses the typing.
@@ -1158,7 +1180,7 @@ async function initWorkspace() {
     for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
-      if (line) card.append(...costLineParts(line));
+      if (line) card.append(...costLineParts(line, lot.id));
       else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
       card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card);
@@ -1169,13 +1191,13 @@ async function initWorkspace() {
     const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
     if (!view.entries.length) collection.append(text('p', 'No collection entries yet.', 'field-note'));
     else {
-      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin missing any of those figures is counted as incomplete, never estimated.', 'field-note collection-note'));
+      collection.append(text('p', 'From your own records: the amounts you entered and the comparables you saved. This is not an appraisal or a valuation, and no amount is converted between currencies. Total cost is each coin’s hammer, premium and saved fees, worked out when its outcome was saved; a coin with no fees recorded counts as having none, and one missing its hammer or premium rate is counted as incomplete, never estimated.', 'field-note collection-note'));
       collection.append(collectionTotalsTable(view));
     }
     for (const entry of snapshot.collectionEntries ?? []) {
       const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
-      if (line) card.append(...costLineParts(line));
+      if (line) card.append(...costLineParts(line, entry.lotId));
       else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
       const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));
       if (invoiceLine) card.append(text('p', invoiceLine));

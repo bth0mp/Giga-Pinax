@@ -3,7 +3,7 @@
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
 import { calculateBidCost } from './core/money.js';
-import { costFees, eventTiming, lotCost, projectExposure } from './core/projections.js';
+import { costFees, eventTiming, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
 /**
@@ -222,10 +222,10 @@ function lineFigure(money, locale) {
   catch { format = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   return format.formatToParts(whole).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
 }
+// The gaps that leave a won coin with no total, in words; fees never recorded are not one of them (G-05).
 const COST_GAP_WORDS = Object.freeze({
   hammer: 'no hammer recorded',
-  'premium-rate': 'no buyer’s premium rate on its bid',
-  fees: 'no fees were saved with this coin',
+  'premium-rate': 'no buyer’s premium rate',
   'fee-currency': 'its fees were saved in another currency, and are never converted',
 });
 const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]);
@@ -233,11 +233,14 @@ const FEE_WORDS = Object.freeze([['premiumVat', 'VAT on premium'], ['platformFee
 /**
  * A won coin's money line, as its History card and its collection entry show it: Hammer · Premium · Fees · Total in
  * the hammer's currency, named once. The cost is the one kept with the outcome (or, for a coin won before costs were
- * kept, the same working from its records). A total that could not be worked out reads "Incomplete", and the note
- * says which figure was never recorded; the detail line gives the premium rate and each fee that is not zero.
+ * kept, the same working from its records). With no fees recorded the total is the hammer and premium, said so, and
+ * the line offers to add them; a total that cannot be worked out at all reads "Incomplete" in the warning tone, and the
+ * note says which figure was never recorded. `fix` is the one field that would complete the line - on the coin's
+ * Outcome tab - and the words for the link to it. The detail line gives the premium rate and each fee that is not zero.
  * @param {Lot | null | undefined} lot
  * @param {string} [locale]
- * @returns {{ currency: string, cells: Array<{ label: string, figure: string }>, detail: string, note: string } | null}
+ * @returns {{ currency: string, cells: Array<{ label: string, figure: string, hint?: string }>, detail: string, note: string,
+ *   tone: '' | 'warning', fix: { field: 'hammer' | 'premium' | 'fees', label: string } | null } | null}
  */
 export function wonCostLine(lot, locale = 'en-US') {
   if (lot?.outcome?.status !== 'won') return null;
@@ -245,16 +248,29 @@ export function wonCostLine(lot, locale = 'en-US') {
   const hammer = lot.outcome.hammer;
   const figure = (money) => (money ? lineFigure(money, locale) : '—');
   const fees = costFees(cost);
+  const missing = cost?.missing ?? [];
+  const shown = shownCostTotal(cost, hammer);
+  const currency = hammer?.currency ?? cost?.premium?.currency ?? '';
+  const totalCell = shown.total
+    ? { label: 'Total', figure: figure(shown.total), ...(shown.partial ? { hint: 'hammer + premium' } : {}) }
+    : { label: 'Total', figure: 'Incomplete' };
   const cells = [
     { label: 'Hammer', figure: figure(hammer) }, { label: 'Premium', figure: figure(cost?.premium) },
-    { label: 'Fees', figure: figure(fees) }, { label: 'Total', figure: cost?.total ? figure(cost.total) : 'Incomplete' },
+    { label: 'Fees', figure: fees ? figure(fees) : missing.includes('fees') ? 'not recorded' : '—' }, totalCell,
   ];
   const rate = Number.isInteger(cost?.buyerPremiumBps) ? `Premium ${Number(/** @type {number} */ (cost?.buyerPremiumBps) / 100)}%` : '';
-  const detail = cost?.total ? [rate, ...FEE_WORDS.filter(([key]) => cost[key]?.minor > 0)
-    .map(([key, words]) => `${words} ${figure(cost[key])}`)].filter(Boolean).join(' · ') : '';
-  const gaps = (cost?.missing ?? []).map((gap) => COST_GAP_WORDS[gap] ?? gap).join('; ');
-  const note = cost?.total ? '' : cost ? `Total incomplete: ${gaps}.` : 'Total not worked out: the amounts are too large to add exactly.';
-  return { currency: hammer?.currency ?? cost?.premium?.currency ?? '', cells, detail, note };
+  const detail = cost?.total
+    ? [rate, ...FEE_WORDS.filter(([key]) => cost[key]?.minor > 0).map(([key, words]) => `${words} ${figure(cost[key])}`)].filter(Boolean).join(' · ')
+    : shown.partial ? [rate, 'fees not recorded'].filter(Boolean).join(' · ') : '';
+  const gaps = missing.filter((gap) => COST_GAP_WORDS[gap]).map((gap) => COST_GAP_WORDS[gap]).join('; ');
+  const note = shown.total ? '' : cost ? `Total incomplete: ${gaps || 'no fees recorded'}.` : 'Total not worked out: the amounts are too large to add exactly.';
+  /** @type {{ field: 'hammer' | 'premium' | 'fees', label: string } | null} */
+  let fix = null;
+  if (missing.includes('hammer')) fix = { field: 'hammer', label: 'Add the hammer' };
+  else if (missing.includes('premium-rate')) fix = { field: 'premium', label: 'Add the premium rate' };
+  else if (missing.includes('fee-currency')) fix = { field: 'fees', label: `Enter the fees in ${currency}` };
+  else if (missing.includes('fees')) fix = { field: 'fees', label: 'Add fees' };
+  return { currency, cells, detail, note, tone: shown.total ? '' : 'warning', fix };
 }
 
 /**

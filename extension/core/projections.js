@@ -38,8 +38,9 @@ import { deriveReminderTriggers, localDateAtInstant, resolveZonedDateTime } from
  * @property {number | null} hammerMinor
  * @property {number} invoiceCount
  * @property {number | null} invoiceMinor
- * @property {number} costCount entries whose worked-out cost is complete
+ * @property {number} costCount entries with a total shown: a complete cost, or hammer and premium with no fees recorded
  * @property {number | null} costMinor
+ * @property {number} costNoFeesCount of those, the ones whose fees were never recorded (counted as none)
  * @property {number | null} firstYear
  * @property {number | null} lastYear
  */
@@ -148,6 +149,24 @@ export function costFees(cost) {
   let minor = 0;
   for (const part of COST_FEE_PARTS) minor += cost[part]?.minor ?? 0;
   return { currency: cost.total.currency, minor };
+}
+
+/**
+ * The total a won coin is shown with (G-05). A complete cost shows its own. A fee sheet never saved means no fees were
+ * recorded, not that the total is unknowable: with only that missing, the total shown is the hammer and premium, and
+ * `partial` says so; the stored cost still names the gap, and nothing is estimated in the data. Any other gap - no
+ * hammer, no premium rate, fees in another currency - leaves no total at all.
+ * @param {import('./types.js').WonCost | null | undefined} cost
+ * @param {Money | null | undefined} hammer
+ * @returns {{ total: Money | null, partial: boolean }}
+ */
+export function shownCostTotal(cost, hammer) {
+  if (cost?.total) return { total: cost.total, partial: false };
+  const onlyFees = cost?.missing?.length === 1 && cost.missing[0] === 'fees';
+  if (!onlyFees || !cost?.premium || !validateMoney(hammer).ok || hammer?.currency !== cost.premium.currency) return { total: null, partial: false };
+  const minor = BigInt(/** @type {Money} */ (hammer).minor) + BigInt(cost.premium.minor);
+  if (minor > BigInt(Number.MAX_SAFE_INTEGER)) return { total: null, partial: false };
+  return { total: { currency: cost.premium.currency, minor: Number(minor) }, partial: true };
 }
 
 function emptyExposure() {
@@ -288,13 +307,14 @@ export function projectCollection(snapshot) {
     // Only the amounts validateMoney accepts are left, so each is read as Money.
     const lot = lots.get(entry.lotId);
     const cost = lotCost(lot);
-    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['cost', cost?.total], ['invoice', entry.actualInvoice]]
+    const shown = shownCostTotal(cost, lot?.outcome?.hammer);
+    const amounts = /** @type {Array<[string, Money]>} */ ([['hammer', entry.hammer], ['cost', shown.total], ['invoice', entry.actualInvoice]]
       .filter(([, money]) => validateMoney(money).ok));
     const currencies = new Set(amounts.map(([, money]) => money.currency));
     if (!currencies.size) { unpriced.entryCount += 1; spreadYears(unpriced, year); }
     for (const currency of currencies) {
       const totals = byCurrency[currency] ??= {
-        entryCount: 0, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
+        entryCount: 0, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 0, invoiceMinor: 0, firstYear: null, lastYear: null,
       };
       totals.entryCount += 1;
       spreadYears(totals, year);
@@ -303,6 +323,7 @@ export function projectCollection(snapshot) {
       const totals = byCurrency[money.currency];
       totals[`${kind}Count`] += 1;
       totals[`${kind}Minor`] = addMinor(totals[`${kind}Minor`], money.minor);
+      if (kind === 'cost' && shown.partial) totals.costNoFeesCount += 1;
     }
     const currency = amounts[0]?.[1].currency ?? null;
     const reference = String(lot?.reference ?? '').trim();

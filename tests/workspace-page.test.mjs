@@ -294,7 +294,15 @@ test('a won coin’s History card and the collection totals show what it really 
   assert.deepEqual(line.children.map((cell) => cell.textContent), ['EUR', 'Hammer 1,300.00', 'Premium 325.00', 'Fees 76.75', 'Total 1,701.75']);
   assert.ok(card.textContent.includes('Premium 25% · VAT on premium 61.75 · shipping 15.00'));
   const nero = page.$('history-list').children.find((item) => item.textContent.includes('Nero, denarius'));
-  assert.ok(nero.textContent.includes('Total incomplete: no buyer’s premium rate on its bid; no fees were saved with this coin.'));
+  assert.ok(nero.textContent.includes('Total incomplete: no buyer’s premium rate.'));
+  assert.equal(nero.querySelector('.money-line').dataset.tone, 'warning');
+  // The one figure that would complete it is a link to the coin's Outcome tab, on that field.
+  const fix = nero.querySelectorAll('button').find((button) => button.textContent === 'Add the premium rate');
+  await fix.click(); await settle();
+  assert.equal(page.location.hash, '#watchlist');
+  assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
+  assert.equal(page.$('detail-tab-outcome').getAttribute('aria-selected'), 'true');
+  assert.ok(page.document.activeElement === page.$('outcome-form').elements.premium);
   const [eur] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
   assert.deepEqual(eur, ['EUR', '2', '€1,800.00', '€1,701.75 (1 of 2)', 'None recorded', '2023–2026']);
   const entry = page.$('collection-list').querySelectorAll('article').find((item) => item.textContent.includes('Künker lot 1234'));
@@ -1227,4 +1235,24 @@ test('a coin won without a recorded bid is costed from the premium and fees type
   page.$('outcome-form').elements.status.value = 'lost';
   await page.$('outcome-form').emit('change', { target: page.$('outcome-form').elements.status[1] ?? page.$('passed-outcome') });
   assert.equal(page.$('outcome-terms').hidden, true);
+});
+
+// G-05: a coin won on a planned 20 % with no fee sheet reads hammer + premium as its total, not "Incomplete", and
+// Add fees opens the fees fold on its Outcome tab.
+test('a won coin with no fees recorded shows hammer + premium, counts it in the totals, and offers Add fees', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, as', sourceLinks: [] } });
+  await background.send({ type: 'bid.plan', lotId: saved.value.id, expectedRevision: 0, plannedBid: { amount: { currency: 'USD', minor: 26000 }, buyerPremiumBps: 2000 } });
+  await background.send({ type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 1, outcome: { status: 'won', hammer: { currency: 'USD', minor: 24000 } }, addToCollection: { title: 'Nero, as', acquisitionDate: '2026-09-20', sourceLinks: [] } });
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const card = page.$('history-list').children.find((item) => item.textContent.includes('Nero, as'));
+  const line = card.querySelector('.money-line');
+  assert.deepEqual(line.children.map((cell) => cell.textContent), ['USD', 'Hammer 240.00', 'Premium 48.00', 'Fees not recorded', 'Total 288.00hammer + premium']);
+  assert.equal(line.dataset.tone, undefined, 'not a failure: nothing is in the warning tone');
+  assert.equal(background.root().lots[0].outcome.cost.missing[0], 'fees', 'the data still names the gap');
+  const [usd] = page.$('collection-totals').querySelector('tbody').querySelectorAll('tr').map(cells);
+  assert.equal(usd[3], '$288.00 (1 without fees)');
+  await card.querySelectorAll('button').find((button) => button.textContent === 'Add fees').click(); await settle();
+  assert.equal(page.$('outcome-fees').open, true);
+  assert.ok(page.document.activeElement === page.$('outcome-form').elements.premiumVat);
 });

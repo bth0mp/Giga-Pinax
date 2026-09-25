@@ -703,13 +703,13 @@ test('the collection is totalled within each currency, never across them', () =>
   });
   assert.deepEqual(Object.keys(collection.byCurrency), ['USD', 'EUR', 'CHF']);
   assert.deepEqual(collection.byCurrency.EUR, {
-    entryCount: 3, hammerCount: 3, hammerMinor: 150000, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
+    entryCount: 3, hammerCount: 3, hammerMinor: 150000, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 1, invoiceMinor: 125000, firstYear: 2019, lastYear: 2023,
   });
   assert.deepEqual(collection.byCurrency.USD, {
-    entryCount: 1, hammerCount: 1, hammerMinor: 50000, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
+    entryCount: 1, hammerCount: 1, hammerMinor: 50000, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 1, invoiceMinor: 62000, firstYear: 2021, lastYear: 2021,
   });
   assert.deepEqual(collection.byCurrency.CHF, {
-    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 1, invoiceMinor: 40000, firstYear: 2020, lastYear: 2020,
   });
   assert.deepEqual(collection.unpriced, { entryCount: 0, firstYear: null, lastYear: null });
   assert.deepEqual(collection.entries.map(({ id, currency, reference }) => [id, currency, reference]), [
@@ -758,7 +758,7 @@ test('an entry with no hammer is counted without one, and one with no amount at 
     evidence: [comparable('e1', 'Price 23', usd(8000))],
   });
   assert.deepEqual(collection.byCurrency.USD, {
-    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
+    entryCount: 1, hammerCount: 0, hammerMinor: 0, costCount: 0, costMinor: 0, costNoFeesCount: 0, invoiceCount: 1, invoiceMinor: 9000, firstYear: 2018, lastYear: 2018,
   });
   assert.deepEqual(collection.unpriced, { entryCount: 1, firstYear: 2024, lastYear: 2024 });
   const [invoiced, unpriced] = collection.entries;
@@ -1328,8 +1328,9 @@ test('the collection totals each won coin’s worked-out cost per currency and c
     ],
   });
   assert.equal(collection.byCurrency.EUR.entryCount, 4);
-  assert.equal(collection.byCurrency.EUR.costCount, 2, 'two coins have a complete cost');
-  assert.equal(collection.byCurrency.EUR.costMinor, 125000 + 13000);
+  assert.equal(collection.byCurrency.EUR.costCount, 3, 'two coins have a complete cost, and one a cost with no fees recorded');
+  assert.equal(collection.byCurrency.EUR.costMinor, 125000 + 48000 + 13000, 'fees not recorded count as none, as the page shows them');
+  assert.equal(collection.byCurrency.EUR.costNoFeesCount, 1);
   assert.deepEqual(collection.entries.map(({ id, cost: entryCost }) => [id, entryCost?.total?.minor ?? null, entryCost?.missing ?? null]), [
     ['a', 125000, null], ['b', null, ['fees']], ['c', 13000, null], ['d', null, null],
   ]);
@@ -1354,14 +1355,28 @@ test('a won coin’s money line reads Hammer · Premium · Fees · Total in one 
 });
 
 test('an incomplete cost shows what it has, never a total, and says what is missing', () => {
-  const line = wonCostLine({ outcome: { status: 'won', hammer: usd(50000), cost: { buyerPremiumBps: 2000, premium: usd(10000), missing: ['fees'] } } });
-  assert.deepEqual(line.cells.map(({ figure }) => figure), ['500.00', '100.00', '—', 'Incomplete']);
-  assert.equal(line.note, 'Total incomplete: no fees were saved with this coin.');
   const bare = wonCostLine({ outcome: { status: 'won' }, bidHistory: [] });
-  assert.deepEqual(bare.cells.map(({ figure }) => figure), ['—', '—', '—', 'Incomplete']);
-  assert.equal(bare.note, 'Total incomplete: no hammer recorded; no buyer’s premium rate on its bid; no fees were saved with this coin.');
+  assert.deepEqual(bare.cells.map(({ figure }) => figure), ['—', '—', 'not recorded', 'Incomplete']);
+  assert.equal(bare.note, 'Total incomplete: no hammer recorded; no buyer’s premium rate.');
+  assert.deepEqual(bare.fix, { field: 'hammer', label: 'Add the hammer' }, 'the first figure to fill, and where');
+  assert.equal(bare.tone, 'warning');
+  const noRate = wonCostLine({ outcome: { status: 'won', hammer: usd(50000), cost: { missing: ['premium-rate', 'fees'] } }, bidHistory: [] });
+  assert.deepEqual(noRate.fix, { field: 'premium', label: 'Add the premium rate' });
   const foreign = wonCostLine({ outcome: { status: 'won', hammer: usd(1), cost: { buyerPremiumBps: 0, premium: usd(0), missing: ['fee-currency'] } } });
   assert.equal(foreign.note, 'Total incomplete: its fees were saved in another currency, and are never converted.');
+  assert.deepEqual(foreign.fix, { field: 'fees', label: 'Enter the fees in USD' });
+});
+
+// G-05: a fee sheet never saved means no fees were recorded, not that the total is unknowable. The line shows hammer
+// plus premium as the total, says so, and offers to add fees; the stored cost still names the gap.
+test('a won coin with no fees recorded shows hammer + premium as its total, and offers to add the fees', () => {
+  const line = wonCostLine({ outcome: { status: 'won', hammer: usd(24000), cost: { buyerPremiumBps: 2000, premium: usd(4800), missing: ['fees'] } } });
+  assert.deepEqual(line.cells.map(({ figure }) => figure), ['240.00', '48.00', 'not recorded', '288.00']);
+  assert.equal(line.cells[3].hint, 'hammer + premium');
+  assert.equal(line.detail, 'Premium 20% · fees not recorded');
+  assert.equal(line.note, '');
+  assert.equal(line.tone, '');
+  assert.deepEqual(line.fix, { field: 'fees', label: 'Add fees' });
 });
 
 // Q-01: the Outcome form states the premium rate and fees a won coin is costed on - its bid's, else its plan's, else
