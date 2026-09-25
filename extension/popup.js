@@ -498,14 +498,16 @@ function renderCandidates(candidates, corpus, partial, personMismatch = false) {
   $('candidates-count').textContent = `${candidates.length} ${candidates.length === 1 ? 'type' : 'types'}${local ? ', local catalogue' : ''}`;
   const groups = candidateGroups(candidates);
   candidateRows = [];
-  const row = ({ id, title, source }, split = null, group = null) => {
+  const row = ({ id, title, source, label, note }, split = null, group = null) => {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'text-button';
-    // The whole title is the button's name wherever the row shows only part of it under its volume's heading.
-    button.setAttribute('aria-label', title);
-    if (split) {
+    // The whole title is the button's name wherever the row shows only part of it under its volume's heading. A type offered because the lot named
+    // no edition (lookup.js soleEditionOffer) is named as the collector writes it, with the reason he has to choose it himself.
+    button.setAttribute('aria-label', note ? `${label ?? title} — ${note}` : title);
+    if (note) button.textContent = `${label ?? title} — ${note}`;
+    else if (split) {
       const ruler = document.createElement('strong');
       ruler.textContent = split.section;
       const rest = document.createElement('span');

@@ -808,6 +808,17 @@ export function soleEdition(volume, title) {
   if (held.length !== 1 || !/\(2nd edition\)$/.test(held[0].value)) return false;
   return norm(parseReference(title, false)?.volume ?? '') === norm(held[0].value);
 }
+// That hit as it is offered: never opened, since an unedited "RIC I 306" may be the 1923 first edition's number and so another coin, but named the
+// way the collector writes it ("RIC I² Nero 306") with the reason he has to choose it himself. Null for any other hit.
+export function soleEditionOffer(reference, title) {
+  if (!soleEdition(reference?.volume, title)) return null;
+  const hit = parseReference(title, false);
+  const short = (RIC_VOLUMES.find(({ value }) => value === hit.volume)?.label ?? hit.volume).replace(/ \(2nd ed\.\)$/, '');
+  const written = unquote(reference.volume).replace(/, Part (\d)/, '.$1');
+  const lot = (Array.isArray(reference.rulers) && reference.rulers.length > 0) || Boolean(reference.headingMint) || Boolean(reference.struckAt);
+  return { label: squash(`RIC ${short} ${hit.section} ${hit.number}`),
+    note: `${lot ? 'the lot says' : 'the reference says'} RIC ${written} without an edition; the second edition is the one bundled` };
+}
 
 // Whether a coin OCRE titles as the answer was struck at a RIC VI–IX mint that is none of the ones the lot's heading names beside its ruler ("Constantius I.
 // Follis. Trier. RIC VI 12." found only his Alexandria 12): the ruler's number there is not the dealer's coin, so it is offered, never opened.

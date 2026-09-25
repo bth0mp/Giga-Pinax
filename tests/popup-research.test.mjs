@@ -2282,6 +2282,26 @@ test('a short list of types keeps no filter and no volume headings', async () =>
     ['RIC I (second edition) Augustus 237', 'RIC I (second edition) Galba 237', 'RIC I (second edition) Nero 237']);
 });
 
+// Loop V-06 (S1): an unedited "RIC I 306" may be the first edition's number, so its one bundled type is offered, never opened, and the row says why.
+test('a type offered because the lot named no edition says so, and one click opens it', async () => {
+  const opened = [];
+  const note = 'the lot says RIC I without an edition; the second edition is the one bundled';
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async () => ({ status: 'candidates', corpus: 'ocre', partial: true, candidates: [
+      { id: 'ric.1(2).ner.306', title: 'RIC I (second edition) Nero 306', source: 'local', label: 'RIC I² Nero 306', note }] }),
+    localProvider: { serves: () => true, lookupById: async (corpus, id) => { opened.push(id); return { status: 'ok', card: { id, corpus, label: 'RIC I (second edition) Nero 306', obverse: {}, reverse: {} } }; } } });
+  popup.element('quick-reference').value = 'Nero. As. RIC I 306; WCN 275.';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [item] = popup.element('candidate-list').children;
+  const row = item.children[0];
+  assert.equal(row.textContent, `RIC I² Nero 306 — ${note}`);
+  assert.equal(row['aria-label'], `RIC I² Nero 306 — ${note}`);
+  await row.emit('click');
+  await settle();
+  assert.deepEqual(opened, ['ric.1(2).ner.306']);
+});
+
 test('the list of types stands outside the Refine form', () => {
   const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
   const refine = html.slice(html.indexOf('<details id="refine-reference"'), html.indexOf('</details>', html.indexOf('<details id="refine-reference"')));
