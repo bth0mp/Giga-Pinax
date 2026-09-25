@@ -309,7 +309,8 @@ test('after Save the coin is saved in one step, and the Reference box is still t
     const pages = browser.context.pages().length;
     await page.locator('#companion-save-watchlist').click();
     // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
-    await page.locator('#companion-saved-line .pill[title="Saved to your watchlist"]').waitFor({ timeout: 15000 });
+    await page.locator('#companion-saved-line .pill[title="Added to your watchlist"]').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('#companion-saved-line .pill').first().textContent(), 'Watching');
     assert.equal(browser.context.pages().length, pages, 'no tab opened');
     assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();

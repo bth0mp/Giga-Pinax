@@ -41,7 +41,7 @@
           <label for="quick-reference">Reference</label>
           <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus aria-keyshortcuts="Control+K Meta+K" placeholder="Reference or pasted lot text" aria-describedby="form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
-          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices follow from acsearch (subscription) and CoinArchives (free).</p><p id="workspace-help" class="field-hint">Save a coin to track its auction, bid and outcome in the workspace.</p></div>
+          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices follow from acsearch (subscription) and CoinArchives (free).</p><p id="workspace-help" class="field-hint">Watch a coin to track its auction, bid and outcome in the workspace.</p></div>
           <nav id="recent" class="recent" aria-label="Recent lookups" hidden><span class="field-hint recent-label">Recent</span><ul id="recent-list" class="recent-list"></ul><button id="recent-more" class="text-button recent-more" type="button" aria-expanded="false" aria-controls="recent-list" hidden>More</button></nav>
         </div>
         <div class="reference-body">
@@ -68,7 +68,7 @@
         </div>
       </form>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
-        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><div class="type-actions"><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a><button id="companion-save-watchlist" class="secondary-button companion-save-watchlist" type="button" data-companion-runtime disabled aria-label="Save to watchlist" title="Saves the reference and its type page to your watchlist. Session acsearch prices stay in this view.">Save</button></div></div>
+        <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><div class="type-actions"><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a><button id="companion-save-watchlist" class="secondary-button companion-save-watchlist" type="button" data-companion-runtime disabled aria-label="Watch: add this coin to your watchlist" title="Add to your watchlist to track its auction, bid and outcome in the workspace">Watch</button></div></div>
         <div id="companion-status-row" class="status-row" hidden><span id="companion-saved-line" class="status-line" role="status" hidden></span><span id="companion-want-line" class="status-line" role="status" hidden></span></div>
         <p id="companion-save-hint" class="field-hint save-hint" hidden></p>
         <details id="sides-details" class="sides-details"><summary><span id="sides-summary">Obverse · reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
@@ -161,7 +161,7 @@
           <div><dt>Auctions due</dt><dd id="companion-due-count">None due</dd></div>
         </dl>
         <p id="companion-needs-outcome" class="companion-needs-outcome" hidden><button id="companion-open-needs-outcome" class="text-button" type="button" data-companion-runtime></button></p>
-        <div id="companion-empty" class="companion-empty" hidden><h3>No coins yet</h3><p>Save a coin from Research, or add one in the workspace.</p></div>
+        <div id="companion-empty" class="companion-empty" hidden><h3>No coins yet</h3><p>Watch a coin from Research, or add one in the workspace.</p></div>
         <section id="companion-coins" class="companion-coins" aria-labelledby="companion-coins-title" hidden><h3 id="companion-coins-title">Coins to watch</h3><ul id="companion-coin-list" class="companion-coin-list"></ul></section>
         <h3>Active bids</h3>
         <ul id="companion-exposure-list" class="companion-exposure-list"><li class="companion-none">No active bids</li></ul>

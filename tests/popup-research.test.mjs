@@ -2499,8 +2499,10 @@ test('the card and the filter row give the median room: Save in the heading, one
   const save = markup.getElementById('companion-save-watchlist');
   assert.ok(save.closest('.type-heading'), 'Save stands in the heading row');
   assert.match(save.className, /secondary-button/);
-  assert.equal(save.textContent.trim(), 'Save');
-  assert.match(save.getAttribute('title'), /^Saves the reference/);
+  // K-14: the card's button is Watch, the verb the Upcoming list and the Watching pill already use.
+  assert.equal(save.textContent.trim(), 'Watch');
+  assert.equal(save.getAttribute('aria-label'), 'Watch: add this coin to your watchlist');
+  assert.equal(save.getAttribute('title'), 'Add to your watchlist to track its auction, bid and outcome in the workspace');
   assert.equal(markup.getElementById('specimens').closest('details')?.id, 'sides-details');
   assert.equal(markup.getElementById('sides-summary').textContent, 'Obverse · reverse');
   for (const id of ['citing-row', 'denomination-row']) assert.ok(markup.getElementById(id).closest('.research-heading'), id);
@@ -2560,7 +2562,7 @@ test('the header opens the workspace by name and the side panel is an icon that 
   assert.equal(panel.getAttribute('aria-label'), 'Keep the popup open beside the page (side panel)');
   assert.equal(panel.textContent.trim(), '');
   assert.equal(panel.parentElement.className, 'popup-header');
-  assert.match(markup.getElementById('first-run').textContent, /Save a coin to track its auction, bid and outcome in the workspace\./);
+  assert.match(markup.getElementById('first-run').textContent, /Watch a coin to track its auction, bid and outcome in the workspace\./);
 });
 
 // Loop 3 (G-01): a toolbar popup closes with every click on the page, and used to open again empty, asking acsearch again for the answer it had a

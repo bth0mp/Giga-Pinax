@@ -674,8 +674,8 @@ test('Save on a bare card saves the coin in one step, as the workspace would, an
     const line = page.element('companion-saved-line');
     assert.equal(line.hidden, false);
     // H-05: "Saved" is the row's pill, its sentence the tooltip; Open and Undo beside it.
-    assert.equal(lineParts(line), '[Saved] · [Open] · [Undo]');
-    assert.equal(line.children[0].title, 'Saved to your watchlist');
+    assert.equal(lineParts(line), '[Watching] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Added to your watchlist');
     assert.equal(page.element('companion-status-row').hidden, false);
     assert.equal(page.element('companion-save-watchlist').hidden, true);
 
@@ -801,7 +801,7 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     const line = page.element('upcoming-saved');
     // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language.
     const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
-    assert.equal(lineParts(line), `[Saved] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
+    assert.equal(lineParts(line), `[Watching] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
     await lineButton(line, 'Add').emit('click');
     await settleAll();
     const [event] = background.root().auctionEvents;
@@ -810,8 +810,8 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     assert.equal(event.localDate, '2099-10-12');
     assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
     assert.equal(background.root().lots[0].auctionEventId, event.id);
-    assert.equal(lineParts(line), '[Saved with its sale day] · [Open] · [Undo]');
-    assert.equal(line.children[0].title, 'Saved to your watchlist with its sale day');
+    assert.equal(lineParts(line), '[Watching with its sale day] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Added to your watchlist with its sale day');
     // A second Watch of the same lot opens the one saved.
     page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
     await settleAll();
@@ -1135,7 +1135,7 @@ test('a save that fails is said in the line under its button for a while, then t
   // Loop 3 (G-03): the line under Save is empty and hidden until something is said in it; what Save does is its tooltip.
   assert.equal(hint.textContent, '');
   assert.equal(hint.hidden, true);
-  assert.match(markup.getElementById('companion-save-watchlist').getAttribute('title'), /^Saves the reference/);
+  assert.match(markup.getElementById('companion-save-watchlist').getAttribute('title'), /^Add to your watchlist/);
   const realSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
@@ -1325,7 +1325,7 @@ test('a save is announced once, by its line', async () => {
   await page.click('companion-save-watchlist');
   await settleAll();
   assert.equal(page.element('announcement').textContent, '');
-  assert.match(lineParts(page.element('companion-saved-line')), /^\[Saved\]/);
+  assert.match(lineParts(page.element('companion-saved-line')), /^\[Watching\]/);
 });
 
 // Fix round (review M7): owning one example of a type is no reason not to watch another. A card whose every saved coin is settled keeps Save beside

@@ -818,9 +818,10 @@ async function initCompanionPopup() {
     // What the line under it said of an earlier save (a failure, a removal) is over.
     const hint = $(anchor);
     if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
-    const pill = entry.event ? 'Saved with its sale day' : 'Saved';
-    // The line is a status region: it says the save once. "Saved" is its pill, with the sentence as the tooltip.
-    fillLine(line, [{ pill, title: pill.replace('Saved', 'Saved to your watchlist'), kind: 'watch-pill' }, openAction(entry.lot.id, anchor),
+    // K-14: one verb into the workspace. The card's button is Watch, as on an Upcoming lot, and what it made is Watching.
+    const pill = entry.event ? 'Watching with its sale day' : 'Watching';
+    // The line is a status region: it says the save once. "Watching" is its pill, with the sentence as the tooltip.
+    fillLine(line, [{ pill, title: pill.replace('Watching', 'Added to your watchlist'), kind: 'watch-pill' }, openAction(entry.lot.id, anchor),
       { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
     entry.timer = setTimeout(() => {
       if (justSaved !== entry) return;

@@ -262,12 +262,12 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
     typed.
 
-30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Save**
-    beside **Type**.
-    *Expected:* no tab opens; the row under the card reads **Saved · Open · Undo**. Select **Undo**
-    within ten seconds. *Expected:* "Removed from your watchlist." and **Save** is back. Select **Save** again, wait ten
+30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Watch**
+    beside **Type** (its tooltip: "Add to your watchlist to track its auction, bid and outcome in the workspace").
+    *Expected:* no tab opens; the row under the card reads **Watching · Open · Undo**. Select **Undo**
+    within ten seconds. *Expected:* "Removed from your watchlist." and **Watch** is back. Select **Watch** again, wait ten
     seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows a **Watching** pill instead of
-    **Save** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
+    **Watch** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
     *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
     saved lot, and **Undo** then takes back both. Open the **Watchlist** tab. *Expected:* "1 coin on your watchlist" (or
     the count you have) over the list, and the coin you just saved as its first row; a coin with no auction ends its row
