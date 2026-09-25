@@ -282,23 +282,30 @@ function renderDataHealth(entries) {
   $('quarantine-list').replaceChildren(...quarantineRows(quarantined).map(quarantineItem));
 }
 
+// The theme and the photos switch are this page's own local storage, not the worker's, so they are drawn once, at
+// once, and no answer from the worker draws them again: one chosen before it answered stands (H-02).
+function renderAppearance() {
+  $('theme').value = storedTheme();
+  $('specimen-photos').checked = storedSpecimenPhotos();
+}
+
+// The worker's settings. The form they leave is compared with the theme and switch as stored, so one chosen and not
+// yet saved still counts as a change.
 function render() {
   $('currency').value = preferencesSnapshot.preferences.currency;
   $('import-vat').value = formatMinorInput(preferencesSnapshot.preferences.importVatBps);
-  $('theme').value = storedTheme();
-  $('specimen-photos').checked = storedSpecimenPhotos();
   $('premium-list').replaceChildren(
     ...(preferencesSnapshot.preferences.housePremiumPresets ?? []).map(premiumRow),
   );
-  renderedForm = formState();
+  renderedForm = formState({ theme: storedTheme(), specimenPhotos: storedSpecimenPhotos() });
 }
 
-function formState() {
+function formState({ theme = $('theme').value, specimenPhotos = $('specimen-photos').checked } = {}) {
   return JSON.stringify({
     currency: $('currency').value,
     importVat: $('import-vat').value,
-    theme: $('theme').value,
-    specimenPhotos: $('specimen-photos').checked,
+    theme,
+    specimenPhotos,
     rows: [...document.querySelectorAll('.premium-row')]
       .map((row) => [...row.querySelectorAll('input, select, textarea')].map((control) => control.value)),
   });
@@ -793,6 +800,7 @@ if ((globalThis.location?.hash ?? '') !== '#from-workspace') {
 
 clearPreview();
 renderCsvTables();
+renderAppearance();
 currencyOptions($('currency'));
 void refreshDiagnostics();
 void load().catch((error) => status(error.message || 'Could not load settings.', true));

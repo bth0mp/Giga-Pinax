@@ -1486,3 +1486,28 @@ test('the settings cannot be edited before they have loaded, and can once they h
   const loaded = await openSettings({});
   for (const id of EDITORS) assert.equal(loaded.element(id).disabled, false, `${id} works once they have loaded`);
 });
+
+// H-02 (cycle 5): the theme and the photos switch live in this page's local storage, not with the worker, so they are
+// drawn at once and a late answer from the worker never puts them back. What was chosen before it answered stands,
+// and counts as a change to save.
+test('a theme and the photos switch chosen before the settings load are kept when they load', async () => {
+  let answer;
+  const late = new Promise((resolve) => { answer = resolve; });
+  const stored = new Map([['giga-pinax-theme-v1', 'light']]);
+  const page = loadSettings({ stored, snapshotReply: late, reply: () => ({ ok: true, value: preferences({ revision: 4 }) }) });
+  await settle();
+  assert.equal(page.element('theme').value, 'light', 'drawn from local storage before the worker answers');
+  assert.equal(page.element('theme').disabled, false);
+  assert.equal(page.element('specimen-photos').disabled, false);
+  page.element('theme').value = 'dark';
+  page.element('specimen-photos').checked = true;
+  answer({ ok: true, value: snapshotWith() });
+  await settle(); await settle();
+  assert.equal(page.element('save-settings').disabled, false, 'the settings have loaded');
+  assert.equal(page.element('theme').value, 'dark');
+  assert.equal(page.element('specimen-photos').checked, true);
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.stored.get('giga-pinax-theme-v1'), 'dark');
+  assert.equal(page.stored.get('giga-pinax-specimen-photos-v1'), 'on');
+});
