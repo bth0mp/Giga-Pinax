@@ -3723,5 +3723,70 @@
   "text": "Felipe V. 8 escudos. Conservación: S/C",
   "grade": "mint",
   "note": "loop N5 review: the Spanish grade label"
+ },
+ {
+  "text": "Jean Elsen. Philippe II. Statère. 4,03g Très Beau à Superbe / Superbe.",
+  "grade": "fine",
+  "note": "loop Q-03: Elsen weight glued before a TB à SUP range; the lower half counts"
+ },
+ {
+  "text": "Auguste. Denier. 3,21g TTB.",
+  "grade": "vf",
+  "note": "loop Q-03: Elsen weight glued to the unit, mark straight behind"
+ },
+ {
+  "text": "Auguste. Denier. 3,21 g TTB.",
+  "grade": "vf",
+  "note": "loop Q-03: weight then the mark, no stop"
+ },
+ {
+  "text": "Néron. Aureus. 7,28g Superbe.",
+  "grade": "ef",
+  "note": "loop Q-03: praise straight behind the weight"
+ },
+ {
+  "text": "Traiano. Sesterzio. 17,10 g BB.",
+  "grade": "vf",
+  "note": "loop Q-03: Bertolami/Artemide weight then BB"
+ },
+ {
+  "text": "Adriano. Denario. gr. 3,45 SPL.",
+  "grade": "ef",
+  "note": "loop Q-03: InAsta unit before the figure"
+ },
+ {
+  "text": "Adriano. Asse. (g 17,10) BB+.",
+  "grade": "vf",
+  "note": "loop Q-03: bracketed Italian weight"
+ },
+ {
+  "text": "Philippus I. Antoninianus. 17.15 g - Zeer fraai +/prachtig.",
+  "grade": "vf",
+  "note": "loop Q-03: Heritage Europe spaced plus before the range"
+ },
+ {
+  "text": "Traianus. Denar. Vorzüglich +/Stempelglanz.",
+  "grade": "ef",
+  "note": "loop Q-03: German spaced plus before the range"
+ },
+ {
+  "text": "Rev. Victory. 3,21 g MB in field.",
+  "grade": null,
+  "note": "loop Q-03: a weight opens a mark but lends it no closing edge"
+ },
+ {
+  "text": "Rome. Denier. 14,40 g superbe patine verte.",
+  "grade": null,
+  "note": "loop Q-03: praise with prose behind it after a weight"
+ },
+ {
+  "text": "Rev. S C. 25 mm SC.",
+  "grade": null,
+  "note": "loop Q-03: the senate SC keeps its own rule behind a diameter"
+ },
+ {
+  "text": "Rome. Denarius. 3.21 g Fine style portrait.",
+  "grade": null,
+  "note": "loop Q-03: bare Fine before Style stays prose behind a weight"
  }
 ]

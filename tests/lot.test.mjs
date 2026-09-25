@@ -1381,3 +1381,167 @@ test('a provenance sentence ends at the full stop a catalogue key follows, even 
   assert.deepEqual(readProvenance('Ex Dr. Sear collection, 1975.').map(({ text }) => text), ['Ex Dr. Sear collection, 1975']);
   assert.deepEqual(readProvenance('Aus Sammlung Dr. W. R. Erworben 1998.').map(({ text }) => text), ['Aus Sammlung Dr. W. R', 'Erworben 1998']);
 });
+
+// Loop Q-07: Leu, Nomos, NAC, NGSA, Roma, Naville, Gorny & Mosch, Hess-Divo and Sotheby's close an entry with the lot and no lot word ("Ex Leu Web
+// Auction 12, 30 May 2020, 234."), which was glued into the source as a sale called "Leu Web Auction 12, 234"; "and ex" joined two owners into one;
+// and CNG's "Acquired from" / "Purchased from" was no provenance at all.
+test('the provenance reader takes a bare lot number behind the date, splits at "and ex", and reads the purchase markers', () => {
+  for (const [text, source, year, lot] of [
+    ['Ex Leu Web Auction 12, 30 May 2020, 234.', 'Leu Web Auction 12', 2020, '234'], ['Ex Nomos 21, 21 November 2020, 123.', 'Nomos 21', 2020, '123'],
+    ['Ex NAC 78, 26 May 2014, 1234.', 'NAC 78', 2014, '1234'], ['Ex Roma XX, 29 October 2020, 336.', 'Roma XX', 2020, '336'],
+    ['Ex Naville Numismatics 53, 2019, 145.', 'Naville Numismatics 53', 2019, '145'], ['Ex Gorny & Mosch 265, 2019, 145.', 'Gorny & Mosch 265', 2019, '145'],
+    ["From the Hunt collection, Sotheby's New York, 19 June 1990, 12.", "the Hunt collection, Sotheby's New York", 1990, '12'],
+    ['Ex Leu 7 (1973), 123a.', 'Leu 7', 1973, '123a'], ['Ex NAC 78, 26 May 2014, 1987.', 'NAC 78', 2014, '1987'],
+    ['Ex Lanz 145, 5 January 2009, lot 1234 (there described as EF).', 'Lanz 145', 2009, '1234'],
+    ['Ex Lanz 145, 5 January 2009, 1234 (where described as "Good VF").', 'Lanz 145', 2009, '1234'],
+  ]) {
+    const [entry] = readProvenance(text);
+    assert.deepEqual([entry.source, entry.year, entry.lot], [source, year, lot], text);
+    assert.equal(entry.text, text.slice(0, -1), text);
+  }
+  assert.deepEqual(readProvenance('Ex Hess-Divo 333, 2017, 55 and ex Sternberg XXIII, 1989, 178.').map(({ source, year, lot }) => [source, year, lot]),
+    [['Hess-Divo 333', 2017, '55'], ['Sternberg XXIII', 1989, '178']]);
+  assert.deepEqual(readProvenance('Ex Leu 86, 5 May 2003, 645; ex Bank Leu 25, 23 April 1980, 210.').map(({ source, lot }) => [source, lot]),
+    [['Leu 86', '645'], ['Bank Leu 25', '210']]);
+  // Only after a year: a number behind anything else, a decimal-looking pair, a sale or auction number, and a list are not the lot.
+  for (const [text, source] of [['Ex Leu 7, 1973,5.', 'Leu 7, 1973,5'], ['Ex Leu 86, 645.', 'Leu 86, 645'], ['Ex Leu sale 1850, 7.', 'Leu sale 1850, 7'],
+    ['Ex Künker Auction 2019, 145.', 'Künker Auction 2019, 145'], ['Ex Leu 86, 2003, 645-646.', 'Leu 86, 645-646'], ['Ex Leu 86, 2003, 12, 15.', 'Leu 86, 12, 15']]) {
+    const [entry] = readProvenance(text);
+    assert.equal(entry.source, source, text);
+    assert.equal(entry.lot, undefined, text);
+  }
+  // "and" joins two owners only in front of another "ex": a firm's own "and" stays in its name.
+  for (const text of ['Ex Spink and Son, 1998.', 'Ex Bank Leu and Münzen und Medaillen 25, 1980, 12.', 'Ex Baldwin and Exeter collection, 2001.']) {
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Nero. Denarius. RIC 53. Purchased from Harlan J. Berk, 2005. Privately purchased from Frank Kovacs, 1999.')
+    .map(({ source, year }) => [source, year]), [['Purchased from Harlan J. Berk', 2005], ['Privately purchased from Frank Kovacs', 1999]]);
+  assert.deepEqual(readProvenance('Bought from Seaby, 1965.').map(({ year }) => year), [1965]);
+  assert.deepEqual(texts('Purchased from CNG, 2005. RIC 53.'), ['RIC 53']);
+  // Only at the start of a sentence and with its capital, as "Ex" is: the verb in the middle of prose is no marker.
+  for (const text of ['Nero. The coin was acquired in 1998. RIC 53.', 'Nero. Denarius, purchased 1998. RIC 53.', 'Nero. acquired from Spink, 1998.']) {
+    assert.deepEqual(readProvenance(text), [], text);
+  }
+});
+
+// Loop Q-08: Naville and NAC head Augustus's coins "Octavian as Augustus"; the heading reads Octavian, whom RIC I² heads no section with and under
+// whose name no bundled type is filed, so the lookup offered every RIC 207 from Augustus to Hadrian. RIC files every Octavian coin under Augustus: a
+// heading naming Octavian names Augustus beside him, and no other name gets that rule.
+test('a heading naming Octavian names Augustus beside him, as RIC files his coins', () => {
+  assert.deepEqual(findReferences('Octavian as Augustus, 27 BC – 14 AD. Denarius. RIC 207.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Octavian, 44-27 BC. Denarius, 29-27 BC. RIC 267.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Octavian and Agrippa. Nemausus. As. RIC 155.').rulers, ['Octavian', 'Augustus', 'Agrippa']);
+  // Augustus named as well is still named once, and a heading naming only Augustus, or neither, is read as before.
+  assert.deepEqual(findReferences('Octavian, later Augustus. Augustus. Denarius. RIC 207.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Augustus, 27 BC – 14 AD. Denarius. RIC 207.').rulers, ['Augustus']);
+  assert.deepEqual(findReferences('Octavia. Cistophorus. RIC 409.').rulers.includes('Augustus'), false);
+  // A legend or a provenance naming him is no heading.
+  assert.deepEqual(findReferences('Nero. Denarius. Ex Octavian collection, 1990. RIC 53.').rulers, ['Nero']);
+});
+
+// Loop Q-17: Áureo writes Calicó "Cal-1015", which was no key at all, and CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"),
+// which read as RIC 27: another coin.
+test('Cal. is Calicó, spelled out in the row, and a single spaced letter behind a RIC number is its type letter', () => {
+  for (const [text, row] of [['RIC-118; Cal-1015; RSC-462a.', 'Calicó 1015'], ['Cal. 1015.', 'Calicó 1015'], ['Cal 1015; RSC 462a.', 'Calicó 1015'],
+    ['Felipe II. 8 reales. Cal-123. MBC.', 'Calicó 123']]) {
+    const found = findReferences(text).references.find(({ reference }) => /^Calic/.test(reference.number));
+    assert.deepEqual(found?.reference, other(row), text);
+  }
+  assert.deepEqual(texts('Trajano. Denario. RIC-118; Cal-1015; RSC-462a. MBC+/EBC-.'), ['RIC-118', 'Calicó 1015', 'RSC-462a']);
+  // Only a capitalised "Cal" with its number straight behind it: the word, California and a lower-case "cal" are no key.
+  for (const text of ['Denarius. Calendar reform issue. RIC 118.', 'Found in Cal. 1998 hoard? RIC 118.', 'Denarius, cal 1015. RIC 118.', 'Cal. RIC 118.']) {
+    assert.deepEqual(texts(text).filter((row) => /^Cal/.test(row)), [], text);
+  }
+  for (const [text, number] of [['Philip I. Antoninianus. RIC 27 b;', '27b'], ['Philip I. RIC IV 27 b; C. 9.', '27b'], ['Philip I. RIC 27 b (Rome).', '27b'],
+    ['Philip I. RIC 27 b', '27b'], ['Philip I. RIC 27 b var.', '27b']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+  // A capital is Cohen's C or another key, a letter with more behind it is a word, and a date's "a.C." is no letter.
+  for (const [text, number] of [['Philip I. RIC 27 C. 9.', '27'], ['Philip I. RIC 27 a rare variety.', '27'], ['Philip I. RIC 27; C. 9.', '27'],
+    ['Filippo I, 244-249 d.C. RIC 27 a.C.', '27']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+});
+
+// Loop P2 review, Important 1 and 2: the spaced letter was glued on wherever a lone lower-case letter closed the first chunk, so the German "335 f."
+// (and following) opened RIC 335f, and "s.", "u.", "v.", "n.", "p." lost the coin main found. It is decided from the raw text now: RIC's own
+// alphabet (a–l), never a letter with a full stop behind it, and CGB's own " - " separator, "=" and a line break close it.
+test('a spaced RIC letter is read only from the RIC alphabet, never with a full stop behind it, and CGB dash closes it', () => {
+  for (const [text, number] of [['Gallienus. Antoninian. RIC 335 f.', '335'], ['Nero. Denar. RIC 306 s.', '306'], ['Nero. Denar. RIC 306 v. Chr.', '306'],
+    ['Pescennius Niger. Denar. RIC 3 f.', '3'], ['Nero. Denar. RIC 306 ff.', '306'], ['Nero. Denar. RIC 306 f. Göbl 12.', '306'], ['Nero. RIC 306 m;', '306'],
+    ['Nero. RIC 306 a. Chr.', '306'], ['Philip I. RIC 27 f; C. 9.', '27f'], ['Philippe Ier. Antoninien. RIC.27 b - C.9 - RSC.9.', '27b'],
+    ['Philip I. RIC 27 b = C. 9.', '27b'], ['Philip I. RIC 27 b – C. 9.', '27b'], ['Philip I. RIC 27 b\nCohen 9.', '27b'], ['Philip I. RIC 27 b, C. 9.', '27b']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+  assert.deepEqual(texts('Nero. Denar. RIC 306 u. Cohen 12.'), ['RIC 306', 'Cohen 12']);
+});
+
+// Loop P2 review, Minor Q-07: a purchase sentence ends at a ";" or "," a citation follows, as it ends at a full stop; and a sale's bracketed date and
+// lot ("Triton VIII (2005, 1132)") give the lot.
+test('a purchase sentence gives up the citation behind it, and a bracketed year and lot give the lot', () => {
+  for (const text of ['Acquired from Spink, 1998; RIC 53; BMC 12.', 'Acquired from Spink, 1998, RIC 53.', 'Bought from Seaby; RIC 53.']) {
+    assert.equal(texts(text)[0], 'RIC 53', text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998; RIC 53.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  // "Ex" keeps its own rule, as it always has.
+  assert.deepEqual(texts('Ex Spink, 1998; RIC 53.'), []);
+  assert.deepEqual(readProvenance('Ex Triton VIII (2005, 1132).'), [{ text: 'Ex Triton VIII (2005, 1132)', source: 'Triton VIII', year: 2005, lot: '1132' }]);
+  for (const text of ['Ex Leu 7 (1973).', 'Ex Leu 7 (sale 1850, 12).', 'Ex Leu 7 (12, 1132).']) assert.equal(readProvenance(text)[0].lot, undefined, text);
+});
+
+// Loop P2 review, Minor Q-17 (a): Áureo writes the edition year of Calicó in front of the number ("Cal. 2008, 1015", "Cal-2019-123").
+test('the edition year of Calicó is not joined to the number', () => {
+  for (const [text, row] of [['Cal. 2008, 1015.', 'Calicó 1015'], ['Cal-2019-123.', 'Calicó 123'], ['Cal. 1015, 1016.', 'Calicó 1015, 1016'], ['Cal. 1015.', 'Calicó 1015']]) {
+    assert.equal(findReferences(`Felipe II. 8 reales. ${text} MBC.`).references[0]?.text, row, text);
+  }
+});
+
+// Loop P2 fix round 2: "RIC 27 b." is ambiguous — the type letter b, or an abbreviation with its full stop — so the row carries the letter as a
+// dotted one, and the lookup offers both readings and opens neither. Only a letter of RIC's alphabet with a full stop and a space or the end
+// behind it; every other shape reads as before.
+test('a dotted RIC letter behind the number is carried on the row as ambiguous, and nothing else is', () => {
+  const dotted = (text) => findReferences(text).references[0].reference.dottedLetter;
+  for (const [text, letter] of [['Philip I. RIC 27 b.', 'b'], ['Gallienus. RIC 335 f.', 'f'], ['Philip I. RIC IV 27 b. C. 9.', 'b']]) {
+    assert.equal(dotted(text), letter, text);
+    assert.equal(findReferences(text).references[0].reference.number, text.match(/(\d+) [a-l]\./)[1], text);
+  }
+  for (const text of ['Nero. RIC 306 s.', 'Nero. RIC 306 ff.', 'Nero. RIC 306 v. Chr.', 'Filippo I. RIC 27 a.C.', 'Philip I. RIC 27 b;', 'Philip I. RIC 27b.',
+    'Nero. RIC 306.', 'Nero. RIC 306 m.', 'Nero. Cohen 306 f.', 'Nero. RIC 306 a rare coin.',
+    'Nero. RIC 306 a. Chr.', 'Nero. RIC 306 n. Chr.', 'Nero. RIC 306 c. 300 AD.']) {
+    assert.equal(dotted(text), undefined, text);
+  }
+  const lot = findReferences('Philip I. Antoninian. RIC IV 27 b.');
+  assert.equal(lotLookup(lot.references[0], lot.rulers).dottedLetter, 'b');
+});
+
+// Loop P2 fix round 3 (re-review Minor 1 and 3): a dotted letter is the one straight behind the row's own number, never one behind a later figure a
+// unit or a die axis carries; a spaced abbreviation or grade behind it ("a. VF", "g. VF", "f. vz.", "d. h.", "i. e.", the Italian "a. C.") is no
+// letter; and the row keeps the letter as the dealer wrote it, so the lot line says why two types are offered.
+test('a dotted letter is read only straight behind the row\'s number, never before a spaced abbreviation or grade, and the row shows it', () => {
+  const dotted = (text) => findReferences(text).references[0]?.reference.dottedLetter;
+  for (const text of ['Nero. RIC 12. 12 h.', 'As. RIC 12. 12 g.', 'Nero. RIC 3. 3 g.', 'Nero. RIC 306 a. VF.', 'Nero. RIC 306 g. VF.', 'Nero. RIC 306 c. VF.',
+    'Nero. RIC 306 e. EF.', 'Nero. RIC 306 f. vz.', 'Nero. RIC 306 d. h. selten.', 'Nero. RIC 306 i. e. rare.', 'Filippo I. RIC 27 a. C.', 'Nero. RIC 306 a. a. O.']) {
+    assert.equal(dotted(text), undefined, text);
+  }
+  for (const [text, letter] of [['Philip I. RIC 27 b.', 'b'], ['Philip I. RIC IV 27 b. C. 9.', 'b'], ['Philip I. RIC 27 b. Sehr schön.', 'b'], ['Philip I. RIC IV/3 27 b.', 'b']]) {
+    assert.equal(dotted(text), letter, text);
+  }
+  const lot = findReferences('Philip I. Antoninian. RIC IV 27 b.');
+  assert.equal(lot.references[0].text, 'RIC IV 27 b.');
+  assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC IV 27 b. · Philip I');
+  assert.equal(lot.references[0].reference.number, '27');
+});
+
+// Loop P2 fix round 3 (re-review Minor 4): the three purchase shapes that still took the citation with them.
+test('a purchase sentence gives up a citation behind a spaced dash, a bracket or a bare space', () => {
+  for (const text of ['Purchased from Spink, 1998 - RIC 53.', 'Purchased from Seaby, 1965 (RIC 53).', 'Acquired from Spink 1998 RIC 53']) {
+    assert.equal(texts(text)[0], 'RIC 53', text);
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Purchased from Seaby, 1965 (RIC 53).').map(({ source, year }) => [source, year]), [['Purchased from Seaby', 1965]]);
+  // "Ex" keeps its own rule, and a purchase sentence without a citation behind it is whole.
+  assert.deepEqual(texts('Ex Spink, 1998 - RIC 53.'), []);
+  assert.deepEqual(readProvenance('Purchased from Spink - London, 1998.').map(({ text }) => text), ['Purchased from Spink - London, 1998']);
+});

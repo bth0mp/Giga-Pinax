@@ -281,12 +281,21 @@ function readClean(value) {
 
 // RPC has no open type data here, but RPC Online has a page per type, which only the user opens (Giga Pinax never fetches RPC): "RPC I 1234" and
 // "RPC I, 1234" are coins/1/1234, "RPC V.2 1234" ("V/2", "V, Part 2") coins/5.2/1234, the volume in Arabic numerals. Null for anything else.
-const RPC_REFERENCE = /^RPC\s*(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./]|,?\s*part)\s*(\d)(?!\d))?\s*,?\s*(\d+)$/i;
+// The volumes RPC Online publishes before print number their types provisionally, and every house writes that number its own way: "RPC IV.2 online
+// 1234 (temporary)", "RPC IV.2, 1234 (temporary)", "RPC IV 1234 (temp.)". Such a number is the volume's, whatever part it is filed in, and RPC Online's
+// own address for the type is the volume without the part (coins/4/1234 is the type URI of "RPC IV.2, 1234 (temporary)"). A capital letter behind the
+// number is a supplement's type of its own ("RPC I 2317A"); a "var." or "corr." remark links the type it stands on.
+const RPC_REFERENCE = /^RPC\s*(X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?![a-z\d])(?:\s*(?:[./]|,?\s*part)\s*(\d)(?!\d))?\s*,?\s*(online\s*,?\s*)?(\d+)([a-z]?)((?:\s*,?\s*(?:\((?:temporary|temp\.?)\)|var\.?|corr\.?)(?![a-z]))*)$/i;
+export function rpcReference(text) {
+  const [, numeral, part = '', online, digits, letter, remarks] = String(text ?? '').trim().match(RPC_REFERENCE) ?? [];
+  if (!digits || letter !== letter.toUpperCase()) return null;
+  const figure = /^\d/.test(numeral) ? Number(numeral) : ROMAN.indexOf(numeral.toUpperCase()) + 1;
+  return { numeral: ROMAN[figure - 1], figure, part, number: `${digits}${letter}`, temporary: Boolean(online) || /\(temp/i.test(remarks) };
+}
 export function rpcUrl(text) {
-  const [, numeral, part, number] = String(text ?? '').trim().match(RPC_REFERENCE) ?? [];
-  if (!number) return null;
-  const volume = /^\d/.test(numeral) ? Number(numeral) : ROMAN.indexOf(numeral.toUpperCase()) + 1;
-  return `https://rpc.ashmus.ox.ac.uk/coins/${volume}${part ? `.${part}` : ''}/${number}`;
+  const rpc = rpcReference(text);
+  if (!rpc) return null;
+  return `https://rpc.ashmus.ox.ac.uk/coins/${rpc.figure}${rpc.part && !rpc.temporary ? `.${rpc.part}` : ''}/${rpc.number}`;
 }
 
 export function buildQuery({ catalogue, number, volume, section }) {
@@ -835,7 +844,53 @@ async function pickPortrait(reference, feed) {
   return pickRic(await feed(ricSearch(anyRuler, [facetName(reference.section)])), anyRuler);
 }
 
-export async function lookupType(given, options = {}) {
+// A RIC number a lot row carries with a dotted letter behind it ("RIC 27 b.", lot.js DOTTED_LETTER) is read both ways: the plain number, and the
+// lettered type. Where the lettered reading finds nothing of its own — no such type, or only other rulers' — the plain answer stands exactly as it
+// always did ("Nero. RIC 306 f." is still Nero 306). Where it does, the text may mean either, so both are offered and neither is opened. A failed
+// or too-broad plain lookup is returned as it is. An OCRE id the dealer linked settles it, and nothing else carries the letter.
+const dottedLetterOf = (reference) => (reference?.catalogue === 'RIC' && typeof reference.dottedLetter === 'string' && /^[a-l]$/.test(reference.dottedLetter)
+  && /^\d+$/.test(String(reference.number ?? '')) && typeof reference.id !== 'string' ? reference.dottedLetter : '');
+// A lettered type the lookup marks as another person's still answers the row where it stands in the section the row names, or in one of its
+// rulers' sections: RIC files a Caesar's coins in his Augustus's section ("RIC IV Trajan Decius 223C" carries Herennius's portrait). Another section's
+// ("RIC V Gallienus 306f" behind a Nero heading) does not.
+const ownSection = (entry, reference) => {
+  const section = norm((parseReference(entry.title, false)?.section ?? '').split(' (')[0]);
+  const named = [reference.section, ...(Array.isArray(reference.rulers) ? reference.rulers : [])].map((name) => norm(String(name ?? '').split(' (')[0]));
+  return Boolean(section) && named.includes(section);
+};
+const readingHits = (result, reference = {}) => {
+  if (result?.status === 'ok' && result.card?.id) return [{ id: result.card.id, title: result.card.label, ...(result.card.source === 'local' ? { source: 'local' } : {}) }];
+  if (result?.status !== 'candidates') return [];
+  return result.personMismatch ? (result.candidates ?? []).filter((entry) => ownSection(entry, reference)) : result.candidates ?? [];
+};
+// Whether a reading answered at all: a type, a choice, "not there" or "too many". A failed request (the network, a damaged bundle, a rate limit) says
+// nothing about whether the lettered type exists.
+const answered = (result) => ['ok', 'candidates', 'none', 'too-many'].includes(result?.status)
+  || (result?.status === 'online-required' && ['none', 'too-many'].includes(result.localStatus));
+export async function eitherReading(reference, look) {
+  const letter = dottedLetterOf(reference);
+  const { dottedLetter, ...plain } = reference ?? {};
+  if (!letter) return look(dottedLetter === undefined ? reference : plain);
+  const [one, other] = await Promise.all([look(plain), look({ ...plain, number: `${plain.number}${letter}`, range: undefined })]);
+  // The lettered reading failed: the plain coin is offered alone, never opened on it; anything short of a coin is the failure, with its retry.
+  if (other && !answered(other)) {
+    return one?.status === 'ok' ? { status: 'candidates', candidates: readingHits(one), partial: true, corpus: one.card?.corpus ?? 'ocre', query: one.query ?? '' } : other;
+  }
+  const lettered = readingHits(other, plain);
+  // A plain number the bundle does not hold, asked locally only, comes back as "online-required": it is still no answer beside the lettered one.
+  const missing = one?.status === 'none' || (one?.status === 'online-required' && one.localStatus === 'none');
+  if (lettered.length === 0 || !(missing || ['ok', 'candidates'].includes(one?.status))) return one;
+  // The plain reading's choice goes in whole, other rulers' types included, as it was offered before the letter was read.
+  const plainHits = one?.status === 'candidates' ? one.candidates ?? [] : readingHits(one);
+  const offered = [...plainHits, ...lettered].filter((entry, index, all) => all.findIndex(({ id }) => id === entry.id) === index);
+  return { status: 'candidates', candidates: offered, partial: true, corpus: one.corpus ?? other.corpus ?? 'ocre', query: one.query ?? other.query ?? '' };
+}
+
+export function lookupType(given, options = {}) {
+  return eitherReading(given, (reference) => lookupOneType(reference, options));
+}
+
+async function lookupOneType(given, options = {}) {
   // A mint written by the name on the map today ("Trier") is RIC's own Latin section ("Treveri"). Every lookup arrives here — typed, guided or from a
   // lot row — so the name is read once, where the section is used, rather than in the parse the guided fields never run. The caller's own object is
   // left as it was.

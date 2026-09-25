@@ -1,7 +1,7 @@
-import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, rpcReference, searchablePart, sgNumber } from './lookup.js';
 import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
-import { anyCase } from './lot.js';
+import { anyCase, DOTTED_TAIL } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
@@ -112,7 +112,12 @@ function bopTerm(section, number) {
 // text. A part lookup calls unsearchable — no letter and digit ("BMC –", "Rare"), or more words than a citation has — would only match unrelated lots,
 // so it is left out; with no part left the card has no term and the guided field says so. An SG part in any spelling takes SG's, so a chip saved
 // before 0.19 ("SG6829v") and a "v" behind a remark ("SG 6829v (this coin)") still search as Sear.
-const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '').split(';')
+// An RPC Online temporary number is read before its "(temporary)" goes, and kept in the one spelling that says so ("RPC IV.2 online 1234").
+const rpcTemporary = (part) => {
+  const rpc = rpcReference(squash(part));
+  return rpc?.temporary ? `RPC ${rpc.numeral}${rpc.part ? `.${rpc.part}` : ''} online ${rpc.number}` : part;
+};
+const otherParts = (number, rpc = true) => String(number ?? '').replace(/["“”„]/g, '').split(';').map((part) => (rpc ? rpcTemporary(part) : part))
   .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
   .filter(searchablePart).map((part) => sgNumber(part) ?? part);
 
@@ -144,14 +149,19 @@ const kmPart = (part) => {
 // narrows a number that repeats across countries (Netherlands, Rostock and Bolivia all have a 123), so it goes in front of the group — but only when
 // every part is Krause and names the same country, since acsearch ANDs the bare word with the whole group: it would wrongly narrow the other
 // catalogues' phrases, or the other country's number, too.
-function otherTerm(number) {
-  const parts = otherParts(number);
+function otherTerm(number, rpcSpellings = true) {
+  const parts = otherParts(number, rpcSpellings);
   const kms = parts.map(kmPart);
   const phrases = parts.flatMap((part, index) => {
     const km = kms[index];
     if (km) return km.key === 'Y' ? [phrase('Y', km.number), phrase('Y#', km.number)] : [phrase('KM', km.number), phrase('Krause/Mishler', km.number)];
     const sg = SG_PART.exec(part);
-    return sg ? [phrase('Sear', sg[1]), phrase('SG', sg[1])] : [phrase(part)];
+    if (sg) return [phrase('Sear', sg[1]), phrase('SG', sg[1])];
+    // One temporary RPC number in the three spellings dealers write it: with its part, without it, and as RPC Online prints it.
+    const rpc = rpcSpellings ? rpcReference(part) : null;
+    if (!rpc?.temporary) return [phrase(part)];
+    const volume = `${rpc.numeral}${rpc.part ? `.${rpc.part}` : ''}`;
+    return [phrase('RPC', volume, rpc.number), ...(rpc.part ? [phrase('RPC', rpc.numeral, rpc.number)] : []), phrase('RPC', volume, 'online', rpc.number)];
   });
   const country = allKm(kms) && kms.every((km) => km.country === kms[0].country) ? kms[0].country : '';
   return squash(`${country} ${group(phrases)}`);
@@ -254,10 +264,15 @@ export function searchesReference(term, reference) {
 const oldBopTerms = ({ section, number }) => [squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`),
   squash(`${bopKing(section)} "Bopearachchi ${bopSeries(number)}"`)];
 // The same for the unquoted defaults of 0.31 and before, which 0.32's exact phrases replace: the bare ruler and number, "Price 23", "Crawford 44/5",
-// "SC 1266.2". An Other reference has searched as phrases since 0.19, so it has no old default to retire.
+// "SC 1266.2". An Other reference has searched as phrases since 0.19; the one it retires is 0.36's single phrase for an RPC Online temporary number
+// ("RPC IV.2 online 1234"), which now offers every spelling dealers write it in.
 function oldDefaultTerms(reference) {
   const { catalogue, number, section, rulers } = reference;
   if (catalogue === 'Bop') return oldBopTerms(reference);
+  if (catalogue === 'Other') {
+    const old = otherTerm(number, false);
+    return old !== otherTerm(number) ? [old] : [];
+  }
   if (catalogue === 'RIC') {
     const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
     return [squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`)];
@@ -354,7 +369,22 @@ const citationKeys = (reference) => {
 // where it cannot be a range: in front of a lettered type ("344-1a"), or of one a shortened range would count down to ("385-4" would be 385 to 384).
 // "44-5" and "344-5" are how a dealer shortens 44–45 and 344–345, which may be two types, so they keep citing nothing.
 const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
+// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"), read exactly as lot.js reads it: a single letter of RIC's own alphabet (a–l)
+// closing the citation — the end of the text or of its line, a ",", ";" or ":", a bracket, "var.", or CGB's " - " and "=" — is the letter, so it
+// cites RIC 27b and no longer RIC 27. A letter of a–l with a full stop behind it ("RIC 27 b.", lot.js DOTTED_TAIL) may be the type letter or an
+// abbreviation ("306 f.", and following), and the lookup offers both: such a row counts for neither card, since nothing says which it cites. The
+// abbreviations that are no such letter ("27 s." see, "u." and, "a. Chr.", "f. vz."), a capital (the next key, "RIC 27 C. 9") and a letter a word or
+// a number follows ("RIC 27 a rare variety", "RIC 27 e 28") cite the plain type. The text is squashed before it is read, so a line break behind a
+// lone letter is marked as the "=" it stands for first.
+const SPACED_LETTER_END = String.raw`(?:$|[,;:]|\s*\(|\s+var\b|\s[-–=]\s)`;
+const SPACED_LETTER = String.raw`(?!\s[a-l]${SPACED_LETTER_END})(?!${DOTTED_TAIL})`;
+const LETTER_AT_BREAK = /(\s[a-l])[^\S\n]*\n/g;
 function numberPattern(catalogue, number) {
+  const [, digits, typeLetter] = (catalogue === 'RIC' && /^(\d+)([a-z])$/i.exec(number)) || [];
+  if (digits) {
+    const spaced = /[a-l]/i.test(typeLetter) ? `|\\s${typeLetter.toLowerCase()}(?=${SPACED_LETTER_END})` : '';
+    return `${digits}(?:${eitherCase(typeLetter)}${spaced})`;
+  }
   const [, issue, type, letter] = (catalogue === 'RRC' && CRAWFORD.exec(number)) || [];
   if (!issue) return eitherCase(number);
   const shortened = Number(`${issue.slice(0, Math.max(0, issue.length - type.length))}${type}`);
@@ -411,10 +441,18 @@ function volumeParts(volume) {
 // second edition of volume I spaced out as volume II.
 const ROMAN_NUMERALS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
 const publishedInParts = (numeral) => ['1', '2', '3'].some((part) => realVolumePart(numeral, part));
+// The houses that glue their separator to the number: a hyphen at Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album ("RIC-118", "Price-112"),
+// a hash ("RIC#118") and a colon ("RIC:118", "RIC: 118"). One mark, straight behind the key and straight in front of the number, so a spaced dash
+// ("RIC - 118") still says "not in RIC" and "RIC -; BMC -" cites nothing. Price takes no colon: "Price: 1,200" is a sale's amount, never PELLA's type,
+// as lookup.js reads it. The French space the colon off the key ("RIC : 118"), and a dotted key keeps its stop in front of the mark ("Cr.-44/5").
+const glued = (catalogue) => String.raw`\.?(?:[-–#]${catalogue === 'Price' ? '' : String.raw`|\s?:\s?`})(?=\p{Lu}?\d)`;
+// Behind a volume numeral the same mark may also open the volume's part ("RIC IV-1 266"), which is one figure: so there the number behind it must be
+// two figures at least ("RIC II-118"), and a single one is left to the part and its guard, as before.
+const GLUED_VOLUME = String.raw`(?:[-–#]|:\s?)(?=\d{2})`;
 function between({ catalogue, volume }) {
   // A French dealer puts the word for series between Bopearachchi and the number ("Bopearachchi Série 24A").
-  if (catalogue === 'Bop') return `${SEP}(?:[Ss][ée]rie${SEP})?`;
-  if (catalogue !== 'RIC') return SEP;
+  if (catalogue === 'Bop') return `(?:${glued(catalogue)}|${SEP}(?:[Ss][ée]rie${SEP})?)`;
+  if (catalogue !== 'RIC') return `(?:${glued(catalogue)}|${SEP})`;
   const text = squash(volume);
   const numeral = /^[IVXLC]+/.exec(text)?.[0] ?? '';
   const part = partPattern(volumeParts(text));
@@ -428,7 +466,9 @@ function between({ catalogue, volume }) {
   // part and the last number the type, as before, so it cites VI 53 and never VI 1.
   const parted = !numeral || publishedInParts(numeral);
   const guard = parted ? String.raw`(?![-/]\d|\.\d(?!\d))` : String.raw`(?![-/]\d|\.\d+\s+\d)`;
-  return `${EDITION}${SEP}(?:(?:[Vv]ol\\.?\\s?)?${written}${EDITION}${part}${EDITION}${guard}${SEP})?${RULERS}`;
+  // The same houses hyphenate the volume onto the key as well ("RIC-II 118", "RIC-II-118"); only a volume may follow that hyphen.
+  const volumed = `(?:[Vv]ol\\.?\\s?)?${written}${EDITION}(?:${GLUED_VOLUME}|${part}${EDITION}${guard}${SEP}${RULERS})`;
+  return `${EDITION}(?:${glued(catalogue)}|[-–](?=[IVX])${volumed}|${SEP}(?:${volumed}|${RULERS}))`;
 }
 
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
@@ -446,13 +486,14 @@ export const filtersCitations = (reference) => Boolean(citationKeys(reference)) 
 // page simply says nothing to judge it by. Every repetition is bounded and no two of them may consume the same characters, so the pattern reads a
 // description once; the text is cut to CITATION_LIMIT first, as the grade reader cuts its own, so no page of literature is ever read whole.
 export function citesReference(description, reference) {
-  const text = squash(description).slice(0, CITATION_LIMIT);
+  const text = squash(String(description ?? '').slice(0, CITATION_LIMIT).replace(LETTER_AT_BREAK, '$1 = '));
   const keys = citationKeys(reference);
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
+    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`
+    + (reference.catalogue === 'RIC' ? SPACED_LETTER : '');
   return new RegExp(pattern, 'u').test(text);
 }
 
@@ -568,6 +609,12 @@ const metalAu = (before, tail) => METAL_TAIL.test(tail) || (GOLD_BRACKET.test(be
 // in front of it.
 const OPENS = /[.;,:(/]\s*$/;
 const PRAISE_OPENS = /[.;,:/]\s*$/;
+// A weight or a diameter ends the clause it stands in, whether the unit follows the figure ("4,03g", "3,21 g", "17,10 g") or leads it, as the Italian
+// houses write it ("g 17,10", "gr. 3,45"), bracketed or behind a dash: Jean Elsen, Bertolami and Heritage Europe grade straight behind it with no
+// stop ("3,21 g TTB.", "17,10 g BB.", "17.15 g - Zeer fraai"). So it opens a mark and a praise word as a full stop does. A die axis is not one of
+// them: "12 h" closes a grade in front of it, it does not open one behind it. A weight carries its decimals, as every house prints one; a bare
+// "12 g" is as likely a catalogue number or a lot beside a stray letter ("RIC 12 g BB", "Lot 12 g BB"). A diameter is whole millimetres.
+const MEASURED = new RegExp(String.raw`(?:\d[.,]\d+\s?(?:g|gr|gm)\.?|\d\s?mm\.?|(?<![\p{L}\d])(?:g|gr|gm)\.?\s?\d{1,3}[.,]\d{1,3})\)?(?:\s[-–])?\s+$`, 'u');
 // The side a dealer names before a grade, which opens a clause of its own ("Obverse VF, reverse Fine.", "Av. ss, Rs. s", "Vz. ZF, Kz. PR"). The
 // Dutch voorzijde, "Vz.", is not one: it is spelled as the German grade vz.
 const SIDE = String.raw`(?:obverse|obv|reverse|rev|avers|revers|av|rs|vs|kz|dritto|rovescio)`;
@@ -576,8 +623,9 @@ const SIDE_GAP = new RegExp(String.raw`^[\s,.]*${SIDE}\.?[\s,.]*$`, 'iu');
 // A grade behind an explicit label is the row's grade, whatever the text goes on to say ("Grade: VF. Notes: EF for the type").
 // A Spanish house labels it "Conservación".
 const LABEL = /(?:Erhaltung|Grade|Condition|Conservaci[oó]n)\s*:?\s*$/i;
-// Two grades a range separator joins are one statement, read as the lower of the two.
-const RANGE_GAP = /^\s*(?:[-–/]|to|bis|à)\s*$/i;
+// Two grades a range separator joins are one statement, read as the lower of the two. The plus a Dutch or German house spaces off the first grade is
+// that grade's own ("Zeer fraai +/prachtig", "Vorzüglich +/Stempelglanz", "VF + / EF"), so it may stand in front of the separator.
+const RANGE_GAP = /^\s*(?:\+\s*)?(?:[-–/]|to|bis|à)\s*$/i;
 // So are two grades a plain "and" joins, which is how a group lot grades its coins ("Lot of 2 coins. VF and EF.", "BB e SPL", "MBC y EBC"): the
 // lower one is what the lot is worth. The word lends the second grade neither a capital nor a range-only mark's standing, so "Good VF and fine for
 // the type" and "vz und s. Anm." are not ranges; and only English "and" closes a grade by itself: "und", "e", "et" and "y" close one only where the
@@ -668,7 +716,7 @@ export function gradeOf(description) {
     const signed = joinable && RANGE_GAP.test(gap);
     const ranged = signed || (joinable && RANGE_WORD.test(gap));
     const sided = joinable && SIDE_GAP.test(gap);
-    const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before);
+    const opened = start === 0 || OPENS.test(before) || SIDE_OPENS.test(before) || MEASURED.test(before);
     const capital = CAPITAL.test(quals + token) || signed;
     const kind = kindOf(token);
     const rest = text.slice(start + quals.length + token.length);
@@ -682,7 +730,7 @@ export function gradeOf(description) {
       && !PLACE_COMMA.test(before) && (!SENATE.has(token) || senateFree(token, start, before, quals, ranged || sided, tail));
     // A foreign adjective and a class-7 mark are lower case wherever a German or Italian dealer writes them mid-sentence, so the capital rule cannot
     // reach them: what tells them from praise is the clause they open, and the range or label they stand in.
-    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || signed;
+    else if (kind === 'praise') read = start === 0 || PRAISE_OPENS.test(before) || MEASURED.test(before) || signed;
     else read = signed || sided || LABEL.test(before) || opensRange(candidates, ends, index, text);
     if (!read) continue;
     const bucket = bucketOf(token);
