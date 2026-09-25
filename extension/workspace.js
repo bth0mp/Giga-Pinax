@@ -51,8 +51,6 @@ async function initWorkspace() {
   };
   let eventsById = new Map();
   let pendingRetry = null;
-  // Each save's attempt, by request id: a retried one is superseded, and its late answer is left.
-  const attempts = new Map();
   let selection = { selectedLotId: null, mode: 'list' };
   let comparisonSelection = [];
   let lotInteractionGeneration = 0;
@@ -468,9 +466,10 @@ async function initWorkspace() {
     // A save with no answer is said within eight seconds, under the form that was saved, with the way out (X-05): the
     // same request retried, which the store answers from its ledger if the first did commit. A reply that comes later is
     // still taken, unless the collector has retried by then.
+    // The attempt travels with the retry it offers, and goes with it (review Minor 8): a retried one is superseded, and its
+    // late answer is left.
     const attempt = { superseded: false };
-    attempts.set(command.requestId, attempt);
-    const retryInfo = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
+    const retryInfo = { command, editor, submittedVersion, submittedBasis, submittedRevisions, attempt };
     const silence = setTimeout(() => {
       if (attempt.superseded) return;
       pendingRetry = retryInfo;
@@ -614,7 +613,7 @@ async function initWorkspace() {
     // The same request, resubmitted as it was first submitted: anything typed since the attempt
     // failed is newer than the save and stays in the form. The first attempt, should its answer still come, is left.
     const retry = pendingRetry; pendingRetry = null; $('unknown-note').hidden = true;
-    const first = attempts.get(retry.command.requestId); if (first) first.superseded = true;
+    if (retry.attempt) retry.attempt.superseded = true;
     // The retry is where an uncertain delete becomes certain, so it is also where the page finds
     // out whether the coin is still its own removal.
     void send(retry.command, retry.editor, retry).then((reply) => {
