@@ -256,3 +256,19 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     entry. *Expected:* its entry and the collection totals show the new figures. Open **Edit entry**, type in a field,
     and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
     typed.
+
+32. **Import VAT on a foreign sale.** In **Settings → Bidding** type `5` under **Import VAT / duty % on a sale in another
+    currency** and save (default currency GBP). In the popup's **Calculator**, set the currency to EUR.
+    *Expected:* **Import VAT / duty %** under **Fees and bid increments** reads `5.00`; with a hammer of `1000`, premium
+    `25` and shipping `15` the figure reads €1,328.25 and the line under it names "import VAT €63.25". Set the currency
+    back to GBP: the field clears. In the workspace, save that fee sheet with a coin's bid and win it.
+    *Expected:* its History line names the import VAT and counts it in Fees and Total, and **Export CSV** of the lots
+    carries it in `import_vat`.
+
+33. **The popup's median where the bid is decided.** Look up `RIC I² Nero 306` in the popup and wait for the acsearch
+    median. Open the **Calculator** tab.
+    *Expected:* above the fields, "acsearch median … (n sales) for RIC I² Nero 306" with **Use as hammer**, which puts
+    the median in the hammer in its own currency. Save the reference to the watchlist and open the coin's **Bid** tab
+    in the workspace. *Expected:* beside your saved comparables, "acsearch median … · seen … ago, session only" with
+    **Use as maximum**, which types it into the maximum without saving. Change the bid's currency, or open a coin with
+    another reference: nothing is offered. Close the browser and open the coin again: the line is gone.
