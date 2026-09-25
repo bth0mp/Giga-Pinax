@@ -99,7 +99,9 @@ const WORDS = /^(?:\s*[^\s\d()]+){0,3}\s*$/u;
 const MEASURE = /^\d[\d.,]*\s*(?:g|gr|mm|h)$|\b(?:AD|BC|BCE|CE)\b|^(?:circa|ca?\.)\s/i;
 // The German, Italian, Spanish and French houses open one with their own words ("Exemplar der Auktion …", "Aus Sammlung …", "Erworben 1998 bei …",
 // "Provenienz: …", "Provient de la vente …", "Proviene da asta …"), each at the start of its sentence and with its capital, as "Ex" is.
-const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Ex|From`;
+// CNG and the American houses say how the coin came instead ("Acquired from Spink, 1998", "Purchased from Harlan J. Berk", "Privately purchased
+// from …", "Bought from Seaby"), and those open one the same way.
+const PROVENANCE_MARKERS = String.raw`Exemplar der|Aus (?:der )?Sammlung|Aus Slg|Erworben|Provenienz|Provenance|Provient de|Proviene|Privately purchased|Acquired|Purchased|Bought|Ex|From`;
 const PROVENANCE = new RegExp(String.raw`(?:^|[.!?]\s+|\n\s*)((?:${PROVENANCE_MARKERS})\b)`);
 // A provenance is one sentence, not the rest of the lot: the houses that write it first ("Ex Leu 4, 25 May 1972, lot 123. RIC 972; Cohen 17.") still
 // have their references read. It ends at a full stop, a line break or the end of the text, and a lot may carry several.
@@ -148,6 +150,12 @@ const PROVENANCE_MARKER = /^(?:ex|from|exemplar der|aus(?: der)?|provient de|pro
 const PROVENANCE_LOT = /,? ?\b(?:lots?|los|lotto|lote)\b\.? ?(?:no\.? ?|nr\.? ?|n\.?[°º] ?|n\. ?|# ?)?(\d{1,6}[a-z]?)(?![\da-z])/i;
 // "n°" is written with the degree sign or with the ordinal indicator the Spanish and French keyboards type ("nº", "n.º"), and Italian writes "n.".
 const PROVENANCE_NUMBER = /, ?(?:n[or]\b\.?|n\.?[°º]|n\.) ?(\d{1,6}[a-z]?)(?![\da-z])/i;
+// The Swiss and London houses write no lot word at all: the number closing the entry behind its year or its full date is the lot ("Leu Web Auction 12,
+// 30 May 2020, 234", "Naville Numismatics 53, 2019, 145"). Only there, and only behind a comma and a space, so "Leu 7, 1973,5" and a number behind a
+// sale's own number keep what they said.
+const PROVENANCE_TRAILING = /, (\d{1,6}[a-z]?)$/i;
+// A grade or description quoted from the earlier sale is no part of the source ("lot 1234 (there described as EF)"); the entry's text keeps it.
+const PROVENANCE_REMARK = /\s*\((?:there|where|previously|formerly)\s+(?:described|catalogued|cataloged|graded|offered|listed)\b[^()]*\)/gi;
 // A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
 const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
 // The day and month before the year, in English, German, Spanish, Italian and French ("25 May", "5. Januar", "7 de marzo de", "12 maggio",
@@ -180,12 +188,23 @@ function provenanceSentences(text) {
   return sentences;
 }
 
+// The bare lot behind a year: the year must be one PROVENANCE_YEAR reads (not a sale's or an auction's number) and must end straight before it.
+function trailingLot(working) {
+  const found = PROVENANCE_TRAILING.exec(working);
+  if (!found) return null;
+  const head = working.slice(0, found.index).replace(/\)$/, '');
+  PROVENANCE_YEAR.lastIndex = 0;
+  let last = null;
+  for (let year; (year = PROVENANCE_YEAR.exec(head));) last = year;
+  return last && last.index + last[0].length === head.length ? found : null;
+}
+
 function provenanceEntry(piece) {
   const text = trimEnds(piece.replace(PROVENANCE_LABEL, ''));
-  let working = trimEnds(text.replace(PROVENANCE_MARKER, ''));
+  let working = trimEnds(text.replace(PROVENANCE_MARKER, '').replace(PROVENANCE_REMARK, ''));
   if (!/[\p{L}\d]/u.test(working)) return null;
   const entry = { text: text.slice(0, 300) };
-  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working);
+  const lot = PROVENANCE_LOT.exec(working) ?? PROVENANCE_NUMBER.exec(working) ?? trailingLot(working);
   if (lot) working = working.slice(0, lot.index) + working.slice(lot.index + lot[0].length);
   let year = null;
   PROVENANCE_YEAR.lastIndex = 0;
@@ -208,7 +227,7 @@ function provenanceEntry(piece) {
 
 // Where one sentence holds several owners: a ";", a comma before another "ex", and a full stop before another marker that the sentence ran past at an
 // initial ("Aus Sammlung Dr. X. Erworben 1998 bei …").
-const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
+const PROVENANCE_PIECES = new RegExp(String.raw`;|,(?= ?[Ee][Xx] )| and (?=[Ee][Xx] )|(?<=\.) (?=(?:${PROVENANCE_MARKERS})\b)`);
 export function readProvenance(text) {
   if (typeof text !== 'string') return [];
   const entries = [];

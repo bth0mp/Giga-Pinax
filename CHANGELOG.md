@@ -12,6 +12,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - The grade reader reads a grade written straight behind the weight or diameter, with no full stop between (`4,03g Très Beau à Superbe`, `3,21 g TTB.`, `17,10 g BB.`, `gr. 3,45 SPL.`), as Jean Elsen and the Italian houses write it. `4,03g Très Beau à Superbe / Superbe.` had counted a Fine coin in the EF bucket.
 - A range whose first grade carries a spaced plus (`Zeer fraai +/prachtig`, `Vorzüglich +/Stempelglanz`) now counts under its lower grade, not its upper one.
 - RPC Online's temporary numbers (`RPC IV.2 online 1234 (temporary)`, `RPC VI online 3231`, `RPC IV 1234 (temp.)`) now get their RPC Online link, as do a lettered number (`RPC I 2317A`) and one with `var.` or `corr.`. Their acsearch search offers every spelling dealers write the number in (`"RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234"`), where it asked for one.
+- Provenance read from a lot keeps the lot number the Swiss and London houses write with no lot word behind the date (`Ex Leu Web Auction 12, 30 May 2020, 234.` is Leu Web Auction 12, 2020, lot 234, where the source had read "Leu Web Auction 12, 234"), splits two owners joined by "and ex", reads CNG's "Acquired from", "Purchased from", "Privately purchased from" and "Bought from" as provenance, and leaves a quoted "(there described as …)" out of the source.
 
 ## [0.36.0] - 2026-09-25
 

@@ -1381,3 +1381,46 @@ test('a provenance sentence ends at the full stop a catalogue key follows, even 
   assert.deepEqual(readProvenance('Ex Dr. Sear collection, 1975.').map(({ text }) => text), ['Ex Dr. Sear collection, 1975']);
   assert.deepEqual(readProvenance('Aus Sammlung Dr. W. R. Erworben 1998.').map(({ text }) => text), ['Aus Sammlung Dr. W. R', 'Erworben 1998']);
 });
+
+// Loop Q-07: Leu, Nomos, NAC, NGSA, Roma, Naville, Gorny & Mosch, Hess-Divo and Sotheby's close an entry with the lot and no lot word ("Ex Leu Web
+// Auction 12, 30 May 2020, 234."), which was glued into the source as a sale called "Leu Web Auction 12, 234"; "and ex" joined two owners into one;
+// and CNG's "Acquired from" / "Purchased from" was no provenance at all.
+test('the provenance reader takes a bare lot number behind the date, splits at "and ex", and reads the purchase markers', () => {
+  for (const [text, source, year, lot] of [
+    ['Ex Leu Web Auction 12, 30 May 2020, 234.', 'Leu Web Auction 12', 2020, '234'], ['Ex Nomos 21, 21 November 2020, 123.', 'Nomos 21', 2020, '123'],
+    ['Ex NAC 78, 26 May 2014, 1234.', 'NAC 78', 2014, '1234'], ['Ex Roma XX, 29 October 2020, 336.', 'Roma XX', 2020, '336'],
+    ['Ex Naville Numismatics 53, 2019, 145.', 'Naville Numismatics 53', 2019, '145'], ['Ex Gorny & Mosch 265, 2019, 145.', 'Gorny & Mosch 265', 2019, '145'],
+    ["From the Hunt collection, Sotheby's New York, 19 June 1990, 12.", "the Hunt collection, Sotheby's New York", 1990, '12'],
+    ['Ex Leu 7 (1973), 123a.', 'Leu 7', 1973, '123a'], ['Ex NAC 78, 26 May 2014, 1987.', 'NAC 78', 2014, '1987'],
+    ['Ex Lanz 145, 5 January 2009, lot 1234 (there described as EF).', 'Lanz 145', 2009, '1234'],
+    ['Ex Lanz 145, 5 January 2009, 1234 (where described as "Good VF").', 'Lanz 145', 2009, '1234'],
+  ]) {
+    const [entry] = readProvenance(text);
+    assert.deepEqual([entry.source, entry.year, entry.lot], [source, year, lot], text);
+    assert.equal(entry.text, text.slice(0, -1), text);
+  }
+  assert.deepEqual(readProvenance('Ex Hess-Divo 333, 2017, 55 and ex Sternberg XXIII, 1989, 178.').map(({ source, year, lot }) => [source, year, lot]),
+    [['Hess-Divo 333', 2017, '55'], ['Sternberg XXIII', 1989, '178']]);
+  assert.deepEqual(readProvenance('Ex Leu 86, 5 May 2003, 645; ex Bank Leu 25, 23 April 1980, 210.').map(({ source, lot }) => [source, lot]),
+    [['Leu 86', '645'], ['Bank Leu 25', '210']]);
+  // Only after a year: a number behind anything else, a decimal-looking pair, a sale or auction number, and a list are not the lot.
+  for (const [text, source] of [['Ex Leu 7, 1973,5.', 'Leu 7, 1973,5'], ['Ex Leu 86, 645.', 'Leu 86, 645'], ['Ex Leu sale 1850, 7.', 'Leu sale 1850, 7'],
+    ['Ex Künker Auction 2019, 145.', 'Künker Auction 2019, 145'], ['Ex Leu 86, 2003, 645-646.', 'Leu 86, 645-646'], ['Ex Leu 86, 2003, 12, 15.', 'Leu 86, 12, 15']]) {
+    const [entry] = readProvenance(text);
+    assert.equal(entry.source, source, text);
+    assert.equal(entry.lot, undefined, text);
+  }
+  // "and" joins two owners only in front of another "ex": a firm's own "and" stays in its name.
+  for (const text of ['Ex Spink and Son, 1998.', 'Ex Bank Leu and Münzen und Medaillen 25, 1980, 12.', 'Ex Baldwin and Exeter collection, 2001.']) {
+    assert.equal(readProvenance(text).length, 1, text);
+  }
+  assert.deepEqual(readProvenance('Acquired from Spink, 1998.'), [{ text: 'Acquired from Spink, 1998', source: 'Acquired from Spink', year: 1998 }]);
+  assert.deepEqual(readProvenance('Nero. Denarius. RIC 53. Purchased from Harlan J. Berk, 2005. Privately purchased from Frank Kovacs, 1999.')
+    .map(({ source, year }) => [source, year]), [['Purchased from Harlan J. Berk', 2005], ['Privately purchased from Frank Kovacs', 1999]]);
+  assert.deepEqual(readProvenance('Bought from Seaby, 1965.').map(({ year }) => year), [1965]);
+  assert.deepEqual(texts('Purchased from CNG, 2005. RIC 53.'), ['RIC 53']);
+  // Only at the start of a sentence and with its capital, as "Ex" is: the verb in the middle of prose is no marker.
+  for (const text of ['Nero. The coin was acquired in 1998. RIC 53.', 'Nero. Denarius, purchased 1998. RIC 53.', 'Nero. acquired from Spink, 1998.']) {
+    assert.deepEqual(readProvenance(text), [], text);
+  }
+});
