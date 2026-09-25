@@ -24,7 +24,8 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  filterSettledLots, monthHeading, relativeToShow, settledYear, splitAuctions, wantListRows, wonCostLine,
+  comparableExclusionText, comparableSaleText, filterSettledLots, lastAddedSet, monthHeading, relativeToShow, savedComparablesCount, settledYear, splitAuctions,
+  wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -563,8 +564,19 @@ async function initWorkspace() {
   }
 
   const selectedSources = () => [...document.querySelectorAll('[name="evidence-source"]:checked')].map((item) => item.value);
+  // The Search route opened with sets saved and nothing asked opens the set last added to, once (K-09); a coin that is open
+  // offers its own reference instead.
+  let lastSetOpened = false;
+  const NEW_SET = 'new-set';
   function renderEvidence() {
+    const openReference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
+    if (!lastSetOpened && !openReference && !$('research-query').value.trim() && !evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).length) {
+      const last = lastAddedSet(snapshot.evidence);
+      if (last) { lastSetOpened = true; currencyChosen.filter = true; chooseSet(last); }
+    }
     const options = comparableSetOptions(snapshot.evidence, activeQuery);
+    // A new set is always offered, last, even while a saved one is open.
+    if (!options.some(({ id }) => id === activeQuery.id && !evidenceRowsForQuery(snapshot.evidence ?? [], id).length)) options.push({ id: NEW_SET, label: 'New set…' });
     const querySelect = $('evidence-query');
     querySelect.replaceChildren(...options.map(({ id, label }) => { const option = text('option', label); option.value = id; return option; }));
     if (!options.some(({ id }) => id === selectedQueryId)) selectedQueryId = activeQuery.id;
@@ -583,7 +595,10 @@ async function initWorkspace() {
     const output = $('statistics-output');
     output.replaceChildren();
     output.classList.toggle('is-empty', !evidenceRows.length);
-    if (!evidenceRows.length) output.append(emptyState('No saved comparables', 'Sales you record by hand, kept apart from acsearch.'));
+    // The empty state is for a store with no comparables at all; a new set among saved ones says what the others hold.
+    const allRows = snapshot.evidence ?? [];
+    if (!allRows.length) output.append(emptyState('No saved comparables', 'Sales you record by hand, kept apart from acsearch.'));
+    else if (!evidenceRows.length) output.append(text('p', `${savedComparablesCount(allRows)} Choose one under Comparable set, or record a sale below to start this one.`, 'field-note'));
     else if (stats.validationError) output.append(text('p', stats.validationError.message));
     else {
       const { headline, leftOut } = comparableSummary(evidenceRows, stats, money);
@@ -593,11 +608,26 @@ async function initWorkspace() {
     const list = $('evidence-list'); list.replaceChildren();
     const effectiveExclusions = new Map(stats.excluded.map((item) => [item.id, item.reason]));
     for (const row of evidenceRows) {
-      const card = text('article', '', 'record');
-      const first = row.observations?.[0];
-      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : first ? `${first.auctionHouse}${first.houseSaleId ? `, ${first.houseSaleId}` : ''}, lot ${first.lotNumber}` : `Observation ${row.id}`));
-      card.append(text('p', `${row.inclusion}${row.exclusionReason ? `: ${row.exclusionReason}` : ''}${row.conflictFields?.length ? ` · conflicts: ${row.conflictFields.join(', ')}` : ''}`));
+      // A saved comparable is a sale row (K-09): the sale, its day, its figure and where it came from, with Exclude at
+      // the right. The records behind it - each claim, when it was read, the effective result - are shown only where two
+      // observations of one sale disagree, beside the chooser that settles them.
+      const conflict = Boolean(row.conflictFields?.length);
+      const sale = comparableSaleText(row, { money, day: dayText });
+      const card = text('article', '', `record comparable-row${row.inclusion === 'included' ? '' : ' is-excluded'}`);
+      const head = text('div', '', 'comparable-head');
+      const words = text('div', '', 'comparable-words');
+      words.append(text('h4', sale.title), text('p', sale.line, 'comparable-line'));
+      if (row.inclusion !== 'included' || effectiveExclusions.has(row.id)) words.append(text('p', `Left out of the figures: ${comparableExclusionText(row.exclusionReason ?? effectiveExclusions.get(row.id))}`, 'comparable-excluded'));
+      if (conflict) words.append(text('p', `The records of this sale disagree on ${row.conflictFields.join(', ')}. Choose the one to use.`, 'comparable-conflict'));
+      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include', 'quiet'); toggle.type = 'button';
+      toggle.addEventListener('click', () => void send({ type: 'evidence.include', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, inclusion: row.inclusion === 'included' ? 'excluded' : 'included', ...(row.inclusion === 'included' ? { exclusionReason: 'collector-excluded' } : {}) }));
+      head.append(words, toggle);
+      card.append(head);
       for (const observation of row.observations ?? []) {
+        if (!conflict) {
+          if (observation.sourceUrl) { const link = text('a', 'Open the sale ↗', 'comparable-source'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link); }
+          continue;
+        }
         const amount = observation.amount ? money(observation.amount) : 'No amount';
         card.append(text('p', `${observation.source} · ${dayText(observation.auctionDate)} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${dayText(observation.retrievedAt)}` : ''}`));
         card.append(text('p', `Query ${observation.queryLabel ?? observation.queryId}`));
@@ -605,41 +635,42 @@ async function initWorkspace() {
           const link = text('a', 'Open source claim'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link);
         }
       }
-      card.append(text('p', effectiveExclusions.has(row.id) ? `Effective result: excluded (${effectiveExclusions.get(row.id)})` : 'Effective result: included'));
+      if (conflict) card.append(text('p', effectiveExclusions.has(row.id) ? `Effective result: excluded (${effectiveExclusions.get(row.id)})` : 'Effective result: included'));
       const actions = text('div', '', 'actions');
-      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include', 'quiet'); toggle.type = 'button';
-      toggle.addEventListener('click', () => void send({ type: 'evidence.include', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, inclusion: row.inclusion === 'included' ? 'excluded' : 'included', ...(row.inclusion === 'included' ? { exclusionReason: 'collector-excluded' } : {}) }));
-      actions.append(toggle);
-      for (const observation of (row.observations ?? []).filter((item) => item.priceBasis === 'hammer' && item.amount)) {
+      for (const observation of (conflict ? row.observations ?? [] : []).filter((item) => item.priceBasis === 'hammer' && item.amount)) {
         const choose = text('button', `Use ${observation.source} claim`, 'quiet'); choose.type = 'button';
         choose.addEventListener('click', () => void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'observation', observationId: observation.id } }));
         actions.append(choose);
       }
-      if (row.conflictFields?.length) {
+      if (conflict) {
         const currency = row.observations?.find((item) => item.amount)?.amount?.currency ?? filters.currency;
         const entered = document.createElement('input'); entered.inputMode = 'decimal'; entered.placeholder = `Entered hammer (${currency})`; entered.setAttribute('aria-label', `Entered hammer for ${row.id}`);
         const chooseEntered = text('button', 'Use entered hammer', 'quiet'); chooseEntered.type = 'button';
         chooseEntered.addEventListener('click', () => { const parsed = parseMoney(entered.value, currency, navigator.language); if (!parsed.ok) return announce(parsed.error.message, true); void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'entered', hammer: parsed.value } }); });
         actions.append(entered, chooseEntered);
       }
-      card.append(actions); list.append(card);
+      if (actions.children.length) card.append(actions);
+      list.append(card);
     }
   }
   $('evidence-form').addEventListener('input', (event) => { if (event.target === $('evidence-form').elements.currency) currencyChosen.form = true; });
   $('evidence-filters').addEventListener('input', (event) => {
     if (event.target === $('evidence-currency') || event.target === $('evidence-query')) currencyChosen.filter = true;
-    if (event.target === $('evidence-query')) {
-      selectedQueryId = event.target.value;
-      const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
-      activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
-      if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
-      // A set is shown in the currency most of its sales were knocked down in; the others stay out, never converted.
-      const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
-      const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
-      if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
-    }
+    if (event.target === $('evidence-query')) chooseSet(event.target.value);
     renderEvidence();
   });
+  // A comparable set chosen: its query in the box, and shown in the currency most of its sales were knocked down in; the
+  // others stay out, never converted.
+  function chooseSet(queryId) {
+    if (queryId === NEW_SET) { $('research-query').value = ''; activeQuery = { id: requestId(), text: '' }; selectedQueryId = activeQuery.id; return; }
+    selectedQueryId = queryId;
+    const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
+    activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
+    if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
+    const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
+    const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
+    if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
+  }
   $('evidence-form').addEventListener('submit', (event) => {
     event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const basis = form.get('priceBasis');
     let amount;

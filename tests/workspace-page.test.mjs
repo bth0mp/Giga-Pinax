@@ -928,7 +928,7 @@ test('the saved comparables say plainly what they hold', async () => {
   }
   const page = await mountWorkspace({ background, hash: '#search' });
   const select = page.$('evidence-query');
-  assert.deepEqual(select.options.map((option) => option.textContent), ['New comparable set', 'RIC 27b (4)']);
+  assert.deepEqual(select.options.map((option) => option.textContent), ['RIC 27b (4)', 'New set…']);
   select.value = queryId;
   await page.$('evidence-filters').emit('input', { target: select });
   assert.equal(page.$('evidence-currency').value, 'EUR', 'a set is shown in the currency most of its sales are in');
@@ -2265,4 +2265,42 @@ test('History filters by text, year and outcome, counts what it shows, and the c
   const won = page.document.querySelectorAll('[name="history-outcome"]').find((box) => box.value === 'won');
   won.checked = false; await won.emit('change'); await settle();
   assert.equal(page.$('history-list').textContent, 'No settled coins match these filters.');
+});
+
+// K-09: with comparables saved, Search opens on the set last added to, offers a new set last, and draws each comparable
+// as a sale row; the records behind a row are shown only where they disagree.
+test('Search opens on the set last added to, and each comparable reads as a sale', async () => {
+  const background = await createWorkspaceBackground();
+  const add = (queryId, queryLabel, lotNumber, minor, currency = 'CHF') => background.send({ type: 'evidence.add', observation: { queryId, queryLabel, source: 'manual', auctionHouse: 'Nomos', houseSaleId: '234', auctionDate: '2022-08-10', lotNumber: String(lotNumber), priceBasis: 'hammer', amount: { currency, minor } } });
+  const older = '00000000-0000-4000-9000-000000000071'; const newer = '00000000-0000-4000-9000-000000000072';
+  for (const [id, label, lot] of [[older, 'RRC 443/1', 940], [older, 'RRC 443/1', 941], [newer, 'RIC II Trajan 253', 942]]) assert.equal((await add(id, label, lot, 136000)).ok, true);
+  const page = await mountWorkspace({ background, hash: '#search' });
+  assert.equal(page.$('evidence-query').value, newer, 'the set last added to');
+  assert.equal(page.$('research-query').value, 'RIC II Trajan 253');
+  assert.deepEqual(page.$('evidence-query').options.map((option) => option.textContent), ['RRC 443/1 (2)', 'RIC II Trajan 253 (1)', 'New set…']);
+  const card = page.$('evidence-list').querySelector('.comparable-row');
+  assert.equal(card.querySelector('h4').textContent, 'Nomos 234, lot 942');
+  assert.equal(card.querySelector('.comparable-line').textContent, 'Aug 10, 2022 · CHF 1,360.00 hammer · manual');
+  assert.doesNotMatch(card.textContent, /claim|Effective result|retrieved|Query/);
+  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Exclude']);
+  // A new set among saved ones says what the others hold, not that there are none.
+  const fresh = page.$('evidence-query').options.find((option) => option.textContent === 'New set…').value;
+  page.$('evidence-query').value = fresh; await page.$('evidence-filters').emit('input', { target: page.$('evidence-query') });
+  assert.equal(page.$('statistics-output').textContent, '3 comparables in 2 sets. Choose one under Comparable set, or record a sale below to start this one.');
+});
+
+// K-09: where two records of one sale disagree, the row shows each record and the chooser that settles it.
+test('a comparable whose records disagree shows each record and the choice between them', async () => {
+  const background = await createWorkspaceBackground();
+  const queryId = '00000000-0000-4000-9000-000000000081';
+  for (const minor of [136000, 140000]) {
+    const reply = await background.send({ type: 'evidence.add', observation: { queryId, queryLabel: 'RRC 443/1', source: 'manual', auctionHouse: 'Nomos', houseSaleId: '234', auctionDate: '2022-08-10', lotNumber: '942', priceBasis: 'hammer', amount: { currency: 'CHF', minor } } });
+    assert.equal(reply.ok, true, reply.message);
+  }
+  const page = await mountWorkspace({ background, hash: '#search' });
+  const cards = page.$('evidence-list').querySelectorAll('.comparable-row');
+  assert.equal(cards.length, 1, 'one sale');
+  assert.match(cards[0].querySelector('.comparable-conflict').textContent, /^The records of this sale disagree on /);
+  assert.match(cards[0].textContent, /Effective result/);
+  assert.ok(cards[0].querySelectorAll('button').some((button) => button.textContent === 'Use entered hammer'));
 });

@@ -675,13 +675,70 @@ export function comparableSetOptions(evidence, active) {
     for (const item of row.observations ?? []) if (item.queryLabel && item.queryId) labels.set(item.queryId, item.queryLabel);
   }
   const ids = [...counts.keys()];
-  if (!ids.includes(active.id)) ids.unshift(active.id);
+  // A new, empty set is offered last (K-09): the saved sets come first.
+  if (!ids.includes(active.id)) ids.push(active.id);
   const seen = new Map();
   return ids.map((id) => {
     const name = labels.get(id) ?? (id === active.id ? active.text : '');
     const count = counts.get(id) ?? 0;
-    if (!name) return { id, label: id === active.id && !count ? 'New comparable set' : `Unnamed set (${count})` };
+    if (!name) return { id, label: id === active.id && !count ? 'New set…' : `Unnamed set (${count})` };
     const repeat = (seen.get(name) ?? 0) + 1; seen.set(name, repeat);
     return { id, label: `${name}${repeat > 1 ? ` · set ${repeat}` : ''}${count ? ` (${count})` : ''}` };
   });
 }
+
+/**
+ * The set a comparable was last added to (K-09): the query of the observation read most recently, or null with none.
+ * @param {Evidence[] | null | undefined} evidence
+ * @returns {string | null}
+ */
+export function lastAddedSet(evidence) {
+  let latest = null;
+  for (const row of evidence ?? []) {
+    for (const item of row.observations ?? []) {
+      if (item.queryId && (!latest || String(item.retrievedAt ?? '') >= String(latest.retrievedAt ?? ''))) latest = item;
+    }
+  }
+  return latest?.queryId ?? null;
+}
+
+/**
+ * How many comparables are saved and in how many sets: "400 comparables in 40 sets."
+ * @param {Evidence[] | null | undefined} evidence
+ * @returns {string}
+ */
+export function savedComparablesCount(evidence) {
+  const rows = evidence ?? [];
+  const sets = new Set(rows.flatMap((row) => (row.observations ?? []).map((item) => item.queryId).filter(Boolean)));
+  return `${rows.length} comparable${rows.length === 1 ? '' : 's'} in ${sets.size} set${sets.size === 1 ? '' : 's'}.`;
+}
+
+/**
+ * A saved comparable as a sale row (K-09): "Nomos 234, lot 942" and "10 Aug 2022 · CHF 1,360.00 hammer · manual" - the
+ * sale's figure being the one the statistics use, and where the row's records disagree, the first record's.
+ * @param {Evidence} row
+ * @param {{ money: (amount: *) => string, day: (iso: *) => string }} format
+ * @returns {{ title: string, line: string }}
+ */
+export function comparableSaleText(row, { money, day }) {
+  const first = row?.observations?.[0];
+  const identity = row?.saleIdentity;
+  const house = identity?.auctionHouse ?? first?.auctionHouse ?? '';
+  const sale = identity?.houseSaleId ?? first?.houseSaleId ?? '';
+  const lotNumber = identity?.lotNumber ?? first?.lotNumber ?? '';
+  const title = [[house, sale].filter(Boolean).join(' '), lotNumber ? `lot ${lotNumber}` : ''].filter(Boolean).join(', ') || 'Saved comparable';
+  const basis = String(first?.priceBasis ?? '');
+  const amount = row?.resolved?.hammer ?? first?.amount ?? null;
+  const figure = basis === 'unsold' ? 'unsold' : basis === 'missing' || !amount ? 'no price' : `${money(amount)} ${basis === 'hammer' ? 'hammer' : basis}`;
+  const sources = [...new Set((row?.observations ?? []).map((item) => item.source === 'authorized-import' ? 'imported' : item.source).filter(Boolean))].join(', ');
+  return { title, line: [first?.auctionDate ? day(first.auctionDate) : '', figure, sources].filter(Boolean).join(' · ') };
+}
+
+// Why a comparable is left out, in the collector's words.
+const EXCLUSION_WORDS = { 'collector-excluded': 'you excluded it', currency: 'in another currency', date: 'outside the dates', 'source-filter': 'from a source not ticked',
+  estimate: 'an estimate, not a hammer', unsold: 'unsold', 'missing-price': 'no price', conflict: 'its records disagree', 'not-comparable': 'not a hammer price', 'invalid-evidence': 'unreadable' };
+/**
+ * @param {*} reason
+ * @returns {string}
+ */
+export const comparableExclusionText = (reason) => EXCLUSION_WORDS[String(reason)] ?? String(reason ?? 'excluded');
