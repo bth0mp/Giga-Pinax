@@ -11,13 +11,13 @@ import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import { CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures } from './store-recovery.js';
 import {
-  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
+  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, outcomeFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
   buildLotSaveCommand, buildLotUndoCommand, commandReplacedRevisions, commandWasCommitted, conflictNoteMessage,
-  draftToConsumeAfterLotSave, editorRecord, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup, planCommit,
+  draftToConsumeAfterLotSave, editorRecord, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup, planCommit, rebaseSentence, rebaseTypedFields,
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
@@ -25,10 +25,14 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  comparableExclusionText, comparableSaleText, savedSetFor, filterSettledLots, lastAddedSet, monthHeading, relativeToShow, savedComparablesCount, settledYear, splitAuctions,
   wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
+// A save with no answer, said under the form that was saved (X-05).
+const NO_ANSWER = 'The save didn\u2019t get an answer. The same request can be retried: it is never saved twice.';
+const SAVE_ANSWER_MS = 8000;
 
 async function initWorkspace() {
   const $ = (id) => document.getElementById(id);
@@ -84,7 +88,7 @@ async function initWorkspace() {
   const eventLine = (event, className, tag = 'span', withName = true) => {
     const line = text(tag, '', className);
     if (!event) { line.textContent = 'No auction attached'; return line; }
-    const { when, relative, tone } = eventWhen(event, view());
+    const said = eventWhen(event, view()); const { when, tone } = said; const relative = relativeToShow(event, said);
     line.append(document.createTextNode(withName ? `${event.name} · ${when}` : when));
     if (relative) { line.append(document.createTextNode(' · ')); line.append(text('span', relative, `when-relative${tone ? ` when-${tone}` : ''}`)); }
     return line;
@@ -120,7 +124,7 @@ async function initWorkspace() {
       const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'pageAuction';
       const when = offered.precision !== 'timed' ? `day on ${offered.localDate}`
         : `${offered.eventKind === 'auction-starts' ? 'starting' : 'closing'} ${offered.localDate} ${offered.localTime} (${offered.timeZone})`;
-      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${offered.capturedText.replace(/^From the page: /, '')}). An auction you choose under Auction reminder is used instead.`));
+      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${offered.capturedText.replace(/^From the page: /, '')}). An auction you choose under Auction is used instead.`));
       root.append(label);
     }
     root.hidden = root.children.length < 2;
@@ -165,7 +169,8 @@ async function initWorkspace() {
   };
   const refreshCounts = (form) => { for (const control of form.querySelectorAll('[data-limit]')) updateCount(control); };
   // A control's own label, without the hints and counts beside it, and the folded section it sits in.
-  const fieldLabel = (control) => [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
+  // A group of radio buttons is named by its fieldset's legend.
+  const fieldLabel = (control) => (control?.type === 'radio' ? control.closest('fieldset')?.querySelector('legend')?.textContent : '') || [...(control?.closest('label')?.childNodes ?? [])].filter((node) => node.nodeType === 3).map((node) => node.textContent).join('').trim() || control?.name || 'this field';
   const sectionOf = (control) => control?.closest('details');
   const where = (control) => { const section = sectionOf(control); return section ? `${fieldLabel(control)} under ${section.querySelector('summary')?.textContent ?? 'its section'}` : fieldLabel(control); };
   // A value the browser refuses stops the submit before the page hears of it. The first refused control of a submit
@@ -244,6 +249,8 @@ async function initWorkspace() {
   const setRoute = (focusLink = false) => {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
+    // A route committed data moved on while another was shown is drawn as it is entered (K-04).
+    renderRoute(active);
     if (active === 'search') offerSelectedReference();
     // An address naming a queue ("#watchlist?queue=needs-outcome", from a missed reminder or the popup) shows it.
     const queue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
@@ -257,8 +264,11 @@ async function initWorkspace() {
   const offerSelectedReference = () => {
     const reference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
     if (!reference || $('research-query').value.trim()) return;
-    $('research-query').value = reference;
-    ensureActiveQuery();
+    // A set already saved under the reference, however it was spelled, is the one opened (K-09): the last added to, when
+    // several are.
+    const saved = savedSetFor(snapshot.evidence, reference);
+    if (saved) chooseSet(saved);
+    else { $('research-query').value = reference; ensureActiveQuery(); }
     renderEvidence();
   };
   document.querySelector('.workspace-nav').addEventListener('click', (event) => { routeChangeFromNav = Boolean(event.target.closest('[data-route]')); });
@@ -283,10 +293,13 @@ async function initWorkspace() {
   // The Search route's two currencies start on the collector's default, however the page was reached, and follow it
   // until the collector chooses one there or opens the route from a coin, which sets the coin's (review Minor 2).
   const currencyChosen = { filter: false, form: false };
+  // The currency of the set shown (K-09): followed in place of the default while that set is shown, and never counted as
+  // the collector's choice when the page opened the set by itself (review Minor 1).
+  let openedSetCurrency = null;
   const followDefaultCurrency = () => {
     const currency = snapshot.preferences?.currency;
     if (!CURRENCIES.includes(currency)) return;
-    if (!currencyChosen.filter) $('evidence-currency').value = currency;
+    if (!currencyChosen.filter) $('evidence-currency').value = openedSetCurrency ?? currency;
     if (!currencyChosen.form) $('evidence-form').elements.currency.value = currency;
   };
   // A draft that arrives after the collector has started on the form it would fill is offered in that form's own line,
@@ -302,6 +315,8 @@ async function initWorkspace() {
   // The coin this page is deleting: any snapshot that drops it, including one that arrives before
   // the reply does, clears its editors without the "removed in another view" notice.
   let removedHere = null;
+  // Why the stored records could not be read, while they cannot (X-12).
+  let storeProblem = '';
   // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
   // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
@@ -312,7 +327,7 @@ async function initWorkspace() {
     discard: (draft) => void send({ type: 'draft.consume', requestId: requestId(), draftId: draft.id }),
   });
   const acceptIncoming = (incoming) => {
-    snapshot = incoming;
+    snapshot = incoming; storeProblem = '';
     enableLoadedControls();
     followDefaultCurrency();
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
@@ -349,11 +364,14 @@ async function initWorkspace() {
   const editorFormValues = {
     lot: (record) => lotFormValues(record),
     bid: (record) => bidFormValues(record, navigator.language, snapshot.preferences?.currency ?? 'USD'),
+    // Read by Reload committed data only (X-07): a commit never merges the Outcome tab, whose fields only its own save writes.
+    outcome: (record) => outcomeFormValues(record, navigator.language, { defaultCurrency: snapshot.preferences?.currency ?? 'USD', event: eventsById.get(record?.auctionEventId) ?? null, today: localToday(), presets: snapshot.preferences?.housePremiumPresets ?? [] }),
   };
+  const MERGED_ON_COMMIT = new Set(['lot', 'bid']);
   // A dirty form cannot be repopulated, but leaving it on the record it was populated from lets its
   // next save undo the commit: each field the collector has not touched follows the new record.
   const mergeRebasedEditor = (editor, previousRecord, incoming) => {
-    const readValues = editorFormValues[editor];
+    const readValues = MERGED_ON_COMMIT.has(editor) ? editorFormValues[editor] : null;
     const record = editorBases.get(editor)?.record;
     if (!readValues || !record || !previousRecord) return;
     const elements = $(`${editor}-form`).elements;
@@ -387,10 +405,33 @@ async function initWorkspace() {
     try { reply = await bridge.getSnapshot(); }
     catch { announce(WORKER_UNREACHABLE, true); return { ok: false, unreachable: true }; }
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
-    beforeRender?.(reply.value);
-    const removed = acceptIncoming(reply.value);
+    return takeCommitted(reply.value, beforeRender);
+  };
+  // A committed snapshot taken: the commit that produced it first, then the page drawn once from it.
+  const takeCommitted = (incoming, beforeRender = null) => {
+    if (pendingIncoming && !newerRoot(pendingIncoming, incoming)) pendingIncoming = null;
+    beforeRender?.(incoming);
+    const removed = acceptIncoming(incoming);
     if (!removed) settleNotice();
-    return { ok: true, value: reply.value, removed };
+    return { ok: true, value: incoming, removed };
+  };
+  // What the subscription delivered and the page has not drawn yet (K-04). Writes come in bursts - a save, then the
+  // reminder schedule it leads to - and each carries the whole store, so the page takes the latest on the next frame,
+  // and never draws the same root twice or an older one over a newer.
+  let pendingIncoming = null;
+  const sameRoot = (left, right) => Boolean(left && right) && left.revision === right.revision && left.updatedAt === right.updatedAt;
+  // A root is older only when both its revision and its time are: a store started afresh restarts its revision.
+  const newerRoot = (candidate, held) => !held || (!sameRoot(candidate, held)
+    && (Number(candidate?.revision) > Number(held?.revision) || String(candidate?.updatedAt ?? '') > String(held?.updatedAt ?? '')));
+  const takePending = () => {
+    const incoming = pendingIncoming; pendingIncoming = null;
+    if (incoming && newerRoot(incoming, snapshot)) acceptIncoming(incoming);
+  };
+  const deliver = (incoming) => {
+    if (sameRoot(incoming, pendingIncoming ?? snapshot)) return;
+    const scheduled = Boolean(pendingIncoming);
+    pendingIncoming = incoming;
+    if (!scheduled) requestAnimationFrame(takePending);
   };
   const send = async (command, editor, previousAttempt = null) => {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
@@ -416,6 +457,10 @@ async function initWorkspace() {
     // A refreshed snapshot decides the editors; when the refresh itself failed the commit is still
     // applied, against what this page already has, so a saved form is never left blank.
     const commitAndRefresh = async (value) => {
+      // The write this page is waiting on has usually reached it through the subscription before the reply did: that
+      // snapshot is as fresh as a second read of the whole store would be, and is taken instead of one (K-04).
+      const known = pendingIncoming ?? snapshot;
+      if (commandWasCommitted(known, command.requestId)) return takeCommitted(known, (incoming) => commit(value, incoming, true));
       const refreshed = await refresh((incoming) => commit(value, incoming, true));
       if (!refreshed.ok) commit(value, snapshot, false);
       return refreshed;
@@ -428,20 +473,37 @@ async function initWorkspace() {
     // that produced it.
     const released = () => { savesInFlight.delete(editor); };
     let reply;
+    // A save with no answer is said within eight seconds, under the form that was saved, with the way out (X-05): the
+    // same request retried, which the store answers from its ledger if the first did commit. A reply that comes later is
+    // still taken, unless the collector has retried by then.
+    // The attempt travels with the retry it offers, and goes with it (review Minor 8): a retried one is superseded, and its
+    // late answer is left.
+    const attempt = { superseded: false };
+    const retryInfo = { command, editor, submittedVersion, submittedBasis, submittedRevisions, attempt };
+    const silence = setTimeout(() => {
+      if (attempt.superseded) return;
+      pendingRetry = retryInfo;
+      offerRetry(editor, NO_ANSWER);
+    }, SAVE_ANSWER_MS);
     try { reply = await bridge.sendCommand(command); }
     catch {
+      clearTimeout(silence);
+      if (attempt.superseded) return { ok: false, requestId: command.requestId, code: 'superseded' };
       released();
       // The worker may or may not have committed: the same request ID makes a retry idempotent.
-      pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
-      $('unknown-note').hidden = false;
-      announce(WORKER_UNREACHABLE, true);
+      pendingRetry = retryInfo;
+      offerRetry(editor, NO_ANSWER);
       return { ok: false, requestId: command.requestId, code: 'unreachable', outcome: 'unknown', message: WORKER_UNREACHABLE };
     }
+    clearTimeout(silence);
+    if (attempt.superseded) return { ok: false, requestId: command.requestId, code: 'superseded' };
+    if (pendingRetry?.command === command) { pendingRetry = null; $('unknown-note').hidden = true; }
     if (!reply.ok) {
       if (editor === 'lot') {
         // A refused value is named, and its folded section opened, so the collector can see what to change.
         const field = lotFieldForPath(reply.path ?? reply.error?.path); const control = field ? $('lot-form').elements[field] : null;
-        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(`${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`)); status.classList.add('error');
+        const message = reply.code === 'conflict' ? conflictWords('lot') : `${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`;
+        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(message)); status.classList.add('error');
         if (control) { const section = sectionOf(control); if (section) section.open = true; control.focus(); }
         const existingLotId = reply.existingLotId ?? reply.error?.existingLotId;
         if (reply.code === 'duplicate' && existingLotId) {
@@ -464,13 +526,13 @@ async function initWorkspace() {
         }
         released();
         pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
-        $('unknown-note').hidden = false;
-        announce('Save outcome is uncertain. Review committed records before retrying the same request.', true);
+        if (RETRY_LINE[editor]) offerRetry(editor, 'The save could not be verified. Check the record, then retry the same request: it is never saved twice.');
+        else { $('unknown-note').hidden = false; announce('Save outcome is uncertain. Review committed records before retrying the same request.', true); }
         return reply;
       }
       released();
       // The lot form has named the refused field in its own line already.
-      if (!removed && editor !== 'lot') say(reply.message, true);
+      if (!removed && editor !== 'lot') say(reply.code === 'conflict' ? conflictWords(editor, reply.message) : reply.message, true);
       return reply;
     }
     const refreshed = await commitAndRefresh(reply.value);
@@ -495,27 +557,79 @@ async function initWorkspace() {
     event.preventDefault();
     event.returnValue = '';
   });
-  // The banner names the forms whose records moved, so only those are discarded: unsaved input in
-  // an editor nothing else touched is still the collector's.
-  $('reload-snapshot').addEventListener('click', () => {
+  // A save refused because its record moved on says so in the collector's words (X-07).
+  const CONFLICT_RECORD = { lot: 'coin', bid: 'coin', outcome: 'coin', event: 'auction', group: 'group', want: 'want', wantlist: 'want', evidence: 'comparable' };
+  const conflictWords = (editor, fallback = '') => (CONFLICT_RECORD[editor]
+    ? `This ${CONFLICT_RECORD[editor]} changed in another view. Select Reload committed data to see the change; what you typed stays in the form until then.`
+    : fallback);
+  // The banner names the forms whose records moved, so only those are reloaded, and each is rebased rather than
+  // emptied (X-07): a field the collector typed in that the other view did not change keeps their typing, every other
+  // field follows the stored record, and the form's line names both. An editor nothing else touched is still the
+  // collector's.
+  $('reload-snapshot').addEventListener('click', async () => {
     const conflicted = editorsWithChangedBasis(snapshot, dirtyEditors, editorBases, savesInFlight);
     if (conflicted.includes('lot')) lotInteractionGeneration += 1;
-    for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); }
+    const typed = new Map(conflicted.filter((editor) => editorFormValues[editor] && editorBases.get(editor)?.record).map((editor) => {
+      const elements = $(`${editor}-form`).elements; const basis = editorBases.get(editor);
+      const values = Object.fromEntries(Object.keys(editorFormValues[editor](basis.record)).map((field) => [field, elements[field].value]));
+      return [editor, { basis, values, provenance: editor === 'lot' ? provenanceValues() : null }];
+    }));
+    for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); clearFormStatus(...(FORM_STATUS[editor] ? [editor] : [])); }
     updateDirtyMarks();
-    void refresh();
     $('conflict-note').hidden = true;
+    const refreshed = await refresh();
+    if (!refreshed.ok) return;
+    for (const [editor, { basis, values, provenance }] of typed) {
+      const record = editorRecord(snapshot, editor, basis.id);
+      if (!record || dirtyEditors.has(editor)) continue;
+      const plan = rebaseTypedFields(editorFormValues[editor](basis.record), editorFormValues[editor](record), values);
+      const elements = $(`${editor}-form`).elements;
+      for (const field of plan.kept) elements[field].value = values[field];
+      const kept = plan.kept.map((field) => fieldLabel($(`${editor}-form`).querySelector(`[name="${field}"]`)));
+      // Sourced provenance is a list of its own: kept as typed where the other view left it alone.
+      if (editor === 'lot' && JSON.stringify(basis.record.provenanceNotes ?? []) === JSON.stringify(record.provenanceNotes ?? [])
+        && JSON.stringify(provenance) !== JSON.stringify(provenanceFromRecord(basis.record))) {
+        $('provenance-editor').replaceChildren(); for (const entry of provenance ?? []) appendProvenanceEditor(entry);
+        kept.push('Sourced provenance');
+      }
+      if (editor === 'outcome') updateOutcomeVisibility();
+      const updated = plan.updated.map((field) => fieldLabel($(`${editor}-form`).querySelector(`[name="${field}"]`)));
+      if (kept.length) { dirtyEditors.add(editor); editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1); if (editor === 'lot') { openFilledGroups(record.id); refreshCounts($('lot-form')); renderLotWantMatch(); } }
+      if (FORM_STATUS[editor] && (kept.length || updated.length)) formStatus(editor, rebaseSentence(updated, kept));
+    }
+    updateDirtyMarks();
   });
-  $('retry-uncertain').addEventListener('click', () => {
+  // A record's sourced provenance as the editor reads its rows back.
+  const provenanceFromRecord = (record) => (record?.provenanceNotes ?? []).map((entry) => ({ id: entry.id, text: entry.text, sourceUrl: entry.sourceUrl, recordedAt: entry.recordedAt, ...(entry.auctionDate ? { auctionDate: entry.auctionDate } : {}) }));
+  // Where the retry is offered: under the form whose save got no answer, or, for a save no form owns, the page's note.
+  const RETRY_LINE = { ...FORM_STATUS, event: 'event-action-status' };
+  function offerRetry(editor, message) {
+    if (RETRY_LINE[editor]) {
+      const line = $(RETRY_LINE[editor]);
+      const button = text('button', 'Retry the same request', 'quiet'); button.type = 'button';
+      button.addEventListener('click', retryPending);
+      line.replaceChildren(document.createTextNode(`${message} `), button);
+      line.classList.add('error');
+      $('announcement').textContent = '';
+      requestAnimationFrame(() => { $('announcement').textContent = message; });
+      return;
+    }
+    $('unknown-note').hidden = false;
+    announce(WORKER_UNREACHABLE, true);
+  }
+  $('retry-uncertain').addEventListener('click', () => retryPending());
+  function retryPending() {
     if (!pendingRetry) return;
     // The same request, resubmitted as it was first submitted: anything typed since the attempt
-    // failed is newer than the save and stays in the form.
+    // failed is newer than the save and stays in the form. The first attempt, should its answer still come, is left.
     const retry = pendingRetry; pendingRetry = null; $('unknown-note').hidden = true;
+    if (retry.attempt) retry.attempt.superseded = true;
     // The retry is where an uncertain delete becomes certain, so it is also where the page finds
     // out whether the coin is still its own removal.
     void send(retry.command, retry.editor, retry).then((reply) => {
       if (retry.command.type === 'lot.delete') removedHere = removedHereAfterDeleteReply(removedHere, retry.command.lotId, reply);
     });
-  });
+  }
 
   // A search the collector asked for, of the edited query only, in a tab of its own.
   const openSearch = async (source, query) => {
@@ -544,8 +658,19 @@ async function initWorkspace() {
   }
 
   const selectedSources = () => [...document.querySelectorAll('[name="evidence-source"]:checked')].map((item) => item.value);
+  // The Search route opened with sets saved and nothing asked opens the set last added to, once (K-09); a coin that is open
+  // offers its own reference instead.
+  let lastSetOpened = false;
+  const NEW_SET = 'new-set';
   function renderEvidence() {
+    const openReference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
+    if (!lastSetOpened && !openReference && !$('research-query').value.trim() && !evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).length) {
+      const last = lastAddedSet(snapshot.evidence);
+      if (last) { lastSetOpened = true; chooseSet(last); }
+    }
     const options = comparableSetOptions(snapshot.evidence, activeQuery);
+    // A new set is always offered, last, even while a saved one is open.
+    if (!options.some(({ id }) => id === activeQuery.id && !evidenceRowsForQuery(snapshot.evidence ?? [], id).length)) options.push({ id: NEW_SET, label: 'New set…' });
     const querySelect = $('evidence-query');
     querySelect.replaceChildren(...options.map(({ id, label }) => { const option = text('option', label); option.value = id; return option; }));
     if (!options.some(({ id }) => id === selectedQueryId)) selectedQueryId = activeQuery.id;
@@ -564,7 +689,10 @@ async function initWorkspace() {
     const output = $('statistics-output');
     output.replaceChildren();
     output.classList.toggle('is-empty', !evidenceRows.length);
-    if (!evidenceRows.length) output.append(emptyState('No saved comparables', 'Sales you record by hand, kept apart from acsearch.'));
+    // The empty state is for a store with no comparables at all; a new set among saved ones says what the others hold.
+    const allRows = snapshot.evidence ?? [];
+    if (!allRows.length) output.append(emptyState('No saved comparables', 'Sales you record by hand, kept apart from acsearch.'));
+    else if (!evidenceRows.length) output.append(text('p', `${savedComparablesCount(allRows)} Choose one under Comparable set, or record a sale below to start this one.`, 'field-note'));
     else if (stats.validationError) output.append(text('p', stats.validationError.message));
     else {
       const { headline, leftOut } = comparableSummary(evidenceRows, stats, money);
@@ -574,11 +702,26 @@ async function initWorkspace() {
     const list = $('evidence-list'); list.replaceChildren();
     const effectiveExclusions = new Map(stats.excluded.map((item) => [item.id, item.reason]));
     for (const row of evidenceRows) {
-      const card = text('article', '', 'record');
-      const first = row.observations?.[0];
-      card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : first ? `${first.auctionHouse}${first.houseSaleId ? `, ${first.houseSaleId}` : ''}, lot ${first.lotNumber}` : `Observation ${row.id}`));
-      card.append(text('p', `${row.inclusion}${row.exclusionReason ? `: ${row.exclusionReason}` : ''}${row.conflictFields?.length ? ` · conflicts: ${row.conflictFields.join(', ')}` : ''}`));
+      // A saved comparable is a sale row (K-09): the sale, its day, its figure and where it came from, with Exclude at
+      // the right. The records behind it - each claim, when it was read, the effective result - are shown only where two
+      // observations of one sale disagree, beside the chooser that settles them.
+      const conflict = Boolean(row.conflictFields?.length);
+      const sale = comparableSaleText(row, { money, day: dayText });
+      const card = text('article', '', `record comparable-row${row.inclusion === 'included' ? '' : ' is-excluded'}`);
+      const head = text('div', '', 'comparable-head');
+      const words = text('div', '', 'comparable-words');
+      words.append(text('h4', sale.title), text('p', sale.line, 'comparable-line'));
+      if (row.inclusion !== 'included' || effectiveExclusions.has(row.id)) words.append(text('p', `Left out of the figures: ${comparableExclusionText(row.exclusionReason ?? effectiveExclusions.get(row.id))}`, 'comparable-excluded'));
+      if (conflict) words.append(text('p', `The records of this sale disagree on ${row.conflictFields.join(', ')}. Choose the one to use.`, 'comparable-conflict'));
+      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include', 'quiet'); toggle.type = 'button';
+      toggle.addEventListener('click', () => void send({ type: 'evidence.include', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, inclusion: row.inclusion === 'included' ? 'excluded' : 'included', ...(row.inclusion === 'included' ? { exclusionReason: 'collector-excluded' } : {}) }));
+      head.append(words, toggle);
+      card.append(head);
       for (const observation of row.observations ?? []) {
+        if (!conflict) {
+          if (observation.sourceUrl) { const link = text('a', 'Open the sale ↗', 'comparable-source'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link); }
+          continue;
+        }
         const amount = observation.amount ? money(observation.amount) : 'No amount';
         card.append(text('p', `${observation.source} · ${dayText(observation.auctionDate)} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${dayText(observation.retrievedAt)}` : ''}`));
         card.append(text('p', `Query ${observation.queryLabel ?? observation.queryId}`));
@@ -586,41 +729,48 @@ async function initWorkspace() {
           const link = text('a', 'Open source claim'); link.href = observation.sourceUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; card.append(link);
         }
       }
-      card.append(text('p', effectiveExclusions.has(row.id) ? `Effective result: excluded (${effectiveExclusions.get(row.id)})` : 'Effective result: included'));
+      if (conflict) card.append(text('p', effectiveExclusions.has(row.id) ? `Effective result: excluded (${effectiveExclusions.get(row.id)})` : 'Effective result: included'));
       const actions = text('div', '', 'actions');
-      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include', 'quiet'); toggle.type = 'button';
-      toggle.addEventListener('click', () => void send({ type: 'evidence.include', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, inclusion: row.inclusion === 'included' ? 'excluded' : 'included', ...(row.inclusion === 'included' ? { exclusionReason: 'collector-excluded' } : {}) }));
-      actions.append(toggle);
-      for (const observation of (row.observations ?? []).filter((item) => item.priceBasis === 'hammer' && item.amount)) {
+      for (const observation of (conflict ? row.observations ?? [] : []).filter((item) => item.priceBasis === 'hammer' && item.amount)) {
         const choose = text('button', `Use ${observation.source} claim`, 'quiet'); choose.type = 'button';
         choose.addEventListener('click', () => void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'observation', observationId: observation.id } }));
         actions.append(choose);
       }
-      if (row.conflictFields?.length) {
+      if (conflict) {
         const currency = row.observations?.find((item) => item.amount)?.amount?.currency ?? filters.currency;
         const entered = document.createElement('input'); entered.inputMode = 'decimal'; entered.placeholder = `Entered hammer (${currency})`; entered.setAttribute('aria-label', `Entered hammer for ${row.id}`);
         const chooseEntered = text('button', 'Use entered hammer', 'quiet'); chooseEntered.type = 'button';
         chooseEntered.addEventListener('click', () => { const parsed = parseMoney(entered.value, currency, navigator.language); if (!parsed.ok) return announce(parsed.error.message, true); void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'entered', hammer: parsed.value } }); });
         actions.append(entered, chooseEntered);
       }
-      card.append(actions); list.append(card);
+      if (actions.children.length) card.append(actions);
+      list.append(card);
     }
   }
   $('evidence-form').addEventListener('input', (event) => { if (event.target === $('evidence-form').elements.currency) currencyChosen.form = true; });
   $('evidence-filters').addEventListener('input', (event) => {
     if (event.target === $('evidence-currency') || event.target === $('evidence-query')) currencyChosen.filter = true;
-    if (event.target === $('evidence-query')) {
-      selectedQueryId = event.target.value;
-      const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
-      activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
-      if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
-      // A set is shown in the currency most of its sales were knocked down in; the others stay out, never converted.
-      const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], selectedQueryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
-      const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
-      if (common && [...$('evidence-currency').options].some((option) => option.value === common)) $('evidence-currency').value = common;
-    }
+    if (event.target === $('evidence-query')) chooseSet(event.target.value);
     renderEvidence();
   });
+  // A comparable set chosen: its query in the box, and shown in the currency most of its sales were knocked down in; the
+  // others stay out, never converted.
+  function chooseSet(queryId) {
+    if (queryId === NEW_SET) { openedSetCurrency = null; $('research-query').value = ''; activeQuery = { id: requestId(), text: '' }; selectedQueryId = activeQuery.id; return; }
+    selectedQueryId = queryId;
+    const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
+    activeQuery = { id: selectedQueryId, text: selectedObservation?.queryLabel ?? $('research-query').value.trim() };
+    if (selectedObservation?.queryLabel) $('research-query').value = selectedObservation.queryLabel;
+    const common = setCurrency(queryId);
+    openedSetCurrency = common;
+    if (common) $('evidence-currency').value = common;
+  }
+  // The currency most of a set's sales were knocked down in, where the filter offers it.
+  function setCurrency(queryId) {
+    const currencies = evidenceRowsForQuery(snapshot.evidence ?? [], queryId).map((row) => row.resolved?.hammer?.currency).filter(Boolean);
+    const common = [...new Set(currencies)].sort((a, b) => currencies.filter((c) => c === b).length - currencies.filter((c) => c === a).length)[0];
+    return common && [...$('evidence-currency').options].some((option) => option.value === common) ? common : null;
+  }
   $('evidence-form').addEventListener('submit', (event) => {
     event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const basis = form.get('priceBasis');
     let amount;
@@ -640,40 +790,99 @@ async function initWorkspace() {
     for (const item of items) { const option = text('option', item.name ?? item.title); option.value = item.id; select.append(option); }
     if ([...select.options].some((option) => option.value === current)) select.value = current;
   }
+  const COIN_WINDOW = 60;
+  let coinWindow = { key: null, shown: COIN_WINDOW };
+  let coinMoreWatch = null;
+  let showCoinMore = null;
+  $('lot-more').addEventListener('click', () => showCoinMore?.(true));
+  function coinRow(lot, event, needingOutcome, position, size) {
+    const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id)); row.dataset.lotId = lot.id;
+    // Its place in the whole list, not in the rows drawn so far (review Minor 4).
+    row.setAttribute('aria-posinset', String(position)); row.setAttribute('aria-setsize', String(size));
+    const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
+    const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
+    const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
+    const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
+    if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
+    if (event) status.append(text('span', event.name, 'coin-row-event'));
+    row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
+    row.addEventListener('click', () => selectLot(lot.id));
+    // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
+    const wrap = text('div', '', 'coin-row-wrap');
+    const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
+    box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
+    box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
+    wrap.append(box, row);
+    return wrap;
+  }
   function renderCoinList() {
     const list = $('lot-list'); list.replaceChildren();
     const queuedLots = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
     // The coin open in the editor stays in its list until another is chosen, even once its outcome moved it to another
     // queue: a list that drops the coin beside its own editor reads as a coin lost (G-07).
     const open = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
-    if (open && !queuedLots.includes(open)) queuedLots.push(open);
+    const kept = Boolean(open && !queuedLots.includes(open));
+    if (kept) queuedLots.push(open);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
+    listDrawn = { snapshot, queue: $('lot-queue').value, filter: $('lot-filter').value, kept };
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
     // With no coin at all the list is the page: its empty state, and no detail panel beside it to say "Select a coin".
     const none = !(snapshot.lots ?? []).length;
     $('coin-workspace').dataset.empty = String(none && selection.mode !== 'detail');
-    if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
+    // Records that cannot be read are said where the coins would be, with the way to Settings, where they can be
+    // downloaded or started afresh (X-12); an empty store is not.
+    if (none && storeProblem) list.append(emptyState('Your records can’t be read', `${storeProblem.replace(/\.?$/, '.')} Open Settings to download the stored data or recover it.`, { label: 'Open Settings', run: () => void openSettings('from-workspace') }));
+    else if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
     else if (!visibleLots.length) list.append(text('p', 'No coins match this filter.', 'empty-row'));
-    for (const lot of visibleLots) {
-      const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
-      const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
-      const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
-      const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
-      const event = eventsById.get(lot.auctionEventId);
-      const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
-      if (needingOutcome.has(lot.id)) { const ended = text('span', 'Ended · record outcome', 'status-pill'); ended.dataset.tone = 'ended'; status.append(ended); }
-      if (event) status.append(text('span', event.name, 'coin-row-event'));
-      row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
-      row.addEventListener('click', () => selectLot(lot.id));
-      // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
-      const wrap = text('div', '', 'coin-row-wrap');
-      const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
-      box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
-      box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
-      wrap.append(box, row);
-      list.append(wrap);
-    }
+    // A window of the list (K-06): the first rows, then more as the collector scrolls to the end, or asks. A queue or a
+    // filter starts again at the first window, and a snapshot keeps the rows already shown. A coin open further down is
+    // shown in the detail panel, and its row is marked once the collector reaches it.
+    const windowKey = `${$('lot-queue').value}|${$('lot-filter').value}`;
+    if (coinWindow.key !== windowKey) coinWindow = { key: windowKey, shown: COIN_WINDOW };
+    // All coins and Completed span years: a month heading where the auction month changes gives the scroll landmarks.
+    // Each month is a group of the listbox, named by its heading, so the listbox holds options alone (review Minor 4).
+    const headed = ['all-coins', 'completed'].includes($('lot-queue').value);
+    let month = null; let group = list;
+    const appendRows = (from, to) => {
+      visibleLots.slice(from, to).forEach((lot, offset) => {
+        const event = eventsById.get(lot.auctionEventId);
+        if (headed) {
+          const heading = monthHeading(event, navigator.language);
+          if (heading !== month) {
+            month = heading;
+            group = text('div', '', 'coin-month-group'); group.setAttribute('role', 'group'); group.setAttribute('aria-label', heading);
+            const line = text('p', heading, 'coin-month'); line.setAttribute('aria-hidden', 'true'); group.append(line);
+            list.append(group);
+          }
+        }
+        group.append(coinRow(lot, event, needingOutcome, from + offset + 1, visibleLots.length));
+      });
+    };
+    appendRows(0, coinWindow.shown);
+    // Show more follows the list, outside it (review Minor 4): pressed, it hands the keyboard to the first row it drew and
+    // says how many (Minor 3); scrolling to the last row drawn does the same without moving the keyboard.
+    const more = $('lot-more');
+    const label = () => { const left = visibleLots.length - coinWindow.shown; more.textContent = `Show ${Math.min(left, COIN_WINDOW)} more (${left} not shown)`; more.hidden = left <= 0; };
+    const watchLastRow = () => {
+      coinMoreWatch?.disconnect(); coinMoreWatch = null;
+      if (more.hidden || typeof IntersectionObserver !== 'function') return;
+      const rows = list.querySelectorAll('.coin-row-wrap'); const last = rows[rows.length - 1];
+      if (!last) return;
+      coinMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) showCoinMore?.(false); }, { rootMargin: '200px' });
+      coinMoreWatch.observe(last);
+    };
+    showCoinMore = (fromButton) => {
+      if (visibleLots.length <= coinWindow.shown) return;
+      const from = coinWindow.shown; coinWindow.shown += COIN_WINDOW;
+      appendRows(from, coinWindow.shown);
+      label(); updateComparisonControls(); watchLastRow();
+      if (!fromButton) return;
+      const shown = Math.min(coinWindow.shown, visibleLots.length) - from;
+      list.querySelectorAll('.coin-row')[from]?.focus();
+      $('announcement').textContent = `${shown} more coin${shown === 1 ? '' : 's'} shown`;
+    };
+    label(); watchLastRow();
     updateComparisonControls();
   }
   // Toggling a coin changes only the controls, never the checkbox the collector is standing on. The boxes show while any
@@ -717,16 +926,35 @@ async function initWorkspace() {
       actions.append(editGroup, add, remove); card.append(actions); groups.append(card);
     }
   }
+  // What the coin list was last drawn from. Choosing another coin from a list drawn from the same records, queue and filter
+  // moves the selection on the two rows concerned instead of drawing the whole list again (K-05); a list that held the
+  // open coin only because it was open is drawn again, since that coin leaves it.
+  let listDrawn = null;
+  function syncCoinListSelection() {
+    const rows = [...$('lot-list').querySelectorAll('.coin-row')];
+    const same = listDrawn && !listDrawn.kept && listDrawn.snapshot === snapshot && listDrawn.queue === $('lot-queue').value && listDrawn.filter === $('lot-filter').value;
+    if (!same || !rows.some((row) => row.dataset.lotId === selection.selectedLotId)) { renderCoinList(); return; }
+    for (const row of rows) { const selected = String(row.dataset.lotId === selection.selectedLotId); if (row.getAttribute('aria-selected') !== selected) row.setAttribute('aria-selected', selected); }
+  }
   function renderLots() {
+    pruneComparison(); renderCoinList(); renderGroups(); renderSelectedEditors();
+  }
+  // A coin chosen: its row, the groups' "Add selected coin" and its forms.
+  function renderSelection() { pruneComparison(); syncCoinListSelection(); renderGroups(); renderSelectedEditors(); }
+  function pruneComparison() {
     const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id));
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
+  }
+  // The open coin's forms follow committed data on every snapshot, whichever route is shown: their bases are what a save
+  // and the conflict note are judged against (K-04).
+  function renderSelectedEditors() {
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
     renderBidPresets();
-    renderCoinList(); renderGroups(); renderSelectedLot();
+    renderSelectedLot();
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
   function selectLot(lotId, { focus = true } = {}) {
-    if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderLots(); if (focus) $('selected-title').focus?.(); return; }
+    if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderSelection(); if (focus) $('selected-title').focus?.(); return; }
     if (lotId !== selection.selectedLotId && !canLeaveSelectedEditors()) return;
     // A lot draft left behind is discarded with its form, so no later save consumes it.
     lotDraftId = null;
@@ -739,7 +967,7 @@ async function initWorkspace() {
     showDetailTab(openingTab(chosen, eventsById.get(chosen?.auctionEventId), chosenDetailTab));
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
-    renderLots(); updateDirtyMarks();
+    renderSelection(); updateDirtyMarks();
     if (focus) $('selected-title').focus?.();
   }
   // A coin whose reference names a type on the want list says so under its Reference, draft or saved (G-22): matched by the
@@ -802,6 +1030,10 @@ async function initWorkspace() {
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
     attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
+    // A coin with no auction says so beside its status, and both ways to add one lead to the same form (K-18).
+    const open = !lot.outcome?.status || lot.outcome.status === 'open';
+    $('selected-no-sale').hidden = Boolean(event) || !open;
+    $('lot-add-auction').hidden = Boolean(event) || Boolean($('lot-form').elements.auctionEventId.value);
     renderSelectedReminders(event);
   }
   // The Reminders tab: the attached auction and its time, then its reminders in words, or the standard two to add;
@@ -876,9 +1108,10 @@ async function initWorkspace() {
     }
     $('comparison-dialog').showModal();
   });
-  $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
+  // A coin whose row is not drawn yet hands the keyboard to the filter box above the list (review Minor 5).
+  $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; ($('lot-list').querySelector('[aria-selected="true"]') ?? $('lot-filter')).focus(); });
   // An empty coin form, as Add coin opens it and a captured lot fills it.
-  const startNewCoin = () => { lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; delete $('selected-status').dataset.tone; renderCoinList(); };
+  const startNewCoin = () => { lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-no-sale').hidden = true; $('lot-add-auction').hidden = true; $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; delete $('selected-status').dataset.tone; renderCoinList(); };
   $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; startNewCoin(); $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
@@ -920,7 +1153,7 @@ async function initWorkspace() {
           lastLotUndo = followup.offerUndo ? { previous, saved: structuredClone(reply.value) } : null;
           $('undo-lot').hidden = !lastLotUndo;
           $('lot-action-status').textContent = (previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.')
-            + (auctionProblem ? ` The auction from the page was not added: ${auctionProblem} Add it under Auction reminder.` : ''); renderLots();
+            + (auctionProblem ? ` The auction from the page was not added: ${auctionProblem} Add it under Auction.` : ''); renderLots();
         }
       }
       const draftId = draftToConsumeAfterLotSave(reply, lotDraftId);
@@ -1110,14 +1343,30 @@ async function initWorkspace() {
     const list = $('event-list'); list.replaceChildren();
     const coinCounts = new Map();
     for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
-    if (!(snapshot.auctionEvents ?? []).length) list.append(emptyState('No auctions yet', 'An auction keeps a sale\u2019s date, time zone and reminders for the coins attached to it.', { label: 'Add auction', run: () => $('new-event').click() }));
-    for (const event of snapshot.auctionEvents ?? []) {
+    const events = snapshot.auctionEvents ?? [];
+    if (!events.length) list.append(emptyState('No auctions yet', 'An auction keeps a sale\u2019s date, time zone and reminders for the coins attached to it.', { label: 'Add auction', run: () => $('new-event').click() }));
+    const eventRow = (event) => {
       const row = text('button', '', 'event-row'); row.type = 'button';
       const top = text('span', '', 'event-row-top'); top.append(text('strong', event.name, 'event-row-name'), text('span', 'Edit', 'event-row-edit'));
       const count = coinCounts.get(event.id) ?? 0;
       row.append(top, eventLine(event, 'event-row-when', 'span', false), text('span', count ? `${count} coin${count === 1 ? '' : 's'}` : 'No coins attached', 'event-row-coins'));
       row.addEventListener('click', () => openEventEditor(event));
-      list.append(row);
+      return row;
+    };
+    // Upcoming first, soonest at the top; the sales that have passed folded beneath, newest first, and open only when
+    // nothing is to come (K-07). Past twenty auctions a filter box finds one by name.
+    $('event-filter-label').hidden = events.length <= 20;
+    const needle = events.length > 20 ? $('event-filter').value.trim().toLocaleLowerCase() : '';
+    const { upcoming, past } = splitAuctions(events.filter((event) => !needle || String(event.name ?? '').toLocaleLowerCase().includes(needle)));
+    for (const event of upcoming) list.append(eventRow(event));
+    if (needle && !upcoming.length && !past.length) list.append(text('p', 'No auctions match this filter.', 'empty-row'));
+    if (past.length) {
+      const fold = document.createElement('details'); fold.className = 'past-auctions'; fold.id = 'past-auctions';
+      fold.open = Boolean(needle) || (pastAuctionsOpen ?? !upcoming.length);
+      fold.addEventListener('toggle', () => { if (!needle) pastAuctionsOpen = fold.open; });
+      fold.append(text('summary', `Past auctions (${past.length})`));
+      for (const event of past) fold.append(eventRow(event));
+      list.append(fold);
     }
     // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
     // them, and never snoozed back into a moment already past. Each says which reminder, when it went off in the
@@ -1144,11 +1393,16 @@ async function initWorkspace() {
     $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
     if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }
   }
+  // Whether the collector opened or closed Past auctions: kept for this page, as they left it.
+  let pastAuctionsOpen = null;
+  $('event-filter').addEventListener('input', () => renderEvents());
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
   const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-action-status').replaceChildren(); $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
-  $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
+  for (const button of [$('selected-no-sale'), $('lot-add-auction')]) button.addEventListener('click', () => $('edit-selected-event').click());
+  // The Auctions route is shown before the form takes the keyboard: the hash change is heard later (review Minor 7).
+  $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; setRoute(); openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
     for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
@@ -1485,18 +1739,42 @@ async function initWorkspace() {
     else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
     if (actions.children.length) card.append(actions);
   };
+  const HISTORY_WINDOW = 50;
+  let historyWindow = { key: null, shown: HISTORY_WINDOW };
+  let historyMoreWatch = null;
+  for (const control of [$('history-filter'), $('history-year'), ...document.querySelectorAll('[name="history-outcome"]')]) control.addEventListener(control.id === 'history-filter' ? 'input' : 'change', () => renderHistory());
   function renderHistory() {
     // A redraw while a field of the entry form has the keyboard gives it back to that field.
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
     const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
-    const view = projectCollection(snapshot);
-    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const settled = settledNewestFirst(snapshot.lots);
+    const settledIds = new Set(settled.map((lot) => lot.id));
+    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
     const entriesByLot = new Map((snapshot.collectionEntries ?? []).map((entry) => [entry.lotId, entry]));
-    const shownEntries = new Set();
+    // An entry whose coin is not a settled one on this device still has a card of its own.
+    const loose = (snapshot.collectionEntries ?? []).filter((entry) => !settledIds.has(entry.lotId) || entriesByLot.get(entry.lotId) !== entry);
+    // What the collector asks of the ledger (K-08): typed text, a year, and which outcomes; the year choices are the
+    // years the settled coins and the entries belong to, newest first.
+    const years = [...new Set([...settled.map((lot) => settledYear(lot, eventsById.get(lot.auctionEventId))), ...loose.map((entry) => String(entry.acquisitionDate ?? '').slice(0, 4))].filter(Boolean))].sort().reverse();
+    const yearSelect = $('history-year'); const chosenYear = yearSelect.value;
+    yearSelect.replaceChildren(Object.assign(text('option', 'Every year'), { value: '' }), ...years.map((year) => Object.assign(text('option', year), { value: year })));
+    yearSelect.value = years.includes(chosenYear) ? chosenYear : '';
+    const filter = { text: $('history-filter').value, year: yearSelect.value, outcomes: [...document.querySelectorAll('[name="history-outcome"]:checked')].map((box) => box.value) };
+    const shown = filterSettledLots(settled, eventsById, filter);
+    const needle = filter.text.trim().toLocaleLowerCase();
+    const shownLoose = loose.filter((entry) => filter.outcomes.includes('won') && (!filter.year || String(entry.acquisitionDate ?? '').startsWith(filter.year))
+      && (!needle || [entry.title, lotsById.get(entry.lotId)?.reference].some((value) => String(value ?? '').toLocaleLowerCase().includes(needle))));
+    const filtered = filter.text.trim() || filter.year || filter.outcomes.length < 3;
+    const won = shown.filter((lot) => lot.outcome.status === 'won').length;
+    $('history-count').textContent = settled.length ? `${filtered ? `${shown.length} of ` : ''}${settled.length} settled · ${won} won` : '';
+    // Every entry in the chosen year is totalled, as the collection panel says.
+    const view = projectCollection(filter.year ? { ...snapshot, collectionEntries: (snapshot.collectionEntries ?? []).filter((entry) => String(entry.acquisitionDate ?? '').startsWith(filter.year)) } : snapshot);
+    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const wholeView = filter.year ? new Map(projectCollection(snapshot).entries.map((item) => [item.id, item])) : viewByEntry;
     // A ledger, newest first (Q-12), one card per settled coin (G-17): what the coin is and where it was won, what it
     // cost - the money line once - the bid that decided it, and its collection entry, if it has one, beneath.
-    for (const lot of settledNewestFirst(snapshot.lots)) {
+    const settledCard = (lot) => {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
       const ledger = historyLine(lot, eventsById.get(lot.auctionEventId), navigator.language);
@@ -1506,20 +1784,52 @@ async function initWorkspace() {
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${money(lot.outcome.actualInvoice)}, as you recorded it`));
       card.append(text('p', decidingBidLine(lot, money), 'history-bid'));
       const entry = entriesByLot.get(lot.id);
-      if (entry) { shownEntries.add(entry.id); appendEntry(card, entry, viewByEntry.get(entry.id), lot); }
-      root.append(card);
-    }
-    // An entry whose coin is not a settled one on this device still has a card of its own.
-    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
-    for (const entry of (snapshot.collectionEntries ?? []).filter(({ id }) => !shownEntries.has(id))) {
-      const lot = lotsById.get(entry.lotId);
+      if (entry) appendEntry(card, entry, wholeView.get(entry.id), lot);
+      return card;
+    };
+    const looseCard = (entry) => {
       const card = text('article', '', 'record'); card.append(text('h3', entry.title));
       if (entry.hammer) card.append(text('p', `Hammer ${money(entry.hammer)}`));
-      appendEntry(card, entry, viewByEntry.get(entry.id), lot);
-      root.append(card);
+      appendEntry(card, entry, wholeView.get(entry.id), lotsById.get(entry.lotId));
+      return card;
+    };
+    const cards = [...shown.map((lot) => () => settledCard(lot)), ...shownLoose.map((entry) => () => looseCard(entry))];
+    // A window of fifty cards, and more on request or as the collector scrolls to the end (K-08, as K-06); the card whose
+    // entry form is open is always drawn.
+    const windowKey = JSON.stringify(filter);
+    if (historyWindow.key !== windowKey) historyWindow = { key: windowKey, shown: HISTORY_WINDOW };
+    const editingIndex = editingEntry ? [...shown.map((lot) => entriesByLot.get(lot.id)?.id), ...shownLoose.map((entry) => entry.id)].indexOf(editingEntry.id) : -1;
+    if (editingIndex >= historyWindow.shown) historyWindow.shown = Math.ceil((editingIndex + 1) / HISTORY_WINDOW) * HISTORY_WINDOW;
+    const appendCards = (from, to) => { for (const card of cards.slice(from, to)) root.append(card()); };
+    appendCards(0, historyWindow.shown);
+    historyMoreWatch?.disconnect(); historyMoreWatch = null;
+    if (cards.length > historyWindow.shown) {
+      const more = text('button', '', 'quiet coin-more'); more.type = 'button';
+      const label = () => { const left = cards.length - historyWindow.shown; more.textContent = `Show ${Math.min(left, HISTORY_WINDOW)} more (${left} not shown)`; };
+      label();
+      // The button stays where it is and the cards are drawn before it; pressed, it hands the keyboard to the first card it
+      // drew and says how many (review Minor 3).
+      const showMore = (fromButton) => {
+        const from = historyWindow.shown; historyWindow.shown += HISTORY_WINDOW;
+        const drawn = cards.slice(from, historyWindow.shown).map((card) => card());
+        const previous = root.children[root.children.length - 2];
+        if (drawn.length) previous.after(...drawn);
+        if (cards.length > historyWindow.shown) label(); else { historyMoreWatch?.disconnect(); historyMoreWatch = null; }
+        if (fromButton && drawn.length) {
+          drawn[0].tabIndex = -1; drawn[0].focus();
+          $('announcement').textContent = `${drawn.length} more settled coin${drawn.length === 1 ? '' : 's'} shown`;
+        }
+        if (cards.length <= historyWindow.shown) more.remove();
+      };
+      more.addEventListener('click', () => showMore(true));
+      root.append(more);
+      if (typeof IntersectionObserver === 'function') {
+        historyMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(false); }, { rootMargin: '200px' });
+        historyMoreWatch.observe(more);
+      }
     }
-    if (!root.children.length) root.append(emptyState('Nothing settled yet', 'A coin whose outcome you record appears here.'));
-    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Your collection'));
+    if (!root.children.length) root.append(settled.length || loose.length ? text('p', 'No settled coins match these filters.', 'empty-row') : emptyState('Nothing settled yet', 'A coin whose outcome you record appears here.'));
+    const collection = $('collection-list'); collection.replaceChildren(text('h3', filter.year ? `Your collection in ${filter.year}` : 'Your collection'));
     // No entries, no collection panel: the empty state beside it says what the page is for.
     collection.closest('.panel').hidden = !view.entries.length;
     if (view.entries.length) {
@@ -1751,10 +2061,24 @@ async function initWorkspace() {
     // A new want nobody has typed in yet follows the default currency, which may have arrived or changed since it opened (H-03).
     if (!wantForm.hidden && !editingWant && !dirtyEditors.has('want')) wantForm.elements.currency.value = defaultWantCurrency();
     const list = $('want-list'); list.replaceChildren();
-    const rows = wantListRows(snapshot, navigator.language);
-    if (!rows.length) {
+    const allRows = wantListRows(snapshot, navigator.language);
+    // Past ten wants a filter box finds one by its reference or notes (K-10).
+    $('want-filter-label').hidden = allRows.length <= 10;
+    const needle = allRows.length > 10 ? $('want-filter').value.trim().toLocaleLowerCase() : '';
+    const rows = allRows.filter(({ want }) => !needle || [want.reference, want.notes].some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
+    if (!allRows.length) {
       list.append(emptyState('No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', { label: 'Add want', run: () => $('new-want').click() }));
       return;
+    }
+    if (!rows.length) list.append(text('p', 'No wants match this filter.', 'empty-row'));
+    // The wants found are folded beneath the ones still wanted, open as the collector left them (K-10).
+    const foundCount = rows.filter(({ want }) => want.foundLotId).length;
+    let foundFold = null;
+    if (foundCount) {
+      foundFold = document.createElement('details'); foundFold.className = 'found-wants'; foundFold.id = 'found-wants';
+      foundFold.open = Boolean(needle) || foundWantsOpen;
+      foundFold.addEventListener('toggle', () => { if (!needle) foundWantsOpen = foundFold.open; });
+      foundFold.append(text('summary', `Found (${foundCount})`));
     }
     for (const { want, terms, found, foundStatus, wonCoins, watched } of rows) {
       const card = text('article', '', 'record want-record'); card.dataset.wantId = want.id;
@@ -1787,11 +2111,25 @@ async function initWorkspace() {
         card.append(line);
         actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null }, 'wantlist')
           .then((reply) => { if (reply?.ok) formStatus('wantlist', `Wanted again · ${want.reference}`); })));
-      } else {
-        for (const lot of wonCoins) {
-          actions.append(wantAction(`Mark found: ${lot.title}`, () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
-            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
+      } else if (wonCoins.length) {
+        // The coins of the type won so far, in one line with one Mark found (K-10): a choice of them when there are several,
+        // newest first, each by its reference, house and day.
+        const won = wonCoinsNewestFirst(wonCoins);
+        const since = won.every((lot) => String(settledAt(lot)) >= String(want.createdAt ?? ''));
+        const line = text('div', '', 'want-won');
+        line.append(text('span', `Won ${won.length === 1 ? 'once' : `${won.length} times`}${since && want.createdAt ? ' since this want was added' : ''}`, 'want-won-count'));
+        let choice = null;
+        if (won.length > 1) {
+          choice = document.createElement('select'); choice.className = 'want-won-choice'; choice.setAttribute('aria-label', `Coin that found ${want.reference}`);
+          choice.append(...won.map((lot) => Object.assign(text('option', wonCoinLabel(lot)), { value: lot.id })));
+          line.append(choice);
         }
+        line.append(wantAction('Mark found', () => {
+          const lot = won.find(({ id }) => id === (choice?.value ?? won[0].id)) ?? won[0];
+          void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
+            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); });
+        }, 'secondary'));
+        card.append(line);
       }
       // Where to look for it, nothing fetched until the collector asks: the popup's card and prices, and acsearch.
       const lookUp = text('button', 'Look up ↗', 'quiet want-look'); lookUp.type = 'button';
@@ -1805,9 +2143,20 @@ async function initWorkspace() {
           .then((reply) => { if (reply?.ok) formStatus('wantlist', `Removed from your want list · ${want.reference}`); });
       }, 'danger quiet'));
       card.append(actions);
-      list.append(card);
+      (want.foundLotId && foundFold ? foundFold : list).append(card);
     }
+    if (foundFold) list.append(foundFold);
   }
+  let foundWantsOpen = false;
+  $('want-filter').addEventListener('input', () => renderWants());
+  // When a coin was settled: its last outcome's record, else when it was last written.
+  const settledAt = (lot) => String(lot.outcomeHistory?.at(-1)?.recordedAt ?? lot.updatedAt ?? '');
+  const wonCoinsNewestFirst = (lots) => [...lots].sort((left, right) => settledAt(right).localeCompare(settledAt(left)));
+  // A won coin as the Mark found choice names it: "RIC II Trajan 253 · Künker · 12 Sept 2026".
+  const wonCoinLabel = (lot) => {
+    const day = eventsById.get(lot.auctionEventId)?.localDate ?? settledAt(lot);
+    return [lot.reference || lot.title, lot.auctionContext?.house, day ? dayText(day) : ''].filter(Boolean).join(' · ');
+  };
   // An auction or group form left open follows committed data until the collector edits it, and
   // following it is not editing: the edit version stays where the collector left it.
   function renderOpenRecordForms() {
@@ -1823,7 +2172,24 @@ async function initWorkspace() {
   // The popup's session median, followed while this page is open; nothing of it is written anywhere.
   let sessionMedians = [];
   followSessionMedians((found) => { sessionMedians = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderWants(); renderLotWantMatch(); renderOpenRecordForms(); updateDirtyMarks(); }
+  // One route drawn per snapshot (K-04): the route on screen now, and every other one marked stale and drawn when it is
+  // entered. Every extension page shares one renderer, so drawing six routes nobody sees slowed every page open beside it.
+  const ROUTE_RENDERS = {
+    search: () => renderEvidence(),
+    watchlist: () => { renderCoinList(); renderGroups(); },
+    auctions: () => renderEvents(),
+    bids: () => renderExposure(),
+    history: () => renderHistory(),
+    wants: () => renderWants(),
+  };
+  const staleRoutes = new Set();
+  function renderRoute(route) { if (staleRoutes.delete(route)) ROUTE_RENDERS[route]?.(); }
+  function renderAll() {
+    for (const route of ROUTES) staleRoutes.add(route);
+    pruneComparison();
+    renderRoute(routeFromHash(location.hash));
+    renderSelectedEditors(); renderLotWantMatch(); renderOpenRecordForms(); updateDirtyMarks();
+  }
   // On a wide screen the detail panel is never an empty "Select a coin": the coin the queue puts first is opened on
   // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
   const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };
@@ -1855,6 +2221,7 @@ async function initWorkspace() {
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) {
+        storeProblem = initialized.message || 'Stored data could not be read.';
         renderAll();
         // Records nothing can read get the recovery notice at the top of the page (X-02), an alert of its own, and no
         // floating banner over it with the validator's sentence.
@@ -1874,7 +2241,7 @@ async function initWorkspace() {
       console.error(error);
       announce('The workspace could not finish loading. Reload this page to try again.', true);
     }
-    bridge.subscribeToSnapshots((incoming) => { acceptIncoming(incoming); });
+    bridge.subscribeToSnapshots(deliver);
   }
 }
 

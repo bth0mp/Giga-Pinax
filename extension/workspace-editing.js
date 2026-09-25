@@ -404,3 +404,36 @@ export function buildGroupReorderCommand(group, orderedLotIds, snapshot, newRequ
 export function commandWasCommitted(snapshot, commandRequestId) {
   return (snapshot?.recentCommands ?? []).some((item) => item.requestId === commandRequestId);
 }
+
+/**
+ * A form reloaded onto a record another view changed (X-07): the fields the collector typed in that the other view left
+ * alone keep their typing (`kept`); every field the other view changed follows it (`updated`), a typed one included.
+ * @param {Record<string, *>} before the form's values from the record it was filled from
+ * @param {Record<string, *>} after the same from the stored record now
+ * @param {Record<string, *>} typed what the form held
+ * @returns {{ kept: string[], updated: string[] }}
+ */
+export function rebaseTypedFields(before, after, typed) {
+  const kept = []; const updated = [];
+  for (const field of Object.keys(after ?? {})) {
+    const changedElsewhere = String(after[field] ?? '') !== String(before?.[field] ?? '');
+    const typedHere = String(typed?.[field] ?? '') !== String(before?.[field] ?? '');
+    if (changedElsewhere) updated.push(field);
+    else if (typedHere) kept.push(field);
+  }
+  return { kept, updated };
+}
+
+/**
+ * What a reload did to a form, in one line: "Title was updated elsewhere; what you typed in Notes is kept."
+ * @param {string[]} updated labels of the fields the other view changed
+ * @param {string[]} kept labels of the fields whose typing stays
+ * @returns {string}
+ */
+export function rebaseSentence(updated, kept) {
+  const list = (names) => (names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
+  const first = updated.length ? `${list(updated)} ${updated.length === 1 ? 'was' : 'were'} updated elsewhere` : '';
+  const second = kept.length ? `what you typed in ${list(kept)} is kept` : '';
+  const sentence = [first, second].filter(Boolean).join('; ');
+  return sentence ? `${sentence.charAt(0).toLocaleUpperCase()}${sentence.slice(1)}.` : '';
+}

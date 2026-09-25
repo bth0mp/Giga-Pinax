@@ -90,14 +90,14 @@
         <aside class="coin-index" aria-label="Watched coins">
           <div class="queue-controls"><label><span class="sr-only">Queue</span><select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-outcome">Needs outcome</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter"><span class="sr-only">Filter coins</span><input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
           <p id="lot-count" class="field-note"></p>
-          <div id="lot-list" class="record-list coin-list" role="listbox" aria-label="Watched coins"></div>
+          <div id="lot-list" class="record-list coin-list" role="listbox" aria-label="Watched coins"></div><button id="lot-more" class="quiet coin-more" type="button" hidden></button>
           <details id="group-fold" class="groups"><summary id="group-summary">Alternatives (0)</summary><div class="groups-body"><div class="subheading"><p class="field-note">Coins you would take one of, in the order you want them.</p><button id="new-group" class="quiet" type="button" disabled data-until-loaded>Add group</button></div><div id="group-list" class="record-list"></div><form id="group-form" class="compact-form" data-editor="group" hidden><input type="hidden" name="id"><label>Group name<input name="name" required data-limit="title"></label><button type="submit" data-needs-runtime>Save group</button></form></div></details>
         </aside>
         <section class="coin-detail">
           <button id="back-to-coins" class="back-button quiet" type="button">Back to coins</button>
           <div id="coin-empty" class="empty-state"><h3>Select a coin</h3><p>Choose a coin to see its details, bid, reminders and outcome together.</p></div>
           <div id="coin-editor" hidden>
-            <div class="detail-heading"><div><p id="selected-reference" class="coin-reference"></p><h3 id="selected-title">Coin details</h3></div><div class="detail-pills"><span id="selected-status" class="status-pill"></span><span id="selected-ended" class="status-pill" data-tone="ended" hidden>Ended · record outcome</span></div></div>
+            <div class="detail-heading"><div><p id="selected-reference" class="coin-reference"></p><h3 id="selected-title">Coin details</h3></div><div class="detail-pills"><span id="selected-status" class="status-pill"></span><button id="selected-no-sale" class="status-pill no-sale-pill" type="button" hidden>No sale date · Add</button><span id="selected-ended" class="status-pill" data-tone="ended" hidden>Ended · record outcome</span></div></div>
             <form id="lot-form" class="detail-section" data-editor="lot">
               <input type="hidden" name="id"><div id="lot-page-values" class="page-values" hidden></div>
               <label>Title<input name="title" required data-limit="title"></label>
@@ -106,7 +106,7 @@
               <div class="form-actions selected-links"><a id="open-auction" class="button-link" target="_blank" rel="noopener noreferrer">Open auction</a><button id="research-reference" class="quiet" type="button">Research reference</button></div>
               <label>Auction page URL<input name="auctionPageUrl" type="url" maxlength="2048"></label>
               <label>Notes<textarea name="notes" data-limit="notes" placeholder="Attribution or questions"></textarea></label>
-              <label>Auction reminder<select name="auctionEventId"><option value="">No auction attached</option></select></label><div id="attached-event" class="attached-event"></div>
+              <div class="auction-field"><label>Auction <span class="optional">the sale it is in: date, time zone and reminders</span><select name="auctionEventId"><option value="">No auction attached</option></select></label><button id="lot-add-auction" class="quiet btn-sm" type="button" hidden>Add auction</button></div><div id="attached-event" class="attached-event"></div>
               <details class="form-group" data-group="identity"><summary>Auction identity and links</summary><div class="form-group-body"><label>Canonical URL <span class="optional">optional</span><input name="auctionCanonicalUrl" type="url" maxlength="2048"></label><div class="field-pair"><label>House<input name="auctionHouse" data-limit="shortText"></label><label>Sale ID<input name="auctionSaleId" data-limit="shortText"></label></div><label>Lot number<input name="auctionLotNumber" data-limit="shortText"></label><label>General source URL<input name="sourceUrl" type="url" maxlength="2048"></label></div></details>
               <details class="form-group" data-group="coin"><summary>Coin details</summary><div class="form-group-body"><div class="field-pair"><label>Weight (g)<input name="weightGrams" type="number" min="0.001" max="1000" step="0.001"></label><label>Diameter (mm)<input name="diameterMm" type="number" min="0.01" max="1000" step="0.01"></label></div><label>Condition<textarea name="condition" maxlength="1000"></textarea></label><label>Photo URL 1<input name="photoUrl1" type="url" maxlength="2048"></label><label>Photo URL 2<input name="photoUrl2" type="url" maxlength="2048"></label><p class="field-note">Photos stay as links and load only when you open comparison.</p></div></details>
               <details class="form-group" data-group="provenance"><summary>Sourced provenance</summary><div class="form-group-body"><div id="provenance-editor" class="record-list"></div><button id="add-provenance" class="quiet" type="button">Add provenance entry</button></div></details>
@@ -123,7 +123,7 @@
 
     <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
       <div class="section-heading"><h2 id="auctions-heading">Auctions</h2><div class="form-actions heading-actions"><button id="new-event" class="secondary btn-sm" type="button" disabled data-until-loaded>Add auction</button></div></div>
-      <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event" hidden>
+      <div class="split-layout"><div class="event-column"><label id="event-filter-label" class="event-filter" hidden><span class="sr-only">Filter auctions</span><input id="event-filter" type="search" autocomplete="off" placeholder="Auction name"></label><div id="event-list" class="record-list"></div></div><form id="event-form" class="panel" data-editor="event" hidden>
         <h3>Auction</h3><input type="hidden" name="id">
         <label>Name<input name="name" required data-limit="title"></label>
         <label>When<select name="when"><option value="auction-starts">Auction starts at</option><option value="lot-closes">Lots close at</option><option value="auction-day">Sale day (date only)</option></select></label>
@@ -152,14 +152,14 @@
 
     <section id="route-history" class="route" aria-labelledby="history-heading" hidden>
       <div class="section-heading"><h2 id="history-heading">History</h2></div>
-      <div class="history-layout"><div id="history-list" class="record-list"></div><section class="panel"><div id="collection-list" class="record-list"></div></section></div>
+      <div class="history-layout"><div class="history-column"><div class="history-controls"><label class="history-filter"><span class="sr-only">Filter history</span><input id="history-filter" type="search" autocomplete="off" placeholder="Title, reference, house or lot number"></label><label><span class="sr-only">Year</span><select id="history-year"><option value="">Every year</option></select></label><fieldset class="history-outcomes"><legend class="sr-only">Outcomes shown</legend><label class="outcome-check"><input type="checkbox" name="history-outcome" value="won" checked> Won</label><label class="outcome-check"><input type="checkbox" name="history-outcome" value="lost" checked> Lost</label><label class="outcome-check"><input type="checkbox" name="history-outcome" value="passed" checked> Passed</label></fieldset></div><p id="history-count" class="field-note"></p><div id="history-list" class="record-list"></div></div><section class="panel"><div id="collection-list" class="record-list"></div></section></div>
       <p class="field-note route-note">Hammer prices here are your own records of your own coins; they are not counted among the comparables.</p>
     </section>
 
     <section id="route-wants" class="route" aria-labelledby="wants-heading" hidden>
       <div class="section-heading"><h2 id="wants-heading">Want list</h2><div class="form-actions heading-actions"><button id="new-want" class="secondary btn-sm" type="button" disabled data-until-loaded>Add want</button></div></div>
       <p id="want-action-status" class="action-status" role="status"></p>
-      <div class="split-layout"><div id="want-list" class="record-list"></div><form id="want-form" class="panel" data-editor="want" hidden>
+      <div class="split-layout"><div class="want-column"><label id="want-filter-label" class="want-filter" hidden><span class="sr-only">Filter wants</span><input id="want-filter" type="search" autocomplete="off" placeholder="Reference or notes"></label><div id="want-list" class="record-list"></div></div><form id="want-form" class="panel" data-editor="want" hidden>
         <h3 id="want-form-heading">Add a want</h3><input type="hidden" name="id">
         <label>Reference<input name="reference" required data-limit="shortText" placeholder="RIC II Trajan 253" aria-describedby="want-reference-note"></label>
         <p id="want-reference-note" class="field-note">One type, as a card names it: RIC with its volume and ruler or mint, RRC, Price, SC, CPE, Newell Demetrius (Newell Demetrius 45) or Bopearachchi with its king.</p>
