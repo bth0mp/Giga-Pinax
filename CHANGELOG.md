@@ -18,6 +18,10 @@ Each date is the date of that version's release tag. Every release also carries 
 - Two grades the German and British houses write are read: Rauch's `s.sch.` (sehr schön) counts as VF, and Spink's lower-case grade run on straight behind the citations (`…, 4.42g (RIC VII 22; Depeyrot 17/3), extremely fine, very rare`) counts, where both were ungraded. A lower-case "very fine" anywhere else is still read as the ordinary adjective.
 - The price panel no longer writes "No result text names , so all 4 results are counted" round a blank for a RIC citation it could not read (`Ric-XI 118`): with no citation to name there is no **Citing** filter, so every result counts and no line is written.
 
+### Changed
+
+- **Copy summary** writes its amounts and days in your browser's language, as the price panel does: `Median hammer 200 $ · …` and `Upcoming: 2 lots, first on Mo., 12. Okt. 2026` in German, where it wrote `$200` and `2026-10-12` whatever your language. The last sale's day is written out the same way.
+
 ## [0.38.0] - 2026-09-25
 
 ### Added

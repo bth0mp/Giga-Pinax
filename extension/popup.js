@@ -1647,7 +1647,7 @@ $('copy-summary').addEventListener('click', async () => {
   const shown = shownPrices;
   if (!shown) return;
   try {
-    await navigator.clipboard.writeText(summaryText(shown.card, shown.summary, shown.currency, shown.term, shown.extras));
+    await navigator.clipboard.writeText(summaryText(shown.card, shown.summary, shown.currency, shown.term, shown.extras, navigator.language));
     $('announcement').textContent = 'Summary copied.';
     if (shownPrices !== shown) return;
     resetCopyLabel();

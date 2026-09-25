@@ -3,6 +3,7 @@ import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase, DOTTED_TAIL } from './lot.js';
 import { fnv32, squash } from './core/validate.js';
+import { formatMoney, minorDigits } from './core/money.js';
 
 export const ACSEARCH_ORIGIN = 'https://www.acsearch.info/*';
 const SEARCH_URL = 'https://www.acsearch.info/search.html';
@@ -896,11 +897,20 @@ export function upcomingLots(lots, now) {
     .map(({ entry }) => entry);
 }
 
+// A day as the copy writes it, in the reader's language ("Mon, Oct 12, 2026", "Mo., 12. Okt. 2026"), the weekday for a sale still to come. The
+// year is always written: a pasted summary is read long after the popup that wrote it. No locale is the browser's own; one Intl refuses is en-GB,
+// as the popup's lists fall back.
+function writtenDay(day, locale, weekday = false) {
+  const options = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC', ...(weekday ? { weekday: 'short' } : {}) };
+  const date = new Date(`${day}T12:00:00Z`);
+  try { return new Intl.DateTimeFormat(locale, options).format(date); } catch { return new Intl.DateTimeFormat('en-GB', options).format(date); }
+}
+
 // How many lots are coming up and the first day one is sold, as the copy says it. Nothing when none is.
-export function upcomingText(lots) {
+export function upcomingText(lots, locale) {
   if (!lots.length) return '';
-  const first = lots.map((entry) => isoDay(entry.date)).sort()[0];
-  return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first}`;
+  const first = lots.map((entry) => isoDay(entry.date)).filter(Boolean).sort()[0];
+  return `Upcoming: ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}, first on ${first ? writtenDay(first, locale, true) : ''}`;
 }
 
 const YEAR_MIN = 3;
@@ -1043,8 +1053,11 @@ export const quotedTerm = (term) => (/["()]/.test(term) ? term : `“${term}”`
 
 // The copy follows the panel: a period other than All (a PERIODS entry) is named on the stats line, then come the last sale and the trend, which the
 // popup takes from the whole page whatever the period.
-export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', years = [], upcoming = [] } = {}) {
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+// Every amount is written by the one page rule, formatMoney in the caller's locale with the narrow sign, rounded to the unit as the panel rounds
+// its medians (whole: the unit's places are left off); a figure that is no amount is a dash.
+export function summaryText(card, summary, currency, term, { period, last, trend, filters = [], grades = [], ungraded = '', years = [], upcoming = [] } = {}, locale = 'en-US') {
+  const scale = 10 ** (minorDigits(currency) ?? 2);
+  const money = { format: (value) => { try { return formatMoney({ currency, minor: Math.round(value) * scale }, locale, { narrow: true, whole: true }); } catch { return '—'; } } };
   const { count } = summary;
   const named = period?.years ? ` (${period.label.toLowerCase()})` : '';
   let stats = `Median hammer ${money.format(summary.median)}${named} · middle 50% ${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
@@ -1053,12 +1066,13 @@ export function summaryText(card, summary, currency, term, { period, last, trend
   // What the filters left out, then the sales themselves, then the median of each grade the panel shows.
   const lines = [card.label, stats, ...filters];
   // The date is page text, squashed so a copied line never splits.
-  if (last) lines.push(`Last sale ${squash(last.date)} · ${money.format(last.amount)}`);
+  // A date that does not read is written as the page gave it, squashed so a copied line never splits.
+  if (last) lines.push(`Last sale ${isoDay(last.date) ? writtenDay(isoDay(last.date), locale) : squash(last.date)} · ${money.format(last.amount)}`);
   if (trend) lines.push(trendText(trend, money.format));
   lines.push(...grades.map((bucket) => gradeText(bucket, money.format)));
   if (ungraded) lines.push(ungraded);
   lines.push(...years.map((year) => yearText(year, money.format)));
-  if (upcoming.length) lines.push(upcomingText(upcoming));
+  if (upcoming.length) lines.push(upcomingText(upcoming, locale));
   if (summary.future) lines.push(futureText(summary));
   if (summary.uncounted.length) lines.push(`Not counted: ${quoteList(summary.uncounted)}`);
   // A reference without type data has no type page to link to.
