@@ -1607,3 +1607,15 @@ test('provenance drops a trailing remark bracket, reads the Italian houses, and 
   // An Italian provenance is no reference: its sale's number is never read as one.
   assert.deepEqual(findReferences('Traiano. Denario. RIC 118. Provenienza: Asta Artemide XLV, 2016, lotto 234.').references.map(({ text }) => text), ['RIC 118']);
 });
+
+// Loop V-12: Rauch's German edition remark is no part of the number.
+test('a lot row drops "(2. Aufl.)" behind the number', () => {
+  const lot = findReferences('RÖMISCHE KAISERZEIT. Nero 54-68. As, Rom, 62-68. 10,80g. RIC 306 (2. Aufl.), WCN 275. ss/vz');
+  assert.deepEqual(lot.references[0].reference, ric('306'));
+  assert.equal(lot.references[0].text, 'RIC 306');
+  assert.deepEqual(findReferences('Nero. As. RIC 306 (2e éd.); WCN 275.').references[0].reference, ric('306'));
+  assert.deepEqual(findReferences('Nero. As. RIC 306 2. Aufl., WCN 275.').references.map(({ reference }) => reference), [ric('306')]);
+  // The first edition's numbers are not the bundle's: that remark stays on the number, and nothing is opened on it.
+  assert.notDeepEqual(findReferences('Nero. As. RIC 306 (1. Aufl.), WCN 275.').references[0].reference, ric('306'));
+  assert.notDeepEqual(findReferences('Nero. As. RIC 306 1. Aufl., WCN 275.').references[0].reference, ric('306'));
+});

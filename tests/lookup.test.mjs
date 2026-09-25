@@ -1694,3 +1694,16 @@ test('parseReference reads a hyphen between RIC or Ric and its volume, never beh
   // The hyphen with a number behind it is read as before.
   assert.deepEqual(parseReference('Ric-118'), { catalogue: 'RIC', number: '118', volume: '', section: '' });
 });
+
+// Loop V-12: Rauch and Frühwald mark RIC I's second edition in German behind the number ("RIC 306 (2. Aufl.)"), and a French house in French
+// ("(2e éd.)"). Only the English "(2nd ed.)" was read as the remark on the book, so the number was "306 (2. Aufl.)" and the lookup found nothing.
+test('parseReference drops the German and French edition remark behind the number', () => {
+  for (const text of ['RIC 306 (2. Aufl.)', 'RIC 306 (2. Auflage)', 'RIC 306 2. Aufl.', 'RIC 306 (2e éd.)', 'RIC 306 (2. Aufl.).', 'RIC 306 (2nd ed.)']) {
+    assert.deepEqual(parseReference(text), { catalogue: 'RIC', number: '306', volume: '', section: '' }, text);
+  }
+  // Only at the end of the reference, and only an edition: a bracket of another kind is left as it was written.
+  assert.deepEqual(parseReference('RIC 306 (2. Jh.)'), { catalogue: 'RIC', number: '306 (2. Jh.)', volume: '', section: '' });
+  assert.equal(parseReference('RIC 306 Aufl.'), null);
+  assert.deepEqual(parseReference('RIC 306 (1. Aufl.)'), { catalogue: 'RIC', number: '306 (1. Aufl.)', volume: '', section: '' });
+  assert.deepEqual(parseReference('Price 23 (2. Aufl.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+});

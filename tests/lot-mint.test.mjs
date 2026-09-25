@@ -257,3 +257,9 @@ test('over the bundled catalogue, an unedited RIC I, II.1 or II.3 behind its rul
   }
   assert.ok(opened > 1000, `${opened} opened`);
 });
+
+// Loop V-12: Rauch's "RIC 306 (2. Aufl.)" behind Nero opens his coin.
+test('over the bundled catalogue, a German edition remark behind the number opens the coin', { skip }, async () => {
+  const rauch = await lookup('RÖMISCHE KAISERZEIT. Nero 54-68. As, Rom, 62-68. 10,80g. RIC 306 (2. Aufl.), WCN 275. ss/vz');
+  assert.equal(rauch.card?.id, 'ric.1(2).ner.306');
+});

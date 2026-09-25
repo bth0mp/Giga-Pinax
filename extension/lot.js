@@ -342,8 +342,11 @@ const depths = (text) => {
   });
 };
 
-// Invisible characters out, en and em dashes as "-", spaces squashed with the line breaks kept, at most 3,000 characters.
-const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
+// Invisible characters out, en and em dashes as "-", spaces squashed with the line breaks kept, at most 3,000 characters. The German second-edition
+// remark a house writes unbracketed behind a number ("RIC 306 2. Aufl., WCN 275") goes too: its full stop would otherwise split the citation, and
+// the bracketed one is lookup.js's EDITION.
+const AUFLAGE = /(?<=\d)[^\S\n]+2\.[^\S\n]?Aufl(?:\.|age)?(?![\p{L}\d])/gu;
+const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(AUFLAGE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
 // A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would

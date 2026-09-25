@@ -8,8 +8,10 @@ import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, i
 export const REMARKS = /\s*\((?:this coin|misdescribed)[^()]*\)|\s+passim(?![\p{L}])|\s*\([^()]*(?:[$€£]|\b(?:EUR|USD|CHF|GBP)\b)[^()]*\)|\s*\((?:R{1,3}|R\d|C\d?|(?:very |extremely )?(?:rare|scarce))\)|\s*\(\s*=[^()]*\)/giu;
 export const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
 // The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
-// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I".
-export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s*$)/i;
+// reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I". The German houses write
+// it "(2. Aufl.)", "(2. Auflage)" or unbracketed "2. Aufl." (Rauch, Frühwald), and the French "(2e éd.)". Only the second edition in those two
+// languages: it is the one the bundle holds, and a first edition's number read as the second's would be another coin.
+export const EDITION = /\s*(?:\(\s*(?:\d+(?:st|nd|rd|th)\s+eds?\.?|2\.\s*Aufl(?:\.|age)|2(?:e|ème)\s+[ée]d\.?)\s*\)|2\.\s*Aufl\.?)(?=\s*[.,;:]*\s*$)/i;
 // A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
 // a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
 // dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
