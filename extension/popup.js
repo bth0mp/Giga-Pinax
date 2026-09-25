@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, nameCard, namesCatalogue, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
@@ -11,15 +11,22 @@ import { openWantsFor, ricSectionKey, wantBadgeText, wantPillText } from './core
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
+  ACSEARCH_CANCELLED, ACSEARCH_TIMEOUT_MESSAGE, ACSEARCH_WAITING, LOOKUP_CANCELLED, LOOKUP_WAITING,
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
-  NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
-  catalogueFailureMessage, coinArchivesFailure, onlineMessage,
+  NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, acsearchErrorMessage, catalogueFailureMessage, coinArchivesFailure, firstEditionMessage, hiddenPricesMessage, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
 
 const LABELS_KEY = 'giga-pinax-labels-v1';
+// X-06: how long a lookup or a price search runs before it says it is still waiting and offers Cancel. The deadline itself is the fetch's (15 s).
+const STILL_WAITING_MS = 4000;
+// The lookup under way, for its Cancel: every lookup a run starts is handed this signal.
+let lookupCancel = new AbortController();
+// The acsearch search under way, for its Cancel; a newer search or a cleared panel stops it.
+let priceCancel = null;
 
 let rawPreferences = null;
 try { rawPreferences = localStorage.getItem(STORAGE_KEY); }
@@ -89,12 +96,12 @@ async function localFirstType(reference) {
   if (local.status !== 'online-required') return local;
   const granted = await hasHostAccess([...HOST_ORIGINS]);
   if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
-  if (granted) return lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true });
-  return { ...local, retry: () => lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+  if (granted) return lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal });
+  return { ...local, retry: () => lookupType(reference, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal }) };
 }
 
 async function localFirstId(corpus, id) {
-  if (localCatalogue?.serves(corpus) !== true) return lookupById(corpus, id, { cache: labelCache });
+  if (localCatalogue?.serves(corpus) !== true) return lookupById(corpus, id, { cache: labelCache, cancel: lookupCancel.signal });
   const ticket = requestId;
   const context = researchContext;
   const local = await lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: false });
@@ -102,8 +109,8 @@ async function localFirstId(corpus, id) {
   if (local.status !== 'online-required') return local;
   const granted = await hasHostAccess([...HOST_ORIGINS]);
   if (ticket !== requestId || context !== researchContext) return { status: 'cancelled' };
-  if (granted) return lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true });
-  return { ...local, retry: () => lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true }) };
+  if (granted) return lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal });
+  return { ...local, retry: () => lookupById(corpus, id, { cache: labelCache, localProvider: localCatalogue, online: true, cancel: lookupCancel.signal }) };
 }
 
 // A Number or Ruler/King pasted from a dealer page can carry the hidden characters parseReference drops ("23" plus a soft hyphen is no Price 23), so the
@@ -209,8 +216,18 @@ function resetCopyLabel() {
 }
 
 // A currency re-fetch keeps the collector's own decisions (keepCuration): acsearch and CoinArchives give a lot the same id in every currency.
+// K-11: while acsearch has no prices to show, the free CoinArchives search is the way on, so its button is the filled one.
+function offerCoinArchives(filled) {
+  $('coinarchives-prices-button').classList.toggle('primary-button', filled);
+  $('coinarchives-prices-button').classList.toggle('secondary-button', !filled);
+}
+
 function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
+  // A search this replaces is stopped, not left to run out its deadline.
+  priceCancel?.abort();
+  priceCancel = null;
+  offerCoinArchives(false);
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
   keepMedian('acsearch', null);
@@ -279,8 +296,10 @@ const saleDay = (text) => listDay(text, { year: true });
 function clearOutput() {
   requestId += 1;
   setBusy(false);
+  hideLookupWait();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
+  $('form-error').classList.toggle('form-guide', false);
   $('candidates').hidden = true;
   $('result').hidden = true;
   $('research-prices').hidden = true;
@@ -291,6 +310,7 @@ function clearOutput() {
   $('online-fallback').hidden = true;
   $('online-fallback').disabled = false;
   $('online-fallback').onclick = null;
+  $('free-text').hidden = true;
   $('prices-restored').hidden = true;
   // What a Watch said under the Upcoming list belongs to the list it was pressed in, which this clears.
   $('upcoming-saved').hidden = true;
@@ -411,7 +431,7 @@ function renderCard(card, { restoring = false } = {}) {
   const source = [card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '', editionName(card.label)].filter(Boolean).join(' · ');
   $('result-source').textContent = source;
   $('result-source').hidden = !source;
-  $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  renderSummaryLine(card, other);
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
   $('result-citation').hidden = !citation;
@@ -457,6 +477,32 @@ function renderCard(card, { restoring = false } = {}) {
   if (restoring) return;
   revealAgain('result');
   void showSpecimens(card);
+}
+
+// The card's summary line. Names nomisma.org did not answer for are said to be missing, with a Retry that asks for them alone (X-10): an identifier
+// is never printed as a name.
+function renderSummaryLine(card, other = card.corpus === 'other') {
+  const names = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  if (other || !Array.isArray(card.unnamed) || card.unnamed.length === 0) { $('result-summary').replaceChildren(names); return; }
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'text-button names-retry';
+  retry.textContent = 'Retry';
+  retry.setAttribute('aria-label', 'Retry the names from nomisma.org');
+  retry.addEventListener('click', () => void retryNames(card, retry));
+  $('result-summary').replaceChildren(`${names ? `${names} · ` : ''}${NAMES_UNAVAILABLE} · `, retry);
+}
+async function retryNames(card, button) {
+  if (currentCard !== card || button.disabled) return;
+  button.disabled = true;
+  let named = card;
+  try { named = await nameCard(card, { cache: labelCache }); } catch { named = card; }
+  if (currentCard !== card) return;
+  if (named === card) { button.disabled = false; return; }
+  currentCard = named;
+  for (const context of [researchContext]) if (context && verifiedPriceCards.get(context) === card) verifiedPriceCards.set(context, named);
+  renderSummaryLine(named);
+  announce(named.unnamed?.length ? `Some names are still unavailable: ${NAMES_UNAVAILABLE}.` : `Names loaded: ${$('result-summary').textContent}.`);
 }
 
 // Show specimen photos, switched on in Settings and read from the local storage both pages share: 'on', or anything else for off. Off, a card asks
@@ -624,7 +670,7 @@ async function openLotReference(found, rulers, button, note = '') {
     if (pick !== lotPick || context !== researchContext) return { status: 'cancelled' };
     if (!allowed && !other) return { status: 'permission' };
     if (allowed && other && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) runPrices(context.term, context.currency, { remember: false, context });
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue, cancel: lookupCancel.signal });
   }, note);
 }
 
@@ -710,8 +756,9 @@ function renderFirstRun() {
   $('first-run').hidden = answered || preferences.recent.length > 0 || Boolean($('quick-reference').value.trim());
 }
 
-// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler.
-$('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
+// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler. The same chips stand under an
+// answer to free words (K-02).
+const exampleChips = () => EXAMPLE_REFERENCES.map((example) => {
   const item = document.createElement('li');
   const button = document.createElement('button');
   button.type = 'button';
@@ -724,7 +771,73 @@ $('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
   });
   item.append(button);
   return item;
-}));
+});
+$('example-list').replaceChildren(...exampleChips());
+$('free-text-examples').replaceChildren(...exampleChips());
+
+// K-02: a whole box that is a web address. A lot page is captured, never searched as a phrase.
+const isWebAddress = (text) => /^\s*(?:https?:\/\/|www\.)\S+\s*$/i.test(String(text ?? ''));
+// Text that names no catalogue, answered rather than refused: its words are offered as an acsearch search the collector starts himself, and a ruler
+// the people table knows opens Refine reference on RIC with him filled in. Text that begins like a catalogue is a misspelt reference, and text with
+// no letter names nothing: both keep the spellings (null).
+function freeText(text) {
+  const words = String(text ?? '').replace(INVISIBLE, '').trim().replace(/\s+/g, ' ');
+  if (!/\p{L}/u.test(words) || namesCatalogue(words)) return null;
+  const { rulers } = findReferences(words);
+  return { words, ruler: rulers.length === 1 ? rulers[0] : '' };
+}
+function showFreeText({ words, ruler }) {
+  clearOutput();
+  answered = true;
+  renderFirstRun();
+  const label = Array.from(words).length > 60 ? `${Array.from(words).slice(0, 59).join('')}…` : words;
+  $('phrase-search').textContent = `Search acsearch for “${label}”`;
+  $('phrase-search').setAttribute('aria-label', `Search acsearch for “${words}”`);
+  $('phrase-search').onclick = () => searchPhrase(words);
+  $('free-text-hint').textContent = SPELLINGS_HINT;
+  if (ruler) {
+    // Refine on RIC with the ruler in its field and the volume he implies; the number is the collector's to type, and Search answers for it.
+    $('catalogue').value = 'RIC';
+    fillRicFields(volumeFor(ruler, ''), ruler);
+    $('reference-number').value = '';
+    updateFields();
+    guidedTouched = true;
+    $('refine-reference').open = true;
+  }
+  showError(ruler ? rulerMessage(ruler) : NO_CATALOGUE_MESSAGE, ruler ? '' : 'quick-reference');
+  // An answer, not a refusal: said in the ink colour, the error's red kept for what cannot go ahead.
+  $('form-error').classList.toggle('form-guide', true);
+  $('free-text').hidden = false;
+  if (ruler) $('reference-number').focus({ preventScroll: true });
+  revealAgain('form-error');
+}
+// The words as one acsearch search, started by the collector's own click: no card, no type, nothing saved, and the prices panel says what it found.
+// Access is asked for before anything waits, so the click still counts as the collector's.
+function searchPhrase(words) {
+  const access = requestHostAccess([ACSEARCH_ORIGIN]);
+  forgetAnswer();
+  clearOutput();
+  answered = true;
+  renderFirstRun();
+  const reference = Object.freeze({ catalogue: 'Other', number: words, volume: '', section: '' });
+  // Searched as the phrase the button names, in acsearch's own quotes, as every other term the popup writes (review M1).
+  const term = `"${words.replace(/["“”„]/g, '')}"`;
+  researchContext = Object.freeze({ reference, label: words, identity: null, term, currency: $('currency').value, priceTicket: priceRequestId, phrase: true });
+  const context = researchContext;
+  // The search is the answer he chose: Refine, opened for a ruler, folds away so the prices come up under the box.
+  $('refine-reference').open = false;
+  $('price-term').value = term;
+  $('price-search').open = false;
+  updateAcsearchLink();
+  updateCoinArchivesLink();
+  $('research-prices').hidden = false;
+  announce(`Searching acsearch for ${words}.`);
+  void Promise.resolve(access).then((allowed) => {
+    if (context !== researchContext) return;
+    if (!allowed) { showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
+    runPrices(term, context.currency, { remember: false, context });
+  });
+}
 
 // The filters an acsearch page is drawn with, for the median and the Upcoming list alike.
 // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
@@ -890,7 +1003,6 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-details').hidden = !visibility.curation;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const years = summary.earliest === null ? '' : ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const counts = priceCuration.counts(periodLots);
   // Nothing counted: either the period holds no sale with a price, or every sale in it is excluded. Reset undoes only the collector's own decisions,
   // so it is offered as the way back only where it would leave a sale counted.
@@ -898,10 +1010,20 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const none = periodLots.length === 0 ? noPeriodSales
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
-  $('sale-strength').textContent = empty ? none : `${sales(count)}${years}`;
   const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
-  $('cited-count').textContent = filters.join(' · ');
-  $('cited-count').hidden = filters.length === 0;
+  // K-16: three counts in one breath under the median ("2 of 4 results cite RIC 306 · 5 matches on acsearch · 1 without a price") become one sentence:
+  // "Median of 2 sales citing RIC 306 (5 results, 1 unpriced)". The filters are folded into it while the median rests on exactly the rows they
+  // leave; where the collector's own decisions, an unread page or a search that looks for something else make it more than that, their lines
+  // stay beside it as before. Inspect sales and Copy summary keep the whole accounting.
+  const byHand = periodLots.some((sale) => (reason(sale) === null) !== (priceCuration.reasonFor(sale) === null));
+  // An empty median keeps its filter line: "0 of 2 results cite Price 23" is why nothing is counted.
+  const folded = !empty && !byHand && !uncited && !unsearched;
+  const which = folded ? [citing ? `citing ${name}` : '', wanted ? `naming “${wanted}”` : ''].filter(Boolean).join(' and ') : '';
+  // The years the sales span stay in the sentence: how old the median's sales are is part of how far to trust it.
+  const yearSpan = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  $('sale-strength').textContent = empty ? none : `Median of ${sales(count)}${which ? ` ${which}` : ''}${yearSpan}`;
+  $('cited-count').textContent = folded ? '' : filters.join(' · ');
+  $('cited-count').hidden = folded || filters.length === 0;
   const trend = trendOf(includedLots, currency, now);
   $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
   $('sale-trend').hidden = !trend;
@@ -911,7 +1033,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     // The name keeps the date it shows, so a screen reader or voice control still finds it.
     const link = lotLink(last, saleDay(last.date));
     link.setAttribute('aria-label', `Last sale ${saleDay(last.date)} on acsearch, opens a new tab`);
-    $('last-sale').replaceChildren(`last ${money.format(last.amount)} on `, link);
+    $('last-sale').replaceChildren(`last ${money.format(last.amount)}, `, link);
   }
   // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" says how much acsearch held. The query is not
   // repeated here: it is shown beside Change search, where it can be edited.
@@ -925,17 +1047,15 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
   // is proves the page reaches back past the period, so every sale of the period is already on it.
   const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
-  let drawn = `${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'} on acsearch`;
-  if (unpriced) drawn += ` · ${unpriced} without a price`;
-  if (future) drawn += ` · ${futureText(drawnFrom)}`;
-  if (skipped) drawn += ` · ${skipped} not counted`;
-  $('sale-period').textContent = drawn;
-  // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip.
+  const drawn = [`${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'result' : 'results'}`, unpriced ? `${unpriced} unpriced` : '',
+    future ? futureText(drawnFrom) : '', skipped ? `${skipped} not counted` : ''].filter(Boolean).join(', ');
+  $('sale-period').textContent = `(${drawn})`;
+  // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip, the years of the sales included.
   const whole = (...ids) => ids.filter((id) => !$(id).hidden).map((id) => $(id).textContent || [...$(id).children].map((part) => part.textContent ?? part).join('')).join(' · ');
   $('sale-period').hidden = false;
   $('price-note').hidden = false;
-  $('stat-sales').title = whole('sale-strength', 'last-sale');
-  $('stat-counts').title = whole('cited-count', 'sale-period');
+  $('stat-sales').title = [`${$('sale-strength').textContent} ${$('sale-period').textContent}`, whole('last-sale')].filter(Boolean).join(' · ');
+  $('stat-counts').title = whole('cited-count');
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;
@@ -1139,10 +1259,32 @@ function showPricesNote(message, withSignIn) {
   $('announcement').textContent = message;
 }
 
-function showPricesError(message) {
+// retry: a search that ran out of time ends with the verb that gets out of it, the same search again (X-06).
+function showPricesError(message, retry = false) {
   $('price-search').open = true;
-  $('prices-error').textContent = message;
+  if (retry) {
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'text-button prices-error-retry';
+    again.textContent = 'Try again';
+    again.addEventListener('click', () => $('prices-form').requestSubmit());
+    $('prices-error').replaceChildren(`${message} `, again);
+  } else $('prices-error').textContent = message;
   $('prices-error').hidden = false;
+}
+
+// X-06: a search or a lookup still running after a few seconds says so where its answer will be, with Cancel beside it.
+function cancelButton(label, cancel) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'text-button';
+  button.textContent = 'Cancel';
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', () => cancel.abort());
+  return button;
+}
+function hideLookupWait() {
+  $('lookup-wait').hidden = true;
 }
 
 // A RIC number with no volume, no section and no single ruler names a type in every volume ("RIC 237" is Caracalla's denarius, Vespasian's aureus and
@@ -1166,6 +1308,8 @@ function setPricesAside() {
   clearAcsearchPrices();
   clearCoinArchivesPrices();
   $('prices-note-text').textContent = PRICES_WAIT_MESSAGE;
+  // K-15: only a signed-out note carries Sign in; this one says to choose a type.
+  $('signin-link').hidden = true;
   $('prices-note').hidden = false;
 }
 
@@ -1184,11 +1328,25 @@ async function run(perform, note = '', failedReference = null) {
   lotNote = note;
   const id = ++requestId;
   const revision = referenceRevision;
+  const cancel = new AbortController();
+  lookupCancel = cancel;
   setBusy(true);
+  // X-06: a lookup still running after a few seconds (numismatics.org is slow) says so under the box, with Cancel.
+  const waiting = setTimeout(() => {
+    if (id !== requestId || !$('lookup-button').disabled) return;
+    $('lookup-wait-text').textContent = LOOKUP_WAITING;
+    $('lookup-cancel').onclick = () => cancel.abort();
+    $('lookup-wait').hidden = false;
+  }, STILL_WAITING_MS);
   let outcome;
   try { outcome = await perform(); }
   catch { outcome = { status: 'network' }; }
-  finally { if (id === requestId) setBusy(false); }
+  finally {
+    clearTimeout(waiting);
+    if (id === requestId) { setBusy(false); hideLookupWait(); }
+  }
+  // Cancelled by the collector: said once, and the box is his again.
+  if (outcome.status === 'cancelled' && cancel.signal.aborted && id === requestId) { forgetPendingReference(); showError(LOOKUP_CANCELLED); return; }
   // A lookup another has replaced: nobody is waiting for this answer, and the reference it was kept for has been typed over.
   if (id !== requestId) { forgetPendingReference(); return; }
   if (outcome.status !== 'cancelled') { answered = true; renderFirstRun(); }
@@ -1265,13 +1423,26 @@ async function run(perform, note = '', failedReference = null) {
     showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
   }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus)?.corpusName}. ${catalogueForCorpus(outcome.corpus)?.notFoundHint}`, 'reference-number');
+  // X-04: a first edition's number, answered before any request; the prices, where they run, search it as written.
+  else if (outcome.status === 'first-edition') showError(firstEditionMessage(outcome, Boolean(researchContext)));
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
-    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
+    const bundled = outcome.localStatus === 'none' && failedReference ? bundledName(failedReference) : '';
+    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference), bundled));
   }
   // A lookup that failed is answered by its error, under the box it was typed in: that is what comes into view, never the prices below it.
   if (!$('form-error').hidden) revealAgain('form-error');
+}
+
+// The book the bundle checked, as a failure names it (X-04): the RIC volume as a collector writes it ("RIC I²"), else the corpus's catalogue.
+function bundledName(reference) {
+  if (reference.catalogue === 'RIC') {
+    const label = RIC_VOLUMES.find(({ value }) => value === reference.volume)?.label;
+    return label ? `RIC ${label.replace(/ \(2nd ed\.\)$/, '')}` : 'OCRE catalogue';
+  }
+  const name = catalogueOf(reference.catalogue)?.corpusName;
+  return name ? `${name} catalogue` : 'catalogue';
 }
 
 async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
@@ -1286,12 +1457,22 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   $('prices-restored').hidden = true;
   clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
+  const cancel = new AbortController();
+  priceCancel = cancel;
   setPricesBusy(true);
   showPricesLoading(term, context);
+  // X-06: still loading after a few seconds, the panel says so where the median will be, with Cancel.
+  const waiting = setTimeout(() => {
+    if (id !== priceRequestId || $('prices-panel').dataset.state !== 'loading') return;
+    $('sale-strength').replaceChildren(`${ACSEARCH_WAITING} `, cancelButton('Cancel the acsearch search', cancel));
+  }, STILL_WAITING_MS);
   let outcome;
-  try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }); }
+  try { outcome = await fetchPrices({ term, currency, category: searchCategory(context.reference) }, { signal: cancel.signal }); }
   catch { outcome = { status: 'network' }; }
-  finally { if (id === priceRequestId) setPricesBusy(false); }
+  finally {
+    clearTimeout(waiting);
+    if (id === priceRequestId) { setPricesBusy(false); priceCancel = null; }
+  }
   if (id !== priceRequestId || context !== researchContext) return;
   if (outcome.status === 'ok') { renderPrices(outcome.lots, currency, term, false, context, priceCard(context)); revealPrices(); return; }
   // No median to hold a place for: the note below says why, and the filter row drawn for the search goes unless something on show still needs it.
@@ -1299,12 +1480,17 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   $('prices-panel').dataset.state = '';
   pendingPrices = null;
   renderPriceFilters();
+  offerCoinArchives(true);
+  if (outcome.status === 'cancelled') { showPricesNote(ACSEARCH_CANCELLED, false); return; }
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
+  else if (outcome.status === 'unpriced' && outcome.hidden) showPricesNote(hiddenPricesMessage(upcomingLots(outcome.lots ?? [], new Date()).length > 0), true);
   else if (outcome.status === 'unpriced') {
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);
   }
+  else if (outcome.status === 'timeout') showPricesError(ACSEARCH_TIMEOUT_MESSAGE, true);
+  else if (outcome.status === 'unavailable') showPricesError(acsearchErrorMessage(outcome.httpStatus), true);
   else showPricesError(outcome.reason === 'too-large' ? ACSEARCH_TOO_LARGE_MESSAGE : ACSEARCH_NETWORK_MESSAGE);
   // A page without a counted price still lists the lots not sold yet; the note is said first, then how many are coming up.
   if (outcome.lots) {
@@ -1624,6 +1810,16 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
+    // K-02: a pasted web address is answered with a sentence, before lot text could read a catalogue key out of it; nothing is searched.
+    if (isWebAddress($('quick-reference').value)) {
+      clearOutput();
+      clearLot();
+      answered = true;
+      renderFirstRun();
+      showError(WEB_ADDRESS_MESSAGE, 'quick-reference');
+      $('companion-current-lot').open = true;
+      return;
+    }
     // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or an SC "Ad." title, would read as lot text.
     const entry = preferences.recent[recalled];
     if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
@@ -1636,7 +1832,13 @@ $('reference-form').addEventListener('submit', async (event) => {
   clearLot();
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
-  if (!refinedSubmit && !applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
+  if (!refinedSubmit && !applyQuickReference()) {
+    const free = freeText($('quick-reference').value);
+    if (free) { showFreeText(free); return; }
+    clearOutput();
+    showError(QUICK_ERROR, 'quick-reference');
+    return;
+  }
   if (!$('reference-form').reportValidity()) {
     $('form-error').hidden = true;
     $('form-error').textContent = '';
@@ -1663,7 +1865,7 @@ $('reference-form').addEventListener('submit', async (event) => {
     if (allowed && other && context === researchContext && context.priceTicket === priceRequestId && !requestedPriceContexts.has(context)) {
       runPrices(context.term, context.currency, { remember: false, context });
     }
-    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue });
+    return bundled ? localFirstType(reference) : lookupType(reference, { cache: labelCache, localProvider: localCatalogue, cancel: lookupCancel.signal });
   });
 });
 $('price-term').addEventListener('input', updateAcsearchLink);

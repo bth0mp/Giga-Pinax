@@ -8,9 +8,32 @@ const CONNECTION_ONLY_MESSAGE = 'Couldn’t connect to numismatics.org. Try the 
 const BARE_RIC_HINT = 'Type a ruler or volume to search auction results.';
 const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.org and nomisma.org to look up types. Select “Look up” again to allow it.';
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
+// X-06: a wait has deadlines the collector can see: "still waiting" with Cancel after a few seconds, and after the fifteen-second deadline a
+// sentence that says it was the wait, not the connection.
+const ACSEARCH_WAITING = 'Still waiting for acsearch…';
+const acsearchErrorMessage = (httpStatus) => `acsearch answered with an error (HTTP ${httpStatus}). It may be down for a while.`;
+const ACSEARCH_TIMEOUT_MESSAGE = 'acsearch didn’t answer within 15 seconds. It may be slow or down.';
+const ACSEARCH_CANCELLED = 'The acsearch search was cancelled. Select “Get prices” to search again.';
+const LOOKUP_WAITING = 'Still waiting for numismatics.org…';
+const LOOKUP_CANCELLED = 'Lookup cancelled. Select “Look up” to try again.';
 const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
-const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
+// K-11: a newcomer does not know that acsearch is a subscription archive, nor that the CoinArchives block below is free and needs no account.
+const SIGN_IN_MESSAGE = 'Hammer prices come from acsearch.info, which shows them to subscribers who are signed in. Select “Get CoinArchives prices” below for free public results, or sign in to acsearch and select “Get prices”:';
+// X-17: every price on the page is acsearch's "*", which it shows a visitor who is not signed in and every lot not sold yet.
+const hiddenPricesMessage = (upcoming) => `Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”${upcoming ? '; lots not yet sold are listed below' : ''}.`;
+// X-10: a card drawn while nomisma.org did not answer shows the names that came back and says the rest are missing, never their identifiers.
+const NAMES_UNAVAILABLE = 'names unavailable — nomisma.org didn’t answer';
+// X-04: a first edition's number is answered before any request, in words, since no catalogue here or online holds those numbers.
+/**
+ * @param {{ number: string, book: string }} citation
+ * @param {boolean} searched
+ * @returns {string}
+ */
+const firstEditionMessage = ({ number, book }, searched) => `${book || 'RIC'} ${number} is cited from the first edition${book ? ` of ${book}` : ''}. `
+  + (book ? 'The catalogue here and OCRE use the second edition, whose numbers differ, so no type is opened.'
+    : 'The catalogue here and OCRE hold RIC I, II.1 and II.3 in their second edition only, whose numbers differ, so no type is opened.')
+  + (searched ? ' Auction results are searched by the number as written.' : ` ${BARE_RIC_HINT}`);
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const ACSEARCH_HOME = 'https://www.acsearch.info/';
@@ -25,6 +48,12 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
+// K-02: what the box says to text that names no catalogue. Words are offered as an acsearch search the collector starts himself; a ruler the people
+// table knows opens Refine reference with him filled in; a web address is refused, since a lot page is captured, never searched as text.
+const NO_CATALOGUE_MESSAGE = 'No catalogue reference in that text.';
+const rulerMessage = (ruler) => `${ruler} is a RIC ruler. Add the type’s number under Refine reference, or search acsearch for the words.`;
+const WEB_ADDRESS_MESSAGE = 'That’s a web address. Open the page in a tab, then use “Capture the lot page you’re on” below.';
+const SPELLINGS_HINT = 'The box also reads “RIC 972”, “Titus 123”, “SC 1266.2” and “Bop Euthydemus I 24A”, or use Refine reference.';
 const PRICES_WAIT_MESSAGE = 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
@@ -34,14 +63,25 @@ const onlineMessage = (corpus) => `This type was not available in the local ${ca
   + 'Check online to search numismatics.org.';
 
 // A bare RIC number starts no auction search of its own (namesOneType), so where there is none below, the message says what would start one.
+// X-04: where the bundle had already answered that it does not hold the reference (bundled names the book it checked), the failed request is only
+// the further look online, and the message says so first: the connection is not the reason there is no card.
 /**
  * @param {{ status: string, httpStatus?: number }} outcome
  * @param {boolean} hasFallback
  * @param {boolean} [bareRic]
+ * @param {string} [bundled]
  * @returns {string}
  */
-function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
+function catalogueFailureMessage(outcome, hasFallback, bareRic = false, bundled = '') {
   const searches = hasFallback ? ' You can still search auction results below.' : bareRic ? ` ${BARE_RIC_HINT}` : '';
+  if (bundled) {
+    const further = outcome.status === 'unavailable' ? `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}), so nothing further was checked.`
+      : outcome.status === 'rate-limited' ? `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}), so nothing further was checked.`
+        : outcome.status === 'timeout' ? 'numismatics.org didn’t answer within 15 seconds to look further.'
+          : 'numismatics.org couldn’t be reached to look further.';
+    return `Not in the bundled ${bundled} (checked offline). ${further}${searches}`;
+  }
+  if (outcome.status === 'timeout') return `numismatics.org didn’t answer within 15 seconds. It may be slow or down. Select “Look up” to try again.${searches}`;
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
@@ -65,8 +105,9 @@ function coinArchivesFailure(outcome, currency) {
 }
 
 export {
+  ACSEARCH_CANCELLED, ACSEARCH_TIMEOUT_MESSAGE, ACSEARCH_WAITING, LOOKUP_CANCELLED, LOOKUP_WAITING,
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
-  NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
-  catalogueFailureMessage, coinArchivesFailure, onlineMessage,
+  NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, acsearchErrorMessage, catalogueFailureMessage, firstEditionMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 };

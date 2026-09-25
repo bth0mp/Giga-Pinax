@@ -62,6 +62,7 @@ const {
   savedPillText,
   savedLineText,
   dueText,
+  watchlistCountText,
 } = await import('../extension/companion-popup.js');
 const { wantPillText } = await import('../extension/core/wantlist.js');
 
@@ -365,20 +366,28 @@ test('a retained retry belongs to its own coin, and an answerless send is not re
 // Nothing that arrives after a failed start-up may put the save buttons back: the note stays true until the page is opened again.
 test('a companion start-up that cannot reach storage leaves its save buttons disabled for good', async () => {
   const snapshot = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const unreachable = 'Giga Pinax can’t reach its records in this browser, so nothing can be saved here.';
   const cases = [
-    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, 'Storage is blocked.'],
-    ['a background that answers nothing', { sendMessage: async () => undefined }, 'Extension storage is unavailable.'],
+    ['a refused snapshot', { sendMessage: async () => { throw new Error('Storage is blocked.'); } }, unreachable],
+    ['a background that answers nothing', { sendMessage: async () => undefined }, unreachable],
+    ['a stored root that cannot be read', { sendMessage: async () => ({ ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.' }) },
+      'Your records can’t be read, so nothing can be saved here.'],
   ];
   for (const [name, options, announced] of cases) {
     const page = await loadCompanion(options);
-    assert.equal(page.element('storage-note').hidden, false, name);
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
     assert.equal(page.element('companion-capture-watchlist').disabled, true, name);
-    // A reply nobody could read names no reason a collector could act on, so it is never shown as one. It is said in the storage note, which is there
-    // for exactly this, never over the panel.
-    assert.equal(page.element('storage-note').textContent, announced, name);
+    // X-12: the reason is not the preferences note under the capture section, out of view at 600 px. It is said in the Watchlist tab and under
+    // the card's Watch, in words, with the way to Settings; the store's own words stay out.
+    assert.equal(page.element('storage-note').hidden, true, name);
+    assert.equal(page.element('companion-empty').hidden, false, name);
+    assert.equal(page.element('companion-empty-title').textContent, 'Records unavailable', name);
+    assert.equal(page.element('companion-empty-text').textContent, announced, name);
+    assert.equal(page.element('companion-empty-settings').hidden, false, name);
 
     page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+    assert.equal(lineParts(page.element('companion-save-hint')), `${announced} · [Open Settings]`, name);
+    assert.doesNotMatch(lineParts(page.element('companion-save-hint')), /Stored data is invalid|Storage is blocked/, name);
     assert.equal(page.element('companion-save-watchlist').disabled, true, name);
     page.element('companion-capture-ruler').value = 'Nero';
     await page.element('companion-capture-ruler').emit('input');
@@ -388,6 +397,8 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
   // With storage answering, the same card is saveable: the flag is what disabled the others, not the page failing to start at all.
   const working = await loadCompanion({ sendMessage: async () => snapshot });
   assert.equal(working.element('storage-note').hidden, true);
+  assert.equal(working.element('companion-empty-title').textContent, 'No coins yet');
+  assert.equal(working.element('companion-empty-settings').hidden, true);
   working.card({ title: 'Nero denarius', reference: 'RIC 306' });
   assert.equal(working.element('companion-save-watchlist').disabled, false);
   working.element('companion-capture-ruler').value = 'Nero';
@@ -475,7 +486,8 @@ test('a stored currency the research select already shows disturbs nothing', asy
 // never reached the background owes the collector is the reason it goes no further than that.
 test('a currency change after a failed start-up is explained once rather than dropped in silence', async () => {
   const page = await loadCompanion({ sendMessage: async () => undefined });
-  assert.equal(page.element('storage-note').textContent, 'Extension storage is unavailable.');
+  // X-12: the records' reason is said in the Watchlist tab and under Watch; the storage note keeps to the preferences, the currency among them.
+  assert.equal(page.element('storage-note').hidden, true);
 
   page.element('currency').value = 'CHF';
   await page.element('currency').emit('change');
@@ -673,8 +685,8 @@ test('Save on a bare card saves the coin in one step, as the workspace would, an
     const line = page.element('companion-saved-line');
     assert.equal(line.hidden, false);
     // H-05: "Saved" is the row's pill, its sentence the tooltip; Open and Undo beside it.
-    assert.equal(lineParts(line), '[Saved] · [Open] · [Undo]');
-    assert.equal(line.children[0].title, 'Saved to your watchlist');
+    assert.equal(lineParts(line), '[Watching] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Added to your watchlist');
     assert.equal(page.element('companion-status-row').hidden, false);
     assert.equal(page.element('companion-save-watchlist').hidden, true);
 
@@ -800,7 +812,7 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     const line = page.element('upcoming-saved');
     // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language. A sale outside this year carries its year (K-07).
     const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
-    assert.equal(lineParts(line), `[Saved] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
+    assert.equal(lineParts(line), `[Watching] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
     await lineButton(line, 'Add').emit('click');
     await settleAll();
     const [event] = background.root().auctionEvents;
@@ -809,8 +821,8 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     assert.equal(event.localDate, '2099-10-12');
     assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
     assert.equal(background.root().lots[0].auctionEventId, event.id);
-    assert.equal(lineParts(line), '[Saved with its sale day] · [Open] · [Undo]');
-    assert.equal(line.children[0].title, 'Saved to your watchlist with its sale day');
+    assert.equal(lineParts(line), '[Watching with its sale day] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Added to your watchlist with its sale day');
     // A second Watch of the same lot opens the one saved.
     page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
     await settleAll();
@@ -897,7 +909,7 @@ test('a one-step save retried after a lost reply is the same request', async () 
   page.card(neroCard);
   await page.click('companion-save-watchlist');
   await settleAll();
-  assert.equal(page.element('companion-save-hint').textContent, 'The watchlist did not answer. Try again.');
+  assert.equal(page.element('companion-save-hint').textContent, 'Giga Pinax’s background didn’t answer. Select Watch again — the same request is retried, never saved twice.');
   await page.click('companion-save-watchlist');
   await settleAll();
   const saves = commands.filter(({ type }) => type === 'lot.save');
@@ -1134,7 +1146,7 @@ test('a save that fails is said in the line under its button for a while, then t
   // Loop 3 (G-03): the line under Save is empty and hidden until something is said in it; what Save does is its tooltip.
   assert.equal(hint.textContent, '');
   assert.equal(hint.hidden, true);
-  assert.match(markup.getElementById('companion-save-watchlist').getAttribute('title'), /^Saves the reference/);
+  assert.match(markup.getElementById('companion-save-watchlist').getAttribute('title'), /^Add to your watchlist/);
   const realSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
@@ -1229,7 +1241,7 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
   const panel = markup.getElementById('companion-panel-watchlist');
   assert.equal(markup.getElementById('companion-open-workspace'), null, 'no second way to the same place');
   assert.equal(panel.querySelectorAll('.companion-intro').length, 0);
-  assert.equal(panel.querySelectorAll('button').filter((button) => !button.closest('.companion-needs-outcome')).length, 1);
+  assert.equal(panel.querySelectorAll('button').filter((button) => !button.closest('.companion-needs-outcome') && !button.closest('.companion-empty')).length, 1);
   const now = new Date();
   const inDays = (days) => new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
   const cng = { id: 'cng', name: 'CNG Feature Auction 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
@@ -1324,7 +1336,7 @@ test('a save is announced once, by its line', async () => {
   await page.click('companion-save-watchlist');
   await settleAll();
   assert.equal(page.element('announcement').textContent, '');
-  assert.match(lineParts(page.element('companion-saved-line')), /^\[Saved\]/);
+  assert.match(lineParts(page.element('companion-saved-line')), /^\[Watching\]/);
 });
 
 // Fix round (review M7): owning one example of a type is no reason not to watch another. A card whose every saved coin is settled keeps Save beside
@@ -1464,4 +1476,165 @@ test('a status pill writes its amount whole where exact and in full otherwise, a
   const css = readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8');
   assert.match(css, /\.status-row \{[^}]*flex-wrap:wrap/);
   assert.doesNotMatch(css, /text-overflow:ellipsis/);
+});
+
+// Loop 6 (K-01): a coin saved from the card has no auction, and the tab named Watchlist listed only coins with one, so the newcomer's first save
+// vanished from it. The tab says what the list holds, lists open coins with no sale (newest first, "no sale date · Add"), and the coin just saved
+// leads the list for as long as the popup is open.
+test('the Watchlist tab lists a coin with no auction, and the coin just saved leads it', async () => {
+  const now = new Date();
+  const inDays = (days) => new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const cng = { id: 'cng', name: 'CNG 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: zone };
+  const lots = [
+    { id: 'old', title: 'Older coin', reference: 'Price 23', outcome: { status: 'open' }, createdAt: '2026-01-01T00:00:00.000Z' },
+    { id: 'new', title: 'Newer coin', reference: 'RIC I (second edition) Nero 306', outcome: { status: 'open' }, createdAt: '2026-02-01T00:00:00.000Z' },
+    { id: 'sale', title: 'Coin with a sale', reference: 'Crawford 44/5', auctionEventId: 'cng', outcome: { status: 'open' } },
+    { id: 'won', title: 'Won coin', reference: 'Price 24', outcome: { status: 'won' } },
+  ];
+  const snapshot = { lots, auctionEvents: [cng] };
+  const rows = coinsToWatch(snapshot, { locale: 'en-GB' });
+  assert.deepEqual(rows.map(({ lot, when, noSale }) => [lot.id, when, Boolean(noSale)]),
+    [['sale', 'in 20 days', false], ['new', 'no sale date', true], ['old', 'no sale date', true]]);
+  assert.deepEqual(coinsToWatch(snapshot, { first: 'old' }).map(({ lot }) => lot.id), ['old', 'sale', 'new']);
+  assert.equal(watchlistCountText(snapshot), '3 coins on your watchlist · 1 with a sale coming');
+  assert.equal(watchlistCountText({ lots: [lots[0]] }), '1 coin on your watchlist');
+  assert.equal(watchlistCountText({ lots: [lots[3]] }), 'No coins on your watchlist');
+  assert.equal(watchlistCountText({ lots: [] }), '', 'a store with no coin keeps its own empty state');
+
+  const background = await createWorkspaceBackground();
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background) });
+    assert.equal(page.element('companion-count').hidden, true);
+    assert.equal(page.element('companion-empty').hidden, false);
+    page.card(neroCard);
+    await page.click('companion-save-watchlist');
+    await settleAll();
+    const [saved] = background.root().lots;
+    assert.equal(page.element('companion-count').textContent, '1 coin on your watchlist');
+    assert.equal(page.element('companion-count').hidden, false);
+    assert.equal(page.element('companion-empty').hidden, true);
+    assert.equal(page.element('companion-coins').hidden, false);
+    const [item] = page.element('companion-coin-list').children;
+    const [row, add] = item.children;
+    assert.equal(row.children.map((part) => (typeof part === 'string' ? part : part.textContent)).join(''), 'RIC I² Nero 306 · Nero · As · Rome · AD 62–68 · no sale date');
+    assert.equal(add.textContent, 'Add');
+    assert.equal(add['aria-label'], 'Add a sale date to Nero · As · Rome · AD 62–68 in the workspace');
+    await add.emit('click');
+    await settleAll();
+    assert.deepEqual(opened, [`moz-extension://test/workspace.html#watchlist?lot=${saved.id}`]);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
+});
+
+// Loop 6 (X-11): a Save whose message port closed printed the browser's own words ("The message port closed before a response was received.") under
+// the card. Every bridge failure is one sentence naming the button to press again; the retry is the same request, and the store keeps one coin.
+test('a save whose bridge throws says so in words, keeps its request for the retry, and records only the kind of failure', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  let fail = true;
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(structuredClone(command));
+    if (command.type === 'lot.save' && fail) { fail = false; await background.send(command); throw new Error('The message port closed before a response was received.'); }
+    return background.send(command);
+  } });
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const hint = page.element('companion-save-hint').textContent;
+  assert.equal(hint, 'Giga Pinax’s background didn’t answer. Select Watch again — the same request is retried, never saved twice.');
+  assert.doesNotMatch(hint, /port closed/);
+  assert.equal(page.element('companion-save-watchlist').disabled, false);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const saves = commands.filter(({ type }) => type === 'lot.save');
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].requestId, saves[1].requestId);
+  assert.equal(background.root().lots.length, 1, 'committed before the port closed, and not written twice');
+  assert.equal(lineParts(page.element('companion-saved-line')), '[Watching] · [Open] · [Undo]');
+
+  // The capture's draft path says the same of its own button, and keeps its request.
+  const sent = [];
+  const saver = createDraftSaver({ newRequestId: () => 'request-draft', sendCommand: async (command) => { sent.push(command.requestId); if (sent.length === 1) throw new Error('port closed'); return { ok: true, value: { id: 'draft-1' } }; },
+    openDraft: async () => ({ ok: true }) });
+  const first = await saver({ reference: 'RIC 306' });
+  assert.equal(first.ok, false);
+  assert.equal(first.unanswered, true);
+  assert.equal(Object.hasOwn(first, 'message'), false, 'no browser words travel with it');
+  assert.equal((await saver({ reference: 'RIC 306' })).ok, true);
+  assert.deepEqual(sent, ['request-draft', 'request-draft']);
+});
+
+// Loop 6 (X-05, popup side): a Save whose reply never came left the button disabled for ever, with nothing said. After eight seconds the line under
+// it says the save got no answer and offers the same request again; the button is back, and the retry stores one coin.
+test('a save with no answer within eight seconds says so under Watch, gives Watch back, and retries the same request', async () => {
+  const background = await createWorkspaceBackground();
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
+  try {
+    const commands = [];
+    let hang = true;
+    const page = await loadCompanion({ sendMessage: async (command) => {
+      commands.push(structuredClone(command));
+      if (command.type === 'lot.save' && hang) { hang = false; return new Promise(() => {}); }
+      return background.send(command);
+    } });
+    page.card(neroCard);
+    const clicked = page.element('companion-save-watchlist').emit('click');
+    await settleAll();
+    assert.equal(page.element('companion-save-watchlist').disabled, true, 'held while the save waits');
+    const deadline = timers.find(({ wait }) => wait === 8000);
+    assert.ok(deadline, 'the wait has a deadline');
+    deadline.callback();
+    await clicked;
+    await settleAll();
+    const hint = page.element('companion-save-hint');
+    assert.equal(hint.hidden, false);
+    assert.equal(lineParts(hint), 'The save didn’t get an answer. · [Retry the same request]');
+    assert.equal(page.element('companion-save-watchlist').disabled, false);
+    assert.equal(page.element('companion-save-watchlist').hidden, false);
+    await lineButton(hint, 'Retry the same request').emit('click');
+    await settleAll();
+    const saves = commands.filter(({ type }) => type === 'lot.save');
+    assert.equal(saves.length, 2);
+    assert.equal(saves[0].requestId, saves[1].requestId);
+    assert.equal(background.root().lots.length, 1);
+    assert.equal(lineParts(page.element('companion-saved-line')), '[Watching] · [Open] · [Undo]');
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+// Loop 6 fix round (review M2): Undo's no-answer sentence says the same request is retried, and it is: the delete is sent again under its own id.
+test('an Undo the background never answered is retried under the same request', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  let fail = true;
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(structuredClone(command));
+    if (command.type === 'lot.delete' && fail) { fail = false; await background.send(command); throw new Error('The message port closed before a response was received.'); }
+    return background.send(command);
+  } });
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const line = page.element('companion-saved-line');
+  await lineButton(line, 'Undo').emit('click');
+  await settleAll();
+  assert.equal(page.element('companion-save-hint').textContent, 'Giga Pinax’s background didn’t answer. Select Undo again — the same request is retried, never applied twice.');
+  await lineButton(line, 'Undo').emit('click');
+  await settleAll();
+  const deletes = commands.filter(({ type }) => type === 'lot.delete');
+  assert.equal(deletes.length, 2);
+  assert.equal(deletes[0].requestId, deletes[1].requestId);
+  assert.deepEqual(background.root().lots, []);
+  assert.equal(page.element('companion-save-hint').textContent, 'Removed from your watchlist.');
 });

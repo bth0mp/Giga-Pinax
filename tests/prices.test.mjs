@@ -299,13 +299,20 @@ test('fetchPrices sends credentials to acsearch and classifies outcomes', { time
   assert.deepEqual(await fetchPrices({ term: 'zzz', currency: 'USD' }, { fetchImpl: fakeFetch(page([])) }), { status: 'empty', term: 'zzz' });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(page([lot(''), lot('-')])) }), { status: 'unpriced', term: 'q', lots: [lot(''), lot('-')].map((entry) => ({ ...entry, grade: null })) });
   assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('<html>changed</html>') }), { status: 'network' });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'network' });
+  // Loop 6 fix round (review M4b): a 5xx is acsearch answering with an error, not a connection that failed; another refusal stays as it was.
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 503 }) }), { status: 'unavailable', httpStatus: 503 });
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch('', { ok: false, status: 404 }) }), { status: 'network' });
   // Node's AbortSignal.timeout keeps no timer of its own alive, so the pending one here holds the event loop until it fires.
   const hang = (url, { signal }) => new Promise((resolve, reject) => {
     const alive = setTimeout(resolve, 1000);
     signal.addEventListener('abort', () => { clearTimeout(alive); reject(new Error('aborted')); });
   });
-  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+  // Loop 6 (X-06): the deadline is a timeout, and the collector's Cancel a cancelled search; neither is a failed connection.
+  assert.deepEqual(await fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'timeout' });
+  const stop = new AbortController();
+  const cancelled = fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: hang, timeoutMs: 5000, signal: stop.signal });
+  stop.abort();
+  assert.deepEqual(await cancelled, { status: 'cancelled' });
 });
 
 // 0.32: "no counted price plus a star" also describes a signed-in collector whose only hits are lots not yet sold, and he was told to sign in again.
@@ -1838,4 +1845,26 @@ test('summaryText writes money and days in the locale it is given', () => {
   assert.equal(upcomingText([lots[2]], 'en-GB'), `Upcoming: 1 lot, first on ${british}`);
   // A figure that is no amount is a dash, never a thrown summary.
   assert.match(summaryText({ label: 'X' }, { ...summary, lowerQuartile: Number.NaN }, 'USD', 'X', {}, 'de-DE'), /middle 50% —–/);
+});
+
+// Loop 6 (X-17): a page whose every price is "*" but carries no login link and one lot still to come was told "No hammer prices among the sales".
+// It is marked hidden, for the popup to say what the stars are; a page with any other kind of missing price is not.
+test('a page whose every price is a star is marked hidden, and no other unpriced page is', async () => {
+  const shell = (lots) => `<html><script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script></html>`;
+  const read = async (lots) => fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(shell(lots)), now: NOW });
+  const stars = await read([lot('*', '01.01.2024', 'a'), lot('*', '01.06.2028', 'c')]);
+  assert.equal(stars.status, 'unpriced');
+  assert.equal(stars.hidden, true);
+  const mixed = await read([lot('*', '01.06.2028', 'c'), lot('-', '01.01.2024', 'a')]);
+  assert.equal(mixed.status, 'unpriced');
+  assert.equal(Object.hasOwn(mixed, 'hidden'), false);
+});
+
+// Loop 6 (X-04): the search term drops an edition remark kept on a RIC number: "Nero 1st ed. \"RIC 306\"" is no phrase a dealer writes.
+test('a RIC term leaves an edition remark out, and keeps a denomination word', () => {
+  const nero = { catalogue: 'RIC', volume: '', section: '', rulers: ['Nero'] };
+  assert.equal(defaultTerm({ ...nero, number: '306 (1st ed.)' }), defaultTerm({ ...nero, number: '306' }));
+  assert.equal(defaultTerm({ ...nero, number: '306 (1. Aufl.)' }), defaultTerm({ ...nero, number: '306' }));
+  assert.doesNotMatch(defaultTerm({ catalogue: 'RIC', volume: 'I', section: '', number: '306 (1st ed.)' }), /ed\./);
+  assert.match(defaultTerm({ catalogue: 'RIC', volume: 'II', section: 'Trajan', number: '253 (aureus)' }), /aureus/);
 });

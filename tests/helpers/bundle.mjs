@@ -68,5 +68,7 @@ export const peopleOn = (id) => {
   const record = recordOf(id);
   return [...(record?.a ?? []), ...(record?.o?.p ?? [])];
 };
+// Who the obverse portrays, as the record itself says: people, gods and personifications alike.
+export const portraitsOn = (id) => recordOf(id)?.o?.p ?? [];
 // Where a coin was struck, as the record itself says: the mint concepts the type carries.
 export const mintsOn = (id) => recordOf(id)?.m ?? [];
