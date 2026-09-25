@@ -300,3 +300,5 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
     watchlist**: the workspace draft says **On your want list** under its Reference. Win a coin of the type: its want
     offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
+    A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
+    leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.
