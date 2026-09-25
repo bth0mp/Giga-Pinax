@@ -28,8 +28,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 1. **The default currency has one home.** In the popup, change **Currency** to EUR, close the popup and open it again.
    Then open **Settings** and the **Calculator** tab.
    *Expected:* the popup still shows EUR, Settings' default currency shows EUR, and the calculator prices in EUR.
-   Changing it in Settings and reopening the popup agrees the same way round. A default prices are not researched in
-   (SEK, JPY) leaves the popup's research currency as it was, and the calculator opens in it.
+   Changing it in Settings and reopening the popup agrees the same way round. A default outside the research currencies
+   (SEK, JPY) leaves the popup's research currency as it was, and the calculator opens in it; choosing a research
+   currency in the popup then leaves that default as it is.
 
 2. **A right-click lookup while the Number field has focus.** Open the lookup window, put the cursor in the catalogue
    number field (**Price number**, **RIC number**, …) and leave it there. On a web page, select a different reference,

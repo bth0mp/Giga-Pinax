@@ -82,8 +82,8 @@ export function moveCompanionTab(current, key) {
 // The stored preference wins over the display cache the research half showed, but it is applied
 // through that half's own change handler rather than by assigning the value: a start-up or
 // handed-over lookup has already priced under the cached currency, and those prices, the acsearch
-// link and the cache itself all have to follow. A value the select already shows is not a change, and a default prices
-// are not researched in (SEK, say) is not one the research select offers, so it keeps its own.
+// link and the cache itself all have to follow. A value the select already shows is not a change, and a default outside
+// the research currencies (SEK, say) is not one the research select offers, so it keeps its own.
 export function applyPreferredCurrency(select, preferred) {
   if (!select || !RESEARCH_CURRENCIES.includes(preferred) || select.value === preferred) return false;
   select.value = preferred;
@@ -938,6 +938,10 @@ async function initCompanionPopup() {
   $('currency').addEventListener('change', () => {
     const chosen = $('currency').value;
     if (!CURRENCIES.includes(chosen)) return;
+    // A default outside the research currencies (SEK, JPY) is the collector's bid currency, which research cannot show:
+    // the research select keeps its own choice (the research form's cache has it) and the default is left alone.
+    const stored = snapshot?.preferences?.currency;
+    if (CURRENCIES.includes(stored) && !RESEARCH_CURRENCIES.includes(stored)) return;
     if (!currencyWritable) {
       if (!currencyNoteShown) announce(CURRENCY_NOT_SAVED, true);
       currencyNoteShown = true;

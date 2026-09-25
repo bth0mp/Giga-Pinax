@@ -27,7 +27,7 @@ function storedCurrency(raw) {
 // display cache of the default currency kept in the local storage the extension's pages share. A
 // page that changes the stored default writes that cache too: without it the next popup priced once
 // in the currency just replaced and then showed an empty panel. Only the currency is written; the
-// rest of the cache belongs to the research form. A default prices are not researched in (SEK, say) is not written:
+// rest of the cache belongs to the research form. A default outside the research currencies (SEK, say) is not written:
 // the research form keeps its own currency.
 export function cacheDefaultCurrency(storage, currency) {
   if (!RESEARCH_CURRENCIES.includes(currency)) return false;
