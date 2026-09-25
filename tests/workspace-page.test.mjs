@@ -4,7 +4,7 @@
 // ask a person to click through.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
+import { createWorkspaceBackground, mountWorkspace, parseHtmlFile, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
 import { exportBackup } from '../extension/core/backup.js';
@@ -1574,6 +1574,11 @@ test('every currency select in the workspace lists every currency', async () => 
   }
   assert.equal(page.$('bid-form').elements.currency.value, 'SEK');
   assert.equal(page.$('bid-form').elements.amount.value, '9500.00');
+  // The markup holds no list of its own: the page fills every select from money.js, the one list there is.
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  for (const select of markup.querySelectorAll('select')) {
+    if (/currency/i.test(select.id || select.getAttribute('name') || '')) assert.equal(select.querySelectorAll('option').length, 0, select.id || select.getAttribute('name'));
+  }
   assert.equal(page.$('outcome-form').elements.hammerCurrency.value, 'SEK', 'the outcome opens in the bid’s currency');
 });
 
@@ -1583,7 +1588,10 @@ test('a JPY 1,200,000 hammer is whole yen in the bid form, the money line, the C
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   await page.openCoin('Taisei lot 88');
   const f = page.$('bid-form').elements;
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['0.01', '0.00']);
   await page.type('bid-form', 'currency', 'JPY');
+  // The budget fold's empty increment and minimum show whole yen.
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['1', '0']);
   await page.type('bid-form', 'amount', '1,200,000');
   await page.type('bid-form', 'premium', '17.5');
   await page.type('bid-form', 'shipping', '3000');
@@ -1594,6 +1602,8 @@ test('a JPY 1,200,000 hammer is whole yen in the bid form, the money line, the C
   assert.equal(stored.costEstimate.shippingMinor, 3000);
   assert.equal(f.amount.value, '1200000', 'the saved figure is written back in whole yen');
   assert.equal(f.shipping.value, '3000');
+  await page.openCoin('Taisei lot 88');
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['1', '0'], 'a coin opened on a yen bid shows whole yen');
 
   page.$('outcome-form').elements.status.value = 'won';
   await page.type('outcome-form', 'hammer', '1200000');
