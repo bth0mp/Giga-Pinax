@@ -2,8 +2,8 @@
 // The workspace's forms and the records they stand for (workspace.js): a coin, its bid and its outcome
 // read into form fields and back, a page's draft read into the coin editor and the auction it offers,
 // and an auction's reminders read into their two controls and back.
-import { FEE_SHEET_FIELDS, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
-import { parsePremiumPercent } from './core/money.js';
+import { FEE_SHEET_FIELDS, buildBidCalculation, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
+import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { bidPremiumRate } from './core/projections.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -105,6 +105,101 @@ export function bidFormValues(lot, locale = 'en-US', fallbackCurrency = 'USD') {
     currency: terms?.amount?.currency ?? fallbackCurrency,
     premium: premiumInputText(terms?.buyerPremiumBps),
   };
+}
+
+// The Bid tab is one form (G-09): the maximum hammer and premium, the fee sheet saved with the bid, and a budget
+// fold, worked out with the calculator's own arithmetic. These read its fields; the page only draws the answers.
+
+// The fee sheet and the budget grid a coin's bid form opens with: the lot's saved fee sheet when it is in the bid's
+// currency, else blank - fees in another currency are never shown as this bid's.
+/**
+ * @param {Lot | null | undefined} lot
+ * @param {string} currency
+ * @returns {Record<string, string>}
+ */
+export function bidFeeFields(lot, currency) {
+  const estimate = lot?.costEstimate?.currency === currency ? lot.costEstimate : null;
+  return {
+    ...feeSheetTexts(estimate),
+    increment: estimate && estimate.incrementMinor !== 1 ? moneyInputText({ currency, minor: estimate.incrementMinor }) : '',
+    minimum: estimate?.minimumBidMinor ? moneyInputText({ currency, minor: estimate.minimumBidMinor }) : '',
+  };
+}
+
+// The bid grid the budget fold types: blank is the fixed grid of one minor unit from nothing.
+const gridMinor = (text, currency, locale, fallback) => {
+  if (!String(text ?? '').trim()) return { ok: true, value: fallback };
+  const parsed = parseMoney(String(text), currency, locale);
+  return parsed.ok ? { ok: true, value: parsed.value.minor } : parsed;
+};
+
+// The fee sheet a bid is saved with: the one typed; none at all (null) when the collector cleared the lot's own sheet
+// in this currency, which takes it off; nothing said (undefined) when there was none to show, so a sheet in another
+// currency stays as it was.
+/**
+ * @param {Lot | null | undefined} lot
+ * @param {Record<string, *>} values the bid form's currency, fee sheet, increment and minimum
+ * @param {string} [locale]
+ * @returns {{ ok: true, value: import('./core/types.js').CostEstimate | null | undefined } | { ok: false, error: { message: string, field: string } }}
+ */
+export function bidEstimateToSend(lot, values, locale = 'en-US') {
+  const currency = String(values.currency);
+  const shown = lot?.costEstimate?.currency === currency ? lot.costEstimate : null;
+  const increment = gridMinor(values.increment, currency, locale, shown?.incrementMinor ?? 1);
+  if (!increment.ok) return { ok: false, error: { message: increment.error.message, field: 'increment' } };
+  if (increment.value < 1) return { ok: false, error: { message: 'Enter an increment greater than zero.', field: 'increment' } };
+  const minimum = gridMinor(values.minimum, currency, locale, shown?.minimumBidMinor ?? 0);
+  if (!minimum.ok) return { ok: false, error: { message: minimum.error.message, field: 'minimum' } };
+  const fees = feeSheetEstimate(values, { currency, locale, incrementMinor: increment.value, minimumBidMinor: minimum.value });
+  if (!fees.ok) return { ok: false, error: { message: fees.error.message, field: fees.error.field } };
+  if (fees.value) return { ok: true, value: fees.value };
+  return { ok: true, value: shown ? null : undefined };
+}
+
+// The live line under the maximum and premium: what the bid costs all in, with the calculator's arithmetic. A line
+// that cannot be worked out says what it is waiting for, and says nothing while the maximum is empty.
+/**
+ * @param {Record<string, *>} values
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function bidLiveLine(values, locale = 'en-US') {
+  if (!String(values.amount ?? '').trim()) return '';
+  const amount = parseMoney(String(values.amount), String(values.currency), locale);
+  if (!amount.ok) return amount.error.message;
+  if (!String(values.premium ?? '').trim()) return 'Add the buyer’s premium to see what this bid costs all in.';
+  const premium = parsePremiumPercent(String(values.premium), locale);
+  if (!premium.ok) return premium.error.message;
+  const fees = feeSheetEstimate(values, { currency: String(values.currency), locale });
+  if (!fees.ok) return fees.error.message;
+  const cost = calculateBidCost(amount.value, premium.value, fees.value ?? {});
+  if (!cost.ok) return cost.error.message;
+  const feeMinor = cost.value.total.minor - cost.value.hammerPlusPremium.minor;
+  return [`≈ ${formatMoney(cost.value.total, locale)} all-in`, `premium ${formatMoney(cost.value.premium, locale)}`,
+    fees.value ? `fees ${formatMoney({ currency: cost.value.total.currency, minor: feeMinor }, locale)}` : 'no fees recorded'].join(' · ');
+}
+
+// The budget fold's answer: the highest hammer whose whole cost fits, on the house's ladder when its preset is chosen
+// and in this currency, else on the increment typed here.
+/**
+ * @param {Record<string, *>} values
+ * @param {{ currency: string, tiers: Array<{ from: number, step: number }> } | null} ladder
+ * @param {string} [locale]
+ * @returns {{ text: string, hammer: import('./core/types.js').Money | null }}
+ */
+export function bidBudgetAnswer(values, ladder, locale = 'en-US') {
+  if (!String(values.budget ?? '').trim()) return { text: 'Type the most you will pay in all, and the highest hammer it allows appears here.', hammer: null };
+  if (!String(values.premium ?? '').trim()) return { text: 'Add the buyer’s premium first: the budget has to cover it.', hammer: null };
+  const texts = Object.fromEntries(FEE_SHEET_FIELDS.map(({ name }) => [name, String(values[name] ?? '')]));
+  const calculated = buildBidCalculation({
+    mode: 'budget', amountText: String(values.budget), premiumText: String(values.premium), currency: String(values.currency), locale, ladder,
+    shippingText: texts.shipping, paymentPercentText: texts.paymentPercent, paymentFixedText: texts.paymentFixed,
+    premiumVatText: texts.premiumVat, platformFeeText: texts.platformFee, importVatText: texts.importVat,
+    incrementText: String(values.increment ?? ''), minimumText: String(values.minimum ?? ''),
+  });
+  if (!calculated.ok) return { text: calculated.error.message, hammer: null };
+  const text = `Maximum hammer ${formatMoney(calculated.value.hammer, locale)} · ${formatMoney(calculated.value.total, locale)} all-in${calculated.ladderNotice ? `. ${calculated.ladderNotice}` : ''}`;
+  return { text, hammer: calculated.value.hammer };
 }
 
 // A dirty form rebased from the record it was populated from onto a newer one: every field the

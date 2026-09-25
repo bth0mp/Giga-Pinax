@@ -674,34 +674,46 @@ test('the Bid tab shows the placed bid, and a settled lot’s is closed with the
   assert.equal(page.$('bid-settled').textContent, 'Settled — re-open the lot under Outcome to change bids.');
 });
 
-// N15: the inline calculator follows the bid just saved. It keeps what the collector typed in it for as long as the
-// coin's saved terms stay the same, and takes the new terms once a save changes them.
-test('the inline calculator follows a bid saved for the coin it shows', async () => {
-  const { calculatorInputsForLot } = await import('../extension/bid-tools.js');
+// G-09: the Bid tab is one form for one figure. Under the maximum and premium a live line says what the bid costs all
+// in; the house preset fills the premium, VAT and platform fee; the Fees fold is the fee sheet saved with the bid; the
+// budget fold answers the highest hammer and puts it in the maximum. A bid saved again keeps the fee sheet it shows.
+test('the Bid tab works out the all-in cost, the preset and the budget in one form, and saves the fee sheet with the bid', async () => {
   const background = await backgroundWithCoins('Nero, denarius');
+  await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'CHF', housePremiumPresets: [{ name: 'Leu', buyerPremiumBps: 2250 }, { name: 'Künker', buyerPremiumBps: 2500, premiumVatBps: 1900 }] } });
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   await page.openCoin('Nero, denarius');
-  let loaded;
-  const applied = () => page.calculatorValues.splice(0).map((values) => {
-    const inputs = calculatorInputsForLot(values, { loadedLotId: loaded });
-    if (inputs) loaded = values.lotId;
-    return inputs;
-  }).filter(Boolean);
-  assert.equal(applied().length, 1, 'opening the coin fills the calculator once');
+  const f = page.$('bid-form').elements;
+  assert.deepEqual(f.preset.options.map((option) => option.textContent), ['No preset', 'Leu', 'Künker']);
+  await page.type('bid-form', 'currency', 'CHF');
+  await page.type('bid-form', 'amount', '1200');
+  assert.equal(page.$('bid-live').textContent, 'Add the buyer’s premium to see what this bid costs all in.');
+  f.preset.value = 'Leu'; await page.$('bid-form').emit('change', { target: f.preset }); await settle();
+  assert.equal(f.premium.value, '22.5');
+  assert.equal(page.$('bid-live').textContent, '≈ CHF\u00a01,470.00 all-in · premium CHF\u00a0270.00 · no fees recorded');
+  await page.type('bid-form', 'shipping', '20');
+  assert.equal(page.$('bid-live').textContent, '≈ CHF\u00a01,490.00 all-in · premium CHF\u00a0270.00 · fees CHF\u00a020.00');
 
-  await page.typeDetails('notes', 'Toned');
-  await page.saveDetails();
-  assert.deepEqual(applied(), [], 'a details save leaves what was typed in the calculator alone');
+  await page.type('bid-form', 'budget', '999');
+  assert.equal(page.$('bid-budget-answer').textContent, 'Maximum hammer CHF\u00a0799.18 · CHF\u00a0999.00 all-in');
+  await page.type('bid-form', 'increment', '10');
+  assert.equal(page.$('bid-budget-answer').textContent, 'Maximum hammer CHF\u00a0790.00 · CHF\u00a0987.75 all-in');
+  let prevented = false;
+  await f.budget.emit('keydown', { key: 'Enter', preventDefault() { prevented = true; } });
+  assert.equal(prevented, true, 'Enter in the budget box never saves a plan');
+  await page.click('use-budget');
+  assert.equal(f.amount.value, '790.00');
 
-  await page.type('bid-form', 'amount', '1300');
-  await page.type('bid-form', 'currency', 'EUR');
-  await page.type('bid-form', 'premium', '20');
-  await page.submit('bid-form', { value: 'place' });
-  assert.deepEqual(storedLot(background, 'Nero, denarius').activeBid.amount, { currency: 'EUR', minor: 130000 });
-  const [after] = applied().slice(-1);
-  assert.equal(after?.currency, 'EUR');
-  assert.equal(after?.amount, '1300.00');
-  assert.equal(after?.premium, '20.00');
+  await page.submit('bid-form', { value: 'plan' });
+  const saved = storedLot(background, 'Nero, denarius');
+  assert.deepEqual(saved.plannedBid, { amount: { currency: 'CHF', minor: 79000 }, buyerPremiumBps: 2250 });
+  assert.deepEqual(saved.costEstimate, { currency: 'CHF', shippingMinor: 2000, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 });
+  assert.equal(f.shipping.value, '20.00', 'the saved fee sheet is what the form shows again');
+  assert.equal(f.increment.value, '10.00');
+  assert.equal(f.paymentPercent.value, '0.00', 'a fee recorded as none reads 0, not blank');
+  // Clearing the sheet it shows takes it off the lot.
+  for (const name of ['shipping', 'paymentPercent', 'paymentFixed']) await page.type('bid-form', name, '');
+  await page.submit('bid-form', { value: 'plan' });
+  assert.equal(Object.hasOwn(storedLot(background, 'Nero, denarius'), 'costEstimate'), false);
 });
 
 // W-04: the details form keeps the five fields a lot page asks for open - title, reference, auction page, notes and

@@ -164,8 +164,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* every amount field reads back in Western digits with a full stop (`1250.50`, `1200.00`, `1450.50`),
     never in Arabic-Indic digits or with the Arabic decimal mark (`١٢٥٠٫٥٠`), and saving the bid and the outcome again
     unchanged succeeds. In **Settings**, a house preset with a premium of `22.5` reads `22.50`, and **Save settings**
-    with nothing touched succeeds. In the workspace's calculator, choosing that house fills **Premium %** with `22.50`,
-    and **Use in bid** fills the bid's amount the same way. Set the language back afterwards.
+    with nothing touched succeeds. On a coin's **Bid** tab, choosing that house under **House preset** fills
+    **Buyer’s premium %** with `22.5`, and **Use as maximum** under **Maximum hammer from a budget** fills the maximum
+    the same way. Set the language back afterwards.
 
 18. **The filter switches.** Look up `Price 23` and select **Get prices**, then look up a reference whose results name
     a denomination.
@@ -227,17 +228,22 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     Demetrius I Poliorcetes · Hemidrachm · Tarsus · Silver · 298–295 BC. Settings → **Local catalogue data** lists PCO
     and AGCO rows. Turn the network back on.
 
-28. **What a won coin really cost.** In the workspace, add a coin, and on its **Bid** tab open the calculator: premium
-    `25`, **VAT on premium %** `19`, shipping `15`. Record a placed bid of `1500` EUR with **Use in bid** and save it.
+28. **What a won coin really cost.** In the workspace, add a coin, and on its **Bid** tab type a maximum of `1500` EUR
+    and premium `25`; under **Fees** type **VAT on premium %** `19` and shipping `15`. The line under the premium reads
+    `≈ €1,961.25 all-in · premium €375.00 · fees €86.25`. Select **Record placed bid**.
     On **Outcome**, record **Won** with a hammer of `1300` EUR, tick **Add a won coin to collection history** and save.
     Open **History**.
     *Expected:* the coin's card reads `EUR  Hammer 1,300.00 · Premium 325.00 · Fees 76.75 · Total 1,701.75` on one
     line, figures right-aligned, with "Premium 25% · VAT on premium 61.75 · shipping 15.00" under it; the collection
     entry shows the same line, and the table's **Total cost** for EUR is €1,701.75. In **Settings**, change the house's
-    premium; back on History nothing has moved. Win a second coin with no bid recorded.
-    *Expected:* its total reads **Incomplete**, the line under it says no premium rate is on its bid and no fees were
-    saved, and the table shows `€1,701.75 (1 of 2)`. **Export CSV** of the lots and check `total_cost` is `1701.75` for
-    the first and blank, with `total_cost_missing` `premium-rate fees`, for the second. At phone width the money line
+    premium; back on History nothing has moved. Win a second coin with no bid recorded, leaving **Buyer’s premium %**
+    on its Outcome tab blank.
+    *Expected:* its total reads **Incomplete** in the warning colour, the line under it says no premium rate was
+    recorded, **Add the premium rate** opens the coin's Outcome tab on that field, and the table shows
+    `€1,701.75 (1 of 2)`. **Export CSV** of the lots and check `total_cost` is `1701.75` for the first and blank, with
+    `total_cost_missing` `premium-rate fees`, for the second. Type `20` in its premium and save the outcome again.
+    *Expected:* its line reads `Fees not recorded` and a **Total** of hammer + premium, with **Add fees**; the table's
+    cell says `(1 without fees)`. At phone width the money line
     folds to two columns and never pushes the page sideways.
 
 29. **A collection entry you correct, and one that follows the outcome.** With two won coins in collection history,

@@ -367,7 +367,9 @@ export function buildLotSaveCommand(lot, expectedRevision, newRequestId = reques
  */
 export function buildBidSaveCommand(action, basis, bid, costEstimate, newRequestId = requestId) {
   const command = { type: action === 'place' ? 'bid.place' : 'bid.plan', requestId: newRequestId(), lotId: basis.id, expectedRevision: basis.revision, [action === 'place' ? 'activeBid' : 'plannedBid']: bid };
-  if (costEstimate?.currency === bid?.amount?.currency) command.costEstimate = structuredClone(costEstimate);
+  // A fee sheet cleared from the form (null) takes the lot's off; one in another currency is never sent.
+  if (costEstimate === null) command.costEstimate = null;
+  else if (costEstimate?.currency === bid?.amount?.currency) command.costEstimate = structuredClone(costEstimate);
   return command;
 }
 

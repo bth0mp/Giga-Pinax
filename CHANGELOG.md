@@ -14,6 +14,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- A coin's **Bid** tab is one form: under **Maximum hammer** and **Buyer’s premium %** a line says what the bid costs all in (`≈ CHF 1,470.00 all-in · premium CHF 270.00 · no fees recorded`), **House preset** on the premium row fills the premium, VAT and platform fee, **Fees** folds the fee sheet saved with the bid, and **Maximum hammer from a budget** folds the budget with **Use as maximum**. The second calculator that repeated the same fields under the form is gone; the popup keeps its Calculator tab. A fee sheet cleared from the form is taken off the coin.
 - A won coin whose fees were never recorded no longer reads **Incomplete**: its line shows `Fees not recorded` and a **Total** of hammer + premium, labelled so, with **Add fees**, which opens its fees fold. The collection's **Total cost** counts it the same way and says how many had no fees ("(1 without fees)"). **Incomplete**, now in the warning colour, is kept for a total that cannot be worked out (no hammer, no premium rate, fees in another currency), and it names the one figure to fill with a link to that field on the coin's **Outcome** tab. The stored cost and the CSV still say `fees` is missing: nothing is estimated in the data.
 
 ### Fixed

@@ -3,11 +3,11 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
-import { FEE_SHEET_FIELDS, mountBidCalculator } from './bid-tools.js';
+import { FEE_SHEET_FIELDS, formatMinorInput } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
-  bidFormValues, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
+  bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
 } from './workspace-forms.js';
 import {
@@ -48,8 +48,6 @@ async function initWorkspace() {
   let comparisonSelection = [];
   let lotInteractionGeneration = 0;
   let lastLotUndo = null;
-  let bidCalculator = null;
-  let calculatorCostEstimate = null;
   let eventReturnLot = null;
   let activeDetailTab = 'details';
   let eventDraftId = null;
@@ -613,6 +611,7 @@ async function initWorkspace() {
     const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id));
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
+    renderBidPresets();
     renderCoinList(); renderComparisonPicker(); renderGroups(); renderSelectedLot();
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
@@ -819,15 +818,36 @@ async function initWorkspace() {
     const value = { amount: money.value }; if (form.premium.value.trim()) { const premium = parsePremiumPercent(form.premium.value, navigator.language); if (!premium.ok) return premium; value.buyerPremiumBps = premium.value; }
     return { ok: true, value };
   };
+  // One form for one figure (G-09): the maximum and premium, the fee sheet saved with the bid, and the budget fold, all
+  // read from the coin; the house preset and the budget are the collector's to choose again for each coin.
   function populateBidForm(lot) {
     const f = $('bid-form').elements;
-    const terms = lot?.activeBid ?? lot?.plannedBid;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
-    calculatorCostEstimate = lot?.costEstimate?.currency === f.currency.value ? structuredClone(lot.costEstimate) : null;
-    // The calculator refills only for another coin or for saved terms that changed (it compares this key), so what the
-    // collector typed in it survives every other re-render, and a bid just saved is followed.
-    const termsKey = lot ? [lot.id, f.currency.value, terms?.amount?.minor ?? '', terms?.buyerPremiumBps ?? '', JSON.stringify(calculatorCostEstimate)].join('|') : null;
-    bidCalculator?.setValues({ lotId: termsKey, currency: f.currency.value, hammerMinor: terms?.amount?.minor ?? null, buyerPremiumBps: terms?.buyerPremiumBps ?? null, costEstimate: calculatorCostEstimate });
+    for (const [field, value] of Object.entries(bidFeeFields(lot, f.currency.value))) f[field].value = value;
+    f.preset.value = ''; f.budget.value = '';
+    $('bid-fees').open = Boolean(lot?.costEstimate && lot.costEstimate.currency === f.currency.value);
+    updateBidAnswers();
+  }
+  const bidValues = () => {
+    const f = $('bid-form').elements;
+    return Object.fromEntries(['amount', 'currency', 'premium', 'budget', 'increment', 'minimum', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value]));
+  };
+  const chosenPreset = () => (snapshot.preferences?.housePremiumPresets ?? []).find((item) => item.name === $('bid-form').elements.preset.value) ?? null;
+  // The live all-in line, and the budget fold's answer with its "Use as maximum".
+  let budgetHammer = null;
+  function updateBidAnswers() {
+    const values = bidValues();
+    $('bid-live').textContent = bidLiveLine(values, navigator.language);
+    const ladder = chosenPreset()?.incrementLadder ?? null;
+    const answer = bidBudgetAnswer(values, ladder, navigator.language);
+    $('bid-budget-answer').textContent = answer.text; budgetHammer = answer.hammer;
+    $('use-budget').disabled = !budgetHammer || $('bid-fields').disabled;
+  }
+  // The house presets Settings keeps, offered on the premium row; the one chosen stays chosen while it exists.
+  function renderBidPresets() {
+    const select = $('bid-form').elements.preset; const chosen = select.value;
+    select.replaceChildren(Object.assign(text('option', 'No preset'), { value: '' }), ...(snapshot.preferences?.housePremiumPresets ?? []).map((item) => Object.assign(text('option', item.name), { value: item.name })));
+    select.value = [...select.options].some((option) => option.value === chosen) ? chosen : '';
   }
   // Beside the maximum hammer, what the coin's own saved comparables sold for: in the bid's currency, the other
   // currencies only counted, never converted or pooled, and worded as the collector's own records.
@@ -858,18 +878,38 @@ async function initWorkspace() {
     });
     strip.append(add);
   }
-  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); });
+  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); updateBidAnswers(); });
+  // A house's terms are its premium and what it charges on top; a house without VAT or a platform fee clears the one
+  // the last house left.
+  $('bid-form').addEventListener('change', (event) => {
+    const f = $('bid-form').elements; const preset = chosenPreset();
+    if (event.target !== f.preset || !preset) return;
+    f.premium.value = premiumInputText(preset.buyerPremiumBps);
+    f.premiumVat.value = formatMinorInput(preset.premiumVatBps); f.platformFee.value = formatMinorInput(preset.platformFeeBps);
+    if (preset.premiumVatBps || preset.platformFeeBps) $('bid-fees').open = true;
+    $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  // Enter in the budget box works the answer out; it never saves a plan.
+  $('bid-form').elements.budget.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); updateBidAnswers(); } });
+  $('use-budget').addEventListener('click', () => {
+    if (!budgetHammer) return;
+    const f = $('bid-form').elements; f.amount.value = moneyInputText(budgetHammer, navigator.language); f.currency.value = budgetHammer.currency;
+    $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+    f.amount.focus();
+  });
   const loadBidEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);
     setBasis('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     populateBidForm(lot);
   };
-  bidCalculator = mountBidCalculator($('workspace-calculator'), { currency: snapshot.preferences?.currency ?? 'USD', compact: false, onUseHammer: ({ hammer, buyerPremiumBps, costEstimate }) => {
-    calculatorCostEstimate = costEstimate ?? null;
-    const f = $('bid-form').elements; f.amount.value = moneyInputText(hammer, navigator.language); f.currency.value = hammer.currency; f.premium.value = premiumInputText(buyerPremiumBps);
-    for (const control of [f.amount, f.currency, f.premium]) control.dispatchEvent(new Event('input', { bubbles: true }));
-  } });
-  $('bid-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f); if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true); const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return; void send(buildBidSaveCommand(action, basis, parsed.value, calculatorCostEstimate), 'bid'); });
+  $('bid-form').addEventListener('submit', (event) => {
+    event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f);
+    if (!basis?.id || !parsed.ok) return announce(parsed.error?.message ?? 'Choose a lot.', true);
+    const estimate = bidEstimateToSend(basis.record, bidValues(), navigator.language);
+    if (!estimate.ok) { const details = f[estimate.error.field]?.closest('details'); if (details) details.open = true; f[estimate.error.field]?.focus(); return announce(estimate.error.message, true); }
+    const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return;
+    void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid');
+  });
   $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
 
   function renderEvents() {

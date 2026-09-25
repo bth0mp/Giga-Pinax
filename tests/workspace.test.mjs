@@ -17,7 +17,7 @@ import {
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
-  lotFieldForPath, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
+  lotFieldForPath, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidLiveLine, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
 import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
@@ -913,15 +913,34 @@ test('workspace bid command carries only a matching calculator estimate atomical
   assert.equal(buildBidSaveCommand('place', { id: 'lot-a', revision: 3 }, { amount: { currency: 'EUR', minor: 10000 } }, estimate, () => 'bid-2').costEstimate, undefined);
 });
 
-test('the bid calculator sits outside the bid form so Enter in it cannot save a plan', () => {
+// G-09: the workspace mounts no second calculator; the Bid tab's fee sheet is the calculator's, field for field.
+test('the Bid tab holds the calculator’s fee sheet and budget, and no second calculator', async () => {
+  const { FEE_SHEET_FIELDS } = await import('../extension/bid-tools.js');
   const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
-  const calculator = markup.getElementById('workspace-calculator');
-  const bidForm = markup.getElementById('bid-form');
-  assert.ok(calculator, 'the calculator is still mounted');
-  assert.ok(bidForm, 'the bid form is present');
-  // The control that is inside the form shows the reading is real before the one outside it is read.
-  assert.equal(bidForm.querySelector('input').closest('form'), bidForm);
-  assert.equal(calculator.closest('form'), null, 'and no form encloses the calculator');
+  assert.equal(markup.getElementById('workspace-calculator'), null);
+  const bid = markup.getElementById('bid-form').elements;
+  const outcome = markup.getElementById('outcome-form').elements;
+  for (const { name } of FEE_SHEET_FIELDS) {
+    assert.ok(bid[name], `Bid tab ${name}`);
+    assert.ok(outcome[name], `Outcome tab ${name}`);
+  }
+  assert.ok(bid.budget && bid.increment && bid.minimum && bid.preset);
+});
+
+test('the bid form reads its fee sheet, its live line and its budget with the calculator’s arithmetic', () => {
+  const eur = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0, premiumVatBps: 1900 };
+  assert.deepEqual(bidFeeFields({ costEstimate: eur }, 'EUR'), { premiumVat: '19.00', platformFee: '', importVat: '', shipping: '15.00', paymentPercent: '0.00', paymentFixed: '0.00', increment: '10.00', minimum: '' });
+  assert.equal(bidFeeFields({ costEstimate: eur }, 'CHF').shipping, '', 'a sheet in another currency is not this bid’s');
+  assert.deepEqual(bidEstimateToSend({ costEstimate: eur }, { currency: 'EUR', shipping: '15', premiumVat: '19' }).value, eur);
+  assert.equal(bidEstimateToSend({ costEstimate: eur }, { currency: 'EUR' }).value, null, 'cleared: taken off');
+  assert.equal(bidEstimateToSend({ costEstimate: eur }, { currency: 'CHF' }).value, undefined, 'never shown: left alone');
+  assert.equal(bidEstimateToSend({}, { currency: 'EUR', increment: '0' }).error.field, 'increment');
+  assert.equal(bidLiveLine({ amount: '1000', currency: 'EUR', premium: '25', premiumVat: '19' }), '≈ €1,297.50 all-in · premium €250.00 · fees €47.50');
+  assert.equal(bidLiveLine({ amount: '', currency: 'EUR', premium: '25' }), '');
+  assert.deepEqual(bidBudgetAnswer({ budget: '1297.50', premium: '25', premiumVat: '19', currency: 'EUR' }, null).hammer, { currency: 'EUR', minor: 100000 });
+  const ladder = { currency: 'EUR', tiers: [{ from: 0, step: 5000 }] };
+  assert.deepEqual(bidBudgetAnswer({ budget: '1297.50', premium: '25', premiumVat: '19', currency: 'EUR' }, ladder).hammer, { currency: 'EUR', minor: 100000 });
+  assert.deepEqual(bidBudgetAnswer({ budget: '1297.49', premium: '25', premiumVat: '19', currency: 'EUR' }, ladder).hammer, { currency: 'EUR', minor: 95000 }, 'on the house’s ladder');
 });
 
 test('workspace rejects malformed nonempty measurements instead of omitting them', () => {
