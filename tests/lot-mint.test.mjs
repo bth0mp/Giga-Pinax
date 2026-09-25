@@ -92,3 +92,20 @@ test('over the bundled catalogue, across RIC VI–IX, a heading\'s mint opens on
   }
   assert.ok(opened > 50 && offered > 50, `${opened} opened, ${offered} offered`);
 });
+
+// Loop Q-08: "Octavian as Augustus" opens Augustus's coin, and never a coin the heading "Augustus" would not open.
+test('over the bundled catalogue, an Octavian heading opens only the Augustus coin an Augustus heading opens', { skip }, async () => {
+  const opened = await lookup('Octavian as Augustus, 27 BC – 14 AD. Denarius. RIC 207.');
+  assert.equal(opened.status, 'ok');
+  assert.equal(opened.card.label, 'RIC I (second edition) Augustus 207');
+  let singles = 0;
+  for (let number = 1; number <= 560; number += 1) {
+    const octavian = await lookup(`Octavian as Augustus, 27 BC – 14 AD. Denarius. RIC ${number}.`);
+    if (octavian.status !== 'ok') continue;
+    singles += 1;
+    const augustus = await lookup(`Augustus, 27 BC – 14 AD. Denarius. RIC ${number}.`);
+    // Augustus's own coin, or one filed under another ruler with his portrait (Divus Augustus under Tiberius), exactly as "Augustus" opens it.
+    assert.equal(octavian.card.id, augustus.card?.id, `RIC ${number}: ${octavian.card.id}`);
+  }
+  assert.ok(singles > 200, `${singles} single answers`);
+});

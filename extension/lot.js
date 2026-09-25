@@ -395,8 +395,12 @@ function rulersIn(text) {
     if (!lower.includes(probe)) continue;
     rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
   }
-  return [...new Set(found.sort((a, b) => a[0] - b[0]).map(([, name]) => name))];
+  return [...new Set(found.sort((a, b) => a[0] - b[0]).flatMap(([, name]) => [name, ...(FILED_UNDER[name] ?? [])]))];
 }
+// The one ruler RIC files under another's name: RIC I² heads no section with Octavian and lists every coin of his under Augustus, so a heading naming
+// him ("Octavian as Augustus, 27 BC – 14 AD") names Augustus beside him for the lookup, as the card's own filing note says. A closed table from RIC's
+// filing, not a spelling: Octavian stays Octavian, and nobody else is widened.
+const FILED_UNDER = Object.freeze({ Octavian: Object.freeze(['Augustus']) });
 
 // Where a lot's heading ends. The rulers are read from it alone: a legend is the coin's own words ("IMP CAES NERVA TRAIAN AVG"), and from the type
 // description on the text says what is pictured, not who struck it.

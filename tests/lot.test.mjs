@@ -1424,3 +1424,18 @@ test('the provenance reader takes a bare lot number behind the date, splits at "
     assert.deepEqual(readProvenance(text), [], text);
   }
 });
+
+// Loop Q-08: Naville and NAC head Augustus's coins "Octavian as Augustus"; the heading reads Octavian, whom RIC I² heads no section with and under
+// whose name no bundled type is filed, so the lookup offered every RIC 207 from Augustus to Hadrian. RIC files every Octavian coin under Augustus: a
+// heading naming Octavian names Augustus beside him, and no other name gets that rule.
+test('a heading naming Octavian names Augustus beside him, as RIC files his coins', () => {
+  assert.deepEqual(findReferences('Octavian as Augustus, 27 BC – 14 AD. Denarius. RIC 207.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Octavian, 44-27 BC. Denarius, 29-27 BC. RIC 267.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Octavian and Agrippa. Nemausus. As. RIC 155.').rulers, ['Octavian', 'Augustus', 'Agrippa']);
+  // Augustus named as well is still named once, and a heading naming only Augustus, or neither, is read as before.
+  assert.deepEqual(findReferences('Octavian, later Augustus. Augustus. Denarius. RIC 207.').rulers, ['Octavian', 'Augustus']);
+  assert.deepEqual(findReferences('Augustus, 27 BC – 14 AD. Denarius. RIC 207.').rulers, ['Augustus']);
+  assert.deepEqual(findReferences('Octavia. Cistophorus. RIC 409.').rulers.includes('Augustus'), false);
+  // A legend or a provenance naming him is no heading.
+  assert.deepEqual(findReferences('Nero. Denarius. Ex Octavian collection, 1990. RIC 53.').rulers, ['Nero']);
+});
