@@ -2548,3 +2548,21 @@ test('Back to coins from a coin beyond the drawn rows focuses the coin filter', 
   await page.click('back-to-coins');
   assert.ok(page.document.activeElement?.dataset?.lotId === storedLot(background, 'Coin 001').id);
 });
+
+// Fix round, Minor 7 (K-18): Add auction from a coin shows the Auctions route before it gives the Name field the keyboard,
+// so the focus lands on a field the collector can see.
+test('Add auction from a coin focuses the auction name once its route is shown', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  for (const id of ['selected-no-sale', 'lot-add-auction', 'edit-selected-event']) {
+    await page.navigate('#watchlist');
+    const name = page.$('event-form').elements.name;
+    let shownAtFocus = null;
+    const focus = name.focus.bind(name);
+    name.focus = () => { shownAtFocus = !page.$('route-auctions').hidden && !page.$('event-form').hidden; focus(); };
+    await page.click(id);
+    assert.equal(shownAtFocus, true, `${id}: the Name field was focused on a shown route`);
+    name.focus = focus;
+  }
+});
