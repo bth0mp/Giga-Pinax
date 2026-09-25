@@ -441,7 +441,7 @@ test('a worker restarted after a failed capture leaves the warning standing', as
 test('a reconcile nobody asked for says so when it fails instead of stopping the reminders in silence', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
   // A root the repair cannot rescue: every command that reads it fails, including the reconcile.
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const logged = [];
   const realError = console.error;
   console.error = (...args) => { logged.push(args.map(String).join(' ')); };
@@ -479,7 +479,7 @@ test('a reconcile nobody asked for says so when it fails instead of stopping the
 // Each warning stands until its own condition is met, so answering one must not take the other off the toolbar.
 test('a capture failure under a standing reconcile failure leaves the reconcile warning up', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const realError = console.error;
   console.error = () => {};
   try {
@@ -566,7 +566,7 @@ test('an expired or already-used draft link is not recorded as a failure', async
 
 test('a failed reminder reconcile, a capture that cannot be shown and a lookup window that cannot open are recorded', async () => {
   const intact = structuredClone(stored[STORAGE_KEY]);
-  stored[STORAGE_KEY].lots = 'not a list';
+  delete stored[STORAGE_KEY].lots;
   const realError = console.error;
   console.error = () => {};
   try {

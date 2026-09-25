@@ -50,12 +50,12 @@ export const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import', 'quarantine.restore',
+  'backup.import', 'quarantine.restore', 'store.reset',
   'want.save', 'want.delete', 'want.found',
 ]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set', 'backup.import',
-  'quarantine.restore',
+  'quarantine.restore', 'store.reset',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
 // A removal whose reply carries the whole record, for Undo. Past the bound that copy is the one thing it may give up,
@@ -919,6 +919,18 @@ function mutation(snapshot, command, context) {
       value = { mode: command.mode, counts: preview.value.counts };
       break;
     }
+    // A fresh start over records nothing could read (X-02): the writer runs it only over the empty root it put in their
+    // place, and only for the page that read the rescue copy at this revision. Anything holding records is refused.
+    case 'store.reset': {
+      if (command.expectedRevision !== snapshot.revision) {
+        return fail('conflict', 'The stored data changed after it was downloaded. Download it again, then start fresh.', 'expectedRevision');
+      }
+      const holding = ['lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries', 'alerts', 'wants', 'quarantine']
+        .some((key) => (snapshot[key]?.length ?? 0) > 0) || snapshot.preferences !== null;
+      if (holding) return fail('validation', 'Your records can be read, so nothing was reset.', 'type');
+      value = { reset: true };
+      break;
+    }
     default:
       return fail('unsupported', `Unsupported command: ${String(command.type)}`, 'type');
   }
@@ -975,6 +987,24 @@ export function applyCommand(snapshot, command, context) {
   return mutation(snapshot, command, context);
 }
 
+// The two commands that may run over records nothing can read: a Replace import that says it means to, and a fresh start.
+const recoversUnreadable = (command) => command.type === 'store.reset' ||
+  (command.type === 'backup.import' && command.mode === 'replace' && command.overUnreadable === true);
+
+// What a recovery runs over in place of records nothing can read: an empty root, counted on from the revision the rescue
+// copy reported, so a page that read that copy is the one whose command runs, and every open page hears of the change.
+/**
+ * @param {*} raw
+ * @param {string} now
+ * @returns {Snapshot}
+ */
+function unreadableBase(raw, now) {
+  const base = createEmptySnapshot(now);
+  const revision = raw?.revision;
+  base.revision = Number.isSafeInteger(revision) && revision >= 0 && revision <= LIMITS.usableRevision ? revision : 0;
+  return base;
+}
+
 /**
  * @param {*} command
  * @param {string} code
@@ -1023,6 +1053,7 @@ export function createCommandWriter(storageArea, context) {
       };
     }
     let stored = migrateSnapshot(raw);
+    let recovering = false;
     // A revision above the usable ceiling has to be restarted before anything else looks at the root, because it is
     // valid: validation accepts it, so the repair pass below would never run, and the record would be locked at its
     // very next write. The scan walks the records already about to be validated, changes nothing when there is nothing
@@ -1046,8 +1077,19 @@ export function createCommandWriter(storageArea, context) {
       const rescued = current.error.code === 'unsupported-schema' && current.error.path === 'schemaVersion'
         ? current
         : quarantineInvalidRecords(stored, getNow(context));
-      if (!rescued.ok) return errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`);
-      stored = rescued.value;
+      if (!rescued.ok) {
+        // Records nothing can read stop every command but the ways out of them (X-02): the rescue copy above, and a Replace
+        // import or a fresh start, which the page offers only once that copy is on disk. Both run over an empty root.
+        if (!recoversUnreadable(command)) {
+          return {
+            ...errorReply(command, 'storage', 'not-committed', `Stored data is invalid: ${current.error.message}`),
+            reason: 'unreadable',
+            ...(Number.isSafeInteger(raw?.schemaVersion) && raw.schemaVersion > SCHEMA_VERSION ? { newerVersion: true } : {}),
+          };
+        }
+        stored = unreadableBase(raw, getNow(context));
+        recovering = true;
+      } else stored = rescued.value;
     }
 
     // An entry left behind by an outcome corrected before 0.36 follows its won lot from this read on; nothing is
@@ -1059,6 +1101,10 @@ export function createCommandWriter(storageArea, context) {
     }
     const prior = stored.recentCommands.find(({ requestId }) => requestId === command.requestId);
     if (prior) return prior.reply;
+    // A fresh start is only ever over records nothing can read; over readable ones it would be a removal of everything.
+    if (command.type === 'store.reset' && !recovering) {
+      return errorReply(command, 'validation', 'not-committed', 'Your records can be read, so nothing was reset.');
+    }
 
     // Internal delivery commands are reproducible from authoritative alert state. Drop their
     // older ledger entries before each new write so they can spend, then replenish, the

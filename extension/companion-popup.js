@@ -1012,7 +1012,10 @@ async function initCompanionPopup() {
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
       showStorageUnavailable();
-      announce(reply?.message || STORAGE_UNAVAILABLE, true);
+      // Records nothing can read get the recovery notice at the top of the popup (X-02), not a raw sentence.
+      const unreadable = reply?.reason === 'unreadable';
+      announce(unreadable ? 'Your records can’t be read. The notice at the top of this window has the ways out.' : reply?.message || STORAGE_UNAVAILABLE, true);
+      if (unreadable) void import('./store-recovery.js').then(({ mountRecovery }) => mountRecovery({ document, bridge, reply })).catch(() => {});
     }
     snapshotRead();
     bridge.subscribeToSnapshots((incoming) => {

@@ -705,7 +705,7 @@ function loadBridge(browser) {
   const url = new URL('../../extension/browser-api.js', import.meta.url);
   const context = vm.createContext({ browser, crypto: { randomUUID: testUuid }, Promise, Error });
   vm.runInContext(pageSource(url), context, { filename: url.pathname });
-  return Object.fromEntries(['sendCommand', 'getSnapshot', 'subscribeToSnapshots', 'requestNotificationPermission']
+  return Object.fromEntries(['sendCommand', 'getSnapshot', 'subscribeToSnapshots', 'requestNotificationPermission', 'newRequestId']
     .map((name) => [name, context[name]]));
 }
 
@@ -751,6 +751,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     // straight from the bridge, the path every other record takes.
     importModule: async (specifier) => {
       if (bridge && specifier === './browser-api.js') return bridge;
+      // The recovery notice for records nothing can read (X-02) is a module of the store's, loaded when it is needed.
+      if (specifier === './store-recovery.js') return import('../../extension/store-recovery.js');
       throw new Error(`No module ${specifier} in this sandbox.`);
     },
     requestAnimationFrame: (callback) => callback(),

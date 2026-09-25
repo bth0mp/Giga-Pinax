@@ -1390,7 +1390,8 @@ test('damaged settings, schedule, scratch or root counter no longer lock the sto
 
 test('snapshot.raw returns an unusable stored root exactly as stored', async () => {
   const stored = createEmptySnapshot(NOW);
-  stored.lots = { id: 'not-a-uuid', title: 'Rescue me' };
+  delete stored.lots;
+  stored.alerts = { id: 'not-a-uuid', title: 'Rescue me' };
   stored.scheduler = 'corrupt';
   const storage = memoryStorage(stored);
   const writer = createCommandWriter(storage, context());
@@ -1403,6 +1404,7 @@ test('snapshot.raw returns an unusable stored root exactly as stored', async () 
     expectedRevision: null, lot: { title: 'New', sourceLinks: [] },
   }));
   assert.equal(blocked.code, 'storage');
+  assert.equal(blocked.reason, 'unreadable');
 });
 
 test('scheduler reconciliation persists occurrences and one next wake', () => {
@@ -2849,4 +2851,97 @@ test('X-01: Undo of a removal at the bound is refused as putting the coin back',
   const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
   assert.equal(undo.ok, false);
   assert.match(undo.message, /^Putting this coin back would take your records to 5\.\d\d MB/);
+});
+
+// X-02: records nothing can read stop every command but the ways out, and say so in a way a page can recognise. The
+// raw rescue copy always works; a Replace import that says it means to, and a fresh start, run over an empty root.
+const unreadableRoots = () => [
+  ['a newer version', { ...createEmptySnapshot(NOW), schemaVersion: 99, revision: 41, lots: [plainLot(uuid())] }],
+  ['a string', 'not a root'],
+  ['an empty object', {}],
+];
+
+test('X-02: an unreadable root answers every page with reason unreadable, and still gives its rescue copy', async () => {
+  for (const [label, raw] of unreadableRoots()) {
+    const storage = memoryStorage(raw);
+    const writer = createCommandWriter(storage, context());
+    const read = await writer.commitCommand(command('snapshot.get'));
+    assert.equal(read.ok, false, label);
+    assert.equal(read.reason, 'unreadable', label);
+    assert.equal(read.newerVersion, label === 'a newer version' ? true : undefined, label);
+    const save = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'New', sourceLinks: [] } }));
+    assert.equal(save.reason, 'unreadable', label);
+    const rescue = await writer.commitCommand(command('snapshot.raw'));
+    assert.equal(rescue.ok, true, label);
+    assert.deepEqual(rescue.value, raw, label);
+    // Neither a merge nor a Replace that does not say it means to replace unreadable records gets past.
+    const document = exportBackup(createEmptySnapshot(NOW), NOW).value;
+    for (const extra of [{ mode: 'merge', overUnreadable: true }, { mode: 'replace' }]) {
+      const refused = await writer.commitCommand(command('backup.import', { expectedRevision: rescue.revision, document, ...extra }));
+      assert.equal(refused.reason, 'unreadable', `${label} ${JSON.stringify(extra)}`);
+    }
+    assert.deepEqual(storage.read(), raw, `${label}: nothing written`);
+  }
+});
+
+test('X-02: a Replace import of a good backup is taken over an unreadable root', async () => {
+  const raw = { ...createEmptySnapshot(NOW), schemaVersion: 99, revision: 41, lots: [plainLot(uuid())] };
+  const storage = memoryStorage(raw);
+  const writer = createCommandWriter(storage, context());
+  const good = createEmptySnapshot(NOW);
+  good.lots.push(plainLot(uuid(), { title: 'From the backup' }));
+  const document = exportBackup(good, NOW).value;
+  const rescue = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(rescue.revision, 41);
+  // Counted from the revision the rescue copy reported: a page that read another is refused.
+  const stale = await writer.commitCommand(command('backup.import', { expectedRevision: 40, mode: 'replace', overUnreadable: true, document }));
+  assert.equal(stale.code, 'conflict');
+  const imported = await writer.commitCommand(command('backup.import', { expectedRevision: 41, mode: 'replace', overUnreadable: true, document }));
+  assert.equal(imported.ok, true, imported.message);
+  assert.equal(storage.read().revision, 42);
+  assert.deepEqual(storage.read().lots.map(({ title }) => title), ['From the backup']);
+  assert.equal((await writer.commitCommand(command('snapshot.get'))).ok, true);
+});
+
+test('X-02: start fresh resets only records nothing can read, counted on from the rescue copy', async () => {
+  const raw = 'not a root';
+  const storage = memoryStorage(raw);
+  const writer = createCommandWriter(storage, context());
+  const rescue = await writer.commitCommand(command('snapshot.raw'));
+  assert.equal(rescue.revision, 0);
+  const wrong = await writer.commitCommand(command('store.reset', { expectedRevision: 3 }));
+  assert.equal(wrong.code, 'conflict');
+  assert.equal(storage.read(), raw);
+  const reset = command('store.reset', { expectedRevision: 0 });
+  const done = await writer.commitCommand(reset);
+  assert.equal(done.ok, true, done.message);
+  assert.deepEqual(done.value, { reset: true });
+  const fresh = await writer.commitCommand(command('snapshot.get'));
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.value.revision, 1);
+  assert.deepEqual(fresh.value.lots, []);
+  // The same request again is answered from the ledger, not refused as a reset over readable records.
+  assert.deepEqual(await writer.commitCommand(reset), done);
+  // A new one over records that can be read is refused, and nothing is written.
+  const saved = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'Kept', sourceLinks: [] } }));
+  assert.equal(saved.ok, true);
+  const before = storage.read();
+  const refused = await writer.commitCommand(command('store.reset', { expectedRevision: before.revision }));
+  assert.equal(refused.ok, false);
+  assert.equal(refused.message, 'Your records can be read, so nothing was reset.');
+  assert.deepEqual(storage.read(), before);
+  // Nor can applyCommand reset a root that holds anything.
+  const direct = applyCommand(before, command('store.reset', { expectedRevision: before.revision }), context());
+  assert.equal(direct.ok, false);
+});
+
+test('X-02: a collection that is no list is set aside whole, and the other records still open', async () => {
+  const kept = plainLot(uuid(), { title: 'Still here' });
+  const raw = { ...createEmptySnapshot(NOW), lots: [kept], auctionEvents: 'x' };
+  const storage = memoryStorage(raw);
+  const read = await createCommandWriter(storage, context()).commitCommand(command('snapshot.get'));
+  assert.equal(read.ok, true, read.message);
+  assert.deepEqual(read.value.lots.map(({ title }) => title), ['Still here']);
+  assert.deepEqual(read.value.auctionEvents, []);
+  assert.deepEqual(read.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['auctionEvents', 'x', 'invalid-record']]);
 });

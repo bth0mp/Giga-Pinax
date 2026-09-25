@@ -10,6 +10,7 @@ import * as diagnostics from '../extension/core/diagnostics.js';
 import * as companionPreferences from '../extension/companion-preferences.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as money from '../extension/core/money.js';
+import * as storeRecovery from '../extension/store-recovery.js';
 import { SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, validateSnapshot } from '../extension/core/records.js';
 import { GIGA_PREFERENCES_KEY } from '../extension/companion-preferences.js';
 import { LOCAL_CORPORA, catalogueMetadataText } from '../extension/local-catalogue.js';
@@ -116,7 +117,7 @@ function loadSettings({
   };
 
   const sandbox = {
-    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv,
+    ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv, ...storeRecovery,
     diagnosticsText: diagnostics.diagnosticsText,
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
@@ -1531,4 +1532,120 @@ test('Settings names the buyer’s premium in the glossary’s words', async () 
   assert.doesNotMatch(html, /buyer premium/i);
   const captions = [...page.document.querySelectorAll('span')].map((span) => span.textContent);
   assert.ok(captions.some((caption) => caption.startsWith('Buyer’s premium %')), JSON.stringify(captions));
+});
+
+// --- X-02: records nothing can read ------------------------------------------------------------------
+
+const UNREADABLE = { ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.', reason: 'unreadable' };
+// A store whose records cannot be read: every read says so, the rescue copy answers with what storage holds at
+// revision 41, and a reset or a Replace import brings a readable root back.
+function unreadableStore(extra = () => null) {
+  return (command, state) => {
+    const answered = extra(command, state);
+    if (answered) return answered;
+    if (command.type === 'snapshot.raw') return { ok: true, requestId: command.requestId, revision: 41, value: 'not a root' };
+    if (command.type === 'store.reset' || command.type === 'backup.import') {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, requestId: command.requestId, revision: 42, value: command.type === 'store.reset' ? { reset: true } : { mode: 'replace' } };
+    }
+    return UNREADABLE;
+  };
+}
+
+test('X-02: Settings over unreadable records puts the ways out at the top, not at the foot', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  const notice = page.element('store-recovery');
+  assert.ok(notice, 'the notice is drawn');
+  assert.equal(page.document.querySelector('main').children[0], notice, 'first in the page');
+  assert.equal(notice.getAttribute('role'), 'alert');
+  assert.equal(page.element('store-recovery-title').textContent, 'Your records can’t be read');
+  assert.match(notice.textContent, /They are damaged\. Nothing has been changed\./);
+  assert.equal(page.element('store-recovery-download').textContent, 'Download the stored data');
+  assert.equal(page.element('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
+  assert.match(notice.textContent, /import a backup below, under Backup and import, with Replace local records/);
+  assert.equal(page.status(), 'Your records can’t be read. The notice at the top of this page has the ways out.');
+});
+
+test('X-02: a newer version’s records say so', async () => {
+  const page = await openSettings({ snapshotReply: { ...UNREADABLE, newerVersion: true }, reply: unreadableStore() });
+  assert.match(page.element('store-recovery').textContent, /written by a newer version of Giga Pinax/);
+});
+
+test('X-02: Download the stored data hands the rescue file to the browser and changes nothing', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  await page.element('store-recovery-download').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-raw-.*\.json$/);
+  assert.equal(JSON.parse(file.text).data, 'not a root');
+  assert.deepEqual(page.commands.map(({ type }) => type).filter((type) => type !== 'snapshot.get'), ['snapshot.raw']);
+  assert.match(page.element('store-recovery-status').textContent, /^Download started: giga-pinax-raw-.*\. Keep it/);
+});
+
+test('X-02: Start fresh downloads the rescue file first, asks, resets at its revision, and loads again', async () => {
+  const order = [];
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => { order.push(command.type); return null; }),
+  });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  const [file] = page.downloads();
+  assert.match(file.name, /^giga-pinax-raw-/);
+  assert.equal(page.prompts.length, 1);
+  assert.match(page.prompts[0], new RegExp(`downloading as ${file.name.replace(/[.]/g, '\\.')}`));
+  assert.deepEqual(order.filter((type) => type !== 'snapshot.get' && type !== 'preferences.migrateIfAbsent'), ['snapshot.raw', 'store.reset']);
+  assert.equal(page.commands.find(({ type }) => type === 'store.reset').expectedRevision, 41);
+  assert.equal(page.element('store-recovery'), null, 'the page loaded again and the notice went');
+  assert.equal(page.element('save-settings').disabled, false);
+});
+
+test('X-02: Start fresh declined keeps the copy and resets nothing', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore(), confirmAnswers: [false] });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  assert.equal(page.downloads().length, 1);
+  assert.equal(page.commands.some(({ type }) => type === 'store.reset'), false);
+  assert.match(page.element('store-recovery-status').textContent, /^Download started: .*\. Nothing was reset\.$/);
+});
+
+test('X-02: a copy that cannot be made resets nothing', async () => {
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => (command.type === 'snapshot.raw' ? { ok: false, message: 'Unable to read local storage.' } : null)),
+  });
+  await page.element('store-recovery-reset').click();
+  await settle();
+  assert.deepEqual(page.downloads(), []);
+  assert.deepEqual(page.prompts, []);
+  assert.equal(page.commands.some(({ type }) => type === 'store.reset'), false);
+  assert.equal(page.element('store-recovery-status').textContent, 'Unable to read local storage. Nothing was reset.');
+});
+
+test('X-02: a Replace import is taken over unreadable records, the rescue file going to disk first', async () => {
+  const order = [];
+  const page = await openSettings({
+    snapshotReply: UNREADABLE,
+    reply: unreadableStore((command) => { order.push(command.type); return null; }),
+  });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(2))] })), 'replace');
+  assert.equal(page.element('import-preview').hidden, false);
+  assert.equal(page.element('import-counts').textContent, 'Local: 0 records. Backup: 1 records. Replaces the records that can’t be read; a copy of them downloads first.');
+  await page.element('confirm-import').click();
+  await settle();
+  const [copy] = page.downloads();
+  assert.match(copy.name, /^giga-pinax-raw-/);
+  const sent = page.commands.find(({ type }) => type === 'backup.import');
+  assert.equal(sent.mode, 'replace');
+  assert.equal(sent.overUnreadable, true);
+  assert.equal(sent.expectedRevision, 41);
+  assert.ok(order.indexOf('snapshot.raw') < order.indexOf('backup.import'));
+  assert.equal(page.element('store-recovery'), null, 'the page loaded the imported records');
+});
+
+test('X-02: a merge over unreadable records is refused with the one way that works', async () => {
+  const page = await openSettings({ snapshotReply: UNREADABLE, reply: unreadableStore() });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(2))] })), 'merge');
+  assert.equal(page.element('import-preview').hidden, true);
+  assert.equal(page.status(), 'Your records can’t be read, so a backup can only replace them. Choose Replace local records, then Preview import.');
 });

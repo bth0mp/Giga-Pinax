@@ -1844,7 +1844,14 @@ async function initWorkspace() {
     catch { initialized = null; }
     try {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
-      else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
+      else if (!initialized.ok) {
+        renderAll();
+        // Records nothing can read get the recovery notice at the top of the page (X-02), not a raw sentence in the banner.
+        if (initialized.reason === 'unreadable') {
+          announce('Your records can’t be read. The notice at the top of this page has the ways out.', true);
+          void import('./store-recovery.js').then(({ mountRecovery }) => mountRecovery({ document, bridge, reply: initialized })).catch(() => {});
+        } else announce(initialized.message, true);
+      }
       else acceptIncoming(initialized.value);
       await loadRouteDraft();
       // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.

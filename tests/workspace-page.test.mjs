@@ -1468,6 +1468,21 @@ test('Remove coin past the storage bound says Undo is not available instead of o
   assert.equal(page.$('undo-remove'), null);
 });
 
+// X-02: records nothing can read put the recovery notice at the top of the workspace, and its rescue copy works.
+test('the workspace over unreadable records offers the rescue copy and a fresh start at the top', async () => {
+  const background = await createWorkspaceBackground();
+  await background.storage.set({ [STORAGE_KEY]: 'not a root' });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  // The notice's module is loaded when it is needed, which takes the loader some turns.
+  for (let turn = 0; turn < 200 && !page.$('store-recovery'); turn += 1) await new Promise((resolve) => { setTimeout(resolve, 1); });
+  const notice = page.$('store-recovery');
+  assert.ok(notice, 'the notice is drawn');
+  assert.equal(page.document.querySelector('main').children[0], notice);
+  assert.equal(page.$('store-recovery-download').textContent, 'Download the stored data');
+  assert.equal(page.$('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
+  assert.equal(page.status(), 'Your records can’t be read. The notice at the top of this page has the ways out.');
+});
+
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,
 // one needing its outcome before any other; a phone keeps its list.
 test('a wide workspace opens the coin the queue puts first, one needing its outcome before the rest', async () => {

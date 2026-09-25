@@ -1,7 +1,7 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot, quarantineEntryId,
-  unusableRevisions, validateSnapshot,
+  LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  quarantineEntryId, unusableRevisions, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 import { findDuplicateLot } from './lot-context.js';
@@ -638,6 +638,17 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
       requiresConfirmation: true,
     },
   };
+}
+
+// A Replace import over records nothing can read (X-02): there is nothing local to count or merge with, so the preview is
+// of the backup alone, as the store runs it over an empty root.
+/**
+ * @param {Snapshot} incoming
+ * @param {string} [now]
+ * @returns {Result<ImportPreview>}
+ */
+export function previewReplaceOverUnreadable(incoming, now = new Date().toISOString()) {
+  return previewImport(createEmptySnapshot(now), incoming, 'replace');
 }
 
 /**

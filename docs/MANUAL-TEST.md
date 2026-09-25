@@ -319,3 +319,18 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     the coin as a row (reference, bid, sale, pill) that opens it; **Look up ↗** opens the popup's card and **Search
     acsearch ↗** an acsearch search for the type. Record the coin as **Won**. *Expected:* the outcome's line offers
     **Mark found on your want list**, which marks the want found by that coin.
+
+36. **Records that can't be read.** Export a backup first. Open **Settings**, open the developer tools on that page and
+    run, in its console (`browser` in place of `chrome` in Firefox):
+
+    ```js
+    await chrome.storage.local.set({ 'auctionCompanion:v1': 'damaged' });
+    ```
+
+    Reload Settings, then open the workspace and the toolbar popup.
+    *Expected:* each shows "Your records can't be read" at the top, with **Download the stored data** and **Start fresh,
+    keeping a copy**; the workspace and the popup also link to **Import a backup in Settings**. Select **Download the
+    stored data**: a `giga-pinax-raw-….json` file downloads and nothing changes. In Settings preview the backup with
+    **Merge**: refused, asking for **Replace local records**. Preview it with **Replace** and confirm: the raw file
+    downloads first, then the backup's records are back and the notice goes. Damage the data again and select **Start
+    fresh, keeping a copy**: the raw file downloads, you are asked with its name, and on yes the page opens empty.

@@ -518,6 +518,9 @@
  * @property {'not-committed' | 'unknown'} outcome
  * @property {string} message
  * @property {FailureError} [error]
+ * @property {'unreadable'} [reason] the stored records cannot be read at all: only the rescue and recovery commands run
+ *   (store-recovery.js)
+ * @property {true} [newerVersion] with `unreadable`, the records say a newer version of Giga Pinax wrote them
  */
 
 /**

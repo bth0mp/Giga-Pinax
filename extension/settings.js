@@ -1,8 +1,9 @@
 import {
   MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText,
-  importIssueLines, importWithSafetyCopy, previewImport, quarantineDocument, quarantineRestoreText,
+  importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
+import { isUnreadable, mountRecovery } from './store-recovery.js';
 import { CSV_TABLES, csvFiles } from './core/csv.js';
 import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
 import { CURRENCIES, parsePercent } from './core/money.js';
@@ -363,11 +364,28 @@ function collectPresets() {
   return { ok: true, value: values };
 }
 
+// Records nothing can read (X-02): the notice at the top of the page offers the rescue copy and a fresh start, and the
+// import form below takes a backup with Replace. Once either has worked the page loads again and the notice goes.
+const UNREADABLE_NOTE = 'Your records can’t be read. The notice at the top of this page has the ways out.';
+function showRecovery(reply) {
+  mountRecovery({
+    document, bridge, reply, download, confirm: (message) => confirm(message), importHint: 'below',
+    reload: () => { void load().then(() => status('Started fresh. Your settings are new; import a backup to bring your records back.')).catch((error) => status(error.message, true)); },
+  });
+}
+// What a page read that failed says: the recovery notice for records nothing can read, the store's own words otherwise.
+function readFailure(reply, fallback) {
+  if (isUnreadable(reply)) return new Error(UNREADABLE_NOTE);
+  return new Error(reply?.message || fallback);
+}
+
 async function load() {
   const reply = await initializeCompanionPreferences(bridge, siteStorage());
   if (!reply?.ok || !reply.value?.preferences) {
-    throw new Error(reply?.message || 'Could not load settings.');
+    if (isUnreadable(reply)) showRecovery(reply);
+    throw readFailure(reply, 'Could not load settings.');
   }
+  document.getElementById('store-recovery')?.remove();
   preferencesSnapshot = reply.value;
   behindStore = false;
   // Settings and the research popup share this origin's local storage, and the popup prices from the cache before the
@@ -577,7 +595,7 @@ $('save-settings').addEventListener('click', async () => {
 $('export-backup').addEventListener('click', async () => {
   try {
     const latest = await bridge.getSnapshot();
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+    if (!latest?.ok) throw readFailure(latest, 'Could not read local records.');
     const result = exportBackup(latest.value, new Date().toISOString());
     if (!result.ok) throw new Error(result.error.message);
     download(result.value, `giga-pinax-${new Date().toISOString().slice(0, 10)}.json`);
@@ -605,7 +623,7 @@ $('export-csv').addEventListener('click', async () => {
   try {
     const table = CSV_TABLES.find(({ key }) => key === $('csv-table').value) ?? CSV_TABLES[0];
     const latest = await bridge.getSnapshot();
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
+    if (!latest?.ok) throw readFailure(latest, 'Could not read local records.');
     const files = csvFiles(latest.value);
     download(files[table.key], `giga-pinax-${table.key}-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
     status(`${table.label} exported as CSV.`);
@@ -699,18 +717,33 @@ $('import-form').addEventListener('submit', async (event) => {
     if (!validated.ok) throw new Error(validated.error.message);
     const latest = await bridge.getSnapshot();
     if (generation !== previewGeneration) return;
-    if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
-    const currentSnapshot = latest.value;
-    const result = previewImport(currentSnapshot, validated.value, mode);
+    // Over records nothing can read, a backup can only replace them, counted on from the revision the rescue copy reports
+    // (X-02); the copy that goes to disk first is that rescue file.
+    const overUnreadable = isUnreadable(latest);
+    if (overUnreadable && mode !== 'replace') {
+      throw new Error('Your records can’t be read, so a backup can only replace them. Choose Replace local records, then Preview import.');
+    }
+    if (!latest?.ok && !overUnreadable) throw new Error(latest?.message || 'Could not read local records.');
+    let expectedRevision = latest.value?.revision;
+    if (overUnreadable) {
+      const raw = await bridge.sendCommand({ type: 'snapshot.raw', requestId: bridge.newRequestId() });
+      if (generation !== previewGeneration) return;
+      if (!raw?.ok) throw new Error(raw?.message || 'Could not read local storage.');
+      expectedRevision = raw.revision;
+    }
+    const result = overUnreadable ? previewReplaceOverUnreadable(validated.value) : previewImport(latest.value, validated.value, mode);
     if (!result.ok) throw new Error(result.error.message);
     pendingImport = {
       generation,
       document: documentText,
       mode,
       preview: result.value,
-      expectedRevision: currentSnapshot.revision,
+      expectedRevision,
+      overUnreadable,
     };
-    $('import-counts').textContent = importCountsText(result.value);
+    $('import-counts').textContent = overUnreadable
+      ? `${importCountsText(result.value).replace(/ Replaces everything local\.$/, '')} Replaces the records that can’t be read; a copy of them downloads first.`
+      : importCountsText(result.value);
     // Untrusted text from a backup file, so every line is written as text and never as markup.
     const lines = [...importChangeLines(result.value), ...importIssueLines(result.value)];
     $('import-conflicts').replaceChildren(...lines.map((line) => {
@@ -745,11 +778,12 @@ $('confirm-import').addEventListener('click', async () => {
     expectedRevision: pending.expectedRevision,
     mode: pending.mode,
     document: pending.document,
+    ...(pending.overUnreadable ? { overUnreadable: true } : {}),
   });
   let copied = '';
   try {
     const result = overwrites
-      ? await importWithSafetyCopy({ exportCopy: safetyCopyFile, exportRaw: rawFile, download, confirm, send })
+      ? await importWithSafetyCopy({ exportCopy: pending.overUnreadable ? rawFile : safetyCopyFile, exportRaw: rawFile, download, confirm, send })
       : { sent: true, copied: null, reply: await send() };
     // A page cannot see a download land, so the wording claims only what it did. It is written down
     // before anything can throw, so a command that failed still reports the copy that was made.

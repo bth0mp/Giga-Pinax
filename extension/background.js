@@ -23,7 +23,7 @@ const EXTENSION_PAGES = api.runtime.getURL('');
 const RECONCILE_AFTER = new Set([
   'preferences.save',
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set',
-  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import', 'quarantine.restore',
+  'alert.ack', 'alert.snooze', 'alert.markAllRead', 'backup.import', 'quarantine.restore', 'store.reset',
 ]);
 let reconcileQueue = Promise.resolve();
 let menuQueue = Promise.resolve();

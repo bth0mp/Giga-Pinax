@@ -1158,7 +1158,15 @@ export function quarantineInvalidRecords(stored, now) {
       delete root[key];
       continue;
     }
-    if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);
+    // A root with a collection missing outright is no root this build knows the shape of. One that holds something
+    // other than a list there has it set aside whole the same way as the want list, so one damaged list no longer makes
+    // every other record unreadable (X-02).
+    if (root[key] === undefined) return failure('invalid-record', `Stored ${key} is not a list.`, key);
+    if (!Array.isArray(root[key])) {
+      setAside(key, root[key], 'invalid-record');
+      root[key] = [];
+      continue;
+    }
     const kept = [];
     const ids = new Set();
     for (const record of keepNewest ? root[key].slice(-maximum) : root[key]) {

@@ -395,6 +395,14 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
   assert.equal(working.element('companion-capture-watchlist').disabled, false);
 });
 
+// X-02: records nothing can read are said in plain words, pointing at the recovery notice, never as the validator's text.
+test('a companion start-up over unreadable records points at the recovery notice', async () => {
+  const unreadable = { ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.', reason: 'unreadable' };
+  const page = await loadCompanion({ sendMessage: async () => unreadable });
+  assert.equal(page.element('storage-note').textContent, 'Your records can’t be read. The notice at the top of this window has the ways out.');
+  assert.equal(page.element('companion-save-watchlist').disabled, true);
+});
+
 const WORKING_SNAPSHOT = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
 
 // A watchlist save goes to extension storage through the background and never touches localStorage, which is read once to carry an old preference over
