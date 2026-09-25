@@ -593,7 +593,10 @@ const EDGE = 24;
 // A quote the dealer wrapped the grade in, the asterisk or star he footnotes it with, and the "though" his reservation opens with all close one too.
 // The weight, diameter or die axis a dealer prints behind the grade closes one too ("VF 3.41 g", "Fine 12 h."); the bare number that follows a grade
 // in "Slg. vz 12." is a lot number, and without one of those units nothing closes there.
-const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}`
+// So does the estimate Noonans prints straight behind the grade ("Very fine £80-£100", "Good fine £120-£150"): a currency's sign or code with its
+// figure. A sign with no figure behind it is no estimate.
+const ESTIMATE = String.raw`(?:US\$|[$€£¥]|(?:USD|EUR|GBP|CHF|AUD|CAD|HKD|JPY|SEK|DKK|NOK|CZK|PLN|HUF)(?![\p{L}]))\s?\d`;
+const CLOSES = new RegExp(String.raw`^$|^[.;,+\-)/!:"“”*★]|^\s[-–(+&/]|^\sà(?![\p{L}\d])|^\s\d{1,3}(?:[.,]\d{1,3})?\s?${UNIT}|^\s${ESTIMATE}`
   + String.raw`|^\s(?:and|for|with|to|bis|but|though|or|details|obv|obverse|rev|reverse|revers|avers|rs|av|dritto|rovescio)(?![\p{L}\d])`, 'iu');
 // "AU" is the chemical symbol for gold as often as it is "About Uncirculated", so a gold lot that never graded anything was counted in the top
 // bucket. Three shapes say the metal is meant: the weight or diameter printed behind it ("Solidus. AU 4.45 g.", "Aureus. AU, 7.25 g.", "AU. 4.45g."), the

@@ -3818,5 +3818,65 @@
   "text": "Nerón. As. Roma. (Ric-306). 10,52 g. BC+.",
   "grade": "fine",
   "note": "V-03 Cayón, title-case key glued to its number"
+ },
+ {
+  "text": "Very fine £80-£100",
+  "grade": "vf",
+  "note": "V-05 Noonans (DNW): the estimate printed straight behind the grade closes it"
+ },
+ {
+  "text": "Nearly very fine £60-£80",
+  "grade": "vf",
+  "note": "V-05 Noonans"
+ },
+ {
+  "text": "Good very fine £150-£200",
+  "grade": "vf",
+  "note": "V-05 Noonans"
+ },
+ {
+  "text": "Extremely fine £1,000-£1,500",
+  "grade": "ef",
+  "note": "V-05 Noonans"
+ },
+ {
+  "text": "Good fine £120-£150",
+  "grade": "fine",
+  "note": "V-05 Noonans"
+ },
+ {
+  "text": "Fine £40-£60",
+  "grade": "fine",
+  "note": "V-05 Noonans"
+ },
+ {
+  "text": "Roman Imperial Coinage, Trajan, Denarius, Rome, 103-11, laureate bust right, rev. Aequitas standing left, 3.36g/6h (RIC 118; RSC 74). Nearly very fine £60-£80",
+  "grade": "vf",
+  "note": "V-05 Noonans, whole row"
+ },
+ {
+  "text": "Greek Coinages, Kingdom of Macedon, Alexander III, Tetradrachm, Amphipolis, c. 320-317, head of Herakles right, rev. Zeus enthroned left, 17.12g/1h (Price 112). Good fine £120-£150",
+  "grade": "fine",
+  "note": "V-05 Noonans, whole row"
+ },
+ {
+  "text": "Nero, Denarius. RIC 53. Good VF €300-€400",
+  "grade": "vf",
+  "note": "V-05 an estimate in euros behind an abbreviation"
+ },
+ {
+  "text": "Nero, Aureus. RIC 52. Extremely Fine CHF 3,200",
+  "grade": "ef",
+  "note": "V-05 a currency code behind a spelled grade"
+ },
+ {
+  "text": "struck on very fine £80 silver flan",
+  "grade": null,
+  "note": "V-05 lower-case very fine is the adjective, estimate or not"
+ },
+ {
+  "text": "A Fine £ note",
+  "grade": null,
+  "note": "V-05 a currency sign with no figure behind it closes nothing"
  }
 ]
