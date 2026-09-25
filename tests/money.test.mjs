@@ -416,7 +416,7 @@ test('refuses a lone separator before three digits where the locale does not gro
 test('rejects malformed money with an error that names the accepted forms', () => {
   const message = parseMoney('twelve fifty', 'USD', 'en-US').error.message;
   assert.equal(message, 'Money must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
-  assert.equal(parsePremiumPercent('twenty', 'en-US').error.message, 'Buyer premium must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
+  assert.equal(parsePremiumPercent('twenty', 'en-US').error.message, 'Buyer’s premium must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
 });
 
 test('rejects ambiguous or unsafe money input instead of rounding it', () => {

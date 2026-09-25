@@ -1522,3 +1522,13 @@ test('Settings fills only its Save settings and Confirm import buttons', () => {
     .map((control) => control.id);
   assert.deepEqual(filled.sort(), ['confirm-import', 'save-settings']);
 });
+
+// H-09 (cycle 5): Settings says buyer's premium, as the calculator and the workspace do.
+test('Settings names the buyer’s premium in the glossary’s words', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  const html = readFileSync(new URL('../extension/settings.html', import.meta.url), 'utf8');
+  assert.match(html, /Each house’s buyer’s premium/);
+  assert.doesNotMatch(html, /buyer premium/i);
+  const captions = [...page.document.querySelectorAll('span')].map((span) => span.textContent);
+  assert.ok(captions.some((caption) => caption.startsWith('Buyer’s premium %')), JSON.stringify(captions));
+});

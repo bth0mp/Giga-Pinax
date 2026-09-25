@@ -2906,3 +2906,12 @@ test('the median kept for the workspace is in the table’s minor units, whateve
   await settle(); await settle();
   assert.equal(session.get('giga-pinax-session-median').acsearch.median, 12000);
 });
+
+// H-06/H-09 (cycle 5, popup part): the Watchlist tab's button names the page it opens by its own word, and the popup's markup
+// uses the glossary's words.
+test('the popup says “Open the workspace” and no word the glossary retired', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.equal(parseHtml(html).getElementById('companion-open-watchlist').textContent, 'Open the workspace');
+  assert.doesNotMatch(html, /auction workspace|buyer premium|evidence/i);
+  assert.doesNotMatch(html, /Hammer price/);
+});

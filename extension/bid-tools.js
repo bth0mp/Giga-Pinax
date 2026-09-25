@@ -506,8 +506,9 @@ export function mountBidCalculator(
   };
   const modeField = label('Calculation', mode);
   const currencyField = label('Currency', currencyControl);
-  const amountField = label('Hammer price', amount);
-  const premiumField = label('Buyer premium %', premium);
+  // The glossary's words (H-09): the hammer typed here is the Bid tab's Maximum hammer, the premium the buyer's premium.
+  const amountField = label('Maximum hammer', amount);
+  const premiumField = label('Buyer’s premium %', premium);
   const presetField = label('House preset', preset);
   presetField.node.className = 'bid-calculator-wide';
   fields.append(
@@ -526,7 +527,7 @@ export function mountBidCalculator(
   const answerLabel = el('p', { className: 'bid-calculator-label', textContent: 'All-in total' });
   const figure = el('p', { className: 'bid-calculator-figure', hidden: true });
   const output = el('p', {
-    className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
+    className: 'bid-calculator-output', textContent: 'Enter an amount and buyer’s premium.',
   });
   answer.append(answerLabel, figure, output);
   const note = el('p', {
@@ -646,7 +647,7 @@ export function mountBidCalculator(
     answerLabel.textContent = mode.value === 'budget' ? 'Maximum hammer' : 'All-in total';
     if (!calculated.ok) {
       figure.hidden = true;
-      output.textContent = 'Enter an amount and buyer premium.';
+      output.textContent = 'Enter an amount and buyer’s premium.';
       if (!untouched) showError(calculated.error.message);
       return;
     }
@@ -660,7 +661,7 @@ export function mountBidCalculator(
     use.disabled = false;
   };
   mode.addEventListener('change', () => {
-    amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Hammer price';
+    amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Maximum hammer';
     showMedian();
     calculate();
   });
@@ -724,7 +725,7 @@ export function mountBidCalculator(
         if (!kept || touched || destroyed) return;
         touched = true;
         mode.value = kept.mode;
-        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Hammer price';
+        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Maximum hammer';
         currencyControl.value = kept.currency;
         for (const field of CALCULATOR_FIELDS) controlsByField[field].value = kept.texts[field];
         importVatOffered = kept.texts.importVat ? null : importVatOffered;

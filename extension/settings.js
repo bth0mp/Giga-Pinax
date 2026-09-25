@@ -221,7 +221,7 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   const charges = document.createElement('div');
   charges.className = 'premium-charges';
   charges.append(vatField, platformField);
-  row.append(premiumField('Auction house', name), premiumField('Premium %', bps), removeField, charges, ladderDetails);
+  row.append(premiumField('Auction house', name), premiumField('Buyer’s premium %', bps), removeField, charges, ladderDetails);
   return row;
 }
 

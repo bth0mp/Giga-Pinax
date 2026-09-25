@@ -249,7 +249,7 @@ export function parsePercent(text, locale = 'en-US', subject = 'Percentage') {
  * @returns {Result<number>} basis points
  */
 export function parsePremiumPercent(text, locale = 'en-US') {
-  return parsePercent(text, locale, 'Buyer premium');
+  return parsePercent(text, locale, 'Buyer’s premium');
 }
 
 // A locale as Intl reads it: the browser's language passes through, and a tag Intl refuses is written in en-US, as
@@ -372,7 +372,7 @@ export function calculatePremium(hammer, buyerPremiumBps) {
   if (!Number.isInteger(buyerPremiumBps) || buyerPremiumBps < 0 || buyerPremiumBps > 10000) {
     return failure(
       'invalid-basis-points',
-      'Buyer premium basis points must be an integer from 0 through 10,000.',
+      'Buyer’s premium basis points must be an integer from 0 through 10,000.',
       'buyerPremiumBps',
     );
   }
