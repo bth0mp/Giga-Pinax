@@ -13,8 +13,9 @@ import { baseRecord, getNow } from './store-builders.js';
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
-// The states in which the collector has had a reminder, or its day has passed: nothing is left to ring for it.
-const SETTLED = new Set(['delivered', 'acknowledged', 'missed']);
+// The states that hold a decision about a reminder: it was delivered or is being delivered, the collector dismissed or
+// snoozed it, or its day passed. An alert in one of them keeps it when the reminder moves (followMovedReminders).
+const SETTLED = new Set(['delivered', 'acknowledged', 'missed', 'snoozed', 'claimed']);
 
 /**
  * @param {Alert[]} alerts
@@ -38,9 +39,10 @@ function adoptTriggerIds(alerts) {
 
 /**
  * V-04 moved a stamped sale-day reminder from R3's instant, late in the auction's day, to one before 09:00 there. An alert
- * 0.38.0 left settled at the old instant (rung, acknowledged or missed) takes the new one and keeps its state and times,
- * so the collector's decision stands and the reminder does not ring twice. One still to ring is left to be replaced, and
- * rings at the new instant. Nothing else moves: a trigger that R3 and V-04 place alike, an unstamped reminder, or an
+ * 0.38.0 left settled at the old instant (delivered or being delivered, acknowledged, snoozed or missed) takes the new one
+ * and keeps its state and times, so the collector's decision stands: the reminder does not ring twice, a snooze ends when
+ * asked, and a delivery in flight waits for its retry. One still to ring (pending or due) is left to be replaced, and
+ * rings at the new instant. An alert already at the new instant, as a merge can bring, is kept and the old one dropped. Nothing else moves: a trigger that R3 and V-04 place alike, an unstamped reminder, or an
  * alert already at the new instant. The alerts are changed in place.
  * @param {Alert[]} alerts
  * @param {import('./core/types.js').AuctionEvent[]} events

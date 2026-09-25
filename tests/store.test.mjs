@@ -589,7 +589,9 @@ test('a reminder on the collector’s clock keeps its zone through a rename made
 // This version rings it earlier, before 09:00 there, so its trigger moves under an alert the store already holds. An alert
 // the collector has dealt with follows its reminder to the new instant and keeps their decision, so upgrading on the sale
 // day does not bring back a reminder they already dismissed; one not yet rung is replaced and rings at the new instant.
-test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision when its instant moves earlier', async () => {
+// A Zurich sale day saved in 0.38.0 by a New York collector, its reminders stamped, and its alerts as 0.38.0 left them:
+// the day before's acknowledged, and the sale day's at 09:00 New York (13:00Z) in the state given.
+function storedBy038(saleDayState = { status: 'acknowledged', acknowledgedAt: '2026-10-23T13:05:00.000Z' }) {
   const stored = createEmptySnapshot(NOW);
   const eventId = uuid();
   const [before, onTheDay] = [uuid(), uuid()];
@@ -598,13 +600,18 @@ test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision
     reminders: [{ id: before, kind: 'wall-time', daysBefore: 1, localTime: '09:00', collectorTimeZone: 'America/New_York' },
       { id: onTheDay, kind: 'wall-time', daysBefore: 0, localTime: '09:00', collectorTimeZone: 'America/New_York' }],
   });
-  // As 0.38.0 left them: both rang at 09:00 New York (13:00Z), and the collector dismissed them.
   const alert = (reminderId, triggerAt, fields) => ({
     id: uuid(), revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, triggerId: `${eventId}:${reminderId}:${triggerAt}`,
     eventId, eventRevision: 0, reminderId, triggerAt, ...fields,
   });
-  const acknowledged = { status: 'acknowledged', acknowledgedAt: '2026-10-23T13:05:00.000Z' };
-  stored.alerts.push(alert(before, '2026-10-22T13:00:00.000Z', acknowledged), alert(onTheDay, '2026-10-23T13:00:00.000Z', acknowledged));
+  stored.alerts.push(alert(before, '2026-10-22T13:00:00.000Z', { status: 'acknowledged', acknowledgedAt: '2026-10-22T13:05:00.000Z' }),
+    alert(onTheDay, '2026-10-23T13:00:00.000Z', saleDayState));
+  return { stored, eventId, onTheDay, alert };
+}
+
+test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision when its instant moves earlier', async () => {
+  // As 0.38.0 left them: both rang at 09:00 New York, and the collector dismissed them.
+  const { stored, eventId, onTheDay, alert } = storedBy038();
 
   // Upgraded at 10:00 New York on the sale day (16:00 Zurich): the sale-day reminder now belongs at 01:00Z, already past.
   const storage = memoryStorage(structuredClone(stored));
@@ -631,6 +638,48 @@ test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision
   const replaced = early.read().alerts.filter(({ reminderId }) => reminderId === onTheDay);
   assert.deepEqual(replaced.map(({ triggerAt, status }) => [triggerAt, status]), [['2026-10-23T01:00:00.000Z', 'due']]);
   assert.notEqual(replaced[0].id, pending.alerts[1].id, 'an alert still to ring is replaced, not carried');
+});
+
+// Review Minor 3: a snooze the collector gave in 0.38.0, and a notification 0.38.0 had in flight, are decisions too. Each
+// follows the reminder to its new instant: the snooze still ends when asked, the claim still waits for its retry.
+test('a sale-day reminder that 0.38.0 snoozed or was delivering keeps that state when its instant moves', async () => {
+  const cases = [
+    [{ status: 'snoozed', snoozedUntil: '2026-10-23T15:00:00.000Z' }, '2026-10-23T15:00:00.000Z'],
+    [{ status: 'claimed', attemptedAt: '2026-10-23T13:58:00.000Z', claimedAt: '2026-10-23T13:58:00.000Z' }, '2026-10-23T14:03:00.000Z'],
+  ];
+  for (const [state, wake] of cases) {
+    const { stored, eventId, onTheDay } = storedBy038(state);
+    const storage = memoryStorage(structuredClone(stored));
+    const reconciled = await createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' })
+      .commitCommand(command('scheduler.reconcile'));
+    assert.equal(reconciled.ok, true, reconciled.message);
+    assert.equal(reconciled.value.dueEventCount, 0, `${state.status}: nothing rings before the collector asked`);
+    assert.equal(reconciled.value.nextWakeAt, wake, state.status);
+    const moved = storage.read().alerts.filter(({ reminderId }) => reminderId === onTheDay);
+    assert.deepEqual(moved.map(({ id, triggerId, status, snoozedUntil, claimedAt }) => ({ id, triggerId, status, snoozedUntil, claimedAt })), [{
+      id: stored.alerts[1].id, triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, status: state.status,
+      snoozedUntil: state.snoozedUntil, claimedAt: state.claimedAt,
+    }]);
+  }
+});
+
+// Review Minor 5: a 0.38.0 backup merged into a store that already rang the reminder at its new instant keeps the store's
+// own alert; the backup's, at 0.38.0's instant, is not carried onto the same trigger beside it.
+test('merging a 0.38.0 backup keeps the alert this version already holds at the new instant', async () => {
+  const { stored, eventId, onTheDay, alert } = storedBy038();
+  const document = exportBackup(stored, NOW).value;
+  const own = structuredClone(stored);
+  own.alerts = [structuredClone(stored.alerts[0]), alert(onTheDay, '2026-10-23T01:00:00.000Z', {
+    status: 'delivered', attemptedAt: '2026-10-23T01:00:00.000Z', claimedAt: '2026-10-23T01:00:00.000Z', deliveredAt: '2026-10-23T01:00:01.000Z',
+  })];
+  const storage = memoryStorage(own);
+  const writer = createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' });
+  const merged = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'merge', document }));
+  assert.equal(merged.ok, true, merged.message);
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.value.dueEventCount, 0);
+  assert.deepEqual(storage.read().alerts.filter(({ reminderId }) => reminderId === onTheDay).map(({ id, triggerId, status }) => ({ id, triggerId, status })),
+    [{ id: own.alerts[1].id, triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, status: 'delivered' }]);
 });
 
 test('a stored event whose start instant drifted from its local fields still loads', async () => {
