@@ -1926,10 +1926,24 @@ async function initWorkspace() {
     // A new want nobody has typed in yet follows the default currency, which may have arrived or changed since it opened (H-03).
     if (!wantForm.hidden && !editingWant && !dirtyEditors.has('want')) wantForm.elements.currency.value = defaultWantCurrency();
     const list = $('want-list'); list.replaceChildren();
-    const rows = wantListRows(snapshot, navigator.language);
-    if (!rows.length) {
+    const allRows = wantListRows(snapshot, navigator.language);
+    // Past ten wants a filter box finds one by its reference or notes (K-10).
+    $('want-filter-label').hidden = allRows.length <= 10;
+    const needle = allRows.length > 10 ? $('want-filter').value.trim().toLocaleLowerCase() : '';
+    const rows = allRows.filter(({ want }) => !needle || [want.reference, want.notes].some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
+    if (!allRows.length) {
       list.append(emptyState('No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', { label: 'Add want', run: () => $('new-want').click() }));
       return;
+    }
+    if (!rows.length) list.append(text('p', 'No wants match this filter.', 'empty-row'));
+    // The wants found are folded beneath the ones still wanted, open as the collector left them (K-10).
+    const foundCount = rows.filter(({ want }) => want.foundLotId).length;
+    let foundFold = null;
+    if (foundCount) {
+      foundFold = document.createElement('details'); foundFold.className = 'found-wants'; foundFold.id = 'found-wants';
+      foundFold.open = Boolean(needle) || foundWantsOpen;
+      foundFold.addEventListener('toggle', () => { if (!needle) foundWantsOpen = foundFold.open; });
+      foundFold.append(text('summary', `Found (${foundCount})`));
     }
     for (const { want, terms, found, foundStatus, wonCoins, watched } of rows) {
       const card = text('article', '', 'record want-record'); card.dataset.wantId = want.id;
@@ -1962,11 +1976,25 @@ async function initWorkspace() {
         card.append(line);
         actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null }, 'wantlist')
           .then((reply) => { if (reply?.ok) formStatus('wantlist', `Wanted again · ${want.reference}`); })));
-      } else {
-        for (const lot of wonCoins) {
-          actions.append(wantAction(`Mark found: ${lot.title}`, () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
-            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
+      } else if (wonCoins.length) {
+        // The coins of the type won so far, in one line with one Mark found (K-10): a choice of them when there are several,
+        // newest first, each by its reference, house and day.
+        const won = wonCoinsNewestFirst(wonCoins);
+        const since = won.every((lot) => String(settledAt(lot)) >= String(want.createdAt ?? ''));
+        const line = text('div', '', 'want-won');
+        line.append(text('span', `Won ${won.length === 1 ? 'once' : `${won.length} times`}${since && want.createdAt ? ' since this want was added' : ''}`, 'want-won-count'));
+        let choice = null;
+        if (won.length > 1) {
+          choice = document.createElement('select'); choice.className = 'want-won-choice'; choice.setAttribute('aria-label', `Coin that found ${want.reference}`);
+          choice.append(...won.map((lot) => Object.assign(text('option', wonCoinLabel(lot)), { value: lot.id })));
+          line.append(choice);
         }
+        line.append(wantAction('Mark found', () => {
+          const lot = won.find(({ id }) => id === (choice?.value ?? won[0].id)) ?? won[0];
+          void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
+            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); });
+        }, 'secondary'));
+        card.append(line);
       }
       // Where to look for it, nothing fetched until the collector asks: the popup's card and prices, and acsearch.
       const lookUp = text('button', 'Look up ↗', 'quiet want-look'); lookUp.type = 'button';
@@ -1980,9 +2008,20 @@ async function initWorkspace() {
           .then((reply) => { if (reply?.ok) formStatus('wantlist', `Removed from your want list · ${want.reference}`); });
       }, 'danger quiet'));
       card.append(actions);
-      list.append(card);
+      (want.foundLotId && foundFold ? foundFold : list).append(card);
     }
+    if (foundFold) list.append(foundFold);
   }
+  let foundWantsOpen = false;
+  $('want-filter').addEventListener('input', () => renderWants());
+  // When a coin was settled: its last outcome's record, else when it was last written.
+  const settledAt = (lot) => String(lot.outcomeHistory?.at(-1)?.recordedAt ?? lot.updatedAt ?? '');
+  const wonCoinsNewestFirst = (lots) => [...lots].sort((left, right) => settledAt(right).localeCompare(settledAt(left)));
+  // A won coin as the Mark found choice names it: "RIC II Trajan 253 · Künker · 12 Sept 2026".
+  const wonCoinLabel = (lot) => {
+    const day = eventsById.get(lot.auctionEventId)?.localDate ?? settledAt(lot);
+    return [lot.reference || lot.title, lot.auctionContext?.house, day ? dayText(day) : ''].filter(Boolean).join(' · ');
+  };
   // An auction or group form left open follows committed data until the collector edits it, and
   // following it is not editing: the edit version stays where the collector left it.
   function renderOpenRecordForms() {

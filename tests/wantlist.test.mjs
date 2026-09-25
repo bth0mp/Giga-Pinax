@@ -487,9 +487,11 @@ test('a won coin of the wanted type is offered as what found it, and Want again 
   await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'ric ii trajan 253' } });
   const page = await mountWorkspace({ background, hash: '#wants' });
   const card = cardFor(page, 'ric ii trajan 253');
-  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found: Trajan denarius, Künker 341', 'Look up ↗', 'Search acsearch ↗', 'Edit', 'Remove'],
+  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found', 'Look up ↗', 'Search acsearch ↗', 'Edit', 'Remove'],
     'only the coin of the type is offered');
-  await buttonIn(card, 'Mark found: Trajan denarius, Künker 341').click(); await settle();
+  // One line and one Mark found for the won coins of the type (K-10).
+  assert.equal(card.querySelector('.want-won-count').textContent, 'Won once since this want was added');
+  await buttonIn(card, 'Mark found').click(); await settle();
   const [want] = background.root().wants;
   assert.equal(want.foundLotId, lot.id);
   const found = cardFor(page, 'ric ii trajan 253');
@@ -878,4 +880,35 @@ test('matching reads each reference once, however often it is compared, and a re
   const reading = read(want); reading.number = '1';
   assert.equal(read(want).number, '2150', 'changing a reading handed out changes nothing kept');
   assert.equal(same(want, 'RIC II Trajan 2150'), true);
+});
+
+// K-10: a type won several times is one line with a choice of the coins and one Mark found; found wants are folded
+// beneath; past ten wants a filter box finds one.
+test('the won coins of a want are one choice with one Mark found, found wants fold, and a long list has a filter', async () => {
+  const background = await createWorkspaceBackground();
+  const won = [];
+  for (const [title, house] of [['Trajan denarius, Künker 341', 'Künker'], ['Trajan denarius, Nomos 30', 'Nomos']]) {
+    const lot = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title, reference: 'RIC II Trajan 253', sourceLinks: [], auctionContext: { pageUrl: `https://house.test/${house}`, house } } })).value;
+    assert.equal((await background.send({ type: 'lot.outcome.set', lotId: lot.id, expectedRevision: 0, outcome: { status: 'won', hammer: { currency: 'EUR', minor: 70000 } } })).ok, true);
+    won.push(lot);
+  }
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC II Trajan 253' } });
+  for (let number = 1; number <= 10; number += 1) await background.send({ type: 'want.save', expectedRevision: null, want: { reference: `RRC 44/${number}`, ...(number === 3 ? { notes: 'for the Punic set' } : {}) } });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const card = cardFor(page, 'RIC II Trajan 253');
+  assert.equal(card.querySelector('.want-won-count').textContent, 'Won 2 times since this want was added');
+  const choice = card.querySelector('.want-won-choice');
+  assert.equal(choice.options.length, 2);
+  assert.match(choice.options[0].textContent, /^RIC II Trajan 253 · (Künker|Nomos) · /);
+  assert.equal(card.querySelectorAll('button').filter((button) => button.textContent.startsWith('Mark found')).length, 1, 'one button');
+  choice.value = won[1].id;
+  await buttonIn(card, 'Mark found').click(); await settle();
+  assert.equal(background.root().wants.find((want) => want.reference === 'RIC II Trajan 253').foundLotId, won[1].id, 'the coin chosen');
+  const fold = page.$('found-wants');
+  assert.equal(fold.querySelector('summary').textContent, 'Found (1)');
+  assert.equal(fold.open, false);
+  assert.ok(fold.querySelectorAll('.want-record').some((node) => node.dataset.wantId === background.root().wants[0].id));
+  assert.equal(page.$('want-filter-label').hidden, false, 'eleven wants have a filter');
+  page.$('want-filter').value = 'punic'; await page.$('want-filter').emit('input'); await settle();
+  assert.deepEqual(page.$('want-list').querySelectorAll('.want-record').map((node) => node.querySelector('h3').textContent), ['RRC 44/3']);
 });
