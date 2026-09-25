@@ -376,8 +376,10 @@ test('the Want list form is read into a want, or names the field that stops it',
   const wants = [makeWant(), makeWant({ id: OTHER_WANT, reference: 'Price 112', foundLotId: LOT_ID, foundAt: NOW })];
   assert.deepEqual(wantFromForm({ reference: ' RIC I² Nero 306 ', maxPrice: '1,200.50', currency: 'GBP', minGrade: 'EF', notes: 'Dark tone' }, { wants }),
     { ok: true, value: { reference: 'RIC I² Nero 306', maxPrice: { currency: 'GBP', minor: 120050 }, minGrade: 'EF', notes: 'Dark tone' } });
-  assert.deepEqual(wantFromForm({ reference: 'Price 112', maxPrice: '', currency: 'EUR', minGrade: '', notes: '  ' }, { wants }),
-    { ok: true, value: { reference: 'Price 112' } }, 'a found want of the type does not stop a new one');
+  assert.deepEqual(wantFromForm({ reference: 'Price 23', maxPrice: '', currency: 'EUR', minGrade: '', notes: '  ' }, { wants }),
+    { ok: true, value: { reference: 'Price 23' } }, 'blank fields are left off');
+  assert.deepEqual(wantFromForm({ reference: 'Price 112' }, { wants }),
+    { ok: false, field: 'reference', message: 'Price 112 is already on your want list, marked found. Choose Want again on it to look for another.' }, 'a found want of the type stops a new one (V-08)');
   assert.deepEqual(wantFromForm({ id: WANT_ID, reference: 'ric ii trajan 253' }, { wants }).ok, true, 'an edit keeps its own reference');
   assert.deepEqual(wantFromForm({ reference: 'RIC II Trajan 253' }, { wants }),
     { ok: false, field: 'reference', message: 'RIC II Trajan 253 is already on your want list.' });
@@ -674,4 +676,40 @@ test('the Want list form saves a want as the catalogue titles it and says so, an
   assert.equal(page.$('want-form-status').textContent, 'RIC I² Nero 306 is already on your want list.', 'the twin check reads the catalogue’s title');
   assert.equal(background.root().wants.length, 1);
   assert.equal(page.commands.filter(({ type }) => type === 'want.save').length, 1, 'nothing refused reached the store');
+});
+
+// --- Loop cycle 5: one want per type, in the store as in the form (V-08) --------------------------------
+
+test('want.save refuses a second want of a type, open or found, in the form’s own sentence; an edit keeps its own type', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('lot.save', { expectedRevision: null, lot: { title: 'Nero', reference: 'RIC I² Nero 306', sourceLinks: [] } }));
+  const lot = state.value;
+  state = reduce(state.snapshot, command('lot.outcome.set', { lotId: lot.id, expectedRevision: 0, outcome: { status: 'won' } }));
+  state = reduce(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } }));
+  const want = state.value;
+  const twin = applyCommand(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I (second edition) Nero 306' } }), context());
+  assert.equal(twin.ok, false);
+  assert.equal(twin.error.code, 'duplicate');
+  assert.equal(twin.error.message, 'RIC I² Nero 306 is already on your want list.');
+  assert.equal(twin.error.path, 'want.reference');
+  state = reduce(state.snapshot, command('want.found', { wantId: want.id, expectedRevision: 0, lotId: lot.id }));
+  const foundTwin = applyCommand(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } }), context());
+  assert.equal(foundTwin.error.message, 'RIC I² Nero 306 is already on your want list, marked found. Choose Want again on it to look for another.');
+  // An edit of the want itself is never its own twin.
+  assert.equal(applyCommand(state.snapshot, command('want.save', { expectedRevision: 1, want: { id: want.id, reference: 'RIC I (second edition) Nero 306', notes: 'Found' } }), context()).ok, true);
+  // Another want may not become this one's type.
+  state = reduce(state.snapshot, command('want.save', { expectedRevision: null, want: { reference: 'Price 112' } }));
+  const becoming = applyCommand(state.snapshot, command('want.save', { expectedRevision: 0, want: { id: state.value.id, reference: 'RIC I² Nero 306' } }), context());
+  assert.equal(becoming.error.code, 'duplicate');
+});
+
+test('twins an older version left behind can still be edited and found, but a found one is not wanted again beside an open twin', () => {
+  const root = { ...createEmptySnapshot(NOW), wants: [makeWant({ reference: 'RIC I² Nero 306', foundLotId: LOT_ID, foundAt: NOW }), makeWant({ id: OTHER_WANT, reference: 'RIC I² Nero 306' })] };
+  assert.equal(applyCommand(root, command('want.save', { expectedRevision: 0, want: { id: WANT_ID, reference: 'RIC I² Nero 306', notes: 'An edit keeps its type' } }), context()).ok, true);
+  assert.equal(applyCommand(root, command('want.save', { expectedRevision: 0, want: { id: OTHER_WANT, reference: 'RIC I² Nero 306', minGrade: 'VF' } }), context()).ok, true);
+  const again = applyCommand(root, command('want.found', { wantId: WANT_ID, expectedRevision: 0, lotId: null }), context());
+  assert.equal(again.ok, false);
+  assert.equal(again.error.message, 'RIC I² Nero 306 is already on your want list.');
+  // The form holds the same rules before anything is sent.
+  assert.equal(wantFromForm({ id: WANT_ID, reference: 'RIC I² Nero 306', notes: 'Kept' }, { wants: root.wants }).ok, true);
+  assert.equal(wantFromForm({ reference: 'RIC I² Nero 306' }, { wants: [root.wants[0]] }).message, 'RIC I² Nero 306 is already on your want list, marked found. Choose Want again on it to look for another.');
 });

@@ -226,6 +226,29 @@ export function wonCoinsFor(want, lots) {
 }
 
 /**
+ * The other want of a reference's type, open or found, that stops it being saved (V-08): one want per type, so a badge
+ * speaks for one want and a found want can always be edited. A want being edited is never its own twin, and one that keeps
+ * the type it already had is not stopped by a twin an older version let in.
+ * @param {Want[] | null | undefined} wants
+ * @param {*} reference
+ * @param {Want | null | undefined} [editing]
+ * @returns {Want | null}
+ */
+export function wantTwin(wants, reference, editing = null) {
+  if (editing && sameWantedType(editing.reference, reference)) return null;
+  return (Array.isArray(wants) ? wants : []).find((want) => want?.id !== editing?.id && sameWantedType(want?.reference, reference)) ?? null;
+}
+
+/**
+ * Why a want's twin stops it, in the words the form and the store both say.
+ * @param {Want} twin
+ * @returns {string}
+ */
+export const wantTwinMessage = (twin) => (twin.foundLotId
+  ? `${twin.reference} is already on your want list, marked found. Choose Want again on it to look for another.`
+  : `${twin.reference} is already on your want list.`);
+
+/**
  * The Want list form read into what `want.save` takes, or the field that stops it and why. The reference must name one
  * type and not be on the list already (an edit may keep its own); a maximum price is an amount in the chosen currency;
  * the grade is one of the four.
@@ -243,8 +266,8 @@ export function wantFromForm(values, { wants = [], locale = 'en-US' } = {}) {
   if (editing?.foundLotId && !sameWantedType(editing.reference, reference)) {
     return { ok: false, field: 'reference', message: 'Choose Want again before changing what this want is for.' };
   }
-  const twin = list.find((want) => want.id !== values.id && !want.foundLotId && sameWantedType(want.reference, reference));
-  if (twin) return { ok: false, field: 'reference', message: `${twin.reference} is already on your want list.` };
+  const twin = wantTwin(list, reference, editing);
+  if (twin) return { ok: false, field: 'reference', message: wantTwinMessage(twin) };
   /** @type {Record<string, any>} */
   const want = { reference };
   if (String(values.maxPrice ?? '').trim()) {
