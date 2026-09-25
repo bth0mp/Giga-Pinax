@@ -106,3 +106,6 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .want-filter{display:block;margin-bottom:10px}.want-won{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:8px;font-size:12px;color:var(--ink)}.want-won-count{font-weight:600}.want-won-choice{flex:1 1 200px;min-width:0;max-width:100%}.found-wants{margin-top:4px}.found-wants>summary{padding:8px 2px;font-size:12px;font-weight:650;color:var(--muted);cursor:pointer}.found-wants[open]>summary{margin-bottom:6px}.found-wants .want-record+.want-record{margin-top:8px}
 /* K-18: the auction field and its Add, and a coin with no sale date. */
 .auction-field{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 10px}.auction-field>label{flex:1 1 240px}.auction-field>button{margin-bottom:2px}.no-sale-pill{min-height:0;border:1px dashed var(--line);background:transparent;color:var(--muted);cursor:pointer;font-weight:600}.no-sale-pill:hover{color:var(--accent);border-color:var(--accent)}
+/* X-05: the page's own notice never covers a heading - a refusal is said in the page's flow, above the route, and a
+   passing notice floats at the foot of the window. */
+#workspace-status{top:auto;bottom:20px}#workspace-status.error{position:static;transform:none;width:auto;max-width:none;margin:0 0 12px;box-shadow:none}

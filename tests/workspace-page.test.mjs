@@ -2353,3 +2353,43 @@ test('reload after a conflict keeps the fields the other window did not change, 
   const stored = storedLot(background, 'Nero, denarius (corrected)');
   assert.equal(stored.notes, 'Flan crack at 3 o’clock', 'both windows’ changes are stored');
 });
+
+// X-05: a save with no answer is said under the form within eight seconds, with Retry the same request; the retry is
+// answered from the store's ledger, so the coin is written once, and the first attempt's late answer is left.
+test('a save with no answer says so under its form, and Retry the same request writes it once', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('notes', 'Weighed again');
+  const hold = background.holdReply('lot.save');
+  await page.startSubmit('lot-form'); await hold.written; await settle();
+  assert.equal(page.$('lot-action-status').textContent, 'Saving…');
+  page.runTimers(); await settle();
+  const line = page.$('lot-action-status');
+  assert.equal(line.textContent, 'The save didn’t get an answer. The same request can be retried: it is never saved twice. Retry the same request');
+  assert.equal(page.status(), '', 'no floating notice');
+  assert.equal(page.$('unknown-note').hidden, true);
+  await line.querySelector('button').click(); await settle();
+  assert.equal(line.textContent, 'Saved.');
+  hold.release(); await settle();
+  assert.equal(line.textContent, 'Saved.', 'the late first answer changes nothing');
+  assert.equal(background.root().recentCommands.filter((item) => item.commandType === 'lot.save').length, 2, 'the seed coin and this one save');
+  assert.equal(storedLot(background, 'Nero, denarius').notes, 'Weighed again');
+});
+
+// X-05: a save whose port closed says the same, under its form, not in a banner over the heading.
+test('a save whose message port closed offers the retry under its form', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('notes', 'Port closed');
+  const send = page.browser.runtime.sendMessage;
+  page.browser.runtime.sendMessage = async (message) => { if (message?.type === 'lot.save') { page.browser.runtime.sendMessage = send; throw new Error('The message port closed before a response was received.'); } return send(message); };
+  await page.saveDetails();
+  const line = page.$('lot-action-status');
+  assert.match(line.textContent, /^The save didn’t get an answer\./);
+  assert.equal(page.status(), '');
+  await line.querySelector('button').click(); await settle();
+  assert.equal(line.textContent, 'Saved.');
+  assert.equal(storedLot(background, 'Nero, denarius').notes, 'Port closed');
+});

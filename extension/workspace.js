@@ -29,6 +29,9 @@ import {
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
+// A save with no answer, said under the form that was saved (X-05).
+const NO_ANSWER = 'The save didn\u2019t get an answer. The same request can be retried: it is never saved twice.';
+const SAVE_ANSWER_MS = 8000;
 
 async function initWorkspace() {
   const $ = (id) => document.getElementById(id);
@@ -48,6 +51,8 @@ async function initWorkspace() {
   };
   let eventsById = new Map();
   let pendingRetry = null;
+  // Each save's attempt, by request id: a retried one is superseded, and its late answer is left.
+  const attempts = new Map();
   let selection = { selectedLotId: null, mode: 'list' };
   let comparisonSelection = [];
   let lotInteractionGeneration = 0;
@@ -448,15 +453,30 @@ async function initWorkspace() {
     // that produced it.
     const released = () => { savesInFlight.delete(editor); };
     let reply;
+    // A save with no answer is said within eight seconds, under the form that was saved, with the way out (X-05): the
+    // same request retried, which the store answers from its ledger if the first did commit. A reply that comes later is
+    // still taken, unless the collector has retried by then.
+    const attempt = { superseded: false };
+    attempts.set(command.requestId, attempt);
+    const retryInfo = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
+    const silence = setTimeout(() => {
+      if (attempt.superseded) return;
+      pendingRetry = retryInfo;
+      offerRetry(editor, NO_ANSWER);
+    }, SAVE_ANSWER_MS);
     try { reply = await bridge.sendCommand(command); }
     catch {
+      clearTimeout(silence);
+      if (attempt.superseded) return { ok: false, requestId: command.requestId, code: 'superseded' };
       released();
       // The worker may or may not have committed: the same request ID makes a retry idempotent.
-      pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
-      $('unknown-note').hidden = false;
-      announce(WORKER_UNREACHABLE, true);
+      pendingRetry = retryInfo;
+      offerRetry(editor, NO_ANSWER);
       return { ok: false, requestId: command.requestId, code: 'unreachable', outcome: 'unknown', message: WORKER_UNREACHABLE };
     }
+    clearTimeout(silence);
+    if (attempt.superseded) return { ok: false, requestId: command.requestId, code: 'superseded' };
+    if (pendingRetry?.command === command) { pendingRetry = null; $('unknown-note').hidden = true; }
     if (!reply.ok) {
       if (editor === 'lot') {
         // A refused value is named, and its folded section opened, so the collector can see what to change.
@@ -485,8 +505,8 @@ async function initWorkspace() {
         }
         released();
         pendingRetry = { command, editor, submittedVersion, submittedBasis, submittedRevisions };
-        $('unknown-note').hidden = false;
-        announce('Save outcome is uncertain. Review committed records before retrying the same request.', true);
+        if (RETRY_LINE[editor]) offerRetry(editor, 'The save could not be verified. Check the record, then retry the same request: it is never saved twice.');
+        else { $('unknown-note').hidden = false; announce('Save outcome is uncertain. Review committed records before retrying the same request.', true); }
         return reply;
       }
       released();
@@ -559,17 +579,35 @@ async function initWorkspace() {
   });
   // A record's sourced provenance as the editor reads its rows back.
   const provenanceFromRecord = (record) => (record?.provenanceNotes ?? []).map((entry) => ({ id: entry.id, text: entry.text, sourceUrl: entry.sourceUrl, recordedAt: entry.recordedAt, ...(entry.auctionDate ? { auctionDate: entry.auctionDate } : {}) }));
-  $('retry-uncertain').addEventListener('click', () => {
+  // Where the retry is offered: under the form whose save got no answer, or, for a save no form owns, the page's note.
+  const RETRY_LINE = { ...FORM_STATUS, event: 'event-action-status' };
+  function offerRetry(editor, message) {
+    if (RETRY_LINE[editor]) {
+      const line = $(RETRY_LINE[editor]);
+      const button = text('button', 'Retry the same request', 'quiet'); button.type = 'button';
+      button.addEventListener('click', retryPending);
+      line.replaceChildren(document.createTextNode(`${message} `), button);
+      line.classList.add('error');
+      $('announcement').textContent = '';
+      requestAnimationFrame(() => { $('announcement').textContent = message; });
+      return;
+    }
+    $('unknown-note').hidden = false;
+    announce(WORKER_UNREACHABLE, true);
+  }
+  $('retry-uncertain').addEventListener('click', () => retryPending());
+  function retryPending() {
     if (!pendingRetry) return;
     // The same request, resubmitted as it was first submitted: anything typed since the attempt
-    // failed is newer than the save and stays in the form.
+    // failed is newer than the save and stays in the form. The first attempt, should its answer still come, is left.
     const retry = pendingRetry; pendingRetry = null; $('unknown-note').hidden = true;
+    const first = attempts.get(retry.command.requestId); if (first) first.superseded = true;
     // The retry is where an uncertain delete becomes certain, so it is also where the page finds
     // out whether the coin is still its own removal.
     void send(retry.command, retry.editor, retry).then((reply) => {
       if (retry.command.type === 'lot.delete') removedHere = removedHereAfterDeleteReply(removedHere, retry.command.lotId, reply);
     });
-  });
+  }
 
   // A search the collector asked for, of the edited query only, in a tab of its own.
   const openSearch = async (source, query) => {
