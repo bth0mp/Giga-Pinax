@@ -13,7 +13,7 @@ import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
   filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash, wonCostLine,
-  decidingBidLine, historyLine, settledNewestFirst,
+  decidingBidLine, historyLine, sameReference, settledNewestFirst,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
@@ -1467,4 +1467,14 @@ test('a settled coin reads as a ledger line and the bid that decided it, newest 
   const older = { id: 'a', outcome: { status: 'won' }, outcomeHistory: [{ recordedAt: '2026-01-01T00:00:00.000Z' }] };
   const newer = { id: 'b', outcome: { status: 'lost' }, outcomeHistory: [{ recordedAt: '2026-05-01T00:00:00.000Z' }] };
   assert.deepEqual(settledNewestFirst([older, { id: 'c', outcome: { status: 'open' } }, newer]).map(({ id }) => id), ['b', 'a']);
+});
+
+// G-04: the popup's median belongs to a coin only when both references read as the same catalogue entry.
+test('two references are the same coin only when the catalogue rules read them alike', () => {
+  assert.equal(sameReference('RIC I (second edition) Nero 306', 'RIC I² Nero 306'), true);
+  assert.equal(sameReference('RIC I² Nero 306', 'RIC I² Nero 306a'), false);
+  assert.equal(sameReference('RIC 306', 'RIC I² Nero 306'), false, 'a bare number is not the same entry');
+  assert.equal(sameReference('Price 23', 'Price 23'), true);
+  assert.equal(sameReference('', 'Price 23'), false);
+  assert.equal(sameReference('not a reference', 'not a reference'), false, 'what the rules cannot read matches nothing');
 });

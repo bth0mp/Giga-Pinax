@@ -711,11 +711,11 @@ function loadBridge(browser) {
 // The workspace page, loaded as tests/settings.test.mjs loads Settings: its markup in the fake DOM,
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
-export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US' } = {}) {
-  const [money, evidence, projections, sourceLaunchers, fields, bidTools] = await Promise.all([
+export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false } = {}) {
+  const [money, evidence, projections, sourceLaunchers, fields, bidTools, lookup] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
-    import('../../extension/core/fields.js'), import('../../extension/bid-tools.js'),
+    import('../../extension/core/fields.js'), import('../../extension/bid-tools.js'), import('../../extension/lookup.js'),
   ]);
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
@@ -732,7 +732,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
-    sameZone, zonePlace,
+    sameZone, zonePlace, parseReference: lookup.parseReference,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
@@ -749,6 +749,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
       throw new Error(`No module ${specifier} in this sandbox.`);
     },
     requestAnimationFrame: (callback) => callback(),
+    // The page's width, as the one media query it asks (G-06: a wide screen opens a coin on arrival).
+    matchMedia: (query) => ({ matches: wide && /min-width/.test(query), media: query }),
     // Timers wait for the test: `runTimers()` fires the ones set so far, as time passing would.
     setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
     clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },

@@ -317,28 +317,33 @@ export function calculationLine(calculated, mode, locale = 'en-US') {
   return [lead, `premium ${money(value.premium)}${rate}`, ...(fees.length ? fees : ['no fees']), ...next].join(' · ');
 }
 
-// The median the popup last drew, as it leaves it in the browser's session storage for this session only (G-04, P1's
-// key): `{ reference, provider, currency, median, count, at }`. It is read defensively - the calculator and a coin's Bid
-// tab only offer it - so a record that is not exactly that shape, from a provider this tool does not search, in another
-// currency than its own median or without a real count and time, is no median at all. Nothing here stores it.
+// The medians the popup has on screen, as it leaves them in the browser's session storage for this session only (G-04,
+// P1's key): one entry per provider, `{ acsearch?: E, coinarchives?: E }`, each `E = { reference, provider, currency,
+// median, count, at }` with the median in minor units and `at` in epoch milliseconds. They are read defensively - the
+// calculator and a coin's Bid tab only offer them - so an entry that is not exactly that shape, filed under another
+// provider than its own, from a provider this tool does not search, without a real count and time, is no median at
+// all. Each provider stays its own line: never pooled. Nothing here stores them.
 export const SESSION_MEDIAN_KEY = 'giga-pinax-session-median';
 const MEDIAN_PROVIDERS = Object.freeze({ acsearch: 'acsearch', coinarchives: 'CoinArchives' });
-export function readSessionMedian(record, now = Date.now()) {
-  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
-  const { reference, provider, currency, count, at } = record;
-  if (typeof reference !== 'string' || !reference.trim() || reference.length > 200) return null;
-  if (!Object.hasOwn(MEDIAN_PROVIDERS, provider) || !CURRENCIES.includes(currency)) return null;
-  const minor = Number.isSafeInteger(record.median) ? record.median
-    : record.median?.currency === currency && Number.isSafeInteger(record.median?.minor) ? record.median.minor : null;
+function sessionMedianEntry(entry, provider, now) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || entry.provider !== provider) return null;
+  const { reference, currency, count } = entry;
+  if (typeof reference !== 'string' || !reference.trim() || reference.length > 200 || !CURRENCIES.includes(currency)) return null;
+  const minor = Number.isSafeInteger(entry.median) ? entry.median
+    : entry.median?.currency === currency && Number.isSafeInteger(entry.median?.minor) ? entry.median.minor : null;
   if (minor === null || minor <= 0 || !Number.isSafeInteger(count) || count < 1) return null;
-  const seen = typeof at === 'string' ? Date.parse(at) : NaN;
-  if (!Number.isFinite(seen) || seen > now + 5 * 60000) return null;
+  const at = Number.isSafeInteger(entry.at) ? entry.at : typeof entry.at === 'string' ? Date.parse(entry.at) : NaN;
+  if (!Number.isFinite(at) || at > now + 5 * 60000) return null;
   return { reference: reference.trim(), provider, providerLabel: MEDIAN_PROVIDERS[provider], currency, median: { currency, minor }, count, at };
+}
+export function readSessionMedians(record, now = Date.now()) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+  return Object.keys(MEDIAN_PROVIDERS).map((provider) => sessionMedianEntry(record[provider], provider, now)).filter(Boolean);
 }
 
 // How long ago the popup drew it, in the words the evidence strip uses.
 export function sessionMedianAge(at, now = Date.now()) {
-  const minutes = Math.max(0, Math.floor((now - Date.parse(at)) / 60000));
+  const minutes = Math.max(0, Math.floor((now - at) / 60000));
   if (minutes < 1) return 'seen just now';
   if (minutes < 60) return `seen ${minutes} min ago`;
   return `seen ${Math.floor(minutes / 60)} h ago`;
@@ -362,13 +367,13 @@ function sessionStorageArea(storage) {
   }
 }
 
-// Reads the popup's session median now and on every change, handing each reading (or null) to `apply`. Returns what
-// stops listening. A page hands in its own extension storage; by default, this realm's.
-export function followSessionMedian(apply, storage = (globalThis.browser ?? globalThis.chrome)?.storage) {
+// Reads the popup's session medians now and on every change, handing each reading (a list, perhaps empty) to `apply`.
+// Returns what stops listening. A page hands in its own extension storage; by default, this realm's.
+export function followSessionMedians(apply, storage = (globalThis.browser ?? globalThis.chrome)?.storage) {
   const area = sessionStorageArea(storage);
   if (!area) return () => {};
-  void area.get().then((record) => apply(readSessionMedian(record))).catch(() => {});
-  return area.listen((record) => apply(readSessionMedian(record)));
+  void area.get().then((record) => apply(readSessionMedians(record))).catch(() => {});
+  return area.listen((record) => apply(readSessionMedians(record)));
 }
 
 export function snapshotSupersedes(incoming, accepted) {
@@ -462,10 +467,7 @@ export function mountBidCalculator(
   const fields = el('div', { className: 'bid-calculator-fields' });
   // The median the Research tab last drew, offered above the fields (G-04): "acsearch median $240 (2 sales) for RIC 306 ·
   // Use as hammer". Using it puts the median in the hammer, in the median's own currency.
-  const medianLine = el('p', { className: 'bid-calculator-median', hidden: true });
-  const medianText = el('span');
-  const useMedian = el('button', { type: 'button', className: 'quiet', textContent: 'Use as hammer' });
-  medianLine.append(medianText, useMedian);
+  const medianLine = el('div', { className: 'bid-calculator-median', hidden: true });
   const label = (text, control) => {
     const node = el('label');
     const caption = el('span', { textContent: text });
@@ -622,32 +624,36 @@ export function mountBidCalculator(
     showMedian();
     calculate();
   });
-  let sessionMedian = null;
-  // A median is a hammer, so it is offered only while the calculator works from a hammer.
+  let sessionMedians = [];
+  // A median is a hammer, so it is offered only while the calculator works from a hammer; each provider on its own line.
   const showMedian = () => {
-    const found = sessionMedian;
-    medianLine.hidden = !found || mode.value === 'budget';
-    if (!found) return;
-    medianText.textContent = `${found.providerLabel} median ${formatMoney(found.median, language())} (${found.count} ${found.count === 1 ? 'sale' : 'sales'}) for ${found.reference} ·`;
+    medianLine.hidden = !sessionMedians.length || mode.value === 'budget';
+    medianLine.replaceChildren(...sessionMedians.map((found) => {
+      const row = el('p', { className: 'bid-calculator-median-row' });
+      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} (${found.count} ${found.count === 1 ? 'sale' : 'sales'}) for ${found.reference} ·` });
+      const use = el('button', { type: 'button', className: 'quiet', textContent: 'Use as hammer' });
+      use.addEventListener('click', () => {
+        currencyControl.value = found.currency;
+        amount.value = formatMinorInput(found.median.minor);
+        offerImportVat(); calculate();
+        amount.focus?.();
+      });
+      row.append(words, use);
+      return row;
+    }));
   };
   // A new median follows into the currency select while the hammer is still empty; one the collector is already
   // working in is left alone.
-  const takeSessionMedian = (found) => {
-    const fresh = Boolean(found) && found.at !== sessionMedian?.at;
-    sessionMedian = found;
-    if (fresh && amount.value.trim() === '' && mode.value !== 'budget' && currencyControl.value !== found.currency) {
-      currencyControl.value = found.currency; offerImportVat(); calculate();
+  const takeSessionMedians = (found) => {
+    const first = found[0];
+    const fresh = Boolean(first) && !sessionMedians.some((item) => item.provider === first.provider && item.at === first.at);
+    sessionMedians = found;
+    if (fresh && amount.value.trim() === '' && mode.value !== 'budget' && currencyControl.value !== first.currency) {
+      currencyControl.value = first.currency; offerImportVat(); calculate();
     }
     showMedian();
   };
-  useMedian.addEventListener('click', () => {
-    if (!sessionMedian) return;
-    currencyControl.value = sessionMedian.currency;
-    amount.value = formatMinorInput(sessionMedian.median.minor);
-    offerImportVat(); calculate();
-    amount.focus?.();
-  });
-  const stopFollowingMedian = followSessionMedian(takeSessionMedian);
+  const stopFollowingMedian = followSessionMedians(takeSessionMedians);
   for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]) {
     control.addEventListener('input', calculate);
   }

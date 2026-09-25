@@ -13,19 +13,17 @@
 </head>
 <body class="page-workspace">
   <header class="workspace-header">
-    <img src="icons/icon-48.png" width="38" height="38" alt="">
-    <div><h1>Giga Pinax</h1><p>Auction workspace</p></div>
+    <div class="workspace-brand"><img src="icons/icon-48.png" width="28" height="28" alt=""><h1>Giga Pinax</h1></div>
+    <nav class="workspace-nav" aria-label="Auction workspace">
+      <a href="#search" data-route="search">Search</a>
+      <a href="#watchlist" data-route="watchlist">Watchlist</a>
+      <a href="#auctions" data-route="auctions">Auctions</a>
+      <a href="#bids" data-route="bids">Active bids</a>
+      <a href="#history" data-route="history">History</a>
+    </nav>
     <span class="local-mark">Stored on this device</span><div id="source-menu"></div>
+    <button id="open-settings" class="nav-action" type="button" aria-label="Settings" title="Settings"><svg class="nav-action-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span class="nav-action-label">Settings</span></button>
   </header>
-
-  <nav class="workspace-nav" aria-label="Auction companion">
-    <a href="#search" data-route="search">Search</a>
-    <a href="#watchlist" data-route="watchlist">Watchlist</a>
-    <a href="#auctions" data-route="auctions">Auctions</a>
-    <a href="#bids" data-route="bids">Active bids</a>
-    <a href="#history" data-route="history">History</a>
-    <button id="open-settings" class="nav-action" type="button">Settings</button>
-  </nav>
 
   <div id="runtime-note" class="notice warning" hidden>Extension storage is unavailable in this browser page. Search launchers and calculator-style fields still work; durable records are disabled.</div>
   <div id="conflict-note" class="notice warning" hidden><span id="conflict-editors">Committed data changed while an editor has unsaved input.</span> Review your entries, then <button id="reload-snapshot" type="button">reload committed data</button>.</div>
@@ -80,7 +78,7 @@
     </section>
 
     <section id="route-watchlist" class="route" aria-labelledby="watchlist-heading" hidden>
-      <div class="section-heading"><div><h2 id="watchlist-heading">Coin workspace</h2><p>Choose a coin to keep its details, auction, bid and outcome together.</p></div><button id="new-lot" type="button">Add coin</button></div>
+      <div class="section-heading"><h2 id="watchlist-heading">Coin workspace</h2><button id="new-lot" class="secondary btn-sm" type="button">Add coin</button></div>
       <div id="coin-workspace" class="coin-workspace" data-mobile-view="list">
         <aside class="coin-index" aria-label="Watched coins">
           <div class="queue-controls"><label>Queue<select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-outcome">Needs outcome</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter">Filter coins<input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
@@ -91,7 +89,7 @@
         </aside>
         <section class="coin-detail">
           <button id="back-to-coins" class="back-button quiet" type="button">Back to coins</button>
-          <div id="coin-empty" class="empty-state"><h3>Select a coin</h3><p>Its notes, auction, bid, reminders and outcome will appear here.</p></div>
+          <div id="coin-empty" class="empty-state"><h3>Select a coin</h3><p>Choose a coin to keep its details, auction, bid, reminders and outcome together.</p></div>
           <div id="coin-editor" hidden>
             <div class="detail-heading"><div><p id="selected-reference" class="coin-reference"></p><h3 id="selected-title">Coin details</h3></div><div class="detail-pills"><span id="selected-status" class="status-pill"></span><span id="selected-ended" class="status-pill" data-tone="ended" hidden>Ended · record outcome</span></div></div>
             <form id="lot-form" class="detail-section" data-editor="lot">
@@ -117,7 +115,7 @@
     </section>
 
     <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
-      <div class="section-heading"><div><h2 id="auctions-heading">Auctions and reminders</h2><p>Check the date, time zone and reminders: the line under <strong>Save auction</strong> says what will be saved.</p></div><div class="form-actions"><button id="new-event" type="button">Add auction</button><button id="enable-notifications" class="quiet" type="button" data-needs-runtime>Enable desktop alerts</button></div></div>
+      <div class="section-heading"><h2 id="auctions-heading">Auctions and reminders</h2><div class="form-actions"><button id="new-event" class="secondary btn-sm" type="button">Add auction</button><button id="enable-notifications" class="quiet" type="button" data-needs-runtime>Enable desktop alerts</button></div></div>
       <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event" hidden>
         <h3>Auction</h3><input type="hidden" name="id">
         <label>Name<input name="name" required data-limit="title"></label>

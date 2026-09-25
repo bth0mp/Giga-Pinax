@@ -3,7 +3,7 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
-import { FEE_SHEET_FIELDS, followSessionMedian, formatMinorInput, sessionMedianAge } from './bid-tools.js';
+import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
@@ -20,7 +20,7 @@ import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
-  decidingBidLine, filterWorkspaceLots, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
   wonCostLine,
 } from './workspace-views.js';
 
@@ -222,6 +222,7 @@ async function initWorkspace() {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
     if (active === 'search') offerSelectedReference();
+    if (active === 'watchlist') openFirstCoin();
     if (focusLink) document.querySelector(`[data-route="${active}"]`)?.focus({ preventScroll: true });
   };
   // A comparable saved while a coin is open belongs, unless the collector says otherwise, to that
@@ -914,13 +915,13 @@ async function initWorkspace() {
         : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
     const others = found.filter((item) => item.currency !== currency);
     if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
-    // The median the popup drew this session, only for this very coin - the same reference, spacing and case set aside -
-    // and in the bid's own currency; it is offered, never stored (G-04).
-    const session = sessionMedian;
-    if (session && normalReference(session.reference) === normalReference(reference) && session.currency === currency) {
+    // The medians the popup has on screen this session, only for this very coin - the same reference read by the
+    // catalogue rules, never by its spelling - and in the bid's own currency, each provider on its own line; offered,
+    // never stored (G-04).
+    for (const session of sessionMedians.filter((item) => item.currency === currency && sameReference(item.reference, reference))) {
       const line = text('p', `${session.providerLabel} median ${formatMoney(session.median)} from ${session.count} ${session.count === 1 ? 'sale' : 'sales'} · ${sessionMedianAge(session.at)}, session only`, 'bid-evidence-session');
       if (!$('bid-fields').disabled) {
-        const use = text('button', 'Use as maximum', 'quiet'); use.type = 'button'; use.id = 'use-session-median';
+        const use = text('button', 'Use as maximum', 'quiet'); use.type = 'button'; use.dataset.provider = session.provider;
         use.addEventListener('click', () => {
           const f = $('bid-form').elements; f.amount.value = moneyInputText(session.median, navigator.language);
           $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
@@ -1450,9 +1451,22 @@ async function initWorkspace() {
     }
   }
   // The popup's session median, followed while this page is open; nothing of it is written anywhere.
-  let sessionMedian = null;
-  followSessionMedian((found) => { sessionMedian = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
+  let sessionMedians = [];
+  followSessionMedians((found) => { sessionMedians = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
   function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
+  // On a wide screen the detail panel is never an empty "Select a coin": the coin the queue puts first is opened on
+  // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
+  const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };
+  const openFirstCoin = () => {
+    // A coin the address names (the popup's Open, "#watchlist?lot=<id>") is the one to open, never the queue's first.
+    if (selection.selectedLotId || lotDraftId || routeFromHash(location.hash) !== 'watchlist' || /[?&]lot=/.test(location.hash) || !wideScreen()) return;
+    const queued = auctionQueueForLots(snapshot.lots ?? [], snapshot.auctionEvents ?? [], $('lot-queue').value).map(({ lot }) => lot);
+    const needing = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
+    const first = queued.find((lot) => needing.has(lot.id)) ?? queued[0];
+    if (!first) return;
+    selectLot(first.id, { focus: false });
+    selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list';
+  };
   // The popup opens a queue by name ("#watchlist?queue=needs-outcome"); a name the Queue select does not list is ignored.
   const namedQueue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
   if (namedQueue && [...$('lot-queue').options].some((option) => option.value === namedQueue)) $('lot-queue').value = namedQueue;
@@ -1469,6 +1483,7 @@ async function initWorkspace() {
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
       else acceptIncoming(initialized.value);
       await loadRouteDraft();
+      openFirstCoin();
     } catch (error) {
       console.error(error);
       announce('The workspace could not finish loading. Reload this page to try again.', true);

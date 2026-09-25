@@ -6,6 +6,7 @@ import { calculateBidCost } from './core/money.js';
 import { costFees, eventTiming, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
+import { parseReference } from './lookup.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').AuctionEvent} AuctionEvent
@@ -306,6 +307,21 @@ export function lotStatusTone(lot) {
 export function lotRowAmount(lot) {
   if (lot?.outcome?.status && lot.outcome.status !== 'open') return lot.outcome.hammer ?? null;
   return lot?.activeBid?.amount ?? lot?.plannedBid?.amount ?? null;
+}
+
+/**
+ * Whether two written references name the same catalogue entry: both read by the lookup's own rules, and every part of
+ * the reading - catalogue, volume, section, number - the same, so "RIC I (second edition) Nero 306" and "RIC I² Nero 306"
+ * agree while "RIC I² Nero 306a" does not. Text either reading cannot parse matches nothing.
+ * @param {*} left
+ * @param {*} right
+ * @returns {boolean}
+ */
+export function sameReference(left, right) {
+  const read = (text) => { try { return parseReference(String(text ?? '')); } catch { return null; } };
+  const one = read(left); const other = read(right);
+  if (!one || !other) return false;
+  return ['catalogue', 'volume', 'section', 'number'].every((key) => String(one[key] ?? '') === String(other[key] ?? ''));
 }
 
 /**

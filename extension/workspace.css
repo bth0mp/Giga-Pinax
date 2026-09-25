@@ -39,3 +39,10 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 @keyframes gp-fade-in{from{opacity:0}to{opacity:1}}.action-status:not(:empty),.notice:not(:empty),.bid-live:not(:empty){animation:gp-fade-in .18s ease-out}
 /* Q-12: a settled coin's ledger line - what it is and where it was won - and the bid that decided it. */
 .history-line{margin-top:2px;color:var(--muted);font-size:12px}.history-bid{font-size:12px;font-variant-numeric:tabular-nums}
+/* G-06: one 56 px header row - brand, nav, where records live, Sources, Settings - and page headings at h3 size; the page's
+   notice is a toast under the header that takes no room when empty. */
+.workspace-header{min-height:56px;padding:0 clamp(16px,4vw,48px);gap:16px}.workspace-brand{display:flex;align-items:center;gap:8px;flex:none}.workspace-header .workspace-brand h1{font:600 16px/1 var(--font-serif);white-space:nowrap}
+.workspace-header .workspace-nav{flex:1 1 auto;min-width:0;padding:0;border:0;background:transparent}.workspace-nav a{padding:6px 10px;min-height:var(--control-h-sm);display:inline-flex;align-items:center}
+.local-mark{white-space:nowrap}.nav-action{display:inline-flex;align-items:center;gap:6px;margin-left:0;padding:6px 10px}.nav-action-icon{display:none}
+#workspace-status{position:fixed;top:64px;left:50%;z-index:6;transform:translateX(-50%);width:max-content;max-width:min(640px,calc(100vw - 32px));margin:0;padding:8px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}#workspace-status:empty{display:none}#workspace-status.error{color:var(--error)}
+.workspace-main{padding-top:16px}.route>.section-heading:first-child{align-items:center;margin-bottom:12px}.section-heading h2{font:600 var(--text-h3)/1.25 var(--font-serif)}.section-heading p{margin-top:2px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.section-heading>div:first-child{min-width:0}

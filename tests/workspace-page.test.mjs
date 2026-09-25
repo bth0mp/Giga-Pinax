@@ -1281,32 +1281,35 @@ test('Active bids shows the all-in figure of the bids with a fee sheet, and how 
   assert.ok(card.textContent.includes('All-in if every bid wins CHF\u00a01,596.06 (1 of 2 with fees)'), card.textContent);
 });
 
-// G-04: the median the popup drew this session is offered on the Bid tab of the coin with the same reference, in the
-// bid's own currency, with Use as maximum; for any other coin or currency, or a record out of shape, nothing shows.
-test('the popup’s session median is offered as the maximum only for the same reference and currency', async () => {
+// G-04: the medians the popup has on screen this session are offered on the Bid tab of the coin with the same
+// reference - read by the catalogue rules, so a coin saved before 0.37 under the long edition name matches - in the
+// bid's own currency, each provider on its own line, with Use as maximum; anything else shows nothing.
+test('the popup’s session medians are offered as the maximum only for the same reference and currency', async () => {
   const background = await createWorkspaceBackground();
-  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, as', reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, as', reference: 'RIC I (second edition) Nero 306', sourceLinks: [] } });
   await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, dupondius', reference: 'RIC I² Nero 306a', sourceLinks: [] } });
-  const at = new Date(Date.now() - 3 * 60000).toISOString();
-  await background.session.set({ 'giga-pinax-session-median': { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'USD', median: { currency: 'USD', minor: 24000 }, count: 2, at } });
+  const at = Date.now() - 3 * 60000;
+  const entry = (provider, currency, median, count) => ({ reference: 'RIC I² Nero 306', provider, currency, median, count, at });
+  await background.session.set({ 'giga-pinax-session-median': { acsearch: entry('acsearch', 'USD', 24000, 2), coinarchives: entry('coinarchives', 'USD', 26000, 7) } });
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   await page.openCoin('Nero, as');
-  const session = () => page.$('bid-evidence').querySelector('.bid-evidence-session');
-  assert.equal(session()?.textContent, 'acsearch median $240.00 from 2 sales · seen 3 min ago, session onlyUse as maximum');
-  await page.click('use-session-median');
+  const sessions = () => page.$('bid-evidence').querySelectorAll('.bid-evidence-session').map((line) => line.textContent);
+  assert.deepEqual(sessions(), [
+    'acsearch median $240.00 from 2 sales · seen 3 min ago, session onlyUse as maximum',
+    'CoinArchives median $260.00 from 7 sales · seen 3 min ago, session onlyUse as maximum',
+  ], 'each provider on its own line, never pooled');
+  await page.$('bid-evidence').querySelectorAll('button').find((button) => button.dataset.provider === 'acsearch').click(); await settle();
   assert.equal(page.$('bid-form').elements.amount.value, '240.00');
   assert.equal(page.blocksUnload(), true, 'the figure is typed into the form, not saved');
   assert.equal(Object.hasOwn(background.root().lots[0], 'plannedBid'), false);
   await page.type('bid-form', 'currency', 'EUR');
-  assert.equal(session(), null, 'another currency: nothing, never converted');
-  page.prompts.length = 0;
+  assert.deepEqual(sessions(), [], 'another currency: nothing, never converted');
   await page.openCoin('Nero, dupondius');
-  assert.equal(session(), null, 'another reference: nothing');
-  // A record out of shape is no median at all.
+  assert.deepEqual(sessions(), [], 'another reference: nothing');
   await page.openCoin('Nero, as');
-  await background.session.set({ 'giga-pinax-session-median': { reference: 'RIC I² Nero 306', provider: 'somewhere', currency: 'USD', median: 24000, count: 2, at } });
+  await background.session.set({ 'giga-pinax-session-median': { acsearch: { ...entry('acsearch', 'USD', 24000, 2), provider: 'somewhere' } } });
   await settle();
-  assert.equal(session(), null);
+  assert.deepEqual(sessions(), [], 'a record out of shape is no median at all');
 });
 
 // Q-10: a raise planned while a bid is active is shown beside it - on the row and on the Bid tab - and can be cleared.
@@ -1396,4 +1399,21 @@ test('Remove coin says so on the page with Undo, which puts back the coin with i
   assert.deepEqual(back.plannedBid.amount, { currency: 'EUR', minor: 50000 });
   assert.equal(page.status(), 'Put back “Nero, denarius”.');
   assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
+});
+
+// G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,
+// one needing its outcome before any other; a phone keeps its list.
+test('a wide workspace opens the coin the queue puts first, one needing its outcome before the rest', async () => {
+  const background = await backgroundWithCoins('Nero, denarius', 'Trajan, sestertius');
+  const past = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma E-Sale 120', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-09-01', localTime: '15:00', timeZone: 'Europe/London', reminderScope: 'linked-lots', reminders: [] } });
+  const trajan = storedLot(background, 'Trajan, sestertius');
+  await background.send({ type: 'lot.save', expectedRevision: trajan.revision, lot: { id: trajan.id, title: trajan.title, sourceLinks: [], auctionEventId: past.value.id } });
+  // Every write is heard of before the page opens, as a browser that is not replaying old writes to a new page would.
+  await settle(40);
+  const wide = await mountWorkspace({ background, hash: '#watchlist', wide: true });
+  assert.equal(wide.$('coin-editor').hidden, false);
+  assert.equal(wide.$('selected-title').textContent, 'Trajan, sestertius', 'the coin whose sale ended without an outcome');
+  const phone = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(phone.$('coin-editor').hidden, true, 'a phone keeps its list');
+  assert.equal(phone.status(), '', 'and nothing is said about loading');
 });
