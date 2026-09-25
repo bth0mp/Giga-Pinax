@@ -2426,3 +2426,26 @@ test('reload after a conflict keeps what was typed on the Outcome tab, and says 
   assert.equal(tabA.$('selected-title').textContent, 'Nero, denarius (corrected)');
   assert.equal(tabA.blocksUnload(), true, 'the kept typing is still unsaved');
 });
+
+// Fix round, Important 2 (K-09): Search reached from a coin whose reference has a saved set - however it is spelled -
+// opens that set among many, never an empty "set 2".
+test('Search reached from a coin opens the saved set of its reference among forty', async () => {
+  const background = await createWorkspaceBackground();
+  for (let set = 0; set < 40; set += 1) {
+    const queryId = `00000000-0000-4000-9000-${String(500 + set).padStart(12, '0')}`;
+    const queryLabel = set === 7 ? 'ric ii trajan 253' : `RRC ${400 + set}/1`;
+    for (let lot = 0; lot < 5; lot += 1) {
+      const reply = await background.send({ type: 'evidence.add', observation: { queryId, queryLabel, source: 'manual', auctionHouse: 'Nomos', houseSaleId: String(set), auctionDate: '2024-05-01', lotNumber: String(lot + 1), priceBasis: 'hammer', amount: { currency: 'EUR', minor: 10000 + lot * 1000 } } });
+      assert.equal(reply.ok, true, reply.message);
+    }
+  }
+  assert.equal((await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan denarius', reference: 'RIC II Trajan 253', sourceLinks: [] } })).ok, true);
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Trajan denarius');
+  await page.navigate('#search');
+  const select = page.$('evidence-query');
+  assert.equal(select.options.find((option) => option.value === select.value).textContent, 'ric ii trajan 253 (5)');
+  assert.equal(select.options.some((option) => /set 2/.test(option.textContent)), false);
+  assert.match(page.$('statistics-output').textContent, /^5 comparables · median /);
+  assert.equal(page.$('evidence-list').querySelectorAll('.comparable-row').length, 5);
+});

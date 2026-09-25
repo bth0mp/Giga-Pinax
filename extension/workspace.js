@@ -24,7 +24,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  comparableExclusionText, comparableSaleText, filterSettledLots, lastAddedSet, monthHeading, relativeToShow, savedComparablesCount, settledYear, splitAuctions,
+  comparableExclusionText, comparableSaleText, savedSetFor, filterSettledLots, lastAddedSet, monthHeading, relativeToShow, savedComparablesCount, settledYear, splitAuctions,
   wantListRows, wonCostLine,
 } from './workspace-views.js';
 
@@ -265,8 +265,11 @@ async function initWorkspace() {
   const offerSelectedReference = () => {
     const reference = String((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId)?.reference ?? '').trim();
     if (!reference || $('research-query').value.trim()) return;
-    $('research-query').value = reference;
-    ensureActiveQuery();
+    // A set already saved under the reference, however it was spelled, is the one opened (K-09): the last added to, when
+    // several are.
+    const saved = savedSetFor(snapshot.evidence, reference);
+    if (saved) chooseSet(saved);
+    else { $('research-query').value = reference; ensureActiveQuery(); }
     renderEvidence();
   };
   document.querySelector('.workspace-nav').addEventListener('click', (event) => { routeChangeFromNav = Boolean(event.target.closest('[data-route]')); });

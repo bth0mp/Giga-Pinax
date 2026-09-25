@@ -13,7 +13,7 @@
 // Money is written by formatMoney(amount, locale, { narrow: true }) (H-04), grades by their abbreviation ("VF or better").
 
 import { calculateBidCost, formatAmount, formatMoney } from './core/money.js';
-import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
+import { costFees, eventTiming, feeSheetOf, lotCost, normalReference, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { parseReference } from './lookup.js';
 import { wantTermsText, watchedLotsFor, wonCoinsFor } from './core/wantlist.js';
@@ -700,6 +700,23 @@ export function lastAddedSet(evidence) {
     }
   }
   return latest?.queryId ?? null;
+}
+
+/**
+ * The saved comparable set a reference names (K-09): one whose query reads as the same catalogue entry by the lookup's
+ * rules, or, for text no catalogue reads, the same text spacing and case aside; the last added to when several do.
+ * @param {Evidence[] | null | undefined} evidence
+ * @param {*} reference
+ * @returns {string | null}
+ */
+export function savedSetFor(evidence, reference) {
+  const key = normalReference(reference);
+  if (!key) return null;
+  const labels = new Map();
+  for (const row of evidence ?? []) for (const item of row.observations ?? []) if (item.queryId && item.queryLabel) labels.set(item.queryId, item.queryLabel);
+  const matching = new Set([...labels].filter(([, label]) => normalReference(label) === key || sameReference(label, reference)).map(([id]) => id));
+  if (!matching.size) return null;
+  return lastAddedSet((evidence ?? []).map((row) => ({ ...row, observations: (row.observations ?? []).filter((item) => matching.has(item.queryId)) })));
 }
 
 /**
