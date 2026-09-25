@@ -4,7 +4,7 @@ import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, re
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { documentMode, shouldRevealRefine } from './companion-popup.js';
+import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
@@ -15,7 +15,7 @@ import {
   catalogueFailureMessage, coinArchivesFailure, onlineMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
-import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
+import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
 
 const LABELS_KEY = 'giga-pinax-labels-v1';
 
@@ -211,6 +211,7 @@ function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
+  keepMedian('acsearch', null);
   shownUpcoming = null;
   pendingPrices = null;
   renderPriceFilters();
@@ -238,6 +239,7 @@ function clearCoinArchivesPrices({ keepCuration = false } = {}) {
   coinArchivesRequestId += 1;
   if (!keepCuration) coinArchivesCuration.reset();
   shownCoinArchivesPrices = null;
+  keepMedian('coinarchives', null);
   renderPriceFilters();
   $('coinarchives-prices-panel').hidden = true;
   $('coinarchives-prices-error').hidden = true;
@@ -279,6 +281,10 @@ function clearOutput() {
   $('online-fallback').hidden = true;
   $('online-fallback').disabled = false;
   $('online-fallback').onclick = null;
+  $('prices-restored').hidden = true;
+  // What a Watch said under the Upcoming list belongs to the list it was pressed in, which this clears.
+  $('upcoming-saved').hidden = true;
+  $('upcoming-saved').replaceChildren();
   clearSpecimens();
   // A note about the fields as they were must not outlive a lookup that rewrites them. Both writers announce after their own clearOutput(), so this
   // never erases a line just written.
@@ -385,13 +391,16 @@ async function fetchAutomaticPrices() {
 // What the live region says about a card: the filing note is the point of the feature, so it is spoken wherever the card is announced.
 const announcement = (card, ...rest) => [`Found ${card.label}.`, filingNote(card), ...rest].filter(Boolean).join(' ');
 
-function renderCard(card) {
+// restoring: the last answer drawn again at start-up, which scrolls nothing and asks no site for anything.
+function renderCard(card, { restoring = false } = {}) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
-  $('result-reference').textContent = card.label;
+  // The heading writes the reference as it is typed ("RIC I² Nero 306"); the edition it abbreviates is said in the source line.
+  $('result-reference').textContent = displayReference(card.label);
   // The card names the catalogue it came out of, so a collector reading "Local PELLA catalogue" knows which bundle answered.
-  $('result-source').textContent = card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '';
-  $('result-source').hidden = card.source !== 'local';
+  const source = [card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '', editionName(card.label)].filter(Boolean).join(' · ');
+  $('result-source').textContent = source;
+  $('result-source').hidden = !source;
   $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
@@ -417,9 +426,10 @@ function renderCard(card) {
     $(`${side}-description`).textContent = card[side].description ?? '—';
   }
   currentCard = card;
+  // The coin a save makes is named by its summary line and keeps the reference in its one short spelling.
   globalThis.gigaPinaxWatchlistReference = Object.freeze({
-    title: [card.label, card.denomination].filter(Boolean).join(' — '),
-    reference: card.label,
+    title: other ? card.label : cardName(card),
+    reference: displayReference(card.label),
     pageUrl: other ? (rpc ?? '') : $('type-link').href,
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
@@ -431,6 +441,7 @@ function renderCard(card) {
   $('refine-reference').open = false;
   if (refocus) $('refine-summary').focus({ preventScroll: true });
   announce(announcement(card));
+  if (restoring) return;
   revealAgain('result');
   void showSpecimens(card);
 }
@@ -453,6 +464,7 @@ function clearSpecimens() {
   specimenRequest = null;
   $('specimens').hidden = true;
   $('specimen-list').replaceChildren();
+  $('sides-summary').textContent = 'Obverse · reverse';
 }
 
 async function showSpecimens(card) {
@@ -466,6 +478,8 @@ async function showSpecimens(card) {
   if (!shown() || !specimens.length) return;
   $('specimen-list').replaceChildren(...specimens.slice(0, 3).map(specimenItem));
   $('specimens').hidden = false;
+  // The photos fold with the legends, and the fold's line says they are there.
+  $('sides-summary').textContent = 'Obverse · reverse · specimens';
 }
 
 // The rows of the list of types on show, with the title each is filtered by and the volume group it sits in (null in a list that is not grouped).
@@ -603,7 +617,10 @@ async function openLotReference(found, rulers, button, note = '') {
 // chosen; several wait for a pick, so a lot fetches nothing it wasn't asked for.
 function showLot(text) {
   const { references, rulers } = findReferences(text);
+  forgetAnswer();
   answered = true;
+  typingReference = false;
+  showRecent();
   renderFirstRun();
   clearOutput();
   clearLot();
@@ -639,19 +656,37 @@ function renderRecent() {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = entry.label;
+    // The chip writes the reference as the card heading does; its tooltip keeps the catalogue's own title.
+    button.textContent = displayReference(entry.label);
     button.title = entry.label;
     button.dataset.key = `${entry.corpus}:${entry.id}`;
     button.addEventListener('click', () => openRecent(entry));
     item.append(button);
     return item;
   }));
-  $('recent').hidden = preferences.recent.length === 0;
+  showRecent();
   renderFirstRun();
   const chips = [...$('recent-list').querySelectorAll('button')];
   const target = chips.find((chip) => chip.dataset.key === focusedKey) || chips[0];
   if (refocus && target) target.focus();
 }
+
+// Recent stands under the Reference row, one line of chips with the rest behind More. It steps aside while a new reference is being typed, and comes
+// back with the lookup's answer or an emptied box.
+let typingReference = false;
+function showRecent() {
+  $('recent').hidden = preferences.recent.length === 0 || typingReference;
+  const list = $('recent-list');
+  const expanded = $('recent').classList.contains('expanded');
+  // More is offered only where the line hides a chip.
+  $('recent-more').hidden = $('recent').hidden || (!expanded && !(list.scrollHeight > list.clientHeight + 1));
+}
+$('recent-more').addEventListener('click', () => {
+  const expanded = !$('recent').classList.contains('expanded');
+  $('recent').classList.toggle('expanded', expanded);
+  $('recent-more').textContent = expanded ? 'Less' : 'More';
+  $('recent-more').setAttribute('aria-expanded', String(expanded));
+});
 
 // The examples are for a popup that has looked nothing up yet: they go with the first answer of any kind (a card, a list of types, an error) or a
 // Recent row, and while the box holds text.
@@ -735,7 +770,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
 function watchUpcoming(sale, context) {
   if (context !== researchContext) return;
   $('upcoming-status').hidden = true;
-  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: priceCard(context).label,
+  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: displayReference(priceCard(context).label),
     pageUrl: lotUrl(sale), closesAt: isoDay(sale.date) }) }));
 }
 
@@ -756,11 +791,14 @@ function renderPriceFilters() {
   // one its card carries as soon as the card is verified, as the answer will.
   const pendingDenomination = pendingPrices ? filterableDenomination(priceCard(pendingPrices.context).denomination) : '';
   const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || shownUpcoming?.denomination || pendingDenomination || '';
+  // Each toggle is a pill in the row with the sales period: its name short on the pill, the whole sentence its tooltip.
   $('citing-row').hidden = !citing;
-  $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
+  $('citing-label').textContent = citing ? `Citing ${referenceName(shown?.context?.reference ?? {})}` : '';
+  $('citing-row').title = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
   $('citing-filter').checked = onlyCiting;
   $('denomination-row').hidden = !denomination;
-  $('denomination-label').textContent = denomination ? `Only results naming “${denomination}”` : '';
+  $('denomination-label').textContent = denomination ? `Naming “${denomination}”` : '';
+  $('denomination-row').title = denomination ? `Only results naming “${denomination}”` : '';
   $('denomination-filter').checked = onlyDenomination && Boolean(denomination);
   $('price-filters').hidden = !citing && !denomination;
 }
@@ -910,6 +948,8 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   showCheck();
   $('prices-panel').dataset.state = 'ready';
   $('prices-panel').hidden = false;
+  keepMedian('acsearch', medianEntry('acsearch', context, currency, summary));
+  if (context === researchContext) rememberAnswer();
   const spoken = median.includes(currency) ? median : `${median} ${currency}`;
   const heading = named || period.years ? `${period.label}: median` : 'Median';
   const left = filters.length ? ` ${spokenFilters(filters)}` : '';
@@ -1003,6 +1043,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   $('coinarchives-prices-error').hidden = true;
   $('coinarchives-prices-panel').hidden = false;
   shownCoinArchivesPrices = { context, outcome, currency, summary, searched, denomination };
+  keepMedian('coinarchives', medianEntry('coinarchives', context, currency, summary));
   renderPriceFilters();
   const left = filters.length ? ` ${spokenFilters(filters)}` : '';
   if (named) $('announcement').textContent = summary.count
@@ -1012,6 +1053,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
 
 function showCoinArchivesError(message) {
   shownCoinArchivesPrices = null;
+  keepMedian('coinarchives', null);
   $('coinarchives-prices-panel').hidden = true;
   // The toggles above both panels follow the one that has just gone: a failed re-fetch left the citation switch on screen with no rows behind it.
   renderPriceFilters();
@@ -1059,6 +1101,11 @@ const blank = (value) => !String(value ?? '').trim();
 const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume)
   || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1;
 
+// A Bopearachchi reference is searched on acsearch by what its card says (the king and series BIGR files it under), so its prices wait for the card, as
+// a bare RIC number's wait for a type: a card that cannot be had (no network, no access) leaves nothing searched, rather than a median for a query
+// nobody checked under an error the collector cannot see.
+const pricesWaitForCard = (reference) => reference?.catalogue === 'Bop';
+
 // A choice of types, or too many to list: prices already fetched for the reference mix those types, so they go, and the panel says why.
 function setPricesAside() {
   if (!researchContext) return;
@@ -1069,8 +1116,11 @@ function setPricesAside() {
 }
 
 function beginResearch(reference, perform, note = '', identity = null) {
+  forgetAnswer();
   clearOutput();
-  const hasPrices = reference && namesOneType(reference) && initialisePriceResearch(reference, identity);
+  typingReference = false;
+  showRecent();
+  const hasPrices = reference && namesOneType(reference) && !pricesWaitForCard(reference) && initialisePriceResearch(reference, identity);
   run(perform, note, reference);
   if (hasPrices) fetchAutomaticPrices();
 }
@@ -1123,6 +1173,7 @@ async function run(perform, note = '', failedReference = null) {
     preferences = rememberRecent(preferences, outcome.card);
     savePreferences();
     renderRecent();
+    rememberAnswer();
   }
   else if (outcome.status === 'candidates') {
     if (outcome.partial && researchContext?.reference.catalogue === 'RIC') setPricesAside();
@@ -1165,6 +1216,8 @@ async function run(perform, note = '', failedReference = null) {
     const hasFallback = Boolean(researchContext && failedReference);
     showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
   }
+  // A lookup that failed is answered by its error, under the box it was typed in: that is what comes into view, never the prices below it.
+  if (!$('form-error').hidden) revealAgain('form-error');
 }
 
 async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
@@ -1176,6 +1229,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   }
   requestedPriceContexts.add(context);
   updateAcsearchLink();
+  $('prices-restored').hidden = true;
   clearAcsearchPrices({ keepCuration });
   const id = ++priceRequestId;
   setPricesBusy(true);
@@ -1208,8 +1262,120 @@ async function runPrices(term, currency, { remember = true, context = researchCo
 // The card is the answer and stands above the prices, so prices landing under it bring nothing into view: the collector is reading the coin. Only
 // prices with no card above them (a lookup that failed, or has not answered yet) are the answer to bring into view.
 function revealPrices() {
-  if ($('result').hidden) revealAgain('research-prices');
+  if ($('result').hidden && $('form-error').hidden) revealAgain('research-prices');
 }
+
+// The last answer, kept for a popup that closes with every click on the page: the box, the card and the acsearch page it was drawn from, in the
+// extension's session area, which lives until the browser closes and is never written to disk. A popup opened with nothing sent to it and nothing
+// typed draws that answer again at once, from what was kept, and says how old it is; it asks nothing of any site - only Refresh does. A new lookup
+// or Refresh replaces it. The side panel and the lookup window share it.
+const LAST_ANSWER_KEY = 'giga-pinax-last-answer-v1';
+const ANSWER_KEPT_FOR_MS = 30 * 60 * 1000;
+// What a price panel shows of its median, for the workspace's bid evidence (read there, defensively, and never stored in a record): one entry per
+// provider, keyed by provider, each { reference, provider, currency, median, count, at } with the median in minor units, the reference in the
+// short spelling a saved coin carries ("RIC I² Nero 306"), and at in epoch ms. Only a median on show is kept; a panel cleared takes its entry.
+const SESSION_MEDIAN_KEY = 'giga-pinax-session-median';
+let sessionMedians = {};
+const sessionWrite = (items) => { try { void Promise.resolve(sessionArea()?.set(items)).catch(() => {}); } catch { /* the answer is only not kept */ } };
+const sessionRemove = (key) => { try { void Promise.resolve(sessionArea()?.remove(key)).catch(() => {}); } catch { /* nothing was kept */ } };
+function keepMedian(provider, entry) {
+  const had = Object.hasOwn(sessionMedians, provider);
+  if (!entry && !had) return;
+  const next = { ...sessionMedians };
+  if (entry) next[provider] = entry; else delete next[provider];
+  sessionMedians = next;
+  if (Object.keys(next).length) sessionWrite({ [SESSION_MEDIAN_KEY]: next });
+  else sessionRemove(SESSION_MEDIAN_KEY);
+}
+// A median in minor units: the currency's own places, as the stored money is.
+const minorUnits = (amount, currency) => {
+  const places = new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  return Math.round(amount * 10 ** places);
+};
+const medianEntry = (provider, context, currency, summary) => (summary.count > 0 && Number.isFinite(summary.median) ? {
+  reference: displayReference(priceCard(context).label), provider, currency, median: minorUnits(summary.median, currency), count: summary.count,
+  at: context.restoredAt ?? Date.now(),
+} : null);
+
+function rememberAnswer() {
+  const context = researchContext;
+  if (!currentCard || !context) return;
+  const prices = shownPrices?.context === context ? shownPrices : null;
+  sessionWrite({ [LAST_ANSWER_KEY]: { version: 1, query: $('quick-reference').value, card: currentCard, reference: { ...context.reference },
+    term: context.term, currency: prices?.currency ?? context.currency, lots: prices?.lots ?? null, onlyCiting, onlyDenomination,
+    shownAt: context.restoredAt ?? Date.now() } });
+}
+function forgetAnswer() {
+  sessionRemove(LAST_ANSWER_KEY);
+  keepMedian('acsearch', null);
+  keepMedian('coinarchives', null);
+}
+
+// Read back defensively: the area is the extension's own, but an answer from an older version, or a torn one, is simply not drawn.
+const plainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function readAnswer(stored, now = Date.now()) {
+  if (!plainObject(stored) || stored.version !== 1 || !Number.isFinite(stored.shownAt)) return null;
+  if (now - stored.shownAt > ANSWER_KEPT_FOR_MS || stored.shownAt > now + 60000) return null;
+  const { card, reference } = stored;
+  if (!plainObject(card) || typeof card.label !== 'string' || typeof card.id !== 'string' || !plainObject(card.obverse) || !plainObject(card.reverse)) return null;
+  if (card.corpus !== 'other' && !CORPORA.includes(card.corpus)) return null;
+  if (!plainObject(reference) || typeof reference.catalogue !== 'string' || typeof reference.number !== 'string') return null;
+  if (typeof stored.term !== 'string' || typeof stored.currency !== 'string' || typeof stored.query !== 'string') return null;
+  if (stored.lots !== null && !Array.isArray(stored.lots)) return null;
+  return stored;
+}
+
+// "just now", "4 min ago": said once, as the answer is drawn.
+const answerAge = (shownAt, now = Date.now()) => {
+  const minutes = Math.floor((now - shownAt) / 60000);
+  return minutes < 1 ? 'just now' : `${minutes} min ago`;
+};
+
+let ageTimer = 0;
+async function restoreLastAnswer(ticket) {
+  let stored;
+  try { stored = await sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]); }
+  catch { return; }
+  // A reference a permission prompt interrupted is the collector's next Look up, and wins over the answer before it.
+  if (selectionQuery(stored?.[PENDING_KEY] ?? '')) return;
+  const answer = readAnswer(stored?.[LAST_ANSWER_KEY]);
+  // He may have started typing, or looked something up, while the area answered: what he did is his, and the old answer stays away.
+  if (!answer || ticket !== opening || $('quick-reference').value || currentCard || researchContext) return;
+  $('quick-reference').value = answer.query;
+  clearOutput();
+  fillFields(answer.reference);
+  answered = true;
+  renderFirstRun();
+  renderCard(answer.card, { restoring: true });
+  // The research the answer was drawn from, as a lookup makes it, with the term and currency it had.
+  researchContext = Object.freeze({ reference: Object.freeze({ ...answer.reference }), label: buildQuery(answer.reference).query, identity: answer.card,
+    term: answer.term, currency: answer.currency, priceTicket: priceRequestId, restoredAt: answer.shownAt });
+  if (cardMatchesContext(answer.card, researchContext)) verifiedPriceCards.set(researchContext, answer.card);
+  onlyCiting = answer.onlyCiting !== false;
+  onlyDenomination = answer.onlyDenomination === true;
+  $('price-term').value = answer.term;
+  $('price-search').open = false;
+  updateAcsearchLink();
+  updateCoinArchivesLink();
+  $('research-prices').hidden = false;
+  // Prices drawn in another currency than the one now chosen are not shown: Refresh fetches them in this one.
+  if (answer.lots && answer.currency === $('currency').value) renderPrices(answer.lots, answer.currency, answer.term, false, researchContext, priceCard(researchContext));
+  $('prices-restored-text').textContent = `as of ${answerAge(answer.shownAt)}`;
+  $('prices-restored').hidden = false;
+  // The age keeps up with the clock for as long as the line is on show: a side panel may stay open for an hour.
+  clearInterval(ageTimer);
+  ageTimer = setInterval(() => {
+    if ($('prices-restored').hidden) return;
+    $('prices-restored-text').textContent = `as of ${answerAge(answer.shownAt)}`;
+  }, 60000);
+  placeAtTop('result');
+  announce(`Your last answer, from ${answerAge(answer.shownAt)}: ${displayReference(answer.card.label)}.`);
+}
+// Refresh asks acsearch again for the answer on show, with the collector's own click behind it, as Get prices does.
+$('refresh-prices').addEventListener('click', () => {
+  if (!researchContext || $('prices-button').disabled) return;
+  $('prices-form').requestSubmit();
+});
 
 // Counted so a reference the store is still fetching cannot land in a window that has since been sent a lookup of its own (openFrom below).
 let opening = 0;
@@ -1272,6 +1438,8 @@ $('quick-reference').addEventListener('input', () => {
   clearLot();
   clearRicNote();
   renderFirstRun();
+  typingReference = Boolean($('quick-reference').value.trim());
+  showRecent();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
   $('quick-reference').removeAttribute('aria-invalid');
@@ -1316,7 +1484,8 @@ $('catalogue').addEventListener('change', () => {
 // back, and so does the announcement, rather than the median simply vanishing.
 $('currency').addEventListener('change', () => {
   savePreferences();
-  const repriced = shownPrices?.context === researchContext ? researchContext : null;
+  // An answer drawn again from the session is never fetched again by itself: its prices go, and Refresh stays beside the heading.
+  const repriced = shownPrices?.context === researchContext && !researchContext.restoredAt ? researchContext : null;
   const publicCurrency = shownCoinArchivesPrices && shownCoinArchivesPrices.context === researchContext ? shownCoinArchivesPrices.currency : '';
   const term = $('price-term').value;
   const currency = $('currency').value;
@@ -1461,6 +1630,12 @@ $('copy-summary').addEventListener('click', async () => {
 });
 $('prices-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  // Prices asked for on an answer drawn again from the session are new: the research stops carrying the old answer's time.
+  if (researchContext?.restoredAt) {
+    const fresh = Object.freeze({ ...researchContext, restoredAt: null });
+    if (verifiedPriceCards.has(researchContext)) verifiedPriceCards.set(fresh, verifiedPriceCards.get(researchContext));
+    researchContext = fresh;
+  }
   const context = researchContext;
   if (!context || $('prices-button').disabled) return;
   const term = $('price-term').value.trim();
@@ -1558,7 +1733,10 @@ function openFrom(search) {
   else if (opened && CORPORA.includes(opened.corpus)) beginResearch(null, () => localFirstId(opened.corpus, opened.id));
   // Nothing was sent here, so a reference a permission prompt interrupted is put back in the box, where Look up is waiting for it. It looks up nothing
   // by itself: the prompt was the answer to the last Look up, and this one is his to press.
-  else if (!$('quick-reference').value) void restorePendingReference(ticket);
+  else if (!$('quick-reference').value) {
+    void restorePendingReference(ticket);
+    void restoreLastAnswer(ticket);
+  }
   $('quick-reference').focus();
 }
 // Another Giga Pinax page saved (the toolbar popup beside a lookup window left open): this page takes up its Recent list and remembered terms, so its

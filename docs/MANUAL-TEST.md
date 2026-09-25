@@ -169,9 +169,10 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 18. **The filter switches.** Look up `Price 23` and select **Get prices**, then look up a reference whose results name
     a denomination.
-    *Expected:* **Only results citing …** and **Only results naming …** each draw as a normal-sized checkbox with its
-    label beside it on the same line, the label whole and readable; never a full-width box with the label pushed off
-    the edge of the popup. Check this in the side panel as well as the toolbar popup.
+    *Expected:* **Citing …** and **Naming …** each draw as a pill in the row of sales-period pills, holding a
+    normal-sized checkbox with its label beside it on the same line, the label whole and readable; never a full-width
+    box with the label pushed off the edge of the popup. Hovering either shows the whole rule (**Only results citing …**).
+    Check this in the side panel as well as the toolbar popup.
 
 19. **A bare RIC number shows no median.** Look up `RIC 237`.
     *Expected:* a list of types to choose from, and no auction research section, median or **Get prices** until a type
@@ -250,3 +251,19 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     entry. *Expected:* its entry and the collection totals show the new figures. Open **Edit entry**, type in a field,
     and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
     typed.
+
+30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Save**
+    beside **Type**.
+    *Expected:* no tab opens; the line under the card reads **Saved to your watchlist · Open · Undo**. Select **Undo**
+    within ten seconds. *Expected:* "Removed from your watchlist." and **Save** is back. Select **Save** again, wait ten
+    seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows **On your watchlist · Open**
+    instead of **Save**; **Open** opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
+    *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
+    saved lot, and **Undo** then takes back both.
+
+31. **The popup's last answer.** Look up `RIC I² Nero 306` in the toolbar popup and wait for the median. Click the
+    page so the popup closes, then open it again.
+    *Expected:* the Reference box, the card and the same median are back at once, with **as of just now · Refresh**
+    beside the acsearch heading, and the network panel of the popup's developer tools shows no new acsearch request.
+    Select **Refresh**. *Expected:* one acsearch request, and the line goes. Look up another reference, close and open
+    the popup. *Expected:* the new answer is the one shown.
