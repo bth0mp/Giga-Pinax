@@ -1771,8 +1771,12 @@ test('captured research text never replaces a query the collector typed', async 
   draft.release();
   await settle();
   assert.equal(page.$('research-query').value, 'Trajan denarius');
-  assert.equal(page.status(), 'Captured research text is waiting: Load it · Keep what I typed');
-  const [load] = page.$('workspace-status').querySelectorAll('button');
+  // Review Minor 3: the offer has a line of its own under the query, which the page's passing notices do not overwrite.
+  assert.equal(page.$('research-action-status').textContent, 'Captured research text is waiting: Load it · Keep what I typed');
+  assert.equal(page.status(), '');
+  await page.click('launch-ac');
+  assert.equal(page.$('research-action-status').textContent, 'Captured research text is waiting: Load it · Keep what I typed', 'a notice leaves it standing');
+  const [load] = page.$('research-action-status').querySelectorAll('button');
   await load.click(); await settle();
   assert.equal(page.$('research-query').value, 'Nero As RIC 306');
 });

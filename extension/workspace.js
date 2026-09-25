@@ -1608,8 +1608,7 @@ async function initWorkspace() {
     } else {
       const typed = $('research-query').value.trim();
       if (typed && typed !== String(draft.payload.rawText ?? '').trim()) {
-        const status = $('workspace-status');
-        offerDraft(status, 'Captured research text is waiting', () => { status.classList.remove('error'); loadResearchDraft(draft); });
+        offerDraft($('research-action-status'), 'Captured research text is waiting', () => loadResearchDraft(draft));
       } else loadResearchDraft(draft);
     }
   }

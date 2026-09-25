@@ -92,3 +92,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
    .status-row .pill in companion-popup.css, which this page does not load, over the shared .pill of design-tokens.css. */
 .want-match{display:flex;align-items:center;gap:6px;min-height:24px;margin:-4px 0 12px;font-size:var(--text-body);line-height:1.4;color:var(--ink);white-space:nowrap}
 .want-match .pill{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;padding:3px 10px;font-family:var(--font-ui);line-height:1.4}
+/* Review Minor 3: the Search route's own line, for a captured research text waiting beside a typed query. */
+#research-action-status{margin:-12px 0 12px}#research-action-status:empty{display:none}
