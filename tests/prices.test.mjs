@@ -1769,3 +1769,21 @@ test('citesReference counts an ambiguous dotted-letter citation for neither card
     assert.equal(citesReference(text, nero), true, text);
   }
 });
+
+// Loop V-03: with Citing on, every Tauler & Fau, Áureo and Cayón row was counted as not citing the card: they write the key in title case, glued to
+// its number or volume ("(Ric-II 118)", "(Ric-118)") or with its stop ("Ric. 306"). That spelling of the key is read; a lower-case "ric" never is.
+test('citesReference reads the title-case Ric glued to its number or volume, in a bracket or with its stop, and never a lower-case ric', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['(Ric-II 118). (Bmcre-284).', '(Ric-118). (Rsc-74).', 'Ric-II-118.', 'Ric-118; Cal-1015.', 'Ric. 118.', '(Ric 118)', 'Ric.II 118.']) {
+    assert.equal(citesReference(`Trajan. Denarius. ${cited}`, trajan), true, cited);
+  }
+  for (const other of ['ric-118.', '(ric-II 118).', 'ric. 118.', 'Ric 118.', 'Eric-118.', 'Ric-1180.', 'Ric-II 1180.', 'Ric - 118.', 'Ric-118a.', 'Price-Ric 118']) {
+    assert.equal(citesReference(`Trajan. Denarius. ${other}`, trajan), false, other);
+  }
+  // Only the card's own volume.
+  assert.equal(citesReference('(Ric-II 118)', { ...trajan, volume: 'I (2nd edition)' }), false);
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['(Ric-I 306). (Wcn-275).', 'Ric. 306', '(Ric-306)']) assert.equal(citesReference(cited, nero), true, cited);
+  const pius = { catalogue: 'RIC', number: '772', volume: 'III', section: 'Antoninus Pius' };
+  assert.equal(citesReference('(Ric-III 772). (Bmcre-1655).', pius), true);
+});

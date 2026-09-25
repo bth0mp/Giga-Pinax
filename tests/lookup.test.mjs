@@ -1682,3 +1682,15 @@ test('lookupType never opens the plain coin of a dotted letter when the lettered
     '223c': { status: 'candidates', partial: true, personMismatch: true, corpus: 'ocre', candidates: [{ id: 'ric.5.gall(1).223c', title: 'RIC V Gallienus 223c' }] } }) });
   assert.equal(stranger.card?.id, 'ric.4.tr_d.223');
 });
+
+// Loop V-03: Tauler & Fau write every citation as "(Ric-II 118)", "(Ric-I 306)": the key in title case with its volume hyphenated on. It read as
+// nothing, so the popup went online for a coin the bundle holds. The hyphen is the glued separator "RIC-118" has always been read with.
+test('parseReference reads a hyphen between RIC or Ric and its volume, never behind a lower-case key', () => {
+  for (const [text, number, volume] of [['Ric-II 118', '118', 'II'], ['(Ric-II 118)', '118', 'II'], ['Ric-I 306', '306', 'I'], ['Ric-III 772', '772', 'III'],
+    ['RIC-II 118', '118', 'II'], ['Ric–VII 42', '42', 'VII'], ['Ric-IV-1 266', '266', 'IV, Part 1']]) {
+    assert.deepEqual(parseReference(text), { catalogue: 'RIC', number, volume, section: '' }, text);
+  }
+  for (const text of ['ric-II 118', 'Ric-XI 118', 'Ric-IIa 118', 'Ric-Illyricum 5', 'Ric-II', 'RIc-II 118']) assert.equal(parseReference(text), null, text);
+  // The hyphen with a number behind it is read as before.
+  assert.deepEqual(parseReference('Ric-118'), { catalogue: 'RIC', number: '118', volume: '', section: '' });
+});

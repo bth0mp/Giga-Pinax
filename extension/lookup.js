@@ -16,8 +16,11 @@ export const EDITION = /\s*\(\s*\d+(?:st|nd|rd|th)\s+eds?\.?\s*\)(?=\s*[.,;:]*\s
 // The range is the one step a caller may keep: the number as the dealer wrote it is what withRange carries to the index, since OCRE titles types
 // over a range too. One fixed run at one position, as every other step here is.
 const RANGE = /(\d+[a-z]?)-(?:\d+[a-z]?|[a-z])(?=$|\s)/i;
+// Tauler & Fau and Áureo glue the volume on with the same hyphen, the key in capitals or in title case ("RIC-II 118", "(Ric-II 118)", "Ric-I 306"),
+// never in lower case: only a volume numeral RIC has may follow it.
+const GLUED_VOLUME = /^(?:RIC|Ric)[-–](?=(?:X|IX|VIII|VII|VI|V|IV|III|II|I)(?![\p{L}\d]))/u;
 export const readable = (text, shortenRange = true) => {
-  const spelled = text.replace(/^RIC²/, 'RIC').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2');
+  const spelled = text.replace(/^RIC²/, 'RIC').replace(GLUED_VOLUME, 'RIC ').replace(/^(?!Price:)(\p{L}[\p{L}/]*)[.:#-](?=\d)/u, '$1 ').replace(/(?<=\s)([IVX]+)-(\d)(?!\d)/, '$1.$2');
   return (shortenRange ? spelled.replace(RANGE, '$1') : spelled).replace(/^Pr\s+(?=\d)/, 'Price ');
 };
 // A bracket naming a section of some RIC volume ("(Elagabalus)", "(Vespasian)"), or null. On a RIC reference readType reads it as the section; on

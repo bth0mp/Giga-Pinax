@@ -1545,3 +1545,13 @@ test('a purchase sentence gives up a citation behind a spaced dash, a bracket or
   assert.deepEqual(texts('Ex Spink, 1998 - RIC 53.'), []);
   assert.deepEqual(readProvenance('Purchased from Spink - London, 1998.').map(({ text }) => text), ['Purchased from Spink - London, 1998']);
 });
+
+// Loop V-03: Tauler & Fau's lot reads its RIC row with the volume, so the heading's ruler finds the card offline.
+test('a Tauler & Fau lot reads "(Ric-II 118)" as RIC II 118', () => {
+  const lot = findReferences('Trajan. Denarius. 103-111 AD. Rome. (Ric-II 118). (Bmcre-284). (Rsc-74). Ag. 3,32 g. Choice VF. Est...100.');
+  assert.deepEqual(lot.references[0].reference, ric('118', 'II'));
+  assert.equal(lot.references[0].text, 'Ric-II 118');
+  assert.deepEqual(lot.rulers, ['Trajan']);
+  assert.deepEqual(findReferences('Nero. As. 62-68 AD. Rome. (Ric-I 306). (Wcn-275).').references[0].reference, ric('306', 'I'));
+  assert.deepEqual(findReferences('Antoninus Pius. Sestertius. 145-161 AD. Rome. (Ric-III 772). (Bmcre-1655).').references[0].reference, ric('772', 'III'));
+});

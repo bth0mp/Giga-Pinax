@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - A late-Roman lot that names the ruler and the mint (`Constantine I BI Nummus. Treveri, AD 310-313. … RIC VII 42.`, Spink's `Constantine I (AD 307-337), Solidus, Treveri … (RIC VII 22 …)`) opens the coin of that mint, where it listed the ruler's coin with the number at every mint of the volume (14 types for that Roma lot). A heading naming two mints narrows the list to them and still lets you choose, and a coin RIC files under the ruler's own name is offered beside the mint's, since it may have been struck there too.
+- Tauler & Fau's citations (`(Ric-II 118)`, `(Ric-I 306)`, `(Ric-III 772)`) are read as RIC with its volume, so their lots open the card from the bundled catalogue, where the popup went online for them and said "Couldn't connect" offline. With **Citing** on, rows that write the key in title case glued to its number or volume (`(Ric-118)`, `(Ric-II 118)`), with its stop (`Ric. 306`) or in a bracket (`(Ric 306)`), the way Tauler & Fau, Áureo and Cayón do, now count as citing the card; a lower-case `ric` still never does.
 
 ## [0.38.0] - 2026-09-25
 

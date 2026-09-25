@@ -471,6 +471,10 @@ function between({ catalogue, volume }) {
   return `${EDITION}(?:${glued(catalogue)}|[-–](?=[IVX])${volumed}|${SEP}(?:${volumed}|${RULERS}))`;
 }
 
+// Tauler & Fau, Áureo and Cayón write RIC in title case, glued to its number or volume with a hyphen ("(Ric-II 118)", "(Ric-118)"), with its own stop
+// ("Ric. 306") or inside a bracket ("(Ric 306)"). Only there: a bare "Ric 306" may be a forename, and a lower-case "ric" is never the key.
+const TITLE_CASE_RIC = String.raw`(?<=\()Ric|Ric(?=[.\-–])`;
+
 // A citation stands in the line or two a dealer describes the coin in; past this the text is a group lot's literature, and reading it only costs time.
 const CITATION_LIMIT = 10000;
 
@@ -491,6 +495,7 @@ export function citesReference(description, reference) {
   const number = keys ? citationNumber(reference) : '';
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
+  if (reference.catalogue === 'RIC') spellings.push(TITLE_CASE_RIC);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
     + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`
     + (reference.catalogue === 'RIC' ? SPACED_LETTER : '');

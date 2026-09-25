@@ -203,3 +203,11 @@ test('over the bundled catalogue, a heading naming two mints narrows to them and
   assert.notEqual(two.status, 'ok');
   assert.deepEqual(two.candidates.map((entry) => entry.id).sort(), ['ric.7.lon.42', 'ric.7.tri.42']);
 });
+
+// Loop V-03: Tauler & Fau's "(Ric-II 118)" behind a Trajan heading is his coin, found in the bundle, where it went online and failed offline.
+test('over the bundled catalogue, a Tauler & Fau lot opens its coin', { skip }, async () => {
+  const trajan = await lookup('Trajan. Denarius. 103-111 AD. Rome. (Ric-II 118). (Bmcre-284). (Rsc-74). Ag. 3,32 g. Choice VF. Est...100.');
+  assert.equal(trajan.card?.id, 'ric.2.tr.118');
+  const pius = await lookup('Antoninus Pius. Sestertius. 145-161 AD. Rome. (Ric-III 772). (Bmcre-1655). (C-579). Ae. 26,34 g.');
+  assert.equal(pius.card?.id, 'ric.3.ant.772');
+});
