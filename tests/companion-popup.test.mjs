@@ -1323,3 +1323,50 @@ test('the Watchlist tab gives each currency its all-in figure beside the hammers
   assert.equal(summary.exposure.GBP.totalCount, 1);
   assert.equal(summary.exposure.USD.totalCount, 0);
 });
+
+// G-22: a card whose type is on the want list says so under it, with the want's terms, matched by the catalogue rules; the want list goes to the research
+// half for its Upcoming rows, and follows every snapshot.
+test('a card of a wanted type says “On your want list” under it, and the research half is handed the list', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I (second edition) Nero 306', maxPrice: { currency: 'GBP', minor: 65000 }, minGrade: 'VF' } });
+  const listeners = [];
+  const shared = [];
+  const onChanged = globalThis.browser.storage.onChanged;
+  const dispatch = globalThis.dispatchEvent;
+  globalThis.browser.storage.onChanged = { addListener: (listener) => listeners.push(listener), removeListener() {} };
+  globalThis.dispatchEvent = (event) => { if (event?.type === 'giga-pinax-wants') shared.push(event.detail); return true; };
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background) });
+    assert.deepEqual(shared.at(-1).map(({ reference }) => reference), ['RIC I (second edition) Nero 306']);
+    const line = page.element('companion-want-line');
+    page.card(neroCard);
+    assert.equal(line.hidden, false);
+    assert.equal(line.children[0].className, 'pill');
+    assert.equal(lineParts(line), '[On your want list] · up to £650.00 · VF or better');
+    // A neighbouring type is not the want.
+    page.card({ title: 'Nero · As', reference: 'RIC I² Nero 306a', pageUrl: 'https://numismatics.org/ocre/id/ric.1(2).ner.306a' });
+    assert.equal(line.hidden, true);
+    page.card(neroCard);
+    assert.equal(line.hidden, false);
+    // A lookup that answers with a list of candidates draws no card: the research half clears it, and the line goes.
+    page.card(null);
+    assert.equal(line.hidden, true);
+    page.card(neroCard);
+    // Typing a new reference takes the card, and the line with it.
+    await page.element('quick-reference').emit('input');
+    assert.equal(line.hidden, true);
+    // Marked found in another view: the next snapshot takes the line away.
+    page.card(neroCard);
+    const lot = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero', reference: 'RIC I² Nero 306', sourceLinks: [] } })).value;
+    await background.send({ type: 'lot.outcome.set', lotId: lot.id, expectedRevision: 0, outcome: { status: 'won' } });
+    const [want] = background.root().wants;
+    await background.send({ type: 'want.found', wantId: want.id, expectedRevision: 0, lotId: lot.id });
+    for (const listener of listeners) listener({ 'auctionCompanion:v1': { newValue: background.root() } }, 'local');
+    await settleAll();
+    assert.equal(line.hidden, true);
+    assert.equal(shared.at(-1)[0].foundLotId, lot.id, 'the research half hears of it too');
+  } finally {
+    globalThis.browser.storage.onChanged = onChanged;
+    globalThis.dispatchEvent = dispatch;
+  }
+});

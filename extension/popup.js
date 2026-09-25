@@ -6,6 +6,7 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
+import { openWantsFor, wantBadgeText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
@@ -733,9 +734,25 @@ function acsearchFilter(lots, term, reference, card) {
 // The lots on the page that are not sold yet, under the panel: only those the median's own filters would count, and the filter line in the median's
 // own words over them. Nothing is fetched for it and nothing a collector decided by hand applies, since none of these rows is a sale to include.
 // Each row links the lot on acsearch and offers Watch; the list is the page's, so the 100-lot cap holds for it too.
+// The want list, as the other half of this page hands it over (G-22): an Upcoming row citing a wanted type says "On your want list", matched by the
+// catalogue rules against the card - only once a card of one type has been verified for this research, so a list of candidates, or a reference
+// still waiting for its card, marks nothing - and against the row's own citation of it. Nothing is fetched for it.
+let wantList = Array.isArray(globalThis.gigaPinaxWants) ? globalThis.gigaPinaxWants : [];
+window.addEventListener('giga-pinax-wants', (event) => {
+  wantList = Array.isArray(event.detail) ? event.detail : [];
+  if (shownUpcoming?.context === researchContext) renderUpcoming(shownUpcoming.lots, shownUpcoming.term);
+});
+function wantedForContext(context) {
+  const card = verifiedPriceCards.get(context);
+  const reference = card ? referenceFromCard(card) : null;
+  return reference ? openWantsFor(wantList, reference) : [];
+}
+
 function renderUpcoming(lots, term, context = researchContext, card = priceCard(context)) {
   if (!context) return [];
   const { denomination, wanted, searched, unsearched, uncited, citing, passes, reason } = acsearchFilter(lots, term, context.reference, card);
+  const wants = wantedForContext(context);
+  const wantWords = wantBadgeText(wants, navigator.language);
   const upcoming = upcomingLots(lots, new Date());
   const listed = upcoming.filter((sale) => reason(sale) === null);
   const filters = filterLines(upcoming, { reasonFor: reason }, { name: referenceName(context.reference), denomination: wanted, citing, uncited, unsearched, passes });
@@ -753,6 +770,18 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     watch.textContent = 'Watch';
     watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}`);
     watch.addEventListener('click', () => watchUpcoming(sale, context));
+    // A row citing the wanted type carries the badge beside its Watch, which saves it in one step as on any other row.
+    if (wants.length && passes.citing(sale)) {
+      const badge = document.createElement('mark');
+      badge.className = 'pill';
+      badge.textContent = 'On your want list';
+      badge.title = wantWords;
+      watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}. ${wantWords}`);
+      const end = document.createElement('div');
+      end.append(badge, ' ', watch);
+      row.append(label, end);
+      return row;
+    }
     row.append(label, watch);
     return row;
   }));

@@ -14,6 +14,7 @@ import { parseReference } from './lookup.js';
 import { validateDraftPayload } from './core/drafts.js';
 import { buildWorkspaceLotDraft, lotDraftToEditor, lotFormValues, offeredEventFromDraft } from './workspace-forms.js';
 import { eventWhen } from './workspace-views.js';
+import { openWantsFor, wantBadgeText } from './core/wantlist.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
 const bounded = (value, maximum) => typeof value === 'string'
@@ -555,6 +556,28 @@ async function initCompanionPopup() {
     // A coin still open takes Save's place; owning one example (or losing one) is no reason not to watch another lot of the type.
     save.hidden = lots.some((lot) => (lot.outcome?.status ?? 'open') === 'open');
   };
+  // The card's type on the want list (G-22): "On your want list · up to €800.00 · VF or better" under the card, matched by
+  // the catalogue rules and only for the one type a card shows - a list of candidates draws no card, so it never says so.
+  // The want list also goes to the research half, for its Upcoming rows; nothing is fetched for it.
+  let cardReference = globalThis.gigaPinaxWatchlistReference?.reference ?? null;
+  const renderCardWanted = () => {
+    const line = $('companion-want-line');
+    if (!line) return;
+    const words = cardReference ? wantBadgeText(openWantsFor(snapshot.wants, cardReference), navigator.language) : '';
+    const [badge, ...rest] = words ? words.split(' · ') : [];
+    line.replaceChildren();
+    if (badge) {
+      const pill = document.createElement('mark');
+      pill.className = 'pill';
+      pill.textContent = badge;
+      line.append(pill, ...rest.map((part) => ` · ${part}`));
+    }
+    line.hidden = !badge;
+  };
+  const shareWants = () => {
+    globalThis.gigaPinaxWants = Object.freeze([...(snapshot.wants ?? [])]);
+    dispatchEvent(new CustomEvent('giga-pinax-wants', { detail: globalThis.gigaPinaxWants }));
+  };
   const forgetJustSaved = (where) => {
     // What the line under Save said of the last card (a removal, a refusal) is not about the next one.
     if (where === 'card') { $('companion-save-hint').textContent = ''; $('companion-save-hint').hidden = true; }
@@ -569,6 +592,8 @@ async function initCompanionPopup() {
   };
   const clearCard = () => {
     safeCard = null;
+    cardReference = null;
+    renderCardWanted();
     $('companion-save-watchlist').disabled = true;
     forgetJustSaved('card');
     clearUpcomingSaved();
@@ -580,6 +605,8 @@ async function initCompanionPopup() {
     $('companion-save-watchlist').disabled = !canSave(safeCard);
     forgetJustSaved('card');
     renderCardSaved();
+    cardReference = event.detail?.reference ?? null;
+    renderCardWanted();
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
@@ -912,6 +939,8 @@ async function initCompanionPopup() {
       applyPreferredCurrency($('currency'), currency);
       renderSummary();
       renderCardSaved();
+      renderCardWanted();
+      shareWants();
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
@@ -928,6 +957,8 @@ async function initCompanionPopup() {
       }
       renderSummary();
       renderCardSaved();
+      renderCardWanted();
+      shareWants();
     });
   }
   // Registered whether or not the snapshot could be read: the research half has already cached the

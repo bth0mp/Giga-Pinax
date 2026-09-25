@@ -320,7 +320,7 @@ test('a want matches the same type in any spelling the lookup reads, and never a
 });
 
 test('only a reading that names one type can be wanted or match one', () => {
-  for (const reference of ['RIC 306', 'RIC II 253', 'RIC 268 (Elagabalus)', 'SNG Cop 123', 'RPC I 1234', 'HGC 4, 1218',
+  for (const reference of ['RIC 306', 'RIC II 253', 'RIC 268 (Elagabalus)', 'Bopearachchi 5A', 'SNG Cop 123', 'RPC I 1234', 'HGC 4, 1218',
     'Sear 1234', 'Good VF', 'RIC IV 27 b.', '', '   ', null, 42]) {
     assert.equal(wantedReading(reference), null, String(reference));
     assert.notEqual(wantReferenceProblem(reference), '', String(reference));
@@ -328,13 +328,16 @@ test('only a reading that names one type can be wanted or match one', () => {
   }
   // A dealer's dotted letter, as lot.js reads one, names two types.
   assert.equal(namesOneType({ catalogue: 'RIC', number: '27', volume: 'IV', section: 'Caracalla', dottedLetter: 'b' }), false);
-  for (const reference of ['RIC I² Nero 306', 'RIC VII Antioch 1', 'RRC 44/5', 'Price 112', 'SC 2195.5c', 'CPE 12', 'Bopearachchi 5A', 'RIC II.3² Hadrian 1009-1012']) {
+  for (const reference of ['RIC I² Nero 306', 'RIC VII Antioch 1', 'RRC 44/5', 'Price 112', 'SC 2195.5c', 'CPE 12', 'Bopearachchi Menander I 13A', 'RIC II.3² Hadrian 1009-1012']) {
     assert.ok(wantedReading(reference), reference);
     assert.equal(wantReferenceProblem(reference), '', reference);
   }
   assert.equal(wantReferenceProblem('RIC 306'), 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.');
   // OCRE titles some types over a range, so a range is one type when it is written as the want was, and only then.
   assert.equal(sameWantedType('RIC II.3² Hadrian 1009-1012', 'RIC II, Part 3 (second edition) Hadrian 1009–1012'), true);
+  assert.equal(wantReferenceProblem('Bop 5A'), 'A Bopearachchi reference names its king, as a card does: Bopearachchi Menander I 13A.');
+  assert.equal(sameWantedType('Bopearachchi Menander I 13A', 'Bop. Menander I 13A'), true);
+  assert.equal(sameWantedType('Bopearachchi Menander I 13A', 'Bopearachchi Menander II 13A'), false);
   assert.match(wantReferenceProblem('SNG Cop 123'), /^“SNG Cop 123” is not read as one catalogue type\./);
 });
 

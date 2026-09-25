@@ -36,9 +36,9 @@ function readingOf(reference) {
 }
 
 /**
- * Whether a reading names one catalogue type: a catalogue with type data (never Other), a number, and for RIC both the
- * volume and the ruler or mint, since RIC numbers begin again in every section. A dealer's dotted letter ("RIC IV 27 b.")
- * names two.
+ * Whether a reading names one catalogue type: a catalogue with type data (never Other), a number, for RIC both the volume
+ * and the ruler or mint, since RIC numbers begin again in every section, and for Bopearachchi the king, whose series each
+ * begin again. A dealer's dotted letter ("RIC IV 27 b.") names two.
  * @param {Reading | null | undefined} reading
  * @returns {boolean}
  */
@@ -46,6 +46,7 @@ export function namesOneType(reading) {
   if (!reading || reading.catalogue === 'Other' || blank(reading.catalogue) || blank(reading.number)) return false;
   if (reading.dottedLetter) return false;
   if (reading.catalogue === 'RIC') return !blank(reading.volume) && !blank(reading.section);
+  if (reading.catalogue === 'Bop') return !blank(reading.section);
   return true;
 }
 
@@ -84,6 +85,7 @@ export function wantReferenceProblem(reference) {
   const reading = readingOf(text);
   if (namesOneType(reading)) return '';
   if (reading?.catalogue === 'RIC') return 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.';
+  if (reading?.catalogue === 'Bop') return 'A Bopearachchi reference names its king, as a card does: Bopearachchi Menander I 13A.';
   return `“${text}” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE or Bopearachchi reference, such as RIC I² Nero 306 or RRC 44/5.`;
 }
 
