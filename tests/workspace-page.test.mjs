@@ -1842,3 +1842,18 @@ test('every route is headed by its nav word', async () => {
   }
   assert.deepEqual(page.document.querySelectorAll('.section-heading').filter((heading) => heading.querySelector('p')), [], 'no intro line sits in a heading to be cut');
 });
+
+// H-17: Alternatives is folded under the coin list, closed until a group exists, its count in the summary.
+test('Alternatives is folded until a group exists, and says how many there are', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(page.$('group-fold').open, false);
+  assert.equal(page.$('group-summary').textContent, 'Alternatives (0)');
+  await page.click('new-group');
+  assert.equal(page.$('group-fold').open, true, 'Add group opens it');
+  await page.type('group-form', 'name', 'One Nero as');
+  await page.submit('group-form');
+  assert.equal(page.$('group-summary').textContent, 'Alternatives (1)');
+  const later = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(later.$('group-fold').open, true, 'a page with a group opens it');
+});

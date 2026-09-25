@@ -642,7 +642,13 @@ async function initWorkspace() {
   function populateGroupForm(group) {
     const form = $('group-form'); form.hidden = false; form.elements.id.value = group.id; form.elements.name.value = group.name;
   }
+  // Alternatives are folded under the coin list, with their count, and open by themselves once a group exists (H-17): a
+  // collector who never keeps one is not shown the feature on every visit.
+  let groupsShown = null;
   function renderGroups() {
+    const count = (snapshot.alternativeGroups ?? []).length;
+    $('group-summary').textContent = `Alternatives (${count})`;
+    if (groupsShown !== count) { if (groupsShown === null || (groupsShown === 0) !== (count === 0)) $('group-fold').open = count > 0; groupsShown = count; }
     const groups = $('group-list'); groups.replaceChildren();
     for (const group of snapshot.alternativeGroups ?? []) {
       const members = (snapshot.lots ?? []).filter((lot) => lot.alternativeGroupId === group.id).sort((a, b) => a.priority - b.priority);
@@ -823,7 +829,7 @@ async function initWorkspace() {
   $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; startNewCoin(); $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
-  $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
+  $('new-group').addEventListener('click', () => { $('group-fold').open = true; $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
   $('lot-form').addEventListener('submit', (event) => {
     event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('lot') ?? { id: null, revision: null, record: null };
     let lot;
