@@ -145,7 +145,8 @@ export function replaceAuctionContextInPayload(payload, auctionContext) {
 
 // X-11: what the collector is told when the background never answered, or the message port closed under the save: the raw browser error ("The message
 // port closed before a response was received.") is no sentence for him. It names the button to press again, and says why pressing it is safe.
-export const noAnswerMessage = (button) => `Giga Pinax’s background didn’t answer. Select ${button} again — the same request is retried, never saved twice.`;
+// An Undo is no save: its request is a removal, retried under its own id and never applied twice (review M2).
+export const noAnswerMessage = (button) => `Giga Pinax’s background didn’t answer. Select ${button} again — the same request is retried, never ${button === 'Undo' ? 'applied' : 'saved'} twice.`;
 // X-05: a save whose answer never comes (a worker that died mid-command) is waited for this long, never for ever: then it is said under the button
 // that was pressed, with the same request offered again, and the button comes back.
 export const SAVE_ANSWER_MS = 8000;
@@ -870,9 +871,16 @@ async function initCompanionPopup() {
     if (justSaved !== entry) return;
     clearTimeout(entry.timer);
     const current = (snapshot.lots ?? []).find(({ id }) => id === entry.lot.id) ?? entry.lot;
-    const reply = await sendDirect({ type: 'lot.delete', requestId: bridge.newRequestId(), lotId: entry.lot.id, expectedRevision: current.revision }, 'Undo');
-    if (!reply.ok) { announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor); return; }
-    if (entry.event) await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: entry.event.id, expectedRevision: entry.event.revision });
+    // One request per Undo, kept until the store has answered it, so a retry after no answer is the same removal (review M2).
+    entry.undoRequest ??= bridge.newRequestId();
+    const reply = await sendDirect({ type: 'lot.delete', requestId: entry.undoRequest, lotId: entry.lot.id, expectedRevision: current.revision }, 'Undo');
+    if (!reply.ok) {
+      // A refusal the store gave is final for that request; only an answer nobody could read keeps it for the retry.
+      if ((reply.outcome ?? reply.error?.outcome) !== 'unknown') entry.undoRequest = undefined;
+      announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor);
+      return;
+    }
+    if (entry.event) await sendDirect({ type: 'event.delete', requestId: (entry.undoEventRequest ??= bridge.newRequestId()), eventId: entry.event.id, expectedRevision: entry.event.revision }, 'Undo');
     justSaved = null;
     snapshot = { ...snapshot, lots: (snapshot.lots ?? []).filter(({ id }) => id !== entry.lot.id) };
     if (savedThisSession === entry.lot.id) savedThisSession = '';

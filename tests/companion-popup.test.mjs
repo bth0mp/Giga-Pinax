@@ -1612,3 +1612,29 @@ test('a save with no answer within eight seconds says so under Watch, gives Watc
     globalThis.setTimeout = realSetTimeout;
   }
 });
+
+// Loop 6 fix round (review M2): Undo's no-answer sentence says the same request is retried, and it is: the delete is sent again under its own id.
+test('an Undo the background never answered is retried under the same request', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  let fail = true;
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(structuredClone(command));
+    if (command.type === 'lot.delete' && fail) { fail = false; await background.send(command); throw new Error('The message port closed before a response was received.'); }
+    return background.send(command);
+  } });
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const line = page.element('companion-saved-line');
+  await lineButton(line, 'Undo').emit('click');
+  await settleAll();
+  assert.equal(page.element('companion-save-hint').textContent, 'Giga Pinax’s background didn’t answer. Select Undo again — the same request is retried, never applied twice.');
+  await lineButton(line, 'Undo').emit('click');
+  await settleAll();
+  const deletes = commands.filter(({ type }) => type === 'lot.delete');
+  assert.equal(deletes.length, 2);
+  assert.equal(deletes[0].requestId, deletes[1].requestId);
+  assert.deepEqual(background.root().lots, []);
+  assert.equal(page.element('companion-save-hint').textContent, 'Removed from your watchlist.');
+});
