@@ -10,6 +10,7 @@ import { STORAGE_KEY } from '../extension/store.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { csvFiles } from '../extension/core/csv.js';
 import { formatMoney } from '../extension/core/money.js';
+import { deriveReminderTriggers } from '../extension/core/reminders.js';
 
 async function backgroundWithCoins(...titles) {
   const background = await createWorkspaceBackground();
@@ -897,10 +898,20 @@ test('a date-only auction’s reminders show 09:00 your time in the Reminders ta
   await page.openCoin('Nero, denarius');
   const rows = [...page.$('selected-reminders').querySelectorAll('.reminder-row')];
   assert.deepEqual(rows.map((row) => row.querySelector('.reminder-when').textContent), ['Previous day at 09:00', 'Auction day at 09:00']);
-  for (const row of rows) assert.match(row.querySelector('.reminder-at').textContent, /^\S.* 9:00 AM \(your time\)( · .+ Kiritimati)?$/);
+  const [previous, onTheDay] = rows.map((row) => row.querySelector('.reminder-at').textContent);
+  assert.match(previous, /^\S.* 9:00 AM \(your time\)( · .+ Kiritimati)?$/);
+  // The sale-day reminder rings on the sale day in Kiritimati, no later than 09:00 there (V-04), and its row shows that
+  // instant on your clock. The bound is checked on the instant, since the row names Kiritimati's day only where it is not yours.
+  const { triggerAt } = deriveReminderTriggers([event.value]).find(({ reminderId }) => reminderId === event.value.reminders[1].id);
+  const kiritimati = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Kiritimati', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(triggerAt)).replace(',', '');
+  assert.ok(kiritimati.startsWith('2030-10-15 ') && kiritimati.slice(11) <= '09:00', kiritimati);
+  const yours = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: viewer }).format(new Date(triggerAt));
+  assert.match(onTheDay, /^\S.* \(your time\)( · .+ Kiritimati)?$/);
+  assert.ok(onTheDay.includes(` ${yours} (your time)`), onTheDay);
   // The auction form says whose clock new reminders ring on, and where each one's time is shown: true of an older
   // auction's untouched reminders too, which keep the auction's clock (review Minor 4).
-  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock; the Reminders tab shows each one's time.");
+  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock, the Auction day one before the sale's morning where it is; the Reminders tab shows each one's time.");
 });
 
 // W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle

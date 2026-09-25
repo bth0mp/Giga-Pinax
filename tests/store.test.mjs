@@ -469,8 +469,9 @@ test('event save gives a date-only auction’s reminders the collector’s zone,
   assert.equal(saved.ok, true, saved.message);
   assert.deepEqual(saved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  // 09:00 in New York on the day before and on the sale day, where they were 09:00 in Zurich, 03:00 in New York.
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T13:00:00.000Z']);
+  // 09:00 in New York on the day before, and 21:00 New York the evening before the sale day (03:00 Zurich, before its
+  // morning), where they were 09:00 in Zurich, 03:00 in New York.
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T01:00:00.000Z']);
 
   // A timed auction's reminders are offsets from its start and carry no zone.
   const timed = await writer.commitCommand(command('event.save', { expectedRevision: null, event: {
@@ -529,13 +530,13 @@ test('an auction saved before Q-19 keeps its reminders’ instants until the col
   assert.equal(retimed.ok, true, retimed.message);
   assert.deepEqual(retimed.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), [undefined, 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-22T07:00:00.000Z', '2026-10-23T14:00:00.000Z']);
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-22T07:00:00.000Z', '2026-10-23T01:00:00.000Z']);
   // A new sale day moves every reminder.
   const moved = await writer.commitCommand(command('event.save', { expectedRevision: 1, event: { id, ...draft, localDate: '2026-10-24' } }));
   assert.equal(moved.ok, true, moved.message);
   assert.deepEqual(moved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-23T13:00:00.000Z', '2026-10-24T13:00:00.000Z']);
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-23T13:00:00.000Z', '2026-10-24T01:00:00.000Z']);
 });
 
 // Review Important 1: renaming an auction saved before Q-19, on its sale day at 10:00 in New York after both its reminders
@@ -582,6 +583,103 @@ test('a reminder on the collector’s clock keeps its zone through a rename made
     assert.deepEqual(renamed.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
     expectedRevision += 1;
   }
+});
+
+// V-04: 0.38.0 rang a stamped sale-day reminder by R3's rule, late in the auction's day for a sale east of the collector.
+// This version rings it earlier, before 09:00 there, so its trigger moves under an alert the store already holds. An alert
+// the collector has dealt with follows its reminder to the new instant and keeps their decision, so upgrading on the sale
+// day does not bring back a reminder they already dismissed; one not yet rung is replaced and rings at the new instant.
+// A Zurich sale day saved in 0.38.0 by a New York collector, its reminders stamped, and its alerts as 0.38.0 left them:
+// the day before's acknowledged, and the sale day's at 09:00 New York (13:00Z) in the state given.
+function storedBy038(saleDayState = { status: 'acknowledged', acknowledgedAt: '2026-10-23T13:05:00.000Z' }) {
+  const stored = createEmptySnapshot(NOW);
+  const eventId = uuid();
+  const [before, onTheDay] = [uuid(), uuid()];
+  stored.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, ...zurichSaleDay(),
+    reminders: [{ id: before, kind: 'wall-time', daysBefore: 1, localTime: '09:00', collectorTimeZone: 'America/New_York' },
+      { id: onTheDay, kind: 'wall-time', daysBefore: 0, localTime: '09:00', collectorTimeZone: 'America/New_York' }],
+  });
+  const alert = (reminderId, triggerAt, fields) => ({
+    id: uuid(), revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, triggerId: `${eventId}:${reminderId}:${triggerAt}`,
+    eventId, eventRevision: 0, reminderId, triggerAt, ...fields,
+  });
+  stored.alerts.push(alert(before, '2026-10-22T13:00:00.000Z', { status: 'acknowledged', acknowledgedAt: '2026-10-22T13:05:00.000Z' }),
+    alert(onTheDay, '2026-10-23T13:00:00.000Z', saleDayState));
+  return { stored, eventId, onTheDay, alert };
+}
+
+test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision when its instant moves earlier', async () => {
+  // As 0.38.0 left them: both rang at 09:00 New York, and the collector dismissed them.
+  const { stored, eventId, onTheDay, alert } = storedBy038();
+
+  // Upgraded at 10:00 New York on the sale day (16:00 Zurich): the sale-day reminder now belongs at 01:00Z, already past.
+  const storage = memoryStorage(structuredClone(stored));
+  const writer = createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' });
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true, reconciled.message);
+  assert.equal(reconciled.value.dueEventCount, 0, 'nothing the collector dismissed notifies again');
+  const [kept, moved] = storage.read().alerts;
+  assert.deepEqual(kept, stored.alerts[0], 'the day-before reminder is untouched');
+  assert.deepEqual({ ...moved, revision: 0, updatedAt: NOW }, { ...stored.alerts[1], revision: 0, updatedAt: NOW,
+    triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, triggerAt: '2026-10-23T01:00:00.000Z' });
+  const again = JSON.stringify(storage.read().alerts);
+  await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(JSON.stringify(storage.read().alerts), again, 'a second reconcile changes nothing');
+
+  // Upgraded at 22:00 New York the evening before (04:00 Zurich), before 0.38.0 would have rung it: the new instant, 21:00
+  // New York, has passed, so it is due now rather than at 09:00 New York, seven hours into the sale.
+  const pending = structuredClone(stored);
+  pending.alerts[1] = alert(onTheDay, '2026-10-23T13:00:00.000Z', { status: 'pending', revision: 0 });
+  const early = memoryStorage(pending);
+  const due = await createCommandWriter(early, { now: () => '2026-10-23T02:00:00.000Z', newId: uuid, timeZone: 'America/New_York' })
+    .commitCommand(command('scheduler.reconcile'));
+  assert.equal(due.value.dueEventCount, 1);
+  const replaced = early.read().alerts.filter(({ reminderId }) => reminderId === onTheDay);
+  assert.deepEqual(replaced.map(({ triggerAt, status }) => [triggerAt, status]), [['2026-10-23T01:00:00.000Z', 'due']]);
+  assert.notEqual(replaced[0].id, pending.alerts[1].id, 'an alert still to ring is replaced, not carried');
+});
+
+// Review Minor 3: a snooze the collector gave in 0.38.0, and a notification 0.38.0 had in flight, are decisions too. Each
+// follows the reminder to its new instant: the snooze still ends when asked, the claim still waits for its retry.
+test('a sale-day reminder that 0.38.0 snoozed or was delivering keeps that state when its instant moves', async () => {
+  const cases = [
+    [{ status: 'snoozed', snoozedUntil: '2026-10-23T15:00:00.000Z' }, '2026-10-23T15:00:00.000Z'],
+    [{ status: 'claimed', attemptedAt: '2026-10-23T13:58:00.000Z', claimedAt: '2026-10-23T13:58:00.000Z' }, '2026-10-23T14:03:00.000Z'],
+  ];
+  for (const [state, wake] of cases) {
+    const { stored, eventId, onTheDay } = storedBy038(state);
+    const storage = memoryStorage(structuredClone(stored));
+    const reconciled = await createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' })
+      .commitCommand(command('scheduler.reconcile'));
+    assert.equal(reconciled.ok, true, reconciled.message);
+    assert.equal(reconciled.value.dueEventCount, 0, `${state.status}: nothing rings before the collector asked`);
+    assert.equal(reconciled.value.nextWakeAt, wake, state.status);
+    const moved = storage.read().alerts.filter(({ reminderId }) => reminderId === onTheDay);
+    assert.deepEqual(moved.map(({ id, triggerId, status, snoozedUntil, claimedAt }) => ({ id, triggerId, status, snoozedUntil, claimedAt })), [{
+      id: stored.alerts[1].id, triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, status: state.status,
+      snoozedUntil: state.snoozedUntil, claimedAt: state.claimedAt,
+    }]);
+  }
+});
+
+// Review Minor 5: a 0.38.0 backup merged into a store that already rang the reminder at its new instant keeps the store's
+// own alert; the backup's, at 0.38.0's instant, is not carried onto the same trigger beside it.
+test('merging a 0.38.0 backup keeps the alert this version already holds at the new instant', async () => {
+  const { stored, eventId, onTheDay, alert } = storedBy038();
+  const document = exportBackup(stored, NOW).value;
+  const own = structuredClone(stored);
+  own.alerts = [structuredClone(stored.alerts[0]), alert(onTheDay, '2026-10-23T01:00:00.000Z', {
+    status: 'delivered', attemptedAt: '2026-10-23T01:00:00.000Z', claimedAt: '2026-10-23T01:00:00.000Z', deliveredAt: '2026-10-23T01:00:01.000Z',
+  })];
+  const storage = memoryStorage(own);
+  const writer = createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' });
+  const merged = await writer.commitCommand(command('backup.import', { expectedRevision: 0, mode: 'merge', document }));
+  assert.equal(merged.ok, true, merged.message);
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.value.dueEventCount, 0);
+  assert.deepEqual(storage.read().alerts.filter(({ reminderId }) => reminderId === onTheDay).map(({ id, triggerId, status }) => ({ id, triggerId, status })),
+    [{ id: own.alerts[1].id, triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, status: 'delivered' }]);
 });
 
 test('a stored event whose start instant drifted from its local fields still loads', async () => {

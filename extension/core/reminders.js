@@ -164,36 +164,47 @@ function startOfLocalDay(localDate, timeZone) {
 const RINGS = new Map();
 // The collector's waking hours, for a day whose own reminder time falls nowhere inside it.
 const WAKING = ['08:00', '21:00'];
+// When a sale day's business starts where the auction is (V-04): its sale-day reminder rings no later.
+const SALE_MORNING = '09:00';
 
 /**
- * When a date-only reminder saved with the collector's zone goes off (Q-19, the lead's rule). Its day is the sale day
- * `daysBefore` days back, in the auction's zone: from that day's start to its end. It rings at its own time (09:00) on
- * the collector's clock, on the latest of their days where that time falls inside the day. Where none does (a day of 23
- * hours can miss it), it rings at the latest minute inside the day between 08:00 and 21:00 on their clock, and where no
- * minute is, or their zone cannot be read, at the day's start. So it is never after the day ends where the auction is,
- * nor before it starts. Null where the day itself cannot be placed.
+ * When a date-only reminder saved with the collector's zone goes off (Q-19, bounded by V-04). Its day is the sale day
+ * `daysBefore` days back, in the auction's zone, and it rings inside a window of that day:
+ * - the sale-day reminder (0 days before) from the day's start to 09:00 there, so it rings before the sale's business
+ *   starts, never late in the auction's day after its lots have closed;
+ * - any other from the day's start to its last minute (R3's rule, unchanged).
+ * Inside its window it rings at its own time (09:00) on the collector's clock, the latest such instant. Where none falls
+ * inside, it rings at the latest minute of the window between 08:00 and 21:00 on their clock; where none is, or their
+ * zone cannot be read, at 09:00 there for the sale-day reminder and at the day's start for any other. So a sale-day
+ * reminder is never after 09:00 on the sale day where the auction is, and none is before its day starts there or after it
+ * ends. Null where the day itself cannot be placed. `morning` false gives R3's rule for the sale-day reminder too.
  * @param {AuctionEvent} event
  * @param {import('./types.js').WallTimeReminder} reminder
+ * @param {boolean} [morning]
  * @returns {string | null}
  */
-function ringOnCollectorClock(event, reminder) {
-  const cacheKey = `${event.localDate}|${reminder.daysBefore}|${reminder.localTime}|${event.timeZone}|${reminder.collectorTimeZone}`;
+function ringOnCollectorClock(event, reminder, morning = reminder.daysBefore === 0) {
+  const cacheKey = `${event.localDate}|${reminder.daysBefore}|${reminder.localTime}|${event.timeZone}|${reminder.collectorTimeZone}|${morning}`;
   if (RINGS.has(cacheKey)) return RINGS.get(cacheKey);
   const day = shiftDate(event.localDate, -reminder.daysBefore);
   const start = day === null ? null : startOfLocalDay(day, event.timeZone);
   const end = start === null ? null : startOfLocalDay(/** @type {string} */ (shiftDate(/** @type {string} */ (day), 1)), event.timeZone);
+  // The window's last instant, which it may ring at: 09:00 there on the sale day (the earlier, where that time occurs
+  // twice or is skipped), else the day's last minute.
+  const last = end === null ? null : morning
+    ? zonedEdge(/** @type {string} */ (day), SALE_MORNING, event.timeZone)
+    : instantAt(Date.parse(end) - 60000);
   let ring = null;
-  if (start !== null && end !== null && TIME.test(reminder.localTime)) {
-    ring = start;
+  if (start !== null && last !== null && TIME.test(reminder.localTime)) {
+    ring = morning ? last : start;
     let format = null;
-    try { format = formatter(reminder.collectorTimeZone); } catch { /* the day's start */ }
+    try { format = formatter(reminder.collectorTimeZone); } catch { /* the fallback above */ }
     // The collector's days that can reach into the auction's: zones are at most 26 hours apart.
     const dates = format ? [-2, -1, 0, 1, 2].map((days) => dateParts(shiftDate(day, days))).filter((date) => date !== null) : [];
     const own = dates.flatMap((date) => zonedCandidates(date, reminder.localTime, format).matches)
-      .filter((instant) => instant >= start && instant < end).sort().at(-1);
+      .filter((instant) => instant >= start && instant <= last).sort().at(-1);
     if (own) ring = own;
     else {
-      const lastMinute = instantAt(Date.parse(end) - 60000);
       let latest = null;
       for (const date of dates) {
         const opens = zonedCandidates(date, WAKING[0], format);
@@ -201,8 +212,8 @@ function ringOnCollectorClock(event, reminder) {
         const from = opens.matches[0] ?? opens.all.at(-1);
         const until = closes.matches.at(-1) ?? closes.all[0];
         if (!from || !until) continue;
-        const last = until < lastMinute ? until : lastMinute;
-        if (last >= from && last >= start && (latest === null || last > latest)) latest = last;
+        const latestHere = until < last ? until : last;
+        if (latestHere >= from && latestHere >= start && (latest === null || latestHere > latest)) latest = latestHere;
       }
       if (latest !== null) ring = latest;
     }
@@ -210,6 +221,40 @@ function ringOnCollectorClock(event, reminder) {
   if (RINGS.size >= 5000) RINGS.clear();
   RINGS.set(cacheKey, ring);
   return ring;
+}
+
+// The earliest instant a local date and time name in a zone: the first of two where it occurs twice, and the one before
+// the gap where the clocks skip it. Null where the date or zone cannot be read.
+function zonedEdge(localDate, localTime, timeZone) {
+  const date = dateParts(localDate);
+  if (!date) return null;
+  let format;
+  try { format = formatter(timeZone); } catch { return null; }
+  const { matches, all } = zonedCandidates(date, localTime, format);
+  return matches[0] ?? all[0] ?? null;
+}
+
+/**
+ * For each sale-day reminder stamped with the collector's zone whose instant the V-04 bound moved: the id of its trigger
+ * now, to the id 0.38.0 derived for it by R3's rule. The store carries the collector's decision on the old trigger's
+ * alert over to the new one (store-schedule.js), so a reminder they dismissed does not ring again because the rule
+ * changed under it.
+ * @param {AuctionEvent[]} events
+ * @returns {Map<string, string>}
+ */
+export function formerTriggerIds(events) {
+  const moved = new Map();
+  for (const event of events) {
+    if (event.precision !== 'date-only') continue;
+    for (const reminder of event.reminders ?? []) {
+      if (reminder.kind !== 'wall-time' || reminder.daysBefore !== 0 || reminder.collectorTimeZone === undefined) continue;
+      const now = ringOnCollectorClock(event, reminder);
+      const before = ringOnCollectorClock(event, reminder, false);
+      if (now === null || before === null || now === before || !isIsoInstant(now) || !isIsoInstant(before)) continue;
+      moved.set(`${event.id}:${reminder.id}:${now}`, `${event.id}:${reminder.id}:${before}`);
+    }
+  }
+  return moved;
 }
 
 function relevanceEnd(trigger) {
