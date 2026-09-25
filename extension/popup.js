@@ -267,6 +267,17 @@ const saleDay = (text) => {
   return day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`)) : String(text ?? '');
 };
 
+// A day on a list of lots as the Watchlist tab writes a sale day (H-11): "Thu 1 Jun", in the browser's language, with the year only when it is not
+// this year; an upcoming lot's day with its weekday, a sale already held without. A date that does not read is shown as it came.
+function listDay(text, { weekday = false } = {}) {
+  const day = isoDay(text);
+  if (!day) return String(text ?? '');
+  const options = { day: 'numeric', month: 'short', timeZone: 'UTC', ...(weekday ? { weekday: 'short' } : {}),
+    ...(day.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' } : {}) };
+  const date = new Date(`${day}T12:00:00Z`);
+  try { return new Intl.DateTimeFormat(navigator.language, options).format(date); } catch { return new Intl.DateTimeFormat('en-GB', options).format(date); }
+}
+
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
   requestId += 1;
@@ -766,7 +777,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
   $('upcoming-list').replaceChildren(...listed.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
-    const day = isoDay(sale.date);
+    const day = listDay(sale.date, { weekday: true });
     const title = lotTitle(sale);
     label.append(`${day} · `, lotLink(sale, title));
     const watch = document.createElement('button');
@@ -957,7 +968,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-list').replaceChildren(...periodLots.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
-    label.append(`${sale.date} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
+    label.append(`${listDay(sale.date)} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
     const toggle = document.createElement('button');
@@ -1058,7 +1069,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     link.href = sale.url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = `${sale.date} · ${sale.title || `Lot ${sale.id}`}`;
+    link.textContent = `${listDay(sale.date)} · ${sale.title || `Lot ${sale.id}`}`;
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
     const toggle = document.createElement('button');

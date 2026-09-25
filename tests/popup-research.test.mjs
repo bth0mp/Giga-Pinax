@@ -304,9 +304,12 @@ test('the acsearch and CoinArchives panels write their figures in the browser lo
   assert.equal(spaced(popup.element('median-amount').textContent), '120 $');
   assert.equal(popup.element('median-currency').textContent, 'USD');
   assert.equal(spaced(popup.element('sale-list').children[0].children[1].textContent), '120 $');
+  // H-11: a sale's day in the browser's language too, never acsearch's 01.01.2025 or an ISO date.
+  assert.equal(popup.element('sale-list').children[0].children[0].children[0], '1. Jan. 2025 · ');
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
   assert.equal(spaced(popup.element('coinarchives-median').textContent), '150 $');
+  assert.equal(popup.element('coinarchives-sale-list').children[0].children[0].textContent, '1. Feb. 2025 · Auction 1, Lot 2');
 });
 
 // A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the
@@ -1705,6 +1708,9 @@ test('a RIC mint written with no volume fetches no prices until a type is chosen
 });
 
 // 0.34 (I2): the lots on the fetched page that have not been sold yet. Far-future days, so the tests hold whatever day they run on.
+// H-11: a lot's day as the popup's lists write it, in en-GB as those tests' browser is set: the weekday for a lot still to come.
+const dayWords = (iso, weekday = true) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  ...(weekday ? { weekday: 'short' } : {}) }).format(new Date(`${iso}T12:00:00Z`));
 const upcomingSale = (id, date, description) => ({ id, title: `Roma Numismatics, E-Sale 200, Lot ${id}`, date, price: '*', description });
 const withUpcoming = {
   status: 'ok',
@@ -1717,7 +1723,7 @@ const withUpcoming = {
 };
 
 test('upcoming lots are listed under the acsearch panel, filtered as the median is, and copied', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1725,7 +1731,8 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
   const rows = () => popup.element('upcoming-list').children;
   // Soonest first, and only the lots that cite the reference while the citation filter is on, which it says in the median's own words.
   assert.equal(rows().length, 2);
-  assert.equal(rows()[0].children[0].children[0], '2099-10-12 · ');
+  // H-11: dated as the Watchlist tab dates a sale day, in the browser's language, with the year when it is not this year.
+  assert.equal(rows()[0].children[0].children[0], `${dayWords('2099-10-12')} · `);
   assert.equal(rows()[0].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u1');
   assert.equal(rows()[0].children[0].children[1].href, 'https://www.acsearch.info/search.html?id=u1');
   assert.equal(rows()[1].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u3');
@@ -1746,7 +1753,7 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
 });
 
 test('Watch hands an upcoming lot to the watchlist half with its acsearch page and its sale day, date only', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1757,7 +1764,7 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   // Loop 3 (G-02): Watch saves in one step, and its sale day waits for Add.
   assert.match(basis, /Watch saves the lot to your watchlist and offers its sale day as an auction to add\./);
   assert.doesNotMatch(basis, /add its auction there to be reminded/);
-  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
+  assert.equal(watch['aria-label'], `Watch Roma Numismatics, E-Sale 200, Lot u1, sale on ${dayWords('2099-10-12')}`);
   popup.dispatched.length = 0;
   await watch.emit('click');
   assert.deepEqual(popup.dispatched.map(({ type, detail }) => ({ type, detail: { ...detail } })), [{ type: 'giga-pinax-watch', detail: {
@@ -1892,13 +1899,13 @@ test('the by-year figures scroll sideways at their natural width, reachable by k
 test('an upcoming lot’s title is shown, spoken and handed over bounded', async () => {
   const long = `Roma ${'x'.repeat(5000)}`;
   const lots = [{ ...upcomingSale('u9', '12.10.2099', 'Macedon. Tetradrachm. Price 23. EF.'), title: long }];
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
   const [row] = popup.element('upcoming-list').children;
   assert.equal(row.children[0].children[1].textContent, long.slice(0, 200));
-  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on 2099-10-12`);
+  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on ${dayWords('2099-10-12')}`);
   popup.dispatched.length = 0;
   await row.children[1].emit('click');
   assert.equal(popup.dispatched[0].detail.title, long.slice(0, 200));
@@ -2767,7 +2774,7 @@ const wantedRows = (popup) => popup.element('upcoming-list').children
   .map((row) => row.children[0].children[1].textContent);
 
 test('an upcoming lot citing a wanted type carries the want-list badge beside its one-step Watch', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming,
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming,
     lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
   await popup.window.emit('giga-pinax-wants', { detail: WANTS });
   popup.element('quick-reference').value = 'Price 23';
@@ -2782,7 +2789,7 @@ test('an upcoming lot citing a wanted type carries the want-list badge beside it
   assert.equal(badge.textContent, 'Wanted · up to $1,500.00 · VF+');
   assert.equal(badge.title, 'On your want list · up to $1,500.00 · VF or better');
   assert.equal(watch.textContent, 'Watch');
-  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12. On your want list · up to $1,500.00 · VF or better');
+  assert.equal(watch['aria-label'], `Watch Roma Numismatics, E-Sale 200, Lot u1, sale on ${dayWords('2099-10-12')}. On your want list · up to $1,500.00 · VF or better`);
   // One click saves it through the one-step save, as any row's Watch does.
   popup.dispatched.length = 0;
   await watch.emit('click');
