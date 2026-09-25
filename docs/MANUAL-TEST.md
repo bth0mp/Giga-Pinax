@@ -260,3 +260,10 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     instead of **Save**; **Open** opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
     *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
     saved lot, and **Undo** then takes back both.
+
+31. **The popup's last answer.** Look up `RIC I² Nero 306` in the toolbar popup and wait for the median. Click the
+    page so the popup closes, then open it again.
+    *Expected:* the Reference box, the card and the same median are back at once, with **as of just now · Refresh**
+    beside the acsearch heading, and the network panel of the popup's developer tools shows no new acsearch request.
+    Select **Refresh**. *Expected:* one acsearch request, and the line goes. Look up another reference, close and open
+    the popup. *Expected:* the new answer is the one shown.

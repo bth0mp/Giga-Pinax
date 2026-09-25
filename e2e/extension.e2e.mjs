@@ -297,6 +297,40 @@ test('after Save the coin is saved in one step, and the Reference box is still t
   }
 });
 
+// Loop 3 (G-01): a toolbar popup closes with every click on the page. Opened again, it draws the last answer at once from
+// the session - card, median and all - and asks acsearch nothing; Refresh is what asks again.
+test('a popup opened again draws its last answer without asking acsearch', async () => {
+  const browser = await launch();
+  let searches = 0;
+  await browser.context.route('https://www.acsearch.info/search.html*', async (route) => { searches += 1; await route.fallback(); });
+  try {
+    const first = await browser.context.newPage();
+    await first.setViewportSize({ width: 400, height: 600 });
+    await first.goto(browser.url('popup.html'));
+    await lookUp(first, 'RIC I² Nero 306');
+    await first.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
+    await first.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    const median = await first.locator('#median-amount').textContent();
+    await first.close();
+    const before = searches;
+    const again = await browser.context.newPage();
+    await again.setViewportSize({ width: 400, height: 600 });
+    await again.goto(browser.url('popup.html'));
+    await again.locator('#median-line').waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal(await again.locator('#median-amount').textContent(), median);
+    assert.equal(await again.locator('#quick-reference').inputValue(), 'RIC I² Nero 306');
+    assert.equal(await again.locator('#result-reference').textContent(), 'RIC I² Nero 306');
+    assert.match(await again.locator('#prices-restored').textContent(), /^as of just now · Refresh$/);
+    await again.waitForTimeout(1000);
+    assert.equal(searches, before, 'acsearch was not asked again');
+    await again.locator('#refresh-prices').click();
+    await again.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    assert.equal(searches, before + 1, 'Refresh asks again');
+  } finally {
+    await browser.close();
+  }
+});
+
 // Loop 1 (K-01): Ctrl+K brings the keyboard back to the Reference box from another tab, and the header's first stop is
 // the skip link that does the same.
 test('Ctrl+K and the skip link take the keyboard to the Reference box', async () => {

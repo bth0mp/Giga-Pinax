@@ -6,6 +6,11 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- The popup remembers its last answer while the browser is open. Closed by a click on the page and opened again within 30 minutes, it shows the same reference, card and acsearch median at once, from the browser's session storage, with `as of 4 min ago · Refresh` beside the acsearch heading; nothing is asked of acsearch until you select **Refresh**, look up something else or change the currency and refresh. The side panel and the lookup window share it. A reference kept over a permission prompt still wins.
+- The median the popup shows for each provider is kept in the same session storage (provider, currency, median, number of sales, when), for the workspace's bid form to offer. It is never written to your records or backups, and goes with its panel.
+
 ### Changed
 
 - **Save** on the popup's card saves the reference to your watchlist in one step. The line under the card says **Saved to your watchlist · Open · Undo**; **Undo** takes it back for ten seconds, and nothing opens by itself. The coin is checked and saved exactly as the workspace's **Save details** would have saved it from the same card. A card carrying a captured page's values still opens the workspace for you to review them. **Watch** on an upcoming acsearch lot saves it the same way, and offers its sale day with **Add** (`add its sale day 12 Oct 2099 as an auction? · Add`), which attaches a date-only auction; a lot already watched offers **Open** instead of a second copy. **Open** opens the workspace on that coin.

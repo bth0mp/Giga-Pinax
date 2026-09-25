@@ -123,8 +123,8 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     windows: { getCurrent: async () => ({ id: 7 }) },
     storage: sessionArea ? {
       session: {
-        get: async (key) => { if (sessionGate) await sessionGate; return session.has(key) ? { [key]: session.get(key) } : {}; },
-        set: async (items) => { for (const [key, value] of Object.entries(items)) { writes.push(value); session.set(key, String(value)); } },
+        get: async (keys) => { if (sessionGate) await sessionGate; return Object.fromEntries([keys].flat().filter((key) => session.has(key)).map((key) => [key, structuredClone(session.get(key))])); },
+        set: async (items) => { for (const [key, value] of Object.entries(items)) { if (key === 'giga-pinax-pending-reference-v1') writes.push(value); session.set(key, structuredClone(value)); } },
         remove: async (key) => { session.delete(key); },
       },
     } : {},
@@ -245,9 +245,12 @@ test('a reference typed before a permission prompt is waiting when the popup ope
   assert.ok(reopened.element('quick-reference').focused);
   await reopened.element('reference-form').emit('submit');
   await settle();
+  assert.equal(session.has('giga-pinax-pending-reference-v1'), false);
+  // Loop 3 (G-01): the next popup opens on that lookup's answer, drawn again from the session, not on the reference kept for the prompt.
   const afterLookup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   await settle();
-  assert.equal(afterLookup.element('quick-reference').value, '');
+  assert.equal(afterLookup.element('result-reference').textContent, 'Price 23');
+  assert.equal(afterLookup.element('result').hidden, false);
 });
 
 // The store answers after the popup has opened, so a reference left over from the prompt must never land on top of what is being typed now.
@@ -293,7 +296,9 @@ test('the price buttons keep no reference, so the next popup opens with an empty
   await settle();
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
-  assert.equal(session.size, 0);
+  assert.equal(session.has('giga-pinax-pending-reference-v1'), false);
+  // Loop 3 (G-01): what the next popup finds is the last answer, never a reference kept for a prompt.
+  session.delete('giga-pinax-last-answer-v1');
   const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }) });
   await settle();
   assert.equal(reopened.element('quick-reference').value, '');
@@ -2463,4 +2468,132 @@ test('the header opens the workspace by name and the side panel is an icon that 
   assert.equal(panel.textContent.trim(), '');
   assert.equal(panel.parentElement.className, 'popup-header');
   assert.match(markup.getElementById('first-run').textContent, /Save a coin to track its auction, bid and outcome in the workspace\./);
+});
+
+// Loop 3 (G-01): a toolbar popup closes with every click on the page, and used to open again empty, asking acsearch again for the answer it had a
+// minute before. The last answer is kept in the extension's session area and drawn again at once, with its age and Refresh; no site is asked.
+const priceCard23 = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', denomination: 'Tetradrachm', obverse: {}, reverse: {} };
+async function answered(session, { priceFetch = async () => oneSale } = {}) {
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  return popup;
+}
+function counting() {
+  const calls = { prices: 0, lookups: 0 };
+  return { calls, priceFetch: async () => { calls.prices += 1; return oneSale; }, lookupTypeImpl: async () => { calls.lookups += 1; return { status: 'ok', card: priceCard23 }; } };
+}
+
+test('a popup opened with nothing typed draws the last answer again from the session, and asks no site for it', async () => {
+  const session = new Map();
+  await answered(session);
+  const kept = session.get('giga-pinax-last-answer-v1');
+  assert.equal(kept.query, 'Price 23');
+  assert.equal(kept.card.label, 'Price 23');
+  assert.equal(kept.lots.length, 1);
+  const { calls, priceFetch, lookupTypeImpl } = counting();
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch, lookupTypeImpl });
+  await settle(); await settle();
+  assert.deepEqual(calls, { prices: 0, lookups: 0 });
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
+  assert.equal(reopened.element('result').hidden, false);
+  assert.equal(reopened.element('result-reference').textContent, 'Price 23');
+  assert.equal(reopened.element('prices-panel').hidden, false);
+  assert.match(reopened.element('median-amount').textContent, /120/);
+  assert.equal(reopened.element('prices-restored').hidden, false);
+  assert.equal(reopened.element('prices-restored-text').textContent, 'as of just now');
+  // Refresh is the collector's own click: it asks acsearch again, and the line goes.
+  await reopened.element('refresh-prices').emit('click');
+  await settle(); await settle();
+  assert.equal(calls.prices, 1);
+  assert.equal(reopened.element('prices-restored').hidden, true);
+  assert.equal(calls.lookups, 0);
+});
+
+test('an old, torn or other-currency answer is not drawn as prices, and a prompt reference wins over it', async () => {
+  const session = new Map();
+  await answered(session);
+  const kept = session.get('giga-pinax-last-answer-v1');
+  for (const stale of [{ ...kept, shownAt: Date.now() - 31 * 60 * 1000 }, { ...kept, card: null }, { ...kept, version: 2 }, 'text']) {
+    const reopened = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', stale]]), permissionRequest: async () => true, priceFetch: async () => oneSale });
+    await settle(); await settle();
+    assert.equal(reopened.element('quick-reference').value, '');
+    assert.equal(reopened.element('result-reference').textContent, '', 'nothing drawn');
+  }
+  // Drawn in another currency than the one now chosen: the card comes back, its prices wait for Refresh.
+  const euro = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', { ...kept, currency: 'EUR' }]]), permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(euro.element('result-reference').textContent, 'Price 23');
+  assert.notEqual(euro.element('prices-panel').dataset.state, 'ready');
+  assert.equal(euro.element('prices-restored').hidden, false);
+  // A reference kept over a permission prompt is the next Look up, and the answer before it stays away.
+  const prompt = await loadPopup({ session: new Map([['giga-pinax-last-answer-v1', kept], ['giga-pinax-pending-reference-v1', 'RRC 44/5']]),
+    permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(prompt.element('quick-reference').value, 'RRC 44/5');
+  assert.equal(prompt.element('result-reference').textContent, '');
+});
+
+test('a new lookup forgets the last answer, and a currency arriving for a drawn-again answer fetches nothing', async () => {
+  const session = new Map();
+  await answered(session);
+  const { calls, priceFetch, lookupTypeImpl } = counting();
+  const reopened = await loadPopup({ session, permissionRequest: async () => true, priceFetch, lookupTypeImpl });
+  await settle(); await settle();
+  assert.equal(reopened.element('prices-panel').dataset.state, 'ready', 'the answer is drawn again');
+  reopened.element('currency').value = 'EUR';
+  await reopened.element('currency').emit('change');
+  await settle(); await settle();
+  assert.equal(calls.prices, 0);
+  assert.equal(reopened.element('prices-panel').hidden, true);
+  assert.equal(reopened.element('prices-restored').hidden, false, 'Refresh stays for the new currency');
+  const pending = deferred();
+  const later = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: () => pending.promise });
+  await settle();
+  later.element('quick-reference').value = 'RRC 44/5';
+  await later.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(session.has('giga-pinax-last-answer-v1'), false);
+});
+
+// Loop 3 (G-04, popup side): the workspace's bid evidence offers the median the popup is showing. It is kept in the session area only, one entry per
+// provider, while it is on show: { reference, provider, currency, median (minor units), count, at }.
+test('a median on show is kept in the session for the workspace, one entry per provider, and goes with its panel', async () => {
+  const session = new Map();
+  const stored = new Map();
+  const popup = await loadPopup({ session, stored, permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  const kept = () => session.get('giga-pinax-session-median');
+  assert.deepEqual(Object.keys(kept()), ['acsearch']);
+  const { at, ...acsearch } = kept().acsearch;
+  assert.deepEqual(acsearch, { reference: 'Price 23', provider: 'acsearch', currency: 'USD', median: 12000, count: 1 });
+  assert.ok(Math.abs(Date.now() - at) < 60000);
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle(); await settle();
+  const { at: when, ...coinArchives } = kept().coinarchives;
+  assert.deepEqual(coinArchives, { reference: 'Price 23', provider: 'coinarchives', currency: 'USD', median: 15000, count: 1 });
+  assert.ok(Number.isFinite(when));
+  assert.equal(kept().acsearch.median, 12000, 'the providers are never pooled');
+  // Never in local storage.
+  assert.equal([...stored.keys()].some((key) => /median/i.test(key)), false);
+  // Typing a new reference takes the medians off with the panels.
+  popup.element('quick-reference').value = 'Price 2';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(session.has('giga-pinax-session-median'), false);
+});
+
+test('the kept median names the reference in the short spelling a saved coin carries', async () => {
+  const session = new Map();
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', source: 'local', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ session, permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: [{ id: 's1', title: 'Lot', date: '2025-01-01', price: '240', description: 'Nero. As. RIC 306.' }] }),
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(session.get('giga-pinax-session-median').acsearch.reference, 'RIC I² Nero 306');
 });
