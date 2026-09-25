@@ -515,12 +515,17 @@ test('the currencies collectors bid in, each with its ISO 4217 minor units', () 
   assert.equal(parseMoney('1', 'XAU').error.message, UNSUPPORTED_CURRENCY_MESSAGE);
 });
 
-// The table is fixed so a stored count never changes meaning with the browser; it is checked here against Intl's own.
-test('the minor-units table agrees with Intl for every currency', () => {
-  for (const code of CURRENCIES) {
-    const places = new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits;
-    assert.equal(minorDigits(code), places, code);
-  }
+// The table is fixed so a stored count never changes meaning with the browser. It is pinned to ISO 4217 here, not to
+// Intl, whose figure follows the runtime's CLDR data and differs between browsers and Node versions (HUF: 2 or 0).
+test('the minor-units table is ISO 4217 for every currency', () => {
+  const ISO_4217 = { USD: 2, EUR: 2, GBP: 2, CHF: 2, AUD: 2, CAD: 2, CZK: 2, DKK: 2, HKD: 2, HUF: 2, JPY: 0, NOK: 2, PLN: 2, SEK: 2 };
+  assert.deepEqual([...CURRENCIES].sort(), Object.keys(ISO_4217).sort());
+  for (const code of CURRENCIES) assert.equal(minorDigits(code), ISO_4217[code], code);
+});
+
+test('an amount is shown with the table places whatever the runtime CLDR says', () => {
+  assert.match(formatMoney({ currency: 'HUF', minor: 150000 }, 'en-US'), /1,500\.00/);
+  assert.match(formatMoney({ currency: 'JPY', minor: 1200000 }, 'en-US'), /1,200,000(?!\.)/);
 });
 
 test('a JPY 1,200,000 hammer is 1,200,000 yen from typed text to minor units, display and plain text', () => {

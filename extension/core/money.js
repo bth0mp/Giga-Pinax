@@ -42,8 +42,8 @@ import { failure } from './validate.js';
 
 // The currencies an amount may be recorded in, and each one's minor units: the ISO 4217 exponent, fixed here rather
 // than read from the browser, because a stored amount is a count of these units and must mean the same thing in
-// every browser for good. The table agrees with Intl's own (`resolvedOptions().maximumFractionDigits`), which a test
-// checks. The yen has no minor unit, so a JPY amount is whole yen. The forint keeps its ISO 4217 two places although
+// every browser for good. Intl's own figure is not used: it follows the runtime's CLDR data, which differs between
+// browsers and Node versions (some give the forint 0 places), and a test pins the table to ISO 4217 instead. The yen has no minor unit, so a JPY amount is whole yen. The forint keeps its ISO 4217 two places although
 // no coin smaller than a forint circulates and houses sell in whole forints: an amount typed in whole forints is
 // stored and shown exactly, with .00. The first four are the ones every earlier version knew, in their old order.
 // Nothing is ever converted between them.
