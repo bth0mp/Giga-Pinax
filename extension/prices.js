@@ -369,7 +369,14 @@ const citationKeys = (reference) => {
 // where it cannot be a range: in front of a lettered type ("344-1a"), or of one a shortened range would count down to ("385-4" would be 385 to 384).
 // "44-5" and "344-5" are how a dealer shortens 44–45 and 344–345, which may be two types, so they keep citing nothing.
 const CRAWFORD = /^(\d+)\/(\d+)([a-z]*)$/i;
+// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"): a single lower-case letter closing the citation — before its end, a ";", a
+// new sentence, a bracket or "var." — is the letter, so it cites RIC 27b and no longer RIC 27. A capital there is the next key ("RIC 27 C. 9"), and a letter a word or a
+// number follows is prose ("RIC 27 a rare variety", "RIC 27 e 28").
+const SPACED_LETTER_END = String.raw`(?:[.,:]?$|;|[.,]\s+\p{Lu}|[.,;:]?\s*\(|\s+var\b)`;
+const SPACED_LETTER = String.raw`(?!\s\p{Ll}${SPACED_LETTER_END})`;
 function numberPattern(catalogue, number) {
+  const [, digits, typeLetter] = (catalogue === 'RIC' && /^(\d+)([a-z])$/i.exec(number)) || [];
+  if (digits) return `${digits}(?:${eitherCase(typeLetter)}|\\s${typeLetter.toLowerCase()}(?=${SPACED_LETTER_END}))`;
   const [, issue, type, letter] = (catalogue === 'RRC' && CRAWFORD.exec(number)) || [];
   if (!issue) return eitherCase(number);
   const shortened = Number(`${issue.slice(0, Math.max(0, issue.length - type.length))}${type}`);
@@ -475,7 +482,8 @@ export function citesReference(description, reference) {
   if (!text || !number) return true;
   const spellings = [...new Set(keys.flatMap((key) => [key, key.toUpperCase()]))].sort((a, b) => b.length - a.length).map(escaped);
   const pattern = `(?<!(?:${PRICE_WORDS.map(eitherCase).join('|')})\\s)(?<![\\p{L}\\d])(?:${spellings.join('|')})`
-    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`;
+    + `${between(reference)}${LIST}\\(?(?<![\\p{L}\\d])${numberPattern(reference.catalogue, number)}(?![\\p{L}\\d])${NOT_AMOUNT}`
+    + (reference.catalogue === 'RIC' ? SPACED_LETTER : '');
   return new RegExp(pattern, 'u').test(text);
 }
 

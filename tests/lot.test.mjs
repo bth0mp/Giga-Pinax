@@ -1439,3 +1439,27 @@ test('a heading naming Octavian names Augustus beside him, as RIC files his coin
   // A legend or a provenance naming him is no heading.
   assert.deepEqual(findReferences('Nero. Denarius. Ex Octavian collection, 1990. RIC 53.').rulers, ['Nero']);
 });
+
+// Loop Q-17: Áureo writes Calicó "Cal-1015", which was no key at all, and CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"),
+// which read as RIC 27: another coin.
+test('Cal. is Calicó, spelled out in the row, and a single spaced letter behind a RIC number is its type letter', () => {
+  for (const [text, row] of [['RIC-118; Cal-1015; RSC-462a.', 'Calicó 1015'], ['Cal. 1015.', 'Calicó 1015'], ['Cal 1015; RSC 462a.', 'Calicó 1015'],
+    ['Felipe II. 8 reales. Cal-123. MBC.', 'Calicó 123']]) {
+    const found = findReferences(text).references.find(({ reference }) => /^Calic/.test(reference.number));
+    assert.deepEqual(found?.reference, other(row), text);
+  }
+  assert.deepEqual(texts('Trajano. Denario. RIC-118; Cal-1015; RSC-462a. MBC+/EBC-.'), ['RIC-118', 'Calicó 1015', 'RSC-462a']);
+  // Only a capitalised "Cal" with its number straight behind it: the word, California and a lower-case "cal" are no key.
+  for (const text of ['Denarius. Calendar reform issue. RIC 118.', 'Found in Cal. 1998 hoard? RIC 118.', 'Denarius, cal 1015. RIC 118.', 'Cal. RIC 118.']) {
+    assert.deepEqual(texts(text).filter((row) => /^Cal/.test(row)), [], text);
+  }
+  for (const [text, number] of [['Philip I. Antoninianus. RIC 27 b.', '27b'], ['Philip I. RIC IV 27 b; C. 9.', '27b'], ['Philip I. RIC 27 b (Rome).', '27b'],
+    ['Philip I. RIC 27 b', '27b'], ['Philip I. RIC 27 b var.', '27b']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+  // A capital is Cohen's C or another key, a letter with more behind it is a word, and a date's "a.C." is no letter.
+  for (const [text, number] of [['Philip I. RIC 27 C. 9.', '27'], ['Philip I. RIC 27 a rare variety.', '27'], ['Philip I. RIC 27; C. 9.', '27'],
+    ['Filippo I, 244-249 d.C. RIC 27 a.C.', '27']]) {
+    assert.equal(findReferences(text).references[0].reference.number, number, text);
+  }
+});

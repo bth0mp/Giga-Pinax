@@ -1699,3 +1699,23 @@ test('an RPC Online temporary number is searched in every spelling dealers cite 
     assert.equal(defaultTerm(other(written)), term, written);
   }
 });
+
+// Loop Q-17: AGCO's own title form, "Newell, Demetrius Poliorcetes 92", and the spaced RIC type letter of CGB and Jean Elsen ("RIC 27 b").
+test('citesReference reads Newell with Poliorcetes behind the key, and a spaced RIC type letter as the letter', () => {
+  const newell = { catalogue: 'Newell', number: '92' };
+  for (const cited of ['Newell, Demetrius Poliorcetes 92.', 'Newell Demetrius Poliorcetes 92.', 'Newell Demetrius 92.', 'Newell 92.']) {
+    assert.equal(citesReference(cited, newell), true, cited);
+  }
+  for (const other of ['Newell, Demetrius Poliorcetes 920.', 'Demetrius Poliorcetes 92.', 'Newell Poliorcetes 92.', 'Newell, Demetrius Poliorcetes 9.']) {
+    assert.equal(citesReference(other, newell), false, other);
+  }
+  const lettered = { catalogue: 'RIC', number: '27b', volume: 'IV', section: 'Philip I' };
+  for (const cited of ['RIC 27 b.', 'RIC IV 27 b; C. 9.', 'RIC 27b.', 'RIC 27 b (Rome).', 'RIC 27 b']) assert.equal(citesReference(cited, lettered), true, cited);
+  for (const other of ['RIC 27 c.', 'RIC 27 B.', 'RIC 27.', 'RIC 27 bis.']) assert.equal(citesReference(other, lettered), false, other);
+  // The plain type is no longer cited by its lettered sibling, and still by a number a word or another number follows.
+  const plain = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  for (const other of ['RIC 27 b.', 'RIC IV 27 b; C. 9.', 'RIC 27 b (Rome).', 'RIC 27 a']) assert.equal(citesReference(other, plain), false, other);
+  for (const cited of ['RIC 27.', 'RIC 27 C. 9.', 'RIC 27 a rare variety.', 'RIC 27 e 28.', 'RIC 27 a.C.', 'RIC 27; C. 9.']) {
+    assert.equal(citesReference(cited, plain), true, cited);
+  }
+});

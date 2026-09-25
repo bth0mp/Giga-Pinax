@@ -40,10 +40,16 @@ const plateName = (key) => { SURNAMES.add(key.toLowerCase()); return plate(key);
 // Two catalogues carry an auction house's name as well; the house's own first name in front of it is never the book. The same lookbehind keeps a
 // second author from stealing the first author's reference ("Jongeward & Cribb 123" is Jongeward's, not Cribb's).
 const notHouse = (first, key) => String.raw`(?<!${first}\s)${key}`;
+// Áureo & Calicó cite Calicó as "Cal-1015" and "Cal. 1015": a key only with its number straight behind it, and the whole reference, as a surname's
+// is ("Found in Cal. 1998 hoard" is a year), spelled out in the row so its phrase finds every house's "Calicó 1015".
+const CALICO = String.raw`Cal\.?(?=[\s.:#-]*\d)`;
+SURNAMES.add('cal');
+SURNAMES.add('cal.');
+const CALICO_KEY = /^Cal\.?$/i;
 // Longest first wherever one key opens another ("BMCRR" before "BMC", "MIBEC" before "MIB", "Sellwood" before "Sell."), and the single letters last.
 const KEYS = [
   // Roman: the British Museum's three, the Republic's Crawford line, Sear's Imperators, the Hunter cabinet, the late bronze and the Gallic hoards.
-  'BMC/RE', 'BMCRE', 'BMCRR', 'BMC', 'Bopearachchi', String.raw`Bop\.?`, 'Calicó', 'Calico', 'Cohen', String.raw`Coh\.?`, 'Crawford',
+  'BMC/RE', 'BMCRE', 'BMCRR', 'BMC', 'Bopearachchi', String.raw`Bop\.?`, 'Calicó', 'Calico', CALICO, 'Cohen', String.raw`Coh\.?`, 'Crawford',
   String.raw`Craw\.?`, String.raw`Cr\.?`, 'RIC', String.raw`R\.I\.C\.?`, 'RBW', 'RRCH', 'RRC', 'RSC', 'RPC', 'RCV', 'HCRI', 'CRI', surname('Hunter'), surname('Woytek'), 'LRBC',
   surname('Cunetio'), surname('Elmer'), surname('Normanby'), surname('Mairat'), surname('Bastien'), surname('Giard'), surname('Depeyrot'),
   surname('Estiot'), surname('Szaivert'), surname('Gnecchi'), surname('Babelon'), surname('Bahrfeldt'), surname('Banti'), 'CNR',
@@ -466,6 +472,7 @@ const DOTTED_KEY = /^(?:RIC|RRC|Pr)$/;
 const AMOUNT_KEY = /^(?:Price|Pr)$/i;
 const AMOUNT = /^[\s.:]*\d+(?:[.,']\d+)*\s*(?:[$€£]|(?:EUR|USD|CHF|GBP)(?!\p{L}))/u;
 // RIC spelled with stops is RIC.
+const RIC_KEY = /^(?:RIC|R\.I\.C\.?)$/i;
 const RIC_STOPS = /^R\.I\.C\.?\s*/;
 // A CPE or Newell Demetrius citation may put "no." before its number, as PCO's and AGCO's own titles do ("CPE no. 330", "Newell Demetrius
 // Poliorcetes, no. 45"): the word is read past, and a volume numeral in front of it stays ("CPE I, no. 330" is CPE I 330).
@@ -486,11 +493,16 @@ const VOLUME_ONLY = /^\s*(?:vol\.?\s*)?[IVX]+(?:\s*[./,]\s*(?:part\s*)?\d|\s+par
 // A volume and a part written as two chunks ("RIC V, 2, 123"): the number is the chunk after them. The part is real or the row is not a reference,
 // by the one table the Reference box reads it by (realVolumePart), so a lot row and the box never disagree about the same words.
 const VOLUME_PART = /^\s*(?:vol\.?\s*)?([IVX]+)\s*,\s*(\d)\s*$/i;
-function pieceAfter(raw, typed = false) {
+// CGB and Jean Elsen space RIC's type letter off the number ("RIC 27 b"): a single lower-case letter closing the reference — before its end, a
+// ";", a new sentence, a bracket or "var." — is glued back on, so the row is RIC 27b and never RIC 27, another coin. A capital is the next key ("RIC 27 C. 9"), and a letter
+// a word or a number follows is prose ("RIC 27 a rare variety", "RIC 27 e 28").
+const SPACED_LETTER = /^(.*\d) ([a-z])(?=[.,:]?$|;|[.,]\s+\p{Lu}|[.,:;]?\s*\(|\s+var\b)/u;
+function pieceAfter(raw, typed = false, lettered = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
   const { parts, stopped } = chunks(span);
   const [first, ...more] = parts;
+  if (lettered) first.text = first.text.replace(SPACED_LETTER, '$1$2');
   const read = first.text.match(BODY)?.[0] ?? (WORDS.test(first.text) ? first.text : '');
   let body = read, ended = typed && !VOLUME_ONLY.test(read), broken = stopped || first.text.slice(read.length).trim() !== '';
   for (const { sep, text } of broken ? [] : more) {
@@ -515,6 +527,7 @@ function normalise(stopped, spelled, cf) {
   const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
   let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  if (CALICO_KEY.test(spelled)) text = text.replace(/^Cal\.?[\s.:#-]*/i, 'Calicó ');
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
   const sg = sgNumber(`${text}${variant ? ' var.' : ''}`);
   if (sg) return { text: text.replace(/(?<=\d)v(?:ar)?$/i, ''), reference: { catalogue: 'Other', number: sg, volume: '', section: '' }, cf, variant: sg.endsWith(' var.'), typed: false };
@@ -561,7 +574,9 @@ export function findReferences(input) {
     const after = text.slice(match.index + match[0].length, opens ? end - 1 : end);
     const span = DOTTED_KEY.test(match[2]) ? after.replace(/^\.(?=\s+\d)/, '')
       : NUMBERED_KEY.test(match[2]) ? after.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : after;
-    const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
+    // A letter the next key is glued to is no type letter: "RIC 27 a.C." is the Italian date's "a.C.", its C read as Cohen's key.
+    const lettered = RIC_KEY.test(match[2]) && (end === text.length || /[\s;(]$/.test(text.slice(0, end)));
+    const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]), lettered);
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
     const number = unseparate(body);
