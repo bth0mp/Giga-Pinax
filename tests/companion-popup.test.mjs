@@ -59,7 +59,6 @@ const {
   savesDirectly,
   savedLotsFor,
   savedLineText,
-  narrowMoney,
   dueText,
 } = await import('../extension/companion-popup.js');
 
@@ -1231,8 +1230,10 @@ test('the Watchlist tab says when, which coins, and only the bids that exist', a
     globalThis.browser.tabs.create = create;
     globalThis.browser.runtime.getURL = getURL;
   }
-  assert.equal(narrowMoney({ currency: 'USD', minor: 26000 }, 'en-GB'), '$260.00');
-  assert.match(narrowMoney({ currency: 'CHF', minor: 120000 }, 'en-US'), /^CHF\s1,200\.00$/);
+  // The Watchlist tab writes each currency's amount with its narrow symbol, through formatMoney.
+  const { formatMoney } = await import('../extension/core/money.js');
+  assert.equal(formatMoney({ currency: 'USD', minor: 26000 }, 'en-GB', { narrow: true }), '$260.00');
+  assert.match(formatMoney({ currency: 'CHF', minor: 120000 }, 'en-US', { narrow: true }), /^CHF\s1,200\.00$/);
   assert.deepEqual([dueText({ dueAuctionCount: 0, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 2, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 0, missedAuctionCount: 1 })],
     ['None due', '2 due', '1 missed']);
   assert.equal(buildWatchlistSummary({ alerts: [{ eventId: 'x', status: 'missed' }, { eventId: 'x', status: 'missed' }, { eventId: 'y', status: 'acknowledged' }] }).missedAuctionCount, 1);
@@ -1309,4 +1310,16 @@ test('a coin removed elsewhere takes its saved line with it', async () => {
   } finally {
     globalThis.browser.storage.onChanged = onChanged;
   }
+});
+
+// Q-11 (popup part): an exposure row gives what leaves the account if every bid wins, from the fees saved with the bids.
+test('the Watchlist tab gives each currency its all-in figure beside the hammers', () => {
+  const summary = buildWatchlistSummary({ lots: [
+    { id: 'a', outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 },
+      costEstimate: { currency: 'GBP', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } },
+    { id: 'b', outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 10000 }, buyerPremiumBps: 2000 } },
+  ] });
+  assert.equal(summary.exposure.GBP.knownTotalMinor, 65000 + 13000 + 1500);
+  assert.equal(summary.exposure.GBP.totalCount, 1);
+  assert.equal(summary.exposure.USD.totalCount, 0);
 });

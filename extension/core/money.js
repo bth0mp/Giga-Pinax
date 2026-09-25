@@ -197,11 +197,14 @@ export function parsePremiumPercent(text, locale = 'en-US') {
 }
 
 /**
+ * An amount in the collector's locale. `narrow` writes the narrow symbol ("$", not "US$"), where only one currency is in
+ * view and the code is named beside it.
  * @param {Money} money
  * @param {string} [locale]
+ * @param {{ narrow?: boolean }} [options]
  * @returns {string}
  */
-export function formatMoney(money, locale = 'en-US') {
+export function formatMoney(money, locale = 'en-US', { narrow = false } = {}) {
   const checked = validateMoney(money);
   if (!checked.ok) throw new TypeError(checked.error.message);
 
@@ -210,6 +213,7 @@ export function formatMoney(money, locale = 'en-US') {
   const formatter = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: money.currency,
+    ...(narrow ? { currencyDisplay: 'narrowSymbol' } : {}),
     minimumFractionDigits: FRACTION_DIGITS,
     maximumFractionDigits: FRACTION_DIGITS,
   });

@@ -376,6 +376,28 @@ export function followSessionMedians(apply, storage = (globalThis.browser ?? glo
   return area.listen((record) => apply(readSessionMedians(record)));
 }
 
+// What the popup's calculator had typed in it, kept in the browser's session storage so a popup opened again within 30
+// minutes shows it again (G-01, beside the popup's last answer): the calculation, the currency and each field's text.
+// Read defensively - an old, future or out-of-shape record restores nothing - and never written anywhere else.
+export const CALCULATOR_MEMORY_KEY = 'giga-pinax-calculator-v1';
+export const CALCULATOR_MEMORY_MS = 30 * 60000;
+export const CALCULATOR_FIELDS = Object.freeze(['amount', 'premium', 'shipping', 'paymentPercent', 'paymentFixed', 'increment', 'minimum', 'premiumVat', 'platformFee', 'importVat']);
+export function readCalculatorMemory(record, now = Date.now()) {
+  if (!record || typeof record !== 'object' || Array.isArray(record) || record.version !== 1) return null;
+  if (!Number.isSafeInteger(record.at) || record.at > now + 60000 || now - record.at > CALCULATOR_MEMORY_MS) return null;
+  if (!['total', 'budget'].includes(record.mode) || !CURRENCIES.includes(record.currency)) return null;
+  const texts = record.texts;
+  if (!texts || typeof texts !== 'object' || Array.isArray(texts)) return null;
+  const read = {};
+  for (const field of CALCULATOR_FIELDS) {
+    const value = texts[field] ?? '';
+    if (typeof value !== 'string' || value.length > 32) return null;
+    read[field] = value;
+  }
+  if (!CALCULATOR_FIELDS.some((field) => read[field].trim())) return null;
+  return { mode: record.mode, currency: record.currency, texts: read };
+}
+
 export function snapshotSupersedes(incoming, accepted) {
   const incomingRevision = Number.isInteger(incoming?.revision) ? incoming.revision : null;
   const acceptedRevision = Number.isInteger(accepted?.revision) ? accepted.revision : null;
@@ -439,7 +461,7 @@ export function calculatorInputsForLot(values = {}, { loadedKey, loadedLotId, mo
 
 export function mountBidCalculator(
   container,
-  { currency = 'USD', onUseHammer = null, compact = false } = {},
+  { currency = 'USD', onUseHammer = null, compact = false, remember = false } = {},
 ) {
   if (!container?.replaceChildren) throw new TypeError('Calculator container is required.');
   const root = el('section', { className: `bid-calculator${compact ? ' compact' : ''}` });
@@ -657,6 +679,37 @@ export function mountBidCalculator(
   for (const control of [currencyControl, amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat]) {
     control.addEventListener('input', calculate);
   }
+  // A calculator that remembers (the popup's) keeps what was typed in session storage, and puts it back when it opens
+  // again within 30 minutes. Once the collector has typed, or something was put back, a caller's bare default - the
+  // preferred currency arriving - no longer resets the fields.
+  let touched = false;
+  const controlsByField = { amount, premium, shipping, paymentPercent, paymentFixed, increment, minimum, premiumVat, platformFee, importVat };
+  const sessionArea = () => { try { return (globalThis.browser ?? globalThis.chrome)?.storage?.session ?? null; } catch { return null; } };
+  const rememberTyped = () => {
+    if (!remember) return;
+    const texts = Object.fromEntries(CALCULATOR_FIELDS.map((field) => [field, controlsByField[field].value]));
+    const record = { version: 1, at: Date.now(), mode: mode.value === 'budget' ? 'budget' : 'total', currency: currencyControl.value, texts };
+    try { void Promise.resolve(sessionArea()?.set({ [CALCULATOR_MEMORY_KEY]: record })).catch(() => {}); } catch { /* nothing kept */ }
+  };
+  for (const control of [mode, currencyControl, ...Object.values(controlsByField)]) {
+    control.addEventListener(control === mode ? 'change' : 'input', () => { touched = true; rememberTyped(); });
+  }
+  if (remember) {
+    try {
+      void Promise.resolve(sessionArea()?.get(CALCULATOR_MEMORY_KEY)).then((items) => {
+        const kept = readCalculatorMemory(items?.[CALCULATOR_MEMORY_KEY]);
+        if (!kept || touched || destroyed) return;
+        touched = true;
+        mode.value = kept.mode;
+        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Hammer price';
+        currencyControl.value = kept.currency;
+        for (const field of CALCULATOR_FIELDS) controlsByField[field].value = kept.texts[field];
+        importVatOffered = kept.texts.importVat ? null : importVatOffered;
+        showMedian();
+        calculate();
+      }).catch(() => {});
+    } catch { /* no session storage: nothing to put back */ }
+  }
   // Settings' usual import VAT starts the field for a house in another currency than the collector's default, and
   // leaves it again for one in the default; a rate the collector typed or cleared is theirs and is never replaced.
   let importVatOffered = null;
@@ -751,6 +804,8 @@ export function mountBidCalculator(
   try { unsubscribe = subscribeToSnapshots(takePreferences); } catch { /* standalone calculator has no extension storage */ }
   return {
     setValues(values = {}) {
+      // A bare default (no key) never wipes what the collector typed or what was put back.
+      if (touched && calculatorKey(values) === undefined) return;
       const inputs = calculatorInputsForLot(values, { loadedKey, mode: mode.value, locale: language() });
       if (!inputs) return;
       loadedKey = calculatorKey(values);

@@ -311,7 +311,7 @@ test('preset save has a synchronous pending guard and disables its control', () 
 
 // The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
 // by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
-async function mountCalculator({ snapshot, session = null }) {
+async function mountCalculator({ snapshot, session = null, options = {} }) {
   const document = new FakeDocument();
   const container = document.createElement('div');
   const commands = [];
@@ -321,20 +321,21 @@ async function mountCalculator({ snapshot, session = null }) {
     sendCommand: async (command) => { commands.push(structuredClone(command)); return { ok: true, value: command.preferences }; },
     newRequestId: () => `request-${commands.length + 1}`,
     subscribeToSnapshots: () => () => {},
-    ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
+    ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), set: async (items) => { Object.assign(session, structuredClone(items)); }, onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
     ...browserGlobals(document),
     Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
   vm.runInContext(pageSource(new URL('../extension/bid-tools.js', import.meta.url)), context, { filename: 'bid-tools.js' });
-  context.mountBidCalculator(container);
+  const mounted = context.mountBidCalculator(container, options);
   for (let turn = 0; turn < 4; turn += 1) await new Promise((resolve) => { setImmediate(resolve); });
   const inputs = container.querySelectorAll('input');
   // A control by the caption of its label, as the collector finds it.
   const field = (caption) => container.querySelectorAll('label')
     .find((label) => label.querySelector('span')?.textContent === caption)?.querySelector('input, select');
   return {
+    mounted,
     commands,
     container,
     field,
@@ -618,4 +619,32 @@ test('the calculator offers the session median above the fields and puts it in t
   assert.equal(calculator.field('Hammer price').value, '240.00');
   const mode = calculator.field('Calculation'); mode.value = 'budget'; await mode.emit('change');
   assert.equal(box.hidden, true, 'a median is a hammer, not a budget');
+});
+
+// G-01 (Calculator part): the popup's calculator keeps what was typed in session storage and puts it back when the popup
+// opens again within 30 minutes; the preferred currency arriving afterwards does not wipe it.
+test('the popup calculator puts back what was typed, and a bare default no longer resets it', async () => {
+  const { readCalculatorMemory, CALCULATOR_MEMORY_KEY } = await import('../extension/bid-tools.js');
+  const session = {};
+  const snapshot = { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } };
+  const first = await mountCalculator({ snapshot, session, options: { remember: true } });
+  first.field('Currency').value = 'EUR'; await first.field('Currency').emit('input');
+  first.field('Hammer price').value = '1000'; await first.field('Hammer price').emit('input');
+  first.premium.value = '25'; await first.premium.emit('input');
+  first.field('Shipping').value = '15'; await first.field('Shipping').emit('input');
+  assert.equal(session[CALCULATOR_MEMORY_KEY].texts.shipping, '15');
+  const again = await mountCalculator({ snapshot, session, options: { remember: true } });
+  assert.deepEqual([again.field('Currency').value, again.field('Hammer price').value, again.premium.value, again.field('Shipping').value], ['EUR', '1000', '25', '15']);
+  assert.equal(again.figure.textContent, '€1,265.00');
+  again.mounted.setValues({ currency: 'USD' });
+  assert.equal(again.field('Currency').value, 'EUR', 'the preferred currency arriving later does not reset what was put back');
+  const plain = await mountCalculator({ snapshot, session });
+  assert.equal(plain.field('Hammer price').value, '', 'a calculator that does not remember puts nothing back');
+  const now = Date.parse('2026-09-25T12:00:00.000Z');
+  const record = { version: 1, at: now - 60000, mode: 'total', currency: 'EUR', texts: { amount: '1000' } };
+  assert.equal(readCalculatorMemory(record, now).texts.amount, '1000');
+  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'JPY' }, { ...record, mode: 'x' },
+    { ...record, texts: { amount: 7 } }, { ...record, texts: { amount: 'x'.repeat(33) } }, { ...record, texts: {} }, { ...record, version: 2 }, null]) {
+    assert.equal(readCalculatorMemory(bad, now), null, JSON.stringify(bad));
+  }
 });
