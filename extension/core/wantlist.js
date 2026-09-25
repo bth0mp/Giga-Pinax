@@ -43,8 +43,20 @@ export const ricSectionKey = (section) => field(ricMintSection(section) || secti
 function readingOf(reference) {
   if (reference && typeof reference === 'object') return reference;
   if (typeof reference !== 'string' || !reference.trim()) return null;
-  try { return parseReference(reference); } catch { return null; }
+  // A page matches every want against every coin on each draw (60 wants and 800 coins are 96,000 comparisons), so each
+  // text is read once and its reading kept (K-04). The reading depends on the text alone; the table is emptied when full.
+  if (readings.has(reference)) return readings.get(reference) ?? null;
+  let reading = null;
+  try { reading = parseReference(reference); } catch { reading = null; }
+  if (readings.size >= READINGS_KEPT) readings.clear();
+  readings.set(reference, reading ? Object.freeze(reading) : null);
+  return reading;
 }
+const READINGS_KEPT = 4000;
+/** @type {Map<string, Reading | null>} */
+const readings = new Map();
+/** How many texts have a reading kept: each text is read once, however often it is compared. */
+export const readingsKept = () => readings.size;
 
 /**
  * Whether a reading names one catalogue type: a catalogue with type data (never Other), a number, for RIC both the volume
@@ -67,9 +79,11 @@ export function namesOneType(reading) {
  * @returns {Reading | null}
  */
 export function wantedReading(reference) {
-  const reading = readingOf(reference);
-  return namesOneType(reading) ? reading : null;
+  const reading = oneTypeReading(reference);
+  return reading ? { ...reading } : null;
 }
+// The same, kept inside this module: the reading read once and never handed out, so nothing can change it.
+const oneTypeReading = (reference) => { const reading = readingOf(reference); return namesOneType(reading) ? reading : null; };
 
 /**
  * Whether two references name the same one type: both read by the lookup's rules, each naming one type, and the same in
@@ -79,8 +93,8 @@ export function wantedReading(reference) {
  * @returns {boolean}
  */
 export function sameWantedType(left, right) {
-  const one = wantedReading(left);
-  const other = wantedReading(right);
+  const one = oneTypeReading(left);
+  const other = oneTypeReading(right);
   if (!one || !other) return false;
   return ['catalogue', 'volume'].every((key) => field(one[key]) === field(other[key])) && sameShelfPlace(one, other);
 }
@@ -187,7 +201,7 @@ export function wantReferenceProblem(reference) {
  * @returns {Want[]}
  */
 export function openWantsFor(wants, reference) {
-  if (!wantedReading(reference)) return [];
+  if (!oneTypeReading(reference)) return [];
   return (Array.isArray(wants) ? wants : []).filter((want) => !want?.foundLotId && sameWantedType(want?.reference, reference));
 }
 

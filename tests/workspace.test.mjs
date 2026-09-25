@@ -10,10 +10,10 @@ import {
   selectionAfterSnapshot, submissionContext, WORKSPACE_EDITORS,
 } from '../extension/workspace-editing.js';
 import {
-  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
+  applyActiveRoute, auctionQueueForLots, auctionTimeLabel, splitAuctions, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
   filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash, wonCostLine,
-  decidingBidLine, historyLine, sameReference, settledNewestFirst,
+  decidingBidLine, historyLine, monthHeading, sameReference, settledNewestFirst,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
@@ -1129,7 +1129,7 @@ test('an auction’s time reads as a day, a time and how soon, in the collector�
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 7 days', tone: '' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-09-30T07:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 31 h', tone: 'soon' });
   assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-01T13:20:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'in 40 min', tone: 'soon' });
-  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closes Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
+  assert.deepEqual(eventWhen(closes, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Closed Thu 1 Oct, 15:00', relative: 'closed', tone: 'past' });
   // The auction's own zone is named by its place when the collector is elsewhere (M3 review), as the reminder rows name
   // it; the time stays the auction's. Two names of one zone are one zone.
   assert.equal(eventWhen(closes, { locale: 'en-GB', timeZone: 'America/New_York', now: '2026-09-24T14:00:00.000Z' }).when, 'Closes Thu 1 Oct, 15:00 London');
@@ -1141,7 +1141,7 @@ test('an auction’s time reads as a day, a time and how soon, in the collector�
   assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-01T22:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'today', tone: 'soon' });
   assert.deepEqual(eventWhen(day, { ...view, now: '2026-10-02T09:00:00.000Z' }), { when: 'Sale day Thu 1 Oct', relative: 'ended', tone: 'past' });
   const starts = { ...closes, eventKind: 'auction-starts' };
-  assert.deepEqual(eventWhen(starts, { ...view, now: '2026-10-01T16:00:00.000Z' }), { when: 'Starts Thu 1 Oct, 15:00', relative: 'started', tone: 'past' });
+  assert.deepEqual(eventWhen(starts, { ...view, now: '2026-10-01T16:00:00.000Z' }), { when: 'Started Thu 1 Oct, 15:00', relative: 'started', tone: 'past' });
   assert.deepEqual(eventWhen(null, view), { when: 'Time unknown', relative: '', tone: '' });
   assert.equal(auctionTimeLabel(closes, { ...view, now: '2026-09-24T14:00:00.000Z' }), 'Closes Thu 1 Oct, 15:00 · in 7 days');
 });
@@ -1547,4 +1547,60 @@ test('an estimate note in a listed currency takes its places from the table, wha
     assert.equal(estimateNoteText({ minor: 500000, currency: 'JPY' }), 'Estimate from page: JPY 500000');
     assert.equal(estimateNoteText({ minor: 5, currency: 'KWD' }), 'Estimate from page: KWD 5');
   });
+});
+
+// K-06: the landmark a long coin list puts where the auction month changes.
+test('a coin list month heading names the auction month and year, or says the coin has no sale date', () => {
+  assert.equal(monthHeading({ localDate: '2022-03-05' }, 'en-GB'), 'March 2022');
+  assert.equal(monthHeading({ localDate: '2026-10-31' }, 'de-DE'), 'Oktober 2026');
+  assert.equal(monthHeading(null), 'No sale date');
+  assert.equal(monthHeading({ localDate: 'soon' }), 'No sale date');
+});
+
+// K-07: a date outside this year carries its year, a sale that has passed is written once in the past tense, and the
+// Auctions page lists what is to come before what has passed.
+test('a past sale is written once in the past tense with its year, and the auctions split upcoming from past', () => {
+  const view = { locale: 'en-GB', timeZone: 'Europe/London', now: '2026-09-25T10:00:00.000Z' };
+  const starts = { eventKind: 'auction-starts', precision: 'timed', localDate: '2021-09-26', localTime: '10:00', timeZone: 'Europe/London', startsAt: '2021-09-26T09:00:00.000Z' };
+  const closes = { eventKind: 'lot-closes', precision: 'timed', localDate: '2021-10-08', localTime: '11:00', timeZone: 'America/New_York', startsAt: '2021-10-08T15:00:00.000Z' };
+  const day = { eventKind: 'auction-day', precision: 'date-only', localDate: '2021-10-20', timeZone: 'Europe/London' };
+  assert.equal(auctionTimeLabel(starts, view), 'Started Sun, 26 Sept 2021, 10:00');
+  assert.equal(auctionTimeLabel(closes, view), 'Closed Fri, 8 Oct 2021, 11:00 New York');
+  assert.equal(auctionTimeLabel(day, view), 'Sale day Wed, 20 Oct 2021 · ended');
+  const next = { eventKind: 'lot-closes', precision: 'timed', localDate: '2027-01-14', localTime: '17:00', timeZone: 'Europe/London', startsAt: '2027-01-14T17:00:00.000Z' };
+  assert.equal(auctionTimeLabel(next, view), 'Closes Thu, 14 Jan 2027, 17:00 · in 111 days');
+  const soon = { eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-01', localTime: '15:00', timeZone: 'Europe/London', startsAt: '2026-10-01T14:00:00.000Z' };
+  const undated = { eventKind: 'auction-day', precision: 'date-only', localDate: 'x', timeZone: 'Europe/London' };
+  const { upcoming, past } = splitAuctions([starts, next, day, undated, soon, closes], view.now);
+  assert.deepEqual(upcoming, [soon, next, undated], 'soonest first, the undated last');
+  assert.deepEqual(past, [day, closes, starts], 'newest first');
+});
+
+// X-07: what a reload keeps and what it takes from the other window, in one line.
+test('a reload keeps typed fields the other window left alone and names what changed', async () => {
+  const { rebaseTypedFields, rebaseSentence } = await import('../extension/workspace-editing.js');
+  const before = { title: 'Nero', notes: '', lotNumber: '12' };
+  const after = { title: 'Nero (corrected)', notes: '', lotNumber: '12' };
+  assert.deepEqual(rebaseTypedFields(before, after, { title: 'Nero', notes: 'Toned', lotNumber: '12' }), { kept: ['notes'], updated: ['title'] });
+  assert.deepEqual(rebaseTypedFields(before, after, { title: 'Nero, As', notes: '', lotNumber: '12' }), { kept: [], updated: ['title'] }, 'a field both changed follows the store');
+  assert.equal(rebaseSentence(['Title'], ['Notes']), 'Title was updated elsewhere; what you typed in Notes is kept.');
+  assert.equal(rebaseSentence(['Title', 'Reference'], ['Notes', 'Lot number shown']), 'Title and Reference were updated elsewhere; what you typed in Notes and Lot number shown is kept.');
+  assert.equal(rebaseSentence([], ['Notes']), 'What you typed in Notes is kept.');
+  assert.equal(rebaseSentence([], []), '');
+});
+
+// Fix round, Minor 6 (K-06): a month heading follows the instant the queue sorts by, in the collector's zone, so the
+// headings of a sorted list never run backwards across zones.
+test('month headings follow the sort instant in the collector’s zone, in order across zones', () => {
+  const now = '2026-03-20T12:00:00.000Z';
+  const london = { id: 'l', localDate: '2026-04-01', precision: 'date-only', eventKind: 'auction-day', timeZone: 'Europe/London' };
+  const tokyo = { id: 't', localDate: '2026-04-01', localTime: '08:00', precision: 'timed', eventKind: 'auction-starts', timeZone: 'Asia/Tokyo', startsAt: '2026-03-31T23:00:00.000Z' };
+  const newYork = { id: 'n', localDate: '2026-03-31', localTime: '23:00', precision: 'timed', eventKind: 'lot-closes', timeZone: 'America/New_York', startsAt: '2026-04-01T03:00:00.000Z' };
+  const lots = [{ id: 'a', auctionEventId: 'n' }, { id: 'b', auctionEventId: 't' }, { id: 'c', auctionEventId: 'l' }];
+  const sorted = auctionQueueForLots(lots, [london, tokyo, newYork], 'all-coins', now).map(({ event }) => event);
+  const view = { timeZone: 'Europe/London', now };
+  assert.deepEqual(sorted.map((event) => monthHeading(event, 'en-GB', view)), ['April 2026', 'April 2026', 'April 2026']);
+  // A New York collector has all three on the evening of 31 March, their own clock.
+  assert.deepEqual(sorted.map((event) => monthHeading(event, 'en-GB', { timeZone: 'America/New_York', now })), ['March 2026', 'March 2026', 'March 2026']);
+  assert.equal(monthHeading(null, 'en-GB', view), 'No sale date');
 });
