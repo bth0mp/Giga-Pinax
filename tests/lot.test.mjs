@@ -1686,3 +1686,18 @@ test('a provenance source drops "purchased privately from" and the article after
   // "der" that opens a name after another word stays.
   assert.deepEqual(readProvenance('Ex Sammlung der Stadt Wien.').map(({ source }) => source), ['Sammlung der Stadt Wien']);
 });
+
+// Loop 6 (K-03): a lot that names its ruler only after the RIC number ("RIC 306 Nero", "RIC II 253, Trajan.") reads it as a heading's ruler. A
+// name with more words behind it, a mint, a new sentence or a legend is nobody, and a heading's own ruler always wins.
+test('a ruler written straight after a RIC number is the lot\'s ruler, and nothing else is', () => {
+  assert.deepEqual(findReferences('Denarius. RIC 306 Nero. 3.21 g.').rulers, ['Nero']);
+  assert.deepEqual(findReferences('RIC 306 Nero; Cohen 12').rulers, ['Nero']);
+  assert.deepEqual(findReferences('AR Denarius, RIC 253, Trajan; Cohen 12.').rulers, ['Trajan']);
+  assert.deepEqual(findReferences('Denarius. RIC II 253 Trajan. Good VF.').rulers, ['Trajan']);
+  for (const text of ['Denarius. RIC 306 Nero as Caesar. 3 g.', 'Denarius. RIC 306 Rome. 3 g.', 'As. RIC 306. Nero seated left.',
+    'RIC 306 NERO CAESAR AVG', 'Denarius. RIC 306 Nero Claudius. 3 g.', 'Denarius. RIC 306 hello. 3 g.', 'Denarius. Cohen 306 Nero. 3 g.']) {
+    assert.deepEqual(findReferences(text).rulers, [], text);
+  }
+  // The heading's ruler is the lot's ruler, whatever follows the number.
+  assert.deepEqual(findReferences('Galba. Denarius. RIC 306 Nero.').rulers, ['Galba']);
+});

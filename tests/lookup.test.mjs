@@ -1732,3 +1732,46 @@ test('parseReference carries a second-edition mark onto RIC I, II.1 and II.3, an
   assert.notEqual(parseReference('RIC 3062. Aufl.')?.number, '306');
   assert.notEqual(parseReference('RIC II.3 3062.Aufl.')?.number, '306');
 });
+
+// Loop 6 (K-03): no keyboard has a "²" key, and a ruler written after the number is the order every American house writes. Both read exactly as the
+// spelling the reader already knew; nothing else is read, and every negative below stays as it was.
+test('parseReference reads I2, I^2 and I2nd as I², and a ruler or mint after the number as the section', () => {
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const text of ['RIC I2 Nero 306', 'RIC I^2 Nero 306', 'RIC I ^2 Nero 306', 'RIC I2nd Nero 306', 'RIC I 2nd Nero 306', 'ric i2 Nero 306', 'RIC vol. I2 Nero 306']) {
+    assert.deepEqual(parseReference(text), nero, text);
+  }
+  // The edition group keeps what it read: "2nd ed." and "2nd edition" are not rewritten into a stray section.
+  assert.deepEqual(parseReference('RIC I 2nd ed. Nero 306'), nero);
+  assert.deepEqual(parseReference('RIC I 2nd edition Nero 306'), nero);
+  assert.equal(parseReference('RIC II.3^2 Hadrian 12').volume, 'II, Part 3 (2nd edition)');
+  assert.deepEqual(parseReference('RIC I2 306'), { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: '' });
+  // Only volume I reads a glued 2: "V2" or "II2" could be a part or a number, and stay unread.
+  assert.equal(parseReference('RIC II2 Hadrian 12'), null);
+  assert.equal(parseReference('RIC V2 Probus 157'), null);
+  assert.equal(parseReference('RIC I22 Nero 306'), null);
+
+  for (const [text, reading] of [
+    ['RIC 306 Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC 306 nero', { catalogue: 'RIC', number: '306', volume: '', section: 'nero' }],
+    ['Ric 306 Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC 306, Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC II 253 Trajan', { catalogue: 'RIC', number: '253', volume: 'II', section: 'Trajan' }],
+    ['RIC I² 306 Nero', { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' }],
+    ['RIC X 602 Leo I (East)', { catalogue: 'RIC', number: '602', volume: 'X', section: 'Leo I (East)' }],
+    ['RIC 12 Trier', { catalogue: 'RIC', number: '12', volume: '', section: 'Trier' }],
+  ]) {
+    assert.deepEqual(parseReference(text), reading, text);
+    assert.deepEqual(parseReference(text), parseReference(text.replace(/^(RIC(?: [IVX²]+)?|Ric) (\S+?),? (.+)$/i, '$1 $3 $2')), `${text} reads as the name before the number`);
+  }
+  // Negatives: words no table knows, a name with more words behind it, a name with a number in it, a section already before the number, a name
+  // that is only half a section, and a key that is not RIC.
+  for (const text of ['RIC 306 hello', 'RIC 306 Nero Rome', 'RIC 306 Nero as Caesar', 'RIC 5 Salonina (2)', 'RIC II Hadrian 253 Trajan',
+    'RIC 306 var', 'RIC 306 Good VF', 'Cohen 306 Nero', 'RIC 306 3.21 g', 'RIC 306 (Nero) Galba']) {
+    const read = parseReference(text);
+    assert.ok(!read || read.catalogue !== 'RIC' || read.section !== 'Nero' || text === 'RIC 306 (Nero) Galba', text);
+    assert.notEqual(read?.section, 'Trajan', text);
+  }
+  assert.equal(parseReference('RIC 306 hello'), null);
+  assert.equal(parseReference('RIC 306 Nero as Caesar'), null);
+  assert.equal(parseReference('RIC II Hadrian 253 Trajan'), null);
+});

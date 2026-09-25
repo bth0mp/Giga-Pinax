@@ -65,3 +65,23 @@ test('over the bundled catalogue, a Spanish heading opens what the English name 
   const soler = await answer(lotReference('AUGUSTO. Denario. (Ar. 3,73g/19mm). 2 a.C.-4 d.C. Lugdunum. (RIC 207; RSC 43). Anv: Cabeza laureada de Augusto a derecha.'));
   assert.equal(soler.card?.id, 'ric.1(2).aug.207');
 });
+
+// Loop 6 (K-03): over the bundle, a ruler written after the number answers exactly as the same ruler before it, typed or in a lot, for every
+// RIC I² title; and I2 / I^2 open what I² opens.
+test('over the bundled catalogue, a ruler after the number answers as the ruler before it', { skip }, async () => {
+  const { parseReference } = await import('../extension/lookup.js');
+  const { bundleJson } = await import('./helpers/bundle.mjs');
+  const titles = bundleJson('ocre/index.json').entries.filter(([, title]) => title.startsWith('RIC I (second edition) ')).map(([id, title]) => [id, parseReference(title, false)])
+    .filter(([, hit]) => hit && !/ /.test(hit.number) && !/[:\d]/.test(hit.section));
+  assert.ok(titles.length > 500);
+  const key = (result) => (result.status === 'ok' ? result.card.id : `${result.status}:${(result.candidates ?? []).map(({ id }) => id).sort().join(',')}`);
+  let opened = 0;
+  for (const [id, hit] of titles.filter((_, index) => index % 3 === 0)) {
+    const before = key(await answer(parseReference(`RIC ${hit.section} ${hit.number}`)));
+    assert.equal(key(await answer(parseReference(`RIC ${hit.number} ${hit.section}`))), before, `RIC ${hit.number} ${hit.section}`);
+    assert.equal(key(await answer(parseReference(`RIC I2 ${hit.section} ${hit.number}`))), key(await answer(parseReference(`RIC I² ${hit.section} ${hit.number}`))), id);
+    assert.equal(key(await answer(lotReference(`Denarius. RIC ${hit.number} ${hit.section}. 3.21 g.`))), key(await answer(lotReference(`${hit.section}. Denarius. RIC ${hit.number}. 3.21 g.`))), id);
+    if (before === id) opened += 1;
+  }
+  assert.ok(opened > 100);
+});

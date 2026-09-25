@@ -272,7 +272,34 @@ function readType(text, clean = true) {
   return clean ? withEdition(withRange(type, () => readClean(cleanReference(written, false))), written) : type;
 }
 
-function readClean(value) {
+// K-03: no keyboard has a "²" key, so RIC I's second edition is typed "RIC I2", "RIC I^2" or "RIC I2nd" (and "RIC I 2nd" without the "ed."
+// that the edition group below already reads). Only volume I is read from a glued "2": it has no parts, so "I2" can be nothing else, while "V2"
+// or "II.32" could be a part or a number. A caret is a written superscript on any volume or part ("RIC II.3^2"). One fixed run at the start each.
+const GLUED_SECOND = /^(RIC\s*(?:vol\.?\s*)?I)(?:2(?:nd)?|\s+2nd)(?![\p{L}\d])(?!\s*ed)/iu;
+const CARET_SECOND = /^(RIC\s*(?:vol\.?\s*)?(?:X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?:\s*[./]\s*\d)?)\s*\^\s*2(?!\d)/i;
+const squared = (value) => value.replace(GLUED_SECOND, '$1²').replace(CARET_SECOND, '$1²');
+
+// K-03: a ruler or a mint written after the number ("RIC 306 Nero", "RIC II 253 Trajan", "Ric 306, nero") reads exactly as the same name before it:
+// only where the text before the number is RIC and a volume and nothing else, the text after it is one name the people or mint tables know, and
+// reading it before the number really makes it the section. Anything else stays unread, as it was. Read by tokens, never by a pattern that could
+// backtrack over the words.
+function rulerAfterNumber(value) {
+  const tokens = value.split(' ');
+  const at = tokens.findLastIndex((token) => /^\d/.test(token));
+  if (at < 1 || at === tokens.length - 1) return null;
+  const head = tokens.slice(0, at).join(' ');
+  const number = tokens[at].replace(/,$/, '');
+  const name = tokens.slice(at + 1).join(' ').replace(/^,\s*/, '');
+  if (!/^RIC(?![a-z])/i.test(head) || !number || /[\d,;]/.test(name) || !name) return null;
+  if (volumesOf(name).length === 0 && !isRicPerson(name) && !ricMintSection(name)) return null;
+  const bare = readClean(`${head} 1`, false);
+  if (bare?.catalogue !== 'RIC' || bare.section) return null;
+  const read = readClean(`${head} ${name} ${number}`, false);
+  return read?.catalogue === 'RIC' && read.section === name && read.number === number ? read : null;
+}
+
+function readClean(written, turned = true) {
+  const value = squared(written);
   // The catalogues whose whole reference is a key and a number; RIC and Bop carry a volume or a king and are read below.
   for (const [catalogue, { referencePattern }] of Object.entries(CATALOGUES)) {
     const number = referencePattern && value.match(referencePattern)?.[1];
@@ -296,7 +323,7 @@ function readClean(value) {
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
-  if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
+  if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return turned ? rulerAfterNumber(value) : null;
   return ricReference(any[3], '', ruler);
 }
 

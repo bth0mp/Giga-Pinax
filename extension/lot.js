@@ -694,7 +694,9 @@ export function findReferences(input) {
     return !seen.has(id) && seen.add(id);
   });
   const headline = heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length));
-  const { names: rulers, first } = rulersIn(headline);
+  const { names: before, first } = rulersIn(headline);
+  // K-03: a heading that names nobody leaves the ruler a collector writes after the number ("RIC 306 Nero", "RIC II 253, Trajan") to say whose it is.
+  const rulers = before.length ? before : rulerAfter(text, kept.find((piece) => RIC_KEY.test(piece.key)));
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
   // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the
@@ -703,6 +705,19 @@ export function findReferences(input) {
   const mint = rulers.length === 0 ? named[0] ?? '' : '';
   const mark = mint ? { mint } : named.length ? { struckAt: named } : null;
   return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
+}
+
+// K-03: the ruler written straight after a RIC citation's number, as American houses and many collectors write it ("RIC 306 Nero", "RIC II 253,
+// Trajan."), read as the heading's ruler would be. Only where the citation stands in the text exactly as it was read, and only a name that is the
+// whole of what follows it up to the clause's end and that the people table answers to as one label: "RIC 306 Nero as Caesar", a mint, a legend or
+// any other words are nobody. The tail is bounded, so nothing here backtracks over a lot's text.
+const AFTER_NUMBER = /^[^\S\n]*,?[^\S\n]*([^\d.;,:()\n]{2,40}?)[^\S\n]*(?=[.;,:\n]|$)/u;
+function rulerAfter(text, piece) {
+  const at = piece ? text.indexOf(piece.written, piece.start) : -1;
+  if (at < 0 || at > piece.start + 8) return [];
+  const name = AFTER_NUMBER.exec(text.slice(at + piece.written.length, at + piece.written.length + 48))?.[1]?.trim() ?? '';
+  if (!name || !LABELS.has(rulerKey(fold(name)))) return [];
+  return rulersIn(name).names;
 }
 
 // Lot text rather than one reference: longer than a reference box holds, or naming two catalogues ("RIC 972; Cohen 17").
