@@ -174,7 +174,8 @@ export function wantReferenceProblem(reference) {
   if (namesOneType(reading)) return '';
   if (reading?.catalogue === 'RIC') return 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.';
   if (reading?.catalogue === 'Bop') return 'A Bopearachchi reference names its king, as a card does: Bopearachchi Menander I 13A.';
-  return `“${text}” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE or Bopearachchi reference, such as RIC I² Nero 306 or RRC 44/5.`;
+  if (/^newell\b/i.test(text)) return 'A Newell reference names Demetrius, as a card does: Newell Demetrius 45.';
+  return `“${text}” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE, Newell Demetrius or Bopearachchi reference, such as RIC I² Nero 306, RRC 44/5 or Newell Demetrius 45.`;
 }
 
 /**

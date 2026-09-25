@@ -713,3 +713,12 @@ test('twins an older version left behind can still be edited and found, but a fo
   assert.equal(wantFromForm({ id: WANT_ID, reference: 'RIC I² Nero 306', notes: 'Kept' }, { wants: root.wants }).ok, true);
   assert.equal(wantFromForm({ reference: 'RIC I² Nero 306' }, { wants: [root.wants[0]] }).message, 'RIC I² Nero 306 is already on your want list, marked found. Choose Want again on it to look for another.');
 });
+
+// V-13: Newell's Demetrius wants are accepted and matched, so the form names them too.
+test('the want form names Newell Demetrius where it lists what can be wanted, and says how to write one', async () => {
+  assert.equal(wantReferenceProblem('Newell Demetrius 45'), '');
+  assert.equal(wantReferenceProblem('Newell 45'), 'A Newell reference names Demetrius, as a card does: Newell Demetrius 45.');
+  assert.equal(wantReferenceProblem('SNG Cop 123'), '“SNG Cop 123” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE, Newell Demetrius or Bopearachchi reference, such as RIC I² Nero 306, RRC 44/5 or Newell Demetrius 45.');
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#wants' });
+  assert.match(page.$('want-reference-note').textContent, /Newell Demetrius/);
+});
