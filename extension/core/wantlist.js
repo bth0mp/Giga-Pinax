@@ -81,8 +81,85 @@ export function sameWantedType(left, right) {
   const one = wantedReading(left);
   const other = wantedReading(right);
   if (!one || !other) return false;
-  const same = (key) => (key === 'section' && field(one.catalogue) === 'ric' ? ricSectionKey(one[key]) === ricSectionKey(other[key]) : field(one[key]) === field(other[key]));
-  return ['catalogue', 'volume', 'section', 'number', 'range'].every(same);
+  return ['catalogue', 'volume'].every((key) => field(one[key]) === field(other[key])) && sameShelfPlace(one, other);
+}
+
+// OCRE splits some RIC numbers by denomination and titles each half with it in a bracket ("RIC II Trajan 253 (aureus)",
+// "... (denarius)"): RIC 253 is still one number, so a number written without the bracket is either half, and one
+// written with it is that half only (V-02).
+const BRACKETED = /^(.*?)\s*\(([^()]*)\)$/;
+/**
+ * @param {*} number
+ * @returns {{ base: string, bracket: string }}
+ */
+const numberParts = (number) => {
+  const text = field(number);
+  const match = BRACKETED.exec(text);
+  return match ? { base: match[1], bracket: match[2] } : { base: text, bracket: '' };
+};
+/**
+ * The section, number and range of two readings of one catalogue agree: a RIC mint in either of its names, and a RIC
+ * number with or without OCRE's bracketed denomination.
+ * @param {Reading} one
+ * @param {Reading} other
+ * @returns {boolean}
+ */
+function sameShelfPlace(one, other) {
+  const ric = field(one.catalogue) === 'ric';
+  if (ric ? ricSectionKey(one.section) !== ricSectionKey(other.section) : field(one.section) !== field(other.section)) return false;
+  if (field(one.range) !== field(other.range)) return false;
+  if (!ric) return field(one.number) === field(other.number);
+  const left = numberParts(one.number); const right = numberParts(other.number);
+  return left.base === right.base && (!left.bracket || !right.bracket || left.bracket === right.bracket);
+}
+
+// OCRE titles a second edition in words ("RIC I (second edition) Nero 306"); a want is written in the short form the popup
+// writes a card's reference in ("RIC I² Nero 306"), which parseReference reads back as the same type. Kept in step with
+// companion-popup.js displayReference.
+const SECOND_EDITION = /^RIC (X|IX|VIII|VII|VI|V|IV|III|II|I)(?:, Part (\d))? \((?:second|2nd) edition\) (\S.*)$/;
+/**
+ * A card's title as a want is written.
+ * @param {*} label
+ * @returns {string}
+ */
+export function cardReference(label) {
+  const text = String(label ?? '').trim();
+  const match = SECOND_EDITION.exec(text);
+  return match ? `RIC ${match[1]}${match[2] ? `.${match[2]}` : ''}² ${match[3]}` : text;
+}
+
+/**
+ * What the bundled catalogue holds for a want, and so what is saved (V-02): a want is kept only where a card could ever
+ * match it. A reference the catalogue opens, or lists, as the same type is saved as written; one it holds only under
+ * another volume or edition of the same ruler or mint and number is saved as the card titles it ("RIC I Nero 306" is
+ * RIC I² Nero 306, the only RIC I OCRE holds; "RIC V.2 Probus 157" is RIC V Probus 157), and `note` says so; several such
+ * cards are offered as `choices`; and one the catalogue does not hold is refused with the reason. A catalogue the bundle
+ * does not hold (Bopearachchi), a lookup that fails, or no catalogue at all, keeps the reference as written: it cannot be
+ * checked here. Nothing is fetched beyond the bundled files.
+ * @param {string} reference the collector's text, one type by `wantReferenceProblem`
+ * @param {((reading: Reading) => Promise<*>) | null | undefined} lookupType the bundled catalogue's lookup
+ * @returns {Promise<{ ok: true, reference: string, note: string } | { ok: false, message: string, choices: string[] }>}
+ */
+export async function resolveWantReference(reference, lookupType) {
+  const asWritten = { ok: /** @type {true} */ (true), reference, note: '' };
+  const reading = wantedReading(reference);
+  if (!reading || typeof lookupType !== 'function') return asWritten;
+  let found = null;
+  try { found = await lookupType(reading); } catch { found = null; }
+  if (!found || !['ok', 'candidates', 'none'].includes(found.status)) return asWritten;
+  const titles = found.status === 'ok' ? [found.card?.label] : found.status === 'candidates' ? (found.candidates ?? []).map((entry) => entry?.title ?? entry?.label) : [];
+  const cards = [...new Set(titles.filter(Boolean).map(cardReference))].filter((card) => wantedReading(card));
+  const renamed = (card) => ({ ok: /** @type {true} */ (true), reference: card, note: `you wrote ${reference}; this is how the catalogue titles it` });
+  // A card opened for this very reading is the type, whatever its title looks like (SC and Newell are titled in words).
+  if (found.status === 'ok') return !cards.length || sameWantedType(cards[0], reference) ? asWritten : renamed(cards[0]);
+  if (cards.some((card) => sameWantedType(card, reference))) return asWritten;
+  const near = cards.filter((card) => {
+    const other = wantedReading(card);
+    return Boolean(other) && field(other?.catalogue) === field(reading.catalogue) && sameShelfPlace(reading, /** @type {Reading} */ (other));
+  });
+  if (near.length === 1) return renamed(near[0]);
+  if (near.length > 1) return { ok: false, message: `The catalogue holds ${reference} in ${near.length} volumes or editions. Choose the one you want:`, choices: near };
+  return { ok: false, message: `${reference} is not in the catalogue bundled with Giga Pinax, so no card could ever match this want. Check the volume, the ruler or mint and the number.`, choices: [] };
 }
 
 /**

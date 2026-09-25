@@ -6,6 +6,11 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- A want is checked against the bundled catalogue when you save it, so it is one a card can match. A reference the catalogue holds under another title is saved under that title, and the page says so: `RIC I Nero 306`, as CNG and Roma cite Julio-Claudian coins, becomes `RIC I² Nero 306`, and `RIC V.2 Probus 157` becomes `RIC V Probus 157`. One held in several volumes is offered as a choice, and one no card could ever match is refused with the reason. A found want keeps its reference, and a Bopearachchi want, which the bundle cannot check, is saved as written.
+- A want for a RIC number that OCRE splits by denomination matches both halves: the form's own example `RIC II Trajan 253` is on your want list under the `253 (aureus)` and the `253 (denarius)` card, while `RIC II Trajan 253 (aureus)` matches the aureus only.
+
 ### Fixed
 
 - The workspace no longer lets its first load take over what you started. On a wide screen the first coin of the queue is opened only while nothing is open: never over **Add coin**, typed in or not, never over a form with unsaved input, and it is the first coin the list shows with the filter you typed while the page was loading. Nothing asks "Discard unsaved changes?" during a load. **Add coin**, **Add auction**, **Add want**, **Add group**, **Save manual evidence** and **Enable desktop alerts** wait for your records to load, as the Settings editors do. A captured lot, auction or research text that arrives after you have started on the form it would fill is offered in that form's line (`A captured lot is waiting: Load it · Keep what I typed`) instead of replacing what you typed.

@@ -310,3 +310,6 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
     A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
     leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.
+    Add the want `RIC I Nero 306` after removing the first. *Expected:* "Want saved · RIC I² Nero 306 · you wrote
+    RIC I Nero 306; this is how the catalogue titles it". Add `RIC II Trajan 99999`. *Expected:* refused beside **Save
+    want**: it is not in the bundled catalogue, and nothing is saved.

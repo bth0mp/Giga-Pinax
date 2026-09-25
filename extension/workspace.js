@@ -3,7 +3,8 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, minorDigits, parseMoney, parsePremiumPercent, plainDecimal } from './core/money.js';
 import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
-import { WANT_GRADE_CHOICES, openWantsFor, wantBadgeText, wantFromForm } from './core/wantlist.js';
+import { WANT_GRADE_CHOICES, openWantsFor, resolveWantReference, wantBadgeText, wantFromForm } from './core/wantlist.js';
+import { defaultLocalCatalogue } from './local-catalogue.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -1575,15 +1576,39 @@ async function initWorkspace() {
   const closeWantForm = () => { dirtyEditors.delete('want'); resetEditor('want'); updateDirtyMarks(); };
   $('new-want').addEventListener('click', () => openWantForm());
   $('cancel-want').addEventListener('click', closeWantForm);
-  wantForm.addEventListener('submit', (event) => {
+  // A want is saved only where a card could ever match it (V-02): the bundled catalogue is asked, offline, what it holds for
+  // the reference, and a want it holds under another title is saved under that one and said so. A found want keeps the
+  // reference its coin answered.
+  const wantChoices = (message, choices) => {
+    const line = $('want-form-status');
+    formStatus('want', message, { error: true });
+    for (const choice of choices) {
+      const button = text('button', choice, 'quiet'); button.type = 'button';
+      button.addEventListener('click', () => { wantForm.elements.reference.value = choice; wantForm.dispatchEvent(new Event('input', { bubbles: true })); void wantForm.requestSubmit(); });
+      line.append(document.createTextNode(' '), button);
+    }
+  };
+  wantForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const f = wantForm.elements;
-    const read = wantFromForm({ id: editingWant?.id, reference: f.reference.value, maxPrice: f.maxPrice.value, currency: f.currency.value, minGrade: f.minGrade.value, notes: f.notes.value },
-      { wants: snapshot.wants, locale: navigator.language });
+    const values = { id: editingWant?.id, reference: f.reference.value, maxPrice: f.maxPrice.value, currency: f.currency.value, minGrade: f.minGrade.value, notes: f.notes.value };
+    const context = { wants: snapshot.wants, locale: navigator.language };
+    let read = wantFromForm(values, context);
     if (!read.ok) { formStatus('want', read.message, { error: true }); f[read.field]?.focus?.(); return; }
+    const found = Boolean(editingWant && (snapshot.wants ?? []).find(({ id }) => id === editingWant.id)?.foundLotId);
+    const version = editorVersions.get('want') ?? 0;
+    const resolved = found ? { ok: true, reference: read.value.reference, note: '' } : await resolveWantReference(read.value.reference, (reading) => defaultLocalCatalogue?.lookupType(reading));
+    // The collector went on typing while the catalogue was read: what they typed now is what a save sends.
+    if ((editorVersions.get('want') ?? 0) !== version || wantForm.hidden) return;
+    if (!resolved.ok) { wantChoices(resolved.message, resolved.choices); f.reference.focus(); return; }
+    if (resolved.reference !== read.value.reference) {
+      read = wantFromForm({ ...values, reference: resolved.reference }, context);
+      if (!read.ok) { formStatus('want', read.message, { error: true }); f[read.field]?.focus?.(); return; }
+    }
     const reference = read.value.reference;
+    const note = resolved.note ? ` · ${resolved.note}` : '';
     void send({ type: 'want.save', requestId: requestId(), expectedRevision: editingWant?.revision ?? null, want: read.value }, 'want').then((reply) => {
-      if (reply?.ok && !reply.editorPreserved) formStatus('wantlist', `Want saved · ${reference}`);
+      if (reply?.ok && !reply.editorPreserved) formStatus('wantlist', `Want saved · ${reference}${note}`);
     });
   });
   const wantAction = (label, run, className = 'quiet') => {

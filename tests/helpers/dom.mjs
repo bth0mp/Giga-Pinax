@@ -712,7 +712,7 @@ function loadBridge(browser) {
 // The workspace page, loaded as tests/settings.test.mjs loads Settings: its markup in the fake DOM,
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
-export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false } = {}) {
+export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false, catalogue = null } = {}) {
   const [money, evidence, projections, sourceLaunchers, fields, bidTools, lookup] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
@@ -735,6 +735,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
     sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist,
+    // The bundled catalogue the want form asks what it holds (V-02); none unless a test hands one in, as outside the extension.
+    defaultLocalCatalogue: catalogue,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},

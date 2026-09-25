@@ -11,11 +11,13 @@ import { exportBackup, importChangeLines, previewImport, validateBackup } from '
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
-  namesOneType, openWantsFor, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
+  cardReference, namesOneType, openWantsFor, resolveWantReference, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading,
+  wonCoinsFor,
 } from '../extension/core/wantlist.js';
 import { MINT_SPELLINGS, RIC_SECTIONS, ricMintSection, rulerKey } from '../extension/catalogues.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
+import { bundle, skip } from './helpers/bundle.mjs';
 
 const NOW = '2026-09-25T12:00:00.000Z';
 const WANT_ID = '11111111-1111-4111-8111-111111111111';
@@ -606,4 +608,70 @@ test('a yen maximum is read, said and written in whole yen', () => {
   assert.equal(validateWant(makeWant({ maxPrice: read.value.maxPrice })).ok, true);
   const [, row] = csvFiles({ ...createEmptySnapshot(NOW), wants: [makeWant({ maxPrice: read.value.maxPrice })] }).wants.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
   assert.match(row, /^"[^"]+","RIC II Trajan 253","1200000","JPY",/);
+});
+
+// --- Loop cycle 5: a want no card can match is not saved (V-02) ----------------------------------------
+
+test('a RIC number is one number whether OCRE splits it by denomination or not', () => {
+  for (const [left, right] of [
+    ['RIC II Trajan 253', 'RIC II Trajan 253 (aureus)'],
+    ['RIC II Trajan 253', 'RIC II Trajan 253 (denarius)'],
+    ['RIC II Trajan 253 (aureus)', 'ric ii trajan 253 (Aureus)'],
+  ]) assert.equal(sameWantedType(left, right), true, `${left} = ${right}`);
+  for (const [left, right] of [
+    ['RIC II Trajan 253 (aureus)', 'RIC II Trajan 253 (denarius)'],
+    ['RIC II Trajan 253', 'RIC II Trajan 2530 (aureus)'],
+    ['RIC II Trajan 253', 'RIC II Hadrian 253 (aureus)'],
+  ]) assert.equal(sameWantedType(left, right), false, `${left} ≠ ${right}`);
+  // The form's own example now finds the card a collector opens for it.
+  assert.deepEqual(openWantsFor([makeWant()], 'RIC II Trajan 253 (aureus)').map(({ id }) => id), [WANT_ID]);
+  assert.equal(cardReference('RIC I (second edition) Nero 306'), 'RIC I² Nero 306');
+  assert.equal(cardReference('RIC II, Part 3 (second edition) Hadrian 2140'), 'RIC II.3² Hadrian 2140');
+  assert.equal(cardReference('RIC V Probus 157'), 'RIC V Probus 157');
+});
+
+test('a want is saved as the bundled catalogue titles it, or refused where no card could ever match it', { skip }, async () => {
+  const lookup = (reading) => bundle.lookupType(reading);
+  const saved = async (reference) => {
+    const resolved = await resolveWantReference(reference, lookup);
+    assert.equal(resolved.ok, true, `${reference}: ${resolved.message}`);
+    return resolved.reference;
+  };
+  for (const reference of ['RIC II Trajan 253', 'RIC II Trajan 253 (aureus)', 'RIC I² Nero 306', 'RIC I (second edition) Nero 306', 'RIC VII Trier 12',
+    'RRC 44/5', 'Price 23', 'SC 1', 'Newell Demetrius 45', 'Bopearachchi Menander I 13A']) {
+    assert.equal(await saved(reference), reference, `${reference} is kept as written`);
+  }
+  assert.deepEqual(await resolveWantReference('RIC I Nero 306', lookup),
+    { ok: true, reference: 'RIC I² Nero 306', note: 'you wrote RIC I Nero 306; this is how the catalogue titles it' });
+  assert.equal(await saved('RIC V.2 Probus 157'), 'RIC V Probus 157');
+  assert.equal(await saved('RIC II.3 Hadrian 2140'), 'RIC II.3² Hadrian 2140');
+  const refused = await resolveWantReference('RIC II Trajan 99999', lookup);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.message, 'RIC II Trajan 99999 is not in the catalogue bundled with Giga Pinax, so no card could ever match this want. Check the volume, the ruler or mint and the number.');
+});
+
+test('a want the catalogue holds in several volumes is offered as a choice, and one it cannot check is kept as written', async () => {
+  const twoVolumes = async () => ({ status: 'candidates', candidates: [{ title: 'RIC V Probus 157' }, { title: 'RIC VI Probus 157' }, { title: 'RIC V Carus 157' }] });
+  assert.deepEqual(await resolveWantReference('RIC IV Probus 157', twoVolumes), {
+    ok: false, message: 'The catalogue holds RIC IV Probus 157 in 2 volumes or editions. Choose the one you want:', choices: ['RIC V Probus 157', 'RIC VI Probus 157'],
+  });
+  for (const lookup of [null, async () => null, async () => ({ status: 'unavailable' }), async () => { throw new Error('damaged bundle'); }]) {
+    assert.deepEqual(await resolveWantReference('RIC II Trajan 253', lookup), { ok: true, reference: 'RIC II Trajan 253', note: '' });
+  }
+});
+
+test('the Want list form saves a want as the catalogue titles it and says so, and refuses one no card could match', { skip }, async () => {
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#wants', catalogue: bundle });
+  await addWant(page, { reference: 'RIC I Nero 306' });
+  assert.deepEqual(background.root().wants.map(({ reference }) => reference), ['RIC I² Nero 306']);
+  assert.equal(page.$('want-action-status').textContent, 'Want saved · RIC I² Nero 306 · you wrote RIC I Nero 306; this is how the catalogue titles it');
+  await addWant(page, { reference: 'RIC II Trajan 99999' });
+  assert.match(page.$('want-form-status').textContent, /^RIC II Trajan 99999 is not in the catalogue bundled with Giga Pinax/);
+  assert.equal(page.$('want-form').hidden, false, 'the form stays open to correct');
+  await page.type('want-form', 'reference', 'RIC I Nero 306');
+  await page.submit('want-form');
+  assert.equal(page.$('want-form-status').textContent, 'RIC I² Nero 306 is already on your want list.', 'the twin check reads the catalogue’s title');
+  assert.equal(background.root().wants.length, 1);
+  assert.equal(page.commands.filter(({ type }) => type === 'want.save').length, 1, 'nothing refused reached the store');
 });
