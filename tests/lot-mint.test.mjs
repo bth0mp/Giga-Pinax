@@ -211,3 +211,49 @@ test('over the bundled catalogue, a Tauler & Fau lot opens its coin', { skip }, 
   const pius = await lookup('Antoninus Pius. Sestertius. 145-161 AD. Rome. (Ric-III 772). (Bmcre-1655). (C-579). Ae. 26,34 g.');
   assert.equal(pius.card?.id, 'ric.3.ant.772');
 });
+
+// Loop V-06: CNG and Roma cite every Julio-Claudian coin "RIC I 306", Baldwin's and Spink Hadrian "RIC II.3 2140", and OCRE holds those volumes in
+// their second edition alone, so the one card there was offered as a list of one. Where the heading's ruler agrees and the bundle holds exactly one
+// type of his for the reference in any edition, it opens; with no ruler it stays an offer.
+test('over the bundled catalogue, "RIC I 306" behind its ruler opens the one type OCRE holds', { skip }, async () => {
+  for (const [text, id] of [
+    ['Nero. As. RIC I 306; WCN 275.', 'ric.1(2).ner.306'],
+    ['Roman Imperial, Hadrian (AD 117-138), AR Denarius, Rome, AD 134-138, HADRIANVS AVG COS III P P, bare head right, rev. FIDES PVBLICA, Fides standing right holding corn ears and fruit, 3.42g (RIC II.3 2140; RSC 716). About extremely fine.', 'ric.2_3(2).hdn.2140'],
+    ['Vespasian. Denarius. RIC II.1 772.', 'ric.2_1(2).ves.772'],
+    ['Galba. Denarius. RIC I 306.', 'ric.1(2).gal.306'],
+    ['Augustus. Denarius. Lugdunum. RIC I 207.', 'ric.1(2).aug.207'],
+  ]) {
+    const result = await lookup(text);
+    assert.equal(result.card?.id, id, `${text.slice(0, 50)}: ${result.status} ${result.candidates?.map((entry) => entry.id).join(' ') ?? ''}`);
+  }
+  // A ruler typed into the reference is the ruler as much as a heading's.
+  assert.equal((await answer(parseReference('RIC I Nero 306'))).card?.id, 'ric.1(2).ner.306');
+  assert.equal((await answer(parseReference('RIC II.3 Hadrian 2140'))).card?.id, 'ric.2_3(2).hdn.2140');
+  // No ruler: the one type is still offered, and several are offered as before.
+  const alone = await answer(parseReference('RIC II.3 2140'));
+  assert.equal(alone.status, 'candidates');
+  assert.deepEqual(alone.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.2140']);
+  assert.equal((await answer(parseReference('RIC I 306'))).candidates?.length, 3);
+  // A ruler with no type of the number in the volume opens nothing.
+  assert.notEqual((await lookup('Nero. As. RIC I 9999.')).status, 'ok');
+});
+
+// Loop V-06: over the three volumes OCRE holds in their second edition alone, the unedited numeral behind the ruler opens that title's own coin or
+// nothing: never another.
+test('over the bundled catalogue, an unedited RIC I, II.1 or II.3 behind its ruler opens only its own type', { skip }, async () => {
+  let opened = 0;
+  let n = 0;
+  for (const [id, title] of bundleJson('ocre/index.json').entries) {
+    const hit = parseReference(title, false);
+    if (!hit || !/\(2nd edition\)$/.test(hit.volume) || hit.section.includes(' and ') || hit.section === 'Civil Wars' || n++ % 5) continue;
+    const volume = hit.volume.replace(' (2nd edition)', '').replace(', Part ', '.');
+    const result = await lookup(`${hit.section.split(' (')[0]}. Denarius. RIC ${volume} ${hit.number.split(' ')[0]}.`);
+    if (result.status !== 'ok') continue;
+    opened += 1;
+    const answered = parseReference(result.card.label, false);
+    assert.equal(answered.volume, hit.volume, `${title}: ${result.card.id}`);
+    assert.equal(answered.number.split(' ')[0], hit.number.split(' ')[0], `${title}: ${result.card.id}`);
+    if (!/\(/.test(hit.number)) assert.equal(result.card.id, id, title);
+  }
+  assert.ok(opened > 1000, `${opened} opened`);
+});

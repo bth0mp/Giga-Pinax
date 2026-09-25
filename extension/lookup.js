@@ -792,6 +792,21 @@ export function otherVolumePart(reference, title) {
   return Boolean(hit) && norm(hit.volume) !== norm(volume);
 }
 
+// Whether a hit is in the one edition OCRE holds of a volume the reference names without one: CNG and Roma cite "RIC I 306", Baldwin's "RIC II.3
+// 2140", and OCRE holds RIC I, II.1 and II.3 in their second edition alone. Read from RIC_VOLUMES, never from a list of numerals: a shelf with any
+// other volume on it ("RIC II", beside II.1² and II.3²) is no such shelf, and a volume typed with its edition is exact already.
+export function soleEdition(volume, title) {
+  const typed = unquote(volume);
+  const [numeral, part] = shelf(typed);
+  if (!numeral || listed(typed)) return false;
+  const held = RIC_VOLUMES.filter(({ value }) => {
+    const [otherNumeral, otherPart] = shelf(value);
+    return otherNumeral === numeral && (!part || otherPart === part);
+  });
+  if (held.length !== 1 || !/\(2nd edition\)$/.test(held[0].value)) return false;
+  return norm(parseReference(title, false)?.volume ?? '') === norm(held[0].value);
+}
+
 // Whether a coin OCRE titles as the answer was struck at a RIC VI–IX mint that is none of the ones the lot's heading names beside its ruler ("Constantius I.
 // Follis. Trier. RIC VI 12." found only his Alexandria 12): the ruler's number there is not the dealer's coin, so it is offered, never opened.
 export function strayMint(reference, title) {

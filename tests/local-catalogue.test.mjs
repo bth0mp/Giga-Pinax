@@ -233,14 +233,16 @@ test('a failed bundle load is retried, never remembered', async () => {
 // checked out.
 
 test('over the bundled catalogue, a cited range reaches the record OCRE titles over it', { skip }, async () => {
+  // RIC II.3 is held in its second edition alone, so with Hadrian named the one type opens (loop V-06), as "RIC II.3² Hadrian 10-11" always did.
   const typed = await bundle.lookupType(parseReference('RIC II.3 Hadrian 10-11'));
-  assert.deepEqual(typed.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
+  assert.equal(typed.card?.id, 'ric.2_3(2).hdn.10-11');
   const lot = findReferences('Hadrian. AR Denarius. RIC II.3 Hadrian 10-11.');
   const row = await bundle.lookupType(lotLookup(lot.references[0], lot.rulers));
-  assert.deepEqual(row.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10-11']);
+  assert.equal(row.card?.id, 'ric.2_3(2).hdn.10-11');
   // A range OCRE has no record of falls back to the first number, which is the type the other 654 ranges share.
   const missing = await bundle.lookupType(parseReference('RIC II.3 Hadrian 10-12'));
-  assert.deepEqual(missing.candidates.map((entry) => entry.id), ['ric.2_3(2).hdn.10']);
+  assert.equal(missing.card?.id, 'ric.2_3(2).hdn.10');
+  assert.equal((await bundle.lookupType(parseReference('RIC II.3² Hadrian 10-12'))).card?.id, 'ric.2_3(2).hdn.10');
 });
 
 test('over the bundled catalogue, guided fields naming a mint by its modern name open the coin', { skip }, async () => {

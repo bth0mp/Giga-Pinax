@@ -1,4 +1,4 @@
-import { buildQuery, eitherReading, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, strayMint } from './lookup.js';
+import { buildQuery, eitherReading, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, soleEdition, strayMint } from './lookup.js';
 import { isMintOnly, isRicPerson, isSectionOnly, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -297,11 +297,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
         const here = struck.length > 0 && matched.some(atNamedMint) ? matched.filter((entry) => !strayMint(reference, entry.title)) : matched;
         let final = pickRic(here, citationRef);
         if (final.status === 'ok' && here.length < matched.length && struck.length > 1) final = { status: 'candidates', candidates: [final.entry], partial: true };
+        // "Nero. RIC I 306": the volume names no edition, OCRE holds that volume in its second alone, and the ruler's one type of the number there is
+        // the only one it could be in any edition. It opens; with no ruler to agree (the bare "RIC II.3 2140") it is still offered, below.
+        const sole = final.status === 'candidates' && final.candidates.length === 1 && soleEdition(reference.volume, final.candidates[0].title);
+        if (sole) final = { status: 'ok', entry: final.candidates[0] };
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.
         // Nor is a coin from another RIC VI–IX mint than the one the heading names beside the ruler: his number there is not the dealer's coin.
-        if (final.status === 'ok' && !otherVolumePart(reference, final.entry.title) && headed.length === 0 && !strayMint(reference, final.entry.title)) {
+        if (final.status === 'ok' && (sole || !otherVolumePart(reference, final.entry.title)) && headed.length === 0 && !strayMint(reference, final.entry.title)) {
           return await listedById('ocre', final.entry.id);
         }
         if (final.status === 'ok') final = { status: 'candidates', candidates: [final.entry], partial: true };
