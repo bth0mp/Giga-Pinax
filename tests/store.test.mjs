@@ -522,12 +522,66 @@ test('an auction saved before Q-19 keeps its reminders’ instants until the col
   assert.equal(imported.ok, true, imported.message);
   assert.deepEqual(other.read().auctionEvents, stored.auctionEvents, 'an import is not an edit');
 
+  // Review Important 1: only a reminder whose own time changed moves to the collector's clock; its sibling stays put.
   const { id, revision, dataClass, createdAt, updatedAt, ...draft } = stored.auctionEvents[0];
-  const edited = await writer.commitCommand(command('event.save', { expectedRevision: 0, event: { id, ...draft, name: 'Leu Auction 32' } }));
-  assert.equal(edited.ok, true, edited.message);
-  assert.deepEqual(edited.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
+  const retimed = await writer.commitCommand(command('event.save', { expectedRevision: 0, event: { id, ...draft,
+    reminders: [draft.reminders[0], { ...draft.reminders[1], localTime: '10:00' }] } }));
+  assert.equal(retimed.ok, true, retimed.message);
+  assert.deepEqual(retimed.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), [undefined, 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T13:00:00.000Z']);
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-22T07:00:00.000Z', '2026-10-23T14:00:00.000Z']);
+  // A new sale day moves every reminder.
+  const moved = await writer.commitCommand(command('event.save', { expectedRevision: 1, event: { id, ...draft, localDate: '2026-10-24' } }));
+  assert.equal(moved.ok, true, moved.message);
+  assert.deepEqual(moved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
+  await writer.commitCommand(command('scheduler.reconcile'));
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-23T13:00:00.000Z', '2026-10-24T13:00:00.000Z']);
+});
+
+// Review Important 1: renaming an auction saved before Q-19, on its sale day at 10:00 in New York after both its reminders
+// rang at 09:00 Zurich and were acknowledged, neither moves them nor brings them back as due.
+test('renaming an auction saved before Q-19 keeps its reminders and their acknowledgements', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const eventId = uuid();
+  stored.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, ...zurichSaleDay(),
+    reminders: [{ id: uuid(), kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { id: uuid(), kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' });
+  const due = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(due.value.dueEventCount, 1);
+  const triggerIds = storage.read().alerts.map(({ triggerId }) => triggerId);
+  assert.equal((await writer.commitCommand(command('alert.ack', { triggerIds }))).ok, true);
+
+  // The form sends the reminders back without the field, as the workspace rebuilds them.
+  const { id, revision, dataClass, createdAt, updatedAt, ...draft } = stored.auctionEvents[0];
+  const renamed = await writer.commitCommand(command('event.save', { expectedRevision: 0, event: { id, ...draft, name: 'Leu Auction 32' } }));
+  assert.equal(renamed.ok, true, renamed.message);
+  assert.equal(renamed.value.reminders.some((reminder) => 'collectorTimeZone' in reminder), false);
+  const after = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(after.value.dueEventCount, 0, 'nothing notifies again');
+  assert.deepEqual(storage.read().alerts.map(({ triggerId, triggerAt, status }) => ({ triggerId, triggerAt, status })),
+    triggerIds.map((triggerId, index) => ({ triggerId, triggerAt: ['2026-10-22T07:00:00.000Z', '2026-10-23T07:00:00.000Z'][index], status: 'acknowledged' })));
+});
+
+// A reminder already on the collector's clock keeps the zone it was saved with through a rename from another zone, whether
+// the draft carries the field or, as the workspace form sends it, not.
+test('a reminder on the collector’s clock keeps its zone through a rename made elsewhere', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const saved = await createCommandWriter(storage, { ...context(), timeZone: 'America/New_York' })
+    .commitCommand(command('event.save', { expectedRevision: null, event: zurichSaleDay() }));
+  assert.equal(saved.ok, true, saved.message);
+  const london = createCommandWriter(storage, { ...context(), timeZone: 'Europe/London' });
+  const { id, revision, dataClass, createdAt, updatedAt, ...draft } = saved.value;
+  const bare = draft.reminders.map(({ collectorTimeZone, ...reminder }) => reminder);
+  let expectedRevision = 0;
+  for (const reminders of [draft.reminders, bare]) {
+    const renamed = await london.commitCommand(command('event.save', { expectedRevision, event: { id, ...draft, reminders, name: `Leu ${expectedRevision}` } }));
+    assert.equal(renamed.ok, true, renamed.message);
+    assert.deepEqual(renamed.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
+    expectedRevision += 1;
+  }
 });
 
 test('a stored event whose start instant drifted from its local fields still loads', async () => {
