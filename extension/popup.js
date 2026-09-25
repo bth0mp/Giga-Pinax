@@ -1098,6 +1098,11 @@ const blank = (value) => !String(value ?? '').trim();
 const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume)
   || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1;
 
+// A Bopearachchi reference is searched on acsearch by what its card says (the king and series BIGR files it under), so its prices wait for the card, as
+// a bare RIC number's wait for a type: a card that cannot be had (no network, no access) leaves nothing searched, rather than a median for a query
+// nobody checked under an error the collector cannot see.
+const pricesWaitForCard = (reference) => reference?.catalogue === 'Bop';
+
 // A choice of types, or too many to list: prices already fetched for the reference mix those types, so they go, and the panel says why.
 function setPricesAside() {
   if (!researchContext) return;
@@ -1112,7 +1117,7 @@ function beginResearch(reference, perform, note = '', identity = null) {
   clearOutput();
   typingReference = false;
   showRecent();
-  const hasPrices = reference && namesOneType(reference) && initialisePriceResearch(reference, identity);
+  const hasPrices = reference && namesOneType(reference) && !pricesWaitForCard(reference) && initialisePriceResearch(reference, identity);
   run(perform, note, reference);
   if (hasPrices) fetchAutomaticPrices();
 }
@@ -1208,6 +1213,8 @@ async function run(perform, note = '', failedReference = null) {
     const hasFallback = Boolean(researchContext && failedReference);
     showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
   }
+  // A lookup that failed is answered by its error, under the box it was typed in: that is what comes into view, never the prices below it.
+  if (!$('form-error').hidden) revealAgain('form-error');
 }
 
 async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
@@ -1252,7 +1259,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
 // The card is the answer and stands above the prices, so prices landing under it bring nothing into view: the collector is reading the coin. Only
 // prices with no card above them (a lookup that failed, or has not answered yet) are the answer to bring into view.
 function revealPrices() {
-  if ($('result').hidden) revealAgain('research-prices');
+  if ($('result').hidden && $('form-error').hidden) revealAgain('research-prices');
 }
 
 // The last answer, kept for a popup that closes with every click on the page: the box, the card and the acsearch page it was drawn from, in the

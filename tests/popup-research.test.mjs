@@ -2597,3 +2597,65 @@ test('the kept median names the reference in the short spelling a saved coin car
   await settle(); await settle();
   assert.equal(session.get('giga-pinax-session-median').acsearch.reference, 'RIC I² Nero 306');
 });
+
+// Loop 3 (G-10): an online-only reference that failed with no network scrolled its own error away - acsearch had been searched for it anyway, and its
+// prices, drawn under no card, were brought into view. A Bopearachchi reference's prices wait for its card, and a failed lookup brings its error into
+// view, never the prices.
+test('a Bopearachchi lookup that fails searches nothing, and brings its error into view', async () => {
+  let searched = 0;
+  const timers = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true, timers,
+    priceFetch: async () => { searched += 1; return oneSale; }, lookupTypeImpl: async () => ({ status: 'network' }) });
+  popup.element('popup-scroll').height = 400;
+  popup.element('quick-search').height = 50;
+  popup.element('form-error').top = 320;
+  popup.element('research-prices').top = 600;
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(searched, 0, 'no acsearch search without its card');
+  assert.equal(popup.element('form-error').hidden, false);
+  for (const run of timers.splice(0)) run();
+  const scrolled = popup.element('popup-scroll').scrolledTo ?? [];
+  assert.equal(scrolled.length, 1);
+  assert.equal(scrolled[0].top, 270, 'the error, just under the Reference row');
+});
+
+test('a Bopearachchi card that answers is priced from itself', async () => {
+  let searched = null;
+  const card = { id: 'bop.9c', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', bop: { series: '9C', king: 'Euthydemus I', citation: '9C' }, obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true,
+    priceFetch: async ({ term }) => { searched = term; return oneSale; }, lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.ok(searched, 'searched once the card arrived');
+  assert.equal(popup.element('prices-panel').dataset.state, 'ready');
+});
+
+test('a sales period, a filter or a sale excluded redraws in place and scrolls nothing', async () => {
+  const timers = [];
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, timers,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle(); await settle();
+  timers.splice(0);
+  const before = (popup.element('popup-scroll').scrolledTo ?? []).length;
+  await popup.element('period').emit('change', { target: { value: '2y' } });
+  await popup.element('citing-filter').emit('change');
+  await popup.element('denomination-filter').emit('change');
+  for (const run of timers.splice(0)) run();
+  assert.equal((popup.element('popup-scroll').scrolledTo ?? []).length, before);
+});
+
+test('controls ease their colours and what arrives later fades in, all under the reduced-motion guard', () => {
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.primary-button,[^{]*\.period label,\.filter-pill[^{]*\{transition:background-color \.12s,border-color \.12s,color \.12s/);
+  assert.match(css, /@keyframes gp-fade-in/);
+  assert.match(css, /\.prices-panel\[data-state="ready"\] \.median-block[^{]*\{animation:gp-fade-in \.18s ease-out;\}/);
+  assert.match(readFileSync(new URL('../extension/companion-popup.css', import.meta.url), 'utf8'), /\.companion-tabs button \{transition:color \.12s,border-color \.12s;\}/);
+  // The guard every page loads: a collector who asks for less motion gets none.
+  assert.match(readFileSync(new URL('../extension/design-tokens.css', import.meta.url), 'utf8'),
+    /@media\(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{[^}]*transition-duration:\.01ms!important;animation-duration:\.01ms!important/);
+});

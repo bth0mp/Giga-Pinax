@@ -15,6 +15,8 @@
   font-weight:650;
 }
 .companion-tabs button:hover {color:var(--accent);}
+/* A tab's colour and its gold underline ease over 120 ms (the reduced-motion guard in design-tokens.css turns it off). */
+.companion-tabs button {transition:color .12s,border-color .12s;}
 .companion-tabs button[aria-selected="true"] {border-bottom-color:var(--gold); color:var(--accent);}
 .companion-tab-panel {min-height:0; display:flex; flex:1 1 auto; flex-direction:column; overflow:hidden;}
 .companion-scroll {overflow-y:auto; padding:16px; scrollbar-width:thin; scrollbar-color:var(--line) transparent;}

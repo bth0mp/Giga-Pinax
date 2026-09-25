@@ -17,12 +17,15 @@ Each date is the date of that version's release tag. Every release also carries 
 - **Auctions due** on the Watchlist tab counts auctions with a reminder missed while the browser was closed too, and names them apart: `1 due · 1 missed`, or `None due`. It used to read `0` after a night with the browser closed.
 - **Save** on the popup's card saves the reference to your watchlist in one step. The line under the card says **Saved to your watchlist · Open · Undo**; **Undo** takes it back for ten seconds, and nothing opens by itself. The coin is checked and saved exactly as the workspace's **Save details** would have saved it from the same card. A card carrying a captured page's values still opens the workspace for you to review them. **Watch** on an upcoming acsearch lot saves it the same way, and offers its sale day with **Add** (`add its sale day 12 Oct 2099 as an auction? · Add`), which attaches a date-only auction; a lot already watched offers **Open** instead of a second copy. **Open** opens the workspace on that coin.
 - A card whose reference is already on your watchlist, in either spelling, says where that coin stands instead of offering a second **Save**: `On your watchlist · Bid active £650.00 · Roma E-Sale 130 · in 7 days · Open`, or `Saved · Won, in your collection`.
-
 - In the 600 px toolbar popup the median, its two stat lines and the middle-50 % range now show without a scroll (the figure starts at about 380 px, where it started at 525). **Save** is a small button beside **Type ↗** in the card's heading, its explanation a tooltip; the obverse, reverse and specimens fold into one **Obverse · reverse** line; the citing and denomination switches are pills beside the sales period (**Citing RIC 306**, **Naming “As”**), with the whole rule as their tooltip.
+- The popup moves a little: buttons, pills and tabs ease their colours over 120 ms, and the median, its range, a saved line, an error and an answer's age fade in over 180 ms. Choosing a sales period or a filter redraws in place and scrolls nothing. **Reduce motion** in the system turns all of it off.
 - **Recent** lookups stand under the Reference box, one line of chips with **More** for the rest, where they sat at the bottom of the answer. They step aside while a new reference is typed and come back with its answer.
 - The popup's header opens the **Workspace** by name. **Panel** is now an icon beside the theme switch, named "Keep the popup open beside the page (side panel)"; in the popup and the side panel the header is one row with the brand's icon, its name read out rather than shown. Before a first lookup, the popup says that a saved coin is tracked in the workspace.
-
 - The popup writes a reference one way, the way it is typed: the card heading and the **Recent** chips read `RIC I² Nero 306` (and `RIC II.3² Hadrian 12`), where they read `RIC I (second edition) Nero 306`; the edition is named once in the card's source line (`Local OCRE catalogue · RIC I, second edition`). A coin saved from the card keeps that short reference and is named by the card's summary line (`Nero · As · Rome · AD 62–68`) instead of the reference again.
+
+### Fixed
+
+- A Bopearachchi lookup that fails (no network, or no access to numismatics.org) no longer searches acsearch anyway and scrolls its own error out of view under a median for a query nobody checked: its prices wait for its card, and a failed lookup brings its error into view under the Reference box, never the prices.
 
 ## [0.36.0] - 2026-09-25
 

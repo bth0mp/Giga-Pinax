@@ -331,6 +331,29 @@ test('a popup opened again draws its last answer without asking acsearch', async
   }
 });
 
+// Loop 3 (G-10): an online-only reference whose card cannot be had searched acsearch anyway and scrolled its own error
+// away under a median for a query nobody checked. Its prices wait for its card; the error stands in view under the box.
+test('a Bopearachchi lookup that fails offline searches nothing and keeps its error in view', async () => {
+  const browser = await launch();
+  let searches = 0;
+  await browser.context.route('https://www.acsearch.info/search.html*', async (route) => { searches += 1; await route.fallback(); });
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await lookUp(page, 'Bop Euthydemus I 9C');
+    await page.locator('#form-error').waitFor({ state: 'visible', timeout: 15000 });
+    await page.waitForTimeout(1500);
+    assert.equal(searches, 0, 'acsearch was not searched');
+    assert.equal(await page.locator('#median-line').isVisible(), false);
+    const { error, row } = await page.evaluate(() => ({ error: document.getElementById('form-error').getBoundingClientRect().toJSON(),
+      row: document.getElementById('quick-search').getBoundingClientRect().toJSON() }));
+    assert.ok(error.top >= row.bottom - 1 && error.bottom <= 600, `the error at ${Math.round(error.top)}–${Math.round(error.bottom)}, the row ends at ${Math.round(row.bottom)}`);
+  } finally {
+    await browser.close();
+  }
+});
+
 // Loop 1 (K-01): Ctrl+K brings the keyboard back to the Reference box from another tab, and the header's first stop is
 // the skip link that does the same.
 test('Ctrl+K and the skip link take the keyboard to the Reference box', async () => {
