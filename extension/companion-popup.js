@@ -1023,6 +1023,8 @@ async function initCompanionPopup() {
     'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-workspace').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the workspace.'));
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
+  // K-17: the credit line's link opens Settings at the local catalogue data, where each bundle is credited with its source and licence.
+  $('open-credits')?.addEventListener('click', () => void navigate(() => openSettings('catalogue-data'), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
   // Set once the snapshot has been read: only then is there a revision to write the currency against.

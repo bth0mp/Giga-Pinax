@@ -2271,14 +2271,18 @@ test('before the first lookup, example chips look up on a click, and they go onc
   for (const example of chips.map((chip) => chip.textContent)) assert.ok(lookup.parseReference(example), example);
 });
 
-// Loop 1 (P-03): the footer's credit took two lines and dropped the arrow of "acsearch ↗" under the word at every width. The credit keeps every
-// corpus it names (tests/pco-agco.test.mjs) but loses its "Type data:" prefix, so it fits one line in the 400 px popup, and the link never breaks.
-test('the footer credit fits the popup on one line, and the acsearch link never breaks', () => {
-  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  const footer = html.slice(html.indexOf('<footer class="popup-footer">'), html.indexOf('</footer>'));
-  assert.match(footer, /<span>ANS OCRE, PELLA, CRRO, SCO, PCO, AGCO &amp; BIGR \(ODbL\)<\/span>/);
+// Loop 6 (K-17): the fixed footer was 30 px of seven acronyms under every screen of the 600 px popup, and its acsearch link repeated the Sources menu.
+// The credit is one muted line at the foot of the scroll: the ANS and the licence in words, every corpus in its tooltip (tests/pco-agco.test.mjs),
+// and a link to Settings' full credits.
+test('the type data is credited in one line at the foot of the scroll, not in a fixed footer', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.querySelectorAll('footer').length, 0);
+  const line = markup.getElementById('credit-line');
+  assert.ok(line.closest('.popup-scroll'), 'the line scrolls with the answer');
+  assert.equal(line.textContent.replace(/\s+/g, ' ').trim(), 'Type data from the ANS (ODbL) · full credits in Settings');
+  assert.equal(markup.getElementById('open-credits').tagName.toLowerCase(), 'button');
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
-  assert.match(css, /\.popup-footer a \{[^}]*white-space:nowrap/);
+  assert.doesNotMatch(css, /popup-footer/);
 });
 
 // Loop 1 (P-06): "RIC 237" listed 47 types flat, each ending in the same "Local catalogue" badge, inside the open Refine form. The list now stands
