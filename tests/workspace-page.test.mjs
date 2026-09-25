@@ -2533,3 +2533,18 @@ test('History’s Show more hands the keyboard to the first new card and says ho
   assert.ok(page.document.activeElement === cards()[50], 'the first new card has the keyboard');
   assert.equal(page.$('announcement').textContent, '10 more settled coins shown');
 });
+
+// Fix round, Minor 5 (K-06): Back to coins, from a coin whose row is not drawn yet, gives the keyboard to the coin list's
+// filter box rather than to nothing.
+test('Back to coins from a coin beyond the drawn rows focuses the coin filter', async () => {
+  const background = await backgroundWithLongList();
+  const last = storedLot(background, 'Coin 130');
+  const page = await mountWorkspace({ background, hash: `#watchlist?lot=${last.id}` });
+  assert.equal(page.$('selected-title').textContent, 'Coin 130');
+  await page.click('back-to-coins');
+  assert.ok(page.document.activeElement === page.$('lot-filter'), 'the filter box has the keyboard');
+  // With the row drawn, its row has it, as before.
+  await page.openCoin('Coin 001');
+  await page.click('back-to-coins');
+  assert.ok(page.document.activeElement?.dataset?.lotId === storedLot(background, 'Coin 001').id);
+});
