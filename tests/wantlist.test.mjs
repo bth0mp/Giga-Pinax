@@ -12,7 +12,7 @@ import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
   cardReference, namesOneType, openWantsFor, resolveWantReference, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantPillText, wantReferenceProblem, wantTermsText, wantedReading,
-  wonCoinsFor,
+  watchedLotsFor, wonCoinsFor,
 } from '../extension/core/wantlist.js';
 import { MINT_SPELLINGS, RIC_SECTIONS, ricMintSection, rulerKey } from '../extension/catalogues.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
@@ -815,4 +815,24 @@ test('the watched coins of a want are plain buttons in a list', async () => {
   const [row] = item.children;
   assert.equal(row.tagName, 'button');
   assert.equal(row.getAttribute('role'), null, 'no role replaces the button’s own');
+});
+
+// Minor 4 (lead's decision): an unedited "RIC I" names no edition - S1's V-06 reads it as ambiguous - so a coin saved as
+// "RIC I Nero 306" is not the RIC I² want's type: no badge, no hunt row, no Mark found.
+test('a coin saved as an unedited RIC I is not counted as a RIC I² want', async () => {
+  const want = makeWant({ reference: 'RIC I² Nero 306' });
+  const coin = { id: LOT_ID, reference: 'RIC I Nero 306', outcome: { status: 'open' } };
+  assert.equal(sameWantedType('RIC I Nero 306', 'RIC I² Nero 306'), false);
+  assert.deepEqual(openWantsFor([want], 'RIC I Nero 306'), []);
+  assert.deepEqual(watchedLotsFor(want, [coin]), []);
+  assert.deepEqual(wonCoinsFor(want, [{ ...coin, outcome: { status: 'won' } }]), []);
+  const background = await createWorkspaceBackground();
+  const saved = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, CNG', reference: 'RIC I Nero 306', sourceLinks: [] } })).value;
+  await background.send({ type: 'lot.outcome.set', lotId: saved.id, expectedRevision: 0, outcome: { status: 'won' } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, Roma', reference: 'RIC I Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const card = cardFor(page, 'RIC I² Nero 306');
+  assert.equal(card.querySelector('.want-coins'), null, 'no hunt row for the unedited coin');
+  assert.equal(card.querySelectorAll('button').some((button) => button.textContent.startsWith('Mark found')), false);
 });
