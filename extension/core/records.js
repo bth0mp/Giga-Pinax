@@ -145,6 +145,9 @@ function costEstimateResult(value, path) {
     bpsResult(value, 'premiumVatBps', path), bpsResult(value, 'platformFeeBps', path), bpsResult(value, 'importVatBps', path),
     // A grid-only sheet: the bid's increment and minimum, no fee recorded.
     OWN(value, 'gridOnly') && value.gridOnly !== true ? failure('invalid-boolean', 'A grid-only sheet says so with true.', `${path}.gridOnly`) : { ok: true },
+    // ...and holds no fee: a sheet with a fee is a fee sheet, never a grid alone.
+    OWN(value, 'gridOnly') && ['shippingMinor', 'paymentFeeBps', 'paymentFeeMinor', 'premiumVatBps', 'platformFeeBps', 'importVatBps'].some((key) => (value[key] ?? 0) !== 0)
+      ? failure('invalid-cost-estimate', 'A grid-only sheet holds no fee.', `${path}.gridOnly`) : { ok: true },
   );
 }
 
@@ -236,6 +239,10 @@ function outcomeTermsResult(terms, path, hammerCurrency) {
     OWN(terms, 'costEstimate') && terms.costEstimate !== null ? costEstimateResult(terms.costEstimate, `${path}.costEstimate`) : { ok: true },
   );
   if (!checks.ok) return checks;
+  // The fees an outcome states are fees: a grid alone belongs to a bid, not to what a coin cost.
+  if (OWN(terms, 'costEstimate') && terms.costEstimate !== null && OWN(terms.costEstimate, 'gridOnly')) {
+    return failure('invalid-outcome-terms', 'An outcome’s fees are a fee sheet, not a bid grid alone.', `${path}.costEstimate.gridOnly`);
+  }
   if (OWN(terms, 'costEstimate') && terms.costEstimate !== null && hammerCurrency && terms.costEstimate.currency !== hammerCurrency) {
     return failure('invalid-outcome-terms', 'Fees are recorded in the hammer’s currency; nothing is converted.', `${path}.costEstimate.currency`);
   }

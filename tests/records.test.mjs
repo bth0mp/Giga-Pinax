@@ -1456,3 +1456,26 @@ test('a grid-only sheet records no fees: the won cost names the gap, and gridOnl
   const broken = structuredClone(won.value); broken.costEstimate.gridOnly = false;
   assert.equal(validateSnapshot(snapshotWith(broken)).error.path, 'lots[0].costEstimate.gridOnly');
 });
+
+// Re-review: a grid-only sheet holds no fee, and an outcome's own terms carry fees, never a grid alone.
+test('gridOnly is refused beside a fee, and inside an outcome’s terms', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 0, gridOnly: true };
+  for (const fee of [{ shippingMinor: 1500 }, { paymentFeeBps: 100 }, { paymentFeeMinor: 50 }, { premiumVatBps: 1900 }, { platformFeeBps: 300 }, { importVatBps: 500 }]) {
+    const lot = makeLot(IDS.lotEur, { costEstimate: { ...grid, ...fee } });
+    assert.equal(validateSnapshot(snapshotWith(lot)).error?.path, 'lots[0].costEstimate.gridOnly', JSON.stringify(fee));
+  }
+  assert.equal(validateSnapshot(snapshotWith(makeLot(IDS.lotEur, { costEstimate: { ...grid, premiumVatBps: 0 } }))).ok, true, 'a fee of nothing is no fee');
+  const refused = setOutcome(makeLot(IDS.lotEur), { status: 'won', hammer: { currency: 'EUR', minor: 100000 }, terms: { costEstimate: grid } }, NOW);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'outcome.terms.costEstimate.gridOnly');
+});
+
+// Re-review: a grid-only sheet beside an active bid adds nothing to the all-in exposure.
+test('a grid-only sheet beside an active bid counts no fees in the all-in exposure', () => {
+  const grid = { currency: 'EUR', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 2500, minimumBidMinor: 0, gridOnly: true };
+  const exposure = projectExposure(snapshotWith(makeLot(IDS.lotEur, {
+    auctionEventId: IDS.eventEur, activeBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2000, placedAt: NOW }, costEstimate: grid,
+  })));
+  assert.equal(exposure.EUR.totalCount, 0);
+  assert.equal(exposure.EUR.knownTotalMinor, 0);
+});
