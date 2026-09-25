@@ -120,7 +120,7 @@ async function initWorkspace() {
       const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'pageAuction';
       const when = offered.precision !== 'timed' ? `day on ${offered.localDate}`
         : `${offered.eventKind === 'auction-starts' ? 'starting' : 'closing'} ${offered.localDate} ${offered.localTime} (${offered.timeZone})`;
-      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${offered.capturedText.replace(/^From the page: /, '')}). An auction you choose under Auction reminder is used instead.`));
+      label.append(box, document.createTextNode(` Add an auction ${when} when saving, from the page (${offered.capturedText.replace(/^From the page: /, '')}). An auction you choose under Auction is used instead.`));
       root.append(label);
     }
     root.hidden = root.children.length < 2;
@@ -913,6 +913,10 @@ async function initWorkspace() {
     const event = eventsById.get(lot.auctionEventId); const attached = $('attached-event'); attached.replaceChildren();
     attached.append(event ? eventLine(event, '', 'p') : text('p', 'No auction is attached.'));
     $('edit-selected-event').textContent = event ? 'Edit auction' : 'Add auction'; $('edit-selected-event').dataset.eventId = event?.id ?? '';
+    // A coin with no auction says so beside its status, and both ways to add one lead to the same form (K-18).
+    const open = !lot.outcome?.status || lot.outcome.status === 'open';
+    $('selected-no-sale').hidden = Boolean(event) || !open;
+    $('lot-add-auction').hidden = Boolean(event) || Boolean($('lot-form').elements.auctionEventId.value);
     renderSelectedReminders(event);
   }
   // The Reminders tab: the attached auction and its time, then its reminders in words, or the standard two to add;
@@ -989,7 +993,7 @@ async function initWorkspace() {
   });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
   // An empty coin form, as Add coin opens it and a captured lot fills it.
-  const startNewCoin = () => { lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; delete $('selected-status').dataset.tone; renderCoinList(); };
+  const startNewCoin = () => { lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-no-sale').hidden = true; $('lot-add-auction').hidden = true; $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; delete $('selected-status').dataset.tone; renderCoinList(); };
   $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; startNewCoin(); $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
@@ -1031,7 +1035,7 @@ async function initWorkspace() {
           lastLotUndo = followup.offerUndo ? { previous, saved: structuredClone(reply.value) } : null;
           $('undo-lot').hidden = !lastLotUndo;
           $('lot-action-status').textContent = (previous ? 'Details saved. You can undo this edit until the coin changes again.' : 'Coin added to the watchlist.')
-            + (auctionProblem ? ` The auction from the page was not added: ${auctionProblem} Add it under Auction reminder.` : ''); renderLots();
+            + (auctionProblem ? ` The auction from the page was not added: ${auctionProblem} Add it under Auction.` : ''); renderLots();
         }
       }
       const draftId = draftToConsumeAfterLotSave(reply, lotDraftId);
@@ -1276,6 +1280,7 @@ async function initWorkspace() {
   // otherwise attach itself to when saved.
   const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-action-status').replaceChildren(); $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };
   $('new-event').addEventListener('click', () => openEventEditor(null));
+  for (const button of [$('selected-no-sale'), $('lot-add-auction')]) button.addEventListener('click', () => $('edit-selected-event').click());
   $('edit-selected-event').addEventListener('click', () => { const event = (snapshot.auctionEvents ?? []).find((item) => item.id === $('edit-selected-event').dataset.eventId); routeChangeFromNav = false; location.hash = '#auctions'; openEventEditor(event ?? null); if (!event) eventReturnLot = structuredClone((snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId) ?? null); });
   const populateEventForm = (event) => {
     const f = $('event-form').elements;

@@ -551,7 +551,7 @@ test('a refused offered auction still saves the coin and says why the auction wa
     const saved = storedLot(background, 'Captured coin');
     assert.ok(saved, 'the coin is saved');
     assert.equal(saved.auctionEventId, undefined);
-    assert.equal(page.$('lot-action-status').textContent, 'Coin added to the watchlist. The auction from the page was not added: That local time occurs more than once in this time zone. Add it under Auction reminder.');
+    assert.equal(page.$('lot-action-status').textContent, 'Coin added to the watchlist. The auction from the page was not added: That local time occurs more than once in this time zone. Add it under Auction.');
   } finally {
     if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
   }
@@ -2303,4 +2303,28 @@ test('a comparable whose records disagree shows each record and the choice betwe
   assert.match(cards[0].querySelector('.comparable-conflict').textContent, /^The records of this sale disagree on /);
   assert.match(cards[0].textContent, /Effective result/);
   assert.ok(cards[0].querySelectorAll('button').some((button) => button.textContent === 'Use entered hammer'));
+});
+
+// K-18: the coin form names its auction field for what it is, and a coin with no auction says so beside its status,
+// both leading to the auction form, whose save attaches the auction to the coin.
+test('a coin with no auction says "No sale date · Add", and Add auction beside the field attaches the one saved', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const select = page.$('lot-form').elements.auctionEventId;
+  assert.equal(select.closest('label').childNodes[0].textContent, 'Auction ');
+  assert.equal(select.closest('label').querySelector('.optional').textContent, 'the sale it is in: date, time zone and reminders');
+  assert.equal(page.$('selected-no-sale').hidden, false);
+  assert.equal(page.$('selected-no-sale').textContent, 'No sale date · Add');
+  assert.equal(page.$('lot-add-auction').hidden, false);
+  await page.click('selected-no-sale');
+  assert.equal(page.location.hash, '#auctions');
+  await fillNewAuction(page, 'Roma Auction 31');
+  await page.submit('event-form');
+  assert.equal(storedLot(background, 'Nero, denarius').auctionEventId, background.root().auctionEvents[0].id, 'the auction is attached to the coin');
+  await page.navigate('#watchlist');
+  assert.equal(page.$('selected-no-sale').hidden, true);
+  assert.equal(page.$('lot-add-auction').hidden, true);
+  await page.click('new-lot');
+  assert.equal(page.$('selected-no-sale').hidden, true, 'a new coin has nothing to attach to yet');
 });
