@@ -1543,6 +1543,10 @@ export function setOutcome(lot, outcomeDraft, now) {
 // The most the root may take in local storage. Chrome and Brave give an extension 10 MB there, Firefox more; this is
 // Giga Pinax's own bound, kept well inside every browser's.
 export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+// What the collector's records may take: the bound less the headroom every save leaves the background's own reminder
+// writes. The gauge and every refusal speak of this figure, "4.9 MB", so the two always agree (review Minor 2).
+export const RECORDS_LIMIT_BYTES = MAX_ROOT_BYTES - LIMITS.commandReplyBytes;
+export const RECORDS_LIMIT_TEXT = '4.9 MB';
 const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
 
 // Every reminder measured as it will be once it has rung and been answered, so a reminder going off never finds the
@@ -1591,8 +1595,9 @@ function dataBytes(snapshot) {
  */
 export function boundVerdict(before, after, headroom) {
   const total = storedBytes(after);
-  const bytes = total + headroom;
-  if (bytes <= MAX_ROOT_BYTES) return { ok: true, bytes };
+  // What the records would take, as the gauge counts them.
+  const bytes = total;
+  if (total + headroom <= MAX_ROOT_BYTES) return { ok: true, bytes };
   return { ok: total <= MAX_ROOT_BYTES + LIMITS.commandReplyBytes && dataBytes(after) <= dataBytes(before), bytes };
 }
 
@@ -1604,10 +1609,11 @@ export function boundVerdict(before, after, headroom) {
 export function megabytesText(bytes) {
   const megabytes = Math.max(0, bytes) / (1024 * 1024);
   if (megabytes < 0.05) return 'under 0.1 MB';
-  // Beside the bound a tenth is too coarse: 4.96 MB and 5.04 MB would both read as the bound itself. Rounded towards
-  // the side of the bound they are on, so a figure over it never reads as within it, nor one within as over.
-  if (megabytes >= 4.95 && megabytes < 5.05) {
-    const hundredths = bytes > MAX_ROOT_BYTES ? Math.ceil(megabytes * 100) : Math.floor(megabytes * 100);
+  // Beside the records' limit a tenth is too coarse: just under and just over would both read as the limit itself.
+  // Rounded towards the side of the limit they are on, so a figure over it never reads as within it, nor one within as over.
+  const limit = RECORDS_LIMIT_BYTES / (1024 * 1024);
+  if (Math.abs(megabytes - limit) < 0.05) {
+    const hundredths = bytes > RECORDS_LIMIT_BYTES ? Math.ceil(megabytes * 100) : Math.floor(megabytes * 100);
     return `${(hundredths / 100).toFixed(2)} MB`;
   }
   return `${megabytes.toFixed(1)} MB`;

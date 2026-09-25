@@ -1,12 +1,12 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
   quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 
 // How much of the bound a store takes, as Settings says it (K-13).
-export { megabytesText };
+export { RECORDS_LIMIT_TEXT, megabytesText };
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 /**
@@ -668,7 +668,7 @@ export function importFit(current, preview) {
   return {
     ok: verdict.ok,
     bytes: verdict.bytes,
-    text: verdict.ok ? '' : `This import would not fit: your records would take ${megabytesText(verdict.bytes)}, more than the 5 MB ` +
+    text: verdict.ok ? '' : `This import would not fit: your records would take ${megabytesText(verdict.bytes)}, more than the ${RECORDS_LIMIT_TEXT} ` +
       'Giga Pinax can keep in this browser. Remove old coins or auctions here first, or import a backup with fewer records.',
   };
 }

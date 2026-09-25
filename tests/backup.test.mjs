@@ -1199,7 +1199,7 @@ test('X-13: a merge preview says when nothing would change, and whether the resu
   const heavy = previewImport(current, validateBackup(exportBackup(big, NOW).value).value, 'merge');
   const fit = importFit(current, heavy.value);
   assert.equal(fit.ok, false);
-  assert.match(fit.text, /^This import would not fit: your records would take 5\.\d+ MB, more than the 5 MB/);
+  assert.match(fit.text, /^This import would not fit: your records would take (4\.9\d|5\.\d+) MB, more than the 4\.9 MB/);
   assert.equal(importFit(null, heavy.value).ok, false, 'over unreadable records it is judged against none');
 });
 

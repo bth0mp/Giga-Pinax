@@ -1,7 +1,7 @@
 // @ts-check
 import {
   ENTRY_EDITABLE_FIELDS, LIMITS, MAX_ROOT_BYTES, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, foldQuarantine, followOutcome,
-  healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId, storedBytes,
+  RECORDS_LIMIT_BYTES, RECORDS_LIMIT_TEXT, healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId, storedBytes,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot, validateWant,
 } from './core/records.js';
@@ -83,7 +83,7 @@ const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or auctions you
  * @returns {[string, string]} the message and the field it belongs to
  */
 function overTheBound(type, bytes) {
-  const size = `${megabytesText(bytes)}, more than the 5 MB Giga Pinax can keep in this browser`;
+  const size = `${megabytesText(bytes)}, more than the ${RECORDS_LIMIT_TEXT} Giga Pinax can keep in this browser`;
   if (type === 'backup.import') {
     return [`This backup does not fit: with it your records would take ${size}. Import a backup with fewer records, or remove old coins or auctions here first.`, 'document'];
   }
@@ -163,7 +163,7 @@ function judgeTheBound(before, next, command, now, headroom) {
   // answered by removing reminders, and each names what to change.
   const [message, path] = ['backup.import', 'quarantine.restore'].includes(command.type)
     ? overTheBound(command.type, scheduled.bytes)
-    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the 5 MB Giga Pinax can keep in this browser. Remove some reminders, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
+    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the ${RECORDS_LIMIT_TEXT} Giga Pinax can keep in this browser. Remove some reminders, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
   return { failure: fail('storage-bound', message, path) };
 }
 
@@ -1151,12 +1151,12 @@ export function createCommandWriter(storageArea, context) {
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };
     }
-    // How full the store is, measured as every write is judged: the root with its reminders reserved, and the headroom a
-    // save leaves the background's own writes (K-13, X-09). Asked for by Settings alone, so no snapshot read pays for it.
+    // How full the store is, measured as every write is judged: the records with their reminders reserved, against what
+    // they may take - the bound less the headroom a save leaves the background's own writes (K-13, X-09, review Minor 2). Asked for by Settings alone, so no snapshot read pays for it.
     if (command.type === 'storage.usage') {
       return {
         ok: true, requestId: command.requestId, revision: stored.revision,
-        value: { bytes: storedBytes(stored) + LIMITS.commandReplyBytes, limit: MAX_ROOT_BYTES },
+        value: { bytes: storedBytes(stored), limit: RECORDS_LIMIT_BYTES },
       };
     }
     const prior = stored.recentCommands.find(({ requestId }) => requestId === command.requestId);

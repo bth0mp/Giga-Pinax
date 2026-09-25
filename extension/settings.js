@@ -1,5 +1,5 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importFit, importNothingText, megabytesText,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importFit, importNothingText, megabytesText, RECORDS_LIMIT_TEXT,
   importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
@@ -376,7 +376,7 @@ function formState({ theme = $('theme').value, specimenPhotos = $('specimen-phot
 const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency && (a.importVatBps ?? null) === (b.importVatBps ?? null) &&
   JSON.stringify(a.housePremiumPresets ?? []) === JSON.stringify(b.housePremiumPresets ?? []);
 
-// How full the store is (K-13, X-09): "1.6 MB of 5 MB used" over a thin meter, and from 80% the way to make room.
+// How full the store is (K-13, X-09): "1.6 MB of 4.9 MB used" over a thin meter, and from 80% the way to make room.
 const STORAGE_WARN_SHARE = 0.8;
 async function refreshStorageUsage() {
   let reply = null;
@@ -387,7 +387,7 @@ async function refreshStorageUsage() {
     return;
   }
   $('storage-gauge').hidden = false;
-  $('storage-used').textContent = `${megabytesText(bytes)} of 5 MB used`;
+  $('storage-used').textContent = `${megabytesText(bytes)} of ${RECORDS_LIMIT_TEXT} used`;
   const meter = $('storage-meter');
   meter.setAttribute('max', String(limit));
   meter.setAttribute('high', String(Math.round(limit * STORAGE_WARN_SHARE)));
@@ -395,8 +395,8 @@ async function refreshStorageUsage() {
   const warning = $('storage-warning');
   warning.hidden = bytes < limit * STORAGE_WARN_SHARE;
   warning.textContent = bytes > limit
-    ? 'Your records fill the 5 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or auctions you no longer need.'
-    : 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.';
+    ? 'Your records fill the 4.9 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or auctions you no longer need.'
+    : 'Your records are filling the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.';
 }
 
 // Data health read again on its own. The revision the page saves against follows the store only

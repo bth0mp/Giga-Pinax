@@ -1506,7 +1506,7 @@ test('writer atomically rejects an event whose fully materialized reminders exce
     },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MB/i);
+  assert.match(result.message, /reminders.*4\.9 MB/i);
   assert.equal(storage.read().auctionEvents.length, 499);
 });
 
@@ -1564,7 +1564,7 @@ test('a schedule-changing command refused for its own sake does not blame remind
   }), context());
   assert.equal(bounded.ok, false);
   assert.equal(bounded.error.code, 'storage-bound');
-  assert.match(bounded.error.message, /^Saving this coin would take your records to 5\.\d\d MB, more than the 5 MB .* Export a backup, then remove old coins or auctions/);
+  assert.match(bounded.error.message, /^Saving this coin would take your records to 4\.9\d MB, more than the 4\.9 MB .* Export a backup, then remove old coins or auctions/);
   assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
 });
 
@@ -1591,7 +1591,7 @@ test('writer preflights linked reminders when a lot activates their event', asyn
     lot: { title: 'Final linked lot', auctionEventId: current.auctionEvents.at(-1).id, sourceLinks: [] },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MB/i);
+  assert.match(result.message, /reminders.*4\.9 MB/i);
   assert.equal(storage.read().lots.length, 499);
 });
 
@@ -2775,7 +2775,7 @@ test('X-01: a change that grows the data is kept up to the bound and refused one
   const reply = await createCommandWriter(storage, context()).commitCommand(save);
   assert.equal(reply.ok, false);
   assert.equal(reply.error.code, 'storage-bound');
-  assert.equal(reply.message, 'Saving this want would take your records to 5.01 MB, more than the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
+  assert.equal(reply.message, 'Saving this want would take your records to 4.91 MB, more than the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
   assert.deepEqual(storage.read(), over, 'nothing is written');
 });
 
@@ -2818,7 +2818,7 @@ test('X-01: past the bound settings that grow are refused as settings, and a sam
     preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Leu Numismatik', buyerPremiumBps: 2000 }] },
   }));
   assert.equal(grown.ok, false);
-  assert.match(grown.message, /^Saving these settings would take your records to 5\.\d+ MB, more than the 5 MB Giga Pinax can keep in this browser\. Export a backup/);
+  assert.match(grown.message, /^Saving these settings would take your records to 5\.\d+ MB, more than the 4\.9 MB Giga Pinax can keep in this browser\. Export a backup/);
   const same = await writer.commitCommand(command('preferences.save', {
     expectedRevision: full.preferences.revision, preferences: { currency: 'CHF', housePremiumPresets: [] },
   }));
@@ -2854,7 +2854,7 @@ test('X-01: Undo of a removal at the bound is refused as putting the coin back',
   assert.equal((await writer.commitCommand(deleteRequest)).ok, true);
   const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
   assert.equal(undo.ok, false);
-  assert.match(undo.message, /^Putting this coin back would take your records to 5\.\d\d MB/);
+  assert.match(undo.message, /^Putting this coin back would take your records to 4\.9\d MB, more than the 4\.9 MB/);
 });
 
 // X-02: records nothing can read stop every command but the ways out, and say so in a way a page can recognise. The
@@ -3011,7 +3011,8 @@ test('K-13: storage.usage answers the bytes a write is judged by, and writes not
   const storage = memoryStorage(full);
   const reply = await createCommandWriter(storage, context()).commitCommand(command('storage.usage'));
   assert.equal(reply.ok, true);
-  assert.deepEqual(reply.value, { bytes: storedBytes(full) + LIMITS.commandReplyBytes, limit: MAX_ROOT_BYTES });
+  // The records alone, against what they may take: the bound less the headroom every save leaves (review Minor 2).
+  assert.deepEqual(reply.value, { bytes: storedBytes(full), limit: MAX_ROOT_BYTES - LIMITS.commandReplyBytes });
   assert.deepEqual(storage.read(), full);
   const unreadable = await createCommandWriter(memoryStorage('damaged'), context()).commitCommand(command('storage.usage'));
   assert.equal(unreadable.reason, 'unreadable');

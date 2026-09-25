@@ -1739,22 +1739,25 @@ test('X-03: Settings opened for the set-aside records from the workspace keeps i
 // --- K-13 / X-09: how full the store is --------------------------------------------------------------
 
 const MiB = 1024 * 1024;
-test('K-13: Settings shows how much of the 5 MB the records use, and warns from 80%', async () => {
-  const quiet = await openSettings({ usage: { ok: true, value: { bytes: Math.round(1.6 * MiB), limit: 5 * MiB } } });
+const LIMIT = 5 * MiB - 100000;
+test('K-13: Settings shows how much of the 4.9 MB the records use, and warns from 80%', async () => {
+  const empty = await openSettings({ usage: { ok: true, value: { bytes: 600, limit: LIMIT } } });
+  assert.equal(empty.element('storage-used').textContent, 'under 0.1 MB of 4.9 MB used');
+  const quiet = await openSettings({ usage: { ok: true, value: { bytes: Math.round(1.6 * MiB), limit: LIMIT } } });
   assert.equal(quiet.element('storage-gauge').hidden, false);
-  assert.equal(quiet.element('storage-used').textContent, '1.6 MB of 5 MB used');
+  assert.equal(quiet.element('storage-used').textContent, '1.6 MB of 4.9 MB used');
   assert.equal(quiet.element('storage-meter').getAttribute('value'), String(Math.round(1.6 * MiB)));
-  assert.equal(quiet.element('storage-meter').getAttribute('high'), String(4 * MiB));
+  assert.equal(quiet.element('storage-meter').getAttribute('high'), String(Math.round(LIMIT * 0.8)));
   assert.equal(quiet.element('storage-warning').hidden, true);
 
-  const filling = await openSettings({ usage: { ok: true, value: { bytes: Math.round(4.1 * MiB), limit: 5 * MiB } } });
-  assert.equal(filling.element('storage-used').textContent, '4.1 MB of 5 MB used');
+  const filling = await openSettings({ usage: { ok: true, value: { bytes: Math.round(4.1 * MiB), limit: LIMIT } } });
+  assert.equal(filling.element('storage-used').textContent, '4.1 MB of 4.9 MB used');
   assert.equal(filling.element('storage-warning').hidden, false);
-  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
+  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 4.9 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
 
-  const full = await openSettings({ usage: { ok: true, value: { bytes: 5 * MiB + 2000, limit: 5 * MiB } } });
-  assert.equal(full.element('storage-used').textContent, '5.01 MB of 5 MB used');
-  assert.match(full.element('storage-warning').textContent, /^Your records fill the 5 MB .* only changes that make them smaller can be saved\./);
+  const full = await openSettings({ usage: { ok: true, value: { bytes: LIMIT + 2000, limit: LIMIT } } });
+  assert.equal(full.element('storage-used').textContent, '4.91 MB of 4.9 MB used');
+  assert.match(full.element('storage-warning').textContent, /^Your records fill the 4\.9 MB .* only changes that make them smaller can be saved\./);
 
   const unknown = await openSettings();
   assert.equal(unknown.element('storage-gauge').hidden, true, 'no figure is shown that the store did not give');
@@ -1794,7 +1797,7 @@ test('X-13: an import that would not fit is refused in the preview, with the fig
   const page = await openSettings({ snapshot: current });
   await preview(page, backupDocument(big));
   assert.equal(page.element('confirm-import').disabled, true);
-  assert.match(page.status(), /^This import would not fit: your records would take 5\.\d+ MB, more than the 5 MB Giga Pinax can keep in this browser\./);
+  assert.match(page.status(), /^This import would not fit: your records would take (4\.9\d|5\.\d+) MB, more than the 4\.9 MB Giga Pinax can keep in this browser\./);
   assert.equal(page.statusIsError(), 'true');
 });
 
