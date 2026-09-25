@@ -210,7 +210,7 @@ async function initWorkspace() {
   // Feedback lives in the action bar of the form that was submitted (G-07): the lot, bid and outcome forms each say what
   // happened to them, with the figure, and the page's own status line keeps only page-level notices. A button - Open,
   // Undo - may follow the words.
-  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status', want: 'want-action-status' };
+  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status', want: 'want-form-status', wantlist: 'want-action-status' };
   const formStatus = (editor, message, { error = false, action = null } = {}) => {
     const line = $(FORM_STATUS[editor]);
     line.replaceChildren(document.createTextNode(message));
@@ -1524,7 +1524,7 @@ async function initWorkspace() {
     f.minGrade.value = want?.minGrade ?? '';
     f.notes.value = want?.notes ?? '';
     $('want-form-heading').textContent = want ? `Edit ${want.reference}` : 'Add a want';
-    clearFormStatus('want');
+    clearFormStatus('want', 'wantlist');
     wantForm.hidden = false;
     dirtyEditors.delete('want'); updateDirtyMarks();
     f.reference.focus();
@@ -1540,7 +1540,7 @@ async function initWorkspace() {
     if (!read.ok) { formStatus('want', read.message, { error: true }); f[read.field]?.focus?.(); return; }
     const reference = read.value.reference;
     void send({ type: 'want.save', requestId: requestId(), expectedRevision: editingWant?.revision ?? null, want: read.value }, 'want').then((reply) => {
-      if (reply?.ok && !reply.editorPreserved) formStatus('want', `Want saved · ${reference}`);
+      if (reply?.ok && !reply.editorPreserved) formStatus('wantlist', `Want saved · ${reference}`);
     });
   });
   const wantAction = (label, run, className = 'quiet') => {
@@ -1570,18 +1570,18 @@ async function initWorkspace() {
         const line = text('p', '', 'want-found'); line.append(text('span', 'Found', 'pill'), document.createTextNode(` ${dayText(want.foundAt)} · `));
         line.append(found ? openCoinLink(found) : document.createTextNode('the coin is no longer saved here'));
         card.append(line);
-        actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null })
-          .then((reply) => { if (reply?.ok) formStatus('want', `Wanted again · ${want.reference}`); })));
+        actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null }, 'wantlist')
+          .then((reply) => { if (reply?.ok) formStatus('wantlist', `Wanted again · ${want.reference}`); })));
       } else {
         for (const lot of wonCoins) {
-          actions.append(wantAction(`Mark found: ${lot.title}`, () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id })
-            .then((reply) => { if (reply?.ok) formStatus('want', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
+          actions.append(wantAction(`Mark found: ${lot.title}`, () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
+            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
         }
       }
       actions.append(wantAction('Edit', () => openWantForm(want)), wantAction('Remove', () => {
         if (!confirm(`Remove “${want.reference}” from your want list?`)) return;
-        void send({ type: 'want.delete', requestId: requestId(), wantId: want.id, expectedRevision: want.revision })
-          .then((reply) => { if (reply?.ok) formStatus('want', `Removed from your want list · ${want.reference}`); });
+        void send({ type: 'want.delete', requestId: requestId(), wantId: want.id, expectedRevision: want.revision }, 'wantlist')
+          .then((reply) => { if (reply?.ok) formStatus('wantlist', `Removed from your want list · ${want.reference}`); });
       }, 'danger quiet'));
       card.append(actions);
       list.append(card);

@@ -770,17 +770,14 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     watch.textContent = 'Watch';
     watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}`);
     watch.addEventListener('click', () => watchUpcoming(sale, context));
-    // A row citing the wanted type carries the badge beside its Watch, which saves it in one step as on any other row.
+    // A row citing the wanted type carries the badge after its title; its Watch saves it in one step, as on any other row.
     if (wants.length && passes.citing(sale)) {
       const badge = document.createElement('mark');
       badge.className = 'pill';
       badge.textContent = 'On your want list';
       badge.title = wantWords;
+      label.append(' ', badge);
       watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}. ${wantWords}`);
-      const end = document.createElement('div');
-      end.append(badge, ' ', watch);
-      row.append(label, end);
-      return row;
     }
     row.append(label, watch);
     return row;

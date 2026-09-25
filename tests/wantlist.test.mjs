@@ -423,21 +423,22 @@ test('the Want list form refuses a reference that names no single type, and one 
   const background = await createWorkspaceBackground();
   const page = await mountWorkspace({ background, hash: '#wants' });
   await addWant(page, { reference: 'RIC 306' });
-  assert.equal(page.$('want-action-status').textContent, 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.');
-  assert.equal(page.$('want-action-status').classList.contains('error'), true);
+  // Said in the form, beside Save want, where the collector is.
+  assert.equal(page.$('want-form-status').textContent, 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.');
+  assert.equal(page.$('want-form-status').classList.contains('error'), true);
   await page.type('want-form', 'reference', 'SNG Cop 123');
   await page.submit('want-form');
-  assert.match(page.$('want-action-status').textContent, /^“SNG Cop 123” is not read as one catalogue type\./);
+  assert.match(page.$('want-form-status').textContent, /^“SNG Cop 123” is not read as one catalogue type\./);
   await page.type('want-form', 'reference', 'RIC I² Nero 306');
   await page.type('want-form', 'maxPrice', 'about 800');
   await page.submit('want-form');
-  assert.equal(page.$('want-action-status').classList.contains('error'), true);
+  assert.equal(page.$('want-form-status').classList.contains('error'), true);
   assert.deepEqual(page.commands.filter(({ type }) => type === 'want.save'), [], 'nothing refused reached the store');
   await page.type('want-form', 'maxPrice', '');
   await page.submit('want-form');
   assert.equal(background.root().wants.length, 1);
   await addWant(page, { reference: 'RIC I (second edition) Nero 306' });
-  assert.equal(page.$('want-action-status').textContent, 'RIC I² Nero 306 is already on your want list.');
+  assert.equal(page.$('want-form-status').textContent, 'RIC I² Nero 306 is already on your want list.');
   assert.equal(background.root().wants.length, 1);
 });
 
