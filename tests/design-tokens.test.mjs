@@ -128,17 +128,17 @@ test('the palette keeps WCAG AA contrast in light and dark', () => {
   }
 });
 
-// W-09 (styling part): "Compare coins" repeated the coin list as a second list of two-line checkbox rows. The picker is a bounded box of
-// one-line choices, the chosen ones marked by more than the tick, and an empty picker takes no room.
-test('the comparison picker is a short box of one-line choices with the chosen ones marked', () => {
+// W-09 / G-14: "Compare coins" repeated the coin list as a second list of checkbox rows. The box sits at the left of each
+// coin row instead, shown on hover or focus and while any coin is ticked (always on a touch screen), and a ticked row is
+// marked by more than the tick.
+test('the compare box sits in each coin row, shows while comparing, and marks the ticked rows', () => {
   const workspace = rules(read('workspace.css'));
   const body = (selector) => workspace.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
-  assert.match(body('#comparison-picker'), /max-height:\d+px/);
-  assert.match(body('#comparison-picker'), /overflow:auto/);
-  assert.match(body('.compare-choice'), /white-space:nowrap/);
-  assert.match(body('.compare-choice'), /text-overflow:ellipsis/);
-  assert.match(body('.compare-choice:has(:checked)'), /background:var\(--accent-soft\)/);
-  assert.match(body('#comparison-picker:empty'), /margin:0;padding:0/);
+  assert.match(body('.compare-box'), /position:absolute/);
+  assert.match(body('.compare-box'), /opacity:0/);
+  assert.match(body('.coin-row-wrap:hover .compare-box,.compare-box:focus-visible,.comparing .compare-box'), /opacity:1/);
+  assert.match(body('.coin-row-wrap:has(.compare-box:checked) .coin-row'), /background:var\(--accent-soft\)/);
+  assert.equal(workspace.some((rule) => /#comparison-picker|\.compare-choice/.test(rule.selector)), false, 'no second list is styled');
 });
 
 // S-01 (what was left): Settings on the shared scale. Its section headings are the workspace's panel headings (16, subsections 14), its prose

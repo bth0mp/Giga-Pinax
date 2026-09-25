@@ -583,34 +583,26 @@ async function initWorkspace() {
       if (event) status.append(text('span', event.name, 'coin-row-event'));
       row.append(top, sub, eventLine(event, 'coin-row-when', 'span', false), status);
       row.addEventListener('click', () => selectLot(lot.id));
-      list.append(row);
+      // Compare coins is a box at the left of the row itself (G-14), not a second copy of the list.
+      const wrap = text('div', '', 'coin-row-wrap');
+      const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'compare-box'; box.dataset.lotId = lot.id;
+      box.setAttribute('aria-label', `Compare ${comparisonPickerLabel(lot)}`);
+      box.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
+      wrap.append(box, row);
+      list.append(wrap);
     }
+    updateComparisonControls();
   }
-  // Toggling a coin changes only the controls, never the checkbox the collector is standing on.
+  // Toggling a coin changes only the controls, never the checkbox the collector is standing on. The boxes show while any
+  // is ticked, and "Compare (n)" opens the comparison once two to four are.
   function updateComparisonControls() {
-    for (const box of $('comparison-picker').querySelectorAll('input[type="checkbox"]')) {
+    for (const box of $('lot-list').querySelectorAll('.compare-box')) {
       box.checked = comparisonSelection.includes(box.dataset.lotId);
       box.disabled = !box.checked && comparisonSelection.length >= 4;
     }
-    $('comparison-count').textContent = `${comparisonSelection.length} selected · choose 2–4 coins`;
+    $('lot-list').classList.toggle('comparing', comparisonSelection.length > 0);
+    $('open-comparison').textContent = comparisonSelection.length ? `Compare (${comparisonSelection.length})` : 'Compare';
     $('open-comparison').disabled = comparisonSelection.length < 2 || comparisonSelection.length > 4;
-  }
-  // The filter narrows the picker by hiding rows: rebuilding it on every keystroke is what used to
-  // move the focus out of the box being typed in.
-  function updateComparisonFilter() {
-    const visible = new Set(filterWorkspaceLots(snapshot.lots ?? [], $('lot-filter').value).map((lot) => lot.id));
-    for (const row of $('comparison-picker').querySelectorAll('label[data-lot-id]')) row.hidden = !visible.has(row.dataset.lotId);
-  }
-  function renderComparisonPicker() {
-    const picker = $('comparison-picker'); picker.replaceChildren();
-    for (const lot of snapshot.lots ?? []) {
-      const label = document.createElement('label'); label.className = 'compare-choice'; label.dataset.lotId = lot.id;
-      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.dataset.lotId = lot.id;
-      checkbox.addEventListener('change', () => { comparisonSelection = comparisonSelectionAfterToggle(comparisonSelection, lot.id); updateComparisonControls(); });
-      label.append(checkbox, document.createTextNode(comparisonPickerLabel(lot))); picker.append(label);
-    }
-    updateComparisonFilter();
-    updateComparisonControls();
   }
   function populateGroupForm(group) {
     const form = $('group-form'); form.hidden = false; form.elements.id.value = group.id; form.elements.name.value = group.name;
@@ -641,7 +633,7 @@ async function initWorkspace() {
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
     renderBidPresets();
-    renderCoinList(); renderComparisonPicker(); renderGroups(); renderSelectedLot();
+    renderCoinList(); renderGroups(); renderSelectedLot();
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
   function selectLot(lotId, { focus = true } = {}) {
@@ -749,7 +741,7 @@ async function initWorkspace() {
   let filterTimer = null;
   $('lot-filter').addEventListener('input', () => {
     clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => { renderCoinList(); updateComparisonFilter(); }, 150);
+    filterTimer = setTimeout(() => { renderCoinList(); }, 150);
   });
   $('lot-queue').addEventListener('change', renderCoinList);
   $('open-comparison').addEventListener('click', () => {

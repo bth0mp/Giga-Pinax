@@ -82,9 +82,8 @@
       <div id="coin-workspace" class="coin-workspace" data-mobile-view="list">
         <aside class="coin-index" aria-label="Watched coins">
           <div class="queue-controls"><label><span class="sr-only">Queue</span><select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-outcome">Needs outcome</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter"><span class="sr-only">Filter coins</span><input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
-          <p id="lot-count" class="field-note"></p>
+          <div class="lot-count-row"><p id="lot-count" class="field-note"></p><button id="open-comparison" class="quiet btn-sm" type="button" disabled title="Tick two to four coins to compare them">Compare</button></div>
           <div id="lot-list" class="record-list coin-list" role="listbox" aria-label="Watched coins"></div>
-          <section class="comparison-picker"><div class="subheading"><h3>Compare coins</h3><button id="open-comparison" class="quiet" type="button" disabled>Open comparison</button></div><p id="comparison-count" class="field-note">Select 2–4 coins.</p><div id="comparison-picker" class="record-list"></div></section>
           <section class="groups"><div class="subheading"><h3>Alternatives</h3><button id="new-group" class="quiet" type="button">Add group</button></div><div id="group-list" class="record-list"></div><form id="group-form" class="compact-form" data-editor="group" hidden><input type="hidden" name="id"><label>Group name<input name="name" required data-limit="title"></label><button type="submit" data-needs-runtime>Save group</button></form></section>
         </aside>
         <section class="coin-detail">

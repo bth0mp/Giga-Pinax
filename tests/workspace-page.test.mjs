@@ -1474,3 +1474,26 @@ test('a coin opens on the tab its state calls for, and a past auction offers no 
   await page.openCoin('Watched, no sale');
   assert.equal(selected(), 'reminders', 'otherwise the tab chosen last');
 });
+
+// G-14 (W-09): Compare coins is a box in each coin row; ticking two to four opens the comparison from "Compare (n)".
+test('coins are compared from boxes in their own rows, two to four at a time', async () => {
+  const background = await backgroundWithCoins('Nero, denarius', 'Trajan, sestertius', 'Hadrian, as', 'Titus, denarius', 'Galba, as');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  assert.equal(page.$('comparison-picker'), null, 'no second list of the coins');
+  const box = (title) => page.$('lot-list').children.find((row) => row.textContent.includes(title)).querySelector('.compare-box');
+  const tick = async (title) => { box(title).checked = !box(title).checked; await box(title).emit('change'); };
+  assert.equal(page.$('open-comparison').disabled, true);
+  await tick('Nero, denarius');
+  assert.equal(page.$('open-comparison').textContent, 'Compare (1)');
+  assert.ok(page.$('lot-list').classList.contains('comparing'), 'the boxes show while one is ticked');
+  await tick('Trajan, sestertius'); await tick('Hadrian, as'); await tick('Titus, denarius');
+  assert.equal(page.$('open-comparison').disabled, false);
+  assert.equal(box('Galba, as').disabled, true, 'four at most');
+  assert.equal(box('Nero, denarius').getAttribute('aria-label'), 'Compare Nero, denarius');
+  // The filter redraws the rows and keeps what was ticked.
+  page.$('lot-filter').value = 'Nero';
+  await page.$('lot-filter').emit('input');
+  page.runTimers(); await settle();
+  assert.equal(box('Nero, denarius').checked, true);
+  assert.equal(page.$('open-comparison').textContent, 'Compare (4)');
+});

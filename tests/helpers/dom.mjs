@@ -802,7 +802,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     async openCoin(title) {
       const row = $('lot-list').children.find((item) => item.textContent.includes(title));
       if (!row) throw new Error(`No coin titled ${title} in the list.`);
-      await row.click();
+      // A row is the coin's button, beside its compare box (G-14).
+      await (row.classList.contains('coin-row') ? row : row.querySelector('.coin-row')).click();
       await settle();
     },
   };
