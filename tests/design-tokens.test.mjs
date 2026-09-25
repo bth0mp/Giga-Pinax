@@ -173,3 +173,22 @@ test('at phone width the sticky action bar spans the coin panel and no further',
   const phone = bars.findIndex((rule) => /margin-right:-16px/.test(rule.body));
   assert.ok(base >= 0 && phone > base, `phone rule ${phone}, base rule ${base}`);
 });
+
+// Fix round, Minor 7: the "hammer + premium" hint under a partial total must not lift the Total label off the other
+// three: it hangs under its cell, out of the row's flow, and the row makes room for it.
+test('the money line keeps its four labels on one line when the total carries a hint', () => {
+  const workspace = rules(read('workspace.css'));
+  const body = (selector) => workspace.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('.money-hint'), /position:absolute/);
+  assert.match(body('.money-cell'), /position:relative/);
+  assert.match(body('.money-line:has(.money-hint)'), /padding-bottom:\d+px/);
+});
+
+// Fix round, Minor 6: in the popup the calculation and currency share a row, as do hammer and premium, so the answer's
+// figure stays on screen at 600 px with two medians offered above.
+test('the compact calculator puts its fields two to a row', () => {
+  const css = rules(read('bid-tools.css'));
+  const body = (selector) => css.filter((rule) => rule.selector === selector).map((rule) => rule.body).join(';');
+  assert.match(body('.bid-calculator.compact .bid-calculator-fields'), /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(body('.bid-calculator-wide'), /grid-column:1\/-1/);
+});

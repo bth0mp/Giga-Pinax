@@ -25,7 +25,9 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 #lot-form input,#lot-form select,#lot-form textarea,#lot-form button,#outcome-form input,#outcome-form select,#outcome-form textarea,#outcome-form button{scroll-margin-bottom:72px}
 .money-line{display:grid;grid-template-columns:auto repeat(4,minmax(0,1fr));gap:4px 16px;align-items:end;margin-top:8px;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}.money-currency{align-self:end;color:var(--muted);font-size:11px;font-weight:650}.money-cell{display:grid;justify-items:end;gap:2px;min-width:0}.money-label{color:var(--muted);font-size:11px}.money-figure{font-size:13px;font-weight:650;white-space:nowrap}.money-cell:last-child .money-figure{color:var(--accent)}
 .money-line[data-tone="warning"] .money-cell:last-child .money-figure{color:var(--warning)}
-.money-hint{color:var(--muted);font-size:11px;white-space:nowrap}
+.money-hint{position:absolute;top:100%;right:0;margin-top:2px;color:var(--muted);font-size:11px;white-space:nowrap}
+.money-cell{position:relative}
+.money-line:has(.money-hint){padding-bottom:24px}
 .money-fix{margin-top:8px}.record .money-detail{font-variant-numeric:tabular-nums}.money-record{container-type:inline-size}@container (max-width:460px){.money-line{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}.money-currency{grid-column:1/-1}}
 .table-scroll{background:linear-gradient(to right,var(--surface) 30%,transparent) left center/32px 100% no-repeat local,linear-gradient(to left,var(--surface) 30%,transparent) right center/32px 100% no-repeat local,radial-gradient(farthest-side at 0 50%,color-mix(in srgb,var(--ink) 24%,transparent),transparent) left center/12px 100% no-repeat scroll,radial-gradient(farthest-side at 100% 50%,color-mix(in srgb,var(--ink) 24%,transparent),transparent) right center/12px 100% no-repeat scroll}
 /* G-09: the Bid tab's live all-in line under the maximum and premium, in the figure's tone; nothing while it has nothing to say. */

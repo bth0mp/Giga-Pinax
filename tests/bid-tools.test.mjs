@@ -610,8 +610,10 @@ test('the calculator offers the session median above the fields and puts it in t
   const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session });
   const box = calculator.container.querySelector('.bid-calculator-median');
   assert.equal(box.hidden, false);
-  const line = box.children[0];
-  assert.equal(line.children[0].textContent, 'acsearch median £240.00 (2 sales) for RIC I² Nero 306');
+  // Fix round, Minor 6: the reference once, then one short line per provider, so two medians leave the figure in view.
+  assert.equal(box.children[0].textContent, 'For RIC I² Nero 306');
+  const line = box.children[1];
+  assert.equal(line.children[0].textContent, 'acsearch median £240.00 · 2 sales');
   assert.equal(calculator.field('Currency').value, 'GBP', 'an empty calculator follows the lookup’s currency');
   calculator.field('Currency').value = 'USD'; await calculator.field('Currency').emit('input');
   await line.children[1].click();
@@ -658,3 +660,4 @@ test('an empty calculator keeps the median’s currency when the preferred curre
   calculator.mounted.setValues({ currency: 'USD' });
   assert.equal(calculator.field('Currency').value, 'GBP', 'the preference second does not override it');
 });
+

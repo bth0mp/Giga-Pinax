@@ -508,6 +508,7 @@ export function mountBidCalculator(
   const amountField = label('Hammer price', amount);
   const premiumField = label('Buyer premium %', premium);
   const presetField = label('House preset', preset);
+  presetField.node.className = 'bid-calculator-wide';
   fields.append(
     modeField.node, currencyField.node, amountField.node, premiumField.node, presetField.node,
   );
@@ -657,9 +658,12 @@ export function mountBidCalculator(
   // A median is a hammer, so it is offered only while the calculator works from a hammer; each provider on its own line.
   const showMedian = () => {
     medianLine.hidden = !sessionMedians.length || mode.value === 'budget';
-    medianLine.replaceChildren(...sessionMedians.map((found) => {
+    // The reference once, then one short line per provider: two medians leave the answer in view (Fix round, Minor 6).
+    const references = [...new Set(sessionMedians.map((found) => found.reference))];
+    const caption = el('p', { className: 'bid-calculator-median-for', textContent: `For ${references.join(' · ')}` });
+    medianLine.replaceChildren(caption, ...sessionMedians.map((found) => {
       const row = el('p', { className: 'bid-calculator-median-row' });
-      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} (${found.count} ${found.count === 1 ? 'sale' : 'sales'}) for ${found.reference}` });
+      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
       const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
       use.addEventListener('click', () => {
         currencyControl.value = found.currency;
