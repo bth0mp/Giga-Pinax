@@ -40,7 +40,8 @@ export const CATALOGUES = Object.freeze({
   // "Newell 45" stays prices only. The king is what an acsearch lot must name beside the citation, in Latin or in Greek, for the same reason.
   Newell: Object.freeze({ corpus: 'agco', corpusName: 'AGCO', idPrefix: 'newell.', label: 'Newell (Demetrius Poliorcetes) number', help: 'Example: Newell Demetrius 45',
     defaultNumber: '45', notFoundHint: 'Check the number.', queryKey: 'Newell Demetrius', termKeys: ['Newell', 'Newell Demetrius'],
-    citationKeys: ['Newell', 'Newell Demetrius', 'Newell, Demetrius'], king: 'Demetrius',
+    citationKeys: ['Newell', 'Newell Demetrius', 'Newell, Demetrius', 'Newell Demetrius Poliorcetes', 'Newell, Demetrius Poliorcetes'],
+    king: 'Demetrius',
     prefixPattern: /^Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?,?\s*(?:no\.\s*)?(?=\d|$)/i,
     referencePattern: /^Newell(?:,\s*|\s+)Demetrius(?:\s+Poliorcetes)?,?\s*(?:no\.\s*)?(\d\S*)$/i }),
   // Any other reference has no open type database, so no corpus name and no "not found" hint: its card is its own text.

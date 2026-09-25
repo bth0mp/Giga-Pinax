@@ -1629,3 +1629,143 @@ test('citesReference reads a hyphen for Crawford’s slash, an Arabic volume wit
     assert.equal(citesReference(cited, { catalogue: 'RIC', number: '53', volume }), true, `${cited} as ${volume} 53`);
   }
 });
+
+// Loop Q-02: Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album glue a hyphen to the number, and a few houses a colon or a hash. With the
+// citation filter on, which is the default, every one of their sales left the median as "not citing" the card.
+test('citesReference reads a hyphen, colon or hash glued to the number, and never a spaced dash or another key behind it', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC-118.', 'RIC-118; Cal-1015; RSC-462a.', 'RIC II-118.', 'RIC: 118.', 'RIC:118.', 'RIC#118.', 'RIC–118.', 'RIC-117-118.']) {
+    assert.equal(citesReference(`Trajano. Denario. ${cited}`, trajan), true, cited);
+  }
+  for (const other of ['RIC - 118.', 'RIC -; BMC -.', 'RIC -, cf. 118.', 'RIC-1180.', 'RIC-118a.', 'RIC-; Cohen 118.', 'RIC -118.', 'RIC--118.',
+    'RIC-118.5 g', 'Cohen-118.']) {
+    assert.equal(citesReference(`Trajano. Denario. ${other}`, trajan), false, other);
+  }
+  // Only the card's own volume: "RIC II-118" is not volume I's 118.
+  assert.equal(citesReference('RIC II-118.', { catalogue: 'RIC', number: '118', volume: 'I (2nd edition)' }), false);
+  // Behind a volume the mark still opens a part, which is one figure: "RIC IV-1 266" is IV 266 and never IV 1.
+  assert.equal(citesReference('RIC IV-1 266.', { catalogue: 'RIC', number: '266', volume: 'IV' }), true);
+  assert.equal(citesReference('RIC IV-1 266.', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  assert.equal(citesReference('RIC IV-1.', { catalogue: 'RIC', number: '1', volume: 'IV' }), false);
+  const price = { catalogue: 'Price', number: '112' };
+  for (const cited of ['Price-112.', 'Price#112.', 'Price 111-112.']) assert.equal(citesReference(cited, price), true, cited);
+  // "Price:" is the word in front of a sale's amount, never PELLA's type, and a longer number is another type.
+  for (const other of ['Price: 112.', 'Price:112', 'Price-1120.', 'Price - 112.', 'Starting Price-112 EUR']) assert.equal(citesReference(other, price), false, other);
+  assert.equal(citesReference('Cr-44/5.', { catalogue: 'RRC', number: '44/5' }), true);
+  assert.equal(citesReference('SC-1266.2.', { catalogue: 'SC', number: '1266.2' }), true);
+  assert.equal(citesReference('CPE-B549.', { catalogue: 'CPE', number: 'B549' }), true);
+  assert.equal(citesReference('Bopearachchi-24A.', { catalogue: 'Bop', number: '24A' }), true);
+});
+
+// Loop Q-03: Jean Elsen, Bertolami, Artemide and InAsta grade straight behind the weight, with no full stop between ("3,21 g TTB."), and Heritage
+// Europe and Schulman space the plus off the first grade of a range ("Zeer fraai +/prachtig"). The first went unread, or read only its second half,
+// which put a Fine coin in the EF bucket; the second dropped the lower half of the range.
+test('gradeOf reads a grade the weight or diameter stands straight in front of, and a range whose first grade carries a spaced plus', () => {
+  for (const [text, bucket] of [
+    ['4,03g Très Beau à Superbe / Superbe.', 'Fine and below'], ['14,40g Superbe.', 'EF'], ['3,21g TTB.', 'VF'], ['3,21 g TTB.', 'VF'],
+    ['17,10 g BB.', 'VF'], ['17,10 g BB+.', 'VF'], ['g 17,10 BB.', 'VF'], ['(g 17,10) BB+.', 'VF'], ['gr. 3,45 SPL.', 'EF'], ['24 mm MBC.', 'VF'],
+    ['3,45 g vz.', 'EF'], ['17.15 g - Zeer fraai +/prachtig.', 'VF'], ['17.15 g - Zeer fraai/prachtig.', 'VF'], ['Zeer fraai +/prachtig.', 'VF'],
+    ['Vorzüglich +/Stempelglanz.', 'EF'], ['VF + / EF.', 'VF'], ['Sehr schön+/vorzüglich.', 'VF'], ['ss +- vz.', 'VF'],
+  ]) assert.equal(gradeOf(text), bucket, text);
+  // The measurement opens a grade; it lends no word the closing edge a grade needs, nor a capital, nor the senate's SC its sin circular.
+  for (const prose of ['Rev. Victory. 3,21 g MB in field.', '14,40 g superbe patine verte.', '3.21 g Fine style portrait.', 'Rev. S C. 25 mm SC.',
+    '17 mm very fine portrait.', 'Lot of 12 g BB silver.', 'Ex Slg. 3,45 g 12.']) {
+    assert.equal(gradeOf(prose), null, prose);
+  }
+  // A die axis is no opening edge: "12 h" closes the grade in front of it.
+  assert.equal(gradeOf('Fine 12 h TTB portrait.'), 'Fine and below');
+});
+
+// Loop Q-06: dealers write one RPC Online temporary number three ways ("RPC IV.2 online 1234", "RPC IV.2, 1234 (temporary)", "RPC IV 1234 (temp.)"),
+// so its term offers all of them either-or, as Price's and Sear's do. A printed number keeps its one phrase.
+test('an RPC Online temporary number is searched in every spelling dealers cite it with', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  const offered = '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234")';
+  for (const written of ['RPC IV.2 online 1234 (temporary)', 'RPC IV.2 online 1234', 'RPC IV.2, 1234 (temporary)', 'RPC IV.2 1234 (temp.)']) {
+    assert.equal(defaultTerm(other(written)), offered, written);
+  }
+  assert.equal(defaultTerm(other('RPC VI online 3231 (temporary)')), '("RPC VI 3231" "RPC VI online 3231")');
+  assert.equal(defaultTerm(other('RPC IV.2 online 1234 (temporary); SNG von Aulock 3151')), '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234" "SNG von Aulock 3151")');
+  assert.equal(coinArchivesTerm(other('RPC IV.2 online 1234 (temporary)')), '"RPC IV.2 1234"');
+  // The single phrase 0.36 searched, remembered by a Get prices, gives way to the new default; a term the collector wrote himself still wins.
+  const temporary = other('RPC IV.2, 1234 (temporary)');
+  assert.equal(chooseTerm(temporary, '"RPC IV.2, 1234"'), offered);
+  assert.equal(chooseTerm(other('RPC IV.2 online 1234 (temporary)'), '"RPC IV.2 online 1234"'), offered);
+  assert.equal(chooseTerm(temporary, '"RPC IV 1234" Antoninus'), '"RPC IV 1234" Antoninus');
+  assert.equal(chooseTerm(other('RPC I 4156'), '"RPC I 4156"'), '"RPC I 4156"');
+  // A printed number, and anything that only looks like one, is searched as written.
+  for (const [written, term] of [['RPC I 4156', '"RPC I 4156"'], ['RPC VII.1 706', '"RPC VII.1 706"'], ['RPC IV.2 1234', '"RPC IV.2 1234"'],
+    ['RPC I 1234 (this coin)', '"RPC I 1234"'], ['SNG Cop 1234 (temporary)', '"SNG Cop 1234"']]) {
+    assert.equal(defaultTerm(other(written)), term, written);
+  }
+});
+
+// Loop Q-17: AGCO's own title form, "Newell, Demetrius Poliorcetes 92", and the spaced RIC type letter of CGB and Jean Elsen ("RIC 27 b").
+test('citesReference reads Newell with Poliorcetes behind the key, and a spaced RIC type letter as the letter', () => {
+  const newell = { catalogue: 'Newell', number: '92' };
+  for (const cited of ['Newell, Demetrius Poliorcetes 92.', 'Newell Demetrius Poliorcetes 92.', 'Newell Demetrius 92.', 'Newell 92.']) {
+    assert.equal(citesReference(cited, newell), true, cited);
+  }
+  for (const other of ['Newell, Demetrius Poliorcetes 920.', 'Demetrius Poliorcetes 92.', 'Newell Poliorcetes 92.', 'Newell, Demetrius Poliorcetes 9.']) {
+    assert.equal(citesReference(other, newell), false, other);
+  }
+  const lettered = { catalogue: 'RIC', number: '27b', volume: 'IV', section: 'Philip I' };
+  for (const cited of ['RIC 27 b;', 'RIC IV 27 b; C. 9.', 'RIC 27b.', 'RIC 27 b (Rome).', 'RIC 27 b']) assert.equal(citesReference(cited, lettered), true, cited);
+  for (const other of ['RIC 27 c.', 'RIC 27 B.', 'RIC 27.', 'RIC 27 bis.']) assert.equal(citesReference(other, lettered), false, other);
+  // The plain type is no longer cited by its lettered sibling, and still by a number a word or another number follows.
+  const plain = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  for (const other of ['RIC 27 b;', 'RIC IV 27 b; C. 9.', 'RIC 27 b (Rome).', 'RIC 27 a']) assert.equal(citesReference(other, plain), false, other);
+  for (const cited of ['RIC 27.', 'RIC 27 C. 9.', 'RIC 27 a rare variety.', 'RIC 27 e 28.', 'RIC 27 a.C.', 'RIC 27; C. 9.']) {
+    assert.equal(citesReference(cited, plain), true, cited);
+  }
+});
+
+// Loop P2 review, Important 1 and 2 on the filter side: the same rule as the lot row. A dotted letter is an abbreviation ("306 f." and following,
+// "27 s." see, "u." and, "a. Chr."), so it cites the plain type; CGB's " - ", "=" and a line break close a spaced letter.
+test('citesReference reads a spaced RIC letter exactly as the lot row does', () => {
+  const plain = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const cited of ['RIC 306 s.', 'RIC 306 u. Cohen 12.', 'RIC 306 a. Chr.', 'RIC 306 ff.', 'RIC 306 m;']) assert.equal(citesReference(cited, plain), true, cited);
+  assert.equal(citesReference('RIC 306 f.', { ...plain, number: '306f' }), false);
+  const philip = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  const lettered = { ...philip, number: '27b' };
+  for (const text of ['RIC.27 b - C.9 - RSC.9.', 'RIC 27 b = C. 9.', 'RIC 27 b – C. 9.', 'RIC 27 b\nCohen 9.', 'RIC 27 b, C. 9.']) {
+    assert.equal(citesReference(text, lettered), true, text);
+    assert.equal(citesReference(text, philip), false, text);
+  }
+  assert.equal(citesReference('RIC 27 f; C. 9.', { ...philip, number: '27f' }), true);
+  assert.equal(citesReference('RIC 27 f; C. 9.', philip), false);
+});
+
+// Loop P2 review, Minors Q-02 and Q-03.
+test('the glued separator reads a spaced colon, a hyphen before the volume and a dotted key; a figure needs its decimals to open a grade', () => {
+  const trajan = { catalogue: 'RIC', number: '118', volume: 'II', section: 'Trajan' };
+  for (const cited of ['RIC : 118.', 'RIC-II 118.', 'RIC-II-118.']) assert.equal(citesReference(cited, trajan), true, cited);
+  assert.equal(citesReference('RIC-II 118.', { ...trajan, volume: 'I (2nd edition)' }), false);
+  assert.equal(citesReference('Cr.-44/5.', { catalogue: 'RRC', number: '44/5' }), true);
+  assert.equal(citesReference('Bop.-24A.', { catalogue: 'Bop', number: '24A' }), true);
+  assert.equal(citesReference('Price : 112.', { catalogue: 'Price', number: '112' }), false);
+  for (const text of ['RIC 12 g BB.', 'Lot 12 g BB.', 'Cohen 12 g BB.', 'g 12 BB.']) assert.equal(gradeOf(text), null, text);
+  for (const [text, bucket] of [['3,21 g TTB.', 'VF'], ['24 mm MBC.', 'VF'], ['g 17,10 BB.', 'VF']]) assert.equal(gradeOf(text), bucket, text);
+});
+
+test('an RPC temporary number with a remark behind a comma is searched in every spelling', () => {
+  assert.equal(defaultTerm({ catalogue: 'Other', number: 'RPC IV.2 online 1234 (temporary), corr.', section: '' }),
+    '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234")');
+});
+
+// Loop P2 fix round 3 (re-review Minor 2, the lead's decision): a dotted letter is ambiguous, so the row counts for neither card: not the plain type,
+// not the lettered one. The spaced abbreviations and grades behind a number, which are no dotted letter, still cite the plain type.
+test('citesReference counts an ambiguous dotted-letter citation for neither card', () => {
+  const plain = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I' };
+  const lettered = { ...plain, number: '27b' };
+  for (const text of ['RIC 27 b.', 'RIC.27 b.', 'RIC IV 27 b. C. 9.', 'RIC 27 b. Sehr schön.', 'RIC 27 b. (Rome)']) {
+    assert.equal(citesReference(text, plain), false, text);
+    assert.equal(citesReference(text, lettered), false, text);
+  }
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  assert.equal(citesReference('RIC 306 f.', nero), false);
+  assert.equal(citesReference('RIC 306 f.', { ...nero, number: '306f' }), false);
+  for (const text of ['RIC 306 a. Chr.', 'RIC 306 f. vz.', 'RIC 306 a. VF.', 'RIC 306 d. h. selten.', 'RIC 306 i. e. rare.', 'RIC 306 c. 300 AD.', 'RIC 306 a. C.']) {
+    assert.equal(citesReference(text, nero), true, text);
+  }
+});

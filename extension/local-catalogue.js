@@ -1,4 +1,4 @@
-import { buildQuery, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, strayMint } from './lookup.js';
+import { buildQuery, eitherReading, formatDates, inGroup, otherVolumePart, parseReference, pickMatch, pickRicEntries, pickRicHits, strayMint } from './lookup.js';
 import { isMintOnly, isRicPerson, isSectionOnly, ricPeople } from './catalogues.js';
 import { RIC_PEOPLE } from './ric-people.js';
 import { squash } from './core/validate.js';
@@ -373,12 +373,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       if (!Object.hasOwn(LOCAL_CORPORA, name)) return null;
       try { return await byId(name, id); } catch { return { status: 'unavailable', source: 'local' }; }
     },
-    async lookupType(reference) {
-      if (!reference?.catalogue) return null;
-      const built = buildQuery(reference);
-      if (!Object.hasOwn(LOCAL_CORPORA, built.corpus)) return null;
-      try { return built.corpus === 'ocre' ? await ricLookup(reference) : await titleLookup(built, reference); }
-      catch { return { status: 'unavailable', source: 'local' }; }
+    // A lot row's dotted letter ("RIC 27 b.") is read both ways here too, as lookup.js reads it, for a caller that asks the bundle directly.
+    async lookupType(given) {
+      if (!given?.catalogue) return null;
+      return eitherReading(given, async (reference) => {
+        const built = buildQuery(reference);
+        if (!Object.hasOwn(LOCAL_CORPORA, built.corpus)) return null;
+        try { return built.corpus === 'ocre' ? await ricLookup(reference) : await titleLookup(built, reference); }
+        catch { return { status: 'unavailable', source: 'local' }; }
+      });
     },
     metadata: async (name = 'ocre') => {
       if (!Object.hasOwn(LOCAL_CORPORA, name)) return null;

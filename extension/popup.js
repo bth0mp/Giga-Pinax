@@ -1098,8 +1098,10 @@ function showPricesError(message) {
 // own, and a chosen candidate begins research with its own volume and ruler.
 const blank = (value) => !String(value ?? '').trim();
 // A mint with no volume ("RIC 40 (Ticinum)") is filed in several volumes, so it names no single type either and waits like a bare number.
-const namesOneType = (reference) => reference.catalogue !== 'RIC' || !blank(reference.volume)
-  || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1;
+// A lot row with a dotted letter behind its number ("RIC IV 27 b.") may be the plain type or the lettered one, and the lookup offers both: it names
+// no single type until the collector chooses one.
+const namesOneType = (reference) => !reference.dottedLetter && (reference.catalogue !== 'RIC' || !blank(reference.volume)
+  || (!blank(reference.section) && !isMintOnly(reference.section)) || reference.rulers?.length === 1);
 
 // A Bopearachchi reference is searched on acsearch by what its card says (the king and series BIGR files it under), so its prices wait for the card, as
 // a bare RIC number's wait for a type: a card that cannot be had (no network, no access) leaves nothing searched, rather than a median for a query
