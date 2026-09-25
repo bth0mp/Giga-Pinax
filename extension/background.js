@@ -2,6 +2,7 @@ import { extensionApi, invokeExtensionMethod, storageLocalAdapter } from './brow
 import { COMMAND_TYPES, createCommandWriter } from './store.js';
 import { reconcileScheduler, reminderNotice } from './core/reminders.js';
 import { recordDiagnostic } from './core/diagnostics.js';
+import { CAPTURE_FAILURE_KEY, captureFailureReason } from './store-recovery.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = extensionApi();
@@ -31,6 +32,12 @@ let menuQueue = Promise.resolve();
 // flight when a capture fails and would wipe the badge within milliseconds. The failure outranks
 // the due count until the collector has had a chance to see it.
 const CAPTURE_FAILURE_TITLE = 'Giga Pinax: the last page capture could not be saved. Open the workspace to check your records.';
+// A capture refused for a reason the collector can act on says which (X-15), and where it is put right.
+const CAPTURE_FAILURE_TITLES = {
+  full: 'Giga Pinax: the last page capture could not be saved because your records fill the storage. Open Settings to make room.',
+  unreadable: 'Giga Pinax: the last page capture could not be saved because your records can’t be read. Open Settings to recover them.',
+  failed: CAPTURE_FAILURE_TITLE,
+};
 const OPEN_FAILURE_TITLE = 'Giga Pinax: the capture was saved, but the workspace could not be opened. Open it from the toolbar.';
 // A lookup saves nothing, so a window that will not open has lost nothing: the capture wording sent
 // the collector looking through their records for work that was never being written.
@@ -298,6 +305,16 @@ async function clearReconcileFailure() {
   await retireWarning(captureFailed ? captureFailureTitle : '');
 }
 
+// Session storage, never local: a note of why the last capture failed, for the workspace to say once.
+async function keepCaptureFailure(note) {
+  const session = api.storage?.session;
+  if (!session) return;
+  try {
+    if (note) await invokeExtensionMethod(session.set, session, { [CAPTURE_FAILURE_KEY]: note });
+    else await invokeExtensionMethod(session.remove, session, CAPTURE_FAILURE_KEY);
+  } catch { /* the badge still says it */ }
+}
+
 async function runMenuAction(info) {
   if (info.menuItemId === MENU_LOOKUP) {
     const query = selectionQuery(info.selectionText);
@@ -318,9 +335,13 @@ async function runMenuAction(info) {
   const reply = await processCommand({ type: 'draft.save', requestId, kind, payload: { rawText, pageUrl } });
   if (!reply.ok) {
     noteFailure('capture', reply.code);
-    await showCaptureFailure(CAPTURE_FAILURE_TITLE);
+    const reason = captureFailureReason(reply);
+    // The workspace says the same on its next load (X-15): the reason class and when, in this session only.
+    void keepCaptureFailure({ reason, at: new Date().toISOString() });
+    await showCaptureFailure(CAPTURE_FAILURE_TITLES[reason]);
     return;
   }
+  void keepCaptureFailure(null);
   await clearCaptureFailure();
   const route = kind === 'auction-capture' ? 'event-draft' : 'research-draft';
   try {

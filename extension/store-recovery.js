@@ -288,3 +288,54 @@ export function mountWaitingCaptures({ document, drafts, now, openId = null, use
   if (!held) main.prepend(section);
   return section;
 }
+
+// Why the last page capture was not saved, kept in session storage by the background for the workspace to say (X-15).
+export const CAPTURE_FAILURE_KEY = 'gigaPinax:captureFailure';
+
+/**
+ * The reason class of a refused capture: the store full, the records unreadable, or anything else.
+ * @param {*} reply
+ * @returns {'full' | 'unreadable' | 'failed'}
+ */
+export function captureFailureReason(reply) {
+  if (reply?.reason === 'unreadable') return 'unreadable';
+  if (reply?.error?.code === 'storage-bound') return 'full';
+  return 'failed';
+}
+
+const CAPTURE_FAILURE_TEXT = {
+  full: 'A page capture could not be saved because your records fill the storage. Open Settings to make room, then capture the page again.',
+  unreadable: 'A page capture could not be saved because your records can’t be read. Open Settings to recover them, then capture the page again.',
+  failed: 'A page capture could not be saved. Capture the page again; if it fails again, Settings › Diagnostics has the reason.',
+};
+
+/**
+ * Says once, first on the page, why the last capture was not saved, and forgets it (X-15).
+ * @param {{ document: Document, session: *, open: () => void }} options
+ * @returns {Promise<HTMLElement | null>}
+ */
+export async function mountCaptureFailure({ document, session, open }) {
+  if (!session?.get) return null;
+  let note;
+  try { note = (await session.get(CAPTURE_FAILURE_KEY))?.[CAPTURE_FAILURE_KEY]; } catch { return null; }
+  const text = CAPTURE_FAILURE_TEXT[note?.reason];
+  if (!text) return null;
+  try { await session.remove(CAPTURE_FAILURE_KEY); } catch { /* said again next time */ }
+  const main = document.querySelector('main');
+  if (!main) return null;
+  const line = document.createElement('p');
+  line.id = 'capture-failure';
+  line.setAttribute('role', 'alert');
+  Object.assign(line.style, {
+    margin: '12px', padding: '8px 16px', border: '1px solid var(--error)', borderRadius: 'var(--radius-panel, 8px)',
+    background: 'var(--surface)', color: 'var(--ink)', fontSize: 'var(--text-body, 12px)',
+  });
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'quiet btn-sm';
+  button.textContent = 'Open Settings';
+  button.addEventListener('click', () => open());
+  line.append(document.createTextNode(`${text} `), button);
+  main.prepend(line);
+  return line;
+}

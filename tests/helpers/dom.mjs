@@ -627,6 +627,7 @@ export function memoryStorageArea() {
   const listeners = new Set();
   return {
     async get(key) { return stored.has(key) ? { [key]: structuredClone(stored.get(key)) } : {}; },
+    async remove(key) { stored.delete(key); },
     async set(items) {
       const changes = {};
       for (const [key, value] of Object.entries(items)) {
@@ -721,7 +722,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const { sameZone, zonePlace } = await import('../../extension/core/reminders.js');
   const wantlist = await import('../../extension/core/wantlist.js');
   // The store's notices (X-02, X-03): the recovery notice and the set-aside line, drawn into this page's document.
-  const { CAPTURE_ROUTES, mountRecovery, mountSetAsideLine, mountWaitingCaptures } = await import('../../extension/store-recovery.js');
+  const { CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures } = await import('../../extension/store-recovery.js');
   const document = parseHtmlFile(new URL('../../extension/workspace.html', import.meta.url));
   const prompts = [];
   const commands = [];
@@ -737,7 +738,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     ...money, ...evidence, ...projections, ...sourceLaunchers, LIMITS: fields.LIMITS,
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
-    sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist, CAPTURE_ROUTES, mountRecovery, mountSetAsideLine, mountWaitingCaptures,
+    sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist, CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures,
     // The bundled catalogue the want form asks what it holds (V-02); none unless a test hands one in, as outside the extension.
     defaultLocalCatalogue: catalogue,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.

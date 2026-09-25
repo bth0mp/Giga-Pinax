@@ -1535,6 +1535,23 @@ test('captures waiting to be used are listed first, and Use opens one while Disc
   assert.ok(!page.$('waiting-captures'), 'the capture open in the form is not listed again');
 });
 
+// X-15: a capture the background could not save says why on the workspace's next load, once.
+test('a capture refused because the records are full is said once on the next workspace load', async () => {
+  const background = await createWorkspaceBackground();
+  await background.session.set({ 'gigaPinax:captureFailure': { reason: 'full', at: '2026-09-12T11:59:00.000Z' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await settle(20);
+  const line = page.$('capture-failure');
+  assert.ok(line, 'the line is drawn');
+  assert.equal(line.textContent, 'A page capture could not be saved because your records fill the storage. Open Settings to make room, then capture the page again. Open Settings');
+  assert.equal(background.session.read('gigaPinax:captureFailure'), undefined, 'said once');
+  await line.querySelector('button').click();
+  assert.deepEqual(page.opened.at(-1), { settings: 'from-workspace' });
+  const again = await mountWorkspace({ background, hash: '#watchlist' });
+  await settle(20);
+  assert.ok(!again.$('capture-failure'));
+});
+
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,
 // one needing its outcome before any other; a phone keeps its list.
 test('a wide workspace opens the coin the queue puts first, one needing its outcome before the rest', async () => {

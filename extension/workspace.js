@@ -9,7 +9,7 @@ import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
-import { CAPTURE_ROUTES, mountRecovery, mountSetAsideLine, mountWaitingCaptures } from './store-recovery.js';
+import { CAPTURE_ROUTES, mountCaptureFailure, mountRecovery, mountSetAsideLine, mountWaitingCaptures } from './store-recovery.js';
 import {
   bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
@@ -1863,6 +1863,8 @@ async function initWorkspace() {
         } else announce(initialized.message, true);
       }
       else acceptIncoming(initialized.value);
+      // A capture the background could not save says why, once, here (X-15).
+      void mountCaptureFailure({ document, session: (globalThis.browser ?? globalThis.chrome)?.storage?.session, open: () => void openSettings('from-workspace') });
       await loadRouteDraft();
       // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.
       const namedLot = /[?&]lot=([\w-]+)/.exec(location.hash)?.[1];
