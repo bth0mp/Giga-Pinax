@@ -1666,29 +1666,47 @@ test('X-03: the set-aside card comes first on the page, and a damaged coin is na
   assert.equal(page.element('data-health-title').textContent, 'Set-aside records');
   const [row] = page.element('quarantine-list').children;
   assert.equal(row.querySelector('span').textContent, 'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters (set aside 2026-09-12)');
-  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Restore', 'Remove', 'Put back with this title']);
+  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Restore', 'Remove', 'Put back with this correction']);
   assert.equal(row.querySelector('.set-aside-value').value, '42');
 });
 
-test('X-03: Put back with this title sends the correction, and one without an optional field clears it', async () => {
-  const title = damaged({ title: 42 });
+// Review Important 2: every bad field is offered at once, and one button sends every correction together.
+test('X-03: a coin with two bad fields offers both, and Put back sends both corrections together', async () => {
+  const two = damaged({ title: 42, lotNumber: 9 });
   const notes = damaged({ notes: 7 });
   const page = await openSettings({
-    snapshot: snapshotWith({ quarantine: [title, notes] }),
+    snapshot: snapshotWith({ quarantine: [two, notes] }),
     reply: () => ({ ok: true, value: { collection: 'lots', id: uuid(9), restoredReferences: [], keptReferences: [] } }),
   });
-  const [titleRow, notesRow] = page.element('quarantine-list').children;
-  titleRow.querySelector('.set-aside-value').value = 'Philip I, antoninianus';
-  const put = titleRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with this title');
-  await put.click();
+  const [twoRow, notesRow] = page.element('quarantine-list').children;
+  assert.equal(twoRow.querySelector('span').textContent,
+    'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters; lot number is not text of up to 120 characters (set aside 2026-09-12)');
+  assert.deepEqual(twoRow.querySelectorAll('label').map((label) => label.textContent), ['Correct the title', 'Correct the lot number', 'Leave out the lot number']);
+  const [title, lotNumber] = twoRow.querySelectorAll('.set-aside-value');
+  title.value = 'Philip I, antoninianus';
+  lotNumber.value = '27';
+  await twoRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with these corrections').click();
   await settle();
-  const without = notesRow.querySelectorAll('button').find((button) => button.textContent === 'Put back without the notes');
-  await without.click();
+  notesRow.querySelector('.set-aside-leave-out').checked = true;
+  await notesRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with this correction').click();
   await settle();
-  assert.deepEqual(page.commands.filter(({ type }) => type === 'quarantine.restore').map(({ entryId, edit }) => [entryId, edit]), [
-    [quarantineEntryId(title), { field: 'title', value: 'Philip I, antoninianus' }],
-    [quarantineEntryId(notes), { field: 'notes', value: null }],
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'quarantine.restore').map(({ entryId, edits }) => [entryId, edits]), [
+    [quarantineEntryId(two), [{ field: 'title', value: 'Philip I, antoninianus' }, { field: 'lotNumber', value: '27' }]],
+    [quarantineEntryId(notes), [{ field: 'notes', value: null }]],
   ]);
+});
+
+test('X-03: corrections kept while another field is still wrong are said, with what is left', async () => {
+  const two = damaged({ title: 42, lotNumber: 9 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [two] }),
+    reply: () => ({ ok: true, value: { collection: 'lots', restored: false, corrected: ['title'], remaining: ['lot number is not text of up to 120 characters'] } }),
+  });
+  const [row] = page.element('quarantine-list').children;
+  row.querySelectorAll('.set-aside-value')[0].value = 'Philip I';
+  await row.querySelectorAll('button').find((button) => button.textContent === 'Put back with these corrections').click();
+  await settle();
+  assert.equal(page.status(), 'Your correction to the title was kept. Still to correct: lot number is not text of up to 120 characters.');
 });
 
 test('X-03: Remove asks first, names the coin, and takes it out of the list', async () => {

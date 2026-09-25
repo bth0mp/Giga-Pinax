@@ -877,12 +877,63 @@ function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Fields a correction may never touch: what names the record and what counts its writes are the store's own.
+export const OWN_RECORD_FIELDS = Object.freeze(['id', 'revision', 'dataClass', 'createdAt', 'updatedAt']);
+// Values that stand in for a bad field while the rest of the record is judged, so each field wrong on its own is found.
+const STAND_INS = [undefined, 'x', [], {}, 0, false];
+
 /**
- * What is wrong with a set-aside entry, in plain words, and what can be done about it (X-03): the field the validator
- * names, whether the record goes back once that field is cleared, and its value as text where it has one to edit.
+ * Every top-level field of a record that is wrong on its own, in the order the validator reaches them (review Important
+ * 2): each with what is wrong in plain words, whether the record can go without it, and its value as text to correct.
+ * A record the validator refuses as a whole, rather than for one field, gives one entry with no field.
+ * @param {string} collection
+ * @param {*} record
+ * @returns {Array<{ field: string | null, fieldLabel: string, problem: string, clearable: boolean, editable: boolean, current: string }>}
+ */
+export function recordProblems(collection, record) {
+  const problems = [];
+  if (!isObject(record)) return [{ field: null, fieldLabel: '', problem: 'it is not in a shape Giga Pinax can read', clearable: false, editable: false, current: '' }];
+  let working = { ...record };
+  for (let round = 0; round < 40; round += 1) {
+    const checked = validateQuarantinedRecord(collection, working);
+    if (checked.ok) break;
+    const field = topField(collection, checked.error.path);
+    if (!field || problems.some((problem) => problem.field === field)) {
+      if (!problems.length) problems.push({ field: null, fieldLabel: '', problem: 'it is not in a shape Giga Pinax can read', clearable: false, editable: false, current: '' });
+      break;
+    }
+    const value = record[field];
+    let clearable = false;
+    let next = null;
+    for (const standIn of STAND_INS) {
+      const trial = { ...working };
+      if (standIn === undefined) delete trial[field];
+      else trial[field] = standIn;
+      const again = validateQuarantinedRecord(collection, trial);
+      if (again.ok || topField(collection, again.error.path) !== field) {
+        clearable = standIn === undefined;
+        next = trial;
+        break;
+      }
+    }
+    const editable = !OWN_RECORD_FIELDS.includes(field) &&
+      (value === undefined || value === null || ['string', 'number', 'boolean'].includes(typeof value));
+    problems.push({
+      field, fieldLabel: fieldWords(field), problem: fieldProblem(field, checked.error.message, value),
+      clearable: clearable && !OWN_RECORD_FIELDS.includes(field), editable,
+      current: editable && value !== undefined && value !== null ? String(value) : '',
+    });
+    if (!next) break;
+    working = next;
+  }
+  return problems;
+}
+
+/**
+ * What is wrong with a set-aside entry, in plain words, and what can be done about it (X-03): every field that stops it,
+ * each with whether the record goes back without it and its value as text where it has one to correct.
  * @param {*} entry
- * @returns {{ noun: string, label: string, field: string | null, fieldLabel: string, problem: string, valid: boolean, clearable: boolean,
- *   editable: boolean, current: string }}
+ * @returns {{ noun: string, label: string, problem: string, valid: boolean, problems: ReturnType<typeof recordProblems> }}
  */
 export function quarantineProblem(entry) {
   const collection = entry?.collection;
@@ -893,41 +944,25 @@ export function quarantineProblem(entry) {
   const checked = isRestorableCollection(collection) && record !== null && record !== undefined
     ? validateQuarantinedRecord(collection, record) : null;
   if (!checked || checked.ok) {
-    return {
-      noun, label, field: null, fieldLabel: '', problem: RECORD_REASONS[entry?.reason] ?? 'it could not be read',
-      valid: Boolean(checked?.ok), clearable: false, editable: false, current: '',
-    };
+    return { noun, label, problem: RECORD_REASONS[entry?.reason] ?? 'it could not be read', valid: Boolean(checked?.ok), problems: [] };
   }
-  const field = topField(collection, checked.error.path);
-  const value = field && isObject(record) ? record[field] : undefined;
-  const problem = field ? fieldProblem(field, checked.error.message, value) : 'it is not in a shape Giga Pinax can read';
-  let clearable = false;
-  if (field && isObject(record) && Object.prototype.hasOwnProperty.call(record, field)) {
-    const without = { ...record };
-    delete without[field];
-    clearable = validateQuarantinedRecord(collection, without).ok;
-  }
-  const editable = Boolean(field) && isObject(record) &&
-    (value === undefined || value === null || ['string', 'number', 'boolean'].includes(typeof value));
-  return {
-    noun, label, field, fieldLabel: field ? fieldWords(field) : '', problem, valid: false, clearable, editable,
-    current: editable && value !== undefined && value !== null ? String(value) : '',
-  };
+  const problems = recordProblems(collection, record);
+  return { noun, label, problem: problems.map(({ problem }) => problem).join('; '), valid: false, problems };
 }
 
 /**
- * A validator's refusal of a record being put back, in plain words: which field, and what is wrong with it.
+ * A record that cannot go back as it is, in plain words: every field that is wrong, and what is wrong with each.
  * @param {string} collection
- * @param {{ message: string, path?: string }} error
  * @param {*} record
  * @returns {string}
  */
-export function restoreRefusalText(collection, error, record) {
-  const field = topField(collection, error?.path);
-  if (!field) return `This ${recordNoun(collection)} cannot go back as it is: it is not in a shape Giga Pinax can read.`;
-  const value = isObject(record) ? record[field] : undefined;
-  return `This ${recordNoun(collection)} cannot go back as it is: its ${fieldProblem(field, error.message, value)}. ` +
-    'Correct it or remove it under Set-aside records.';
+export function restoreRefusalText(collection, record) {
+  const problems = recordProblems(collection, record);
+  const noun = recordNoun(collection);
+  if (!problems.length || problems[0].field === null) return `This ${noun} cannot go back as it is: it is not in a shape Giga Pinax can read.`;
+  const phrases = problems.map(({ problem }) => `its ${problem}`);
+  const listed = phrases.length === 1 ? phrases[0] : `${phrases.slice(0, -1).join(', ')}, and ${phrases.at(-1)}`;
+  return `This ${noun} cannot go back as it is: ${listed}. Correct ${problems.length === 1 ? 'it' : 'them'} or remove it under Set-aside records.`;
 }
 
 function quarantineLine(entry) {
@@ -991,6 +1026,13 @@ export function setAsideCountText(entries) {
  */
 export function quarantineRestoreText(value) {
   if (!value || typeof value !== 'object') return 'The record was put back.';
+  // Corrections kept in the bin while another field is still wrong (review Important 2).
+  if (value.restored === false) {
+    const fields = (value.corrected ?? []).map((field) => `the ${fieldWords(field)}`);
+    const named = fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)}` : fields[0] ?? 'the record';
+    return `Your correction${fields.length === 1 ? '' : 's'} to ${named} ${fields.length === 1 ? 'was' : 'were'} kept. ` +
+      `Still to correct: ${(value.remaining ?? []).join('; ')}.`;
+  }
   const restored = value.restoredReferences?.length ?? 0;
   const kept = value.keptReferences ?? [];
   const parts = [`The record was put back into ${value.collection}.`];

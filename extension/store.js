@@ -14,7 +14,7 @@ import {
   appendBidHistory, baseRecord, compactGroupPriorities, eventFromDraft, fail, findRecord, getId, getNow, lotFromDraft, ok,
   preferenceFields,
 } from './store-builders.js';
-import { editedEntry, missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
+import { editedEntry, keptCorrections, missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
 import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
 import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
 /**
@@ -742,12 +742,25 @@ function mutation(snapshot, command, context) {
       // The collector may correct, or clear, the one field that kept it out (X-03). The bin keeps the record as it was
       // until the corrected copy is back, so a correction that is refused changes nothing.
       let candidate = chosen;
-      if (command.edit !== undefined) {
-        const edited = editedEntry(chosen, command.edit);
+      let editedFields = [];
+      const edits = command.edits ?? (command.edit === undefined ? undefined : [command.edit]);
+      if (edits !== undefined) {
+        const edited = editedEntry(chosen, edits);
         if (!edited.ok) return edited;
-        candidate = edited.value;
+        candidate = edited.value.entry;
+        editedFields = edited.value.fields;
       }
       const first = readyToRestore(next, candidate);
+      if (!first.ok && editedFields.length) {
+        // A correction that puts its field right is kept in the bin while another field is still wrong, and the reply
+        // names what is left, so every round makes progress (review Important 2).
+        const kept = keptCorrections(chosen, candidate, editedFields);
+        if (kept.corrected.length && kept.remaining.length) {
+          entries[index] = { ...chosen, record: kept.record };
+          value = { collection: chosen.collection, restored: false, corrected: kept.corrected, remaining: kept.remaining };
+          break;
+        }
+      }
       if (!first.ok) return first;
       const restoring = [{ entry: chosen, ...first.value }];
       const partner = missingPartner(next, chosen.collection, first.value.record);

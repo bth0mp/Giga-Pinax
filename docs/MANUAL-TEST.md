@@ -350,5 +350,5 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* under the coin count, "1 coin set aside: fix or remove"; **fix or remove** opens Settings, whose first
     card, **Set-aside records**, names the coin by its reference and says "title is not text of up to 300 characters".
     **Restore** is refused in the same plain words. Type a title in **Correct the title** and select **Put back with this
-    title**: the coin is back in the workspace with that title, and the line under the count goes. Set it aside again
+    correction**: the coin is back in the workspace with that title, and the line under the count goes. Set it aside again
     and select **Remove**: you are asked first, and on yes the card goes.

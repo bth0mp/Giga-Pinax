@@ -233,11 +233,11 @@ const PRESET_FIELD_CLASS = {
 
 // Putting a record back is a command like any other: the store decides whether it can go back, and
 // the page says what the reply says and reads the list again.
-async function restoreSetAside(entryId, button, edit) {
+async function restoreSetAside(entryId, button, edits) {
   button.disabled = true;
   try {
     const reply = await bridge.sendCommand({
-      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId, ...(edit ? { edit } : {}),
+      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId, ...(edits ? { edits } : {}),
     });
     if (!reply?.ok) {
       throw new Error(reply?.message || reply?.error?.message || 'That record could not be put back.');
@@ -296,27 +296,40 @@ function quarantineItem(row) {
   const remove = control('Remove');
   remove.addEventListener('click', () => { void removeSetAside(row, remove); });
   item.append(' ', restore, ' ', remove);
-  const { field, fieldLabel, editable, clearable, current } = row.problem ?? {};
-  if (!field || (!editable && !clearable)) return item;
+  // Every field that stops it is offered at once, and one button sends every correction together (review Important 2).
+  const fixable = (row.problem?.problems ?? []).filter(({ field, editable, clearable }) => field && (editable || clearable));
+  if (!fixable.length) return item;
   const fix = document.createElement('div');
   fix.className = 'set-aside-fix';
-  if (editable) {
-    const label = document.createElement('label');
-    const caption = document.createElement('span');
-    caption.textContent = `Correct the ${fieldLabel}`;
-    const input = document.createElement('input');
-    input.className = 'set-aside-value';
-    input.value = current;
-    label.append(caption, input);
-    const put = control(`Put back with ${/s$/.test(fieldLabel) ? 'these' : 'this'} ${fieldLabel}`, 'secondary');
-    put.addEventListener('click', () => { void restoreSetAside(row.id, put, { field, value: input.value }); });
-    fix.append(label, put);
+  const readers = [];
+  for (const { field, fieldLabel, editable, clearable, current } of fixable) {
+    let input = null;
+    let leaveOut = null;
+    if (editable) {
+      const label = document.createElement('label');
+      const caption = document.createElement('span');
+      caption.textContent = `Correct the ${fieldLabel}`;
+      input = document.createElement('input');
+      input.className = 'set-aside-value';
+      input.value = current;
+      label.append(caption, input);
+      fix.append(label);
+    }
+    if (clearable) {
+      const label = document.createElement('label');
+      leaveOut = document.createElement('input');
+      leaveOut.type = 'checkbox';
+      leaveOut.className = 'set-aside-leave-out';
+      const caption = document.createElement('span');
+      caption.textContent = `Leave out the ${fieldLabel}`;
+      label.append(leaveOut, caption);
+      fix.append(label);
+    }
+    readers.push(() => ({ field, value: leaveOut?.checked || !input ? null : input.value }));
   }
-  if (clearable) {
-    const without = control(`Put back without the ${fieldLabel}`);
-    without.addEventListener('click', () => { void restoreSetAside(row.id, without, { field, value: null }); });
-    fix.append(without);
-  }
+  const put = control(`Put back with ${fixable.length === 1 ? 'this correction' : 'these corrections'}`, 'secondary');
+  put.addEventListener('click', () => { void restoreSetAside(row.id, put, readers.map((read) => read())); });
+  fix.append(put);
   item.append(fix);
   return item;
 }

@@ -1036,10 +1036,10 @@ test('X-03: a set-aside coin is named with the field that stops it, in plain wor
   ]);
   const [titleRow, notesRow, keptRow] = quarantineRows([title, notes, kept]);
   assert.deepEqual(titleRow.problem, {
-    noun: 'coin', label: 'RIC IV Philip I 27b', field: 'title', fieldLabel: 'title', problem: 'title is not text of up to 300 characters',
-    valid: false, clearable: false, editable: true, current: '42',
+    noun: 'coin', label: 'RIC IV Philip I 27b', problem: 'title is not text of up to 300 characters', valid: false,
+    problems: [{ field: 'title', fieldLabel: 'title', problem: 'title is not text of up to 300 characters', clearable: false, editable: true, current: '42' }],
   });
-  assert.equal(notesRow.problem.clearable, true, 'notes are optional, so the coin goes back without them');
+  assert.equal(notesRow.problem.problems[0].clearable, true, 'notes are optional, so the coin goes back without them');
   assert.equal(keptRow.problem.valid, true);
   assert.equal(setAsideCountText([title, notes, kept]), '3 coins set aside');
   assert.equal(setAsideCountText([title]), '1 coin set aside');
@@ -1201,4 +1201,18 @@ test('X-13: a merge preview says when nothing would change, and whether the resu
   assert.equal(fit.ok, false);
   assert.match(fit.text, /^This import would not fit: your records would take 5\.\d+ MB, more than the 5 MB/);
   assert.equal(importFit(null, heavy.value).ok, false, 'over unreadable records it is judged against none');
+});
+
+// Review Important 2 and Minor 5: every bad field is named at once, and only corrections a restore accepts are offered.
+test('X-03: a set-aside coin with two bad fields names both, and never offers its ID or revision to edit', () => {
+  const two = { collection: 'lots', record: damagedLot({ title: 42, lotNumber: 9 }), reason: 'invalid-string', quarantinedAt: NOW };
+  assert.deepEqual(quarantineLines([two]), [
+    'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters; lot number is not text of up to 120 characters (set aside 2026-09-12)',
+  ]);
+  const { problems } = quarantineRows([two])[0].problem;
+  assert.deepEqual(problems.map(({ field, editable, clearable, current }) => [field, editable, clearable, current]), [
+    ['title', true, false, '42'], ['lotNumber', true, true, '9'],
+  ]);
+  const badId = { collection: 'lots', record: damagedLot({ id: 'not-a-uuid' }), reason: 'invalid-id', quarantinedAt: NOW };
+  assert.deepEqual(quarantineRows([badId])[0].problem.problems.map(({ field, editable, clearable }) => [field, editable, clearable]), [['id', false, false]]);
 });

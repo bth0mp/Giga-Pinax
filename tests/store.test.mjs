@@ -3038,3 +3038,52 @@ test('X-02: every hostile revision on unreadable records still lets a reset, and
     }
   }
 });
+
+// Review Important 2: a record with two bad fields. Corrections go together; one that is valid is kept even while
+// another field is still refused, so every round makes progress, and the reply names every field still wrong.
+test('X-03: a set-aside coin with two bad fields goes back with both corrected, or keeps each valid correction', async () => {
+  const broken = plainLot(uuid(), { title: 42, lotNumber: 9 });
+  const entry = { collection: 'lots', record: broken, reason: 'invalid-string', quarantinedAt: NOW };
+
+  const together = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const both = await createCommandWriter(together, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: 'Nero denarius' }, { field: 'lotNumber', value: '12' }],
+  }));
+  assert.equal(both.ok, true, both.message);
+  assert.deepEqual(together.read().lots.map(({ title, lotNumber }) => [title, lotNumber]), [['Nero denarius', '12']]);
+
+  const storage = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const writer = createCommandWriter(storage, context());
+  const plain = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(entry) }));
+  assert.equal(plain.message, 'This coin cannot go back as it is: its title is not text of up to 300 characters, and its lot number is not text of up to 120 characters. Correct them or remove it under Set-aside records.');
+
+  // A good title beside a lot number still refused: the title is kept in the bin, and the lot number is named.
+  const first = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: 'Nero denarius' }, { field: 'lotNumber', value: '' }],
+  }));
+  assert.equal(first.ok, true, first.message);
+  assert.equal(first.value.restored, false);
+  assert.deepEqual(first.value.corrected, ['title']);
+  assert.deepEqual(first.value.remaining, ['lot number is not text of up to 120 characters'], 'what the bin now holds');
+  const [kept] = storage.read().quarantine;
+  assert.equal(kept.record.title, 'Nero denarius');
+  assert.equal(kept.record.lotNumber, 9, 'the refused correction is not written');
+  assert.deepEqual(storage.read().lots, []);
+
+  const second = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(kept), edits: [{ field: 'lotNumber', value: '12' }],
+  }));
+  assert.equal(second.ok, true, second.message);
+  assert.notEqual(second.value.restored, false);
+  assert.deepEqual(storage.read().lots.map(({ title, lotNumber }) => [title, lotNumber]), [['Nero denarius', '12']]);
+  assert.equal(storage.read().quarantine, undefined);
+
+  // Corrections that change nothing wrong are refused, and the bin stays as it was.
+  const stuck = memoryStorage(setAsideRoot([structuredClone(entry)], []));
+  const none = await createCommandWriter(stuck, context()).commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(entry), edits: [{ field: 'title', value: '  ' }],
+  }));
+  assert.equal(none.ok, false);
+  assert.match(none.message, /its title is empty, and its lot number is not text/);
+  assert.deepEqual(stuck.read().quarantine, [entry]);
+});

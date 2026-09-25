@@ -2,7 +2,7 @@
 // Putting back what a repair set aside: a record from the quarantine bin, with the partner it is
 // linked to, and the links the repair had to clear.
 import { LIMITS, validateQuarantinedRecord } from './core/records.js';
-import { restoreRefusalText } from './core/backup.js';
+import { OWN_RECORD_FIELDS, recordProblems, restoreRefusalText } from './core/backup.js';
 import { clone, own } from './core/validate.js';
 import { fail, ok } from './store-builders.js';
 /**
@@ -104,7 +104,7 @@ function readyToRestore(snapshot, entry) {
   }
   const candidate = validateQuarantinedRecord(entry.collection, entry.record);
   // Said in plain words: which field, and what is wrong with it (X-03).
-  if (!candidate.ok) return fail('validation', restoreRefusalText(entry.collection, candidate.error, entry.record), candidate.error.path);
+  if (!candidate.ok) return fail('validation', restoreRefusalText(entry.collection, entry.record), candidate.error.path);
   // The want list is written with its first want, so a want set aside from the last list there was comes back into a new one.
   if (entry.collection === 'wants' && snapshot.wants === undefined) snapshot.wants = [];
   const home = snapshot[entry.collection];
@@ -117,29 +117,56 @@ function readyToRestore(snapshot, entry) {
   return ok({ home, record: clone(candidate.value) });
 }
 
-// Fields a correction may never touch: what names the record and what counts its writes are the store's own.
-const OWN_FIELDS = new Set(['id', 'revision', 'dataClass', 'createdAt', 'updatedAt']);
-
-// The entry with one field of its record corrected, as text, or cleared (null) - never the entry itself, which stays in
-// the bin as it was until the corrected copy goes back (X-03).
+// The entry with fields of its record corrected, as text, or cleared (null) - never the entry itself, which stays in the
+// bin as it was until a corrected copy goes back or is kept (X-03). Every correction is held to its shape first, and
+// all of them are applied together, so a record with two bad fields can go back in one step (review Important 2).
 /**
  * @param {QuarantineEntry} entry
- * @param {*} edit `{ field, value }`, the value text or null
- * @returns {Result<QuarantineEntry>}
+ * @param {*} edits a list of `{ field, value }`, each value text or null
+ * @returns {Result<{ entry: QuarantineEntry, fields: string[] }>}
  */
-function editedEntry(entry, edit) {
-  const field = edit?.field;
-  if (typeof field !== 'string' || !/^[A-Za-z]{1,64}$/.test(field) || OWN_FIELDS.has(field)) {
-    return fail('validation', 'Only a field of the record itself can be corrected.', 'edit.field');
+function editedEntry(entry, edits) {
+  if (!Array.isArray(edits) || edits.length === 0 || edits.length > 40) {
+    return fail('validation', 'Corrections are a list of fields and their values.', 'edits');
   }
   if (!entry.record || typeof entry.record !== 'object' || Array.isArray(entry.record)) {
     return fail('validation', 'This entry holds no record whose fields can be corrected.', 'entryId');
   }
   const record = clone(entry.record);
-  if (edit.value === null) delete record[field];
-  else if (typeof edit.value === 'string' && edit.value.length <= LIMITS.notes) record[field] = edit.value.trim();
-  else return fail('validation', `A correction is text of at most ${LIMITS.notes} characters.`, 'edit.value');
-  return ok({ ...entry, record });
+  const fields = [];
+  for (const edit of edits) {
+    const field = edit?.field;
+    if (typeof field !== 'string' || !/^[A-Za-z]{1,64}$/.test(field) || OWN_RECORD_FIELDS.includes(field) || fields.includes(field)) {
+      return fail('validation', 'Only a field of the record itself can be corrected, once.', 'edits.field');
+    }
+    if (edit.value === null) delete record[field];
+    else if (typeof edit.value === 'string' && edit.value.length <= LIMITS.notes) record[field] = edit.value.trim();
+    else return fail('validation', `A correction is text of at most ${LIMITS.notes} characters.`, 'edits.value');
+    fields.push(field);
+  }
+  return ok({ entry: { ...entry, record }, fields });
 }
 
-export { editedEntry, missingPartner, readyToRestore, restoreClearedReferences };
+// The corrections that put a field right while others are still wrong (review Important 2): each one whose field the
+// corrected record no longer fails on is kept, on the record as the bin held it; the rest are left out.
+/**
+ * @param {QuarantineEntry} entry
+ * @param {QuarantineEntry} edited
+ * @param {string[]} fields
+ * @returns {{ record: *, corrected: string[], remaining: string[] }}
+ */
+function keptCorrections(entry, edited, fields) {
+  const stillWrong = recordProblems(entry.collection, edited.record);
+  const wrong = new Set(stillWrong.map(({ field }) => field));
+  const record = clone(entry.record);
+  const corrected = [];
+  for (const field of fields) {
+    if (wrong.has(field) || wrong.has(null)) continue;
+    if (Object.prototype.hasOwnProperty.call(edited.record, field)) record[field] = clone(edited.record[field]);
+    else delete record[field];
+    corrected.push(field);
+  }
+  return { record, corrected, remaining: recordProblems(entry.collection, record).map(({ problem }) => problem) };
+}
+
+export { editedEntry, keptCorrections, missingPartner, readyToRestore, restoreClearedReferences };
