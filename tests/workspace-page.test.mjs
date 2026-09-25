@@ -1917,3 +1917,15 @@ test('the auction form asks When once, shows a time only for a timed sale, and k
   const kept = background.root().auctionEvents.find(({ id }) => id === odd.value.id);
   assert.deepEqual([kept.name, kept.eventKind, kept.precision], ['Odd pair, renamed', 'lot-closes', 'date-only']);
 });
+
+// H-12: one filled button per form - the form's own save - and the rest secondary or quiet.
+test('each workspace form has one filled button, its own save, and the search launchers are secondary', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const filled = (root) => root.querySelectorAll('button').filter((button) => !['quiet', 'secondary', 'danger'].some((kind) => button.classList.contains(kind))).map((button) => button.textContent);
+  assert.deepEqual(filled(page.$('research-form')), [], 'the launchers open a site; the page’s save is the comparable’s');
+  assert.deepEqual(filled(page.$('evidence-form')), ['Save manual evidence']);
+  assert.deepEqual(filled(page.$('bid-form')), ['Save plan']);
+  for (const form of ['lot-form', 'outcome-form', 'event-form', 'want-form', 'group-form']) assert.equal(filled(page.$(form)).length, 1, form);
+});

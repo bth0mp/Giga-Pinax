@@ -546,18 +546,18 @@ async function initWorkspace() {
       }
       card.append(text('p', effectiveExclusions.has(row.id) ? `Effective result: excluded (${effectiveExclusions.get(row.id)})` : 'Effective result: included'));
       const actions = text('div', '', 'actions');
-      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include'); toggle.type = 'button';
+      const toggle = text('button', row.inclusion === 'included' ? 'Exclude' : 'Include', 'quiet'); toggle.type = 'button';
       toggle.addEventListener('click', () => void send({ type: 'evidence.include', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, inclusion: row.inclusion === 'included' ? 'excluded' : 'included', ...(row.inclusion === 'included' ? { exclusionReason: 'collector-excluded' } : {}) }));
       actions.append(toggle);
       for (const observation of (row.observations ?? []).filter((item) => item.priceBasis === 'hammer' && item.amount)) {
-        const choose = text('button', `Use ${observation.source} claim`); choose.type = 'button';
+        const choose = text('button', `Use ${observation.source} claim`, 'quiet'); choose.type = 'button';
         choose.addEventListener('click', () => void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'observation', observationId: observation.id } }));
         actions.append(choose);
       }
       if (row.conflictFields?.length) {
         const currency = row.observations?.find((item) => item.amount)?.amount?.currency ?? filters.currency;
         const entered = document.createElement('input'); entered.inputMode = 'decimal'; entered.placeholder = `Entered hammer (${currency})`; entered.setAttribute('aria-label', `Entered hammer for ${row.id}`);
-        const chooseEntered = text('button', 'Use entered hammer'); chooseEntered.type = 'button';
+        const chooseEntered = text('button', 'Use entered hammer', 'quiet'); chooseEntered.type = 'button';
         chooseEntered.addEventListener('click', () => { const parsed = parseMoney(entered.value, currency, navigator.language); if (!parsed.ok) return announce(parsed.error.message, true); void send({ type: 'evidence.resolve', requestId: requestId(), evidenceId: row.id, expectedRevision: row.revision, resolution: { kind: 'entered', hammer: parsed.value } }); });
         actions.append(entered, chooseEntered);
       }
@@ -656,16 +656,16 @@ async function initWorkspace() {
       if (!members.length) card.append(text('p', 'No lots assigned'));
       for (const [index, lot] of members.entries()) {
         const line = text('div', '', 'actions'); line.append(text('span', `${index + 1}. ${lot.title}`));
-        const reorder = (label, nextIndex) => { const button = text('button', label); button.type = 'button'; button.disabled = nextIndex < 0 || nextIndex >= members.length; button.addEventListener('click', () => { const ids = members.map((item) => item.id); [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]]; void send(buildGroupReorderCommand(group, ids, snapshot)); }); return button; };
+        const reorder = (label, nextIndex) => { const button = text('button', label, 'quiet'); button.type = 'button'; button.disabled = nextIndex < 0 || nextIndex >= members.length; button.addEventListener('click', () => { const ids = members.map((item) => item.id); [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]]; void send(buildGroupReorderCommand(group, ids, snapshot)); }); return button; };
         line.append(reorder('Move up', index - 1), reorder('Move down', index + 1));
-        const removeMember = text('button', 'Remove from group'); removeMember.type = 'button'; removeMember.addEventListener('click', () => void send(buildGroupReorderCommand(group, members.filter((item) => item.id !== lot.id).map((item) => item.id), snapshot))); line.append(removeMember);
+        const removeMember = text('button', 'Remove from group', 'quiet'); removeMember.type = 'button'; removeMember.addEventListener('click', () => void send(buildGroupReorderCommand(group, members.filter((item) => item.id !== lot.id).map((item) => item.id), snapshot))); line.append(removeMember);
         card.append(line);
       }
       const actions = text('div', '', 'actions');
-      const editGroup = text('button', 'Edit group name'); editGroup.type = 'button'; editGroup.addEventListener('click', () => { beginEditor('group', { id: group.id, revision: group.revision, record: structuredClone(group) }); populateGroupForm(group); $('group-form').elements.name.focus(); });
-      const add = text('button', 'Add selected coin'); add.type = 'button'; add.dataset.addSelected = ''; add.disabled = !selection.selectedLotId;
+      const editGroup = text('button', 'Edit group name', 'quiet'); editGroup.type = 'button'; editGroup.addEventListener('click', () => { beginEditor('group', { id: group.id, revision: group.revision, record: structuredClone(group) }); populateGroupForm(group); $('group-form').elements.name.focus(); });
+      const add = text('button', 'Add selected coin', 'quiet'); add.type = 'button'; add.dataset.addSelected = ''; add.disabled = !selection.selectedLotId;
       add.addEventListener('click', () => { const ids = [...members.map((lot) => lot.id), selection.selectedLotId].filter((id, index, all) => id && all.indexOf(id) === index); void send(buildGroupReorderCommand(group, ids, snapshot)); });
-      const remove = text('button', 'Remove group'); remove.type = 'button'; remove.addEventListener('click', () => { if (confirm(`Delete group “${group.name}”? Its lots will remain.`)) void send({ type: 'group.delete', requestId: requestId(), groupId: group.id, expectedRevision: group.revision }); });
+      const remove = text('button', 'Remove group', 'danger quiet'); remove.type = 'button'; remove.addEventListener('click', () => { if (confirm(`Delete group “${group.name}”? Its lots will remain.`)) void send({ type: 'group.delete', requestId: requestId(), groupId: group.id, expectedRevision: group.revision }); });
       actions.append(editGroup, add, remove); card.append(actions); groups.append(card);
     }
   }
@@ -1418,7 +1418,7 @@ async function initWorkspace() {
     if (entry.notes) card.append(text('p', entry.notes, 'collection-entry-notes'));
     card.append(text('p', collectionComparablesLabel(viewItem), 'collection-comparables'));
     const actions = text('div', '', 'actions');
-    if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
+    if (entry.reviewReason) { for (const decision of ['keep', 'remove']) { const button = text('button', decision === 'keep' ? 'Keep collection entry' : 'Remove collection entry', decision === 'keep' ? 'secondary' : 'danger quiet'); button.type = 'button'; button.addEventListener('click', () => void send({ type: 'collection.review.resolve', requestId: requestId(), collectionEntryId: entry.id, expectedRevision: entry.revision, decision })); actions.append(button); } }
     if (editingEntry?.id === entry.id) card.append(entryEditForm());
     else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
     if (actions.children.length) card.append(actions);
