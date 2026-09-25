@@ -92,7 +92,7 @@ export function bidPremiumRate(lot) {
 // won without a recorded bid or on other terms than its bid), else its bid's rate and the fee sheet saved with the lot.
 /**
  * @param {Lot | null | undefined} lot
- * @returns {{ rate: number | null, estimate: import('./types.js').CostEstimate | undefined }}
+ * @returns {{ rate: number | null, estimate: import('./types.js').CostEstimate | undefined, noFees: boolean }}
  */
 export function wonTerms(lot) {
   const terms = lot?.outcome?.terms;

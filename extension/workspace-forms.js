@@ -427,7 +427,7 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
   else if (Number.isInteger(recordsPremiumRate(lot))) { rate = recordsPremiumRate(lot); premiumSource = lot?.activeBid ? 'from your bid' : lot?.plannedBid && rate === lot.plannedBid.buyerPremiumBps ? 'from your plan' : 'from your last bid'; }
   else if ((preset = housePresetFor(presets, lot?.auctionContext?.house))) { rate = preset.buyerPremiumBps; premiumSource = `from your ${preset.name} preset`; }
   // "No fees were charged beyond the premium" is the outcome's `costEstimate: null`: ticked, with no sheet shown.
-  const noFees = Boolean(terms) && Object.hasOwn(terms, 'costEstimate') && terms?.costEstimate === null;
+  const noFees = Boolean(terms) && Object.hasOwn(/** @type {object} */ (terms), 'costEstimate') && terms?.costEstimate === null;
   const saved = noFees ? null : terms?.costEstimate ?? feeSheetOf(lot?.costEstimate);
   const estimate = saved?.currency === hammerCurrency ? saved : null;
   const fees = estimate || noFees ? feeSheetTexts(estimate) : feeSheetTexts(preset ? { premiumVatBps: preset.premiumVatBps, platformFeeBps: preset.platformFeeBps } : null);
