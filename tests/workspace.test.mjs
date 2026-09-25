@@ -1463,6 +1463,7 @@ test('a settled coin reads as a ledger line and the bid that decided it, newest 
   assert.equal(decidingBidLine(lot, formatMoney), 'Won on a €6,500.00 maximum (25%)');
   assert.equal(decidingBidLine({ outcome: { status: 'lost', hammer: eur(65000) }, bidHistory: [{ action: 'settled-lost', amount: eur(50000) }] }, formatMoney), 'Lost · your bid €500.00, hammer €650.00');
   assert.equal(decidingBidLine({ outcome: { status: 'won' }, bidHistory: [] }, formatMoney), 'Won · no bid recorded here');
+  assert.equal(decidingBidLine({ outcome: { status: 'won' }, bidHistory: [], plannedBid: { amount: eur(130000), buyerPremiumBps: 2000 } }, formatMoney), 'Won · your plan was €1,300.00 (20%)', 'a plan is named as a plan');
   assert.equal(decidingBidLine({ outcome: { status: 'passed' }, bidHistory: [] }, formatMoney), 'Passed');
   const older = { id: 'a', outcome: { status: 'won' }, outcomeHistory: [{ recordedAt: '2026-01-01T00:00:00.000Z' }] };
   const newer = { id: 'b', outcome: { status: 'lost' }, outcomeHistory: [{ recordedAt: '2026-05-01T00:00:00.000Z' }] };

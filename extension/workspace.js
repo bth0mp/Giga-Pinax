@@ -1353,8 +1353,8 @@ async function initWorkspace() {
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
       const ledger = historyLine(lot, eventsById.get(lot.auctionEventId), navigator.language);
       if (ledger) card.append(text('p', ledger, 'history-line'));
+      // A lost coin's hammer is said once, in the line of the bid that decided it.
       if (line) card.append(...costLineParts(line, lot.id));
-      else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
       card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid'));
       const entry = entriesByLot.get(lot.id);

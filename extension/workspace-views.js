@@ -353,10 +353,13 @@ export function historyLine(lot, event, locale = 'en-US') {
 export function decidingBidLine(lot, format) {
   const status = lot?.outcome?.status;
   const settled = (lot?.bidHistory ?? []).findLast((entry) => entry.action === 'settled-won' || entry.action === 'settled-lost');
-  const rate = Number.isInteger(settled?.buyerPremiumBps) ? ` (${/** @type {number} */ (settled?.buyerPremiumBps) / 100}%)` : '';
+  // A coin never placed here may still have been planned: the plan is named as a plan, never as a bid.
+  const plan = settled ? null : lot?.plannedBid;
+  const terms = settled ?? plan;
+  const rate = Number.isInteger(terms?.buyerPremiumBps) ? ` (${/** @type {number} */ (terms?.buyerPremiumBps) / 100}%)` : '';
   const hammer = lot?.outcome?.hammer ? format(lot.outcome.hammer) : '';
-  if (status === 'won') return settled?.amount ? `Won on a ${format(settled.amount)} maximum${rate}` : 'Won · no bid recorded here';
-  if (status === 'lost') return ['Lost', [settled?.amount ? `your bid ${format(settled.amount)}` : '', hammer ? `hammer ${hammer}` : ''].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  if (status === 'won') return settled?.amount ? `Won on a ${format(settled.amount)} maximum${rate}` : plan?.amount ? `Won · your plan was ${format(plan.amount)}${rate}` : 'Won · no bid recorded here';
+  if (status === 'lost') return ['Lost', [settled?.amount ? `your bid ${format(settled.amount)}` : plan?.amount ? `your plan ${format(plan.amount)}` : '', hammer ? `hammer ${hammer}` : ''].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
   if (status === 'passed') return 'Passed';
   return '';
 }

@@ -78,11 +78,11 @@
     </section>
 
     <section id="route-watchlist" class="route" aria-labelledby="watchlist-heading" hidden>
-      <div class="section-heading"><h2 id="watchlist-heading">Coin workspace</h2><button id="new-lot" class="secondary btn-sm" type="button">Add coin</button></div>
+      <div class="section-heading"><h2 id="watchlist-heading">Coin workspace</h2><div class="form-actions heading-actions"><button id="open-comparison" class="quiet btn-sm" type="button" disabled title="Tick two to four coins in the list to compare them">Compare</button><button id="new-lot" class="secondary btn-sm" type="button">Add coin</button></div></div>
       <div id="coin-workspace" class="coin-workspace" data-mobile-view="list">
         <aside class="coin-index" aria-label="Watched coins">
           <div class="queue-controls"><label><span class="sr-only">Queue</span><select id="lot-queue"><option value="all-open">All open</option><option value="closing-soon">Closing soon</option><option value="needs-outcome">Needs outcome</option><option value="needs-research">Needs research</option><option value="planned">Planned</option><option value="active">Active</option><option value="completed">Completed</option><option value="all-coins">All coins</option></select></label><label class="coin-filter"><span class="sr-only">Filter coins</span><input id="lot-filter" type="search" autocomplete="off" placeholder="Title, reference or lot number"></label></div>
-          <div class="lot-count-row"><p id="lot-count" class="field-note"></p><button id="open-comparison" class="quiet btn-sm" type="button" disabled title="Tick two to four coins to compare them">Compare</button></div>
+          <p id="lot-count" class="field-note"></p>
           <div id="lot-list" class="record-list coin-list" role="listbox" aria-label="Watched coins"></div>
           <section class="groups"><div class="subheading"><h3>Alternatives</h3><button id="new-group" class="quiet" type="button">Add group</button></div><div id="group-list" class="record-list"></div><form id="group-form" class="compact-form" data-editor="group" hidden><input type="hidden" name="id"><label>Group name<input name="name" required data-limit="title"></label><button type="submit" data-needs-runtime>Save group</button></form></section>
         </aside>
@@ -114,7 +114,7 @@
     </section>
 
     <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
-      <div class="section-heading"><h2 id="auctions-heading">Auctions and reminders</h2><div class="form-actions"><button id="new-event" class="secondary btn-sm" type="button">Add auction</button><button id="enable-notifications" class="quiet" type="button" data-needs-runtime>Enable desktop alerts</button></div></div>
+      <div class="section-heading"><h2 id="auctions-heading">Auctions and reminders</h2><div class="form-actions"><button id="new-event" class="secondary btn-sm" type="button">Add auction</button><button id="enable-notifications" class="quiet btn-sm" type="button" data-needs-runtime>Enable desktop alerts</button></div></div>
       <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event" hidden>
         <h3>Auction</h3><input type="hidden" name="id">
         <label>Name<input name="name" required data-limit="title"></label>
@@ -142,7 +142,7 @@
     <section id="route-bids" class="route" aria-labelledby="bids-heading" hidden><div class="section-heading"><div><h2 id="bids-heading">Active bid exposure</h2><p>Binding bids are totalled within each currency and auction. Alternatives do not reduce exposure.</p></div></div><div id="exposure-list" class="exposure-grid"></div></section>
 
     <section id="route-history" class="route" aria-labelledby="history-heading" hidden>
-      <div class="section-heading"><div><h2 id="history-heading">Outcomes and history</h2><p>Final prices are personal, unverified records and never become comparable evidence.</p></div></div>
+      <div class="section-heading"><div><h2 id="history-heading">Outcomes and history</h2><p>Final prices are your own unverified records, never comparable evidence.</p></div></div>
       <div class="history-layout"><div id="history-list" class="record-list"></div><section class="panel"><div id="collection-list" class="record-list"></div></section></div>
     </section>
   </main>

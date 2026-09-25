@@ -610,7 +610,7 @@ test('the calculator offers the session median above the fields and puts it in t
   const box = calculator.container.querySelector('.bid-calculator-median');
   assert.equal(box.hidden, false);
   const line = box.children[0];
-  assert.equal(line.children[0].textContent, 'acsearch median £240.00 (2 sales) for RIC I² Nero 306 ·');
+  assert.equal(line.children[0].textContent, 'acsearch median £240.00 (2 sales) for RIC I² Nero 306');
   assert.equal(calculator.field('Currency').value, 'GBP', 'an empty calculator follows the lookup’s currency');
   calculator.field('Currency').value = 'USD'; await calculator.field('Currency').emit('input');
   await line.children[1].click();

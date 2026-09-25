@@ -630,8 +630,8 @@ export function mountBidCalculator(
     medianLine.hidden = !sessionMedians.length || mode.value === 'budget';
     medianLine.replaceChildren(...sessionMedians.map((found) => {
       const row = el('p', { className: 'bid-calculator-median-row' });
-      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} (${found.count} ${found.count === 1 ? 'sale' : 'sales'}) for ${found.reference} ·` });
-      const use = el('button', { type: 'button', className: 'quiet', textContent: 'Use as hammer' });
+      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} (${found.count} ${found.count === 1 ? 'sale' : 'sales'}) for ${found.reference}` });
+      const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
       use.addEventListener('click', () => {
         currencyControl.value = found.currency;
         amount.value = formatMinorInput(found.median.minor);
