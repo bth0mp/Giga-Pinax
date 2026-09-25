@@ -453,6 +453,83 @@ test('event save refuses an absurd daysBefore as an ordinary validation failure'
   }
 });
 
+// Q-19: an auction saved from now on gives each of its date-only reminders the collector's zone, taken from the context
+// the writer runs in (background.js gives it the browser's), so they ring on the collector's clock.
+const zurichSaleDay = (fields = {}) => ({
+  name: 'Leu 32', eventKind: 'auction-day', precision: 'date-only', localDate: '2026-10-23', timeZone: 'Europe/Zurich',
+  reminderScope: 'standalone',
+  reminders: [{ kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
+  ...fields,
+});
+
+test('event save gives a date-only auction’s reminders the collector’s zone, so they ring on their clock', async () => {
+  const storage = memoryStorage(createEmptySnapshot(NOW));
+  const writer = createCommandWriter(storage, { ...context(), timeZone: () => 'America/New_York' });
+  const saved = await writer.commitCommand(command('event.save', { expectedRevision: null, event: zurichSaleDay() }));
+  assert.equal(saved.ok, true, saved.message);
+  assert.deepEqual(saved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
+  await writer.commitCommand(command('scheduler.reconcile'));
+  // 09:00 in New York on the day before and on the sale day, where they were 09:00 in Zurich, 03:00 in New York.
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T13:00:00.000Z']);
+
+  // A timed auction's reminders are offsets from its start and carry no zone.
+  const timed = await writer.commitCommand(command('event.save', { expectedRevision: null, event: {
+    name: 'Leu Web 32', eventKind: 'lot-closes', precision: 'timed', localDate: '2026-10-16', localTime: '14:00',
+    timeZone: 'Europe/Zurich', reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 60 }],
+  } }));
+  assert.equal(timed.ok, true, timed.message);
+  assert.equal('collectorTimeZone' in timed.value.reminders[0], false);
+
+  // A time the auction's zone skips is no longer refused, since the reminder rings on the collector's clock.
+  const skipped = await writer.commitCommand(command('event.save', { expectedRevision: null, event: zurichSaleDay({
+    localDate: '2026-03-29', timeZone: 'Europe/London', reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '01:30' }],
+  }) }));
+  assert.equal(skipped.ok, true, skipped.message);
+});
+
+test('without a readable zone for the collector, an auction’s reminders ring at their time in the auction’s zone', () => {
+  for (const timeZone of [undefined, 'Mars/Olympus', () => { throw new Error('no zone'); }]) {
+    const result = applyCommand(createEmptySnapshot(NOW), command('event.save', { expectedRevision: null, event: zurichSaleDay() }),
+      { ...context(), timeZone });
+    assert.equal(result.ok, true, result.error?.message);
+    assert.equal(result.value.value.reminders.some((reminder) => 'collectorTimeZone' in reminder), false, String(timeZone));
+  }
+});
+
+// Existing reminders keep their instants unless the collector edits the auction: a reconcile, a load and an import leave an
+// auction saved before Q-19 exactly as it was, and saving it again moves its reminders to the collector's clock.
+test('an auction saved before Q-19 keeps its reminders’ instants until the collector edits it', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const eventId = uuid();
+  stored.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, ...zurichSaleDay(),
+    reminders: [{ id: uuid(), kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { id: uuid(), kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
+  });
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, { ...context(), timeZone: 'America/New_York' });
+  assert.equal((await writer.commitCommand(command('scheduler.reconcile'))).ok, true);
+  const reconciled = storage.read();
+  assert.deepEqual(reconciled.auctionEvents, stored.auctionEvents);
+  assert.deepEqual(reconciled.alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T07:00:00.000Z', '2026-10-23T07:00:00.000Z']);
+  const alerts = JSON.stringify(reconciled.alerts);
+  assert.equal((await writer.commitCommand(command('scheduler.reconcile'))).ok, true);
+  assert.equal(JSON.stringify(storage.read().alerts), alerts, 'a second reconcile changes nothing');
+
+  const document = exportBackup(reconciled, NOW).value;
+  const other = memoryStorage(createEmptySnapshot(NOW));
+  const imported = await createCommandWriter(other, { ...context(), timeZone: 'America/New_York' })
+    .commitCommand(command('backup.import', { expectedRevision: 0, mode: 'replace', document }));
+  assert.equal(imported.ok, true, imported.message);
+  assert.deepEqual(other.read().auctionEvents, stored.auctionEvents, 'an import is not an edit');
+
+  const { id, revision, dataClass, createdAt, updatedAt, ...draft } = stored.auctionEvents[0];
+  const edited = await writer.commitCommand(command('event.save', { expectedRevision: 0, event: { id, ...draft, name: 'Leu Auction 32' } }));
+  assert.equal(edited.ok, true, edited.message);
+  assert.deepEqual(edited.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
+  await writer.commitCommand(command('scheduler.reconcile'));
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T13:00:00.000Z']);
+});
+
 test('a stored event whose start instant drifted from its local fields still loads', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.auctionEvents.push({

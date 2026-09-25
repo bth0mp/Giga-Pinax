@@ -515,6 +515,8 @@
  * @typedef {object} CommandContext
  * @property {string | (() => string)} now
  * @property {() => string} newId
+ * @property {string | (() => string | undefined)} [timeZone] the collector's zone, which a date-only auction's reminders
+ *   take when it is saved (Q-19, store-schedule.js); without one they ring at their time in the auction's zone
  */
 
 /**

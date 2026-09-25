@@ -15,7 +15,7 @@ import {
   preferenceFields,
 } from './store-builders.js';
 import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
-import { reconcileIntoSnapshot } from './store-schedule.js';
+import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
 /**
  * @typedef {import('./core/types.js').Snapshot} Snapshot
  * @typedef {import('./core/types.js').Command} Command
@@ -454,6 +454,7 @@ function mutation(snapshot, command, context) {
         value = eventFromDraft(eventDraft, found.value.record, context);
         next.auctionEvents[found.value.index] = value;
       }
+      ringOnCollectorClock(value, context);
       const localTimes = validateEventLocalTimes(value);
       if (!localTimes.ok) return fail('validation', localTimes.error.message, localTimes.error.path);
       const retainedReminderIds = new Set(value.reminders.map(({ id }) => id));

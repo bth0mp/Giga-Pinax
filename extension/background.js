@@ -5,9 +5,13 @@ import { recordDiagnostic } from './core/diagnostics.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, isLookupWindowUrl, popupUrlFor, selectionQuery, showInWindow } from './selection.js';
 
 const api = extensionApi();
+// The collector's zone as the browser reports it, or none where it cannot say.
+const collectorTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } };
 const writer = createCommandWriter(storageLocalAdapter(), {
   now: () => new Date().toISOString(),
   newId: () => crypto.randomUUID(),
+  // A date-only auction saved from now on rings on the collector's clock (Q-19): its reminders take this zone.
+  timeZone: collectorTimeZone,
 });
 
 const MENU_LOOKUP = 'giga-pinax-lookup';
@@ -103,7 +107,7 @@ async function refreshBadge() {
 }
 
 // The collector's zone as the browser reports it when the reminder goes off, so a notification follows them when they travel.
-const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
+const viewerTimeZone = () => collectorTimeZone() ?? 'UTC';
 
 async function notificationsAllowed(state) {
   if (!state.preferences?.desktopAlertsEnabled || !api.notifications) return false;

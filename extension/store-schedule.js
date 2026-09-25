@@ -86,4 +86,36 @@ function reconcileIntoSnapshot(next, context) {
   return plan;
 }
 
-export { reconcileIntoSnapshot };
+/**
+ * The collector's zone, from the context the writer runs in (background.js gives the browser's), or null where it gives
+ * none the browser can read.
+ * @param {CommandContext} context
+ * @returns {string | null}
+ */
+function collectorZone(context) {
+  try {
+    const zone = typeof context.timeZone === 'function' ? context.timeZone() : context.timeZone;
+    if (typeof zone !== 'string' || !zone) return null;
+    new Intl.DateTimeFormat('en', { timeZone: zone }).format(0);
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Q-19: an auction the collector saves has its date-only reminders ring on their clock from then on, so each takes the
+ * collector's zone (reminders.js). Only a save does this: a reconcile, a load or an import leaves the reminders an
+ * auction already holds, and their instants, as they are. The event is changed in place.
+ * @param {import('./core/types.js').AuctionEvent} event
+ * @param {CommandContext} context
+ * @returns {void}
+ */
+function ringOnCollectorClock(event, context) {
+  if (event.precision !== 'date-only') return;
+  const zone = collectorZone(context);
+  if (zone === null) return;
+  for (const reminder of event.reminders) if (reminder.kind === 'wall-time') reminder.collectorTimeZone = zone;
+}
+
+export { reconcileIntoSnapshot, ringOnCollectorClock };
