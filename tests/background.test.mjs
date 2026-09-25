@@ -287,10 +287,24 @@ test('overdue reminders delivered together are worded for the latest of them', a
 // ring at 09:00 on the collector's clock.
 test('a date-only auction saved through the worker rings on the browser’s clock', async () => {
   const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const clock = (timeZone, instant) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .format(new Date(instant)).replace(',', '');
+  // The sale is held where the browser's 09:00 on the sale day is the afternoon (review Minor 2): R3's rule would ring
+  // then, V-04's before 09:00 there, so the test tells them apart on a machine in any zone.
+  const yourMornings = [];
+  for (let at = Date.parse('2099-10-21T12:00:00Z'); at < Date.parse('2099-10-25T12:00:00Z'); at += 15 * 60000) {
+    if (clock(viewer, at).endsWith(' 09:00')) yourMornings.push(at);
+  }
+  const saleZone = Array.from({ length: 27 }, (_, index) => index - 14).map((hours) => `Etc/GMT${hours < 0 ? hours : `+${hours}`}`)
+    .find((zone) => yourMornings.some((morning) => {
+      const at = clock(zone, morning);
+      return at.startsWith('2099-10-23 ') && at.slice(11) >= '12:00' && at.slice(11) < '20:00';
+    }));
+  assert.ok(saleZone, viewer);
   const event = await send({
     type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
     event: {
-      name: 'Zurich sale day', eventKind: 'auction-day', precision: 'date-only', localDate: '2099-10-23', timeZone: 'Europe/Zurich',
+      name: 'Afternoon sale day', eventKind: 'auction-day', precision: 'date-only', localDate: '2099-10-23', timeZone: saleZone,
       reminderScope: 'standalone', reminders: [{ kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
     },
   });
@@ -298,13 +312,11 @@ test('a date-only auction saved through the worker rings on the browser’s cloc
   assert.deepEqual(event.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), [viewer, viewer]);
   const state = await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
   const alertOf = (index) => state.value.alerts.find(({ reminderId }) => reminderId === event.value.reminders[index].id);
-  const clock = (timeZone, instant) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-    .format(new Date(instant)).replace(',', '');
   // The day before rings at 09:00 on the browser's clock, whatever zone it is in: a 24-hour day holds one 09:00.
   assert.match(clock(viewer, alertOf(0).triggerAt), / 09:00$/);
-  // The sale-day reminder rings on the sale day in Zurich, no later than 09:00 there (V-04).
-  const zurich = clock('Europe/Zurich', alertOf(1).triggerAt);
-  assert.ok(zurich.startsWith('2099-10-23 ') && zurich.slice(11) <= '09:00', zurich);
+  // The sale-day reminder rings on the sale day where it is held, no later than 09:00 there (V-04).
+  const there = clock(saleZone, alertOf(1).triggerAt);
+  assert.ok(there.startsWith('2099-10-23 ') && there.slice(11) <= '09:00', `${viewer}, sale in ${saleZone}: ${there}`);
 });
 
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {
