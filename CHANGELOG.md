@@ -8,6 +8,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- In the 600 px toolbar popup the median, its two stat lines and the middle-50 % range now show without a scroll (the figure starts at about 380 px, where it started at 525). **Save** is a small button beside **Type ↗** in the card's heading, its explanation a tooltip; the obverse, reverse and specimens fold into one **Obverse · reverse** line; the citing and denomination switches are pills beside the sales period (**Citing RIC 306**, **Naming “As”**), with the whole rule as their tooltip.
+- **Recent** lookups stand under the Reference box, one line of chips with **More** for the rest, where they sat at the bottom of the answer. They step aside while a new reference is typed and come back with its answer.
+- The popup's header opens the **Workspace** by name. **Panel** is now an icon beside the theme switch, named "Keep the popup open beside the page (side panel)"; in the popup and the side panel the header is one row with the brand's icon, its name read out rather than shown. Before a first lookup, the popup says that a saved coin is tracked in the workspace.
+
 - The popup writes a reference one way, the way it is typed: the card heading and the **Recent** chips read `RIC I² Nero 306` (and `RIC II.3² Hadrian 12`), where they read `RIC I (second edition) Nero 306`; the edition is named once in the card's source line (`Local OCRE catalogue · RIC I, second edition`). A coin saved from the card keeps that short reference and is named by the card's summary line (`Nero · As · Rome · AD 62–68`) instead of the reference again.
 
 ## [0.36.0] - 2026-09-25

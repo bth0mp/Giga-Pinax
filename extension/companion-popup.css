@@ -33,8 +33,8 @@
 .companion-exposure-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .companion-exposure-list li {display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px;}
 .companion-exposure-list strong {font-variant-numeric:tabular-nums; text-align:right;}
-/* Save to watchlist and the capture buttons are secondary buttons (design-tokens.css); here they only take their place. */
-.companion-save-watchlist {width:100%; margin-top:10px;}
+/* Save and the capture buttons are secondary buttons (design-tokens.css); Save sits in the card's heading row at the small height. */
+.companion-save-watchlist {min-height:var(--control-h-sm); padding:0 12px;}
 .companion-current-lot {margin:0; border-bottom:1px solid var(--line);}
 .companion-current-lot summary {padding:10px 16px; color:var(--accent); font-size:var(--text-body); font-weight:650;}
 .companion-current-lot-body {padding:0 16px 13px;}

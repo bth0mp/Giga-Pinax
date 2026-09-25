@@ -932,13 +932,17 @@ test('a save is said in the hint under its button for a while, then the hint com
   assert.equal(markup.getElementById('companion-status'), null);
   assert.equal(markup.querySelectorAll('.status-anchor').length, 0);
   const hint = markup.getElementById('companion-save-hint');
-  assert.match(hint.textContent, /^Saves the reference/);
+  // Loop 3 (G-03): the line under Save is empty and hidden until something is said in it; what Save does is its tooltip.
+  assert.equal(hint.textContent, '');
+  assert.equal(hint.hidden, true);
+  assert.match(markup.getElementById('companion-save-watchlist').getAttribute('title'), /^Saves the reference/);
   const realSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
   try {
     const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-3' } } : WORKING_SNAPSHOT) });
     page.element('companion-save-hint').textContent = hint.textContent;
+    page.element('companion-save-hint').hidden = true;
     page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
     await page.click('companion-save-watchlist');
     assert.equal(page.element('companion-save-hint').textContent, 'Watchlist details are ready to review.');
@@ -947,6 +951,7 @@ test('a save is said in the hint under its button for a while, then the hint com
     assert.ok(restore, 'the hint is restored after 8 s');
     restore.callback();
     assert.equal(page.element('companion-save-hint').textContent, hint.textContent);
+    assert.equal(page.element('companion-save-hint').hidden, true);
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
@@ -985,4 +990,21 @@ test('the workspace opens on the queue its address names, and ignores one it doe
   const unknown = await mountWorkspace({ hash: '#watchlist?queue=nonsense' });
   assert.equal(unknown.document.getElementById('lot-queue').value, plain.document.getElementById('lot-queue').value);
   assert.notEqual(unknown.document.getElementById('lot-queue').value, 'nonsense');
+});
+
+// Loop 3 (G-13): the workspace is named in the header, one click from every tab.
+test('the header’s Workspace opens the workspace', async () => {
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+    await page.click('open-workspace');
+    assert.deepEqual(opened, ['moz-extension://test/workspace.html#watchlist']);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
 });

@@ -44,7 +44,9 @@ class TestElement {
     this.style = {};
     this.children = [];
     this.listeners = new Map();
-    this.classList = { toggle() {} };
+    const classes = new Set();
+    this.classList = { toggle(name, force = !classes.has(name)) { if (force) classes.add(name); else classes.delete(name); return force; },
+      add(name) { classes.add(name); }, remove(name) { classes.delete(name); }, contains: (name) => classes.has(name) };
   }
   addEventListener(type, listener) {
     const listeners = this.listeners.get(type) ?? [];
@@ -836,7 +838,9 @@ test('the citation filter is named, checked by default and can be switched off',
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
+  // Loop 3 (G-03): the pill is short; its tooltip is the whole sentence.
+  assert.equal(popup.element('citing-row').title, 'Only results citing Price 23');
   assert.equal(popup.element('citing-filter').checked, true);
   assert.match(popup.element('median-amount').textContent, /100/);
   popup.element('citing-filter').checked = false;
@@ -959,7 +963,7 @@ test('the denomination toggle is offered by the verified card and filters on its
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “tetradrachm”');
   assert.equal(popup.element('denomination-filter').checked, false);
   assert.match(popup.element('median-amount').textContent, /200/);
   popup.element('denomination-filter').checked = true;
@@ -984,7 +988,7 @@ test('a card found under a mint’s other English name is still this reference�
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “solidus”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “solidus”');
   await popup.element('copy-summary').emit('click');
   assert.match(popup.clipboard[0], /numismatics\.org\/ocre\/id\/ric\.7\.tri\.12/);
 });
@@ -1022,7 +1026,7 @@ test('prices that arrive before the card are drawn again once it does', async ()
   await submission;
   await settle();
   assert.equal(popup.element('denomination-row').hidden, false);
-  assert.equal(popup.element('denomination-label').textContent, 'Only results naming “tetradrachm”');
+  assert.equal(popup.element('denomination-label').textContent, 'Naming “tetradrachm”');
   await popup.element('copy-summary').emit('click');
   assert.match(popup.clipboard[0], /numismatics\.org\/pella\/id\/price\.23/);
 });
@@ -2301,11 +2305,11 @@ test('the filter row is drawn while acsearch answers, so its arrival moves nothi
   assert.equal(popup.element('prices-panel').dataset.state, 'loading');
   assert.equal(popup.element('price-filters').hidden, false);
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
   answer.resolve(mixedSales);
   await settle();
   assert.equal(popup.element('price-filters').hidden, false);
-  assert.equal(popup.element('citing-label').textContent, 'Only results citing Price 23');
+  assert.equal(popup.element('citing-label').textContent, 'Citing Price 23');
 });
 
 test('a search that is not the reference\'s own draws no filter row while it loads', async () => {
@@ -2386,4 +2390,76 @@ test('the coverage line names future-dated lots apart from uncounted prices', as
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.equal(popup.element('sale-period').textContent, '3 matches on acsearch · 1 future-dated lot not counted');
+});
+
+// Loop 3 (G-03): in the 600 px popup the median was on the bottom edge. What stood above it takes less room without losing anything: Save is a small
+// button in the card's heading row beside Type, its hint a tooltip; the sides and the specimens fold into one line; the citing and denomination
+// switches are pills in the sales period's row, and the section's name is said to a screen reader only.
+test('the card and the filter row give the median room: Save in the heading, one fold, the filters among the period pills', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const save = markup.getElementById('companion-save-watchlist');
+  assert.ok(save.closest('.type-heading'), 'Save stands in the heading row');
+  assert.match(save.className, /secondary-button/);
+  assert.equal(save.textContent.trim(), 'Save');
+  assert.match(save.getAttribute('title'), /^Saves the reference/);
+  assert.equal(markup.getElementById('specimens').closest('details')?.id, 'sides-details');
+  assert.equal(markup.getElementById('sides-summary').textContent, 'Obverse · reverse');
+  for (const id of ['citing-row', 'denomination-row']) assert.ok(markup.getElementById(id).closest('.research-heading'), id);
+  assert.match(markup.getElementById('research-prices-title').className, /sr-only/);
+  const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
+  assert.match(css, /\.result \{margin:0 16px; padding:12px 0;/);
+  assert.match(css, /\.sides-details > summary \{min-height:28px;\}/);
+});
+
+test('specimens found fold under the sides, and the fold says so', async () => {
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, permissionContains: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    stored: new Map([['giga-pinax-specimen-photos-v1', 'on']]),
+    specimenFetch: async () => [{ page: 'https://example.org/1', collection: 'Museum', obverse: 'https://example.org/o.jpg', reverse: 'https://example.org/r.jpg' }],
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  for (let turn = 0; turn < 10; turn += 1) await settle();
+  assert.equal(popup.element('specimens').hidden, false);
+  assert.equal(popup.element('sides-summary').textContent, 'Obverse · reverse · specimens');
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('sides-summary').textContent, 'Obverse · reverse');
+});
+
+// Loop 3 (G-21): Recent was the last thing before the footer, under a 1,215 px answer. It stands under the Reference row, steps aside while a new
+// reference is typed, and comes back with the answer.
+test('Recent stands under the Reference row, steps aside while typing, and comes back with the answer', async () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.ok(markup.getElementById('recent').closest('.quick-row'), 'Recent is in the Reference row');
+  assert.equal(markup.getElementById('recent-more').hidden, true);
+  const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', source: 'local', obverse: {}, reverse: {} };
+  const stored = new Map([[preferences.STORAGE_KEY, JSON.stringify({ recent: [{ corpus: 'pella', id: 'price.24', label: 'Price 24' }] })]]);
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), stored,
+    localProvider: { serves: () => true, lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) } });
+  assert.equal(popup.element('recent').hidden, false);
+  popup.element('quick-reference').value = 'Price';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('recent').hidden, true, 'hidden while typing');
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('recent').hidden, false, 'back with the answer');
+  popup.element('quick-reference').value = '';
+  await popup.element('quick-reference').emit('input');
+  assert.equal(popup.element('recent').hidden, false, 'an emptied box shows it');
+});
+
+// Loop 3 (G-13): the Research tab named nothing of the workspace, and "Panel" said nothing of what it gives. The header opens the workspace by name;
+// the side panel is an icon whose name says what it is for; first run says that a saved coin is tracked there.
+test('the header opens the workspace by name and the side panel is an icon that says what it keeps', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const actions = [...markup.querySelector('.header-actions').children];
+  assert.equal(actions[0].id, 'open-workspace');
+  assert.equal(actions[0].textContent.trim(), 'Workspace');
+  const panel = markup.getElementById('open-panel');
+  assert.match(panel.className, /icon-button/);
+  assert.equal(panel.getAttribute('aria-label'), 'Keep the popup open beside the page (side panel)');
+  assert.equal(panel.textContent.trim(), '');
+  assert.equal(panel.parentElement.className, 'popup-header');
+  assert.match(markup.getElementById('first-run').textContent, /Save a coin to track its auction, bid and outcome in the workspace\./);
 });

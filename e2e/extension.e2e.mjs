@@ -123,7 +123,7 @@ test('step 18: the citing filter is a normal checkbox with its label beside it, 
         return { x, y, width, height };
       }));
       const text = await page.locator('#citing-label').textContent();
-      assert.match(text, /^Only results citing /, path);
+      assert.match(text, /^Citing /, path);
       // A checkbox the size of a checkbox, not a full-width box.
       assert.ok(box.width <= 24 && box.height <= 24, `${path}: checkbox is ${box.width}x${box.height}`);
       // The label beside it on the same line, and whole inside the page.
@@ -209,6 +209,11 @@ test('prices arriving after the card leave the card where it is', async () => {
         await page.waitForTimeout(900);
         assert.deepEqual(await frame(), before, label);
         assert.ok(before.result >= 0 && before.result < height / 2, `${label}: the card starts at ${before.result}`);
+        // Loop 3 (G-03): in the 600 px popup the figure, its two stat lines and the range all show on first paint.
+        if (height === 600) {
+          assert.ok(before.median <= 400, `${label}: the median starts at ${before.median}`);
+          assert.ok(before.median + 90 < height, `${label}: the stat lines end below the fold`);
+        }
         await page.close();
       }
     } finally {
@@ -301,8 +306,8 @@ test('Ctrl+K and the skip link take the keyboard to the Reference box', async ()
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'quick-reference');
     assert.equal(await page.locator('#companion-panel-research').isVisible(), true);
     await page.locator('#companion-tab-watchlist').click();
-    // Nothing comes before the skip link: one stop back from the header's first button lands on it.
-    await page.locator('#open-panel').focus();
+    // Nothing comes before the skip link: one stop back from the header's first button (Workspace) lands on it.
+    await page.locator('#open-workspace').focus();
     await page.keyboard.press('Shift+Tab');
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'skip-to-research');
     assert.equal(await page.locator('#skip-to-research').isVisible(), true);

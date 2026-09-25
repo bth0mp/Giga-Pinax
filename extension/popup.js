@@ -456,6 +456,7 @@ function clearSpecimens() {
   specimenRequest = null;
   $('specimens').hidden = true;
   $('specimen-list').replaceChildren();
+  $('sides-summary').textContent = 'Obverse · reverse';
 }
 
 async function showSpecimens(card) {
@@ -469,6 +470,8 @@ async function showSpecimens(card) {
   if (!shown() || !specimens.length) return;
   $('specimen-list').replaceChildren(...specimens.slice(0, 3).map(specimenItem));
   $('specimens').hidden = false;
+  // The photos fold with the legends, and the fold's line says they are there.
+  $('sides-summary').textContent = 'Obverse · reverse · specimens';
 }
 
 // The rows of the list of types on show, with the title each is filtered by and the volume group it sits in (null in a list that is not grouped).
@@ -607,6 +610,8 @@ async function openLotReference(found, rulers, button, note = '') {
 function showLot(text) {
   const { references, rulers } = findReferences(text);
   answered = true;
+  typingReference = false;
+  showRecent();
   renderFirstRun();
   clearOutput();
   clearLot();
@@ -650,12 +655,29 @@ function renderRecent() {
     item.append(button);
     return item;
   }));
-  $('recent').hidden = preferences.recent.length === 0;
+  showRecent();
   renderFirstRun();
   const chips = [...$('recent-list').querySelectorAll('button')];
   const target = chips.find((chip) => chip.dataset.key === focusedKey) || chips[0];
   if (refocus && target) target.focus();
 }
+
+// Recent stands under the Reference row, one line of chips with the rest behind More. It steps aside while a new reference is being typed, and comes
+// back with the lookup's answer or an emptied box.
+let typingReference = false;
+function showRecent() {
+  $('recent').hidden = preferences.recent.length === 0 || typingReference;
+  const list = $('recent-list');
+  const expanded = $('recent').classList.contains('expanded');
+  // More is offered only where the line hides a chip.
+  $('recent-more').hidden = $('recent').hidden || (!expanded && !(list.scrollHeight > list.clientHeight + 1));
+}
+$('recent-more').addEventListener('click', () => {
+  const expanded = !$('recent').classList.contains('expanded');
+  $('recent').classList.toggle('expanded', expanded);
+  $('recent-more').textContent = expanded ? 'Less' : 'More';
+  $('recent-more').setAttribute('aria-expanded', String(expanded));
+});
 
 // The examples are for a popup that has looked nothing up yet: they go with the first answer of any kind (a card, a list of types, an error) or a
 // Recent row, and while the box holds text.
@@ -760,11 +782,14 @@ function renderPriceFilters() {
   // one its card carries as soon as the card is verified, as the answer will.
   const pendingDenomination = pendingPrices ? filterableDenomination(priceCard(pendingPrices.context).denomination) : '';
   const denomination = shownPrices?.denomination || shownCoinArchivesPrices?.denomination || shownUpcoming?.denomination || pendingDenomination || '';
+  // Each toggle is a pill in the row with the sales period: its name short on the pill, the whole sentence its tooltip.
   $('citing-row').hidden = !citing;
-  $('citing-label').textContent = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
+  $('citing-label').textContent = citing ? `Citing ${referenceName(shown?.context?.reference ?? {})}` : '';
+  $('citing-row').title = citing ? `Only results citing ${referenceName(shown?.context?.reference ?? {})}` : '';
   $('citing-filter').checked = onlyCiting;
   $('denomination-row').hidden = !denomination;
-  $('denomination-label').textContent = denomination ? `Only results naming “${denomination}”` : '';
+  $('denomination-label').textContent = denomination ? `Naming “${denomination}”` : '';
+  $('denomination-row').title = denomination ? `Only results naming “${denomination}”` : '';
   $('denomination-filter').checked = onlyDenomination && Boolean(denomination);
   $('price-filters').hidden = !citing && !denomination;
 }
@@ -1074,6 +1099,8 @@ function setPricesAside() {
 
 function beginResearch(reference, perform, note = '', identity = null) {
   clearOutput();
+  typingReference = false;
+  showRecent();
   const hasPrices = reference && namesOneType(reference) && initialisePriceResearch(reference, identity);
   run(perform, note, reference);
   if (hasPrices) fetchAutomaticPrices();
@@ -1276,6 +1303,8 @@ $('quick-reference').addEventListener('input', () => {
   clearLot();
   clearRicNote();
   renderFirstRun();
+  typingReference = Boolean($('quick-reference').value.trim());
+  showRecent();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
   $('quick-reference').removeAttribute('aria-invalid');

@@ -15,13 +15,20 @@ p,h1,h2 {margin:0;}
 .brand-icon {border-radius:6px; flex-shrink:0; width:28px; height:28px;}
 h1 {font-family:var(--font-serif); font-size:17px; line-height:1.2; font-weight:600; letter-spacing:0; color:var(--accent);}
 .popup-header p {font-size:11px; margin-top:2px; color:var(--muted);}
-.header-actions {margin-left:auto; display:flex; align-items:center; gap:10px;}
+/* Workspace, Sources, Settings, the side panel and the theme take the header's width in the popup and the side panel: the brand is its icon there,
+   its name said to a screen reader, so the header stays one 54 px row. A window wide enough shows the name beside the icon. */
+@media (max-width:439px) {
+  .popup-header .brand-name {position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap;}
+}
+.header-actions {margin-left:auto; display:flex; align-items:center; gap:8px;}
 .header-action,.header-actions summary {border:0; padding:5px 0; background:transparent; color:var(--accent); font-size:11px; font-weight:650; white-space:nowrap; cursor:pointer;}
 /* Sources opens a menu, so it reads as the text button beside it with the chevron every fold carries (drawn by design-tokens.css), not as a bare disclosure marker. */
 .header-actions summary {list-style:none;}
 .header-actions summary::-webkit-details-marker {display:none;}
 /* The light or dark switch sits at the header's end, the size of the brand icon; Settings → Appearance shows the same choice. */
 .popup-header .header-icon {margin-left:0; width:28px; height:28px;}
+/* The side panel is an icon beside the theme switch: its name is the tooltip and the button's own label. */
+.popup-header #open-panel {margin-left:2px;}
 .popup-header .header-icon svg {width:15px; height:15px;}
 /* The menu hangs from the header's right edge, not from Sources, so at 320 px it stays whole on screen with the theme switch beside Settings. */
 .popup-header {position:relative;}
@@ -110,28 +117,37 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .candidate-list .text-button {display:block; width:100%; text-align:left; padding:8px 0; border-top:1px solid var(--line); overflow-wrap:anywhere;}
 /* The lot row whose type is on show: ink with an accent bar, so it reads as chosen without colour alone. */
 .candidate-list [aria-current="true"] {color:var(--ink); box-shadow:inset 3px 0 0 var(--accent); padding-left:10px;}
-.recent {padding:8px 16px 12px; border-bottom:1px solid var(--line);}
-.recent .field-hint {margin-top:0;}
+/* Recent sits under the Reference row, as the examples do before a first lookup: its name and one line of chips, the rest behind More. It goes
+   while a new reference is being typed and comes back with the answer. */
+.recent {display:flex; align-items:flex-start; gap:8px; margin:2px 16px 4px;}
+.recent-label {flex-shrink:0; margin:5px 0 0;}
+.recent .recent-list {flex:1 1 auto; min-width:0; margin:0;}
+.recent:not(.expanded) .recent-list {max-height:26px; overflow:hidden;}
+/* A chip the keyboard reaches is never one the fold hides. */
+.recent:focus-within .recent-list {max-height:none;}
+.recent-more {flex-shrink:0; padding:5px 0;}
 .recent-list {list-style:none; margin:6px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
 .recent-list li {min-width:0; max-width:100%;}
 /* The chips are buttons, so their edge carries the same weight as the typed field's: --line reads as 1.3:1 against the page, --muted as 4.7:1 light and 7.7:1 dark. */
 .recent-list button {max-width:100%; border:1px solid var(--muted); border-radius:var(--radius-pill); background:var(--soft); color:var(--ink); font-size:var(--text-meta); padding:5px 12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .recent-list button:hover {border-color:var(--accent); color:var(--accent);}
-.result {margin:0 16px; padding:16px 0 18px; background:transparent; border-bottom:1px solid var(--line);}
+.result {margin:0 16px; padding:12px 0; background:transparent; border-bottom:1px solid var(--line);}
 .type-heading {display:flex; align-items:flex-start; gap:10px;}
 .catalogue-code {font-family:var(--font-serif); font-size:var(--text-h3); line-height:1.3; font-weight:600; letter-spacing:0; color:var(--accent); overflow-wrap:anywhere;}
 /* The coin's identity is one strip: its code with the catalogue that answered beside it, then the ruler, denomination, mint, metal and dates. */
 .type-heading .catalogue-code {display:inline; margin-right:6px;}
 .type-heading .source-badge {margin:0; vertical-align:1px;}
 .type-heading p {font-size:11px; line-height:1.3; color:var(--muted); margin-top:4px;}
-.type-link {margin-left:auto; text-decoration:none; font-size:12px; white-space:nowrap; padding:4px 0 8px 8px;}
+/* The card's actions stand at the heading's right: the type's page, then Save (a 32 px secondary), so the figure below is not pushed down by them. */
+.type-actions {margin-left:auto; display:flex; align-items:center; gap:10px; flex-shrink:0;}
+.type-link {text-decoration:none; font-size:12px; white-space:nowrap; padding:4px 0;}
+.save-hint {margin-top:6px;}
 .type-link:hover {text-decoration:underline;}
 .sides {margin:0 0 12px; display:grid; gap:8px;}
 .sides div {display:grid; grid-template-columns:62px 1fr; gap:8px; font-size:12px; line-height:1.45;}
 .sides dt {color:var(--muted); font-weight:600;}
 .sides dd {margin:0; display:grid; gap:2px; min-width:0;}
 /* Up to three specimens side by side, each an obverse and a reverse over the collection that holds it. */
-.specimens {margin-top:12px;}
 .specimens-title {margin:0 0 8px; font-size:12px; font-weight:600;}
 .specimen-list {list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;}
 .specimen-list li {display:grid; gap:4px; min-width:0;}
@@ -151,11 +167,11 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .prices-note {font-size:12px; line-height:1.5; color:var(--muted);}
 .prices-note a {white-space:nowrap;}
 /* A provider's heading: its name, its results link at the right like Type, and the one gold rule under it. */
-.provider-heading {display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:14px; padding-bottom:6px; border-bottom:1px solid var(--gold-line);}
+.provider-heading {display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:12px; padding-bottom:6px; border-bottom:1px solid var(--gold-line);}
 .provider-link {font-size:12px; text-decoration:none; white-space:nowrap;}
 .provider-link:hover {text-decoration:underline;}
 /* The median sits right under the heading; without prices, the note takes its place. */
-.median-block,.prices-note {margin-top:10px;}
+.median-block,.prices-note {margin-top:8px;}
 /* One stat block: the figure, then one line of sales, years and the last sale, and one line of what the filters left out and how many matched. */
 /* The two stat lines wrap rather than lose a count; the block holds room for one wrap under 400 px (below), so the answer moves nothing. The trend, a
    sentence of its own that arrives with the answer, stands under the range block with the year strip and the grade medians. */
@@ -175,13 +191,14 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
    providers' panels, since one state governs both and either panel may be the only one fetched. */
 .sale-filtered {font-size:11px; color:var(--muted); margin-top:4px;}
 .stat-meta .sale-filtered {margin-top:0;}
-.price-filters {margin-bottom:4px;}
-/* A checkbox row reads as a sentence, so it keeps 600 rather than the 650 of a field's name. */
-.denomination-row {display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px; font-weight:600;}
-.denomination-row + .denomination-row {margin-top:6px;}
-/* The field rule above sizes every input at 36px and full width; a checkbox in this row keeps its own size or it fills the row and pushes its label
-   off the edge. */
-.denomination-row input {margin:0; flex-shrink:0; width:auto; height:auto; padding:0;}
+.price-filters {display:contents;}
+/* Each filter is a pill in the sales period's row: a real checkbox and its short name ("Citing RIC 306"), the whole sentence its tooltip. On, its
+   edge and name take the accent; the period's chosen pill is the filled one, so the two kinds never read alike. */
+.filter-pill {display:inline-flex; align-items:center; gap:6px; margin:0; border:1px solid var(--muted); border-radius:var(--radius-pill); background:var(--soft); color:var(--ink); font-size:var(--text-meta); font-weight:400; padding:5px 10px 5px 8px; white-space:nowrap;}
+.filter-pill:hover {border-color:var(--accent);}
+.filter-pill:has(:checked) {border-color:var(--accent); color:var(--accent); font-weight:650;}
+/* The field rule sizes every input at 36px and full width; a checkbox in a pill keeps its own size or it fills the pill and pushes its name out. */
+.filter-pill input {margin:0; flex-shrink:0; width:auto; height:auto; min-height:0; padding:0; accent-color:var(--accent);}
 /* A median per dealer grade, under the range it splits up. */
 .grade-medians {list-style:none; padding:0; margin:6px 0 0;}
 .grade-medians li {font-size:11px; color:var(--muted); margin-top:2px; font-variant-numeric:tabular-nums;}
@@ -223,6 +240,10 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .sale-details,.sides-details {margin-top:12px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
 .sale-details summary,.sides-details summary {list-style:none; cursor:pointer; display:flex; justify-content:space-between; align-items:center; min-height:40px; font-size:12px; font-weight:600;}
 .sale-details summary::-webkit-details-marker,.sides-details summary::-webkit-details-marker {display:none;}
+/* The card's sides and its specimens fold into one 28 px line, closed until asked for. */
+.sides-details {margin-top:8px;}
+.sides-details > summary {min-height:28px;}
+.sides-details .specimens {margin:0 0 12px;}
 .sale-count {display:flex; align-items:center; gap:12px; color:var(--muted);}
 /* The fold marks of the rows are the same drawn chevron as every other fold (design-tokens.css), not the ⌄ glyph, which turned over sits high. */
 .chevron {display:inline-block; width:7px; height:7px; margin:0 4px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); font-size:0; transform:translateY(-2px) rotate(45deg);}
@@ -251,9 +272,10 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .copy-button {padding:8px 0 0;}
 /* The panel's single basis line closes it. */
 .copy-button + .price-basis {margin-top:8px;}
-.research-prices {padding:16px;}
-/* The section's name and the sales period share a row while both fit, and the pills wrap under it when they do not. */
-.research-heading {display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px;}
+.research-prices {padding:12px 16px 16px;}
+/* One row of pills over both providers: the sales period, then the filters; a filter that finds no room wraps under them. The section's name is
+   said to a screen reader only: the row and the provider headings under it show what the section is. */
+.research-heading {display:flex; flex-wrap:wrap; align-items:center; gap:6px;}
 .research-prices h2 {font-size:var(--text-h4); margin:0;}
 .research-heading .period {margin:0;}
 .price-source-title,.coinarchives-prices h3 {font-size:13px; margin:0;}
@@ -281,8 +303,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
   .median-block {min-height:115px;}
 }
 @media (max-width:359px) {
-  .popup-header,.quick-search,.reference-body,.recent,.popup-footer,.storage-note {padding-left:12px; padding-right:12px;}
-  .quick-row > label,.quick-row > .field-hint,.quick-row > .lookup-prompt,.first-run {margin-left:12px; margin-right:12px;}
+  .popup-header,.quick-search,.reference-body,.popup-footer,.storage-note {padding-left:12px; padding-right:12px;}
+  .quick-row > label,.quick-row > .field-hint,.quick-row > .lookup-prompt,.first-run,.recent {margin-left:12px; margin-right:12px;}
   .result {margin-left:12px; margin-right:12px; padding:12px;}
   .primary-button {padding:0 10px;}
   .range-visual {width:70px;}

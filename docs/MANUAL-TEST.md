@@ -169,9 +169,10 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 18. **The filter switches.** Look up `Price 23` and select **Get prices**, then look up a reference whose results name
     a denomination.
-    *Expected:* **Only results citing …** and **Only results naming …** each draw as a normal-sized checkbox with its
-    label beside it on the same line, the label whole and readable; never a full-width box with the label pushed off
-    the edge of the popup. Check this in the side panel as well as the toolbar popup.
+    *Expected:* **Citing …** and **Naming …** each draw as a pill in the row of sales-period pills, holding a
+    normal-sized checkbox with its label beside it on the same line, the label whole and readable; never a full-width
+    box with the label pushed off the edge of the popup. Hovering either shows the whole rule (**Only results citing …**).
+    Check this in the side panel as well as the toolbar popup.
 
 19. **A bare RIC number shows no median.** Look up `RIC 237`.
     *Expected:* a list of types to choose from, and no auction research section, median or **Get prices** until a type
