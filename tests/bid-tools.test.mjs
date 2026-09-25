@@ -568,3 +568,12 @@ test('the calculator answers with a labelled figure and one line, and in budget 
   const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
   assert.equal(markup.getElementById('companion-bid-calculator').className, '', 'no card inside the tab');
 });
+
+// G-24 (N15 cleanup): the calculator is keyed by a real key, not by a fingerprint passed as a lot id.
+test('the calculator reloads only under another key, and a caller without one keys by lot id', () => {
+  const values = { key: 'lot-a|EUR|15000|2000', lotId: 'lot-a', currency: 'EUR', hammerMinor: 15000, buyerPremiumBps: 2000 };
+  assert.equal(calculatorInputsForLot(values, { loadedKey: 'lot-a|EUR|15000|2000' }), null);
+  assert.ok(calculatorInputsForLot(values, { loadedKey: 'lot-a|EUR|14000|2000' }), 'the same coin with new terms loads again');
+  assert.equal(calculatorInputsForLot({ lotId: 'lot-a', currency: 'EUR' }, { loadedKey: 'lot-a' }), null);
+  assert.ok(calculatorInputsForLot({ currency: 'GBP' }, { loadedKey: 'lot-a' }), 'no key: always loads');
+});

@@ -347,8 +347,13 @@ export function createPreferenceRevisionGate(apply, isActive = () => true) {
   };
 }
 
-export function calculatorInputsForLot(values = {}, { loadedLotId, mode = 'total', locale = 'en-US' } = {}) {
-  if (values.lotId !== undefined && values.lotId === loadedLotId) return null;
+// A caller's values are loaded again only under another `key` (G-24): what the collector typed in the calculator stays
+// while the page hands it the same terms. The key is whatever names those terms for the caller - a coin and its saved
+// bid, say; a caller that gives none keys by `lotId`, as earlier callers did.
+export const calculatorKey = (values = {}) => values.key ?? values.lotId;
+export function calculatorInputsForLot(values = {}, { loadedKey, loadedLotId, mode = 'total', locale = 'en-US' } = {}) {
+  const loaded = loadedKey ?? loadedLotId;
+  if (calculatorKey(values) !== undefined && calculatorKey(values) === loaded) return null;
   const estimate = values.costEstimate ?? {};
   const inputs = {
     currency: values.currency ?? null,
@@ -461,7 +466,7 @@ export function mountBidCalculator(
   let result = null;
   let preferences = null;
   let destroyed = false;
-  let loadedLotId;
+  let loadedKey;
   let ladder = null;
   const showError = (message) => {
     status.textContent = message;
@@ -653,9 +658,9 @@ export function mountBidCalculator(
   try { unsubscribe = subscribeToSnapshots(takePreferences); } catch { /* standalone calculator has no extension storage */ }
   return {
     setValues(values = {}) {
-      const inputs = calculatorInputsForLot(values, { loadedLotId, mode: mode.value, locale: language() });
+      const inputs = calculatorInputsForLot(values, { loadedKey, mode: mode.value, locale: language() });
       if (!inputs) return;
-      loadedLotId = values.lotId;
+      loadedKey = calculatorKey(values);
       if (inputs.currency) currencyControl.value = inputs.currency;
       preset.value = inputs.preset;
       ladder = inputs.ladder;
