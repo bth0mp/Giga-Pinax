@@ -192,3 +192,12 @@ test('the compact calculator puts its fields two to a row', () => {
   assert.match(body('.bid-calculator.compact .bid-calculator-fields'), /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(body('.bid-calculator-wide'), /grid-column:1\/-1/);
 });
+
+// A pill that carries an amount wraps; it never cuts the figure with an ellipsis (S3 review, Important 1), in the popup
+// and in the workspace alike.
+test('no want or status pill cuts its text with an ellipsis', () => {
+  const rules = (sheet, part) => read(sheet).split('}').filter((rule) => rule.split('{')[0].includes(part));
+  const checked = [...rules('workspace.css', '.want-match'), ...rules('companion-popup.css', 'pill')];
+  assert.ok(checked.length >= 2, 'the pill rules are found');
+  for (const rule of checked) assert.doesNotMatch(rule, /text-overflow:\s*ellipsis|white-space:\s*nowrap/, rule);
+});
