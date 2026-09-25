@@ -1824,7 +1824,7 @@ test('summaryText writes money and days in the locale it is given', () => {
   const [, stats, last, grade, upcoming] = german.split('\n');
   assert.equal(stats, `Median hammer ${money('USD', 200, 'de-DE')} · middle 50% ${money('USD', 150, 'de-DE')}–${money('USD', 250, 'de-DE')}`
     + ` · range ${money('USD', 100, 'de-DE')}–${money('USD', 300, 'de-DE')} · 2 recorded sales matching “Price 23” · 2024–2025`);
-  assert.match(stats, /Median hammer 200(?:,00)? \$ /);
+  assert.match(stats, /Median hammer 200 \$ /);
   assert.ok(!german.includes('$200') && !german.includes('$300'), german);
   assert.equal(last, `Last sale 1. Juni 2025 · ${money('USD', 300, 'de-DE')}`);
   assert.equal(grade, `VF · ${money('USD', 180, 'de-DE')} · 9 sales`);

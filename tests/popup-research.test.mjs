@@ -1783,7 +1783,7 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
 // A search whose only hits are lots not sold yet has no median to show, and those lots are exactly what the collector may want to know about.
 test('a page without a counted price still lists its upcoming lots', async () => {
   const lots = withUpcoming.lots.slice(1);
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  const popup = await loadPopup({ language: 'de-DE', permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1793,7 +1793,8 @@ test('a page without a counted price still lists its upcoming lots', async () =>
   assert.equal(popup.element('upcoming-list').children.length, 2);
   // The toggle stands for the list as it does for a median.
   assert.equal(popup.element('citing-row').hidden, false);
-  assert.match(popup.element('announcement').textContent, /Upcoming: 2 lots, first on (?!2099-)[^\n]*\b12\b[^\n]*2099\.$/);
+  // The day is written in the page's language, as the copy writes it (loop S1 review, Minor 8).
+  assert.match(popup.element('announcement').textContent, /Upcoming: 2 lots, first on Mo\., 12\. Okt\. 2099\.$/);
   popup.element('citing-filter').checked = false;
   await popup.element('citing-filter').emit('change');
   assert.equal(popup.element('upcoming-list').children.length, 3);

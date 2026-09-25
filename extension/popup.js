@@ -1309,7 +1309,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   // A page without a counted price still lists the lots not sold yet; the note is said first, then how many are coming up.
   if (outcome.lots) {
     const listed = renderUpcoming(outcome.lots, term, context);
-    if (listed.length) $('announcement').textContent += ` ${upcomingText(listed)}.`;
+    if (listed.length) $('announcement').textContent += ` ${upcomingText(listed, navigator.language)}.`;
   }
 }
 
