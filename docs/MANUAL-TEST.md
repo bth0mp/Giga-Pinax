@@ -28,7 +28,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 1. **The default currency has one home.** In the popup, change **Currency** to EUR, close the popup and open it again.
    Then open **Settings** and the **Calculator** tab.
    *Expected:* the popup still shows EUR, Settings' default currency shows EUR, and the calculator prices in EUR.
-   Changing it in Settings and reopening the popup agrees the same way round.
+   Changing it in Settings and reopening the popup agrees the same way round. A default prices are not researched in
+   (SEK, JPY) leaves the popup's research currency as it was, and the calculator opens in it.
 
 2. **A right-click lookup while the Number field has focus.** Open the lookup window, put the cursor in the catalogue
    number field (**Price number**, **RIC number**, …) and leave it there. On a web page, select a different reference,
@@ -290,3 +291,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     in the workspace. *Expected:* beside your saved comparables, "acsearch median … · seen … ago, session only" with
     **Use as maximum**, which types it into the maximum without saving. Change the bid's currency, or open a coin with
     another reference: nothing is offered. Close the browser and open the coin again: the line is gone.
+
+34. **A yen hammer.** In the popup's **Calculator**, choose JPY and type a hammer of `1,200,000` and a premium of `17.5`.
+    *Expected:* the fields show `0` and a step of `1` when empty, the figure reads ¥1,410,000, and `1200000.50` is refused
+    as having decimal places. In the workspace, place a bid of `1,200,000` JPY on a coin and win it at `1200000`.
+    *Expected:* the Bid and Outcome fields read `1200000`, the History line reads `Hammer 1,200,000`, and **Export CSV**
+    of the lots has `1200000` under `hammer` and `JPY` beside it. A coin in USD, EUR, GBP or CHF still shows two places.
