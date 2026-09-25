@@ -41,6 +41,10 @@
 .source-intro {margin:0 0 9px; color:var(--muted); font-size:12px; line-height:1.45;}
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
 .companion-full-button {width:100%; margin-top:14px;}
+/* Where a saved coin stands, or what a save just did, with its Open and Undo: one line of words and text buttons under the card's heading or the
+   Upcoming list. The buttons keep the line's height, so it never jumps as they come and go. */
+.saved-line {margin:8px 0 0; padding:4px 10px; border-left:3px solid var(--gold); background:var(--soft); border-radius:0 var(--radius) var(--radius) 0; font-size:var(--text-body); line-height:1.6; color:var(--ink);}
+.saved-line .text-button {padding:0; font-size:var(--text-body); line-height:inherit;}
 /* A message said for a while in the hint line under the control that caused it (companion-popup.js); a failure in the error colour. */
 .said-error {color:var(--error);}
 .companion-needs-outcome {margin:10px 0 0;}

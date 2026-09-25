@@ -2,7 +2,7 @@
 // which the repository's own suites do without. Each check is one step of docs/MANUAL-TEST.md that a browser can show
 // offline:
 //
-//   step 18  The filter switches: "Only results citing …" draws as a normal checkbox with its label beside it, in the
+//   step 18  The filter switches: the "Citing …" pill draws as a normal checkbox with its label beside it, in the
 //            toolbar popup's width and in the side panel's.
 //   step 19  A bare RIC number shows no median: `RIC 237` offers types to choose from, and no price search, median or
 //            Get prices appears until one is chosen.
@@ -269,7 +269,7 @@ test('the stat lines keep every count at 360 and 320, and one wrap moves nothing
 
 // Fix round 2 (re-review Important 2): what Save reference to watchlist says is said under its button, so the Reference box
 // stays uncovered and can be clicked straight away.
-test('after Save reference to watchlist the Reference box is still the thing under its own centre', async () => {
+test('after Save the coin is saved in one step, and the Reference box is still the thing under its own centre', async () => {
   const browser = await launch();
   try {
     const page = await browser.context.newPage();
@@ -277,8 +277,12 @@ test('after Save reference to watchlist the Reference box is still the thing und
     await page.goto(browser.url('popup.html'));
     await lookUp(page, 'Price 23');
     await page.locator('#companion-save-watchlist:not([disabled])').waitFor({ timeout: 15000 });
+    const pages = browser.context.pages().length;
     await page.locator('#companion-save-watchlist').click();
-    await page.locator('#announcement', { hasText: 'Watchlist details are ready to review.' }).waitFor({ state: 'attached', timeout: 15000 });
+    // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
+    await page.locator('#companion-saved-line', { hasText: 'Saved to your watchlist' }).waitFor({ timeout: 15000 });
+    assert.equal(browser.context.pages().length, pages, 'no tab opened');
+    assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();
     // The panel scrolled as after a longer answer, so the Reference row is the one stuck under the tabs.
     await page.evaluate(() => document.querySelector('.popup-scroll').scrollTo(0, 300));

@@ -1301,6 +1301,9 @@ async function initWorkspace() {
       else if (!initialized.ok) { renderAll(); announce(initialized.message, true); }
       else if (!acceptIncoming(initialized.value)) announce(LOADED);
       await loadRouteDraft();
+      // The popup opens a coin by its id ("#watchlist?lot=<id>"); an id the store no longer holds opens nothing.
+      const namedLot = /[?&]lot=([\w-]+)/.exec(location.hash)?.[1];
+      if (namedLot && (snapshot.lots ?? []).some(({ id }) => id === namedLot)) selectLot(namedLot, { focus: false });
     } catch (error) {
       console.error(error);
       announce('The workspace could not finish loading. Reload this page to try again.', true);

@@ -251,3 +251,12 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     entry. *Expected:* its entry and the collection totals show the new figures. Open **Edit entry**, type in a field,
     and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
     typed.
+
+30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Save**
+    beside **Type**.
+    *Expected:* no tab opens; the line under the card reads **Saved to your watchlist · Open · Undo**. Select **Undo**
+    within ten seconds. *Expected:* "Removed from your watchlist." and **Save** is back. Select **Save** again, wait ten
+    seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows **On your watchlist · Open**
+    instead of **Save**; **Open** opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
+    *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
+    saved lot, and **Undo** then takes back both.

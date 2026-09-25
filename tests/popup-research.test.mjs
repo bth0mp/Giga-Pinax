@@ -1716,7 +1716,8 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   assert.equal(watch.textContent, 'Watch');
   // The list says what Watch does, and no longer that the day stays behind.
   const basis = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  assert.match(basis, /Watch opens the lot in the workspace for you to review and save, with its sale day offered as an auction day\./);
+  // Loop 3 (G-02): Watch saves in one step, and its sale day waits for Add.
+  assert.match(basis, /Watch saves the lot to your watchlist and offers its sale day as an auction to add\./);
   assert.doesNotMatch(basis, /add its auction there to be reminded/);
   assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
   popup.dispatched.length = 0;

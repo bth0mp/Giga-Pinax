@@ -55,6 +55,10 @@ const {
   createDraftSaver,
   clearAuctionContextFromPayload,
   replaceAuctionContextInPayload,
+  directLotFromPayload,
+  savesDirectly,
+  savedLotsFor,
+  savedLineText,
 } = await import('../extension/companion-popup.js');
 
 class TestElement {
@@ -520,7 +524,10 @@ test('a capture that fails takes the earlier page off the card it would be saved
   await page.click('companion-capture-current');
   page.card({ title: 'Nero denarius', reference: 'RIC 306' });
   await page.click('companion-save-watchlist');
-  assert.equal(Object.hasOwn(commands.filter(({ type }) => type === 'draft.save').at(-1).payload, 'auctionContext'), false);
+  // With no page left on it the card is a bare reference, saved in one step (G-02), and nothing of the earlier page goes with it.
+  const saved = commands.filter(({ type }) => type === 'lot.save').at(-1);
+  assert.ok(saved, 'saved in one step');
+  assert.equal(Object.hasOwn(saved.lot, 'auctionContext'), false);
 });
 
 // A right-click on another page sends its reference to this window. That lookup is not about the page captured here, so the
@@ -541,16 +548,28 @@ test('a lookup sent to this window takes the captured page off the coin saved fr
   page.lookupReceived();
   page.card({ title: 'Roman Republic denarius', reference: 'RRC 44/5' });
   await page.click('companion-save-watchlist');
-  assert.equal(Object.hasOwn(lastSaved(), 'auctionContext'), false, 'the sent lookup carries no page of its own');
+  // A bare reference again: saved in one step (G-02), with no page of its own.
+  const direct = commands.filter(({ type }) => type === 'lot.save').at(-1);
+  assert.equal(direct.lot.reference, 'RRC 44/5');
+  assert.equal(Object.hasOwn(direct.lot, 'auctionContext'), false, 'the sent lookup carries no page of its own');
   // The capture editor no longer claims a page it is not standing for.
   assert.equal(page.element('companion-capture-source').textContent, 'Auction context cleared. Captured fields remain available for research.');
   assert.equal(page.element('companion-capture-reference').value, 'Price 23', 'the captured fields stay available');
 });
 
-test('both watchlist actions visibly share one synchronous pending guard', () => {
+// Loop 3 (G-02): the draft path and the one-step save share the guard: each refuses a save while another is pending, holds both save buttons
+// before its first await, and gives them back when it is done.
+test('every watchlist save visibly shares one synchronous pending guard', () => {
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
-  assert.match(source, /if \(draftSavePending\) return \{ ok: false, [^\n]*\};[\s\S]*companion-save-watchlist'\)\.disabled = true;[\s\S]*companion-capture-watchlist'\)\.disabled = true;/);
-  assert.match(source, /finally \{[\s\S]*draftSavePending = false;[\s\S]*companion-save-watchlist[\s\S]*companion-capture-watchlist/);
+  assert.match(source, /const holdSaveButtons = \(\) => \{\n\s*\$\('companion-save-watchlist'\)\.disabled = true;\n\s*\$\('companion-capture-watchlist'\)\.disabled = true;/);
+  for (const name of ['saveWatchlistDraft', 'saveDirect']) {
+    const body = source.slice(source.indexOf(`const ${name} = async`), source.indexOf('\n  };', source.indexOf(`const ${name} = async`)));
+    assert.match(body, /if \(savePending\)[^\n]*PENDING_MESSAGE/, name);
+    const guard = body.indexOf('savePending = true;');
+    assert.ok(guard > 0 && guard < body.indexOf('await'), `${name} takes the guard before its first await`);
+    assert.match(body.slice(guard), /^savePending = true;\n\s*holdSaveButtons\(\);/, name);
+    assert.match(body, /finally \{\n\s*savePending = false;\n\s*releaseSaveButtons\(\);/, name);
+  }
 });
 
 test('watchlist transfer whitelists reference fields and excludes acsearch results', () => {
@@ -594,82 +613,252 @@ test('date-only next auctions use each event local calendar day and sort with ti
   assert.equal(afterNewYorkMidnight.nextEvent, null);
 });
 
-// 0.34 (I2): Watch on an upcoming acsearch lot in the research half saves it through the same draft path as Save to watchlist, and opens the draft.
-test('Watch on an upcoming acsearch lot saves that lot as a watchlist draft, without the captured page', async () => {
+// Loop 3 (G-02): a bare reference saves in one step. The collector still confirms it - the line under the card says "Saved to your watchlist · Open ·
+// Undo", and Undo takes it back - but nothing opens by itself, and the coin saved is the very coin the workspace's own draft confirmation would
+// have saved from the same card: the same validation, the same reading into the details form, the same command.
+const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
+const storeReplies = (background, commands = []) => async (command) => { commands.push(structuredClone(command)); return background.send(command); };
+const lineParts = (line) => line.children.map((part) => (typeof part === 'string' ? part : `[${part.textContent}]`)).join('');
+const lineButton = (line, label) => line.children.find((part) => typeof part !== 'string' && part.textContent === label);
+const settleAll = async () => { for (let tick = 0; tick < 30; tick += 1) await settle(); };
+const neroCard = { title: 'Nero · As · Rome · AD 62–68', reference: 'RIC I² Nero 306', pageUrl: 'https://numismatics.org/ocre/id/ric.1(2).ner.306' };
+
+test('Save on a bare card saves the coin in one step, as the workspace would, and Undo takes it back', async () => {
+  const background = await createWorkspaceBackground();
   const commands = [];
-  const page = await loadCompanion({
-    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-7' } } : WORKING_SNAPSHOT; },
-    script: capturedPage({ reference: { value: 'Price 23', provenance: 'visible-text' } }),
-  });
-  await page.click('companion-capture-current');
   const opened = [];
   const create = globalThis.browser.tabs.create;
   globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
-  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
-  for (let tick = 0; tick < 20; tick += 1) await settle();
-  const saved = commands.filter(({ type }) => type === 'draft.save');
-  assert.equal(saved.length, 1);
-  assert.equal(saved[0].kind, 'current-lot');
-  assert.deepEqual(saved[0].payload, { target: 'watchlist', title: 'Roma Numismatics, E-Sale 200, Lot 7', reference: 'Price 23',
-    pageUrl: 'https://www.acsearch.info/search.html?id=7', closesAt: '2099-10-12' });
-  globalThis.browser.tabs.create = create;
-  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-7']);
-  // Said under the Upcoming list Watch was pressed in.
-  assert.equal(page.element('upcoming-note').textContent, 'Watchlist details are ready to review.');
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background, commands) });
+    page.card(neroCard);
+    assert.equal(page.element('companion-save-watchlist').disabled, false);
+    await page.click('companion-save-watchlist');
+    await settleAll();
+    assert.deepEqual(opened, [], 'nothing opens by itself');
+    assert.deepEqual(commands.filter(({ type }) => type === 'draft.save'), []);
+    const [lot] = background.root().lots;
+    assert.equal(lot.title, 'Nero · As · Rome · AD 62–68');
+    assert.equal(lot.reference, 'RIC I² Nero 306');
+    assert.deepEqual(lot.sourceLinks, [{ source: 'manual', url: neroCard.pageUrl }]);
+    const line = page.element('companion-saved-line');
+    assert.equal(line.hidden, false);
+    assert.equal(lineParts(line), 'Saved to your watchlist · [Open] · [Undo]');
+    assert.equal(page.element('companion-save-watchlist').hidden, true);
+
+    // The workspace's own path from the same card - its draft, confirmed with Save details - saves the same coin.
+    const other = await createWorkspaceBackground();
+    const payload = buildWatchlistDraftPayload(neroCard);
+    const draft = await other.send({ type: 'draft.save', kind: 'current-lot', payload });
+    const workspace = await mountWorkspace({ background: other, hash: `#lot-draft=${draft.value.id}` });
+    await workspace.saveDetails();
+    await settleAll();
+    const [confirmed] = other.root().lots;
+    for (const field of ['title', 'reference', 'sourceLinks', 'notes', 'outcome', 'bidHistory']) assert.deepEqual(lot[field], confirmed[field], field);
+
+    await lineButton(line, 'Undo').emit('click');
+    await settleAll();
+    assert.deepEqual(background.root().lots, []);
+    assert.equal(line.hidden, true);
+    assert.equal(page.element('companion-save-hint').textContent, 'Removed from your watchlist.');
+    assert.equal(page.element('companion-save-watchlist').hidden, false);
+  } finally {
+    globalThis.browser.tabs.create = create;
+  }
 });
 
-// 0.34 review (M5): a Watch that could not be saved is said on this half's status line and handed back to the research half, where the collector
-// pressed it; a Watch that worked hands nothing back.
+test('the one-step save refuses what the workspace would refuse, and says why under the button', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  const page = await loadCompanion({ sendMessage: storeReplies(background, commands) });
+  // The draft check the workspace's path starts with: a title past its bound is refused before anything is sent.
+  assert.equal(directLotFromPayload({ target: 'watchlist', title: 'x'.repeat(250), reference: 'Price 23' }).ok, false);
+  // The store's own check, which both paths end with: only an http or https page is kept.
+  page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'javascript:alert(1)' });
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  assert.deepEqual(background.root()?.lots ?? [], []);
+  assert.equal(page.element('companion-save-hint').textContent, 'Expected an HTTP or HTTPS URL.');
+  assert.equal(page.element('companion-saved-line').hidden, true);
+  // A card carrying a captured page's values still goes to the workspace for review.
+  assert.equal(savesDirectly({ target: 'watchlist', reference: 'Price 23', auctionContext: { pageUrl: 'https://auction.example/1' } }), false);
+  assert.equal(savesDirectly({ target: 'watchlist', reference: 'Price 23', estimate: { currency: 'USD', minor: 100 } }), false);
+  assert.equal(savesDirectly(buildWatchlistDraftPayload(neroCard)), true);
+});
+
+test('Undo lasts ten seconds; then the card says where the coin stands', async () => {
+  const background = await createWorkspaceBackground();
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background) });
+    page.card(neroCard);
+    await page.click('companion-save-watchlist');
+    await settleAll();
+    timers.filter(({ wait }) => wait === 10000).at(-1).callback();
+    assert.match(lineParts(page.element('companion-saved-line')), /^On your watchlist · \[Open\]$/);
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+// Loop 3 (G-12): a coin already saved under the card's reference - in either spelling - is shown, with where it stands, instead of a second Save.
+test('a card whose reference is saved shows where that coin stands and opens it, instead of offering a second Save', async () => {
+  const event = { id: 'e1', name: 'Roma E-Sale 130', eventKind: 'auction-day', precision: 'date-only', localDate: '2099-10-12', timeZone: 'Europe/London' };
+  const lot = { id: 'lot-1', title: 'Nero as', reference: 'RIC I (second edition) Nero 306', auctionEventId: 'e1', outcome: { status: 'open' },
+    activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 }, updatedAt: '2026-09-01T00:00:00.000Z' };
+  const snapshot = { ok: true, value: { lots: [lot], auctionEvents: [event], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: async () => snapshot });
+    page.card(neroCard);
+    const line = page.element('companion-saved-line');
+    assert.equal(line.hidden, false);
+    assert.match(lineParts(line), /^On your watchlist · Bid active £650\.00 · Roma E-Sale 130 · in \d+ days · \[Open\]$/);
+    assert.equal(page.element('companion-save-watchlist').hidden, true);
+    await lineButton(line, 'Open').emit('click');
+    await settleAll();
+    assert.deepEqual(opened, ['moz-extension://test/workspace.html#watchlist?lot=lot-1']);
+    page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
+    assert.equal(line.hidden, true);
+    assert.equal(page.element('companion-save-watchlist').hidden, false);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
+  assert.deepEqual(savedLotsFor({ lots: [{ id: 'won', reference: 'RIC I² Nero 306', outcome: { status: 'won' } }, lot] }, 'RIC I² Nero 306').map(({ id }) => id), ['lot-1', 'won']);
+  assert.equal(savedLineText([{ reference: 'Price 23', outcome: { status: 'won' } }], {}), 'Saved · Won, in your collection');
+  assert.deepEqual(savedLotsFor({ lots: [lot] }, 'RIC I² Nero 307'), []);
+});
+
+// Loop 3 (G-02): Watch on an upcoming acsearch lot saves that lot in one step too - its title, the card's reference and its own acsearch page, never
+// the page captured here - and offers its sale day as a date-only auction, attached only when the collector presses Add.
+test('Watch saves an upcoming lot in one step, and Add attaches its sale day as a date-only auction', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  try {
+    const page = await loadCompanion({ sendMessage: storeReplies(background, commands), script: capturedPage({ reference: { value: 'Price 23', provenance: 'visible-text' } }) });
+    await page.click('companion-capture-current');
+    page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
+    await settleAll();
+    assert.deepEqual(opened, []);
+    const [lot] = background.root().lots;
+    assert.equal(lot.title, 'Roma Numismatics, E-Sale 200, Lot 9');
+    assert.deepEqual(lot.sourceLinks, [{ source: 'manual', url: 'https://www.acsearch.info/search.html?id=9' }]);
+    assert.equal(Object.hasOwn(lot, 'auctionContext'), false, 'the captured page does not ride along');
+    assert.equal(Object.hasOwn(lot, 'auctionEventId'), false, 'no auction until the collector asks');
+    const line = page.element('upcoming-saved');
+    assert.equal(lineParts(line), 'Saved to your watchlist · [Open] · [Undo] · add its sale day 12 Oct 2099 as an auction? · [Add]');
+    await lineButton(line, 'Add').emit('click');
+    await settleAll();
+    const [event] = background.root().auctionEvents;
+    assert.equal(event.eventKind, 'auction-day');
+    assert.equal(event.precision, 'date-only');
+    assert.equal(event.localDate, '2099-10-12');
+    assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
+    assert.equal(background.root().lots[0].auctionEventId, event.id);
+    assert.equal(lineParts(line), 'Saved to your watchlist with its sale day · [Open] · [Undo]');
+    // A second Watch of the same lot opens the one saved.
+    page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
+    await settleAll();
+    assert.equal(lineParts(line), 'Already on your watchlist · [Open]');
+    assert.equal(background.root().lots.length, 1);
+  } finally {
+    globalThis.browser.tabs.create = create;
+  }
+});
+
+test('Undo after Add takes back the coin and the auction it made', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await loadCompanion({ sendMessage: storeReplies(background) });
+  page.watch({ title: 'Roma, Lot 10', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=10', closesAt: '2099-10-12' });
+  await settleAll();
+  const line = page.element('upcoming-saved');
+  await lineButton(line, 'Add').emit('click');
+  await settleAll();
+  assert.equal(background.root().auctionEvents.length, 1);
+  await lineButton(line, 'Undo').emit('click');
+  await settleAll();
+  assert.deepEqual(background.root().lots, []);
+  assert.deepEqual(background.root().auctionEvents, []);
+});
+
+// 0.34 review (M5): a Watch that could not be saved is handed back to the research half, where the collector pressed it; a Watch that worked hands
+// nothing back.
 test('a failed Watch hands its reason back to the research half', async () => {
-  const replies = [{ ok: false, outcome: 'rejected', message: 'Draft store is full.' }, { ok: true, value: { id: 'draft-8' } }];
-  const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? replies.shift() : WORKING_SNAPSHOT) });
+  const replies = [{ ok: false, outcome: 'not-committed', message: 'The store is full.' }, { ok: true, value: { id: 'lot-8', revision: 0, title: 'Roma, Lot 8' } }];
+  const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'lot.save' ? replies.shift() : WORKING_SNAPSHOT) });
   const handedBack = [];
   const dispatch = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
   const watched = { title: 'Roma, Lot 8', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=8', closesAt: '2099-10-12' };
   page.watch(watched);
-  for (let tick = 0; tick < 20; tick += 1) await settle();
-  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'Draft store is full.' } }]);
-  // The research half shows it beside the list; here it is only spoken.
-  assert.equal(page.element('announcement').textContent, 'Draft store is full.');
+  await settleAll();
+  assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed', detail: { message: 'The store is full.' } }]);
+  assert.equal(page.element('announcement').textContent, 'The store is full.');
   page.watch(watched);
-  for (let tick = 0; tick < 20; tick += 1) await settle();
+  await settleAll();
   globalThis.dispatchEvent = dispatch;
   assert.equal(handedBack.length, 1);
 });
 
-// 0.34 final review: a second Watch pressed while the first lot's draft is still being saved is refused aloud, not dropped - the collector who
-// pressed Watch on B is told so beside the list, rather than being told the details are ready and finding only A.
-test('a second Watch while the first draft is saving is refused and handed back, and only the first is saved', async () => {
+// 0.34 final review: a second Watch pressed while the first lot is still being saved is refused aloud, not dropped.
+test('a second Watch while the first is saving is refused and handed back, and only the first is saved', async () => {
   const commands = [];
   let release;
   const held = new Promise((resolve) => { release = resolve; });
   const page = await loadCompanion({ sendMessage: async (command) => {
     commands.push(command);
-    if (command.type !== 'draft.save') return WORKING_SNAPSHOT;
+    if (command.type !== 'lot.save') return WORKING_SNAPSHOT;
     await held;
-    return { ok: true, value: { id: 'draft-9' } };
+    return { ok: true, value: { id: 'lot-9', revision: 0, title: command.lot.title } };
   } });
   const handedBack = [];
   const dispatch = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (event) => { handedBack.push({ type: event.type, detail: event.detail }); return true; };
-  const create = globalThis.browser.tabs.create;
-  const opened = [];
-  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
   page.watch({ title: 'Roma, Lot A', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=1', closesAt: '2099-10-12' });
   await settle(); await settle();
   page.watch({ title: 'Roma, Lot B', reference: 'Price 24', pageUrl: 'https://www.acsearch.info/search.html?id=2', closesAt: '2099-10-12' });
   for (let tick = 0; tick < 5; tick += 1) await settle();
   release();
-  for (let tick = 0; tick < 20; tick += 1) await settle();
+  await settleAll();
   globalThis.dispatchEvent = dispatch;
-  globalThis.browser.tabs.create = create;
-  const saved = commands.filter(({ type }) => type === 'draft.save');
+  const saved = commands.filter(({ type }) => type === 'lot.save');
   assert.equal(saved.length, 1);
-  assert.equal(saved[0].payload.title, 'Roma, Lot A');
-  assert.deepEqual(opened, ['workspace.html#lot-draft=draft-9']);
+  assert.equal(saved[0].lot.title, 'Roma, Lot A');
   assert.deepEqual(handedBack, [{ type: 'giga-pinax-watch-failed',
-    detail: { message: 'Another lot is still being saved to the watchlist. Press Watch again once it has opened.' } }]);
+    detail: { message: 'Another lot is still being saved to the watchlist. Try again in a moment.' } }]);
+});
+
+// A save whose reply was lost is sent again under the same request, which the store answers from its ledger: one coin, not two.
+test('a one-step save retried after a lost reply is the same request', async () => {
+  const background = await createWorkspaceBackground();
+  const commands = [];
+  let lose = true;
+  const page = await loadCompanion({ sendMessage: async (command) => {
+    commands.push(structuredClone(command));
+    const reply = await background.send(command);
+    if (command.type === 'lot.save' && lose) { lose = false; return undefined; }
+    return reply;
+  } });
+  page.card(neroCard);
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  assert.equal(page.element('companion-save-hint').textContent, 'The watchlist did not answer. Try again.');
+  await page.click('companion-save-watchlist');
+  await settleAll();
+  const saves = commands.filter(({ type }) => type === 'lot.save');
+  assert.equal(saves.length, 2);
+  assert.equal(saves[0].requestId, saves[1].requestId);
+  assert.equal(background.root().lots.length, 1);
 });
 
 // 0.34 (W2a): a capture the page refused is kept in the local diagnostics list as a kind of failure only - no page title, address or text reaches it.
@@ -757,38 +946,6 @@ test('the captured lot’s provenance entries go to its draft and come off with 
   await page.click('companion-clear-auction-context');
   await page.click('companion-capture-watchlist');
   assert.equal(Object.hasOwn(lastSaved(), 'provenance'), false);
-});
-
-// 0.34 (W2a, closing I2's owner decision): the sale day Watch hands over rides on the draft as its closing day, and the workspace that opens the
-// draft offers it as a date-only auction day for the collector to confirm - end to end, from the Watch the research half sends to the auction the
-// workspace saves.
-test('Watch carries the sale day to the workspace, which offers it as a date-only auction day to confirm', async () => {
-  const commands = [];
-  const page = await loadCompanion({
-    sendMessage: async (command) => { commands.push(command); return command.type === 'draft.save' ? { ok: true, value: { id: 'draft-9' } } : WORKING_SNAPSHOT; },
-  });
-  page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
-  for (let tick = 0; tick < 20; tick += 1) await settle();
-  const { payload } = commands.find(({ type }) => type === 'draft.save');
-  assert.equal(payload.closesAt, '2099-10-12');
-
-  const { createWorkspaceBackground, mountWorkspace } = await import('./helpers/dom.mjs');
-  const background = await createWorkspaceBackground();
-  const draft = await background.send({ type: 'draft.save', kind: 'current-lot', payload });
-  assert.equal(draft.ok, true, draft.message);
-  const workspace = await mountWorkspace({ background, hash: `#lot-draft=${draft.value.id}` });
-  assert.ok(workspace.$('lot-page-values').textContent.includes('Add an auction day on 2099-10-12 when saving, from the page (2099-10-12).'));
-  const box = workspace.$('lot-form').elements.pageAuction;
-  assert.equal(box.checked, false);
-  box.checked = true;
-  await workspace.saveDetails();
-  for (let tick = 0; tick < 20; tick += 1) await settle();
-  const [event] = background.root().auctionEvents;
-  assert.equal(event.eventKind, 'auction-day');
-  assert.equal(event.precision, 'date-only');
-  assert.equal(event.localDate, '2099-10-12');
-  assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
-  assert.equal(background.root().lots[0].auctionEventId, event.id);
 });
 
 // A page can write addresses as long as a draft allows each one; what it states about the lot then gives way, provenance first, so the draft is
@@ -924,10 +1081,7 @@ test('Ctrl+K, "/" and the skip link bring the Reference box back from any tab', 
   assert.equal(box.focused, true);
 });
 
-// Fix round 2 (re-review Important 2): the status line lay over the top of the panel, so after Save reference to watchlist it covered the Reference
-// box for 8 s. There is no status line now: a message is said in the hint line under the control that caused it, for 8 s, then that line's own text
-// comes back; the live region speaks it as before. Nothing is drawn over the panel.
-test('a save is said in the hint under its button for a while, then the hint comes back', async () => {
+test('a save that fails is said in the line under its button for a while, then the line goes', async () => {
   const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
   assert.equal(markup.getElementById('companion-status'), null);
   assert.equal(markup.querySelectorAll('.status-anchor').length, 0);
@@ -940,17 +1094,17 @@ test('a save is said in the hint under its button for a while, then the hint com
   const timers = [];
   globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
   try {
-    const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'draft.save' ? { ok: true, value: { id: 'draft-3' } } : WORKING_SNAPSHOT) });
-    page.element('companion-save-hint').textContent = hint.textContent;
+    const page = await loadCompanion({ sendMessage: async (command) => (command.type === 'lot.save' ? { ok: false, outcome: 'not-committed', message: 'The store is full.' } : WORKING_SNAPSHOT) });
     page.element('companion-save-hint').hidden = true;
     page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
     await page.click('companion-save-watchlist');
-    assert.equal(page.element('companion-save-hint').textContent, 'Watchlist details are ready to review.');
-    assert.equal(page.element('announcement').textContent, 'Watchlist details are ready to review.');
+    assert.equal(page.element('companion-save-hint').textContent, 'The store is full.');
+    assert.equal(page.element('companion-save-hint').hidden, false);
+    assert.equal(page.element('announcement').textContent, 'The store is full.');
     const restore = timers.filter(({ wait }) => wait === 8000).at(-1);
-    assert.ok(restore, 'the hint is restored after 8 s');
+    assert.ok(restore, 'the line is restored after 8 s');
     restore.callback();
-    assert.equal(page.element('companion-save-hint').textContent, hint.textContent);
+    assert.equal(page.element('companion-save-hint').textContent, '');
     assert.equal(page.element('companion-save-hint').hidden, true);
   } finally {
     globalThis.setTimeout = realSetTimeout;
@@ -1007,4 +1161,17 @@ test('the header’s Workspace opens the workspace', async () => {
     globalThis.browser.tabs.create = create;
     globalThis.browser.runtime.getURL = getURL;
   }
+});
+
+// Loop 3 (G-02, G-12): Open on a saved coin's line opens the workspace on that coin; an id the store no longer holds opens the list as before.
+test('the workspace opens on the coin its address names', async () => {
+  const background = await createWorkspaceBackground();
+  const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero · As · Rome · AD 62–68', reference: 'RIC I² Nero 306', sourceLinks: [], notes: '' } });
+  const named = await mountWorkspace({ background, hash: `#watchlist?lot=${saved.value.id}` });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.equal(named.$('selected-title').textContent, 'Nero · As · Rome · AD 62–68');
+  assert.equal(named.$('coin-editor').hidden, false);
+  const unknown = await mountWorkspace({ background, hash: '#watchlist?lot=00000000-0000-4000-8000-00000000ffff' });
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+  assert.notEqual(unknown.$('selected-title').textContent, 'Nero · As · Rome · AD 62–68');
 });
