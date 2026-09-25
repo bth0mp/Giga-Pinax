@@ -300,7 +300,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     of the lots has `1200000` under `hammer` and `JPY` beside it. A coin in USD, EUR, GBP or CHF still shows two places.
 
 35. **The want list.** In the workspace open **Want list**, select **Add want** and save `RIC I² Nero 306` with a maximum
-    of `650` GBP and **Very Fine (VF) or better**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
+    of `650` GBP and **VF · Very Fine**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
     VF or better"; `RIC 306` is refused beside **Save want** ("A RIC reference names its volume and its ruler or mint…")
     and nothing is saved. Look up `RIC I (second edition) Nero 306` in the popup. *Expected:* under the card
     **On your want list** · up to £650.00 · VF or better, and on **Upcoming** (when acsearch lists a lot still to come)

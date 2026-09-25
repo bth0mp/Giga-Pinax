@@ -2,6 +2,16 @@
 // What the workspace (workspace.js) shows, worked out from the records: its routes and detail tabs,
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
+//
+// One word for one thing, on every page (H-09):
+// - buyer’s premium: never "BP" or "buyer premium";
+// - hammer: "Maximum hammer" where the collector sets a bid's figure, "Hammer" in an outcome and in History;
+// - comparable: a sale the collector records to compare with, never "evidence" on the page;
+// - auction: never "event" on the page ("Add auction", "Remove auction", "When");
+// - want: a type on the want list;
+// - collection: the coins the collector keeps; "Lot number shown" is the coin row's number, "Lot number" the house's.
+// Money is written by formatMoney(amount, locale, { narrow: true }) (H-04), grades by their abbreviation ("VF or better").
+
 import { calculateBidCost, formatAmount, formatMoney } from './core/money.js';
 import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';

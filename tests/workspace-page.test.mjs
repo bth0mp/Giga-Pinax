@@ -1977,3 +1977,18 @@ test('every workspace page with nothing in it says so in one empty state', async
   assert.equal(page.$('coin-workspace').dataset.empty, 'false', 'Add coin opens the coin form beside the list');
   assert.equal(page.$('selected-title').textContent, 'Add coin');
 });
+
+// H-09: one word for one thing - buyer's premium, hammer, comparable, auction - on every workspace page.
+test('the workspace says buyer’s premium, comparable and auction, never BP, evidence or event', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const coin = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.place', lotId: coin.id, expectedRevision: coin.revision, activeBid: { amount: { currency: 'EUR', minor: 50000 } } });
+  const page = await mountWorkspace({ background, hash: '#bids' });
+  await page.openCoin('Nero, denarius');
+  const shown = (root) => root.querySelectorAll('label, legend, button, h2, h3, h4, p, summary, option, span').map((node) => node.textContent).join(' \u00b7 ');
+  const everything = shown(page.document.querySelector('main'));
+  for (const word of [/\bBP\b/, /[Bb]uyer premium/, /\bevidence\b/i, /\bevent\b/i]) assert.doesNotMatch(everything, word);
+  assert.match(page.$('exposure-list').textContent, /Known hammer \+ buyer’s premium/);
+  assert.match(page.$('exposure-list').textContent, /Incomplete — buyer’s premium unknown for 1 bid/);
+  assert.equal(page.$('lot-form').elements.lotNumber.closest('label').childNodes[0].textContent, 'Lot number shown ');
+});
