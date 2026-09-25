@@ -416,7 +416,7 @@ test('refuses a lone separator before three digits where the locale does not gro
 test('rejects malformed money with an error that names the accepted forms', () => {
   const message = parseMoney('twelve fifty', 'USD', 'en-US').error.message;
   assert.equal(message, 'Money must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
-  assert.equal(parsePremiumPercent('twenty', 'en-US').error.message, 'Buyer premium must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
+  assert.equal(parsePremiumPercent('twenty', 'en-US').error.message, 'Buyer’s premium must be digits with at most two decimal places, written like 1200, 1200.50 or 1200,50.');
 });
 
 test('rejects ambiguous or unsafe money input instead of rounding it', () => {
@@ -669,4 +669,37 @@ test('the narrow symbol is used only where it names one currency for the locale'
   // Where no listed currency has "$" as its own sign, it stays with the US dollar, as every earlier version showed it.
   assert.equal(narrow('USD', 'en-GB'), '$1,200.00');
   assert.equal(narrow('AUD', 'en-GB'), 'A$1,200.00');
+});
+
+// One money rule for every page (cycle 5): each page writes an amount with formatMoney(money, its locale, { narrow: true }),
+// and the workspace calls it in exactly that shape. The same yen, crown and franc read the same on every page.
+test('the one page rule writes each amount with the narrow sign only where it names one currency', () => {
+  const page = (currency, minor, locale) => formatMoney({ currency, minor }, locale, { narrow: true }).replace(/ /g, ' ');
+  assert.equal(page('JPY', 1200000, 'en-GB'), '¥1,200,000');
+  assert.equal(page('SEK', 1250000, 'en-GB'), 'SEK 12,500.00');
+  assert.equal(page('CHF', 120000, 'en-GB'), 'CHF 1,200.00');
+  assert.equal(page('GBP', 65000, 'en-GB'), '£650.00');
+  assert.equal(page('EUR', 130000, 'de-DE'), '1.300,00 €');
+  assert.equal(page('USD', 120000, 'de-DE'), '1.200,00 $');
+});
+
+// A page passes the browser's language as it is; one Intl cannot read must not take the page down with it.
+test('formatMoney writes a locale Intl refuses in en-US rather than throwing', () => {
+  for (const locale of ['en_GB', 'not a locale', '']) {
+    assert.equal(formatMoney({ currency: 'GBP', minor: 65000 }, locale, { narrow: true }), '£650.00', JSON.stringify(locale));
+    assert.equal(formatMoney({ currency: 'USD', minor: 65000 }, locale), '$650.00', JSON.stringify(locale));
+  }
+});
+
+// A house schedule prints its tiers in whole units, and the price panel its medians rounded to the unit: `whole` leaves
+// the places off an amount that has none to show, and keeps them on one that has.
+test('formatMoney with whole leaves the places off a whole amount only', () => {
+  const whole = (currency, minor, locale = 'en-GB') => formatMoney({ currency, minor }, locale, { narrow: true, whole: true }).replace(/ /g, ' ');
+  assert.equal(whole('GBP', 100000), '£1,000');
+  assert.equal(whole('GBP', 100050), '£1,000.50');
+  assert.equal(whole('EUR', 100000, 'de-DE'), '1.000 €');
+  assert.equal(whole('JPY', 1200000), '¥1,200,000');
+  assert.equal(whole('SEK', 1250000), 'SEK 12,500');
+  assert.equal(whole('HUF', 150000, 'en-US'), 'Ft 1,500');
+  assert.equal(whole('USD', 0, 'en-US'), '$0');
 });

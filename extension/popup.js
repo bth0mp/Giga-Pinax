@@ -6,8 +6,8 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
-import { minorDigits } from './core/money.js';
-import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
+import { formatMoney, minorDigits } from './core/money.js';
+import { openWantsFor, ricSectionKey, wantBadgeText, wantPillText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
@@ -261,11 +261,19 @@ function clearPrices(options) {
 const basisLine = (...parts) => parts.filter(Boolean).join(' · ');
 // Said once, in the basis line, wherever a strip of medians by year is drawn.
 const YEARS_BASIS = 'by year: years with at least 3 counted sales';
-// A sale's day as acsearch dates it ("01.06.2028"), written out ("1 Jun 2028"); a date that does not read is shown as it came.
-const saleDay = (text) => {
+// A day on a list of lots as the Watchlist tab writes a sale day (H-11): "Thu 1 Jun", in the browser's language, with the year only when it is not
+// this year (or always, with year); an upcoming lot's day with its weekday, a sale already held without. A date that does not read is shown as it
+// came.
+function listDay(text, { weekday = false, year = false } = {}) {
   const day = isoDay(text);
-  return day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`)) : String(text ?? '');
-};
+  if (!day) return String(text ?? '');
+  const options = { day: 'numeric', month: 'short', timeZone: 'UTC', ...(weekday ? { weekday: 'short' } : {}),
+    ...(year || day.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' } : {}) };
+  const date = new Date(`${day}T12:00:00Z`);
+  try { return new Intl.DateTimeFormat(navigator.language, options).format(date); } catch { return new Intl.DateTimeFormat('en-GB', options).format(date); }
+}
+// A sale's day as acsearch dates it ("01.06.2028"), written out with its year ("1 Jun 2028"), in the browser's language.
+const saleDay = (text) => listDay(text, { year: true });
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
@@ -759,6 +767,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
   const { denomination, wanted, searched, unsearched, uncited, citing, passes, reason } = acsearchFilter(lots, term, context.reference, card);
   const wants = wantedForContext(context);
   const wantWords = wantBadgeText(wants, navigator.language);
+  const wantPill = wantPillText(wants, navigator.language);
   const upcoming = upcomingLots(lots, new Date());
   const listed = upcoming.filter((sale) => reason(sale) === null);
   const filters = filterLines(upcoming, { reasonFor: reason }, { name: referenceName(context.reference), denomination: wanted, citing, uncited, unsearched, passes });
@@ -767,7 +776,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
   $('upcoming-list').replaceChildren(...listed.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
-    const day = isoDay(sale.date);
+    const day = listDay(sale.date, { weekday: true });
     const title = lotTitle(sale);
     label.append(`${day} · `, lotLink(sale, title));
     const watch = document.createElement('button');
@@ -776,11 +785,12 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     watch.textContent = 'Watch';
     watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}`);
     watch.addEventListener('click', () => watchUpcoming(sale, context));
-    // A row citing the wanted type carries the badge after its title; its Watch saves it in one step, as on any other row.
+    // A row citing the wanted type carries the card's want pill after its title (H-05), its whole terms the tooltip; its Watch saves it in one step,
+    // as on any other row.
     if (wants.length && passes.citing(sale)) {
       const badge = document.createElement('mark');
-      badge.className = 'pill';
-      badge.textContent = 'On your want list';
+      badge.className = 'pill want-pill';
+      badge.textContent = wantPill;
       badge.title = wantWords;
       label.append(' ', badge);
       watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}. ${wantWords}`);
@@ -835,6 +845,16 @@ function renderPriceFilters() {
   $('price-filters').hidden = !citing && !denomination;
 }
 
+// The panels' figures are hammer prices in whole units, as acsearch and CoinArchives print them, and medians rounded to the unit. They are written
+// by the one page rule, formatMoney in the browser's language with the narrow sign, and keep no places a rounded figure does not have. A figure
+// that is no amount at all writes a dash rather than taking the panel down.
+function panelMoney(currency) {
+  const scale = 10 ** (minorDigits(currency) ?? 2);
+  return (value) => {
+    try { return formatMoney({ currency, minor: Math.round(value) * scale }, navigator.language, { narrow: true, whole: true }); } catch { return '—'; }
+  };
+}
+
 // Draws the chosen period from the page's lots, with no request, as of the collector's own date: everything on the panel follows the period
 // except the trend and the last sale, which come from the whole page. A period without a counted sale keeps only the buttons, the trend and the
 // last sale. The announcement names a period other than All, and All too when the collector has just chosen it (named).
@@ -842,7 +862,7 @@ function renderPriceFilters() {
 // verifies it a moment later, and Copy summary must head the text with that label.
 function renderPrices(lots, currency, term, named = false, context = shownPrices?.context ?? researchContext, card = priceCard(context)) {
   if (!context) return;
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const money = { format: panelMoney(currency) };
   const now = localDay(new Date());
   const period = PERIODS.find((entry) => entry.value === preferences.period);
   const reference = context.reference;
@@ -947,7 +967,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-list').replaceChildren(...periodLots.map((sale) => {
     const row = document.createElement('li');
     const label = document.createElement('span');
-    label.append(`${sale.date} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
+    label.append(`${listDay(sale.date)} · `, lotLink(sale, sale.title || `Lot ${sale.id}`));
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
     const toggle = document.createElement('button');
@@ -1018,14 +1038,14 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   const used = coinArchivesCuration.included(periodLots);
   const summary = summarise(used.map((lot) => ({ ...lot, price: String(lot.amount) })), currency);
   summary.priced = used;
-  const money = new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 });
+  const money = { format: panelMoney(currency) };
   const median = summary.count ? money.format(summary.median) : '—';
   for (const radio of $('period').elements) radio.checked = radio.value === preferences.period;
   $('coinarchives-median').textContent = summary.count ? median : '';
   $('coinarchives-median-line').hidden = summary.count === 0;
   $('coinarchives-median-currency').textContent = summary.count && !median.includes(currency) ? currency : '';
   const dates = used.map(({ date }) => date).sort();
-  const formatDate = (date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+  const formatDate = saleDay;
   const dateSpan = dates.length ? ` · ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
   $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${sales(summary.count)}${dateSpan}` : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
@@ -1048,7 +1068,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
     link.href = sale.url;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = `${sale.date} · ${sale.title || `Lot ${sale.id}`}`;
+    link.textContent = `${listDay(sale.date)} · ${sale.title || `Lot ${sale.id}`}`;
     const amount = document.createElement('strong');
     amount.textContent = money.format(sale.amount);
     const toggle = document.createElement('button');
@@ -1363,6 +1383,16 @@ const answerAge = (shownAt, now = Date.now()) => {
 };
 
 let ageTimer = 0;
+// The watchlist half (companion-popup.js) reads the store as the popup opens and says when it has. A restored card waits for that (H-11), so it
+// lands with its status row instead of the row pushing the panel down a moment later; a fresh lookup never waits on the store.
+// ponytail: capped at two seconds, so a worker that never answers still leaves the last answer drawn, with its row to follow.
+const SNAPSHOT_WAIT_MS = 2000;
+const storeRead = () => (globalThis.gigaPinaxSnapshotReady ? Promise.resolve() : new Promise((resolve) => {
+  window.addEventListener('giga-pinax-snapshot-ready', () => resolve(), { once: true });
+  setTimeout(resolve, SNAPSHOT_WAIT_MS);
+}));
+// Set by the collector's first keystroke in the Reference box: from then on the box is his, and no restore writes into it or draws over it.
+let typedSinceOpen = false;
 async function restoreLastAnswer(ticket) {
   let stored;
   try { stored = await sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]); }
@@ -1371,8 +1401,13 @@ async function restoreLastAnswer(ticket) {
   if (selectionQuery(stored?.[PENDING_KEY] ?? '')) return;
   const answer = readAnswer(stored?.[LAST_ANSWER_KEY]);
   // He may have started typing, or looked something up, while the area answered: what he did is his, and the old answer stays away.
-  if (!answer || ticket !== opening || $('quick-reference').value || currentCard || researchContext) return;
+  const his = () => ticket !== opening || typedSinceOpen || currentCard || researchContext;
+  if (!answer || his() || $('quick-reference').value) return;
+  // The box is settled at once, as soon as the session answers; only the card waits for the store, and it is drawn only if the box still holds
+  // the answer and nothing he did came in between.
   $('quick-reference').value = answer.query;
+  await storeRead();
+  if (his() || $('quick-reference').value !== answer.query) return;
   clearOutput();
   fillFields(answer.reference);
   answered = true;
@@ -1463,6 +1498,7 @@ $('quick-reference').addEventListener('keydown', (event) => {
 });
 // Typing begins a new reference, so neither an old catalogue answer nor its independent price research may arrive over it.
 $('quick-reference').addEventListener('input', () => {
+  typedSinceOpen = true;
   referenceRevision += 1;
   clearOutput();
   recalled = -1;

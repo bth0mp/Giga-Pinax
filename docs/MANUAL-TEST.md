@@ -263,10 +263,10 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Save**
     beside **Type**.
-    *Expected:* no tab opens; the line under the card reads **Saved to your watchlist · Open · Undo**. Select **Undo**
+    *Expected:* no tab opens; the row under the card reads **Saved · Open · Undo**. Select **Undo**
     within ten seconds. *Expected:* "Removed from your watchlist." and **Save** is back. Select **Save** again, wait ten
-    seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows **On your watchlist · Open**
-    instead of **Save**; **Open** opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
+    seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows a **Watching** pill instead of
+    **Save** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
     *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
     saved lot, and **Undo** then takes back both.
 
@@ -303,10 +303,12 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     of `650` GBP and **VF · Very Fine**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
     VF or better"; `RIC 306` is refused beside **Save want** ("A RIC reference names its volume and its ruler or mint…")
     and nothing is saved. Look up `RIC I (second edition) Nero 306` in the popup. *Expected:* under the card
-    **On your want list** · up to £650.00 · VF or better, and on **Upcoming** (when acsearch lists a lot still to come)
-    the badge after each lot citing it, whose **Watch** saves it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
+    the pill **Wanted · up to £650 · VF+** (its tooltip "On your want list · up to £650.00 · VF or better"), on the
+    same row as the **Watching** pill when the coin is saved too, with the median still in view at 400×600; and on
+    **Upcoming** (when acsearch lists a lot still to come) the same pill after each lot citing it, whose **Watch** saves
+    it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
     no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
-    watchlist**: the workspace draft shows the **Wanted · up to £650.00 · VF+** pill under its Reference, the popup's pill, with the want's full terms as its tooltip. Win a coin of the type: its want
+    watchlist**: the workspace draft shows the **Wanted · up to £650 · VF+** pill under its Reference, the popup's pill, with the want's full terms as its tooltip. Win a coin of the type: its want
     offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
     A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
     leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.

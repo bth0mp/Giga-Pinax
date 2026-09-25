@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import * as money from '../extension/core/money.js';
 import { FakeDocument, browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
 import {
-  buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
+  buildBidCalculation, calculationLine, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
   formatMinorInput, housePresetsText, ladderTierText, parseHousePresets, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
 } from '../extension/bid-tools.js';
 
@@ -311,7 +311,7 @@ test('preset save has a synchronous pending guard and disables its control', () 
 
 // The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
 // by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
-async function mountCalculator({ snapshot, session = null, options = {} }) {
+async function mountCalculator({ snapshot, session = null, options = {}, language = 'en-US' }) {
   const document = new FakeDocument();
   const container = document.createElement('div');
   const commands = [];
@@ -322,7 +322,7 @@ async function mountCalculator({ snapshot, session = null, options = {} }) {
     newRequestId: () => `request-${commands.length + 1}`,
     subscribeToSnapshots: () => () => {},
     ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), set: async (items) => { Object.assign(session, structuredClone(items)); }, onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
-    ...browserGlobals(document),
+    ...browserGlobals(document, { language }),
     Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
   };
   sandbox.globalThis = sandbox;
@@ -384,7 +384,7 @@ test('the calculator has VAT on premium and platform fee fields, and names both 
   assert.ok(vat && platform, 'both fields are under Fees and bid increments');
   assert.ok(vat.closest('.bid-calculator-fees'));
   calculator.field('Currency').value = 'CHF';
-  calculator.field('Hammer price').value = '1000';
+  calculator.field('Maximum hammer').value = '1000';
   calculator.premium.value = '25';
   vat.value = '19';
   await vat.emit('input');
@@ -452,7 +452,7 @@ test('the calculator says which tier of the chosen house the hammer is on', asyn
   await preset.emit('change');
   const ladderNote = calculator.container.querySelector('.bid-calculator-ladder');
   assert.equal(ladderNote.textContent, 'Leu: 3 increment tiers you entered in Settings. Bids follow those tiers, not the fixed increment.');
-  const hammer = calculator.field('Hammer price');
+  const hammer = calculator.field('Maximum hammer');
   hammer.value = '1033';
   await hammer.emit('input');
   assert.equal(ladderNote.textContent, 'Leu: 3 increment tiers you entered in Settings. The next valid bid, CHF\u00a01,100.00, is on the CHF\u00a01,000–CHF\u00a02,000 tier, steps of CHF\u00a0100.');
@@ -519,7 +519,7 @@ test('the calculator adds import VAT, names it, and starts it from Settings for 
   assert.equal(importVat.value, '', 'a sale in the collector’s own currency crosses no border');
   currency.value = 'EUR'; await currency.emit('input');
   assert.equal(importVat.value, '5.00');
-  calculator.field('Hammer price').value = '1000';
+  calculator.field('Maximum hammer').value = '1000';
   calculator.premium.value = '25';
   calculator.field('Shipping').value = '15';
   await importVat.emit('input');
@@ -556,7 +556,7 @@ test('the calculator answers with a labelled figure and one line, and in budget 
   assert.equal(calculator.container.querySelector('h3'), null, 'the tab is the heading');
   assert.equal(calculator.figure.hidden, true);
   calculator.field('Currency').value = 'USD';
-  calculator.field('Hammer price').value = '260';
+  calculator.field('Maximum hammer').value = '260';
   calculator.premium.value = '20';
   await calculator.premium.emit('input');
   assert.deepEqual([calculator.label.textContent, calculator.figure.textContent, calculator.output.textContent],
@@ -618,7 +618,7 @@ test('the calculator offers the session median above the fields and puts it in t
   calculator.field('Currency').value = 'USD'; await calculator.field('Currency').emit('input');
   await line.children[1].click();
   assert.equal(calculator.field('Currency').value, 'GBP');
-  assert.equal(calculator.field('Hammer price').value, '240.00');
+  assert.equal(calculator.field('Maximum hammer').value, '240.00');
   const mode = calculator.field('Calculation'); mode.value = 'budget'; await mode.emit('change');
   assert.equal(box.hidden, true, 'a median is a hammer, not a budget');
 });
@@ -631,17 +631,17 @@ test('the popup calculator puts back what was typed, and a bare default no longe
   const snapshot = { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } };
   const first = await mountCalculator({ snapshot, session, options: { remember: true } });
   first.field('Currency').value = 'EUR'; await first.field('Currency').emit('input');
-  first.field('Hammer price').value = '1000'; await first.field('Hammer price').emit('input');
+  first.field('Maximum hammer').value = '1000'; await first.field('Maximum hammer').emit('input');
   first.premium.value = '25'; await first.premium.emit('input');
   first.field('Shipping').value = '15'; await first.field('Shipping').emit('input');
   assert.equal(session[CALCULATOR_MEMORY_KEY].texts.shipping, '15');
   const again = await mountCalculator({ snapshot, session, options: { remember: true } });
-  assert.deepEqual([again.field('Currency').value, again.field('Hammer price').value, again.premium.value, again.field('Shipping').value], ['EUR', '1000', '25', '15']);
+  assert.deepEqual([again.field('Currency').value, again.field('Maximum hammer').value, again.premium.value, again.field('Shipping').value], ['EUR', '1000', '25', '15']);
   assert.equal(again.figure.textContent, '€1,265.00');
   again.mounted.setValues({ currency: 'USD' });
   assert.equal(again.field('Currency').value, 'EUR', 'the preferred currency arriving later does not reset what was put back');
   const plain = await mountCalculator({ snapshot, session });
-  assert.equal(plain.field('Hammer price').value, '', 'a calculator that does not remember puts nothing back');
+  assert.equal(plain.field('Maximum hammer').value, '', 'a calculator that does not remember puts nothing back');
   const now = Date.parse('2026-09-25T12:00:00.000Z');
   const record = { version: 1, at: now - 60000, mode: 'total', currency: 'EUR', texts: { amount: '1000' } };
   assert.equal(readCalculatorMemory(record, now).texts.amount, '1000');
@@ -719,7 +719,7 @@ test('the calculator offers every currency and prices a JPY 1,200,000 hammer in 
   const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } } });
   const currency = calculator.field('Currency');
   assert.deepEqual(currency.querySelectorAll('option').map((option) => option.value), [...money.CURRENCIES]);
-  const amount = calculator.field('Hammer price');
+  const amount = calculator.field('Maximum hammer');
   const increment = calculator.field('Bid increment');
   assert.deepEqual([amount.placeholder, increment.placeholder], ['0.00', '0.01']);
   currency.value = 'JPY'; await currency.emit('input');
@@ -741,6 +741,49 @@ test('the calculator offers every currency and prices a JPY 1,200,000 hammer in 
 test('a calculator mounted in yen shows whole-yen placeholders before anything is typed or loaded', async () => {
   const calculator = await mountCalculator({ snapshot: { ok: false, message: 'No settings here.' }, options: { currency: 'JPY' } });
   assert.equal(calculator.field('Currency').value, 'JPY');
-  assert.deepEqual(['Hammer price', 'Shipping', 'Fixed payment fee', 'Minimum bid', 'Bid increment'].map((caption) => calculator.field(caption).placeholder),
+  assert.deepEqual(['Maximum hammer', 'Shipping', 'Fixed payment fee', 'Minimum bid', 'Bid increment'].map((caption) => calculator.field(caption).placeholder),
     ['0', '0', '0', '0', '1']);
+});
+
+// H-04 (cycle 5): the calculator writes money by the one page rule, formatMoney(money, the browser's language,
+// { narrow: true }) - the same yen reads ¥ here as on the workspace's coin row and the popup's Watchlist tab, never JP¥.
+test('the calculator writes every amount in the browser locale with the narrow sign where it names one currency', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'JPY', housePremiumPresets: [] } } }, language: 'en-GB', options: { currency: 'JPY' } });
+  const amount = calculator.container.querySelector('input');
+  amount.value = '1200000';
+  calculator.premium.value = '17.5';
+  await calculator.premium.emit('input');
+  assert.equal(calculator.figure.textContent, '¥1,410,000');
+  assert.equal(calculator.output.textContent, 'Hammer ¥1,200,000 · premium ¥210,000 (17.5%) · no fees');
+  const currency = calculator.field('Currency');
+  currency.value = 'SEK'; amount.value = '12500'; await currency.emit('input');
+  assert.equal(calculator.figure.textContent.replace(/ /g, ' '), 'SEK 14,687.50');
+  currency.value = 'USD'; await currency.emit('input');
+  assert.equal(calculator.figure.textContent, '$14,687.50', 'en-GB reads "$" as the US dollar, not "US$"');
+});
+
+test('the calculator line, the ladder tier and the session median follow the one page rule', async () => {
+  const line = buildBidCalculation({ mode: 'total', amountText: '1000', premiumText: '20', currency: 'USD', locale: 'en-GB' });
+  assert.equal(calculationLine(line, 'total', 'en-GB'), 'Hammer $1,000.00 · premium $200.00 (20%) · no fees');
+  assert.equal(ladderTierText([{ from: 0, step: 5000 }, { from: 100000, step: 10000 }], 120000, 'USD', 'en-GB'), 'on the tier from $1,000, steps of $100');
+  const session = { 'giga-pinax-session-median': { acsearch: { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'USD', median: 24000, count: 2, at: Date.now() } } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session, language: 'en-GB' });
+  assert.equal(calculator.container.querySelector('.bid-calculator-median').children[1].children[0].textContent, 'acsearch median $240.00 · 2 sales');
+});
+
+// H-09 (cycle 5): one word for one thing. The calculator's hammer is the Bid tab's "Maximum hammer", and the premium is the
+// buyer's premium, with the apostrophe the workspace writes.
+test('the calculator names its fields in the glossary’s words', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } } });
+  const captions = calculator.container.querySelectorAll('label').map((label) => label.querySelector('span')?.textContent);
+  assert.ok(captions.includes('Maximum hammer'));
+  assert.ok(captions.includes('Buyer’s premium %'));
+  assert.ok(!captions.some((caption) => /Hammer price|Buyer premium/.test(caption ?? '')));
+  assert.equal(calculator.output.textContent, 'Enter an amount and buyer’s premium.');
+  const mode = calculator.field('Calculation');
+  mode.value = 'budget'; await mode.emit('change');
+  assert.equal(calculator.field('Total budget').value, '');
+  mode.value = 'total'; await mode.emit('change');
+  assert.ok(calculator.field('Maximum hammer'));
+  assert.equal(money.parsePremiumPercent('x').error.message.startsWith('Buyer’s premium must'), true);
 });

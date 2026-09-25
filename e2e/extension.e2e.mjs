@@ -10,7 +10,8 @@
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
 // and the popup's frame, which only a real layout shows: its header and tabs stay put through a lot lookup after a list
-// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint),
+// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint,
+// a coin saved and wanted included),
 // Save saves in one step without opening a tab, a popup opened again draws its last answer without asking acsearch, a failed
 // Bopearachchi lookup searches nothing and keeps its error in view, and Ctrl+K and the skip link reach the Reference box.
 //
@@ -308,7 +309,7 @@ test('after Save the coin is saved in one step, and the Reference box is still t
     const pages = browser.context.pages().length;
     await page.locator('#companion-save-watchlist').click();
     // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
-    await page.locator('#companion-saved-line', { hasText: 'Saved to your watchlist' }).waitFor({ timeout: 15000 });
+    await page.locator('#companion-saved-line .pill[title="Saved to your watchlist"]').waitFor({ timeout: 15000 });
     assert.equal(browser.context.pages().length, pages, 'no tab opened');
     assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();
@@ -320,6 +321,70 @@ test('after Save the coin is saved in one step, and the Reference box is still t
       return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.id;
     });
     assert.equal(hit, 'quick-reference');
+  } finally {
+    await browser.close();
+  }
+});
+
+// Cycle 5 (H-05): a coin saved with a bid and wanted too says both in one row of pills under the card, so the median keeps the place G-03 gave it
+// in the 600 px popup. S3 fix round (review Important 1): a pill never cuts its amount. A whole amount is written whole ("£12,500"), and where two
+// pills with five-figure amounts do not fit the side panel's 360 or 320 px, the row takes a second line rather than cutting either.
+test('a saved and wanted coin says both in one row, the median stays in view, and no pill is cut', async () => {
+  const browser = await launch();
+  try {
+    const seed = await browser.context.newPage();
+    await seed.goto(browser.url('popup.html'));
+    const seeded = await seed.evaluate(async () => {
+      const send = (command) => chrome.runtime.sendMessage({ requestId: crypto.randomUUID(), ...command });
+      await send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+      const at = new Date(Date.now() + 25 * 3600e3).toISOString();
+      const event = await send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma Numismatics E-Sale 130', eventKind: 'auction-starts',
+        precision: 'timed', localDate: at.slice(0, 10), localTime: at.slice(11, 16), timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+      const replies = [event];
+      for (const [reference, bid, max, grade] of [['RIC I² Nero 306', 65000, 65000, 'VF'], ['Price 23', 1250000, 1125000, 'EF']]) {
+        const lot = await send({ type: 'lot.save', expectedRevision: null, lot: { title: `${reference} lot`, reference,
+          auctionEventId: event.value.id, notes: '', sourceLinks: [], outcome: { status: 'open' }, bidHistory: [] } });
+        replies.push(lot, await send({ type: 'bid.place', lotId: lot.value.id, expectedRevision: lot.value.revision,
+          activeBid: { amount: { currency: 'GBP', minor: bid }, buyerPremiumBps: 2000 } }));
+        replies.push(await send({ type: 'want.save', expectedRevision: null, want: { reference, maxPrice: { currency: 'GBP', minor: max }, minGrade: grade } }));
+      }
+      return replies.every((reply) => reply.ok);
+    });
+    assert.equal(seeded, true);
+    await seed.close();
+    const cases = [
+      ['RIC I² Nero 306', 'popup.html', 400, 600, /^Watching · £650 bid · in \d+ h$/, 'Wanted · up to £650 · VF+'],
+      ['RIC I² Nero 306', 'popup.html?panel=1', 320, 700, /^Watching · £650 bid · in \d+ h$/, 'Wanted · up to £650 · VF+'],
+      ['Price 23', 'popup.html?panel=1', 360, 900, /^Watching · £12,500 bid · in \d+ h$/, 'Wanted · up to £11,250 · EF+'],
+      ['Price 23', 'popup.html?panel=1', 320, 700, /^Watching · £12,500 bid · in \d+ h$/, 'Wanted · up to £11,250 · EF+'],
+    ];
+    for (const [reference, path, width, height, saved, want] of cases) {
+      const label = `${reference} in ${path} at ${width}`;
+      const page = await browser.context.newPage();
+      await page.setViewportSize({ width, height });
+      await page.goto(browser.url(path));
+      await lookUp(page, reference);
+      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+      await page.locator('#companion-want-line:not([hidden])').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(900);
+      const frame = await page.evaluate(() => {
+        const box = (element) => element.getBoundingClientRect();
+        const row = document.getElementById('companion-status-row');
+        const pills = [...row.querySelectorAll('.pill')];
+        return { median: Math.round(box(document.getElementById('median-line')).top), row: Math.round(box(row).height),
+          saved: document.getElementById('companion-saved-line').textContent,
+          want: document.querySelector('#companion-want-line [aria-hidden="true"]').textContent,
+          cut: pills.filter((pill) => pill.scrollWidth > pill.clientWidth + 1 || box(pill).right > box(row).right + 1).map((pill) => pill.textContent) };
+      });
+      assert.match(frame.saved, saved, label);
+      assert.equal(frame.want, want, label);
+      assert.deepEqual(frame.cut, [], `${label}: a pill is cut`);
+      if (height === 600) {
+        assert.ok(frame.row <= 28, `${label}: the status row is ${frame.row} px`);
+        assert.ok(frame.median <= 400, `${label}: the median starts at ${frame.median}`);
+      }
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
@@ -354,6 +419,49 @@ test('a popup opened again draws its last answer without asking acsearch', async
     await again.locator('#refresh-prices').click();
     await again.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
     assert.equal(searches, before + 1, 'Refresh asks again');
+  } finally {
+    await browser.close();
+  }
+});
+
+// S3 fix round (review Important 2): a popup opened again writes its last answer into the Reference box as the session answers, never later,
+// even while the store is slow to answer (held back 1.5 s here); only the card waits for the store. Typed in at once, it looks up what was
+// typed, and the last answer's card is never drawn over the new lookup when the store answers after it.
+test('a popup opened again settles its box at once and, typed in at once, looks up what was typed', async () => {
+  const browser = await launch();
+  try {
+    const first = await browser.context.newPage();
+    await first.setViewportSize({ width: 400, height: 600 });
+    await first.goto(browser.url('popup.html'));
+    await lookUp(first, 'RIC I² Nero 306');
+    await first.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    // The answer is kept in the session as the prices are drawn; closed at once, the page could take that write with it.
+    await first.waitForTimeout(500);
+    await first.close();
+    // Every page opened from here reads the store 1.5 s late, as a slow worker or a busy laptop would.
+    await browser.context.addInitScript(() => {
+      const send = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = function sendLate(message, ...rest) {
+        if (message?.type !== 'snapshot.get') return send.call(this, message, ...rest);
+        setTimeout(() => send.call(chrome.runtime, message, ...rest), 1500);
+        return undefined;
+      };
+    });
+    for (let round = 0; round < 2; round += 1) {
+      const again = await browser.context.newPage();
+      await again.setViewportSize({ width: 400, height: 600 });
+      await again.goto(browser.url('popup.html'));
+      await again.waitForTimeout(400);
+      const restored = round === 0 ? 'RIC I² Nero 306' : 'Price 23';
+      assert.equal(await again.locator('#quick-reference').inputValue(), restored, `round ${round}: the box is settled while the store is still reading`);
+      assert.equal(await again.locator('#result-reference').textContent(), '', `round ${round}: the card waits for the store`);
+      await lookUp(again, 'Price 23');
+      await again.locator('#result-reference', { hasText: 'Price 23' }).waitFor({ timeout: 15000 });
+      await again.waitForTimeout(1800);
+      assert.equal(await again.locator('#quick-reference').inputValue(), 'Price 23', `round ${round}`);
+      assert.equal(await again.locator('#result-reference').textContent(), 'Price 23', `round ${round}`);
+      await again.close();
+    }
   } finally {
     await browser.close();
   }

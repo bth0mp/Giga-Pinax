@@ -7,6 +7,9 @@ import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './
 
 const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
 const language = () => globalThis.navigator?.language ?? 'en-US';
+// Every amount the calculator shows is written by the one page rule: the collector's locale, and the narrow sign only
+// where it names one currency there (¥, not JP¥; SEK 12,500.00, not kr).
+const pageMoney = (amount, locale = language(), options = {}) => formatMoney(amount, locale, { narrow: true, ...options });
 const presetKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
 // A saved amount written back into a field the collector saves again, so it is written the one way
@@ -217,12 +220,7 @@ export function parseHousePresets(text) {
 }
 
 // An amount on a house's schedule, in whole units when it is a whole amount, as schedules are printed.
-function tierMoney(minor, currency, locale) {
-  const scale = 10n ** BigInt(minorDigits(currency) ?? 2);
-  if (BigInt(minor) % scale !== 0n) return formatMoney({ currency, minor }, locale);
-  return new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
-    .format(BigInt(minor) / scale);
-}
+const tierMoney = (minor, currency, locale) => pageMoney({ currency, minor }, locale, { whole: true });
 
 // The tier of a house's ladder a bid stands on, and its step: "on the €1,000–€2,000 tier, steps of
 // €100". The top tier has no end. Nothing when there is no ladder or no bid to place on it.
@@ -316,7 +314,7 @@ export function buildBidCalculation(input) {
 // grid. In budget mode the figure is the hammer, so the line starts with what it costs all in.
 export function calculationLine(calculated, mode, locale = 'en-US') {
   const value = calculated.value;
-  const money = (amount) => formatMoney(amount, locale);
+  const money = (amount) => pageMoney(amount, locale);
   const fees = [['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]
     .filter(([key]) => value[key]?.minor > 0).map(([key, words]) => `${words} ${money(value[key])}`);
   const rate = Number.isInteger(calculated.buyerPremiumBps) ? ` (${calculated.buyerPremiumBps / 100}%)` : '';
@@ -508,8 +506,9 @@ export function mountBidCalculator(
   };
   const modeField = label('Calculation', mode);
   const currencyField = label('Currency', currencyControl);
-  const amountField = label('Hammer price', amount);
-  const premiumField = label('Buyer premium %', premium);
+  // The glossary's words (H-09): the hammer typed here is the Bid tab's Maximum hammer, the premium the buyer's premium.
+  const amountField = label('Maximum hammer', amount);
+  const premiumField = label('Buyer’s premium %', premium);
   const presetField = label('House preset', preset);
   presetField.node.className = 'bid-calculator-wide';
   fields.append(
@@ -528,7 +527,7 @@ export function mountBidCalculator(
   const answerLabel = el('p', { className: 'bid-calculator-label', textContent: 'All-in total' });
   const figure = el('p', { className: 'bid-calculator-figure', hidden: true });
   const output = el('p', {
-    className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
+    className: 'bid-calculator-output', textContent: 'Enter an amount and buyer’s premium.',
   });
   answer.append(answerLabel, figure, output);
   const note = el('p', {
@@ -599,7 +598,7 @@ export function mountBidCalculator(
       const locale = language();
       const onGrid = calculated.nextValidBid.minor === calculated.value.hammer.minor;
       const bid = onGrid ? calculated.value.hammer : calculated.nextValidBid;
-      ladderNote.textContent = `${tiers} ${onGrid ? 'The hammer' : 'The next valid bid'}, ${formatMoney(bid, locale)}, is ${ladderTierText(applied.tiers, bid.minor, bid.currency, locale)}.`;
+      ladderNote.textContent = `${tiers} ${onGrid ? 'The hammer' : 'The next valid bid'}, ${pageMoney(bid, locale)}, is ${ladderTierText(applied.tiers, bid.minor, bid.currency, locale)}.`;
     } else {
       ladderNote.textContent = `${tiers} Bids follow those tiers, not the fixed increment.`;
     }
@@ -648,21 +647,21 @@ export function mountBidCalculator(
     answerLabel.textContent = mode.value === 'budget' ? 'Maximum hammer' : 'All-in total';
     if (!calculated.ok) {
       figure.hidden = true;
-      output.textContent = 'Enter an amount and buyer premium.';
+      output.textContent = 'Enter an amount and buyer’s premium.';
       if (!untouched) showError(calculated.error.message);
       return;
     }
     const hammer = calculated.value.hammer;
     const locale = language();
     renderLadder(calculated);
-    figure.textContent = formatMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
+    figure.textContent = pageMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
     figure.hidden = false;
     output.textContent = calculationLine(calculated, mode.value, locale);
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
   mode.addEventListener('change', () => {
-    amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Hammer price';
+    amountField.caption.textContent = mode.value === 'budget' ? 'Total budget' : 'Maximum hammer';
     showMedian();
     calculate();
   });
@@ -675,7 +674,7 @@ export function mountBidCalculator(
     const caption = el('p', { className: 'bid-calculator-median-for', textContent: `For ${references.join(' · ')}` });
     medianLine.replaceChildren(caption, ...sessionMedians.map((found) => {
       const row = el('p', { className: 'bid-calculator-median-row' });
-      const words = el('span', { textContent: `${found.providerLabel} median ${formatMoney(found.median, language())} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
+      const words = el('span', { textContent: `${found.providerLabel} median ${pageMoney(found.median)} · ${found.count} ${found.count === 1 ? 'sale' : 'sales'}${references.length > 1 ? ` · ${found.reference}` : ''}` });
       const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
       use.addEventListener('click', () => {
         currencyControl.value = found.currency;
@@ -726,7 +725,7 @@ export function mountBidCalculator(
         if (!kept || touched || destroyed) return;
         touched = true;
         mode.value = kept.mode;
-        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Hammer price';
+        amountField.caption.textContent = kept.mode === 'budget' ? 'Total budget' : 'Maximum hammer';
         currencyControl.value = kept.currency;
         for (const field of CALCULATOR_FIELDS) controlsByField[field].value = kept.texts[field];
         importVatOffered = kept.texts.importVat ? null : importVatOffered;

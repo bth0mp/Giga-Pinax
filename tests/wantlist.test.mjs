@@ -359,7 +359,9 @@ test('the open wants of a type are the ones not yet found; a stored want no rule
   assert.equal(wantBadgeText([makeWant()]), 'On your want list');
   assert.equal(wantBadgeText([]), '');
   // H-05: the pill's short words, as the popup's card and Upcoming rows write them.
-  assert.equal(wantPillText(openWantsFor(wants, 'RIC I² Nero 306')), 'Wanted · up to €800.00 · VF+');
+  // S3 fix round (review Important 1): a pill writes its amount whole where exact, so the row never has to cut it; with cents, in full.
+  assert.equal(wantPillText(openWantsFor(wants, 'RIC I² Nero 306')), 'Wanted · up to €800 · VF+');
+  assert.equal(wantPillText([makeWant({ maxPrice: { currency: 'EUR', minor: 80050 } })]), 'Wanted · up to €800.50');
   assert.equal(wantPillText([makeWant()]), 'Wanted');
   assert.equal(wantPillText([makeWant({ minGrade: 'F' })]), 'Wanted · F+');
   assert.equal(wantPillText([]), '');
@@ -510,9 +512,11 @@ test('a captured lot citing a wanted type is marked in its draft, and one that d
   const pill = page.$('lot-want-match').querySelector('.want-pill');
   assert.equal(pill.tagName, 'mark');
   assert.equal(pill.className, 'pill want-pill');
-  assert.equal(pill.textContent, 'Wanted · up to £650.00 · VF+');
+  assert.equal(pill.textContent, 'Wanted · up to £650 · VF+');
   assert.equal(pill.title, 'On your want list · up to £650.00 · VF or better');
-  assert.equal(page.$('lot-want-match').textContent, 'Wanted · up to £650.00 · VF+');
+  // The whole terms are also spoken: the short pill is hidden from a screen reader, the terms are its text.
+  assert.equal(pill.getAttribute('aria-hidden'), 'true');
+  assert.equal(page.$('lot-want-match').querySelector('.sr-only').textContent, 'On your want list · up to £650.00 · VF or better');
   // Typed to a neighbour, the mark goes; typed back, it returns.
   await page.typeDetails('reference', 'RIC I² Nero 306a');
   assert.equal(page.$('lot-want-match').hidden, true);

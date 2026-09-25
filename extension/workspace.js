@@ -739,8 +739,11 @@ async function initWorkspace() {
     const line = $('lot-want-match');
     const wants = openWantsFor(snapshot.wants, $('lot-form').elements.reference.value);
     const pill = wants.length ? text('mark', wantPillText(wants, navigator.language), 'pill want-pill') : null;
-    if (pill) pill.title = wantBadgeText(wants, navigator.language);
-    line.replaceChildren(...(pill ? [pill] : []));
+    // The whole terms are the tooltip for a pointer and the spoken text for a screen reader, as on the popup's pill; the
+    // pill wraps rather than cutting an amount short.
+    const terms = pill ? text('span', wantBadgeText(wants, navigator.language), 'sr-only') : null;
+    if (pill) { pill.title = wantBadgeText(wants, navigator.language); pill.setAttribute('aria-hidden', 'true'); }
+    line.replaceChildren(...(pill ? [pill, terms] : []));
     line.hidden = !pill;
   }
   $('lot-form').addEventListener('input', renderLotWantMatch);

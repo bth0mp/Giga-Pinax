@@ -230,9 +230,10 @@ export function watchedLotsFor(want, lots) {
 }
 
 /**
- * A wanted type as its status pill says it (H-05): "Wanted · up to £650.00 · VF+", from the first want of the type; '' when
- * the type is on no want list. wantBadgeText words the same in full, for the pill's tooltip. The same words as the popup's
- * card and Upcoming rows (companion-popup.js on loop/s3 writes them with the same rule).
+ * A wanted type as its status pill says it (H-05): "Wanted · up to £650 · VF+", from the first want of the type; '' when
+ * the type is on no want list. The amount is whole where it is exact and in full where it is not, so a pill never has to cut
+ * or round it. wantBadgeText words the same in full, for the pill's tooltip. The one source for the popup's card, its Upcoming
+ * rows and the workspace draft.
  * @param {Want[]} matches
  * @param {string} [locale]
  * @returns {string}
@@ -241,7 +242,7 @@ export function wantPillText(matches, locale = 'en-US') {
   const want = matches?.[0];
   if (!want) return '';
   const parts = ['Wanted'];
-  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true })}`); } catch { /* not a price to say */ } }
+  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true, whole: true })}`); } catch { /* not a price to say */ } }
   if (Object.hasOwn(WANT_GRADE_LABELS, want.minGrade ?? '')) parts.push(`${want.minGrade}+`);
   return parts.join(' · ');
 }

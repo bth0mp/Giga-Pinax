@@ -90,7 +90,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl, language = undefined, innerHeight = undefined, snapshotReady = true }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -151,7 +151,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
       setItem: (key, value) => { stored.set(key, String(value)); },
     },
     location: { search, href: `moz-extension://test/popup.html${search}` },
-    navigator: { clipboard: { writeText: async (text) => { clipboard.push(text); } } },
+    navigator: { language, clipboard: { writeText: async (text) => { clipboard.push(text); } } },
     matchMedia: () => ({ matches: true, addEventListener() {} }),
     Option: class extends TestElement { constructor(label, value) { super(); this.label = label; this.value = value; } },
     Event: class { constructor(type, init = {}) { this.type = type; Object.assign(this, init); } },
@@ -169,6 +169,9 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     console,
   };
   sandbox.globalThis = sandbox;
+  if (innerHeight) sandbox.innerHeight = innerHeight;
+  // The watchlist half, not loaded here, has read the store unless a test says it is still reading.
+  sandbox.gigaPinaxSnapshotReady = snapshotReady;
   // A clock a test can move: Date.now() reads it, and every other use of Date is the real one.
   if (clock) sandbox.Date = class extends Date { static now() { return clock.now; } };
 
@@ -290,6 +293,29 @@ test('an answered lookup keeps no reference, and access already granted was neve
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.deepEqual(popup.writes, ['Price 23']);
+});
+
+// H-04 (cycle 5): the price panels write money by the one page rule, in the browser's language with the narrow sign, never in
+// a hard-coded en-US; a median or a sale is a whole-unit figure, so it keeps no places it does not have.
+test('the acsearch and CoinArchives panels write their figures in the browser locale', async () => {
+  const popup = await loadPopup({ language: 'de-DE', permissionRequest: async () => true, priceFetch: async () => oneSale, coinArchivesFetch: async () => coinArchivesSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} } }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const spaced = (text) => text.replace(/ /g, ' ');
+  assert.equal(spaced(popup.element('median-amount').textContent), '120 $');
+  assert.equal(popup.element('median-currency').textContent, 'USD');
+  assert.equal(spaced(popup.element('sale-list').children[0].children[1].textContent), '120 $');
+  // H-11: a sale's day in the browser's language too, never acsearch's 01.01.2025 or an ISO date.
+  assert.equal(popup.element('sale-list').children[0].children[0].children[0], '1. Jan. 2025 · ');
+  // S3 fix round (review Minor 4): the last sale's link and the CoinArchives sample's dates too, always with their year.
+  assert.equal(popup.element('last-sale').children[1].textContent, '1. Jan. 2025');
+  await popup.element('coinarchives-prices-button').emit('click');
+  await settle();
+  assert.equal(spaced(popup.element('coinarchives-median').textContent), '150 $');
+  assert.equal(popup.element('coinarchives-sale-list').children[0].children[0].textContent, '1. Feb. 2025 · Auction 1, Lot 2');
+  assert.match(popup.element('coinarchives-sample').textContent, / · 1\. Feb\. 2025$/);
 });
 
 // A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the
@@ -438,7 +464,7 @@ test('CoinArchives prices require a dedicated click and render a separate public
   const permission = deferred();
   let calls = 0;
   let requestedOrigins;
-  const popup = await loadPopup({
+  const popup = await loadPopup({ language: 'en-GB',
     permissionRequest: ({ origins }) => { requestedOrigins = origins; return permission.promise; },
     permissionContains: async ({ origins }) => !origins.includes('https://www.coinarchives.com/*'),
     priceFetch: async () => oneSale,
@@ -1688,6 +1714,9 @@ test('a RIC mint written with no volume fetches no prices until a type is chosen
 });
 
 // 0.34 (I2): the lots on the fetched page that have not been sold yet. Far-future days, so the tests hold whatever day they run on.
+// H-11: a lot's day as the popup's lists write it, in en-GB as those tests' browser is set: the weekday for a lot still to come.
+const dayWords = (iso, weekday = true) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  ...(weekday ? { weekday: 'short' } : {}) }).format(new Date(`${iso}T12:00:00Z`));
 const upcomingSale = (id, date, description) => ({ id, title: `Roma Numismatics, E-Sale 200, Lot ${id}`, date, price: '*', description });
 const withUpcoming = {
   status: 'ok',
@@ -1700,7 +1729,7 @@ const withUpcoming = {
 };
 
 test('upcoming lots are listed under the acsearch panel, filtered as the median is, and copied', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1708,14 +1737,18 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
   const rows = () => popup.element('upcoming-list').children;
   // Soonest first, and only the lots that cite the reference while the citation filter is on, which it says in the median's own words.
   assert.equal(rows().length, 2);
-  assert.equal(rows()[0].children[0].children[0], '2099-10-12 · ');
+  // H-11: dated as the Watchlist tab dates a sale day, in the browser's language, with the year when it is not this year.
+  assert.equal(rows()[0].children[0].children[0], `${dayWords('2099-10-12')} · `);
   assert.equal(rows()[0].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u1');
   assert.equal(rows()[0].children[0].children[1].href, 'https://www.acsearch.info/search.html?id=u1');
   assert.equal(rows()[1].children[0].children[1].textContent, 'Roma Numismatics, E-Sale 200, Lot u3');
   assert.equal(popup.element('upcoming-filtered').textContent, '2 of 3 results cite Price 23');
   assert.equal(popup.element('upcoming-filtered').hidden, false);
   await popup.element('copy-summary').emit('click');
-  assert.ok(popup.clipboard[0].split('\n').includes('Upcoming: 2 lots, first on Mon, Oct 12, 2099'));
+  // The copy writes the day in the browser's language too, with its year (loop S1).
+  const copiedDay = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date('2099-10-12T12:00:00Z'));
+  assert.ok(popup.clipboard[0].split('\n').includes(`Upcoming: 2 lots, first on ${copiedDay}`), popup.clipboard[0]);
   // The one toggle governs the list too.
   popup.element('citing-filter').checked = false;
   await popup.element('citing-filter').emit('change');
@@ -1729,7 +1762,7 @@ test('upcoming lots are listed under the acsearch panel, filtered as the median 
 });
 
 test('Watch hands an upcoming lot to the watchlist half with its acsearch page and its sale day, date only', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -1740,7 +1773,7 @@ test('Watch hands an upcoming lot to the watchlist half with its acsearch page a
   // Loop 3 (G-02): Watch saves in one step, and its sale day waits for Add.
   assert.match(basis, /Watch saves the lot to your watchlist and offers its sale day as an auction to add\./);
   assert.doesNotMatch(basis, /add its auction there to be reminded/);
-  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12');
+  assert.equal(watch['aria-label'], `Watch Roma Numismatics, E-Sale 200, Lot u1, sale on ${dayWords('2099-10-12')}`);
   popup.dispatched.length = 0;
   await watch.emit('click');
   assert.deepEqual(popup.dispatched.map(({ type, detail }) => ({ type, detail: { ...detail } })), [{ type: 'giga-pinax-watch', detail: {
@@ -1875,13 +1908,13 @@ test('the by-year figures scroll sideways at their natural width, reachable by k
 test('an upcoming lot’s title is shown, spoken and handed over bounded', async () => {
   const long = `Roma ${'x'.repeat(5000)}`;
   const lots = [{ ...upcomingSale('u9', '12.10.2099', 'Macedon. Tetradrachm. Price 23. EF.'), title: long }];
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: '"Price 23"', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
   const [row] = popup.element('upcoming-list').children;
   assert.equal(row.children[0].children[1].textContent, long.slice(0, 200));
-  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on 2099-10-12`);
+  assert.equal(row.children[1]['aria-label'], `Watch ${long.slice(0, 200)}, sale on ${dayWords('2099-10-12')}`);
   popup.dispatched.length = 0;
   await row.children[1].emit('click');
   assert.equal(popup.dispatched[0].detail.title, long.slice(0, 200));
@@ -2116,6 +2149,29 @@ test('the row holding the Reference box is sticky, and the lookup prompt sits un
   assert.match(css, /\.quick-search \{[^}]*position:sticky; top:0/);
 });
 
+// H-11: Recent comes back with the answer, just above the card, and a lookup scrolled it away under the tabs. The card is brought up with the row still
+// over it - unless that would push the median's figure below the top two thirds of the window (G-03's line, 400 px of 600), when the card comes first.
+test('the answer is brought up with Recent over it while the median still starts in the top two thirds', async () => {
+  for (const [figureTop, expected] of [[600, 224], [700, 264]]) {
+    const timers = [];
+    const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+    const popup = await loadPopup({ timers, innerHeight: 600, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+      lookupTypeImpl: async () => ({ status: 'ok', card }) });
+    Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+    popup.element('quick-search').height = 56;
+    Object.assign(popup.element('recent'), { top: 380, height: 30 });
+    popup.element('result').top = 420;
+    Object.assign(popup.element('median-line'), { top: figureTop, height: 40 });
+    popup.element('quick-reference').value = 'Price 23';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    popup.element('median-line').hidden = false;
+    for (const run of timers.splice(0)) run();
+    assert.equal(popup.element('recent').hidden, false);
+    assert.equal(popup.element('popup-scroll').scrolledTo?.[0]?.top, expected, `figure at ${figureTop}`);
+  }
+});
+
 // Prices that come in before the card are brought into view, but the card arriving after them is the answer: the passes still waiting for the prices
 // must not scroll past it.
 test('a card arriving after its prices is what stays in view', async () => {
@@ -2142,7 +2198,7 @@ test('a card arriving after its prices is what stays in view', async () => {
 test('the acsearch panel reads as one stat block with one basis line', async () => {
   const lots = [citingSale('a', '220', 'Macedon. Tetradrachm. Price 23. VF'), { ...citingSale('b', '300', 'Macedon. Tetradrachm. Price 23. VF'), date: '01.06.2025' },
     citingSale('c', '380', 'Macedon. Tetradrachm. Price 23. VF'), citingSale('d', '999', 'Macedon. Tetradrachm. Price 3014. VF')];
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
@@ -2548,6 +2604,45 @@ test('a popup opened with nothing typed draws the last answer again from the ses
   assert.equal(calls.lookups, 0);
 });
 
+// H-11: a restored card is drawn once the watchlist half has read the store, so it lands with its status row rather than having the row push the
+// panel down a moment later. A fresh lookup never waits on the store.
+test('a restored answer waits for the store to be read, and a lookup does not', async () => {
+  const session = new Map();
+  await answered(session);
+  const reopened = await loadPopup({ session, snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(reopened.element('result-reference').textContent, '', 'the card waits for the store');
+  // Fix round (review Important 2): the box is settled as soon as the session answers, as in 0.38.0; only the card waits.
+  assert.equal(reopened.element('quick-reference').value, 'Price 23');
+  await reopened.window.emit('giga-pinax-snapshot-ready');
+  await settle(); await settle();
+  assert.equal(reopened.element('result').hidden, false);
+  assert.equal(reopened.element('result-reference').textContent, 'Price 23');
+  const fresh = await loadPopup({ snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  fresh.element('quick-reference').value = 'Price 23';
+  await fresh.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(fresh.element('result').hidden, false, 'a lookup draws its card at once');
+});
+
+// Fix round (review Important 2): what the collector types while the store is being read is his. The restored card is not drawn over it, and
+// nothing is written into the box after the session has answered.
+test('typing while a reopened popup waits for the store keeps what was typed, and draws no restored card', async () => {
+  const session = new Map();
+  await answered(session);
+  for (const typed of ['Price 23 Nero', '']) {
+    const reopened = await loadPopup({ session, snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale });
+    await settle(); await settle();
+    reopened.element('quick-reference').value = typed;
+    await reopened.element('quick-reference').emit('input');
+    await reopened.window.emit('giga-pinax-snapshot-ready');
+    await settle(); await settle();
+    assert.equal(reopened.element('quick-reference').value, typed, JSON.stringify(typed));
+    assert.equal(reopened.element('result-reference').textContent, '', `${JSON.stringify(typed)}: no restored card`);
+  }
+});
+
 test('an old, torn or other-currency answer is not drawn as prices, and a prompt reference wins over it', async () => {
   const session = new Map();
   await answered(session);
@@ -2766,11 +2861,11 @@ test('a dotted-letter lot row searches no prices and shows no plain term until a
 const WANTS = [{ id: '11111111-1111-4111-8111-111111111111', revision: 0, dataClass: 'collector', createdAt: '2026-09-25T12:00:00.000Z',
   updatedAt: '2026-09-25T12:00:00.000Z', reference: 'Price 23', maxPrice: { currency: 'USD', minor: 150000 }, minGrade: 'VF' }];
 const wantedRows = (popup) => popup.element('upcoming-list').children
-  .filter((row) => row.children[0].children.at(-1)?.textContent === 'On your want list')
+  .filter((row) => (row.children[0].children.at(-1)?.textContent ?? '').startsWith('Wanted'))
   .map((row) => row.children[0].children[1].textContent);
 
 test('an upcoming lot citing a wanted type carries the want-list badge beside its one-step Watch', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming,
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => withUpcoming,
     lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
   await popup.window.emit('giga-pinax-wants', { detail: WANTS });
   popup.element('quick-reference').value = 'Price 23';
@@ -2780,10 +2875,12 @@ test('an upcoming lot citing a wanted type carries the want-list badge beside it
   const [row] = popup.element('upcoming-list').children;
   const badge = row.children[0].children.at(-1);
   const watch = row.children[1];
-  assert.equal(badge.className, 'pill');
+  // H-05: the same pill as under the card, short, with the want's whole terms as its tooltip.
+  assert.equal(badge.className, 'pill want-pill');
+  assert.equal(badge.textContent, 'Wanted · up to $1,500 · VF+');
   assert.equal(badge.title, 'On your want list · up to $1,500.00 · VF or better');
   assert.equal(watch.textContent, 'Watch');
-  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12. On your want list · up to $1,500.00 · VF or better');
+  assert.equal(watch['aria-label'], `Watch Roma Numismatics, E-Sale 200, Lot u1, sale on ${dayWords('2099-10-12')}. On your want list · up to $1,500.00 · VF or better`);
   // One click saves it through the one-step save, as any row's Watch does.
   popup.dispatched.length = 0;
   await watch.emit('click');
@@ -2852,4 +2949,13 @@ test('the median kept for the workspace is in the table’s minor units, whateve
   await popup.element('reference-form').emit('submit');
   await settle(); await settle();
   assert.equal(session.get('giga-pinax-session-median').acsearch.median, 12000);
+});
+
+// H-06/H-09 (cycle 5, popup part): the Watchlist tab's button names the page it opens by its own word, and the popup's markup
+// uses the glossary's words.
+test('the popup says “Open the workspace” and no word the glossary retired', () => {
+  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
+  assert.equal(parseHtml(html).getElementById('companion-open-watchlist').textContent, 'Open the workspace');
+  assert.doesNotMatch(html, /auction workspace|buyer premium|evidence/i);
+  assert.doesNotMatch(html, /Hammer price/);
 });

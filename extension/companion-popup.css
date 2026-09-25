@@ -34,10 +34,17 @@
 .companion-exposure-list li {display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px;}
 .companion-exposure-list strong {font-variant-numeric:tabular-nums; text-align:right;}
 .companion-exposure-list .companion-none {color:var(--muted);}
+/* The tab with no coin saved: three words and one sentence, in the workspace's empty-state voice (H-07). */
+.companion-empty {margin:14px 0 0;}
+.companion-empty h3 {margin:0 0 4px;}
+.companion-empty p {margin:0; color:var(--muted); font-size:var(--text-body); line-height:1.5;}
 /* The coins that want the collector now: each a row that opens the workspace on that coin. */
 .companion-coin-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .companion-coin-list li {border-bottom:1px solid var(--line);}
-.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:600; overflow-wrap:anywhere;}
+.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:400; color:var(--muted); overflow-wrap:anywhere;}
+/* A coin to watch leads with its reference in serif, as every workspace row does (H-16); then its title, muted; then when, in the accent. */
+.companion-coin-list .coin-reference {font-family:var(--font-serif); font-size:var(--text-input); font-weight:600; color:var(--ink);}
+.companion-coin-list .coin-when {font-weight:650; color:var(--accent);}
 /* Save and the capture buttons are secondary buttons (design-tokens.css); Save sits in the card's heading row at the small height. */
 .companion-save-watchlist {min-height:var(--control-h-sm); padding:0 12px;}
 .companion-current-lot {margin:0; border-bottom:1px solid var(--line);}
@@ -46,10 +53,17 @@
 .source-intro {margin:0 0 9px; color:var(--muted); font-size:12px; line-height:1.45;}
 .companion-capture-actions {display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
 .companion-full-button {width:100%; margin-top:14px;}
-/* Where a saved coin stands, or what a save just did, with its Open and Undo: one line of words and text buttons under the card's heading or the
-   Upcoming list. The buttons keep the line's height, so it never jumps as they come and go. */
-.saved-line {margin:8px 0 0; padding:4px 10px; border-left:3px solid var(--gold); background:var(--soft); border-radius:0 var(--radius) var(--radius) 0; font-size:var(--text-body); line-height:1.6; color:var(--ink);}
-.saved-line .text-button {padding:0; font-size:var(--text-body); line-height:inherit;}
+/* The status row (H-05): Watching, Saved and Wanted as pills on one row under the card's summary - or under the Upcoming list - with Open and
+   Undo beside a save, so a coin saved and wanted keeps the median where G-03 put it. Nothing in it is ever cut: two pills that do not fit take a
+   second row (long amounts at the side panel's widths), and a pill wider than the row wraps inside itself. The buttons keep the row's height,
+   so it never jumps as they come and go. */
+.status-row {display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; min-height:24px; margin:6px 0 0; font-size:var(--text-body); line-height:1.4; color:var(--ink);}
+.status-line {display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; max-width:100%;}
+.status-row .pill {max-width:100%; padding:3px 8px; font-family:var(--font-ui); line-height:1.4; white-space:normal;}
+.status-row .text-button {flex:none; padding:0 2px; font-size:var(--text-body); line-height:inherit;}
+.watch-pill {border-color:var(--accent); background:var(--accent-soft); color:var(--accent);}
+button.watch-pill {cursor:pointer;}
+button.watch-pill:hover {border-color:var(--accent-hover); color:var(--accent-hover);}
 /* A message said for a while in the hint line under the control that caused it (companion-popup.js); a failure in the error colour. */
 .said-error {color:var(--error);}
 .companion-needs-outcome {margin:10px 0 0;}

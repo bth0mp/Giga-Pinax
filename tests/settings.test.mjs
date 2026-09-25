@@ -1486,3 +1486,49 @@ test('the settings cannot be edited before they have loaded, and can once they h
   const loaded = await openSettings({});
   for (const id of EDITORS) assert.equal(loaded.element(id).disabled, false, `${id} works once they have loaded`);
 });
+
+// H-02 (cycle 5): the theme and the photos switch live in this page's local storage, not with the worker, so they are
+// drawn at once and a late answer from the worker never puts them back. What was chosen before it answered stands,
+// and counts as a change to save.
+test('a theme and the photos switch chosen before the settings load are kept when they load', async () => {
+  let answer;
+  const late = new Promise((resolve) => { answer = resolve; });
+  const stored = new Map([['giga-pinax-theme-v1', 'light']]);
+  const page = loadSettings({ stored, snapshotReply: late, reply: () => ({ ok: true, value: preferences({ revision: 4 }) }) });
+  await settle();
+  assert.equal(page.element('theme').value, 'light', 'drawn from local storage before the worker answers');
+  assert.equal(page.element('theme').disabled, false);
+  assert.equal(page.element('specimen-photos').disabled, false);
+  page.element('theme').value = 'dark';
+  page.element('specimen-photos').checked = true;
+  answer({ ok: true, value: snapshotWith() });
+  await settle(); await settle();
+  assert.equal(page.element('save-settings').disabled, false, 'the settings have loaded');
+  assert.equal(page.element('theme').value, 'dark');
+  assert.equal(page.element('specimen-photos').checked, true);
+  await page.element('save-settings').click();
+  await settle();
+  assert.equal(page.stored.get('giga-pinax-theme-v1'), 'dark');
+  assert.equal(page.stored.get('giga-pinax-specimen-photos-v1'), 'on');
+});
+
+// H-12 (cycle 5, Settings part): one filled button per form. Save settings is the page's action, and Confirm import the
+// import preview's; Export backup and the update link are secondary, as every other action on the page is.
+test('Settings fills only its Save settings and Confirm import buttons', () => {
+  const markup = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
+  const quiet = ['secondary', 'quiet', 'danger', 'text-button'];
+  const filled = [...markup.querySelectorAll('button'), ...markup.querySelectorAll('a.button')]
+    .filter((control) => !quiet.some((kind) => String(control.getAttribute('class') ?? '').split(/\s+/).includes(kind)))
+    .map((control) => control.id);
+  assert.deepEqual(filled.sort(), ['confirm-import', 'save-settings']);
+});
+
+// H-09 (cycle 5): Settings says buyer's premium, as the calculator and the workspace do.
+test('Settings names the buyer’s premium in the glossary’s words', async () => {
+  const page = await openSettings({ snapshot: snapshotWith({ preferences: preferences({ housePremiumPresets: [{ name: 'Roma', buyerPremiumBps: 2000 }] }) }) });
+  const html = readFileSync(new URL('../extension/settings.html', import.meta.url), 'utf8');
+  assert.match(html, /Each house’s buyer’s premium/);
+  assert.doesNotMatch(html, /buyer premium/i);
+  const captions = [...page.document.querySelectorAll('span')].map((span) => span.textContent);
+  assert.ok(captions.some((caption) => caption.startsWith('Buyer’s premium %')), JSON.stringify(captions));
+});
