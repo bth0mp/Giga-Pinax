@@ -1,7 +1,7 @@
 // @ts-check
 import {
-  ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, healCollectionEntries,
-  migrateSnapshot, quarantineEntryId,
+  ENTRY_EDITABLE_FIELDS, LIMITS, MAX_ROOT_BYTES, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, foldQuarantine, followOutcome,
+  healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot, validateWant,
 } from './core/records.js';
@@ -37,7 +37,7 @@ import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
  */
 
 export const STORAGE_KEY = 'auctionCompanion:v1';
-export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+export { MAX_ROOT_BYTES };
 // The commands the background worker answers from an extension page; any other message gets no reply.
 export const COMMAND_TYPES = new Set([
   'snapshot.get', 'snapshot.raw',
@@ -58,15 +58,37 @@ const SCHEDULE_CHANGING_COMMANDS = new Set([
   'quarantine.restore',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
-const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
-// What a command that no longer fits in local storage says, where the reminder preflight's own
-// sentence would name the wrong thing: the message and the field it belongs to.
-const OVER_THE_BOUND = new Map([
-  ['backup.import', ['This backup does not fit in the 5 MiB local storage bound. Remove records here, or import a backup with fewer records.', 'document']],
-  ['quarantine.restore', ['Putting this record back would exceed the 5 MiB local storage bound. Remove records you no longer need, then put it back.', 'entryId']],
+// A removal whose reply carries the whole record, for Undo. Past the bound that copy is the one thing it may give up,
+// so the removal itself still happens (X-01).
+const REMOVALS = new Set(['lot.delete', 'event.delete', 'group.delete', 'want.delete']);
+// What grew, as the collector would say it, for a change the bound refuses.
+const WHAT_GREW = new Map([
+  ['lot.save', 'Saving this coin'], ['lot.restore', 'Putting this coin back'], ['event.save', 'Saving this auction'],
+  ['group.save', 'Saving this group'], ['group.reorder', 'Reordering this group'],
+  ['bid.plan', 'Saving this bid'], ['bid.place', 'Saving this bid'], ['bid.cancel', 'Saving this bid'],
+  ['lot.outcome.set', 'Saving this result'], ['collection.update', 'Saving this collection entry'],
+  ['collection.review.resolve', 'Saving this collection entry'],
+  ['evidence.add', 'Adding this comparable'], ['evidence.include', 'Saving this comparable'], ['evidence.resolve', 'Saving this comparable'],
+  ['draft.save', 'Keeping this page capture'], ['preferences.save', 'Saving these settings'],
+  ['preferences.migrateIfAbsent', 'Saving your settings'], ['want.save', 'Saving this want'], ['want.found', 'Marking this want found'],
 ]);
-// What any other command says when its own result, before any reminder it schedules, does not fit.
-const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
+const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or comparables you no longer need.';
+/**
+ * The refusal of a change that would grow the records past the bound: what grew, and the way out that works.
+ * @param {string} type
+ * @param {number} bytes
+ * @returns {[string, string]} the message and the field it belongs to
+ */
+function overTheBound(type, bytes) {
+  const size = `${megabytesText(bytes)}, more than the 5 MB Giga Pinax can keep in this browser`;
+  if (type === 'backup.import') {
+    return [`This backup does not fit: with it your records would take ${size}. Import a backup with fewer records, or remove old coins or comparables here first.`, 'document'];
+  }
+  if (type === 'quarantine.restore') {
+    return [`Putting this record back would take your records to ${size}. ${OUT_OF_THE_BOUND} Then put it back.`, 'entryId'];
+  }
+  return [`${WHAT_GREW.get(type) ?? 'This change'} would take your records to ${size}. ${OUT_OF_THE_BOUND}`, 'type'];
+}
 
 // The want a command names at the revision it was sent against, refused in a sentence of its own: "This want changed in another view."
 /**
@@ -87,21 +109,56 @@ function sameValue(left, right) {
   return left === right;
 }
 
+// A public command leaves the ledger headroom the background's own reminder writes spend after it; those spend it.
+const headroomFor = (type) => (INTERNAL_COMMANDS.has(type) ? 0 : LIMITS.commandReplyBytes);
+
+// The root a command leaves, judged against the bound, and then the schedule it leads to: null when both may be kept,
+// or the refusal. The command's own result is judged first: a lot too many or a store already at the bound is the
+// command's own refusal, in its own words, and was reported as reminders that could not be scheduled.
 /**
- * @param {Snapshot} snapshot
- * @param {boolean} [commandHeadroom]
- * @returns {number}
+ * @param {Snapshot} before
+ * @param {Snapshot} next
+ * @param {Command} command
+ * @param {string} now
+ * @param {number} headroom
+ * @returns {{ failure: CommandFailure | *, invalid?: true } | null}
  */
-function storageBytesWithReserve(snapshot, commandHeadroom = true) {
-  const reserved = clone(snapshot);
-  for (const alert of reserved.alerts) {
-    alert.revision = Number.MAX_SAFE_INTEGER;
-    alert.status = 'acknowledged';
-    for (const field of ['attemptedAt', 'claimedAt', 'deliveredAt', 'acknowledgedAt', 'snoozedUntil', 'missedAt']) {
-      alert[field] = RESERVED_INSTANT;
-    }
+function judgeTheBound(before, next, command, now, headroom) {
+  const fits = boundVerdict(before, next, headroom);
+  if (!fits.ok) {
+    const [message, path] = overTheBound(command.type, fits.bytes);
+    return { failure: fail('storage-bound', message, path) };
   }
-  return new TextEncoder().encode(JSON.stringify(reserved)).length + (commandHeadroom ? LIMITS.commandReplyBytes : 0);
+  if (!SCHEDULE_CHANGING_COMMANDS.has(command.type)) return null;
+  let projectedId = 0;
+  const projected = clone(next);
+  reconcileIntoSnapshot(projected, {
+    now: () => now,
+    newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
+  });
+  projected.revision += 1;
+  const reconcileRequestId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const reconcileValue = { nextWakeAt: projected.scheduler.nextWakeAt, dueEventCount: projected.alerts.filter(({ status }) => status === 'due').length };
+  projected.recentCommands.push({
+    requestId: reconcileRequestId, commandType: 'scheduler.reconcile', revision: projected.revision, committedAt: now,
+    reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
+  });
+  projected.recentCommands = projected.recentCommands.slice(-200);
+  // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
+  // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
+  // command itself has already passed, so what failed is the schedule it leads to.
+  const projectedValid = validateSnapshot(projected);
+  if (!projectedValid.ok) {
+    return { invalid: true, failure: fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path) };
+  }
+  const scheduled = boundVerdict(before, projected, headroom);
+  if (scheduled.ok) return null;
+  // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back is
+  // answered by removing reminders, and each names what to change.
+  const [message, path] = ['backup.import', 'quarantine.restore'].includes(command.type)
+    ? overTheBound(command.type, scheduled.bytes)
+    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the 5 MB Giga Pinax can keep in this browser. Remove reminders or old auctions, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
+  return { failure: fail('storage-bound', message, path) };
 }
 
 /**
@@ -202,6 +259,9 @@ function mutation(snapshot, command, context) {
     case 'lot.restore': {
       const deleted = snapshot.recentCommands.find(({ requestId, commandType }) => requestId === command.deleteRequestId && commandType === 'lot.delete');
       const removed = deleted?.reply?.value;
+      if (removed?.undoAvailable === false) {
+        return fail('validation', 'This coin was removed while your records filled the storage, so no copy was kept to put back. A backup that holds it can bring it back.', 'deleteRequestId');
+      }
       if (!removed?.id) return fail('validation', 'This coin can no longer be put back.', 'deleteRequestId');
       if (next.lots.some(({ id }) => id === removed.id)) return fail('conflict', 'This coin is already back.', 'deleteRequestId');
       value = clone(removed);
@@ -880,41 +940,15 @@ function mutation(snapshot, command, context) {
   // be scheduled - with removing reminders offered as the way out.
   const validated = validateSnapshot(next);
   if (!validated.ok) return fail('validation', validated.error.message, validated.error.path);
-  if (SCHEDULE_CHANGING_COMMANDS.has(command.type)) {
-    // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back
-    // is answered by removing reminders, and each names what to change.
-    const overTheBound = OVER_THE_BOUND.get(command.type);
-    if (storageBytesWithReserve(next) > MAX_ROOT_BYTES) {
-      const bounded = overTheBound ?? [THIS_CHANGE_OVER_THE_BOUND, 'type'];
-      return fail('storage-bound', bounded[0], bounded[1]);
-    }
-    let projectedId = 0;
-    const projected = clone(next);
-    reconcileIntoSnapshot(projected, {
-      now: () => now,
-      newId: () => `ffffffff-ffff-4fff-8fff-${String(projectedId++).padStart(12, '0')}`,
-    });
-    projected.revision += 1;
-    const reconcileRequestId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
-    const reconcileValue = { nextWakeAt: projected.scheduler.nextWakeAt, dueEventCount: projected.alerts.filter(({ status }) => status === 'due').length };
-    projected.recentCommands.push({
-      requestId: reconcileRequestId, commandType: 'scheduler.reconcile', revision: projected.revision, committedAt: now,
-      reply: { ok: true, requestId: reconcileRequestId, revision: projected.revision, value: reconcileValue },
-    });
-    projected.recentCommands = projected.recentCommands.slice(-200);
-    // The reconcile that follows this command is a command of its own, so a projection that could not be validated used
-    // to commit anyway and leave every later reconcile failing, with nobody to tell. Refused here, while there is. The
-    // command itself has already passed, so what failed is the schedule it leads to.
-    const projectedValid = validateSnapshot(projected);
-    if (!projectedValid.ok) {
-      return fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path);
-    }
-    if (storageBytesWithReserve(projected) > MAX_ROOT_BYTES) {
-      const bounded = overTheBound ??
-        ['These reminders would exceed the 5 MiB local storage bound. Remove reminders or old auction events before saving.', 'reminders'];
-      return fail('storage-bound', bounded[0], bounded[1]);
-    }
+  const headroom = headroomFor(command.type);
+  let judged = judgeTheBound(snapshot, next, command, now, headroom);
+  // A removal past the bound gives up the copy its Undo would have put back, and the reply says so (X-01).
+  if (judged && !judged.invalid && REMOVALS.has(command.type) && value?.id) {
+    reply.value = { id: value.id, undoAvailable: false };
+    next.recentCommands[next.recentCommands.length - 1].reply = clone(reply);
+    judged = judgeTheBound(snapshot, next, command, now, headroom);
   }
+  if (judged) return judged.failure;
   return ok({ snapshot: next, value, reply, mutated: true });
 }
 
@@ -1044,10 +1078,7 @@ export function createCommandWriter(storageArea, context) {
     if (!applied.value.mutated) {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: applied.value.value };
     }
-    const includeCommandHeadroom = !INTERNAL_COMMANDS.has(command.type);
-    if (storageBytesWithReserve(applied.value.snapshot, includeCommandHeadroom) > MAX_ROOT_BYTES) {
-      return errorReply(command, 'validation', 'not-committed', 'Local data plus reminder-delivery reserve exceeds the 5 MiB storage bound. Remove old auction events, reminders, or other saved data before retrying.');
-    }
+    // The bound was judged with the command itself (boundVerdict), against the data the store held before it.
     try {
       await storageArea.set({ [STORAGE_KEY]: applied.value.snapshot });
     } catch (error) {

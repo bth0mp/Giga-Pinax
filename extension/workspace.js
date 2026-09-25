@@ -936,7 +936,9 @@ async function initWorkspace() {
     void send({ type: 'lot.delete', requestId: deleteRequestId, lotId: basis.id, expectedRevision: basis.revision }, 'lot')
       .then((reply) => {
         removedHere = removedHereAfterDeleteReply(removedHere, basis.id, reply);
-        if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
+        // Past the storage bound the store keeps no copy to put back (X-01), so no Undo is offered.
+        if (reply?.ok && reply.value?.undoAvailable === false) announce(`Removed “${basis.record.title}”. Undo is not available while your records fill the storage.`);
+        else if (reply?.ok) offerUndoRemove(basis.record.title, deleteRequestId);
       });
   });
   // "Removed · Undo" on the page for ten seconds: Undo asks the store to put back the very coin that delete removed.

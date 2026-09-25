@@ -1531,3 +1531,76 @@ export function setOutcome(lot, outcomeDraft, now) {
   if (!validated.ok) return validated;
   return { ok: true, value: next };
 }
+
+// The most the root may take in local storage. Chrome and Brave give an extension 10 MB there, Firefox more; this is
+// Giga Pinax's own bound, kept well inside every browser's.
+export const MAX_ROOT_BYTES = 5 * 1024 * 1024;
+const RESERVED_INSTANT = '9999-12-31T23:59:59.999Z';
+
+// Every reminder measured as it will be once it has rung and been answered, so a reminder going off never finds the
+// store full.
+function reserveAlerts(root) {
+  for (const alert of Array.isArray(root.alerts) ? root.alerts : []) {
+    if (!isObject(alert)) continue;
+    alert.revision = Number.MAX_SAFE_INTEGER;
+    alert.status = 'acknowledged';
+    for (const field of ['attemptedAt', 'claimedAt', 'deliveredAt', 'acknowledgedAt', 'snoozedUntil', 'missedAt']) {
+      alert[field] = RESERVED_INSTANT;
+    }
+  }
+  return root;
+}
+
+const byteLength = (value) => new TextEncoder().encode(JSON.stringify(value)).length;
+
+/**
+ * Every byte a root takes against the bound, its reminders reserved.
+ * @param {Snapshot} snapshot
+ * @returns {number}
+ */
+export function storedBytes(snapshot) {
+  return byteLength(reserveAlerts(structuredClone(snapshot)));
+}
+
+// The collector's data alone: the root without the request ledger, which is bookkeeping, and with every revision
+// counted at its widest, so a counter gaining a digit is never taken for the data growing.
+function dataBytes(snapshot) {
+  const root = reserveAlerts(structuredClone(snapshot));
+  root.recentCommands = [];
+  for (const { host, key } of revisionSites(root)) host[key] = Number.MAX_SAFE_INTEGER;
+  return byteLength(root);
+}
+
+/**
+ * Whether the root a command leaves may be kept, and what it would take. A change that stays inside the bound with
+ * `headroom` to spare is kept. So, past it, is one that does not grow the collector's data - a removal, an
+ * acknowledgement, a snooze, a currency of the same length - because refusing those left nothing that could get a full
+ * store under the bound again (X-01). The ledger entry such a change still writes may spend the headroom, and no more.
+ * @param {Snapshot} before
+ * @param {Snapshot} after
+ * @param {number} headroom
+ * @returns {{ ok: boolean, bytes: number }}
+ */
+export function boundVerdict(before, after, headroom) {
+  const total = storedBytes(after);
+  const bytes = total + headroom;
+  if (bytes <= MAX_ROOT_BYTES) return { ok: true, bytes };
+  return { ok: total <= MAX_ROOT_BYTES + LIMITS.commandReplyBytes && dataBytes(after) <= dataBytes(before), bytes };
+}
+
+/**
+ * Bytes as the collector reads them beside the bound: "1.6 MB".
+ * @param {number} bytes
+ * @returns {string}
+ */
+export function megabytesText(bytes) {
+  const megabytes = Math.max(0, bytes) / (1024 * 1024);
+  if (megabytes < 0.05) return 'under 0.1 MB';
+  // Beside the bound a tenth is too coarse: 4.96 MB and 5.04 MB would both read as the bound itself. Rounded towards
+  // the side of the bound they are on, so a figure over it never reads as within it, nor one within as over.
+  if (megabytes >= 4.95 && megabytes < 5.05) {
+    const hundredths = bytes > MAX_ROOT_BYTES ? Math.ceil(megabytes * 100) : Math.floor(megabytes * 100);
+    return `${(hundredths / 100).toFixed(2)} MB`;
+  }
+  return `${megabytes.toFixed(1)} MB`;
+}

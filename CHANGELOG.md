@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- When your records fill the 5 MB Giga Pinax keeps in this browser, removing a coin, acknowledging or snoozing a reminder and changing the currency work again: only a change that makes your records bigger is refused, and the refusal says what grew and the way out (`Saving this coin would take your records to 5.01 MB, more than the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.`). A removal that could not also keep a copy for **Undo** says so instead of offering it. A record put back from the set-aside list no longer counts as growth, since it was already stored.
+
 ## [0.39.0] - 2026-09-25
 
 ### Added

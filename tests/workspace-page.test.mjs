@@ -1452,6 +1452,22 @@ test('Remove coin says so on the page with Undo, which puts back the coin with i
   assert.equal(page.$('selected-title').textContent, 'Nero, denarius');
 });
 
+// X-01: past the storage bound the store removes the coin but keeps no copy to put back, and the page offers no Undo.
+test('Remove coin past the storage bound says Undo is not available instead of offering it', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const commit = background.writer.commitCommand;
+  background.writer.commitCommand = async (command) => {
+    const reply = await commit(command);
+    return command.type === 'lot.delete' && reply.ok ? { ...reply, value: { id: reply.value.id, undoAvailable: false } } : reply;
+  };
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('delete-lot');
+  assert.equal(background.root().lots.length, 0);
+  assert.equal(page.status(), 'Removed “Nero, denarius”. Undo is not available while your records fill the storage.');
+  assert.equal(page.$('undo-remove'), null);
+});
+
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,
 // one needing its outcome before any other; a phone keeps its list.
 test('a wide workspace opens the coin the queue puts first, one needing its outcome before the rest', async () => {

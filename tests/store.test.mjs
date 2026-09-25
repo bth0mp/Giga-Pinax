@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId } from '../extension/core/records.js';
+import { LIMITS, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, storedBytes } from '../extension/core/records.js';
 import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
 import { deduplicateEvidence } from '../extension/core/evidence.js';
 import { MAX_ROOT_BYTES, STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
@@ -1500,7 +1500,7 @@ test('writer atomically rejects an event whose fully materialized reminders exce
     },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.match(result.message, /reminders.*5 MB/i);
   assert.equal(storage.read().auctionEvents.length, 499);
 });
 
@@ -1525,17 +1525,15 @@ test('an import over the storage bound is refused as an import, not as a reminde
   assert.match(result.error.message, /backup/i);
   assert.doesNotMatch(result.error.message, /reminder/i);
 
-  // Nor is a record coming back out of the bin: the way out of that is the records already saved.
+  // A record coming back out of the bin was already counted there, so at the bound it moves rather than grows (X-01).
   const stored = createEmptySnapshot(NOW);
   stored.lots.push(...incoming.lots);
   stored.quarantine = [{ collection: 'lots', record: fat(999999), reason: 'collection-limit', quarantinedAt: NOW }];
   const restore = applyCommand(stored, command('quarantine.restore', {
     entryId: quarantineEntryId(stored.quarantine[0]),
   }), context());
-  assert.equal(restore.ok, false);
-  assert.equal(restore.error.code, 'storage-bound');
-  assert.match(restore.error.message, /put(ting)? (this record )?back/i);
-  assert.doesNotMatch(restore.error.message, /reminder/i);
+  assert.equal(restore.ok, true, restore.error?.message);
+  assert.equal(restore.value.snapshot.quarantine, undefined);
 });
 
 // The reminder preflight ran before the command's own result had been judged, so a lot too many, or a
@@ -1560,7 +1558,7 @@ test('a schedule-changing command refused for its own sake does not blame remind
   }), context());
   assert.equal(bounded.ok, false);
   assert.equal(bounded.error.code, 'storage-bound');
-  assert.match(bounded.error.message, /5 MiB/);
+  assert.match(bounded.error.message, /^Saving this coin would take your records to 5\.\d\d MB, more than the 5 MB .* Export a backup, then remove old coins or comparables/);
   assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
 });
 
@@ -1587,7 +1585,7 @@ test('writer preflights linked reminders when a lot activates their event', asyn
     lot: { title: 'Final linked lot', auctionEventId: current.auctionEvents.at(-1).id, sourceLinks: [] },
   }));
   assert.equal(result.ok, false);
-  assert.match(result.message, /reminders.*5 MiB/i);
+  assert.match(result.message, /reminders.*5 MB/i);
   assert.equal(storage.read().lots.length, 499);
 });
 
@@ -2727,4 +2725,128 @@ test('lot.restore refuses the request id of a command that was not a delete', ()
   const refused = applyCommand(removed, command('lot.restore', { deleteRequestId: save.requestId }), context());
   assert.equal(refused.ok, false);
   assert.equal(refused.error.path, 'deleteRequestId');
+});
+
+// X-01: at the 5 MiB bound a change that grows the collector's data is refused, in words that say what grew and the way
+// out; one that shrinks it or leaves its size unchanged - a removal, an acknowledgement, a snooze, a currency of the
+// same length - is kept, so a full store can always be brought back under the bound.
+const HEADROOM = LIMITS.commandReplyBytes;
+// A store at the bound: a near-sale auction with two due reminders, a coin to remove, settings, and padding that takes
+// the whole root to `total` bytes against the bound.
+function storeAtTheBound(total = MAX_ROOT_BYTES - HEADROOM + 1) {
+  let state = reduce(createEmptySnapshot(NOW), command('preferences.migrateIfAbsent', {
+    preferences: { currency: 'EUR', housePremiumPresets: [] },
+  })).snapshot;
+  state = reduce(state, command('event.save', {
+    expectedRevision: null,
+    event: {
+      name: 'Near sale', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-09-12', localTime: '12:10',
+      timeZone: 'UTC', reminderScope: 'standalone', reminders: [{ kind: 'offset', offsetMinutes: 20 }, { kind: 'offset', offsetMinutes: 15 }],
+    },
+  })).snapshot;
+  state = reduce(state, command('scheduler.reconcile')).snapshot;
+  state.lots.push(plainLot(uuid(), { title: 'Fat coin', notes: 'n'.repeat(LIMITS.notes) }));
+  state.padding = '';
+  state.padding = 'p'.repeat(total - storedBytes(state));
+  assert.equal(storedBytes(state), total);
+  return state;
+}
+
+test('X-01: a change that grows the data is kept up to the bound and refused one byte past it, saying what grew', async () => {
+  const base = createEmptySnapshot(NOW);
+  base.padding = '';
+  // A save that schedules nothing, so its own root is the one the bound is judged on.
+  const save = command('want.save', { expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const grown = storedBytes(applyCommand(base, save, context()).value.snapshot);
+  base.padding = 'p'.repeat(MAX_ROOT_BYTES - HEADROOM - grown);
+  const fits = applyCommand(base, save, context());
+  assert.equal(fits.ok, true, fits.error?.message);
+  assert.equal(storedBytes(fits.value.snapshot) + HEADROOM, MAX_ROOT_BYTES);
+
+  const over = structuredClone(base);
+  over.padding += 'p';
+  const storage = memoryStorage(over);
+  const reply = await createCommandWriter(storage, context()).commitCommand(save);
+  assert.equal(reply.ok, false);
+  assert.equal(reply.error.code, 'storage-bound');
+  assert.equal(reply.message, 'Saving this want would take your records to 5.01 MB, more than the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.');
+  assert.deepEqual(storage.read(), over, 'nothing is written');
+});
+
+test('X-01: at the bound a coin can be removed, a reminder acknowledged or snoozed and the currency changed', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const [first, second] = full.alerts;
+  assert.equal(first.status, 'due');
+
+  // Growing is refused first, so this store really is at the bound.
+  const grow = await writer.commitCommand(command('lot.save', { expectedRevision: null, lot: { title: 'One more', sourceLinks: [] } }));
+  assert.equal(grow.error?.code, 'storage-bound');
+
+  const removed = await writer.commitCommand(command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision }));
+  assert.equal(removed.ok, true, removed.message);
+  assert.equal(removed.value.title, 'Fat coin', 'the copy for Undo is kept while the headroom allows');
+  assert.equal(storage.read().lots.length, 0);
+
+  const acknowledged = await writer.commitCommand(command('alert.ack', { triggerIds: [first.triggerId] }));
+  assert.equal(acknowledged.ok, true, acknowledged.message);
+  const snoozed = await writer.commitCommand(command('alert.snooze', { triggerIds: [second.triggerId], snoozedUntil: LATER }));
+  assert.equal(snoozed.ok, true, snoozed.message);
+
+  const preferences = storage.read().preferences;
+  const currency = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: preferences.revision, preferences: { currency: 'USD', housePremiumPresets: [] },
+  }));
+  assert.equal(currency.ok, true, currency.message);
+  assert.equal(storage.read().preferences.currency, 'USD');
+});
+
+test('X-01: past the bound settings that grow are refused as settings, and a same-size change is not', async () => {
+  const full = storeAtTheBound(MAX_ROOT_BYTES + 10);
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const grown = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: full.preferences.revision,
+    preferences: { currency: 'EUR', housePremiumPresets: [{ name: 'Leu Numismatik', buyerPremiumBps: 2000 }] },
+  }));
+  assert.equal(grown.ok, false);
+  assert.match(grown.message, /^Saving these settings would take your records to 5\.\d+ MB, more than the 5 MB Giga Pinax can keep in this browser\. Export a backup/);
+  const same = await writer.commitCommand(command('preferences.save', {
+    expectedRevision: full.preferences.revision, preferences: { currency: 'CHF', housePremiumPresets: [] },
+  }));
+  assert.equal(same.ok, true, same.message);
+});
+
+test('X-01: past the headroom a removal gives up its Undo copy, says so, and Undo explains', async () => {
+  // A store whose ledger already spent the headroom: removing the coin would put its copy in the ledger past it.
+  const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM - 20);
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const deleteRequest = command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision });
+  const removed = await writer.commitCommand(deleteRequest);
+  assert.equal(removed.ok, true, removed.message);
+  assert.deepEqual(removed.value, { id: lot.id, undoAvailable: false });
+  assert.equal(storage.read().lots.length, 0);
+  assert.ok(storedBytes(storage.read()) < storedBytes(full), 'the store shrank');
+  // The same request again is answered from the ledger, still without the copy.
+  assert.deepEqual(await writer.commitCommand(deleteRequest), removed);
+
+  const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
+  assert.equal(undo.ok, false);
+  assert.equal(undo.message, 'This coin was removed while your records filled the storage, so no copy was kept to put back. A backup that holds it can bring it back.');
+});
+
+test('X-01: Undo of a removal at the bound is refused as putting the coin back', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const writer = createCommandWriter(storage, context());
+  const lot = full.lots[0];
+  const deleteRequest = command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision });
+  assert.equal((await writer.commitCommand(deleteRequest)).ok, true);
+  const undo = await writer.commitCommand(command('lot.restore', { deleteRequestId: deleteRequest.requestId }));
+  assert.equal(undo.ok, false);
+  assert.match(undo.message, /^Putting this coin back would take your records to 5\.\d\d MB/);
 });
