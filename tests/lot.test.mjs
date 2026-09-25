@@ -1074,8 +1074,8 @@ test('a mint named beside a volume of its own is that section, and one beside an
   // A volume the mint is a section of keeps both, and a citation with no volume at all reads as it did: the mint's section, its volumes to choose from.
   assert.deepEqual(lookup('Trier. RIC VII 12'), { catalogue: 'RIC', number: '12', volume: 'VII', section: 'Treveri', headingMint: true });
   assert.deepEqual(lookup('Londinium. RIC 12'), { catalogue: 'RIC', number: '12', volume: '', section: 'Londinium', headingMint: true });
-  // A house whose name is a mint spelling is read as that mint still, where the volume it cites is one of the mint's own (see Known issues).
-  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: 'Rome', headingMint: true });
+  // A house whose name opens on a mint spelling ("Roma Numismatics") names no mint (loop S1 re-review, Minor 1): the volume's numbers are offered.
+  assert.deepEqual(lookup('Roma Numismatics E-Sale 100. RIC VI 12'), { catalogue: 'RIC', number: '12', volume: 'VI', section: '' });
 });
 
 test('a heading that names a ruler is looked up by the ruler, whatever volume the lot cites', () => {
@@ -1676,4 +1676,13 @@ test('a provenance source is the firm, whatever verb the house writes it with', 
   assert.deepEqual(read('Ex Sincona 40, 2017, 1023 (hammer CHF 3,200).').map(([, source, year, lot]) => [source, year, lot]), [['Sincona 40', 2017, '1023']]);
   // A remark bracket holding the year is read for its year, as before.
   assert.deepEqual(read('Ex Hunt collection (sold 1991).').map(([, source, year]) => [source, year]), [['Hunt collection', 1991]]);
+});
+
+// Loop S1 re-review, Minor 4: the verb in its other order, and the German article behind "bei", are no part of the firm either.
+test('a provenance source drops "purchased privately from" and the article after "bei"', () => {
+  assert.deepEqual(readProvenance('Purchased privately from Spink in 1998.').map(({ source, year }) => [source, year]), [['Spink', 1998]]);
+  assert.deepEqual(readProvenance('Erworben im Jahr 1998 bei der Münzhandlung Lanz.').map(({ source, year }) => [source, year]), [['Münzhandlung Lanz', 1998]]);
+  assert.deepEqual(readProvenance('Erworben 1979 bei dem Münzhaus Frühwald.').map(({ source }) => source), ['Münzhaus Frühwald']);
+  // "der" that opens a name after another word stays.
+  assert.deepEqual(readProvenance('Ex Sammlung der Stadt Wien.').map(({ source }) => source), ['Sammlung der Stadt Wien']);
 });

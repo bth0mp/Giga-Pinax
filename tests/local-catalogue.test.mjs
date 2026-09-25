@@ -318,8 +318,10 @@ test('over the bundled catalogue, a mint beside a volume of another part of RIC 
   // alone, so its coin is offered rather than opened.
   assert.deepEqual((await lookup('Trier mint. RIC VII 12')).candidates.map((entry) => entry.id), ['ric.7.tri.12']);
   assert.deepEqual((await lookup('Londinium. RIC 12')).candidates.map((entry) => entry.id), ['ric.6.lon.12', 'ric.7.lon.12']);
-  // A house whose name is a mint spelling still reads as that mint where the volume it cites is one of the mint's own, and it too is only offered.
-  assert.deepEqual((await lookup('Roma Numismatics E-Sale 100. RIC VI 12')).candidates.map((entry) => entry.id), ['ric.6.rom.12']);
+  // A house whose name opens on a mint spelling names no mint (loop S1 re-review, Minor 1): the volume's coins with the number are offered, none opened.
+  const house = await lookup('Roma Numismatics E-Sale 100. RIC VI 12');
+  assert.equal(house.status, 'candidates');
+  assert.ok(house.candidates.some((entry) => entry.id === 'ric.6.rom.12') && house.candidates.length > 1, JSON.stringify(house.candidates));
 });
 
 

@@ -182,7 +182,7 @@ const PROVENANCE_ASIDE = /\s*\((?:(?!(?:part|vol|lot)\b)(?![^()]*(?<!\d)(?:1[6-9
 // purchased from", "Erworben 1998 bei Lanz") are no part of its name wherever they stand, and nor is the "in" in front of a year ("in 1988"); the
 // entry's text keeps every word. A verb with no firm behind it ("Acquired 1998") leaves the entry no source.
 const PROVENANCE_IN_YEAR = /,?\s+in\s+(?=(?:1[6-9]\d\d|20\d\d)(?![\d.,]\d))/i;
-const PROVENANCE_VERB = /(?<![\p{L}\d])(?:privately purchased from|acquired from|purchased from|bought from|erworben\b[^,;()]{0,40}?\bbei)\s+/giu;
+const PROVENANCE_VERB = /(?<![\p{L}\d])(?:privately purchased from|purchased privately from|acquired from|purchased from|bought from|erworben\b[^,;()]{0,40}?\bbei(?:\s+(?:der|dem|den))?)\s+/giu;
 const PROVENANCE_BARE_VERB = /^(?:privately purchased|acquired|purchased|bought|erworben)$/i;
 // A year may close its clause with a comma ("Zürich 2000, Nr. 12"); only a digit, or a decimal part, behind it makes it another number.
 const PROVENANCE_YEAR = /(?<!(?:\blots?|\blos|\blotto|\blote|\bno|\bnr|n\.?[°º]|\bn|\bsale|\bauction|\bcatalogue|#)\.? ?)(?<![\d,])(?:1[6-9]\d\d|20\d\d)(?!\d|[.,]\d)/gi;
@@ -412,8 +412,14 @@ const COMMEMORATED = /\b[uv]rbs\s+roma\b|\b(?:for|commemorative(?:\s+series)?)[\
 // Where a coin was found is no more where it was struck than a category is: a place with a hoard or a find behind it ("the Lyon hoard", "Trier
 // find", "Hort"), or "found near", "found at", "hoard of" in front of it ("Found near London", "Aus dem Hort von Trier"). A closed list, read on the
 // folded heading.
-const FIND_AFTER = /^\s+(?:hoard|find|treasure|hort|schatzfund|fund|ripostiglio|tesoro|tresor)(?!\p{L})/iu;
-const FIND_BEFORE = /(?:(?:found|discovered|unearthed|excavated|gefunden|trouvee?|rinvenut[oa]|hallad[oa])\s+(?:near|at|in|close\s+to|bei|pres\s+de|a|vicino\s+a|cerca\s+de|en)|(?:hoard|find|hort|fund|tresor|tesoro|ripostiglio)\s+(?:of|von|de|di|du))\s+(?:the\s+|dem\s+|la\s+|le\s+)?$/iu;
+const FINDS = String.raw`hoard|find|treasure|schatzfund|schatz|hort|fund|ripostiglio|tesoro|tresor|cache|deposit`;
+const FIND_AFTER = new RegExp(String.raw`^\s+(?:${FINDS})(?!\p{L})`, 'iu');
+const FIND_BEFORE = new RegExp(String.raw`(?:(?:found|discovered|unearthed|excavated|gefunden|trouvee?|rinvenut[oa]|hallad[oa])\s+(?:near|at|in|close\s+to|bei|pres\s+de|a|vicino\s+a|cerca\s+de|en)|(?:${FINDS})\s+(?:of|von|de|di|du))\s+(?:the\s+|dem\s+|la\s+|le\s+)?$`, 'iu');
+// Nor is a mint word that is part of a house's or firm's name, wherever it stands: one a firm's word follows ("London Coins Auction 12", "Roma
+// Numismatics", "Trier Numismatik", "Lyon Auktionen", "London Ltd", "& Co") or one that "Sold by", "Ex", "From" or "bei" opens the clause of
+// ("Sold by Baldwin's of London"). A closed list, read in the mint's own clause.
+const FIRM_AFTER = /^\s*(?:coins|numismatics|numismatik|numismatica|auctions?|auktion(?:en)?|ltd|limited|gmbh|&\s*co)(?!\p{L})/iu;
+const FIRM_BEFORE = /(?<!\p{L})(?:sold\s+by|ex|from|bei)(?!\p{L})[^.;:,]*$/iu;
 // The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Roman Empire,
 // Rome. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
 // the same fold, so a heading written "Trèves" is compared as the table holds it. Only a name standing after `from` counts: a mint word in front
@@ -426,7 +432,8 @@ function headingMints(text, from = -1) {
     if (!lower.includes(probe)) continue;
     for (const at of rest.matchAll(pattern)) {
       const end = at.index + at[0].length;
-      if (at.index <= from || FIND_AFTER.test(rest.slice(end, end + 20)) || FIND_BEFORE.test(rest.slice(Math.max(0, at.index - 40), at.index))) continue;
+      const after = rest.slice(end, end + 24), before = rest.slice(Math.max(0, at.index - 40), at.index);
+      if (at.index <= from || FIND_AFTER.test(after) || FIND_BEFORE.test(before) || FIRM_AFTER.test(after) || FIRM_BEFORE.test(before)) continue;
       found.push({ index: at.index, section });
       break;
     }

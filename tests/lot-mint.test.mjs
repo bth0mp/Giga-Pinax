@@ -318,3 +318,22 @@ test('over the bundled catalogue, an edition written after the number opens or f
     assert.ok(!(result.candidates ?? []).some((entry) => entry.note), text);
   }
 });
+
+// Loop S1 re-review, Minors 1 and 2: a mint word that is part of a house's or firm's name ("London Coins Auction 12", "Sold by Baldwin's of London",
+// "Roma Numismatics"), even behind the ruler, and a treasure, cache or deposit named before its place ("Treasure of Trier") say nothing of where the
+// coin was struck.
+test('a house name or a treasure behind the ruler is not where the coin was struck', () => {
+  const struck = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers).struckAt; };
+  for (const text of ['Constantine I. Follis. London Coins Auction 12. RIC VII 42.', "Constantine I. Follis. Sold by Baldwin's of London. RIC VII 42.",
+    'Constantine I. Follis. Roma Numismatics E-Sale 100, lot 12. RIC VII 42.', 'Constantine I. Follis. Trier Numismatik GmbH. RIC VII 42.',
+    'Constantine I. Follis. London Auctions Ltd. RIC VII 42.', 'Constantine I. Follis. Lyon Auktionen. RIC VII 42.', 'Constantine I. Follis. London Ltd. RIC VII 42.',
+    'Constantine I. Follis. London Limited. RIC VII 42.', 'Constantine I. Follis. London & Co. RIC VII 42.', 'Constantine I. Follis. Ex Trier collection. RIC VII 42.',
+    'Constantine I. Follis. From London dealer. RIC VII 42.', 'Constantine I. Follis. Gekauft bei Trier Münzen. RIC VII 42.',
+    'Constantine I. Follis. Treasure of Trier. RIC VII 42.', 'Constantine I. Follis. Schatz von Trier. RIC VII 42.', 'Constantine I. Follis. Trésor de Lyon. RIC VII 42.',
+    'Constantine I. Follis. Tesoro di Aquileia. RIC VII 42.', 'Constantine I. Follis. Cache of London. RIC VII 42.', 'Constantine I. Follis. Deposit of Trier. RIC VII 42.']) {
+    assert.equal(struck(text), undefined, text);
+  }
+  // The mint itself, behind the ruler, still travels.
+  assert.deepEqual(struck('Constantine I. Follis, London. RIC VII 42.'), ['Londinium']);
+  assert.deepEqual(struck('Constantine I. Follis. Treveri mint. RIC VII 42.'), ['Treveri']);
+});
