@@ -896,8 +896,9 @@ test('a date-only auction’s reminders show 09:00 your time in the Reminders ta
   const rows = [...page.$('selected-reminders').querySelectorAll('.reminder-row')];
   assert.deepEqual(rows.map((row) => row.querySelector('.reminder-when').textContent), ['Previous day at 09:00', 'Auction day at 09:00']);
   for (const row of rows) assert.match(row.querySelector('.reminder-at').textContent, /^\S.* 9:00 AM \(your time\)( · .+ Kiritimati)?$/);
-  // The auction form says whose clock the times are on.
-  assert.match(page.$('date-only-reminder-note').textContent, /go off at these times on your clock/);
+  // The auction form says whose clock new reminders ring on, and where each one's time is shown: true of an older
+  // auction's untouched reminders too, which keep the auction's clock (review Minor 4).
+  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock; the Reminders tab shows each one's time.");
 });
 
 // W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle
