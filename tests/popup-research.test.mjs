@@ -2763,7 +2763,7 @@ test('a dotted-letter lot row searches no prices and shows no plain term until a
 const WANTS = [{ id: '11111111-1111-4111-8111-111111111111', revision: 0, dataClass: 'collector', createdAt: '2026-09-25T12:00:00.000Z',
   updatedAt: '2026-09-25T12:00:00.000Z', reference: 'Price 23', maxPrice: { currency: 'USD', minor: 150000 }, minGrade: 'VF' }];
 const wantedRows = (popup) => popup.element('upcoming-list').children
-  .filter((row) => row.children[0].children.at(-1)?.textContent === 'On your want list')
+  .filter((row) => (row.children[0].children.at(-1)?.textContent ?? '').startsWith('Wanted'))
   .map((row) => row.children[0].children[1].textContent);
 
 test('an upcoming lot citing a wanted type carries the want-list badge beside its one-step Watch', async () => {
@@ -2777,7 +2777,9 @@ test('an upcoming lot citing a wanted type carries the want-list badge beside it
   const [row] = popup.element('upcoming-list').children;
   const badge = row.children[0].children.at(-1);
   const watch = row.children[1];
-  assert.equal(badge.className, 'pill');
+  // H-05: the same pill as under the card, short, with the want's whole terms as its tooltip.
+  assert.equal(badge.className, 'pill want-pill');
+  assert.equal(badge.textContent, 'Wanted · up to $1,500.00 · VF+');
   assert.equal(badge.title, 'On your want list · up to $1,500.00 · VF or better');
   assert.equal(watch.textContent, 'Watch');
   assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12. On your want list · up to $1,500.00 · VF or better');

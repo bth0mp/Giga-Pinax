@@ -68,8 +68,7 @@
       </form>
       <section id="result" class="result card" aria-labelledby="result-reference" hidden>
         <div class="type-heading"><div><h2 class="catalogue-code" id="result-reference"></h2><p id="result-source" class="source-badge" hidden></p><p id="result-summary"></p><p id="result-citation" hidden></p><p id="result-filing" hidden></p></div><div class="type-actions"><a id="type-link" class="type-link" href="https://numismatics.org/" target="_blank" rel="noopener noreferrer">Type <span aria-hidden="true">↗</span></a><a id="rpc-link" class="type-link" href="https://rpc.ashmus.ox.ac.uk/" target="_blank" rel="noopener noreferrer" hidden>RPC online <span aria-hidden="true">↗</span></a><button id="companion-save-watchlist" class="secondary-button companion-save-watchlist" type="button" data-companion-runtime disabled aria-label="Save to watchlist" title="Saves the reference and its type page to your watchlist. Session acsearch prices stay in this view.">Save</button></div></div>
-        <p id="companion-saved-line" class="saved-line" role="status" hidden></p>
-        <p id="companion-want-line" class="saved-line want-line" role="status" hidden></p>
+        <div id="companion-status-row" class="status-row" hidden><span id="companion-saved-line" class="status-line" role="status" hidden></span><span id="companion-want-line" class="status-line" role="status" hidden></span></div>
         <p id="companion-save-hint" class="field-hint save-hint" hidden></p>
         <details id="sides-details" class="sides-details"><summary><span id="sides-summary">Obverse · reverse</span><span class="chevron" aria-hidden="true">⌄</span></summary><dl class="sides">
           <div><dt>Obverse</dt><dd><span id="obverse-legend" class="legend"></span><span id="obverse-description"></span></dd></div>
@@ -104,7 +103,7 @@
           <p id="upcoming-filtered" class="sale-filtered" hidden></p>
           <p id="upcoming-status" class="form-error" hidden></p>
           <ol id="upcoming-list" class="sale-list"></ol>
-          <p id="upcoming-saved" class="saved-line" role="status" hidden></p>
+          <p id="upcoming-saved" class="status-row status-row-wrap" role="status" hidden></p>
           <p id="upcoming-note" class="price-basis">Not sold yet, by sale date. Watch saves the lot to your watchlist and offers its sale day as an auction to add.</p>
         </section>
         <details id="price-search" class="price-search"><summary><span>Change search</span><span id="price-search-term" class="price-search-term"></span><span class="chevron" aria-hidden="true">⌄</span></summary>

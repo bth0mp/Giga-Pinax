@@ -665,7 +665,10 @@ test('Save on a bare card saves the coin in one step, as the workspace would, an
     assert.deepEqual(lot.sourceLinks, [{ source: 'manual', url: neroCard.pageUrl }]);
     const line = page.element('companion-saved-line');
     assert.equal(line.hidden, false);
-    assert.equal(lineParts(line), 'Saved to your watchlist · [Open] · [Undo]');
+    // H-05: "Saved" is the row's pill, its sentence the tooltip; Open and Undo beside it.
+    assert.equal(lineParts(line), '[Saved] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Saved to your watchlist');
+    assert.equal(page.element('companion-status-row').hidden, false);
     assert.equal(page.element('companion-save-watchlist').hidden, true);
 
     // The workspace's own path from the same card - its draft, confirmed with Save details - saves the same coin.
@@ -682,6 +685,7 @@ test('Save on a bare card saves the coin in one step, as the workspace would, an
     await settleAll();
     assert.deepEqual(background.root().lots, []);
     assert.equal(line.hidden, true);
+    assert.equal(page.element('companion-status-row').hidden, true, 'the row goes with its last pill');
     assert.equal(page.element('companion-save-hint').textContent, 'Removed from your watchlist.');
     assert.equal(page.element('companion-save-watchlist').hidden, false);
     // What the line said of that card is not said of the next one.
@@ -722,7 +726,8 @@ test('Undo lasts ten seconds; then the card says where the coin stands', async (
     await page.click('companion-save-watchlist');
     await settleAll();
     timers.filter(({ wait }) => wait === 10000).at(-1).callback();
-    assert.match(lineParts(page.element('companion-saved-line')), /^On your watchlist · \[Open\]$/);
+    assert.equal(lineParts(page.element('companion-saved-line')), '[Watching]');
+    assert.equal(page.element('companion-saved-line').children[0].title, 'On your watchlist');
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
@@ -744,9 +749,13 @@ test('a card whose reference is saved shows where that coin stands and opens it,
     page.card(neroCard);
     const line = page.element('companion-saved-line');
     assert.equal(line.hidden, false);
-    assert.match(lineParts(line), /^On your watchlist · Bid active £650\.00 · Roma E-Sale 130 · in \d+ days · \[Open\]$/);
+    // H-05: one short pill, whose click opens the coin; the whole sentence is its tooltip and its name.
+    assert.match(lineParts(line), /^\[Watching · £650\.00 bid · in \d+ days\]$/);
+    const pill = line.children[0];
+    assert.match(pill.title, /^On your watchlist · Bid active £650\.00 · Roma E-Sale 130 · in \d+ days$/);
+    assert.equal(pill['aria-label'], `${pill.title} · Open this coin in the workspace`);
     assert.equal(page.element('companion-save-watchlist').hidden, true);
-    await lineButton(line, 'Open').emit('click');
+    await pill.emit('click');
     await settleAll();
     assert.deepEqual(opened, ['moz-extension://test/workspace.html#watchlist?lot=lot-1']);
     page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
@@ -783,7 +792,7 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     const line = page.element('upcoming-saved');
     // Fix round (review M5): the sale day is written as the Watchlist tab writes one, in the browser's language.
     const day = new Intl.DateTimeFormat(navigator.language, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date('2099-10-12T12:00:00Z'));
-    assert.equal(lineParts(line), `Saved to your watchlist · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
+    assert.equal(lineParts(line), `[Saved] · [Open] · [Undo] · add its sale day ${day} as an auction? · [Add]`);
     await lineButton(line, 'Add').emit('click');
     await settleAll();
     const [event] = background.root().auctionEvents;
@@ -792,7 +801,8 @@ test('Watch saves an upcoming lot in one step, and Add attaches its sale day as 
     assert.equal(event.localDate, '2099-10-12');
     assert.equal(event.name, 'Roma Numismatics, E-Sale 200, Lot 9');
     assert.equal(background.root().lots[0].auctionEventId, event.id);
-    assert.equal(lineParts(line), 'Saved to your watchlist with its sale day · [Open] · [Undo]');
+    assert.equal(lineParts(line), '[Saved with its sale day] · [Open] · [Undo]');
+    assert.equal(line.children[0].title, 'Saved to your watchlist with its sale day');
     // A second Watch of the same lot opens the one saved.
     page.watch({ title: 'Roma Numismatics, E-Sale 200, Lot 9', reference: 'Price 23', pageUrl: 'https://www.acsearch.info/search.html?id=9', closesAt: '2099-10-12' });
     await settleAll();
@@ -1296,7 +1306,7 @@ test('a save is announced once, by its line', async () => {
   await page.click('companion-save-watchlist');
   await settleAll();
   assert.equal(page.element('announcement').textContent, '');
-  assert.match(lineParts(page.element('companion-saved-line')), /^Saved to your watchlist/);
+  assert.match(lineParts(page.element('companion-saved-line')), /^\[Saved\]/);
 });
 
 // Fix round (review M7): owning one example of a type is no reason not to watch another. A card whose every saved coin is settled keeps Save beside
@@ -1306,7 +1316,7 @@ test('a card whose saved coins are all settled still offers Save', async () => {
   const snapshot = { ok: true, value: { lots: [won], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
   const page = await loadCompanion({ sendMessage: async () => snapshot });
   page.card(neroCard);
-  assert.equal(lineParts(page.element('companion-saved-line')), 'In your collection · [Open]');
+  assert.equal(lineParts(page.element('companion-saved-line')), '[In your collection]');
   assert.equal(page.element('companion-save-watchlist').hidden, false);
   assert.equal(savedLineText([{ reference: 'Price 23', outcome: { status: 'lost' } }], {}), 'Saved · Lost');
 });
@@ -1362,8 +1372,11 @@ test('a card of a wanted type says “On your want list” under it, and the res
     const line = page.element('companion-want-line');
     page.card(neroCard);
     assert.equal(line.hidden, false);
-    assert.equal(line.children[0].className, 'pill');
-    assert.equal(lineParts(line), '[On your want list] · up to £650.00 · VF or better');
+    // H-05: the want is the row's second pill, short; its sentence is the tooltip.
+    assert.equal(line.children[0].className, 'pill want-pill');
+    assert.equal(lineParts(line), '[Wanted · up to £650.00 · VF+]');
+    assert.equal(line.children[0].title, 'On your want list · up to £650.00 · VF or better');
+    assert.equal(page.element('companion-status-row').hidden, false);
     // A neighbouring type is not the want.
     page.card({ title: 'Nero · As', reference: 'RIC I² Nero 306a', pageUrl: 'https://numismatics.org/ocre/id/ric.1(2).ner.306a' });
     assert.equal(line.hidden, true);
@@ -1402,7 +1415,7 @@ test('a Bopearachchi card of a wanted type says so under it, from the reading th
   const bopCard = { title: 'Euthydemus I · Tetradrachm', reference: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', pageUrl: 'https://numismatics.org/bigr/id/bop.9c' };
   page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus I' } });
   assert.equal(line.hidden, false);
-  assert.equal(lineParts(line), '[On your want list]');
+  assert.equal(lineParts(line), '[Wanted]');
   page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus II' } });
   assert.equal(line.hidden, true, 'another king is another type');
   page.card(bopCard);

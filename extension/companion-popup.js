@@ -14,7 +14,7 @@ import { parseReference } from './lookup.js';
 import { validateDraftPayload } from './core/drafts.js';
 import { buildWorkspaceLotDraft, lotDraftToEditor, lotFormValues, offeredEventFromDraft } from './workspace-forms.js';
 import { eventWhen } from './workspace-views.js';
-import { openWantsFor, wantBadgeText } from './core/wantlist.js';
+import { WANT_GRADE_LABELS, openWantsFor, wantBadgeText } from './core/wantlist.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
 const bounded = (value, maximum) => typeof value === 'string'
@@ -195,20 +195,45 @@ export function savedLotsFor(snapshot, reference) {
 }
 
 const OUTCOME_WORDS = Object.freeze({ lost: 'Lost', withdrawn: 'Withdrawn', unsold: 'Unsold' });
-// What the card says of a coin already saved under its reference: where it stands, the bid in force or planned, and its auction and when.
-export function savedLineText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
-  const lot = lots?.[0];
-  if (!lot) return '';
+// What there is to say of the coins saved under a card's reference: where the newest open one stands, its bid in force or planned (written by
+// the one money rule), its auction and when.
+function savedFacts(lots, snapshot, { now, locale }) {
+  const lot = lots[0];
   const status = lot.outcome?.status ?? 'open';
-  const parts = [status === 'open' ? 'On your watchlist' : status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
   const money = (amount) => { try { return formatMoney(amount, locale, { narrow: true }); } catch { return ''; } };
-  if (status === 'open' && lot.activeBid?.amount) parts.push(`Bid active ${money(lot.activeBid.amount)}`);
-  else if (status === 'open' && lot.plannedBid?.amount) parts.push(`Bid planned ${money(lot.plannedBid.amount)}`);
+  const bid = status !== 'open' ? null : lot.activeBid?.amount ? { kind: 'active', amount: money(lot.activeBid.amount) }
+    : lot.plannedBid?.amount ? { kind: 'planned', amount: money(lot.plannedBid.amount) } : null;
   const event = lot.auctionEventId ? (snapshot?.auctionEvents ?? []).find(({ id }) => id === lot.auctionEventId) : null;
-  if (event?.name) parts.push(event.name);
-  if (event && status === 'open') { const { relative } = eventWhen(event, { now, locale }); if (relative) parts.push(relative); }
+  const relative = event && status === 'open' ? eventWhen(event, { now, locale }).relative : '';
+  return { status, bid: bid?.amount ? bid : null, eventName: event?.name ?? '', relative };
+}
+// What the card says of a coin already saved under its reference, in full: where it stands, the bid in force or planned, and its auction and when.
+// It is the tooltip and the name of the card's status pill.
+export function savedLineText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
+  if (!lots?.[0]) return '';
+  const { status, bid, eventName, relative } = savedFacts(lots, snapshot, { now, locale });
+  const parts = [status === 'open' ? 'On your watchlist' : status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`];
+  if (bid) parts.push(`Bid ${bid.kind} ${bid.amount}`);
+  parts.push(eventName, relative);
   if (lots.length > 1) parts.push(`${lots.length} coins saved`);
   return parts.filter(Boolean).join(' · ');
+}
+// The same coin as the card's status pill says it (H-05), short enough to share one row with the want: "Watching · £650.00 bid · in 25 h".
+export function savedPillText(lots, snapshot, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
+  if (!lots?.[0]) return '';
+  const { status, bid, relative } = savedFacts(lots, snapshot, { now, locale });
+  if (status !== 'open') return status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`;
+  return ['Watching', bid ? `${bid.amount} ${bid.kind === 'active' ? 'bid' : 'planned'}` : '', relative].filter(Boolean).join(' · ');
+}
+// A wanted type as its pill says it (H-05): "Wanted · up to £650.00 · VF+", from the first want of the type; wantBadgeText words the same in full
+// for its tooltip. '' when the type is on no want list.
+export function wantPillText(matches, locale = 'en-US') {
+  const want = matches?.[0];
+  if (!want) return '';
+  const parts = ['Wanted'];
+  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true })}`); } catch { /* not a price to say */ } }
+  if (Object.hasOwn(WANT_GRADE_LABELS, want.minGrade ?? '')) parts.push(`${want.minGrade}+`);
+  return parts.join(' · ');
 }
 
 // A bare reference (a card, or an acsearch lot's Watch) is saved in one step: validated as the workspace validates the draft it would have opened,
@@ -523,13 +548,32 @@ async function initCompanionPopup() {
 
   // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
   const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
-  // A line of words and buttons, "Saved to your watchlist · Open · Undo": what happened, and what can be done about it, where it happened.
+  // The card's status row (H-05) shows while either of its two lines has something to say.
+  const syncStatusRow = () => {
+    const row = $('companion-status-row');
+    if (row) row.hidden = $('companion-saved-line').hidden && $('companion-want-line').hidden;
+  };
+  // A status pill: its short words and its whole sentence as the tooltip; where it leads somewhere, a button named by that sentence.
+  const pillNode = (part) => {
+    const node = document.createElement(part.action ? 'button' : 'mark');
+    node.className = part.kind ? `pill ${part.kind}` : 'pill';
+    node.textContent = part.pill;
+    if (part.title) node.title = part.title;
+    if (part.action) {
+      node.type = 'button';
+      node.setAttribute('aria-label', part.name ?? part.title ?? part.pill);
+      node.addEventListener('click', part.action);
+    }
+    return node;
+  };
+  // A line of pills, words and buttons, "Saved · Open · Undo": what happened, and what can be done about it, where it happened.
   const fillLine = (line, parts) => {
     const shown = parts.filter(Boolean);
     line.replaceChildren();
     shown.forEach((part, index) => {
       if (index) line.append(' · ');
       if (typeof part === 'string') { line.append(part); return; }
+      if (part.pill) { line.append(pillNode(part)); return; }
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'text-button';
@@ -539,9 +583,14 @@ async function initCompanionPopup() {
       line.append(button);
     });
     line.hidden = shown.length === 0;
+    syncStatusRow();
   };
   const openLot = (lotId, anchor) => void navigate(() => openWorkspace('watchlist', undefined, '', lotId), 'Couldn’t open the workspace.', anchor);
   const openAction = (lotId, anchor) => ({ label: 'Open', name: 'Open this coin in the workspace', action: () => openLot(lotId, anchor) });
+  // A saved coin as one pill whose click opens it (H-05): its short words, its whole sentence as the tooltip, and that sentence with where it leads
+  // as its name.
+  const watchingPill = (pill, sentence, lotId, anchor) => ({ pill, title: sentence, kind: 'watch-pill', name: `${sentence} · Open this coin in the workspace`,
+    action: () => openLot(lotId, anchor) });
   // The coin a save from this page made a moment ago, which Undo takes back for ten seconds: where it was saved (the card or the Upcoming list), the
   // coin as stored and the auction attached to it, if any.
   let justSaved = null;
@@ -553,7 +602,8 @@ async function initCompanionPopup() {
     if (justSaved?.where === 'card') { save.hidden = true; return; }
     const lots = safeCard?.reference ? savedLotsFor(snapshot, safeCard.reference) : [];
     if (!lots.length) { fillLine(line, []); save.hidden = false; return; }
-    fillLine(line, [savedLineText(lots, snapshot, { locale: navigator.language }), openAction(lots[0].id, 'companion-save-hint')]);
+    const locale = navigator.language;
+    fillLine(line, [watchingPill(savedPillText(lots, snapshot, { locale }), savedLineText(lots, snapshot, { locale }), lots[0].id, 'companion-save-hint')]);
     // A coin still open takes Save's place; owning one example (or losing one) is no reason not to watch another lot of the type.
     save.hidden = lots.some((lot) => (lot.outcome?.status ?? 'open') === 'open');
   };
@@ -563,19 +613,12 @@ async function initCompanionPopup() {
   // The card's reading where it handed one over (a Bopearachchi card's label reads as nothing), else its reference.
   const readingOfCard = (card) => card?.reading ?? card?.reference ?? null;
   let cardReference = readingOfCard(globalThis.gigaPinaxWatchlistReference);
+  // H-05: the want is the status row's second pill, "Wanted · up to £650.00 · VF+", its whole terms the tooltip.
   const renderCardWanted = () => {
     const line = $('companion-want-line');
     if (!line) return;
-    const words = cardReference ? wantBadgeText(openWantsFor(snapshot.wants, cardReference), navigator.language) : '';
-    const [badge, ...rest] = words ? words.split(' · ') : [];
-    line.replaceChildren();
-    if (badge) {
-      const pill = document.createElement('mark');
-      pill.className = 'pill';
-      pill.textContent = badge;
-      line.append(pill, ...rest.map((part) => ` · ${part}`));
-    }
-    line.hidden = !badge;
+    const wants = cardReference ? openWantsFor(snapshot.wants, cardReference) : [];
+    fillLine(line, wants.length ? [{ pill: wantPillText(wants, navigator.language), title: wantBadgeText(wants, navigator.language), kind: 'want-pill' }] : []);
   };
   const shareWants = () => {
     globalThis.gigaPinaxWants = Object.freeze([...(snapshot.wants ?? [])]);
@@ -712,14 +755,15 @@ async function initCompanionPopup() {
     // What the line under it said of an earlier save (a failure, a removal) is over.
     const hint = $(anchor);
     if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
-    const words = entry.event ? 'Saved to your watchlist with its sale day' : 'Saved to your watchlist';
-    // The line is a status region: it says the save once.
-    fillLine(line, [words, openAction(entry.lot.id, anchor), { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
+    const pill = entry.event ? 'Saved with its sale day' : 'Saved';
+    // The line is a status region: it says the save once. "Saved" is its pill, with the sentence as the tooltip.
+    fillLine(line, [{ pill, title: pill.replace('Saved', 'Saved to your watchlist'), kind: 'watch-pill' }, openAction(entry.lot.id, anchor),
+      { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
     entry.timer = setTimeout(() => {
       if (justSaved !== entry) return;
       justSaved = null;
       if (entry.where === 'card') renderCardSaved();
-      else fillLine(line, ['On your watchlist', openAction(entry.lot.id, anchor)]);
+      else fillLine(line, [watchingPill('Watching', 'On your watchlist', entry.lot.id, anchor)]);
     }, UNDO_FOR_MS);
   };
   $('companion-save-watchlist').addEventListener('click', async () => {

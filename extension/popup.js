@@ -4,7 +4,7 @@ import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, re
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
+import { cardName, displayReference, documentMode, editionName, shouldRevealRefine, wantPillText } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { formatMoney, minorDigits } from './core/money.js';
 import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
@@ -757,6 +757,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
   const { denomination, wanted, searched, unsearched, uncited, citing, passes, reason } = acsearchFilter(lots, term, context.reference, card);
   const wants = wantedForContext(context);
   const wantWords = wantBadgeText(wants, navigator.language);
+  const wantPill = wantPillText(wants, navigator.language);
   const upcoming = upcomingLots(lots, new Date());
   const listed = upcoming.filter((sale) => reason(sale) === null);
   const filters = filterLines(upcoming, { reasonFor: reason }, { name: referenceName(context.reference), denomination: wanted, citing, uncited, unsearched, passes });
@@ -774,11 +775,12 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
     watch.textContent = 'Watch';
     watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}`);
     watch.addEventListener('click', () => watchUpcoming(sale, context));
-    // A row citing the wanted type carries the badge after its title; its Watch saves it in one step, as on any other row.
+    // A row citing the wanted type carries the card's want pill after its title (H-05), its whole terms the tooltip; its Watch saves it in one step,
+    // as on any other row.
     if (wants.length && passes.citing(sale)) {
       const badge = document.createElement('mark');
-      badge.className = 'pill';
-      badge.textContent = 'On your want list';
+      badge.className = 'pill want-pill';
+      badge.textContent = wantPill;
       badge.title = wantWords;
       label.append(' ', badge);
       watch.setAttribute('aria-label', `Watch ${title}, sale on ${day}. ${wantWords}`);

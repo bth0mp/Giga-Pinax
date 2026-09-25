@@ -10,7 +10,8 @@
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
 // and the popup's frame, which only a real layout shows: its header and tabs stay put through a lot lookup after a list
-// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint),
+// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint,
+// a coin saved and wanted included),
 // Save saves in one step without opening a tab, a popup opened again draws its last answer without asking acsearch, a failed
 // Bopearachchi lookup searches nothing and keeps its error in view, and Ctrl+K and the skip link reach the Reference box.
 //
@@ -308,7 +309,7 @@ test('after Save the coin is saved in one step, and the Reference box is still t
     const pages = browser.context.pages().length;
     await page.locator('#companion-save-watchlist').click();
     // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
-    await page.locator('#companion-saved-line', { hasText: 'Saved to your watchlist' }).waitFor({ timeout: 15000 });
+    await page.locator('#companion-saved-line .pill[title="Saved to your watchlist"]').waitFor({ timeout: 15000 });
     assert.equal(browser.context.pages().length, pages, 'no tab opened');
     assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();
@@ -320,6 +321,54 @@ test('after Save the coin is saved in one step, and the Reference box is still t
       return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.id;
     });
     assert.equal(hit, 'quick-reference');
+  } finally {
+    await browser.close();
+  }
+});
+
+// Cycle 5 (H-05): a coin saved with a bid and wanted too says both in one row of pills under the card, so the median keeps the place G-03 gave it
+// in the 600 px popup, and at 320 the row stays one row.
+test('a saved and wanted coin says both in one row, and the median stays in view', async () => {
+  const browser = await launch();
+  try {
+    const seed = await browser.context.newPage();
+    await seed.goto(browser.url('popup.html'));
+    const seeded = await seed.evaluate(async () => {
+      const send = (command) => chrome.runtime.sendMessage({ requestId: crypto.randomUUID(), ...command });
+      await send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+      const at = new Date(Date.now() + 25 * 3600e3).toISOString();
+      const event = await send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma Numismatics E-Sale 130', eventKind: 'auction-starts',
+        precision: 'timed', localDate: at.slice(0, 10), localTime: at.slice(11, 16), timeZone: 'UTC', reminderScope: 'standalone', reminders: [] } });
+      const lot = await send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero · As · Rome · AD 62–68', reference: 'RIC I² Nero 306',
+        auctionEventId: event.value.id, notes: '', sourceLinks: [], outcome: { status: 'open' }, bidHistory: [] } });
+      const bid = await send({ type: 'bid.place', lotId: lot.value.id, expectedRevision: lot.value.revision,
+        activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } });
+      const want = await send({ type: 'want.save', expectedRevision: null,
+        want: { reference: 'RIC I² Nero 306', maxPrice: { currency: 'GBP', minor: 65000 }, minGrade: 'VF' } });
+      return [event, lot, bid, want].every((reply) => reply.ok);
+    });
+    assert.equal(seeded, true);
+    await seed.close();
+    for (const [path, width, height] of [['popup.html', 400, 600], ['popup.html?panel=1', 320, 700]]) {
+      const label = `${path} at ${width}`;
+      const page = await browser.context.newPage();
+      await page.setViewportSize({ width, height });
+      await page.goto(browser.url(path));
+      await lookUp(page, 'RIC I² Nero 306');
+      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+      await page.locator('#companion-want-line:not([hidden])').waitFor({ timeout: 15000 });
+      await page.waitForTimeout(900);
+      const frame = await page.evaluate(() => {
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        return { median: Math.round(box('median-line').top), row: Math.round(box('companion-status-row').height),
+          saved: document.getElementById('companion-saved-line').textContent, want: document.getElementById('companion-want-line').textContent };
+      });
+      assert.match(frame.saved, /^Watching · £650\.00 bid · in \d+ h$/, label);
+      assert.equal(frame.want, 'Wanted · up to £650.00 · VF+', label);
+      assert.ok(frame.row <= 28, `${label}: the status row is ${frame.row} px`);
+      if (height === 600) assert.ok(frame.median <= 400, `${label}: the median starts at ${frame.median}`);
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
