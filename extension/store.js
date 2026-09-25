@@ -154,13 +154,16 @@ function judgeTheBound(before, next, command, now, headroom) {
   if (!projectedValid.ok) {
     return { invalid: true, failure: fail('validation', `These reminders could not be scheduled: ${projectedValid.error.message}`, projectedValid.error.path) };
   }
+  // A removal's reconcile only ever drops alerts; the ledger entry it writes may not make it a refusal about reminders
+  // the collector never asked for (review Minor 1).
+  if (REMOVALS.has(command.type)) return null;
   const scheduled = boundVerdict(before, projected, headroom);
   if (scheduled.ok) return null;
   // The bound is shared, but the way out of it is not: neither a backup that does not fit nor a record being put back is
   // answered by removing reminders, and each names what to change.
   const [message, path] = ['backup.import', 'quarantine.restore'].includes(command.type)
     ? overTheBound(command.type, scheduled.bytes)
-    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the 5 MB Giga Pinax can keep in this browser. Remove reminders or old auctions, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
+    : [`The reminders this schedules would take your records to ${megabytesText(scheduled.bytes)}, more than the 5 MB Giga Pinax can keep in this browser. Remove some reminders, or ${OUT_OF_THE_BOUND.replace(/^E/, 'e')}`, 'reminders'];
   return { failure: fail('storage-bound', message, path) };
 }
 

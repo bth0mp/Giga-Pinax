@@ -2826,8 +2826,8 @@ test('X-01: past the bound settings that grow are refused as settings, and a sam
 });
 
 test('X-01: past the headroom a removal gives up its Undo copy, says so, and Undo explains', async () => {
-  // A store whose ledger already spent the headroom: removing the coin would put its copy in the ledger past it.
-  const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM - 20);
+  // A store whose ledger has spent the headroom and more: removing the coin would put its copy in the ledger past it.
+  const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM + 200);
   const storage = memoryStorage(full);
   const writer = createCommandWriter(storage, context());
   const lot = full.lots[0];
@@ -3086,4 +3086,20 @@ test('X-03: a set-aside coin with two bad fields goes back with both corrected, 
   assert.equal(none.ok, false);
   assert.match(none.message, /its title is empty, and its lot number is not text/);
   assert.deepEqual(stuck.read().quarantine, [entry]);
+});
+
+// Review Minor 1: near the ceiling a small removal was refused with the reminders sentence, because the reconcile the
+// removal leads to writes a ledger entry of its own. A removal only ever drops alerts, so its schedule is not judged by
+// the bound, and it is never refused in words about reminders.
+test('X-01: a small removal a few bytes under the ceiling is kept, never refused as reminders', async () => {
+  for (const under of [20, 200, 300]) {
+    const full = storeAtTheBound(MAX_ROOT_BYTES + HEADROOM - under);
+    full.lots = [plainLot(uuid(), { title: 'Small coin' })];
+    full.padding += 'p'.repeat(MAX_ROOT_BYTES + HEADROOM - under - storedBytes(full));
+    const storage = memoryStorage(full);
+    const lot = full.lots[0];
+    const removed = await createCommandWriter(storage, context()).commitCommand(command('lot.delete', { lotId: lot.id, expectedRevision: lot.revision }));
+    assert.equal(removed.ok, true, `${under} B under: ${removed.message}`);
+    assert.deepEqual(storage.read().lots, []);
+  }
 });
