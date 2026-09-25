@@ -222,12 +222,13 @@ test('enabling desktop alerts reconciles and delivers an already-due reminder', 
 });
 
 // N14: the notification names the auction's own clock and the collector's, and the auction's place wherever its zone is
-// not the collector's. Kathmandu keeps no summer time, so the wall time just gone there always exists exactly once.
+// not the collector's. Kathmandu keeps no summer time, so its sale day is always 24 hours long.
 test('a date-only reminder’s notification names the sale day, your clock, and the auction’s clock and place', async () => {
   const zone = 'Asia/Kathmandu';
   const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const now = Date.now();
-  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+  // Q-19: the reminder rings on the collector's clock, so the time just gone is theirs.
+  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: viewer, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
   const before = notifications.length;
   const event = await send({
     type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
@@ -257,7 +258,8 @@ test('overdue reminders delivered together are worded for the latest of them', a
   const zone = 'Asia/Kathmandu';
   const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const now = Date.now();
-  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+  // Q-19: the reminder rings on the collector's clock, so the time just gone is theirs.
+  const localTime = new Intl.DateTimeFormat('en-GB', { timeZone: viewer, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
   const before = notifications.length;
   const event = await send({
     type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
@@ -279,6 +281,24 @@ test('overdue reminders delivered together are worded for the latest of them', a
   }, { eventKind: 'auction-day', timeZone: viewer });
   assert.notEqual(words(alerts[0]), words(alerts[1]));
   assert.equal(shown[0].message, words(alerts[1]), 'the sale day’s own reminder, not the day before’s');
+});
+
+// Q-19: an auction saved through the worker gives its date-only reminders the browser's zone, the collector's, so they
+// ring at 09:00 on the collector's clock.
+test('a date-only auction saved through the worker rings on the browser’s clock', async () => {
+  const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const event = await send({
+    type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
+    event: {
+      name: 'Zurich sale day', eventKind: 'auction-day', precision: 'date-only', localDate: '2099-10-23', timeZone: 'Europe/Zurich',
+      reminderScope: 'standalone', reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
+    },
+  });
+  assert.equal(event.ok, true, event.message);
+  assert.equal(event.value.reminders[0].collectorTimeZone, viewer);
+  const state = await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
+  const alert = state.value.alerts.find(({ eventId }) => eventId === event.value.id);
+  assert.equal(new Intl.DateTimeFormat('en-GB', { timeZone: viewer, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(alert.triggerAt)), '09:00');
 });
 
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {

@@ -881,6 +881,26 @@ test('each reminder in the Reminders tab says when it goes off in the collector�
   assert.match(row.querySelector('.reminder-at').textContent, /^\S.* \(your time\)( · (.+ )?2:00 PM Tokyo)?$/);
 });
 
+// Q-19: a date-only auction saved now rings at 09:00 on the collector's clock, and its row says so first, then the auction's
+// own clock where its zone is not theirs. Kiritimati's day is 14 hours ahead of UTC, so its clock differs from any tester's.
+test('a date-only auction’s reminders show 09:00 your time in the Reminders tab', async () => {
+  const viewer = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const background = await createWorkspaceBackground({ timeZone: viewer });
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Kiritimati sale', eventKind: 'auction-day', precision: 'date-only',
+    localDate: '2030-10-15', timeZone: 'Pacific/Kiritimati', reminderScope: 'linked-lots', reminders: [
+      { kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { kind: 'wall-time', daysBefore: 0, localTime: '09:00' }] } });
+  assert.equal(event.ok, true, event.message);
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, denarius', sourceLinks: [], auctionEventId: event.value.id } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const rows = [...page.$('selected-reminders').querySelectorAll('.reminder-row')];
+  assert.deepEqual(rows.map((row) => row.querySelector('.reminder-when').textContent), ['Previous day at 09:00', 'Auction day at 09:00']);
+  for (const row of rows) assert.match(row.querySelector('.reminder-at').textContent, /^\S.* 9:00 AM \(your time\)( · .+ Kiritimati)?$/);
+  // The auction form says whose clock new reminders ring on, and where each one's time is shown: true of an older
+  // auction's untouched reminders too, which keep the auction's clock (review Minor 4).
+  assert.equal(page.$('date-only-reminder-note').textContent, "New reminders ring on your clock; the Reminders tab shows each one's time.");
+});
+
 // W-07: the saved comparables speak plainly - one sentence when there are none, and "3 comparables · median … · middle
 // half … · years" when there are; the set list names each reference with how many it holds.
 test('the saved comparables say plainly what they hold', async () => {

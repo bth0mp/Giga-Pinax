@@ -669,6 +669,25 @@ test('keeps stored event instants authoritative and requires matching reminder k
   assert.equal(validateEventLocalTimes(snapshot.auctionEvents[0]).error.path, 'event.reminders[0].localTime');
 });
 
+// Q-19: a date-only reminder saved with the collector's zone rings on their clock, so its zone must be one the browser
+// knows, and its time need not exist in the auction's zone: 01:30 on London's spring-forward day is refused only for a
+// reminder that rings there.
+test('a wall-time reminder may carry the collector’s zone, which must be a real zone', () => {
+  const snapshot = snapshotWith();
+  Object.assign(snapshot.auctionEvents[0], {
+    precision: 'date-only', localDate: '2026-03-29', timeZone: 'Europe/London',
+    reminders: [{ id: IDS.history, kind: 'wall-time', daysBefore: 0, localTime: '01:30', collectorTimeZone: 'America/New_York' }],
+  });
+  delete snapshot.auctionEvents[0].localTime;
+  delete snapshot.auctionEvents[0].startsAt;
+  assert.equal(validateSnapshot(snapshot).ok, true);
+  assert.equal(validateEventLocalTimes(snapshot.auctionEvents[0]).ok, true);
+  for (const collectorTimeZone of ['Mars/Olympus', '', 5, null]) {
+    snapshot.auctionEvents[0].reminders[0].collectorTimeZone = collectorTimeZone;
+    assert.equal(validateSnapshot(snapshot).error?.path, 'auctionEvents[0].reminders[0].collectorTimeZone', String(collectorTimeZone));
+  }
+});
+
 test('rejects broken foreign links and duplicate alternative priorities', () => {
   const snapshot = snapshotWith(
     makeLot(IDS.lotUsdKnown, { alternativeGroupId: IDS.group, priority: 1 }),
