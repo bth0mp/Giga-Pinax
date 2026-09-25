@@ -431,8 +431,12 @@ export function outcomeDraftForLot(lot, locale = 'en-US', { defaultCurrency = 'U
     invoice: moneyInputText(lot?.outcome?.actualInvoice, locale),
     invoiceCurrency: lot?.outcome?.actualInvoice?.currency ?? hammerCurrency,
     bindingActive: '',
-    hammerPlaceholder: !settled && lot?.activeBid?.amount ? `Your bid ${moneyInputText(lot.activeBid.amount, locale)}` : '',
+    hammerPlaceholder: settled ? '' : lot?.activeBid?.amount ? `Your bid ${moneyInputText(lot.activeBid.amount, locale)}`
+      : lot?.plannedBid?.amount ? `Your plan ${moneyInputText(lot.plannedBid.amount, locale)}` : '',
     acquisitionDate: lot?.collectionEntryId ? '' : event?.localDate ?? today,
+    // A first win goes into the collection unless the collector says otherwise (Q-09); a coin already in it is never
+    // offered a second entry, which the store would refuse.
+    addToCollection: !settled && !lot?.collectionEntryId,
     premium: premiumInputText(rate),
     premiumSource,
     fees,

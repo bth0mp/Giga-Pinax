@@ -1330,3 +1330,32 @@ test('a plan saved beside the placed bid is shown on the row and the Bid tab, an
   assert.equal(page.$('bid-plan-line').hidden, true);
   assert.deepEqual(storedLot(background, 'Nero, denarius').activeBid.amount, { currency: 'EUR', minor: 130000 });
 });
+
+// Q-09: a coin already in the collection says so on its Outcome tab and links to its entry, instead of offering a
+// second entry the store would refuse; a first win goes into the collection by default, a loss never does.
+test('the Outcome tab adds a first win to the collection by default and names an entry that exists', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const lot = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.plan', lotId: lot.id, expectedRevision: 0, plannedBid: { amount: { currency: 'EUR', minor: 2000000 } } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.click('detail-tab-outcome');
+  const f = page.$('outcome-form').elements;
+  assert.equal(f.hammer.placeholder, 'Your plan 20000.00');
+  assert.equal(f.addToCollection.checked, true);
+  assert.equal(page.$('outcome-collection').hidden, false);
+  assert.equal(page.$('outcome-in-collection').hidden, true);
+  f.status.value = 'lost'; await page.$('outcome-form').emit('change', { target: page.$('passed-outcome') });
+  assert.equal(page.$('outcome-collection').hidden, true, 'a loss is never offered the collection');
+  f.status.value = 'won'; await page.$('outcome-form').emit('change', { target: page.$('passed-outcome') });
+  await page.type('outcome-form', 'hammer', '18000');
+  await page.submit('outcome-form');
+  const [entry] = background.root().collectionEntries;
+  assert.ok(entry, 'saved into the collection without an extra click');
+  assert.equal(page.$('outcome-in-collection').hidden, false);
+  assert.match(page.$('outcome-in-collection-text').textContent, /^In your collection since /);
+  assert.equal(page.$('outcome-collection').hidden, true, 'no second entry is offered');
+  await page.click('outcome-edit-entry');
+  assert.equal(page.location.hash, '#history');
+  assert.ok(page.$('entry-edit-form'), 'the entry opens for correction');
+});

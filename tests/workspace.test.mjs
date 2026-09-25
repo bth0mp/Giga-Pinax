@@ -1167,7 +1167,10 @@ test('the outcome form opens an open lot on Won, in its bid’s currency, with t
   });
   const planned = { outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 50000 } } };
   assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerCurrency, 'CHF');
-  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerPlaceholder, '', 'a plan is not a bid');
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).hammerPlaceholder, 'Your plan 500.00', 'a plan is named as a plan (Q-09)');
+  assert.equal(outcomeDraftForLot(planned, 'en-US', { defaultCurrency: 'USD' }).addToCollection, true, 'a first win goes into the collection');
+  assert.equal(outcomeDraftForLot({ ...planned, collectionEntryId: 'entry' }, 'en-US').addToCollection, false, 'never a second entry');
+  assert.equal(outcomeDraftForLot({ outcome: { status: 'won' } }, 'en-US').addToCollection, false, 'a settled coin keeps the choice it was saved with');
   const watched = { outcome: { status: 'open' } };
   assert.deepEqual(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).hammerCurrency, 'GBP');
   assert.equal(outcomeDraftForLot(watched, 'en-US', { defaultCurrency: 'GBP', today: '2026-10-03' }).acquisitionDate, '2026-10-03', 'no auction: today');

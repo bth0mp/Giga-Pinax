@@ -1282,7 +1282,20 @@ async function initWorkspace() {
     $('open-outcome').closest('label').hidden = !lot?.outcome?.status || lot.outcome.status === 'open';
     $('reopen-choice').hidden = !(settled && f.status.value === 'open');
     $('outcome-terms').hidden = f.status.value !== 'won';
+    // A coin already in the collection says since when and where to correct its entry; a coin not yet in it is offered
+    // the collection only for a win (Q-09).
+    const entry = lot?.collectionEntryId ? (snapshot.collectionEntries ?? []).find((item) => item.id === lot.collectionEntryId) : null;
+    $('outcome-in-collection').hidden = !entry;
+    $('outcome-in-collection-text').textContent = entry ? `In your collection since ${dayText(entry.acquisitionDate)}` : '';
+    $('outcome-collection').hidden = Boolean(lot?.collectionEntryId) || f.status.value !== 'won';
   };
+  $('outcome-edit-entry').addEventListener('click', () => {
+    const lot = editorBases.get('outcome')?.record;
+    const entry = (snapshot.collectionEntries ?? []).find((item) => item.id === lot?.collectionEntryId);
+    if (!entry) return;
+    routeChangeFromNav = false; location.hash = '#history'; setRoute();
+    openEntryForm(entry);
+  });
   const showAcquisitionError = (message) => { $('acquisition-error').textContent = message; $('acquisition-error').hidden = !message; };
   const localToday = () => { try { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', numberingSystem: 'latn' }).format(new Date()); } catch { return ''; } };
   function populateOutcomeForm(lot) {
@@ -1291,7 +1304,7 @@ async function initWorkspace() {
     f.premium.value = draft.premium; $('outcome-premium-source').textContent = draft.premiumSource;
     for (const [name, value] of Object.entries(draft.fees)) f[name].value = value;
     $('outcome-fees').open = draft.feesOpen;
-    f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammer.placeholder = draft.hammerPlaceholder; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = false; f.acquisitionDate.value = draft.acquisitionDate; f.collectionNotes.value = ''; showAcquisitionError(''); updateOutcomeVisibility();
+    f.status.value = draft.status; f.hammer.value = draft.hammer; f.hammer.placeholder = draft.hammerPlaceholder; f.hammerCurrency.value = draft.hammerCurrency; f.invoice.value = draft.invoice; f.invoiceCurrency.value = draft.invoiceCurrency; f.bindingActive.value = draft.bindingActive; f.addToCollection.checked = draft.addToCollection; f.acquisitionDate.value = draft.acquisitionDate; f.collectionNotes.value = ''; showAcquisitionError(''); updateOutcomeVisibility();
   }
   const loadOutcomeEditor = (selectedLot) => {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('outcome-form').elements.lotId.value);
@@ -1299,7 +1312,7 @@ async function initWorkspace() {
     populateOutcomeForm(lot);
   };
   $('outcome-form').addEventListener('change', (event) => { if (event.target.name === 'lotId') loadOutcomeEditor(); else if (event.target.name === 'status') updateOutcomeVisibility(); });
-  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'won') { const terms = outcomeTermsFromForm(lot, Object.fromEntries(['premium', 'hammerCurrency', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value])), navigator.language); if (!terms.ok) { if (terms.error.field !== 'premium') $('outcome-fees').open = true; f[terms.error.field]?.focus?.(); return announce(terms.error.message, true); } if (terms.value !== undefined) outcome.terms = terms.value; } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; if (status === 'won' && f.addToCollection.checked && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (status === 'won' && f.addToCollection.checked) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
+  $('outcome-form').addEventListener('submit', (event) => { event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('outcome'); const lot = basis?.record; if (!lot) return announce('Choose a lot.', true); const status = f.status.value; const outcome = { status }; if (['won', 'lost'].includes(status)) { if (f.hammer.value) { const money = parseMoney(f.hammer.value, f.hammerCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.hammer = money.value; } if (f.invoice.value) { const money = parseMoney(f.invoice.value, f.invoiceCurrency.value, navigator.language); if (!money.ok) return announce(money.error.message, true); outcome.actualInvoice = money.value; } } if (status === 'won') { const terms = outcomeTermsFromForm(lot, Object.fromEntries(['premium', 'hammerCurrency', ...FEE_SHEET_FIELDS.map(({ name }) => name)].map((name) => [name, f[name].value])), navigator.language); if (!terms.ok) { if (terms.error.field !== 'premium') $('outcome-fees').open = true; f[terms.error.field]?.focus?.(); return announce(terms.error.message, true); } if (terms.value !== undefined) outcome.terms = terms.value; } if (status === 'open' && ['won', 'lost'].includes(lot.outcome.status)) { if (!f.bindingActive.value) return announce('Choose whether the prior binding terms are externally active.', true); outcome.bindingActive = f.bindingActive.value === 'true'; } const command = { type: 'lot.outcome.set', requestId: requestId(), lotId: lot.id, expectedRevision: basis.revision, outcome }; const adding = status === 'won' && !lot.collectionEntryId && f.addToCollection.checked; if (adding && !f.acquisitionDate.value) { showAcquisitionError('Enter the acquisition date to add this coin to the collection.'); return f.acquisitionDate.focus(); } showAcquisitionError(''); if (adding) command.addToCollection = { title: lot.title, acquisitionDate: f.acquisitionDate.value, sourceLinks: lot.sourceLinks ?? [], ...(f.collectionNotes.value ? { notes: f.collectionNotes.value } : {}) }; void send(command, 'outcome'); });
 
   function resetEditor(editor) {
     const form = $(`${editor}-form`);
