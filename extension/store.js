@@ -14,7 +14,7 @@ import {
   appendBidHistory, baseRecord, compactGroupPriorities, eventFromDraft, fail, findRecord, getId, getNow, lotFromDraft, ok,
   preferenceFields,
 } from './store-builders.js';
-import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
+import { editedEntry, missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
 import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
 import { sameWantedType, wantTwin, wantTwinMessage } from './core/wantlist.js';
 /**
@@ -50,7 +50,7 @@ export const COMMAND_TYPES = new Set([
   'evidence.add', 'evidence.include', 'evidence.resolve',
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
-  'backup.import', 'quarantine.restore', 'store.reset',
+  'backup.import', 'quarantine.restore', 'quarantine.remove', 'store.reset',
   'want.save', 'want.delete', 'want.found',
 ]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
@@ -736,7 +736,15 @@ function mutation(snapshot, command, context) {
         return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
       }
       const chosen = entries[index];
-      const first = readyToRestore(next, chosen);
+      // The collector may correct, or clear, the one field that kept it out (X-03). The bin keeps the record as it was
+      // until the corrected copy is back, so a correction that is refused changes nothing.
+      let candidate = chosen;
+      if (command.edit !== undefined) {
+        const edited = editedEntry(chosen, command.edit);
+        if (!edited.ok) return edited;
+        candidate = edited.value;
+      }
+      const first = readyToRestore(next, candidate);
       if (!first.ok) return first;
       const restoring = [{ entry: chosen, ...first.value }];
       const partner = missingPartner(next, chosen.collection, first.value.record);
@@ -810,6 +818,19 @@ function mutation(snapshot, command, context) {
           ? { alsoRestored: restoring.slice(1).map(({ entry, record }) => ({ collection: entry.collection, id: record.id })) }
           : {}),
       };
+      break;
+    }
+    // Removing a set-aside record for good, when the collector says it is not worth putting back (X-03). The page offers
+    // the set-aside download first; the store only takes it out of the bin.
+    case 'quarantine.remove': {
+      const entries = Array.isArray(next.quarantine) ? next.quarantine : [];
+      const index = entries.findIndex((entry) => quarantineEntryId(entry) === command.entryId);
+      if (index < 0) {
+        return fail('validation', 'That set-aside record is no longer in the list. Reload the page and try again.', 'entryId');
+      }
+      const [removed] = entries.splice(index, 1);
+      if (!entries.length) delete next.quarantine;
+      value = { collection: removed.collection, ...(typeof removed.record?.id === 'string' ? { id: removed.record.id } : {}) };
       break;
     }
     // The want list (G-22). A want is what the collector wrote - the reference, and the notes, most they would pay and

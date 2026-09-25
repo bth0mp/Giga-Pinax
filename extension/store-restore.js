@@ -1,7 +1,8 @@
 // @ts-check
 // Putting back what a repair set aside: a record from the quarantine bin, with the partner it is
 // linked to, and the links the repair had to clear.
-import { validateQuarantinedRecord } from './core/records.js';
+import { LIMITS, validateQuarantinedRecord } from './core/records.js';
+import { restoreRefusalText } from './core/backup.js';
 import { clone, own } from './core/validate.js';
 import { fail, ok } from './store-builders.js';
 /**
@@ -102,7 +103,8 @@ function readyToRestore(snapshot, entry) {
     return fail('validation', 'This entry holds no record of its own: it lists links that were cleared while repairing local data.', 'entryId');
   }
   const candidate = validateQuarantinedRecord(entry.collection, entry.record);
-  if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
+  // Said in plain words: which field, and what is wrong with it (X-03).
+  if (!candidate.ok) return fail('validation', restoreRefusalText(entry.collection, candidate.error, entry.record), candidate.error.path);
   // The want list is written with its first want, so a want set aside from the last list there was comes back into a new one.
   if (entry.collection === 'wants' && snapshot.wants === undefined) snapshot.wants = [];
   const home = snapshot[entry.collection];
@@ -115,4 +117,29 @@ function readyToRestore(snapshot, entry) {
   return ok({ home, record: clone(candidate.value) });
 }
 
-export { missingPartner, readyToRestore, restoreClearedReferences };
+// Fields a correction may never touch: what names the record and what counts its writes are the store's own.
+const OWN_FIELDS = new Set(['id', 'revision', 'dataClass', 'createdAt', 'updatedAt']);
+
+// The entry with one field of its record corrected, as text, or cleared (null) - never the entry itself, which stays in
+// the bin as it was until the corrected copy goes back (X-03).
+/**
+ * @param {QuarantineEntry} entry
+ * @param {*} edit `{ field, value }`, the value text or null
+ * @returns {Result<QuarantineEntry>}
+ */
+function editedEntry(entry, edit) {
+  const field = edit?.field;
+  if (typeof field !== 'string' || !/^[A-Za-z]{1,64}$/.test(field) || OWN_FIELDS.has(field)) {
+    return fail('validation', 'Only a field of the record itself can be corrected.', 'edit.field');
+  }
+  if (!entry.record || typeof entry.record !== 'object' || Array.isArray(entry.record)) {
+    return fail('validation', 'This entry holds no record whose fields can be corrected.', 'entryId');
+  }
+  const record = clone(entry.record);
+  if (edit.value === null) delete record[field];
+  else if (typeof edit.value === 'string' && edit.value.length <= LIMITS.notes) record[field] = edit.value.trim();
+  else return fail('validation', `A correction is text of at most ${LIMITS.notes} characters.`, 'edit.value');
+  return ok({ ...entry, record });
+}
+
+export { editedEntry, missingPartner, readyToRestore, restoreClearedReferences };

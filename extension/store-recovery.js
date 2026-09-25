@@ -4,7 +4,7 @@
 // keeping a copy", which downloads that file first and resets only once it has been handed to the browser. A Replace
 // import of a backup is the third way out, in Settings. Nothing here reads the records themselves: the rescue file is
 // the store's own verbatim copy (snapshot.raw), and the reset is the store's to refuse over records it can read.
-import { backupFileName, rawExportDocument } from './core/backup.js';
+import { backupFileName, rawExportDocument, setAsideCountText } from './core/backup.js';
 
 /**
  * @typedef {{ sendCommand: (command: *) => Promise<*>, newRequestId: () => string }} Bridge
@@ -183,4 +183,34 @@ export function mountRecovery({
   card.append(title, text, actions, status);
   main.prepend(card);
   return card;
+}
+
+/**
+ * The line under the watchlist's count while records are set aside (X-03): "1 coin set aside: fix or remove", the last
+ * words a button to where that is done. Drawn again with every snapshot, and gone once nothing is set aside.
+ * @param {{ document: Document, quarantine: *, open: () => void, anchorId?: string }} options
+ * @returns {HTMLElement | null}
+ */
+export function mountSetAsideLine({ document, quarantine, open, anchorId = 'lot-count' }) {
+  const text = setAsideCountText(quarantine);
+  const held = document.getElementById('set-aside-line');
+  if (!text) {
+    held?.remove();
+    return null;
+  }
+  const anchor = document.getElementById(anchorId);
+  if (!anchor) return null;
+  const line = held ?? document.createElement('p');
+  line.id = 'set-aside-line';
+  line.className = 'field-note set-aside-line';
+  line.setAttribute('role', 'status');
+  line.style.color = 'var(--warning)';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'quiet btn-sm';
+  button.textContent = 'fix or remove';
+  button.addEventListener('click', () => open());
+  line.replaceChildren(document.createTextNode(`${text}: `), button);
+  if (!held) anchor.after(line);
+  return line;
 }

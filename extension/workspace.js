@@ -9,6 +9,7 @@ import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
+import { mountRecovery, mountSetAsideLine } from './store-recovery.js';
 import {
   bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
@@ -320,6 +321,8 @@ async function initWorkspace() {
     }
     updateConflictNote();
     renderAll();
+    // A record set aside is said where the collector already is, under the coin count, with the way to it (X-03).
+    mountSetAsideLine({ document, quarantine: snapshot.quarantine, open: () => void openSettings('from-workspace?data-health') });
     // The banner belongs to the editors that still exist; losing typed input is said out loud.
     if (clearedInput) announce(COIN_REMOVED_NOTICE, true);
     return clearedInput;
@@ -1849,7 +1852,7 @@ async function initWorkspace() {
         // Records nothing can read get the recovery notice at the top of the page (X-02), not a raw sentence in the banner.
         if (initialized.reason === 'unreadable') {
           announce('Your records can’t be read. The notice at the top of this page has the ways out.', true);
-          void import('./store-recovery.js').then(({ mountRecovery }) => mountRecovery({ document, bridge, reply: initialized })).catch(() => {});
+          mountRecovery({ document, bridge, reply: initialized });
         } else announce(initialized.message, true);
       }
       else acceptIncoming(initialized.value);

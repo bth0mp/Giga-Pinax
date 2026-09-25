@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createWorkspaceBackground, mountWorkspace, parseHtmlFile, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
+import { quarantineEntryId } from '../extension/core/records.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { csvFiles } from '../extension/core/csv.js';
 import { formatMoney } from '../extension/core/money.js';
@@ -1481,6 +1482,27 @@ test('the workspace over unreadable records offers the rescue copy and a fresh s
   assert.equal(page.$('store-recovery-download').textContent, 'Download the stored data');
   assert.equal(page.$('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
   assert.equal(page.status(), 'Your records can’t be read. The notice at the top of this page has the ways out.');
+});
+
+// X-03: a coin set aside is never silent: the watchlist says so under its count, with the way to fix or remove it.
+test('a set-aside coin is said under the coin count, with the way to fix or remove it', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const root = background.root();
+  const broken = { ...storedLot(background, 'Nero, denarius'), id: '00000000-0000-4000-8000-00000000abcd', title: 42 };
+  root.quarantine = [{ collection: 'lots', record: broken, reason: 'invalid-string', quarantinedAt: root.updatedAt }];
+  await background.storage.set({ [STORAGE_KEY]: root });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const line = page.$('set-aside-line');
+  assert.ok(line, 'the line is drawn');
+  assert.equal(line.textContent, '1 coin set aside: fix or remove');
+  assert.equal(page.$('lot-count').parentNode.children.indexOf(line), page.$('lot-count').parentNode.children.indexOf(page.$('lot-count')) + 1,
+    'right under the coin count');
+  await line.querySelector('button').click();
+  assert.deepEqual(page.opened.at(-1), { settings: 'from-workspace?data-health' });
+
+  await background.send({ type: 'quarantine.remove', entryId: quarantineEntryId(root.quarantine[0]) });
+  await settle(20);
+  assert.equal(page.$('set-aside-line'), null, 'gone once nothing is set aside');
 });
 
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,

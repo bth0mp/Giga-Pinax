@@ -1649,3 +1649,66 @@ test('X-02: a merge over unreadable records is refused with the one way that wor
   assert.equal(page.element('import-preview').hidden, true);
   assert.equal(page.status(), 'Your records can’t be read, so a backup can only replace them. Choose Replace local records, then Preview import.');
 });
+
+// --- X-03: a set-aside record can be fixed or removed -------------------------------------------------
+
+const damaged = (extra) => ({ collection: 'lots', record: lot(uuid(9), { reference: 'RIC IV Philip I 27b', ...extra }), reason: 'invalid-string', quarantinedAt: NOW });
+
+test('X-03: the set-aside card comes first on the page, and a damaged coin is named with its field', async () => {
+  const entry = damaged({ title: 42 });
+  const page = await openSettings({ snapshot: snapshotWith({ quarantine: [entry] }) });
+  assert.equal(page.document.querySelector('main').children[0], page.element('data-health'));
+  assert.equal(page.element('data-health-title').textContent, 'Set-aside records');
+  const [row] = page.element('quarantine-list').children;
+  assert.equal(row.querySelector('span').textContent, 'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters (set aside 2026-09-12)');
+  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Restore', 'Remove', 'Put back with this title']);
+  assert.equal(row.querySelector('.set-aside-value').value, '42');
+});
+
+test('X-03: Put back with this title sends the correction, and one without an optional field clears it', async () => {
+  const title = damaged({ title: 42 });
+  const notes = damaged({ notes: 7 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [title, notes] }),
+    reply: () => ({ ok: true, value: { collection: 'lots', id: uuid(9), restoredReferences: [], keptReferences: [] } }),
+  });
+  const [titleRow, notesRow] = page.element('quarantine-list').children;
+  titleRow.querySelector('.set-aside-value').value = 'Philip I, antoninianus';
+  const put = titleRow.querySelectorAll('button').find((button) => button.textContent === 'Put back with this title');
+  await put.click();
+  await settle();
+  const without = notesRow.querySelectorAll('button').find((button) => button.textContent === 'Put back without the notes');
+  await without.click();
+  await settle();
+  assert.deepEqual(page.commands.filter(({ type }) => type === 'quarantine.restore').map(({ entryId, edit }) => [entryId, edit]), [
+    [quarantineEntryId(title), { field: 'title', value: 'Philip I, antoninianus' }],
+    [quarantineEntryId(notes), { field: 'notes', value: null }],
+  ]);
+});
+
+test('X-03: Remove asks first, names the coin, and takes it out of the list', async () => {
+  const entry = damaged({ title: 42 });
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [entry] }),
+    confirmAnswers: [false, true],
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, value: { collection: 'lots', id: uuid(9) } };
+    },
+  });
+  const remove = () => page.element('quarantine-list').children[0].querySelectorAll('button').find((button) => button.textContent === 'Remove');
+  await remove().click();
+  await settle();
+  assert.deepEqual(page.commands, [], 'declined: nothing sent');
+  await remove().click();
+  await settle();
+  assert.deepEqual(page.prompts, Array(2).fill('Remove this coin “RIC IV Philip I 27b” for good? Download set-aside records first if you may want it later.'));
+  assert.deepEqual(page.commands.map(({ type, entryId }) => [type, entryId]), [['quarantine.remove', quarantineEntryId(entry)]]);
+  assert.equal(page.status(), 'The coin “RIC IV Philip I 27b” was removed from the set-aside records.');
+  assert.equal(page.element('data-health').hidden, true);
+});
+
+test('X-03: Settings opened for the set-aside records from the workspace keeps its way back', async () => {
+  const page = await openSettings({ hash: '#from-workspace%3Fdata-health' });
+  assert.equal(page.element('settings-return').textContent, 'Return to workspace');
+});

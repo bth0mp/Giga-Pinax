@@ -6,7 +6,7 @@ import { deduplicateEvidence } from '../extension/core/evidence.js';
 import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
   importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
-  quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
+  quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, setAsideCountText, validateBackup,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -995,8 +995,8 @@ test('set-aside records are summarized, listed and downloadable on their own', (
   assert.equal(quarantineSummaryText(entries), '1 record could not be read and was set aside.');
   assert.equal(quarantineSummaryText([entries[0], { ...entries[0] }]), '2 records could not be read and were set aside.');
   assert.deepEqual(quarantineLines(entries), [
-    'lots: invalid-enum (2026-09-12)',
-    'auctionEvents: missing-record (2026-09-13), 2 links cleared',
+    'Coin: ID is not a valid link (set aside 2026-09-12)',
+    'A missing auction other records pointed to (set aside 2026-09-13), 2 links cleared',
   ]);
   const document = JSON.parse(quarantineDocument(entries, NOW));
   assert.equal(document.exportedAt, NOW);
@@ -1017,6 +1017,34 @@ test('each set-aside row carries the line, the entry it names, and whether there
   assert.deepEqual(rows.map(({ id }) => id), entries.map((entry) => quarantineEntryId(entry)));
   assert.equal(new Set(rows.map(({ id }) => id)).size, 2);
   assert.deepEqual(quarantineRows(null), []);
+});
+
+// X-03: a set-aside coin is named, and what is wrong with it is said in plain words, with what can be done about it.
+const damagedLot = (extra = {}) => ({
+  id: uuid(9), revision: 0, dataClass: 'collector', title: 'Philip I · Antoninianus · Rome', reference: 'RIC IV Philip I 27b',
+  sourceLinks: [], bidHistory: [], outcome: { status: 'open' }, outcomeHistory: [], createdAt: NOW, updatedAt: NOW, ...extra,
+});
+test('X-03: a set-aside coin is named with the field that stops it, in plain words', () => {
+  const title = { collection: 'lots', record: damagedLot({ title: 42 }), reason: 'invalid-string', quarantinedAt: NOW };
+  const notes = { collection: 'lots', record: damagedLot({ notes: 7 }), reason: 'invalid-string', quarantinedAt: NOW };
+  const kept = { collection: 'lots', record: damagedLot(), reason: 'duplicate-id', quarantinedAt: NOW };
+  assert.deepEqual(quarantineLines([title, notes, kept]), [
+    'Coin “RIC IV Philip I 27b”: title is not text of up to 300 characters (set aside 2026-09-12)',
+    'Coin “Philip I · Antoninianus · Rome”: notes are not text of up to 5000 characters (set aside 2026-09-12)',
+    'Coin “Philip I · Antoninianus · Rome”: another record has the same ID (set aside 2026-09-12)',
+  ]);
+  const [titleRow, notesRow, keptRow] = quarantineRows([title, notes, kept]);
+  assert.deepEqual(titleRow.problem, {
+    noun: 'coin', label: 'RIC IV Philip I 27b', field: 'title', fieldLabel: 'title', problem: 'title is not text of up to 300 characters',
+    valid: false, clearable: false, editable: true, current: '42',
+  });
+  assert.equal(notesRow.problem.clearable, true, 'notes are optional, so the coin goes back without them');
+  assert.equal(keptRow.problem.valid, true);
+  assert.equal(setAsideCountText([title, notes, kept]), '3 coins set aside');
+  assert.equal(setAsideCountText([title]), '1 coin set aside');
+  assert.equal(setAsideCountText([title, { collection: 'wants', record: { id: 'x' }, reason: 'invalid-record', quarantinedAt: NOW }]), '2 records set aside');
+  assert.equal(setAsideCountText([{ collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: NOW }]), '', 'a note of cleared links is no record');
+  assert.equal(setAsideCountText(undefined), '');
 });
 
 test('settings set aside whole, or an unreadable entry of the list itself, offer no Restore', () => {

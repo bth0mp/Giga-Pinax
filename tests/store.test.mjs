@@ -1112,7 +1112,7 @@ test('a set-aside record that still does not validate is refused and stays in th
   assert.equal(refused.ok, false);
   assert.equal(refused.code, 'validation');
   assert.equal(refused.outcome, 'not-committed');
-  assert.match(refused.message, /allowed set/i, 'the validator says what is wrong with it');
+  assert.equal(refused.message, 'This auction cannot go back as it is: its kind of sale holds a value Giga Pinax does not know. Correct it or remove it under Set-aside records.', 'it says which field and what is wrong with it, in plain words');
   const after = storage.read();
   assert.deepEqual(after.auctionEvents, []);
   assert.equal(after.quarantine.length, 1, 'nothing is lost by a refusal');
@@ -1315,11 +1315,11 @@ test('an entry the load-time repair set aside keeps its identity from one read t
   assert.equal(ids(first).length, 2);
   assert.deepEqual(ids(second), ids(first), 'the same entry is named the same way on every read');
 
-  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('collectionEntries'));
+  const entryRow = quarantineRows(first.value.quarantine).find(({ line }) => line.startsWith('Collection entry'));
   const reply = await writer.commitCommand(command('quarantine.restore', { entryId: entryRow.id }));
   assert.equal(reply.ok, false);
   assert.doesNotMatch(reply.message, /no longer in the list/, 'the entry the page drew is found');
-  assert.match(reply.message, /allowed set/, 'and the restore is answered on its merits: its lot is still broken');
+  assert.match(reply.message, /^This coin cannot go back as it is: its outcome /, 'and the restore is answered on its merits: its lot is still broken');
 });
 
 // The fold behind an import and behind every load-time repair compared each entry and each cleared link
@@ -2944,4 +2944,59 @@ test('X-02: a collection that is no list is set aside whole, and the other recor
   assert.deepEqual(read.value.lots.map(({ title }) => title), ['Still here']);
   assert.deepEqual(read.value.auctionEvents, []);
   assert.deepEqual(read.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['auctionEvents', 'x', 'invalid-record']]);
+});
+
+// X-03: a set-aside coin can go back with the field that stopped it corrected or cleared, or be removed for good.
+test('X-03: a set-aside coin goes back with its field corrected, or cleared, and never with a bad correction', async () => {
+  const badTitle = plainLot(uuid(), { title: 42, reference: 'RIC IV Philip I 27b' });
+  const badNotes = plainLot(uuid(), { notes: 7 });
+  const stored = setAsideRoot([
+    { collection: 'lots', record: badTitle, reason: 'invalid-string', quarantinedAt: NOW },
+    { collection: 'lots', record: badNotes, reason: 'invalid-string', quarantinedAt: NOW },
+  ], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const [titleEntry, notesEntry] = stored.quarantine;
+
+  const plain = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry) }));
+  assert.equal(plain.message, 'This coin cannot go back as it is: its title is not text of up to 300 characters. Correct it or remove it under Set-aside records.');
+  for (const edit of [{ field: 'title', value: '   ' }, { field: 'id', value: 'x' }, { field: '__proto__', value: 'x' }, { field: 'title', value: 5 }]) {
+    const refused = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry), edit }));
+    assert.equal(refused.ok, false, JSON.stringify(edit));
+  }
+  const empty = await writer.commitCommand(command('quarantine.restore', { entryId: quarantineEntryId(titleEntry), edit: { field: 'title', value: '' } }));
+  assert.match(empty.message, /its title is empty\./);
+  assert.deepEqual(storage.read().quarantine, stored.quarantine, 'a refused correction leaves the bin as it was');
+
+  const corrected = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(titleEntry), edit: { field: 'title', value: ' Philip I, antoninianus ' },
+  }));
+  assert.equal(corrected.ok, true, corrected.message);
+  assert.equal(storage.read().lots.find(({ id }) => id === badTitle.id).title, 'Philip I, antoninianus');
+
+  const cleared = await writer.commitCommand(command('quarantine.restore', {
+    entryId: quarantineEntryId(notesEntry), edit: { field: 'notes', value: null },
+  }));
+  assert.equal(cleared.ok, true, cleared.message);
+  const back = storage.read().lots.find(({ id }) => id === badNotes.id);
+  assert.equal(Object.hasOwn(back, 'notes'), false);
+  assert.equal(storage.read().quarantine, undefined, 'the bin is empty and gone');
+});
+
+test('X-03: a set-aside record can be removed for good, and only the one named', async () => {
+  const stored = setAsideRoot([
+    { collection: 'lots', record: plainLot(uuid(), { title: 42 }), reason: 'invalid-string', quarantinedAt: NOW },
+    { collection: 'lots', record: plainLot(uuid(), { notes: 7 }), reason: 'invalid-string', quarantinedAt: NOW },
+  ], []);
+  const storage = memoryStorage(stored);
+  const writer = createCommandWriter(storage, context());
+  const removed = await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(removed.ok, true, removed.message);
+  assert.deepEqual(removed.value, { collection: 'lots', id: stored.quarantine[0].record.id });
+  assert.deepEqual(storage.read().quarantine, [stored.quarantine[1]]);
+  const missing = await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[0]) }));
+  assert.equal(missing.ok, false);
+  assert.match(missing.message, /no longer in the list/);
+  assert.equal((await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[1]) }))).ok, true);
+  assert.equal(storage.read().quarantine, undefined);
 });

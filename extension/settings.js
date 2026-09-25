@@ -233,11 +233,11 @@ const PRESET_FIELD_CLASS = {
 
 // Putting a record back is a command like any other: the store decides whether it can go back, and
 // the page says what the reply says and reads the list again.
-async function restoreSetAside(entryId, button) {
+async function restoreSetAside(entryId, button, edit) {
   button.disabled = true;
   try {
     const reply = await bridge.sendCommand({
-      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId,
+      type: 'quarantine.restore', requestId: bridge.newRequestId(), entryId, ...(edit ? { edit } : {}),
     });
     if (!reply?.ok) {
       throw new Error(reply?.message || reply?.error?.message || 'That record could not be put back.');
@@ -253,9 +253,27 @@ async function restoreSetAside(entryId, button) {
   }
 }
 
+// Taking a set-aside record out of the list for good (X-03), once the collector has said so knowing the download exists.
+async function removeSetAside(row, button) {
+  const { noun, label } = row.problem;
+  const named = label ? ` “${label}”` : '';
+  if (!confirm(`Remove this ${noun}${named} for good? Download set-aside records first if you may want it later.`)) return;
+  button.disabled = true;
+  try {
+    const reply = await bridge.sendCommand({ type: 'quarantine.remove', requestId: bridge.newRequestId(), entryId: row.id });
+    if (!reply?.ok) throw new Error(reply?.message || 'That record could not be removed.');
+    status(`The ${noun}${named} was removed from the set-aside records.`);
+    await refreshDataHealth().catch((error) => status(`The ${noun} was removed. The list could not be read again: ${error.message}`, true));
+  } catch (error) {
+    button.disabled = false;
+    status(error.message || 'That record could not be removed.', true);
+  }
+}
+
 let quarantineRowSequence = 0;
 
-// Untrusted text from a repaired record, so the line is written as text and never as markup.
+// Untrusted text from a repaired record, so the line is written as text and never as markup. A record that does not
+// validate is offered its one field to correct, or to go back without it where that field is optional (X-03).
 function quarantineItem(row) {
   const item = document.createElement('li');
   const line = document.createElement('span');
@@ -264,14 +282,42 @@ function quarantineItem(row) {
   if (!row.restorable) return item;
   quarantineRowSequence += 1;
   line.id = `quarantine-line-${quarantineRowSequence}`;
-  const restore = document.createElement('button');
-  restore.type = 'button';
-  restore.className = 'quiet';
-  restore.textContent = 'Restore';
-  // Every row carries a button of this name, so the line beside it is what tells them apart.
-  restore.setAttribute('aria-describedby', line.id);
+  const control = (text, kind = 'quiet') => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = kind;
+    button.textContent = text;
+    // Every row carries buttons of these names, so the line beside them is what tells them apart.
+    button.setAttribute('aria-describedby', line.id);
+    return button;
+  };
+  const restore = control('Restore');
   restore.addEventListener('click', () => { void restoreSetAside(row.id, restore); });
-  item.append(' ', restore);
+  const remove = control('Remove');
+  remove.addEventListener('click', () => { void removeSetAside(row, remove); });
+  item.append(' ', restore, ' ', remove);
+  const { field, fieldLabel, editable, clearable, current } = row.problem ?? {};
+  if (!field || (!editable && !clearable)) return item;
+  const fix = document.createElement('div');
+  fix.className = 'set-aside-fix';
+  if (editable) {
+    const label = document.createElement('label');
+    const caption = document.createElement('span');
+    caption.textContent = `Correct the ${fieldLabel}`;
+    const input = document.createElement('input');
+    input.className = 'set-aside-value';
+    input.value = current;
+    label.append(caption, input);
+    const put = control(`Put back with ${/s$/.test(fieldLabel) ? 'these' : 'this'} ${fieldLabel}`, 'secondary');
+    put.addEventListener('click', () => { void restoreSetAside(row.id, put, { field, value: input.value }); });
+    fix.append(label, put);
+  }
+  if (clearable) {
+    const without = control(`Put back without the ${fieldLabel}`);
+    without.addEventListener('click', () => { void restoreSetAside(row.id, without, { field, value: null }); });
+    fix.append(without);
+  }
+  item.append(fix);
   return item;
 }
 
@@ -827,7 +873,8 @@ async function closeSettingsTab() {
   } catch { /* try the page's own close */ }
   try { globalThis.close?.(); } catch { /* nothing more a page can do */ }
 }
-if ((globalThis.location?.hash ?? '') !== '#from-workspace') {
+// The workspace may name what it opened Settings for after its own mark ("#from-workspace%3Fdata-health").
+if (!/^#from-workspace/.test(globalThis.location?.hash ?? '')) {
   $('settings-return').textContent = 'Close';
   $('settings-return').addEventListener('click', (event) => { event.preventDefault(); void closeSettingsTab(); });
 }
