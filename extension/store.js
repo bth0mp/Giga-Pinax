@@ -67,6 +67,18 @@ const OVER_THE_BOUND = new Map([
 // What any other command says when its own result, before any reminder it schedules, does not fit.
 const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
 
+// The want a command names at the revision it was sent against, refused in a sentence of its own: "This want changed in another view."
+/**
+ * @param {import('./core/types.js').Want[]} wants
+ * @param {*} id
+ * @param {*} expectedRevision
+ * @returns {Result<{ index: number, record: import('./core/types.js').Want }>}
+ */
+function findWant(wants, id, expectedRevision) {
+  const found = findRecord(wants, id, expectedRevision, 'want');
+  return found.ok ? found : fail(found.error.code, found.error.message.replace(/^want\b/, 'This want'), found.error.path);
+}
+
 // Two amounts, or two texts, that are the same whatever order an amount's keys were written in; absent is null.
 function sameValue(left, right) {
   if (left === undefined || left === null || right === undefined || right === null) return (left ?? null) === (right ?? null);
@@ -759,7 +771,7 @@ function mutation(snapshot, command, context) {
         value = baseRecord(fields, context);
         wants.push(value);
       } else {
-        const found = findRecord(wants, draft.id, command.expectedRevision, 'want');
+        const found = findWant(wants, draft.id, command.expectedRevision);
         if (!found.ok) return found;
         const { id, dataClass, createdAt, foundLotId, foundAt } = found.value.record;
         value = { id, revision: found.value.record.revision + 1, dataClass, createdAt, updatedAt: now, ...fields,
@@ -773,7 +785,7 @@ function mutation(snapshot, command, context) {
     }
     case 'want.delete': {
       const wants = next.wants ?? [];
-      const found = findRecord(wants, command.wantId, command.expectedRevision, 'want');
+      const found = findWant(wants, command.wantId, command.expectedRevision);
       if (!found.ok) return found;
       value = found.value.record;
       wants.splice(found.value.index, 1);
@@ -783,8 +795,9 @@ function mutation(snapshot, command, context) {
     // Found: the won coin that answered the want, and when; `lotId: null` takes it back. Only a coin won here can be named,
     // and the page offers only one whose reference the catalogue rules read as the want's.
     case 'want.found': {
-      const found = findRecord(next.wants ?? [], command.wantId, command.expectedRevision, 'want');
+      const found = findWant(next.wants ?? [], command.wantId, command.expectedRevision);
       if (!found.ok) return found;
+      if (command.lotId !== null && typeof command.lotId !== 'string') return fail('validation', 'A coin is required.', 'lotId');
       const want = found.value.record;
       if (command.lotId === null) {
         if (!own(want, 'foundLotId')) return fail('validation', 'This want is not marked found.', 'lotId');

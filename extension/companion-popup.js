@@ -559,7 +559,9 @@ async function initCompanionPopup() {
   // The card's type on the want list (G-22): "On your want list · up to €800.00 · VF or better" under the card, matched by
   // the catalogue rules and only for the one type a card shows - a list of candidates draws no card, so it never says so.
   // The want list also goes to the research half, for its Upcoming rows; nothing is fetched for it.
-  let cardReference = globalThis.gigaPinaxWatchlistReference?.reference ?? null;
+  // The card's reading where it handed one over (a Bopearachchi card's label reads as nothing), else its reference.
+  const readingOfCard = (card) => card?.reading ?? card?.reference ?? null;
+  let cardReference = readingOfCard(globalThis.gigaPinaxWatchlistReference);
   const renderCardWanted = () => {
     const line = $('companion-want-line');
     if (!line) return;
@@ -605,7 +607,7 @@ async function initCompanionPopup() {
     $('companion-save-watchlist').disabled = !canSave(safeCard);
     forgetJustSaved('card');
     renderCardSaved();
-    cardReference = event.detail?.reference ?? null;
+    cardReference = readingOfCard(event.detail);
     renderCardWanted();
   });
   if (globalThis.gigaPinaxWatchlistReference) {

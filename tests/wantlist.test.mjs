@@ -11,8 +11,9 @@ import { exportBackup, importChangeLines, previewImport, validateBackup } from '
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
 import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
-  namesOneType, openWantsFor, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
+  namesOneType, openWantsFor, ricSectionKey, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
 } from '../extension/core/wantlist.js';
+import { MINT_SPELLINGS, RIC_SECTIONS, ricMintSection, rulerKey } from '../extension/catalogues.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
 
@@ -481,7 +482,7 @@ test('a won coin of the wanted type is offered as what found it, and Want again 
   const [want] = background.root().wants;
   assert.equal(want.foundLotId, lot.id);
   const found = cardFor(page, 'ric ii trajan 253');
-  assert.equal(found.querySelector('.want-found').textContent, 'Found Sep 12, 2026 · Trajan denarius, Künker 341');
+  assert.equal(found.querySelector('.want-found').textContent, 'Found Sep 12, 2026 · Trajan denarius, Künker 341 · won');
   assert.equal(found.querySelector('.want-found').querySelector('a').href, `#watchlist?lot=${lot.id}`);
   await buttonIn(found, 'Want again').click(); await settle();
   assert.equal(Object.hasOwn(background.root().wants[0], 'foundLotId'), false);
@@ -506,4 +507,92 @@ test('a captured lot citing a wanted type is marked in its draft, and one that d
   // A bare number is never the wanted type.
   await page.typeDetails('reference', 'RIC 306');
   assert.equal(page.$('lot-want-match').hidden, true);
+});
+
+// --- Fix round (r1-review) --------------------------------------------------------------------------
+
+// Minor 1: a found want names the coin that answered it, so what it is for cannot change under that coin.
+test('a found want keeps its type: the form refuses another reference until it is wanted again', () => {
+  const found = makeWant({ reference: 'Price 112', foundLotId: LOT_ID, foundAt: NOW });
+  assert.deepEqual(wantFromForm({ id: WANT_ID, reference: 'RIC I² Nero 306' }, { wants: [found] }),
+    { ok: false, field: 'reference', message: 'Choose Want again before changing what this want is for.' });
+  assert.equal(wantFromForm({ id: WANT_ID, reference: 'Price  112', notes: 'Kept' }, { wants: [found] }).ok, true, 'the same type in another spelling is no change');
+  assert.equal(wantFromForm({ id: WANT_ID, reference: 'RIC I² Nero 306' }, { wants: [makeWant({ reference: 'Price 112' })] }).ok, true, 'an open want may change');
+});
+
+// Minor 3: want.found names a coin, or null; nothing else.
+test('want.found without a coin is refused as such', () => {
+  let state = reduce(createEmptySnapshot(NOW), command('want.save', { expectedRevision: null, want: { reference: 'Price 112' } }));
+  for (const lotId of [undefined, 42, {}]) {
+    const result = applyCommand(state.snapshot, command('want.found', { wantId: state.value.id, expectedRevision: 0, ...(lotId === undefined ? {} : { lotId }) }), context());
+    assert.equal(result.ok, false);
+    assert.equal(result.error.message, 'A coin is required.');
+    assert.equal(result.error.path, 'lotId');
+  }
+});
+
+// Minor 4: the want commands speak of the want in a sentence of their own.
+test('a want changed or removed in another view is named in a sentence', () => {
+  const state = reduce(createEmptySnapshot(NOW), command('want.save', { expectedRevision: null, want: { reference: 'Price 112' } }));
+  const stale = applyCommand(state.snapshot, command('want.save', { expectedRevision: 3, want: { id: state.value.id, reference: 'Price 112' } }), context());
+  assert.equal(stale.error.message, 'This want changed in another view. Reload and try again.');
+  assert.equal(stale.error.path, 'want.revision');
+  const gone = applyCommand(state.snapshot, command('want.delete', { wantId: WANT_ID, expectedRevision: 0 }), context());
+  assert.equal(gone.error.message, 'This want was not found.');
+  assert.equal(gone.error.path, 'want.id');
+});
+
+// Minor 5: a RIC mint in its modern or its Latin name is one section, as the popup reads a card against its research - through the one helper -
+// and no alias makes a different type match.
+test('a RIC mint matches in either of its names, and no alias joins two sections', () => {
+  assert.equal(sameWantedType('RIC VII Trier 12', 'RIC VII Treveri 12'), true);
+  assert.equal(sameWantedType('RIC VI Lyon 12', 'RIC VI Lugdunum 12'), true);
+  assert.equal(sameWantedType('RIC VII Trier 12', 'RIC VII Lugdunum 12'), false);
+  assert.equal(sameWantedType('RIC VII Trier 12', 'RIC VI Treveri 12'), false, 'the volume still counts');
+  assert.equal(sameWantedType('RIC VII Trier 12', 'RIC VII Treveri 13'), false);
+  assert.equal(ricSectionKey('Trier'), ricSectionKey('Treveri'));
+  for (const [volume, sections] of Object.entries(RIC_SECTIONS)) {
+    const keys = new Map();
+    for (const section of sections) {
+      const key = ricSectionKey(section);
+      assert.equal(keys.has(key), false, `${volume}: ${section} and ${keys.get(key)} read as one section`);
+      keys.set(key, section);
+    }
+    // An alias reads as its own section, never as another section of the volume.
+    for (const [alias, section] of MINT_SPELLINGS) {
+      if (!ricMintSection(alias)) continue;
+      const other = sections.find((name) => rulerKey(name) === alias && name !== section);
+      assert.equal(other, undefined, `${volume}: the alias ${alias} of ${section} is also the section ${other}`);
+      if (sections.includes(section)) assert.equal(ricSectionKey(alias), ricSectionKey(section), `${alias} is ${section}`);
+    }
+  }
+});
+
+// Minor 2: a found coin whose outcome is corrected away from won says so, so Want again is due.
+test('the found line says where the found coin now stands', async () => {
+  const background = await createWorkspaceBackground();
+  const lot = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Price 112 tetradrachm', reference: 'Price 112', sourceLinks: [] } })).value;
+  await background.send({ type: 'lot.outcome.set', lotId: lot.id, expectedRevision: 0, outcome: { status: 'won' } });
+  const want = (await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'Price 112' } })).value;
+  await background.send({ type: 'want.found', wantId: want.id, expectedRevision: 0, lotId: lot.id });
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  assert.equal(cardFor(page, 'Price 112').querySelector('.want-found').textContent, 'Found Sep 12, 2026 · Price 112 tetradrachm · won');
+  await background.send({ type: 'lot.outcome.set', lotId: lot.id, expectedRevision: 1, outcome: { status: 'lost' } });
+  await settle();
+  assert.equal(cardFor(page, 'Price 112').querySelector('.want-found').textContent, 'Found Sep 12, 2026 · Price 112 tetradrachm · coin now lost');
+});
+
+// Minor 4: the form of a want another tab removed closes, and says why.
+test('the want form closes when its want is removed in another view', async () => {
+  const background = await createWorkspaceBackground();
+  const want = (await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'Price 112' } })).value;
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  await buttonIn(cardFor(page, 'Price 112'), 'Edit').click();
+  await page.type('want-form', 'notes', 'Typed here');
+  assert.equal(page.$('want-form').hidden, false);
+  await background.send({ type: 'want.delete', wantId: want.id, expectedRevision: 0 });
+  await settle();
+  assert.equal(page.$('want-form').hidden, true);
+  assert.equal(page.$('want-action-status').textContent, 'This want was removed in another view.');
+  assert.equal(page.blocksUnload(), false);
 });

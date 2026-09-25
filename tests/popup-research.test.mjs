@@ -2791,3 +2791,20 @@ test('no Upcoming row is marked while the research has no card of one type, nor 
   const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
   assert.equal(markup.getElementById('companion-want-line')?.hidden, true);
 });
+
+// Fix round (r1-review Important 1): the card hands the other half its reading, the one the Upcoming rows are matched with.
+test('a card hands over its reading with its reference, a Bopearachchi card its king and series', async () => {
+  const card = { id: 'bop.9c', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', bop: { series: '9C', king: 'Euthydemus I', citation: '9C' }, obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const detail = popup.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail;
+  assert.deepEqual({ ...detail.reading }, { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus I' });
+  assert.equal(Object.isFrozen(detail.reading), true);
+  const price = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
+  price.element('quick-reference').value = 'Price 23';
+  await price.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual({ ...price.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail.reading }, { catalogue: 'Price', number: '23', volume: '', section: '' });
+});

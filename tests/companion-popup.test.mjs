@@ -1370,3 +1370,20 @@ test('a card of a wanted type says “On your want list” under it, and the res
     globalThis.dispatchEvent = dispatch;
   }
 });
+
+// Fix round (r1-review Important 1): a Bopearachchi card's label is not a reference the rules read ("Bactrian and Indo-Greek Coinage Euthydemus I
+// 9C"), so the card hands over its reading, as the Upcoming rows read it (referenceFromCard), and the line is drawn from that.
+test('a Bopearachchi card of a wanted type says so under it, from the reading the card hands over', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'Bopearachchi Euthydemus I 9C' } });
+  const page = await loadCompanion({ sendMessage: storeReplies(background) });
+  const line = page.element('companion-want-line');
+  const bopCard = { title: 'Euthydemus I · Tetradrachm', reference: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', pageUrl: 'https://numismatics.org/bigr/id/bop.9c' };
+  page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus I' } });
+  assert.equal(line.hidden, false);
+  assert.equal(lineParts(line), '[On your want list]');
+  page.card({ ...bopCard, reading: { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus II' } });
+  assert.equal(line.hidden, true, 'another king is another type');
+  page.card(bopCard);
+  assert.equal(line.hidden, true, 'without a reading the label reads as nothing');
+});

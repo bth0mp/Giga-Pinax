@@ -6,6 +6,7 @@
 // catalogue reads (an Other) never does. OCRE titles some types over a range, so a range matches only the same range.
 // Everything here is local: nothing is fetched and nothing leaves the machine.
 import { parseReference } from '../lookup.js';
+import { ricMintSection } from '../catalogues.js';
 import { WANT_GRADES } from './fields.js';
 import { formatMoney, parseMoney } from './money.js';
 /**
@@ -23,6 +24,15 @@ export const WANT_GRADE_CHOICES = Object.freeze(WANT_GRADES.map((grade) => Objec
 
 const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const blank = (value) => !field(value);
+
+/**
+ * A RIC section as two readings of it are compared: Nomisma gives a mint both its modern and its Latin name, and the lookup opens
+ * one card under either ("RIC VII Trier 12" is RIC VII Treveri 12), so a mint is read by the Latin name RIC files it under; any
+ * other section as it is written, spacing and case aside. The popup reads a card against its research with this same helper.
+ * @param {*} section
+ * @returns {string}
+ */
+export const ricSectionKey = (section) => field(ricMintSection(section) || section);
 
 /**
  * A reference as the lookup's rules read it: text is read, a reading already made is taken as it is.
@@ -62,7 +72,7 @@ export function wantedReading(reference) {
 
 /**
  * Whether two references name the same one type: both read by the lookup's rules, each naming one type, and the same in
- * catalogue, volume, section, number and range - spacing and case aside.
+ * catalogue, volume, section, number and range - spacing and case aside, and a RIC mint in either of its names (ricSectionKey).
  * @param {*} left
  * @param {*} right
  * @returns {boolean}
@@ -71,7 +81,8 @@ export function sameWantedType(left, right) {
   const one = wantedReading(left);
   const other = wantedReading(right);
   if (!one || !other) return false;
-  return ['catalogue', 'volume', 'section', 'number', 'range'].every((key) => field(one[key]) === field(other[key]));
+  const same = (key) => (key === 'section' && field(one.catalogue) === 'ric' ? ricSectionKey(one[key]) === ricSectionKey(other[key]) : field(one[key]) === field(other[key]));
+  return ['catalogue', 'volume', 'section', 'number', 'range'].every(same);
 }
 
 /**
@@ -149,7 +160,13 @@ export function wantFromForm(values, { wants = [], locale = 'en-US' } = {}) {
   const reference = String(values.reference ?? '').trim();
   const problem = wantReferenceProblem(reference);
   if (problem) return { ok: false, field: 'reference', message: problem };
-  const twin = (Array.isArray(wants) ? wants : []).find((want) => want.id !== values.id && !want.foundLotId && sameWantedType(want.reference, reference));
+  const list = Array.isArray(wants) ? wants : [];
+  // A found want names the coin that answered it: what it is for changes only once it is wanted again.
+  const editing = values.id ? list.find((want) => want.id === values.id) : null;
+  if (editing?.foundLotId && !sameWantedType(editing.reference, reference)) {
+    return { ok: false, field: 'reference', message: 'Choose Want again before changing what this want is for.' };
+  }
+  const twin = list.find((want) => want.id !== values.id && !want.foundLotId && sameWantedType(want.reference, reference));
   if (twin) return { ok: false, field: 'reference', message: `${twin.reference} is already on your want list.` };
   /** @type {Record<string, any>} */
   const want = { reference };

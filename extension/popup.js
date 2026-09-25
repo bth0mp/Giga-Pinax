@@ -1,12 +1,12 @@
 import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
-import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
+import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
-import { openWantsFor, wantBadgeText } from './core/wantlist.js';
+import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {
@@ -371,9 +371,9 @@ function cardMatchesContext(card, context) {
   const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   if (field(reference.catalogue) !== field(context.reference.catalogue) || field(reference.number) !== field(context.reference.number)) return false;
   // Nomisma gives a RIC mint both its English names and the lookup opens the card under either, so the card that came back
-  // is this reference's card whichever of them was typed ("RIC VII Trier 12" is RIC VII Treveri 12).
-  const section = (value) => field(ricMintSection(value) || value);
-  if (reference.catalogue === 'RIC') return field(reference.volume) === field(context.reference.volume) && section(reference.section) === section(context.reference.section);
+  // is this reference's card whichever of them was typed ("RIC VII Trier 12" is RIC VII Treveri 12). The want list reads a
+  // section through the same helper, so a card and a want never disagree about it.
+  if (reference.catalogue === 'RIC') return field(reference.volume) === field(context.reference.volume) && ricSectionKey(reference.section) === ricSectionKey(context.reference.section);
   if (reference.catalogue === 'Bop') return field(reference.section) === field(context.reference.section);
   return true;
 }
@@ -428,10 +428,13 @@ function renderCard(card, { restoring = false } = {}) {
   }
   currentCard = card;
   // The coin a save makes is named by its summary line and keeps the reference in its one short spelling.
+  // The card's reading goes with it, as the Upcoming rows read it, for the want list: a Bopearachchi card's label is no reference the rules read.
+  const reading = referenceFromCard(card);
   globalThis.gigaPinaxWatchlistReference = Object.freeze({
     title: other ? card.label : cardName(card),
     reference: displayReference(card.label),
     pageUrl: other ? (rpc ?? '') : $('type-link').href,
+    ...(reading ? { reading: Object.freeze({ ...reading }) } : {}),
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
   $('result').hidden = false;

@@ -1495,7 +1495,6 @@ async function initWorkspace() {
       clearPageValues();
       showPageValues(values, values.auctionContext?.pageUrl || values.sourceUrl);
       for (const entry of values.provenance ?? []) appendProvenanceEditor({ text: entry.text, sourceUrl: values.auctionContext?.pageUrl || values.sourceUrl }, entry);
-      renderLotWantMatch();
       beginEditor('lot', { id: null, revision: null, record: null });
       dirtyEditors.add('lot');
       openFilledGroups(); updateDirtyMarks();
@@ -1554,13 +1553,18 @@ async function initWorkspace() {
     return link;
   };
   function renderWants() {
+    // The form of a want another view removed closes, and says why.
+    if (editingWant && !(snapshot.wants ?? []).some(({ id }) => id === editingWant.id)) {
+      closeWantForm();
+      formStatus('wantlist', 'This want was removed in another view.');
+    }
     const list = $('want-list'); list.replaceChildren();
     const rows = wantListRows(snapshot, navigator.language);
     if (!rows.length) {
       list.append(text('p', 'No wants yet. Add a reference you are looking for, such as RIC II Trajan 253: a card, an upcoming acsearch lot or a captured lot of that type then says “On your want list”. Nothing is searched for you, and nothing leaves this device.', 'empty-row'));
       return;
     }
-    for (const { want, terms, found, wonCoins } of rows) {
+    for (const { want, terms, found, foundStatus, wonCoins } of rows) {
       const card = text('article', '', 'record want-record'); card.dataset.wantId = want.id;
       card.append(text('h3', want.reference));
       if (terms) card.append(text('p', terms, 'want-terms'));
@@ -1569,6 +1573,7 @@ async function initWorkspace() {
       if (want.foundLotId) {
         const line = text('p', '', 'want-found'); line.append(text('span', 'Found', 'pill'), document.createTextNode(` ${dayText(want.foundAt)} · `));
         line.append(found ? openCoinLink(found) : document.createTextNode('the coin is no longer saved here'));
+        if (found) line.append(document.createTextNode(foundStatus === 'won' ? ' · won' : ` · coin now ${({ open: 'open', lost: 'lost', passed: 'passed' })[foundStatus] ?? foundStatus}`));
         card.append(line);
         actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null }, 'wantlist')
           .then((reply) => { if (reply?.ok) formStatus('wantlist', `Wanted again · ${want.reference}`); })));
