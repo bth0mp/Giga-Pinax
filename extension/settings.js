@@ -1,5 +1,5 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, megabytesText,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, importFit, importNothingText, megabytesText,
   importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
@@ -815,6 +815,9 @@ $('import-form').addEventListener('submit', async (event) => {
       expectedRevision,
       overUnreadable,
     };
+    // Said before Confirm, not after it (X-13): an import that would not fit, and a merge that would change nothing.
+    const nothing = importNothingText(result.value);
+    const fit = importFit(overUnreadable ? null : latest.value, result.value);
     $('import-counts').textContent = overUnreadable
       ? `${importCountsText(result.value).replace(/ Replaces everything local\.$/, '')} Replaces the records that can’t be read; a copy of them downloads first.`
       : importCountsText(result.value);
@@ -825,9 +828,10 @@ $('import-form').addEventListener('submit', async (event) => {
       item.textContent = line;
       return item;
     }));
-    $('confirm-import').disabled = !result.value.snapshot;
+    if (nothing) $('import-counts').textContent = nothing;
+    $('confirm-import').disabled = !result.value.snapshot || Boolean(nothing) || !fit.ok;
     $('import-preview').hidden = false;
-    status('Review the import summary, then confirm.');
+    status(nothing || fit.text || 'Review the import summary, then confirm.', !nothing && !fit.ok);
   } catch (error) {
     if (generation === previewGeneration) {
       clearPreview();

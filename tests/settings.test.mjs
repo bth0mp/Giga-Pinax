@@ -1755,3 +1755,25 @@ test('K-13: Preview and Confirm say they are working while a large backup is rea
   await settle();
   assert.equal(page.element('confirm-import').textContent, 'Confirm import');
 });
+
+// --- X-13: said before Confirm, not after it ----------------------------------------------------------
+
+test('X-13: a merge that would change nothing says so and offers no Confirm', async () => {
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  const page = await openSettings({ snapshot: current });
+  await preview(page, backupDocument(current));
+  assert.equal(page.element('import-counts').textContent, 'Nothing to import: every record in this backup is already here, unchanged.');
+  assert.equal(page.element('confirm-import').disabled, true);
+  assert.equal(page.status(), 'Nothing to import: every record in this backup is already here, unchanged.');
+});
+
+test('X-13: an import that would not fit is refused in the preview, with the figure, before Confirm', async () => {
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  // A backup whose coins carry notes enough to take the records past the 5 MB bound.
+  const big = snapshotWith({ lots: [lot(uuid(1)), ...Array.from({ length: 1100 }, (_, index) => lot(uuid(100 + index), { notes: 'n'.repeat(4900) }))] });
+  const page = await openSettings({ snapshot: current });
+  await preview(page, backupDocument(big));
+  assert.equal(page.element('confirm-import').disabled, true);
+  assert.match(page.status(), /^This import would not fit: your records would take 5\.\d+ MB, more than the 5 MB Giga Pinax can keep in this browser\./);
+  assert.equal(page.statusIsError(), 'true');
+});

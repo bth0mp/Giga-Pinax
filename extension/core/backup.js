@@ -1,12 +1,12 @@
 // @ts-check
 import {
-  LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  LIMITS, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
   quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
 
 // How much of the bound a store takes, as Settings says it (K-13).
-export { megabytesText } from './records.js';
+export { megabytesText };
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 /**
@@ -652,6 +652,39 @@ function planImport(current, incoming, mode, { exportedAt, now = new Date().toIS
  */
 export function previewReplaceOverUnreadable(incoming, now = new Date().toISOString()) {
   return previewImport(createEmptySnapshot(now), incoming, 'replace');
+}
+
+// Whether the root an import leaves fits the storage bound, judged before Confirm as the store judges it after (X-13):
+// the records the preview holds, with the request ledger a merge keeps, and the headroom every save leaves.
+/**
+ * @param {Snapshot | null} current null for records nothing can read, which an import replaces as if there were none
+ * @param {ImportPreview} preview
+ * @returns {{ ok: boolean, bytes: number, text: string }}
+ */
+export function importFit(current, preview) {
+  const before = current ?? createEmptySnapshot(preview.snapshot.updatedAt);
+  const after = { ...preview.snapshot, recentCommands: preview.mode === 'merge' ? before.recentCommands ?? [] : [] };
+  const verdict = boundVerdict(before, after, LIMITS.commandReplyBytes);
+  return {
+    ok: verdict.ok,
+    bytes: verdict.bytes,
+    text: verdict.ok ? '' : `This import would not fit: your records would take ${megabytesText(verdict.bytes)}, more than the 5 MB ` +
+      'Giga Pinax can keep in this browser. Remove old coins or comparables here first, or import a backup with fewer records.',
+  };
+}
+
+// A merge that would write nothing says so, rather than a row of zeros and a Confirm that changes nothing (X-13).
+/**
+ * @param {ImportPreview} preview
+ * @returns {string} empty when the merge would change something
+ */
+export function importNothingText(preview) {
+  const tally = preview?.counts;
+  if (preview?.mode !== 'merge' || !tally || tally.added || tally.updated || tally.quarantine) return '';
+  const differs = (preview.keptLocal?.length ?? 0) + (preview.conflicts?.length ?? 0) + (preview.duplicates?.length ?? 0);
+  return differs
+    ? 'Nothing to import: every record in this backup is already here, and your own copies are kept.'
+    : 'Nothing to import: every record in this backup is already here, unchanged.';
 }
 
 /**
