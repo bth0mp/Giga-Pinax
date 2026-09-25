@@ -6,6 +6,8 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-25
+
 ### Added
 
 - The popup remembers its last answer while the browser is open. Closed by a click on the page and opened again within 30 minutes, it shows the same reference, card and acsearch median at once, from the browser's session storage, with `as of 4 min ago · Refresh` beside the acsearch heading; nothing is asked of acsearch until you select **Refresh**, look up something else or change the currency and refresh. The side panel and the lookup window share it. A reference kept over a permission prompt still wins.
@@ -466,7 +468,8 @@ The accompanying audit of research, pricing, launch behaviour, records, reminder
 
 - acsearch stays scoped to one collector action, one results page and session-only display. Fetched rows, prices, identifiers, medians and claims are never written into drafts, records, exports or backups. Saved comparables are collector-entered and their statistics stay separate from the live price panel's.
 
-[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/bth0mp/Giga-Pinax/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.37.0
 [0.36.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.36.0
 [0.35.0]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.35.0
 [0.34.1]: https://github.com/bth0mp/Giga-Pinax/releases/tag/v0.34.1
