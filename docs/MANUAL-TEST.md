@@ -290,3 +290,13 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     in the workspace. *Expected:* beside your saved comparables, "acsearch median … · seen … ago, session only" with
     **Use as maximum**, which types it into the maximum without saving. Change the bid's currency, or open a coin with
     another reference: nothing is offered. Close the browser and open the coin again: the line is gone.
+
+34. **The want list.** In the workspace open **Want list**, select **Add want** and save `RIC I² Nero 306` with a maximum
+    of `650` GBP and **Very Fine (VF) or better**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
+    VF or better"; `RIC 306` is refused beside **Save want** ("A RIC reference names its volume and its ruler or mint…")
+    and nothing is saved. Look up `RIC I (second edition) Nero 306` in the popup. *Expected:* under the card
+    **On your want list** · up to £650.00 · VF or better, and on **Upcoming** (when acsearch lists a lot still to come)
+    the badge after each lot citing it, whose **Watch** saves it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
+    no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
+    watchlist**: the workspace draft says **On your want list** under its Reference. Win a coin of the type: its want
+    offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.

@@ -6,6 +6,12 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- A **Want list** in the workspace: the types you are looking for, each with an optional maximum price in one currency, lowest grade (Fine, VF, EF or AU, or better) and notes. **Add want**, **Edit** and **Remove** are on the page; once you win a coin of the type, **Mark found: …** names it, and **Want again** takes that back. A want is one catalogue type as a card names it — RIC with its volume and ruler or mint, RRC, Price, SC, CPE, or Bopearachchi with its king — and the form refuses `RIC 306` or `SNG Cop 123`, or a type already on the list, before anything is saved.
+- **On your want list** where a wanted type turns up: under a popup card of the type, with the want's terms (`On your want list · up to £650.00 · VF or better`); after the title of each **Upcoming** acsearch lot citing it, whose **Watch** still saves it in one step; and under the Reference of a captured lot drafted in the workspace, or of a saved coin. Wants are matched by the catalogue rules the lookup reads references with, so `RIC I (second edition) Nero 306` is the want `RIC I² Nero 306` and `RIC I² Nero 306a` is not; a bare RIC number, a list of candidates, a dealer's dotted letter or a text no catalogue reads never shows the badge. It is all worked out on your device: nothing is searched for and nothing is sent.
+- The want list is in your backups, in merge imports (a want on both sides keeps the copy written last) and in a new **Want list** CSV table in Settings. A backup with a want list still imports into 0.37.0, which leaves the want list out; everything else in it arrives.
+
 ## [0.37.0] - 2026-09-25
 
 ### Added
