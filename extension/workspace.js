@@ -20,7 +20,7 @@ import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  decidingBidLine, filterWorkspaceLots, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
   wonCostLine,
 } from './workspace-views.js';
 
@@ -1286,13 +1286,16 @@ async function initWorkspace() {
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
     const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
-    for (const lot of (snapshot.lots ?? []).filter((item) => item.outcome?.status !== 'open')) {
+    // A ledger, newest first: what the coin is and where it was won, what it cost, and the bid that decided it (Q-12).
+    for (const lot of settledNewestFirst(snapshot.lots)) {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
+      const ledger = historyLine(lot, eventsById.get(lot.auctionEventId), navigator.language);
+      if (ledger) card.append(text('p', ledger, 'history-line'));
       if (line) card.append(...costLineParts(line, lot.id));
       else if (lot.outcome.hammer) card.append(text('p', `Hammer ${formatMoney(lot.outcome.hammer)}`));
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
-      card.append(text('p', `${lot.bidHistory?.length ?? 0} recorded bid change${lot.bidHistory?.length === 1 ? '' : 's'}`)); root.append(card);
+      card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid')); root.append(card);
     }
     const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Collection entries'));
     const view = projectCollection(snapshot);
@@ -1306,6 +1309,9 @@ async function initWorkspace() {
     for (const entry of snapshot.collectionEntries ?? []) {
       const line = wonCostLine(lotsById.get(entry.lotId), navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('p', `${entry.title} · ${entry.acquisitionDate}${entry.reviewReason ? ` · review: ${entry.reviewReason}` : ''}`));
+      const entryLot = lotsById.get(entry.lotId);
+      const ledger = entryLot ? historyLine(entryLot, eventsById.get(entryLot.auctionEventId), navigator.language) : '';
+      if (ledger) card.append(text('p', ledger, 'history-line'));
       if (line) card.append(...costLineParts(line, entry.lotId));
       else if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
       const invoiceLine = entryInvoiceLine(entry, lotsById.get(entry.lotId));

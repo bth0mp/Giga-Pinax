@@ -309,6 +309,52 @@ export function lotRowAmount(lot) {
 }
 
 /**
+ * What a settled coin is and where it was won, as a ledger's first line (Q-12): its reference, the house, sale and lot
+ * number, and the day of its auction - "RIC II Trajan 253 · Künker 341, lot 1234 · Sat 20 Sept 2026" - each part only
+ * where it was recorded.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function historyLine(lot, event, locale = 'en-US') {
+  const context = lot?.auctionContext ?? {};
+  const sale = [context.house, context.saleId].filter(Boolean).join(' ');
+  const lotNumber = context.lotNumber ?? lot?.lotNumber;
+  const where = [sale, lotNumber ? `lot ${lotNumber}` : ''].filter(Boolean).join(', ');
+  const day = event?.localDate ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate) : '';
+  return [String(lot?.reference ?? '').trim(), where, day].filter(Boolean).join(' · ');
+}
+
+/**
+ * The bid that decided a settled coin, in place of a count of bid changes (Q-12): "Won on a €6,500.00 maximum (25%)",
+ * "Lost · your bid €500.00, hammer €650.00", "Passed". The bid is the last one settled with the outcome.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function decidingBidLine(lot, format) {
+  const status = lot?.outcome?.status;
+  const settled = (lot?.bidHistory ?? []).findLast((entry) => entry.action === 'settled-won' || entry.action === 'settled-lost');
+  const rate = Number.isInteger(settled?.buyerPremiumBps) ? ` (${/** @type {number} */ (settled?.buyerPremiumBps) / 100}%)` : '';
+  const hammer = lot?.outcome?.hammer ? format(lot.outcome.hammer) : '';
+  if (status === 'won') return settled?.amount ? `Won on a ${format(settled.amount)} maximum${rate}` : 'Won · no bid recorded here';
+  if (status === 'lost') return ['Lost', [settled?.amount ? `your bid ${format(settled.amount)}` : '', hammer ? `hammer ${hammer}` : ''].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  if (status === 'passed') return 'Passed';
+  return '';
+}
+
+/**
+ * The settled coins newest first: by when their outcome was last recorded, else when they were last written.
+ * @param {Lot[] | null | undefined} lots
+ * @returns {Lot[]}
+ */
+export function settledNewestFirst(lots) {
+  const at = (lot) => String(lot.outcomeHistory?.at(-1)?.recordedAt ?? lot.updatedAt ?? '');
+  return (lots ?? []).filter((lot) => lot?.outcome?.status && lot.outcome.status !== 'open').sort((left, right) => at(right).localeCompare(at(left)));
+}
+
+/**
  * The amount a coin row shows, in words where one figure would hide a record: a plan saved beside the bid in force is
  * named after it ("Placed £1,300.00 · plan £1,500.00", Q-10); otherwise the one amount lotRowAmount gives.
  * @param {Lot | null | undefined} lot

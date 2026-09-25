@@ -37,3 +37,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 /* G-07: a form's own status line, in its action bar; what arrives fades in over 180 ms (the reduced-motion guard in design-tokens.css shortens it to nothing). */
 #bid-action-status{min-height:0;margin:8px 0 0}#bid-action-status:empty{display:none}.action-status button,.notice button{margin-left:4px;min-height:0;padding:2px 8px}
 @keyframes gp-fade-in{from{opacity:0}to{opacity:1}}.action-status:not(:empty),.notice:not(:empty),.bid-live:not(:empty){animation:gp-fade-in .18s ease-out}
+/* Q-12: a settled coin's ledger line - what it is and where it was won - and the bid that decided it. */
+.history-line{margin-top:2px;color:var(--muted);font-size:12px}.history-bid{font-size:12px;font-variant-numeric:tabular-nums}

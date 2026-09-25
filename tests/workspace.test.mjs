@@ -13,6 +13,7 @@ import {
   applyActiveRoute, auctionQueueForLots, auctionTimeLabel, buildExposureSections, chooseSelectedLot, eventWhen,
   comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, evidenceRowsForQuery,
   filterWorkspaceLots, lotStatusLabel, moveDetailTab, reminderAtLabel, routeFromHash, wonCostLine,
+  decidingBidLine, historyLine, settledNewestFirst,
 } from '../extension/workspace-views.js';
 import {
   bidFormValues, buildWorkspaceLotDraft, createEventDraft, estimateNoteText, lotDraftToEditor, lotFormValues,
@@ -1448,4 +1449,22 @@ test('a won coin’s money line names its import VAT and totals it', () => {
     costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, importVatBps: 500, incrementMinor: 1, minimumBidMinor: 0 } }], ['a']);
   assert.match(row.estimateLabel, /import VAT 5\.00% on hammer, premium and shipping/);
   assert.equal(row.totalLabel, 'Estimated total EUR 1328.25');
+});
+
+// Q-12: a History card reads as a ledger - what the coin is and where it was won, then the bid that decided it - and
+// the settled coins run newest first.
+test('a settled coin reads as a ledger line and the bid that decided it, newest first', async () => {
+  const { formatMoney } = await import('../extension/core/money.js');
+  const eur = (minor) => ({ currency: 'EUR', minor });
+  const lot = { reference: 'RIC II Trajan 253', auctionContext: { pageUrl: 'https://k.test/1', house: 'Künker', saleId: '341', lotNumber: '1234' },
+    outcome: { status: 'won', hammer: eur(600000) }, bidHistory: [{ action: 'placed', amount: eur(650000) }, { action: 'settled-won', amount: eur(650000), buyerPremiumBps: 2500 }] };
+  assert.equal(historyLine(lot, { localDate: '2026-09-20' }, 'en-GB'), 'RIC II Trajan 253 · Künker 341, lot 1234 · Sun, 20 Sept 2026');
+  assert.equal(historyLine({ lotNumber: '7' }, null), 'lot 7');
+  assert.equal(decidingBidLine(lot, formatMoney), 'Won on a €6,500.00 maximum (25%)');
+  assert.equal(decidingBidLine({ outcome: { status: 'lost', hammer: eur(65000) }, bidHistory: [{ action: 'settled-lost', amount: eur(50000) }] }, formatMoney), 'Lost · your bid €500.00, hammer €650.00');
+  assert.equal(decidingBidLine({ outcome: { status: 'won' }, bidHistory: [] }, formatMoney), 'Won · no bid recorded here');
+  assert.equal(decidingBidLine({ outcome: { status: 'passed' }, bidHistory: [] }, formatMoney), 'Passed');
+  const older = { id: 'a', outcome: { status: 'won' }, outcomeHistory: [{ recordedAt: '2026-01-01T00:00:00.000Z' }] };
+  const newer = { id: 'b', outcome: { status: 'lost' }, outcomeHistory: [{ recordedAt: '2026-05-01T00:00:00.000Z' }] };
+  assert.deepEqual(settledNewestFirst([older, { id: 'c', outcome: { status: 'open' } }, newer]).map(({ id }) => id), ['b', 'a']);
 });
