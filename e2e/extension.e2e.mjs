@@ -311,7 +311,15 @@ test('after Save the coin is saved in one step, and the Reference box is still t
     await page.locator('#companion-save-watchlist').click();
     // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
     await page.locator('#companion-saved-line .pill[title="Added to your watchlist"]').waitFor({ timeout: 15000 });
-    assert.equal(await page.locator('#companion-saved-line .pill').first().textContent(), 'Watching');
+    // Loop 6 (K-14): what the card's Watch made is Watching; the pill's shown words, its sentence for a screen reader beside them.
+    assert.equal(await page.locator('#companion-saved-line .pill span[aria-hidden="true"]').first().textContent(), 'Watching');
+    assert.equal(await page.locator('#companion-save-watchlist').textContent(), 'Watch');
+    // Loop 6 (K-01): the coin just saved has no auction, and the Watchlist tab lists it first, with what the list holds over it.
+    await page.locator('#companion-tab-watchlist').click();
+    await page.locator('#companion-count:not([hidden])').waitFor({ timeout: 5000 });
+    assert.equal(await page.locator('#companion-count').textContent(), '1 coin on your watchlist');
+    assert.match(await page.locator('#companion-coin-list li').first().textContent(), /no sale date/);
+    await page.locator('#companion-tab-research').click();
     assert.equal(browser.context.pages().length, pages, 'no tab opened');
     assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();
@@ -540,6 +548,35 @@ test('step 17: in Arabic, a house premium reads back as 22.50 and saves again un
     await page.locator('#save-settings').click();
     await page.locator('#settings-status', { hasText: 'Settings saved.' }).waitFor({ timeout: 10000 });
     assert.equal(await saved.getAttribute('aria-invalid'), null);
+  } finally {
+    await browser.close();
+  }
+});
+
+// Loop 6 (K-02): what a newcomer types is answered. Free words are offered as a search he starts himself - nothing is fetched until he does - a
+// ruler opens Refine, and a pasted web address is told to be captured, never searched.
+test('free words are offered as a search the collector starts, and a web address is never searched', async () => {
+  const browser = await launch();
+  let searches = 0;
+  await browser.context.route('https://www.acsearch.info/search.html*', async (route) => { searches += 1; await route.fallback(); });
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await lookUp(page, 'nero denarius');
+    await page.locator('#free-text:not([hidden])').waitFor({ timeout: 10000 });
+    assert.match(await page.locator('#form-error').textContent(), /^Nero is a RIC ruler/);
+    assert.equal(await page.locator('#phrase-search').textContent(), 'Search acsearch for “nero denarius”');
+    assert.equal(await page.locator('#refine-reference').evaluate((details) => details.open), true);
+    assert.equal(await page.locator('#ric-section').inputValue(), 'Nero');
+    assert.equal(searches, 0, 'nothing is fetched until the search is chosen');
+    await page.locator('#phrase-search').click();
+    await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    assert.equal(searches, 1);
+    assert.equal(await page.locator('#result').isHidden(), true, 'a phrase search has no card');
+    await lookUp(page, 'https://www.cngcoins.com/Lot.aspx?LOT_ID=1');
+    await page.locator('#form-error', { hasText: 'That’s a web address' }).waitFor({ timeout: 5000 });
+    assert.equal(searches, 1, 'a web address is never searched');
   } finally {
     await browser.close();
   }
