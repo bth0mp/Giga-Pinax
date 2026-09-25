@@ -1,6 +1,6 @@
 import { computeStatistics } from './core/evidence.js';
 import { LIMITS } from './core/fields.js';
-import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { CURRENCIES, formatMoney, minorDigits, parseMoney, parsePremiumPercent, plainDecimal } from './core/money.js';
 import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
 import { WANT_GRADE_CHOICES, openWantsFor, wantBadgeText, wantFromForm } from './core/wantlist.js';
@@ -69,6 +69,11 @@ async function initWorkspace() {
     if (className) node.className = className;
     return node;
   };
+  // Every currency select lists the currencies an amount may be recorded in, in money.js's order (G-23).
+  for (const select of [$('evidence-currency'), $('evidence-form').elements.currency, $('bid-form').elements.currency,
+    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency]) {
+    select.replaceChildren(...CURRENCIES.map((code) => { const option = text('option', code); option.value = code; return option; }));
+  }
   const view = () => ({ locale: navigator.language });
   // An auction's name, its day and time, and how soon, the relative part toned: amber within 48 hours, muted once past.
   const eventLine = (event, className, tag = 'span', withName = true) => {
@@ -959,7 +964,12 @@ async function initWorkspace() {
     });
     strip.append(add);
   }
-  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) renderBidEvidence(); updateBidAnswers(); });
+  // The budget fold's empty increment and minimum show an amount in the bid's currency: 0.01 and 0.00, or 1 and 0 yen.
+  const bidPlaceholders = () => {
+    const f = $('bid-form').elements; const digits = minorDigits(f.currency.value) ?? 2;
+    f.increment.placeholder = digits ? `0.${'1'.padStart(digits, '0')}` : '1'; f.minimum.placeholder = plainDecimal(0, digits);
+  };
+  $('bid-form').addEventListener('input', (event) => { if (event.target === $('bid-form').elements.currency) { renderBidEvidence(); bidPlaceholders(); } updateBidAnswers(); });
   // A house's terms are its premium and what it charges on top; a house without VAT or a platform fee clears the one
   // the last house left.
   $('bid-form').addEventListener('change', (event) => {
@@ -982,6 +992,7 @@ async function initWorkspace() {
     const lot = selectedLot ?? snapshot.lots.find((item) => item.id === $('bid-form').elements.lotId.value);
     setBasis('bid', lot ? { id: lot.id, revision: lot.revision, record: structuredClone(lot) } : { id: null, revision: null, record: null });
     populateBidForm(lot);
+    bidPlaceholders();
   };
   $('bid-form').addEventListener('submit', (event) => {
     event.preventDefault(); const f = event.currentTarget.elements; const basis = editorBases.get('bid'); const parsed = bidMoney(f);

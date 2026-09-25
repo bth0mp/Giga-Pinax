@@ -1,6 +1,6 @@
 import { parseReference } from './lookup.js';
 import { readProvenance } from './lot.js';
-import { ambiguousGrouping } from './core/money.js';
+import { ambiguousGrouping, minorDigits } from './core/money.js';
 
 // Injected into the auction page by scripting.executeScript, so it stands alone: every helper it uses is defined inside it, and everything it reads is
 // the page's own text, which the page controls. ponytail: no per-auction-house selector table - none of the houses' markup is verified here, so the
@@ -174,7 +174,8 @@ export function pageEstimate(price, currency) {
   const figure = /^(\d{1,15})(?:\.(\d{1,6}))?$/.exec(text);
   if (!/^[A-Z]{3}$/.test(code) || !figure) return null;
   let places;
-  try { places = new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits; }
+  // A currency money.js lists has its places from its table; any other a page states, from the browser.
+  try { places = minorDigits(code) ?? new Intl.NumberFormat('en', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits; }
   catch { return null; }
   const fraction = figure[2] ?? '';
   // "1.200" may be a grouped twelve hundred as well as a decimal: refused as the collector's own typed amounts are (core/money.js), unless the

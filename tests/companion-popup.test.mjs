@@ -437,6 +437,27 @@ test('the stored currency reaches the research select through its change handler
   assert.deepEqual(saved[0].preferences, { currency: 'CHF' });
 });
 
+// A default outside the research currencies (SEK) is the collector's bid currency, not a research one: choosing where
+// prices are researched in the popup leaves it alone, and the research select keeps the choice on its own.
+test('a research currency chosen in the popup never overwrites a default outside the research currencies', async () => {
+  const commands = [];
+  const currencyChanges = [];
+  const reply = async (command) => {
+    commands.push(command);
+    return command.type === 'preferences.save'
+      ? { ok: true, value: { currency: command.preferences.currency, revision: command.expectedRevision + 1 } }
+      : { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'SEK', revision: 4 } } };
+  };
+  const page = await loadCompanion({ sendMessage: reply, currency: 'EUR', currencyChanges });
+  assert.equal(page.element('currency').value, 'EUR', 'research stays in its own currency');
+  assert.deepEqual(currencyChanges, []);
+  page.element('currency').value = 'CHF';
+  await page.element('currency').emit('change');
+  await settle();
+  assert.deepEqual(commands.filter(({ type }) => type === 'preferences.save'), [], 'the SEK default is left as it is');
+  assert.notEqual(page.element('storage-note').textContent, 'The currency could not be saved.');
+});
+
 // Nothing to clear and nothing to announce: the cache and the stored preference already agree, which
 // is what every start-up after the first looks like.
 test('a stored currency the research select already shows disturbs nothing', async () => {

@@ -1263,7 +1263,7 @@ test('damaged settings, schedule, scratch or root counter no longer lock the sto
     createdAt: NOW, updatedAt: NOW, ...extra,
   });
   for (const [label, damage] of [
-    ['a currency no build writes', (root) => { root.preferences = settings({ currency: 'JPY' }); }],
+    ['a currency no build writes', (root) => { root.preferences = settings({ currency: 'XAU' }); }],
     ['a preset with a broken ladder', (root) => {
       root.preferences = settings({ housePremiumPresets: [{ name: 'X', buyerPremiumBps: 2000, incrementLadder: { currency: 'USD', tiers: 'oops' } }] });
     }],

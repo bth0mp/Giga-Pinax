@@ -6,6 +6,7 @@ import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, look
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
 import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
+import { minorDigits } from './core/money.js';
 import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
@@ -1318,11 +1319,8 @@ function keepMedian(provider, entry) {
   if (Object.keys(next).length) sessionWrite({ [SESSION_MEDIAN_KEY]: next });
   else sessionRemove(SESSION_MEDIAN_KEY);
 }
-// A median in minor units: the currency's own places, as the stored money is.
-const minorUnits = (amount, currency) => {
-  const places = new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
-  return Math.round(amount * 10 ** places);
-};
+// A median in minor units: the currency's own places from money.js's table, as the stored money is.
+const minorUnits = (amount, currency) => Math.round(amount * 10 ** (minorDigits(currency) ?? 2));
 const medianEntry = (provider, context, currency, summary) => (summary.count > 0 && Number.isFinite(summary.median) ? {
   reference: displayReference(priceCard(context).label), provider, currency, median: minorUnits(summary.median, currency), count: summary.count,
   at: context.restoredAt ?? Date.now(),

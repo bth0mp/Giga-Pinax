@@ -139,8 +139,8 @@ test('an increment ladder is typed one tier per line, in the currency the tiers 
   const parsed = parseIncrementLadder('0: 5\n100: 10,00\n\n 1 000 : 25 ', 'EUR');
   assert.deepEqual(parsed.value, { currency: 'EUR', tiers: [{ from: 0, step: 500 }, { from: 10000, step: 1000 }, { from: 100000, step: 2500 }] });
   assert.equal(parseIncrementLadder('   ', 'EUR').value, null, 'an empty ladder box means no ladder');
-  assert.equal(parseIncrementLadder('   ', 'JPY').value, null, 'a currency nobody chose does not matter without tiers');
-  assert.equal(parseIncrementLadder('0: 5', 'JPY').error.field, 'ladderCurrency');
+  assert.equal(parseIncrementLadder('   ', 'XAU').value, null, 'a currency nobody chose does not matter without tiers');
+  assert.equal(parseIncrementLadder('0: 5', 'XAU').error.field, 'ladderCurrency');
   assert.equal(parseIncrementLadder('0 5', 'EUR').ok, false);
   assert.match(parseIncrementLadder('0: 5\n100', 'EUR').error.message, /^Line 2: /);
   assert.match(parseIncrementLadder('0: 5\n100: x', 'EUR').error.message, /^Line 2: /);
@@ -593,7 +593,7 @@ test('session medians are read per provider and only in their exact shape', asyn
     { reference: 'RIC I² Nero 306', provider: 'coinarchives', providerLabel: 'CoinArchives', currency: 'GBP', median: { currency: 'GBP', minor: 19000 }, count: 5, at },
   ]);
   assert.equal(readSessionMedians({ acsearch: { ...acsearch, at: new Date(at).toISOString() } }, now)[0].at, at);
-  for (const bad of [{ ...acsearch, provider: 'coinarchives' }, { ...acsearch, currency: 'JPY' }, { ...acsearch, median: { currency: 'EUR', minor: 24000 } },
+  for (const bad of [{ ...acsearch, provider: 'coinarchives' }, { ...acsearch, currency: 'XAU' }, { ...acsearch, median: { currency: 'EUR', minor: 24000 } },
     { ...acsearch, median: 0 }, { ...acsearch, median: 1.5 }, { ...acsearch, count: 0 }, { ...acsearch, count: '2' }, { ...acsearch, at: 'yesterday' },
     { ...acsearch, at: now + 3600000 }, { ...acsearch, reference: '' }, { ...acsearch, reference: 7 }, null, 'x']) {
     assert.deepEqual(readSessionMedians({ acsearch: bad }, now), [], JSON.stringify(bad));
@@ -645,7 +645,7 @@ test('the popup calculator puts back what was typed, and a bare default no longe
   const now = Date.parse('2026-09-25T12:00:00.000Z');
   const record = { version: 1, at: now - 60000, mode: 'total', currency: 'EUR', texts: { amount: '1000' } };
   assert.equal(readCalculatorMemory(record, now).texts.amount, '1000');
-  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'JPY' }, { ...record, mode: 'x' },
+  for (const bad of [{ ...record, at: now - 31 * 60000 }, { ...record, at: now + 3600000 }, { ...record, currency: 'XAU' }, { ...record, mode: 'x' },
     { ...record, texts: { amount: 7 } }, { ...record, texts: { amount: 'x'.repeat(33) } }, { ...record, texts: {} }, { ...record, version: 2 }, null]) {
     assert.equal(readCalculatorMemory(bad, now), null, JSON.stringify(bad));
   }
@@ -661,3 +661,86 @@ test('an empty calculator keeps the median’s currency when the preferred curre
   assert.equal(calculator.field('Currency').value, 'GBP', 'the preference second does not override it');
 });
 
+
+// --- More currencies (G-23 / Q-15): every amount in its own currency's places ------------------------------------
+
+import { feeSheetEstimate, feeSheetTexts } from '../extension/bid-tools.js';
+
+test('a saved amount is written back in its own currency’s places, and a percentage in two', () => {
+  assert.equal(formatMinorInput(1200000, 'en-US', 'JPY'), '1200000');
+  assert.equal(formatMinorInput(1200000, 'de-DE', 'SEK'), '12000.00');
+  assert.equal(formatMinorInput(1200000, 'en-US', 'USD'), '12000.00');
+  assert.equal(formatMinorInput(1750, 'en-US'), '17.50', 'a rate has no currency');
+  assert.equal(formatMinorInput(-1, 'en-US', 'JPY'), '');
+  for (const currency of money.CURRENCIES) {
+    for (const minor of [0, 1, 7, 1200000, 123456789]) {
+      const text = formatMinorInput(minor, 'en-US', currency);
+      for (const locale of ['en-US', 'de-DE', 'ar-EG']) assert.equal(money.parseMoney(text, currency, locale).value.minor, minor, `${currency} ${text} ${locale}`);
+    }
+  }
+});
+
+test('a JPY fee sheet reads and writes whole yen', () => {
+  const estimate = { currency: 'JPY', shippingMinor: 3000, paymentFeeBps: 250, paymentFeeMinor: 500, incrementMinor: 1, minimumBidMinor: 0, importVatBps: 1000 };
+  const texts = feeSheetTexts(estimate);
+  assert.deepEqual(texts, { premiumVat: '', platformFee: '', importVat: '10.00', shipping: '3000', paymentPercent: '2.50', paymentFixed: '500' });
+  assert.deepEqual(feeSheetEstimate(texts, { currency: 'JPY' }).value, estimate);
+  const refused = feeSheetEstimate({ ...texts, shipping: '3000.50' }, { currency: 'JPY' });
+  assert.equal(refused.error.field, 'shipping');
+  assert.equal(refused.error.message, 'Money in JPY is whole units with no decimal places, written like 1200 or 1,200.');
+  // A euro sheet is written exactly as it always was.
+  assert.equal(feeSheetTexts({ ...estimate, currency: 'EUR' }).shipping, '30.00');
+});
+
+test('a JPY lot fills the calculator in whole yen', () => {
+  const inputs = calculatorInputsForLot({ key: 'a', currency: 'JPY', hammerMinor: 1200000, buyerPremiumBps: 1750,
+    costEstimate: { currency: 'JPY', shippingMinor: 3000, paymentFeeBps: 0, paymentFeeMinor: 500, incrementMinor: 1000, minimumBidMinor: 10000 } });
+  assert.deepEqual([inputs.amount, inputs.premium, inputs.shipping, inputs.paymentFixed, inputs.increment, inputs.minimum],
+    ['1200000', '17.50', '3000', '500', '1000', '10000']);
+  const usd = calculatorInputsForLot({ key: 'b', currency: 'USD', hammerMinor: 1200000, buyerPremiumBps: 1750,
+    costEstimate: { currency: 'USD', shippingMinor: 3000, paymentFeeBps: 0, paymentFeeMinor: 500, incrementMinor: 1000, minimumBidMinor: 10000 } });
+  assert.deepEqual([usd.amount, usd.shipping, usd.increment], ['12000.00', '30.00', '10.00']);
+});
+
+test('a house ladder in yen is written and read in whole yen, and its tiers are printed as yen', () => {
+  const tiers = [{ from: 0, step: 1000 }, { from: 100000, step: 5000 }, { from: 1000000, step: 50000 }];
+  assert.equal(formatIncrementLadder(tiers, 'JPY'), '0: 1000\n100000: 5000\n1000000: 50000');
+  assert.deepEqual(parseIncrementLadder(formatIncrementLadder(tiers, 'JPY'), 'JPY').value, { currency: 'JPY', tiers });
+  assert.deepEqual(parseIncrementLadder('0: 1 000\n100 000: 5 000\n1,000,000: 50,000', 'JPY', 'en-US').value, { currency: 'JPY', tiers });
+  assert.match(parseIncrementLadder('0: 1000.5', 'JPY').error.message, /^Line 1: Money in JPY is whole units/);
+  assert.equal(ladderTierText(tiers, 1200000, 'JPY', 'en-US'), 'on the tier from ¥1,000,000, steps of ¥50,000');
+  // Two places, as ever, for every other currency, and for a ladder saved before a currency was named.
+  assert.equal(formatIncrementLadder([{ from: 0, step: 500 }], 'SEK'), '0.00: 5.00');
+  assert.equal(formatIncrementLadder([{ from: 0, step: 500 }]), '0.00: 5.00');
+  assert.equal(ladderTierText([{ from: 0, step: 500 }, { from: 10000, step: 1000 }], 12345, 'SEK', 'en-US'), 'on the tier from SEK 100, steps of SEK 10');
+});
+
+test('the calculator offers every currency and prices a JPY 1,200,000 hammer in whole yen', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } } });
+  const currency = calculator.field('Currency');
+  assert.deepEqual(currency.querySelectorAll('option').map((option) => option.value), [...money.CURRENCIES]);
+  const amount = calculator.field('Hammer price');
+  const increment = calculator.field('Bid increment');
+  assert.deepEqual([amount.placeholder, increment.placeholder], ['0.00', '0.01']);
+  currency.value = 'JPY'; await currency.emit('input');
+  assert.deepEqual([amount.placeholder, increment.placeholder, calculator.field('Shipping').placeholder], ['0', '1', '0']);
+  amount.value = '1,200,000';
+  calculator.premium.value = '17.5';
+  await calculator.premium.emit('input');
+  assert.equal(calculator.figure.textContent, '¥1,410,000');
+  assert.equal(calculator.output.textContent, 'Hammer ¥1,200,000 · premium ¥210,000 (17.5%) · no fees');
+  amount.value = '1200000.5'; await amount.emit('input');
+  assert.equal(calculator.status.textContent, 'Money in JPY is whole units with no decimal places, written like 1200 or 1,200.');
+  const mode = calculator.field('Calculation'); mode.value = 'budget'; await mode.emit('change');
+  calculator.field('Total budget').value = '1410000'; await calculator.premium.emit('input');
+  assert.equal(calculator.figure.textContent, '¥1,200,000');
+  currency.value = 'SEK'; await currency.emit('input');
+  assert.deepEqual([calculator.field('Total budget').placeholder, increment.placeholder], ['0.00', '0.01']);
+});
+
+test('a calculator mounted in yen shows whole-yen placeholders before anything is typed or loaded', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: false, message: 'No settings here.' }, options: { currency: 'JPY' } });
+  assert.equal(calculator.field('Currency').value, 'JPY');
+  assert.deepEqual(['Hammer price', 'Shipping', 'Fixed payment fee', 'Minimum bid', 'Bid increment'].map((caption) => calculator.field(caption).placeholder),
+    ['0', '0', '0', '0', '1']);
+});

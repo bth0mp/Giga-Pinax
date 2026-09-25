@@ -1,6 +1,6 @@
 import { PERIODS } from './prices.js';
 import { CATALOGUES, CORPORA, catalogueOf } from './catalogues.js';
-import { CURRENCIES } from './core/money.js';
+import { RESEARCH_CURRENCIES } from './core/money.js';
 
 export const STORAGE_KEY = 'giga-pinax-preferences-v1';
 // One column of the catalogue table: the example the guided fields start from, and the ruler or king beside it. A
@@ -65,7 +65,7 @@ export function restorePreferences(raw) {
   const catalogue = catalogueOf(saved.catalogue) ? saved.catalogue : 'Price';
   const recent = restoreRecent(saved.recent);
   return {
-    currency: CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
+    currency: RESEARCH_CURRENCIES.includes(saved.currency) ? saved.currency : 'USD',
     catalogue,
     number: text(saved.number, DEFAULT_NUMBER[catalogue]),
     volume: text(saved.volume, 'I (2nd edition)'),

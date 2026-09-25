@@ -1,4 +1,4 @@
-import { CURRENCIES } from './core/money.js';
+import { CURRENCIES, RESEARCH_CURRENCIES } from './core/money.js';
 
 export const GIGA_PREFERENCES_KEY = 'giga-pinax-preferences-v1';
 const LEGACY_COMPANION_PREFERENCES_KEY = 'coin-lookup-test-preferences-v1';
@@ -27,9 +27,10 @@ function storedCurrency(raw) {
 // display cache of the default currency kept in the local storage the extension's pages share. A
 // page that changes the stored default writes that cache too: without it the next popup priced once
 // in the currency just replaced and then showed an empty panel. Only the currency is written; the
-// rest of the cache belongs to the research form.
+// rest of the cache belongs to the research form. A default outside the research currencies (SEK, say) is not written:
+// the research form keeps its own currency.
 export function cacheDefaultCurrency(storage, currency) {
-  if (!CURRENCIES.includes(currency)) return false;
+  if (!RESEARCH_CURRENCIES.includes(currency)) return false;
   let cached;
   try { cached = JSON.parse(storedValue(storage, GIGA_PREFERENCES_KEY)); } catch { cached = null; }
   const kept = cached && typeof cached === 'object' && !Array.isArray(cached) ? cached : {};

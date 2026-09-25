@@ -4,7 +4,7 @@
 // ask a person to click through.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorkspaceBackground, mountWorkspace, settle } from './helpers/dom.mjs';
+import { createWorkspaceBackground, mountWorkspace, parseHtmlFile, settle } from './helpers/dom.mjs';
 import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
 import { exportBackup } from '../extension/core/backup.js';
@@ -1553,4 +1553,79 @@ test('the Outcome tab’s fees: blank keeps the bid’s sheet, the checkbox char
   f.noFees.checked = false; await page.type('outcome-form', 'shipping', '30');
   await page.submit('outcome-form');
   assert.equal(total(), 100000 + 20000 + 3000, 'typed: the typed sheet');
+});
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+import { CURRENCIES } from '../extension/core/money.js';
+import { validateBackup } from '../extension/core/backup.js';
+
+test('every currency select in the workspace lists every currency', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const planned = await background.send({ type: 'bid.plan', lotId: storedLot(background, 'Nero, denarius').id, expectedRevision: 0,
+    plannedBid: { amount: { currency: 'SEK', minor: 950000 }, buyerPremiumBps: 2000 } });
+  assert.equal(planned.ok, true, planned.message);
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const codes = (select) => select.options.map((option) => option.value);
+  for (const select of [page.$('evidence-currency'), page.$('bid-form').elements.currency, page.$('outcome-form').elements.hammerCurrency,
+    page.$('outcome-form').elements.invoiceCurrency, page.$('evidence-form').elements.currency]) {
+    assert.deepEqual(codes(select), [...CURRENCIES], select.name || select.id);
+  }
+  assert.equal(page.$('bid-form').elements.currency.value, 'SEK');
+  assert.equal(page.$('bid-form').elements.amount.value, '9500.00');
+  // The markup holds no list of its own: the page fills every select from money.js, the one list there is.
+  const markup = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  for (const select of markup.querySelectorAll('select')) {
+    if (/currency/i.test(select.id || select.getAttribute('name') || '')) assert.equal(select.querySelectorAll('option').length, 0, select.id || select.getAttribute('name'));
+  }
+  assert.equal(page.$('outcome-form').elements.hammerCurrency.value, 'SEK', 'the outcome opens in the bid’s currency');
+});
+
+// A yen sale from the bid to the History card, the CSV and the backup: whole yen everywhere, never a place added.
+test('a JPY 1,200,000 hammer is whole yen in the bid form, the money line, the CSV and the backup', async () => {
+  const background = await backgroundWithCoins('Taisei lot 88');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Taisei lot 88');
+  const f = page.$('bid-form').elements;
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['0.01', '0.00']);
+  await page.type('bid-form', 'currency', 'JPY');
+  // The budget fold's empty increment and minimum show whole yen.
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['1', '0']);
+  await page.type('bid-form', 'amount', '1,200,000');
+  await page.type('bid-form', 'premium', '17.5');
+  await page.type('bid-form', 'shipping', '3000');
+  assert.equal(page.$('bid-live').textContent, '≈ ¥1,413,000 all-in · premium ¥210,000 · fees ¥3,000');
+  await page.submit('bid-form', { value: 'place' });
+  let stored = storedLot(background, 'Taisei lot 88');
+  assert.deepEqual(stored.activeBid.amount, { currency: 'JPY', minor: 1200000 });
+  assert.equal(stored.costEstimate.shippingMinor, 3000);
+  assert.equal(f.amount.value, '1200000', 'the saved figure is written back in whole yen');
+  assert.equal(f.shipping.value, '3000');
+  await page.openCoin('Taisei lot 88');
+  assert.deepEqual([f.increment.placeholder, f.minimum.placeholder], ['1', '0'], 'a coin opened on a yen bid shows whole yen');
+
+  page.$('outcome-form').elements.status.value = 'won';
+  await page.type('outcome-form', 'hammer', '1200000');
+  await page.submit('outcome-form');
+  stored = storedLot(background, 'Taisei lot 88');
+  assert.deepEqual(stored.outcome.hammer, { currency: 'JPY', minor: 1200000 });
+  assert.equal(page.$('outcome-form').elements.hammer.value, '1200000');
+
+  await page.navigate('#history');
+  const card = page.$('history-list').children.find((item) => item.textContent.includes('Taisei lot 88'));
+  assert.deepEqual(card.querySelector('.money-line').children.map((cell) => cell.textContent),
+    ['JPY', 'Hammer 1,200,000', 'Premium 210,000', 'Fees 3,000', 'Total 1,413,000']);
+
+  const [lot] = csvFiles(background.root()).lots.split('\r\n').slice(1, 2).map((line) => line.split('","'));
+  const header = csvFiles(background.root()).lots.slice(1).split('\r\n')[0].split('","').map((name) => name.replace(/"/g, ''));
+  const cell = (name) => lot[header.indexOf(name)].replace(/"/g, '');
+  assert.deepEqual([cell('hammer'), cell('hammer_currency'), cell('premium'), cell('fees'), cell('total_cost'), cell('total_cost_currency')],
+    ['1200000', 'JPY', '210000', '3000', '1413000', 'JPY']);
+
+  const file = exportBackup(background.root(), '2026-09-25T12:00:00.000Z');
+  assert.equal(file.ok, true);
+  const read = validateBackup(file.value);
+  assert.equal(read.ok, true, read.error?.message);
+  assert.deepEqual(read.value.lots.find((item) => item.title === 'Taisei lot 88').outcome.hammer, { currency: 'JPY', minor: 1200000 });
 });

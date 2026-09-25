@@ -547,7 +547,7 @@ test('quarantine reports an unusable root instead of guessing at its shape', () 
 // store can run without or build again, so the repair sets the settings aside whole and starts the rest again.
 test('damage to the parts of the root every record shares is repaired without touching a record', () => {
   const settings = {
-    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'JPY', housePremiumPresets: [],
+    schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'XAU', housePremiumPresets: [],
     desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
   };
   const snapshot = snapshotWith(makeLot());
@@ -910,7 +910,7 @@ test('a house preset may carry an optional increment ladder that older data simp
   ladder([{ from: 0, step: 500 }, { from: 10000, step: 1000 }]);
   assert.equal(validateSnapshot(snapshot).ok, true);
   // The tiers are in the house's own currency, which the calculator's currency need not match.
-  ladder([{ from: 0, step: 500 }], 'JPY');
+  ladder([{ from: 0, step: 500 }], 'XAU');
   assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder.currency');
   preferences.housePremiumPresets[0].incrementLadder = [{ from: 0, step: 500 }];
   assert.equal(validateSnapshot(snapshot).error.path, 'preferences.housePremiumPresets[0].incrementLadder');
@@ -1497,4 +1497,21 @@ test('a grid-only sheet beside an active bid counts no fees in the all-in exposu
   })));
   assert.equal(exposure.EUR.totalCount, 0);
   assert.equal(exposure.EUR.knownTotalMinor, 0);
+});
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+import { CURRENCIES, UNSUPPORTED_CURRENCY_MESSAGE } from '../extension/core/money.js';
+
+test('a record may be in any currency money.js lists, and another is refused with the list', () => {
+  const lots = CURRENCIES.map((currency, index) => makeLot(`00000000-0000-4000-8000-${String(900 + index).padStart(12, '0')}`, {
+    plannedBid: { amount: { currency, minor: 1200000 }, buyerPremiumBps: 1750 },
+    costEstimate: { currency, shippingMinor: 3000, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 },
+  }));
+  const snapshot = snapshotWith(...lots);
+  snapshot.preferences = { schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'JPY', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+    housePremiumPresets: [{ name: 'Taisei', buyerPremiumBps: 1500, incrementLadder: { currency: 'JPY', tiers: [{ from: 0, step: 1000 }] } }] };
+  assert.deepEqual(validateSnapshot(snapshot), { ok: true, value: snapshot });
+  const refused = snapshotWith(makeLot(IDS.lotUsdKnown, { costEstimate: { currency: 'XAU', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }));
+  assert.equal(validateSnapshot(refused).error.message, UNSUPPORTED_CURRENCY_MESSAGE);
 });
