@@ -951,6 +951,10 @@ test('a missed reminder is listed under Due reminders and acknowledged with the 
   const [row] = page.$('alert-list').children;
   assert.match(row.textContent, /^Missed · 1 hour before · .+ \(your time\)(?: · [^·]+)? · Nomos 30 — 1 lot needs an outcome Record outcomes$/);
   assert.equal(row.querySelector('a').getAttribute('href'), '#watchlist?queue=needs-outcome');
+  await page.navigate('#watchlist?queue=needs-outcome');
+  assert.equal(page.$('lot-queue').value, 'needs-outcome');
+  assert.deepEqual(page.$('lot-list').children.map((item) => item.querySelector('.coin-row-title').textContent), ['Athens, owl']);
+  await page.navigate('#auctions');
   assert.equal(page.$('due-reminders').hidden, false);
   await page.click('ack-alerts');
   assert.equal(background.root().alerts[0].status, 'acknowledged');

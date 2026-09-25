@@ -222,6 +222,9 @@ async function initWorkspace() {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
     if (active === 'search') offerSelectedReference();
+    // An address naming a queue ("#watchlist?queue=needs-outcome", from a missed reminder or the popup) shows it.
+    const queue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
+    if (active === 'watchlist' && queue && [...$('lot-queue').options].some((option) => option.value === queue) && $('lot-queue').value !== queue) { $('lot-queue').value = queue; renderCoinList(); }
     if (active === 'watchlist') openFirstCoin();
     if (focusLink) document.querySelector(`[data-route="${active}"]`)?.focus({ preventScroll: true });
   };
@@ -1011,7 +1014,6 @@ async function initWorkspace() {
       if (waiting) {
         row.append(document.createTextNode(` — ${waiting} ${waiting === 1 ? 'lot needs' : 'lots need'} an outcome `));
         const link = text('a', 'Record outcomes'); link.href = '#watchlist?queue=needs-outcome';
-        link.addEventListener('click', () => { $('lot-queue').value = 'needs-outcome'; routeChangeFromNav = false; });
         row.append(link);
       }
       return row;
