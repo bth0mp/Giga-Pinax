@@ -2226,3 +2226,43 @@ test('the Auctions page lists upcoming sales first and folds the past ones, newe
   assert.deepEqual(names(page.$('event-list')), ['CNG 101']);
   assert.equal(fold().open, true, 'a filter opens the past auctions it found');
 });
+
+// K-08: History is filtered like the Watchlist - text, a year and which outcomes - with a count line, and the collection
+// panel follows the year.
+test('History filters by text, year and outcome, counts what it shows, and the collection follows the year', async () => {
+  const background = await createWorkspaceBackground();
+  const sale = async (name, localDate) => (await background.send({ type: 'event.save', expectedRevision: null, event: { name, eventKind: 'auction-day', precision: 'date-only', localDate, timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } })).value.id;
+  const nomos = await sale('Nomos 26', '2023-05-10');
+  const roma = await sale('Roma 25', '2025-02-01');
+  const settle3 = async (title, reference, auctionEventId, status, acquisitionDate) => {
+    const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title, reference, sourceLinks: [], auctionEventId, auctionContext: { pageUrl: `https://house.test/${encodeURIComponent(title)}`, house: title.split(' ')[0] } } });
+    const outcome = status === 'passed' ? { status } : { status, hammer: { currency: 'EUR', minor: 20000 } };
+    const reply = await background.send({ type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: saved.value.revision, outcome, ...(status === 'won' ? { addToCollection: { title, acquisitionDate, sourceLinks: [] } } : {}) });
+    assert.equal(reply.ok, true, reply.message);
+  };
+  await settle3('Nomos Trajan denarius', 'RIC II Trajan 253', nomos, 'won', '2023-05-20');
+  await settle3('Nomos Hadrian as', 'RIC II Hadrian 600', nomos, 'lost');
+  await settle3('Roma Nero as', 'RIC I² Nero 306', roma, 'won', '2025-02-10');
+  await settle3('Roma Vespasian denarius', 'RIC II Vespasian 1', roma, 'passed');
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const titles = () => page.$('history-list').querySelectorAll('.record').map((card) => card.querySelector('h3').textContent.replace(/ · .*$/, ''));
+  assert.equal(page.$('history-count').textContent, '4 settled · 2 won');
+  assert.deepEqual(page.$('history-year').options.map((option) => option.textContent), ['Every year', '2025', '2023']);
+  page.$('history-filter').value = 'trajan'; await page.$('history-filter').emit('input'); await settle();
+  assert.deepEqual(titles(), ['Nomos Trajan denarius']);
+  assert.equal(page.$('history-count').textContent, '1 of 4 settled · 1 won');
+  page.$('history-filter').value = 'nomos'; await page.$('history-filter').emit('input'); await settle();
+  assert.equal(titles().length, 2, 'the house is read too');
+  page.$('history-filter').value = ''; await page.$('history-filter').emit('input');
+  page.$('history-year').value = '2025'; await page.$('history-year').emit('change'); await settle();
+  assert.deepEqual(titles().sort(), ['Roma Nero as', 'Roma Vespasian denarius']);
+  assert.equal(page.$('collection-list').querySelector('h3').textContent, 'Your collection in 2025');
+  assert.equal(page.$('collection-totals').textContent.includes('Entries1'), true, 'one entry acquired in 2025');
+  const passed = page.document.querySelectorAll('[name="history-outcome"]').find((box) => box.value === 'passed');
+  passed.checked = false; await passed.emit('change'); await settle();
+  assert.deepEqual(titles(), ['Roma Nero as']);
+  assert.equal(page.$('history-count').textContent, '1 of 4 settled · 1 won');
+  const won = page.document.querySelectorAll('[name="history-outcome"]').find((box) => box.value === 'won');
+  won.checked = false; await won.emit('change'); await settle();
+  assert.equal(page.$('history-list').textContent, 'No settled coins match these filters.');
+});

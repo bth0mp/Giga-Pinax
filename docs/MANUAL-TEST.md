@@ -249,6 +249,11 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* its line reads `Fees not recorded` and a **Total** of hammer + premium, with **Add fees**; the table's
     cell says `(1 without fees)`. At phone width the money line
     folds to two columns and never pushes the page sideways.
+    Above the ledger, type the first coin's house in the filter box, then choose its year under **Every year** and
+    untick **Lost** and **Passed**.
+    *Expected:* the count line above the cards says how many settled coins are shown of how many (`1 of 2 settled ·
+    1 won`), only the matching cards are listed, and the collection panel is headed `Your collection in <year>` with the
+    totals of the entries acquired that year.
 
 29. **A collection entry you correct, and one that follows the outcome.** With two won coins in collection history,
     select **Edit entry** on the first, change its acquisition date, its invoice paid to `1710` and its notes, and

@@ -460,6 +460,40 @@ export function decidingBidLine(lot, format) {
 }
 
 /**
+ * The year a settled coin belongs to on the History page (K-08): its auction's, else the year its outcome was recorded.
+ * @param {Lot | null | undefined} lot
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @returns {string}
+ */
+export function settledYear(lot, event) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(event?.localDate ?? '')) ? String(event?.localDate)
+    : String(lot?.outcomeHistory?.at(-1)?.recordedAt ?? lot?.updatedAt ?? '');
+  return /^\d{4}/.test(day) ? day.slice(0, 4) : '';
+}
+
+/**
+ * The settled coins the History page shows (K-08): those whose outcome is ticked, of the chosen year, and whose title,
+ * reference, house or lot number holds the typed text, spacing and case aside.
+ * @param {Lot[]} lots settled coins, in the order shown
+ * @param {Map<string, AuctionEvent>} eventsById
+ * @param {{ text?: string, year?: string, outcomes?: string[] }} filter
+ * @returns {Lot[]}
+ */
+export function filterSettledLots(lots, eventsById, { text = '', year = '', outcomes = ['won', 'lost', 'passed'] } = {}) {
+  const needle = String(text).trim().toLocaleLowerCase();
+  return (lots ?? []).filter((lot) => {
+    if (!outcomes.includes(String(lot?.outcome?.status))) return false;
+    const event = eventsById.get(String(lot.auctionEventId));
+    if (year && settledYear(lot, event) !== year) return false;
+    if (!needle) return true;
+    /** @type {Record<string, *>} */
+    const context = lot.auctionContext ?? {};
+    return [lot.title, lot.reference, lot.lotNumber, context.house, context.saleId, context.lotNumber, event?.name]
+      .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle));
+  });
+}
+
+/**
  * The settled coins newest first: by when their outcome was last recorded, else when they were last written.
  * @param {Lot[] | null | undefined} lots
  * @returns {Lot[]}

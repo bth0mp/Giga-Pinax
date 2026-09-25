@@ -24,7 +24,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  monthHeading, relativeToShow, splitAuctions, wantListRows, wonCostLine,
+  filterSettledLots, monthHeading, relativeToShow, settledYear, splitAuctions, wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -1582,18 +1582,42 @@ async function initWorkspace() {
     else { const edit = text('button', 'Edit entry', 'quiet'); edit.type = 'button'; edit.addEventListener('click', () => openEntryForm(entry)); actions.append(edit); entryEditButtons.set(entry.id, edit); }
     if (actions.children.length) card.append(actions);
   };
+  const HISTORY_WINDOW = 50;
+  let historyWindow = { key: null, shown: HISTORY_WINDOW };
+  let historyMoreWatch = null;
+  for (const control of [$('history-filter'), $('history-year'), ...document.querySelectorAll('[name="history-outcome"]')]) control.addEventListener(control.id === 'history-filter' ? 'input' : 'change', () => renderHistory());
   function renderHistory() {
     // A redraw while a field of the entry form has the keyboard gives it back to that field.
     const focusedField = editingEntry && document.activeElement?.closest?.('#entry-edit-form') ? document.activeElement.name : '';
     const focusedEdit = [...entryEditButtons].find(([, button]) => button === document.activeElement)?.[0];
     const root = $('history-list'); root.replaceChildren(); entryEditButtons.clear();
-    const view = projectCollection(snapshot);
-    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const settled = settledNewestFirst(snapshot.lots);
+    const settledIds = new Set(settled.map((lot) => lot.id));
+    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
     const entriesByLot = new Map((snapshot.collectionEntries ?? []).map((entry) => [entry.lotId, entry]));
-    const shownEntries = new Set();
+    // An entry whose coin is not a settled one on this device still has a card of its own.
+    const loose = (snapshot.collectionEntries ?? []).filter((entry) => !settledIds.has(entry.lotId) || entriesByLot.get(entry.lotId) !== entry);
+    // What the collector asks of the ledger (K-08): typed text, a year, and which outcomes; the year choices are the
+    // years the settled coins and the entries belong to, newest first.
+    const years = [...new Set([...settled.map((lot) => settledYear(lot, eventsById.get(lot.auctionEventId))), ...loose.map((entry) => String(entry.acquisitionDate ?? '').slice(0, 4))].filter(Boolean))].sort().reverse();
+    const yearSelect = $('history-year'); const chosenYear = yearSelect.value;
+    yearSelect.replaceChildren(Object.assign(text('option', 'Every year'), { value: '' }), ...years.map((year) => Object.assign(text('option', year), { value: year })));
+    yearSelect.value = years.includes(chosenYear) ? chosenYear : '';
+    const filter = { text: $('history-filter').value, year: yearSelect.value, outcomes: [...document.querySelectorAll('[name="history-outcome"]:checked')].map((box) => box.value) };
+    const shown = filterSettledLots(settled, eventsById, filter);
+    const needle = filter.text.trim().toLocaleLowerCase();
+    const shownLoose = loose.filter((entry) => filter.outcomes.includes('won') && (!filter.year || String(entry.acquisitionDate ?? '').startsWith(filter.year))
+      && (!needle || [entry.title, lotsById.get(entry.lotId)?.reference].some((value) => String(value ?? '').toLocaleLowerCase().includes(needle))));
+    const filtered = filter.text.trim() || filter.year || filter.outcomes.length < 3;
+    const won = shown.filter((lot) => lot.outcome.status === 'won').length;
+    $('history-count').textContent = settled.length ? `${filtered ? `${shown.length} of ` : ''}${settled.length} settled · ${won} won` : '';
+    // Every entry in the chosen year is totalled, as the collection panel says.
+    const view = projectCollection(filter.year ? { ...snapshot, collectionEntries: (snapshot.collectionEntries ?? []).filter((entry) => String(entry.acquisitionDate ?? '').startsWith(filter.year)) } : snapshot);
+    const viewByEntry = new Map(view.entries.map((item) => [item.id, item]));
+    const wholeView = filter.year ? new Map(projectCollection(snapshot).entries.map((item) => [item.id, item])) : viewByEntry;
     // A ledger, newest first (Q-12), one card per settled coin (G-17): what the coin is and where it was won, what it
     // cost - the money line once - the bid that decided it, and its collection entry, if it has one, beneath.
-    for (const lot of settledNewestFirst(snapshot.lots)) {
+    const settledCard = (lot) => {
       const line = wonCostLine(lot, navigator.language);
       const card = text('article', '', line ? 'record money-record' : 'record'); card.append(text('h3', `${lot.title} · ${lotStatusLabel(lot)}`));
       const ledger = historyLine(lot, eventsById.get(lot.auctionEventId), navigator.language);
@@ -1603,20 +1627,43 @@ async function initWorkspace() {
       if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${money(lot.outcome.actualInvoice)}, as you recorded it`));
       card.append(text('p', decidingBidLine(lot, money), 'history-bid'));
       const entry = entriesByLot.get(lot.id);
-      if (entry) { shownEntries.add(entry.id); appendEntry(card, entry, viewByEntry.get(entry.id), lot); }
-      root.append(card);
-    }
-    // An entry whose coin is not a settled one on this device still has a card of its own.
-    const lotsById = new Map((snapshot.lots ?? []).map((lot) => [lot.id, lot]));
-    for (const entry of (snapshot.collectionEntries ?? []).filter(({ id }) => !shownEntries.has(id))) {
-      const lot = lotsById.get(entry.lotId);
+      if (entry) appendEntry(card, entry, wholeView.get(entry.id), lot);
+      return card;
+    };
+    const looseCard = (entry) => {
       const card = text('article', '', 'record'); card.append(text('h3', entry.title));
       if (entry.hammer) card.append(text('p', `Hammer ${money(entry.hammer)}`));
-      appendEntry(card, entry, viewByEntry.get(entry.id), lot);
-      root.append(card);
+      appendEntry(card, entry, wholeView.get(entry.id), lotsById.get(entry.lotId));
+      return card;
+    };
+    const cards = [...shown.map((lot) => () => settledCard(lot)), ...shownLoose.map((entry) => () => looseCard(entry))];
+    // A window of fifty cards, and more on request or as the collector scrolls to the end (K-08, as K-06); the card whose
+    // entry form is open is always drawn.
+    const windowKey = JSON.stringify(filter);
+    if (historyWindow.key !== windowKey) historyWindow = { key: windowKey, shown: HISTORY_WINDOW };
+    const editingIndex = editingEntry ? [...shown.map((lot) => entriesByLot.get(lot.id)?.id), ...shownLoose.map((entry) => entry.id)].indexOf(editingEntry.id) : -1;
+    if (editingIndex >= historyWindow.shown) historyWindow.shown = Math.ceil((editingIndex + 1) / HISTORY_WINDOW) * HISTORY_WINDOW;
+    const appendCards = (from, to) => { for (const card of cards.slice(from, to)) root.append(card()); };
+    appendCards(0, historyWindow.shown);
+    historyMoreWatch?.disconnect(); historyMoreWatch = null;
+    if (cards.length > historyWindow.shown) {
+      const more = text('button', '', 'quiet coin-more'); more.type = 'button';
+      const label = () => { const left = cards.length - historyWindow.shown; more.textContent = `Show ${Math.min(left, HISTORY_WINDOW)} more (${left} not shown)`; };
+      label();
+      const showMore = () => {
+        const from = historyWindow.shown; historyWindow.shown += HISTORY_WINDOW;
+        more.remove(); appendCards(from, historyWindow.shown);
+        if (cards.length > historyWindow.shown) { label(); root.append(more); } else { historyMoreWatch?.disconnect(); historyMoreWatch = null; }
+      };
+      more.addEventListener('click', showMore);
+      root.append(more);
+      if (typeof IntersectionObserver === 'function') {
+        historyMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(); }, { rootMargin: '200px' });
+        historyMoreWatch.observe(more);
+      }
     }
-    if (!root.children.length) root.append(emptyState('Nothing settled yet', 'A coin whose outcome you record appears here.'));
-    const collection = $('collection-list'); collection.replaceChildren(text('h3', 'Your collection'));
+    if (!root.children.length) root.append(settled.length || loose.length ? text('p', 'No settled coins match these filters.', 'empty-row') : emptyState('Nothing settled yet', 'A coin whose outcome you record appears here.'));
+    const collection = $('collection-list'); collection.replaceChildren(text('h3', filter.year ? `Your collection in ${filter.year}` : 'Your collection'));
     // No entries, no collection panel: the empty state beside it says what the page is for.
     collection.closest('.panel').hidden = !view.entries.length;
     if (view.entries.length) {

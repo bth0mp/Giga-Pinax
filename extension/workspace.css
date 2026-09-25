@@ -98,3 +98,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .coin-month{margin:10px 2px 0;font-size:11px;font-weight:650;letter-spacing:.02em;color:var(--muted)}.coin-month:first-child{margin-top:0}.coin-more{justify-self:center;margin:4px 0 8px}
 /* K-07: the auctions to come, then the past ones folded; a filter past twenty. */
 .event-filter{display:block;margin-bottom:10px}.past-auctions{margin-top:4px}.past-auctions>summary{padding:8px 2px;font-size:12px;font-weight:650;color:var(--muted);cursor:pointer}.past-auctions[open]>summary{margin-bottom:6px}
+/* K-08: History's filter box, year and outcomes above the ledger. */
+.history-column{min-width:0}.history-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:6px}.history-filter{flex:1 1 220px}.history-outcomes{display:flex;gap:12px;margin:0;padding:0;border:0}.outcome-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600}#history-count{margin:0 0 8px}
