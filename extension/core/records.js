@@ -3,8 +3,8 @@ import { CURRENCIES } from './money.js';
 import { validateDraftPayload } from './drafts.js';
 import { validateSaleEvidence } from './evidence.js';
 import {
-  LIMITS, OWN, arrayResult, auctionContextResult, bpsResult, dateResult, housePresetResult, enumResult, firstFailure, instantResult, integerResult,
-  isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
+  LIMITS, OWN, WANT_GRADES, arrayResult, auctionContextResult, bpsResult, dateResult, housePresetResult, enumResult, firstFailure, instantResult,
+  integerResult, isObject, moneyResult, objectResult, optionalString, optionalUrl, stringResult, urlResult, uuidResult,
 } from './fields.js';
 import { COST_GAPS, deriveWonCost, projectExposure } from './projections.js';
 import { resolveZonedDateTime } from './reminders.js';
@@ -24,6 +24,7 @@ import { failure, isRecursionError, shiftDate, stableUuid, tooDeeplyNested } fro
  * @typedef {import('./types.js').Bid} Bid
  * @typedef {import('./types.js').BidHistoryEntry} BidHistoryEntry
  * @typedef {import('./types.js').SaleEvidence} SaleEvidence
+ * @typedef {import('./types.js').Want} Want
  */
 /**
  * @template T
@@ -589,6 +590,39 @@ function editedFieldsResult(fields, path) {
   return { ok: true, value: fields };
 }
 
+const WANT_GRADE_SET = new Set(WANT_GRADES);
+
+// A want (G-22): the reference as the collector wrote it, and whatever else they said of it. The reference is only held to
+// its length here: whether a catalogue's rules read it is the page's question when the want is written, never a reason to
+// set aside a stored one, since the rules grow from version to version. The most they would pay is one amount in one
+// currency, never nothing; and a found want names the won coin and the moment together.
+/**
+ * @param {*} want
+ * @param {string} [path]
+ * @returns {Result<Want>}
+ */
+export function validateWant(want, path = 'want') {
+  const common = commonRecord(want, path);
+  if (!common.ok) return common;
+  const checks = [
+    stringResult(want.reference, `${path}.reference`, LIMITS.shortText),
+    optionalString(want, 'notes', path, LIMITS.notes),
+  ];
+  if (OWN(want, 'maxPrice')) {
+    checks.push(moneyResult(want.maxPrice, `${path}.maxPrice`));
+    if (want.maxPrice?.minor === 0) checks.push(failure('invalid-minor-units', 'A maximum price is more than nothing.', `${path}.maxPrice.minor`));
+  }
+  if (OWN(want, 'minGrade')) checks.push(enumResult(want.minGrade, WANT_GRADE_SET, `${path}.minGrade`));
+  if (OWN(want, 'foundLotId')) checks.push(uuidResult(want.foundLotId, `${path}.foundLotId`));
+  if (OWN(want, 'foundAt')) checks.push(instantResult(want.foundAt, `${path}.foundAt`));
+  const result = firstFailure(...checks);
+  if (!result.ok) return result;
+  if (OWN(want, 'foundLotId') !== OWN(want, 'foundAt')) {
+    return failure('invalid-found', 'A found want names the coin that was won and when, together.', `${path}.foundAt`);
+  }
+  return { ok: true, value: want };
+}
+
 /** @returns {Result<SaleEvidence>} */
 function evidenceResult(evidence, path) {
   const common = commonRecord(evidence, path);
@@ -731,6 +765,9 @@ const COLLECTIONS = [
   { key: 'alternativeGroups', maximum: LIMITS.alternativeGroups, validator: groupResult },
   { key: 'evidence', maximum: LIMITS.evidenceObservations, validator: evidenceResult },
   { key: 'collectionEntries', maximum: LIMITS.collectionEntries, validator: collectionEntryResult },
+  // The want list is the one collection a root may leave out: it is written with the first want, so a root that has none
+  // reads exactly as it did before there was a want list, and a build from before it reads a root that has one.
+  { key: 'wants', maximum: LIMITS.wants, validator: validateWant, optional: true },
   { key: 'drafts', maximum: LIMITS.drafts, validator: draftResult },
   { key: 'alerts', maximum: LIMITS.alerts, validator: alertResult },
   // The ledger is appended to and trimmed from the front, and a retry is only answered from an
@@ -1110,7 +1147,13 @@ export function quarantineInvalidRecords(stored, now) {
   if (!settings.ok) setAside('preferences', root.preferences, settings.error.code);
   if (!settings.ok || root.preferences === undefined) root.preferences = null;
 
-  for (const { key, maximum, validator, keepNewest } of COLLECTIONS) {
+  for (const { key, maximum, validator, keepNewest, optional } of COLLECTIONS) {
+    // A want list that is no list at all is set aside whole, rather than refusing every other record over it.
+    if (optional && !Array.isArray(root[key])) {
+      if (root[key] !== undefined && root[key] !== null) setAside(key, root[key], 'invalid-record');
+      delete root[key];
+      continue;
+    }
     if (!Array.isArray(root[key])) return failure('invalid-record', `Stored ${key} is not a list.`, key);
     const kept = [];
     const ids = new Set();
@@ -1239,8 +1282,8 @@ function validateRoot(value) {
   );
   if (!header.ok) return header;
 
-  const collectionFailure = firstFailure(...COLLECTIONS.map(({ key, maximum, validator }) =>
-    validateCollection(value, key, maximum, validator)));
+  const collectionFailure = firstFailure(...COLLECTIONS.map(({ key, maximum, validator, optional }) =>
+    (optional && !OWN(value, key) ? { ok: true } : validateCollection(value, key, maximum, validator))));
   if (!collectionFailure.ok) return collectionFailure;
 
   const events = new Map(value.auctionEvents.map((event) => [event.id, event]));

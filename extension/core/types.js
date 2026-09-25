@@ -259,6 +259,20 @@
  * }} CollectionEntry
  */
 
+/**
+ * A reference the collector is looking for (G-22): matched by catalogue rules, locally, wherever it turns up. It may say
+ * the most the collector would pay, in one currency, and the lowest grade they would take. Once a coin of the type is
+ * won, the want can name that coin and when it was found; the two go together.
+ * @typedef {RecordBase & {
+ *   reference: string,
+ *   notes?: string,
+ *   maxPrice?: Money,
+ *   minGrade?: 'F' | 'VF' | 'EF' | 'AU',
+ *   foundLotId?: string,
+ *   foundAt?: string,
+ * }} Want
+ */
+
 // --- Evidence --------------------------------------------------------------------------------------
 
 /**
@@ -474,6 +488,7 @@
  * @property {Scheduler} scheduler
  * @property {RecentCommand[]} recentCommands
  * @property {QuarantineEntry[]} [quarantine]
+ * @property {Want[]} [wants] the want list; absent until the first want is saved, so an older build reads the root as before
  */
 
 // --- Commands --------------------------------------------------------------------------------------
