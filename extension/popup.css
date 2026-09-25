@@ -175,6 +175,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* An answer drawn again from the session says its age in the heading, with Refresh, so it takes no line of its own and moves nothing. */
 .prices-restored {margin:0 auto 0 0; font-size:var(--text-meta); color:var(--muted); white-space:nowrap;}
 .prices-restored .text-button {padding:0; font-size:var(--text-meta);}
+/* X-10: Retry sits inside the card's summary line, at its size. */
+.names-retry {padding:0; font-size:inherit;}
 .provider-link:hover {text-decoration:underline;}
 /* The median sits right under the heading; without prices, the note takes its place. */
 .median-block,.prices-note {margin-top:8px;}

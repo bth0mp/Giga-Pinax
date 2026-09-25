@@ -3110,3 +3110,22 @@ test('a page whose every price is hidden says so, with Sign in, and names the lo
     assert.equal(popup.element('signin-link').hidden, false);
   }
 });
+
+// Loop 6 (X-10): a card drawn while nomisma.org did not answer says which names are missing, never their identifiers, and Retry fills them in.
+test('a card with names nomisma.org did not answer for says so, and Retry fills them in', async () => {
+  const card = { id: 'bigr.euthydemus_i.13.1', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1', authority: null, denomination: null,
+    mint: null, material: 'Silver', dates: '230–190 BC', obverse: {}, reverse: {}, bop: { king: 'Euthydemus I', series: '24A', citation: 'Euthydème I 24A' },
+    unnamed: [{ field: 'authority', slug: 'euthydemus_i_bactria' }, { field: 'denomination', slug: 'denomination_d_sco' }] };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'ok', card }),
+    stored: new Map([['giga-pinax-labels-v1', JSON.stringify({ euthydemus_i_bactria: 'Euthydemus I', denomination_d_sco: 'Tetradrachm' })]]) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 24A';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const summary = popup.element('result-summary');
+  assert.equal(summary.children[0], 'Silver · 230–190 BC · names unavailable — nomisma.org didn’t answer · ');
+  const retry = summary.children[1];
+  assert.equal(retry.textContent, 'Retry');
+  await retry.emit('click');
+  await settle();
+  assert.equal(summary.children.join(''), 'Euthydemus I · Tetradrachm · Silver · 230–190 BC');
+});

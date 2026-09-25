@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, namesCatalogue, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, nameCard, namesCatalogue, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
@@ -14,7 +14,7 @@ import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
@@ -419,7 +419,7 @@ function renderCard(card, { restoring = false } = {}) {
   const source = [card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '', editionName(card.label)].filter(Boolean).join(' · ');
   $('result-source').textContent = source;
   $('result-source').hidden = !source;
-  $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  renderSummaryLine(card, other);
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
   $('result-citation').hidden = !citation;
@@ -465,6 +465,32 @@ function renderCard(card, { restoring = false } = {}) {
   if (restoring) return;
   revealAgain('result');
   void showSpecimens(card);
+}
+
+// The card's summary line. Names nomisma.org did not answer for are said to be missing, with a Retry that asks for them alone (X-10): an identifier
+// is never printed as a name.
+function renderSummaryLine(card, other = card.corpus === 'other') {
+  const names = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
+  if (other || !Array.isArray(card.unnamed) || card.unnamed.length === 0) { $('result-summary').replaceChildren(names); return; }
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'text-button names-retry';
+  retry.textContent = 'Retry';
+  retry.setAttribute('aria-label', 'Retry the names from nomisma.org');
+  retry.addEventListener('click', () => void retryNames(card, retry));
+  $('result-summary').replaceChildren(`${names ? `${names} · ` : ''}${NAMES_UNAVAILABLE} · `, retry);
+}
+async function retryNames(card, button) {
+  if (currentCard !== card || button.disabled) return;
+  button.disabled = true;
+  let named = card;
+  try { named = await nameCard(card, { cache: labelCache }); } catch { named = card; }
+  if (currentCard !== card) return;
+  if (named === card) { button.disabled = false; return; }
+  currentCard = named;
+  for (const context of [researchContext]) if (context && verifiedPriceCards.get(context) === card) verifiedPriceCards.set(context, named);
+  renderSummaryLine(named);
+  announce(named.unnamed?.length ? `Some names are still unavailable: ${NAMES_UNAVAILABLE}.` : `Names loaded: ${$('result-summary').textContent}.`);
 }
 
 // Show specimen photos, switched on in Settings and read from the local storage both pages share: 'on', or anything else for off. Off, a card asks

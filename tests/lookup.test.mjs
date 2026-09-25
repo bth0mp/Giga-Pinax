@@ -1782,3 +1782,49 @@ test('namesCatalogue tells a misspelt reference from free words', async () => {
   for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', 'Price', 'Bopearachi 9C', 'cf. RIC 972', 'Seleucid Coins']) assert.equal(namesCatalogue(text), true, text);
   for (const text of ['Nero', 'nero denarius', 'Athens tetradrachm', 'Ricci', 'owl tetradrachm', 'Alexander the Great']) assert.equal(namesCatalogue(text), false, text);
 });
+
+// Loop 6 (X-10): with numismatics.org answering and nomisma.org down, a Bopearachchi card printed "euthydemus_i_bactria · denomination_d_sco · ae"
+// as its names. A name nomisma.org did not answer for is left empty and listed as unnamed; a retry asks for those alone; a concept it answered for
+// without an English name still shows its identifier, as before.
+test('a card never prints an identifier nomisma.org did not answer for, and a retry asks for those names alone', async () => {
+  const routes = {
+    'bigr/id/bigr.euthydemus_i.13.1.jsonld': fixture('bigr-euthydemus-i-13-1.jsonld'),
+    'bigr/id/bigr.euthydemus_i.13.1.xml': fixture('bigr-euthydemus-i-13-1.xml'),
+  };
+  const down = async (url, options) => {
+    if (url.includes('nomisma.org')) throw Object.assign(new Error('HTTP 503'), { status: 503 });
+    return fakeFetch(routes)(url, options);
+  };
+  const found = await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: down });
+  assert.equal(found.status, 'ok');
+  const { card } = found;
+  const slots = ['authority', 'denomination', 'mint', 'material'];
+  for (const slot of slots) assert.doesNotMatch(String(card[slot] ?? ''), /_|^ae$|^ar$/, slot);
+  assert.ok(card.unnamed.length >= 2);
+  for (const { field, slug } of card.unnamed) {
+    assert.ok(slots.includes(field));
+    assert.equal(card[field], null, field);
+    assert.match(slug, /^[a-z0-9_]+$/);
+  }
+  // The retry asks nomisma.org for the unnamed slugs and nothing else; with it answering, every slot is named and nothing is left unnamed.
+  const asked = [];
+  const { nameCard } = await import('../extension/lookup.js');
+  const named = await nameCard(card, { fetchImpl: async (url) => {
+    asked.push(url);
+    const slug = url.split('/').pop().replace('.jsonld', '');
+    return { ok: true, status: 200, text: async () => JSON.stringify({ '@graph': [{ '@id': `nm:${slug}`, 'skos:prefLabel': [{ '@language': 'en', '@value': `Name of ${slug}` }] }] }) };
+  } });
+  assert.deepEqual(asked.sort(), card.unnamed.map(({ slug }) => `https://nomisma.org/id/${slug}.jsonld`).sort());
+  assert.equal(Object.hasOwn(named, 'unnamed'), false);
+  for (const { field, slug } of card.unnamed) assert.equal(named[field], `Name of ${slug}`);
+  // Still down: the card keeps what it had, and says the same slots are unnamed.
+  const again = await nameCard(card, { fetchImpl: down });
+  assert.deepEqual(again.unnamed, card.unnamed);
+  assert.equal(await nameCard(named), named, 'nothing to ask for, no request');
+  // Answered without an English name (404): the identifier, as before.
+  assert.equal(toCard(json('pella-price-23.jsonld'), 'pella', {}, []).authority, 'alexander_iii');
+  const unreachable = [];
+  assert.deepEqual(await resolveLabels(['nero', 'gone'], { fetchImpl: async (url) => (url.includes('nero') ? { ok: true, status: 200, text: async () => fixture('nomisma-nero.jsonld') }
+    : { ok: false, status: 404, text: async () => '' }), unreachable }), { nero: 'Nero' });
+  assert.deepEqual(unreachable, []);
+});

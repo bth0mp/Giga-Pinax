@@ -468,7 +468,13 @@ export function nomismaLabel(jsonld, slug) {
   return english(node?.['skos:prefLabel']);
 }
 
-export function toCard(jsonld, corpus, labels = {}) {
+// The card's four named slots, in the order namedSlugs reads them.
+const NAMED_SLOTS = Object.freeze(['authority', 'denomination', 'mint', 'material']);
+
+// unreachable: the slugs nomisma.org did not answer for (X-10). Their slot is left empty rather than printed as an identifier
+// ("euthydemus_i_bactria"), and the card lists them as unnamed, each with its slot, for a retry that asks for those alone. A slug nomisma answered
+// for without an English name keeps the identifier, as the bundled catalogue does.
+export function toCard(jsonld, corpus, labels = {}, unreachable = []) {
   const main = mainNode(jsonld);
   if (!main) return null;
   const uri = main['@id'];
@@ -477,7 +483,9 @@ export function toCard(jsonld, corpus, labels = {}) {
     const node = graphOf(jsonld).find((entry) => entry['@id'] === `${uri}#${name}`) ?? {};
     return { legend: english(node['nmo:hasLegend']), description: english(node['dcterms:description']) };
   };
-  const [authority, denomination, mint, material] = namedSlugs(main).map((slug) => (slug ? labels[slug] ?? slug : null));
+  const slugs = namedSlugs(main);
+  const missing = slugs.map((slug, index) => (slug && !Object.hasOwn(labels, slug) && unreachable.includes(slug) ? { field: NAMED_SLOTS[index], slug } : null)).filter(Boolean);
+  const [authority, denomination, mint, material] = slugs.map((slug) => (!slug || missing.some((entry) => entry.slug === slug) ? null : labels[slug] ?? slug));
   // Only a type with one authority and one obverse portrait has a portrait to report, and the name never falls back to its slug: an unresolved label
   // would print as "cornelia_salonina", so it fails closed to null instead.
   const authorities = main['nmo:hasAuthority'] ?? main['nmo:hasIssuer'] ?? [];
@@ -495,7 +503,26 @@ export function toCard(jsonld, corpus, labels = {}) {
     dates: formatDates(main['nmo:hasStartDate']?.[0]?.['@value'], main['nmo:hasEndDate']?.[0]?.['@value']),
     obverse: side('obverse'),
     reverse: side('reverse'),
+    ...(missing.length ? { unnamed: missing } : {}),
   };
+}
+
+// X-10: asks nomisma.org again for the names a card was drawn without, and those alone; answers the card with every name that came back, still
+// listing the ones that did not. A card with nothing unnamed is answered as it is, with no request.
+export async function nameCard(card, { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = {}) {
+  const missing = Array.isArray(card?.unnamed) ? card.unnamed.filter((entry) => NAMED_SLOTS.includes(entry?.field) && typeof entry?.slug === 'string') : [];
+  if (!missing.length) return card;
+  const timer = withTimeout(timeoutMs);
+  const unreachable = [];
+  try {
+    const labels = await resolveLabels([...new Set(missing.map(({ slug }) => slug))], { fetchImpl, cache, signal: timer.signal, unreachable });
+    const { unnamed, ...named } = card;
+    for (const { field, slug } of missing) if (!unreachable.includes(slug)) named[field] = labels[slug] ?? slug;
+    const still = missing.filter(({ slug }) => unreachable.includes(slug));
+    return still.length ? { ...named, unnamed: still } : named;
+  } finally {
+    timer.done();
+  }
 }
 
 // The other sections of a volume that share this one's name before its parenthesis ("Zeno" and "Zeno (West)" for "Zeno (East)"), by the rulerKey rule
@@ -620,7 +647,9 @@ const failureOutcome = (error) => error?.status === 429 ? { status: 'rate-limite
   : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
     : { status: 'network' };
 
-export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal } = {}) {
+// unreachable, when given, collects the slugs nomisma.org did not answer for (a failed connection, an outage, the deadline), as against a concept it
+// answered for without an English name (404, or no label), which falls back to its slug as it always did.
+export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal, unreachable } = {}) {
   const labels = {};
   await Promise.all(slugs.map(async (slug) => {
     const cached = cache.get(slug);
@@ -628,7 +657,10 @@ export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(
     try {
       const label = nomismaLabel(await getJson(`${NOMISMA}${slug}.jsonld`, fetchImpl, signal), slug);
       if (label) { labels[slug] = label; cache.set(slug, label); }
-    } catch { /* unlabelled concepts fall back to their slug */ }
+    } catch (error) {
+      // Unlabelled concepts fall back to their slug; one nomisma.org never answered for is said to be unnamed instead.
+      if (error?.status !== 404) unreachable?.push(slug);
+    }
   }));
   return labels;
 }
@@ -649,8 +681,9 @@ async function cardOutcome(jsonld, corpus, { fetchImpl, cache, signal, citation 
   // Only OCRE files a type under an authority a portrait can differ from, so only OCRE asks for the portrait's name: no request at all when it is the
   // authority already asked for (the common case), one more parallel, cached, same-deadline one when it differs.
   const slugs = [...new Set([...nomismaSlugs(jsonld), ...(corpus === 'ocre' ? [portraitSlug(jsonld)] : [])].filter(Boolean))];
-  const labels = await resolveLabels(slugs, { fetchImpl, cache, signal });
-  const card = toCard(jsonld, corpus, labels);
+  const unreachable = [];
+  const labels = await resolveLabels(slugs, { fetchImpl, cache, signal, unreachable });
+  const card = toCard(jsonld, corpus, labels, unreachable);
   if (!card) return { status: 'network' };
   if (corpus === BIGR) card.bop = bopDetails(card.label, citation === undefined ? await fetchCitation(card.id, fetchImpl, signal) : citation);
   return { status: 'ok', card };
