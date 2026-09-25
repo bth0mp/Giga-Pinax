@@ -1,4 +1,4 @@
-import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, searchablePart, sgNumber } from './lookup.js';
+import { TIMEOUT_MS, bopSeries, kmNumber, realVolumePart, referenceNumber, rpcReference, searchablePart, sgNumber } from './lookup.js';
 import { recordFetchFailure } from './core/diagnostics.js';
 import { canonicalRicPerson, CATALOGUES, catalogueOf, ricPeople } from './catalogues.js';
 import { anyCase } from './lot.js';
@@ -112,7 +112,12 @@ function bopTerm(section, number) {
 // text. A part lookup calls unsearchable — no letter and digit ("BMC –", "Rare"), or more words than a citation has — would only match unrelated lots,
 // so it is left out; with no part left the card has no term and the guided field says so. An SG part in any spelling takes SG's, so a chip saved
 // before 0.19 ("SG6829v") and a "v" behind a remark ("SG 6829v (this coin)") still search as Sear.
-const otherParts = (number) => String(number ?? '').replace(/["“”„]/g, '').split(';')
+// An RPC Online temporary number is read before its "(temporary)" goes, and kept in the one spelling that says so ("RPC IV.2 online 1234").
+const rpcTemporary = (part) => {
+  const rpc = rpcReference(squash(part));
+  return rpc?.temporary ? `RPC ${rpc.numeral}${rpc.part ? `.${rpc.part}` : ''} online ${rpc.number}` : part;
+};
+const otherParts = (number, rpc = true) => String(number ?? '').replace(/["“”„]/g, '').split(';').map((part) => (rpc ? rpcTemporary(part) : part))
   .map((part) => squash(squash(part).replace(/(\S)\s*\([^)]*\)$/, '$1').replace(/[()[\]{}]/g, '')))
   .filter(searchablePart).map((part) => sgNumber(part) ?? part);
 
@@ -144,14 +149,19 @@ const kmPart = (part) => {
 // narrows a number that repeats across countries (Netherlands, Rostock and Bolivia all have a 123), so it goes in front of the group — but only when
 // every part is Krause and names the same country, since acsearch ANDs the bare word with the whole group: it would wrongly narrow the other
 // catalogues' phrases, or the other country's number, too.
-function otherTerm(number) {
-  const parts = otherParts(number);
+function otherTerm(number, rpcSpellings = true) {
+  const parts = otherParts(number, rpcSpellings);
   const kms = parts.map(kmPart);
   const phrases = parts.flatMap((part, index) => {
     const km = kms[index];
     if (km) return km.key === 'Y' ? [phrase('Y', km.number), phrase('Y#', km.number)] : [phrase('KM', km.number), phrase('Krause/Mishler', km.number)];
     const sg = SG_PART.exec(part);
-    return sg ? [phrase('Sear', sg[1]), phrase('SG', sg[1])] : [phrase(part)];
+    if (sg) return [phrase('Sear', sg[1]), phrase('SG', sg[1])];
+    // One temporary RPC number in the three spellings dealers write it: with its part, without it, and as RPC Online prints it.
+    const rpc = rpcSpellings ? rpcReference(part) : null;
+    if (!rpc?.temporary) return [phrase(part)];
+    const volume = `${rpc.numeral}${rpc.part ? `.${rpc.part}` : ''}`;
+    return [phrase('RPC', volume, rpc.number), ...(rpc.part ? [phrase('RPC', rpc.numeral, rpc.number)] : []), phrase('RPC', volume, 'online', rpc.number)];
   });
   const country = allKm(kms) && kms.every((km) => km.country === kms[0].country) ? kms[0].country : '';
   return squash(`${country} ${group(phrases)}`);
@@ -254,10 +264,15 @@ export function searchesReference(term, reference) {
 const oldBopTerms = ({ section, number }) => [squash(`${firstName(section)} Bopearachchi ${bopSeries(number)}`),
   squash(`${bopKing(section)} "Bopearachchi ${bopSeries(number)}"`)];
 // The same for the unquoted defaults of 0.31 and before, which 0.32's exact phrases replace: the bare ruler and number, "Price 23", "Crawford 44/5",
-// "SC 1266.2". An Other reference has searched as phrases since 0.19, so it has no old default to retire.
+// "SC 1266.2". An Other reference has searched as phrases since 0.19; the one it retires is 0.36's single phrase for an RPC Online temporary number
+// ("RPC IV.2 online 1234"), which now offers every spelling dealers write it in.
 function oldDefaultTerms(reference) {
   const { catalogue, number, section, rulers } = reference;
   if (catalogue === 'Bop') return oldBopTerms(reference);
+  if (catalogue === 'Other') {
+    const old = otherTerm(number, false);
+    return old !== otherTerm(number) ? [old] : [];
+  }
   if (catalogue === 'RIC') {
     const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
     return [squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${squash(number)}`)];

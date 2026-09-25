@@ -760,6 +760,23 @@ test('rpcUrl links an RPC reference to its RPC Online page, the volume in Arabic
   }
 });
 
+// Loop Q-06: RPC IV, VI, VII.2, VIII, IX and X are cited by the temporary numbers RPC Online gives them ("RPC IV.2 online 1234 (temporary)"), which is
+// most provincial coins of the 2nd and 3rd centuries. RPC Online's own type address for a temporary number is its volume without the part
+// (https://rpc.ashmus.ox.ac.uk/coins/4/1234 is the type URI of "RPC IV.2, 1234 (temporary)", checked once by hand); a lettered supplement number and a
+// "var." or "corr." remark link the number they stand on.
+test('rpcUrl links a temporary RPC Online number, a lettered number and a remarked one, and still nothing else', () => {
+  for (const [text, path] of [
+    ['RPC IV.2 online 1234 (temporary)', '4/1234'], ['RPC IV.2 online 1234', '4/1234'], ['RPC IV.2, 1234 (temporary)', '4/1234'], ['RPC IV 1234 (temp.)', '4/1234'],
+    ['RPC VI online 3231', '6/3231'], ['RPC VIII online 21234 (temporary)', '8/21234'], ['RPC X online 61234 (temporary)', '10/61234'],
+    ['RPC VII.2 online 3000 (temporary)', '7/3000'], ['RPC I 2317A', '1/2317A'], ['RPC II 1094 var.', '2/1094'], ['RPC III 1707 corr.', '3/1707'],
+    ['RPC IV.2 1234', '4.2/1234'],
+  ]) assert.equal(rpcUrl(text), `https://rpc.ashmus.ox.ac.uk/coins/${path}`, text);
+  for (const text of ['RPC IV online', 'RPC online 1234', 'RPC IV.2 online', 'RPC I 12a', 'RPC I 1234 (this coin)', 'RPC IV 1234 (temporarily)', 'RPC I 1234AB',
+    'RPC I 1234 var. (this coin)', 'RPC IV onlines 1234', 'RPC I S-1234']) {
+    assert.equal(rpcUrl(text), null, text);
+  }
+});
+
 test('SC references build the SCO record id and parse from one box', () => {
   assert.deepEqual(buildQuery({ catalogue: 'SC', number: 'SC 1266.2' }), { corpus: 'sco', query: 'SC 1266.2', id: 'sc.1.1266.2' });
   assert.equal(referenceNumber('SC', 'Seleucid Coins 1630.2b'), '1630.2b');

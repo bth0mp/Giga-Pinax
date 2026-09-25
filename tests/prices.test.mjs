@@ -1675,3 +1675,27 @@ test('gradeOf reads a grade the weight or diameter stands straight in front of, 
   // A die axis is no opening edge: "12 h" closes the grade in front of it.
   assert.equal(gradeOf('Fine 12 h TTB portrait.'), 'Fine and below');
 });
+
+// Loop Q-06: dealers write one RPC Online temporary number three ways ("RPC IV.2 online 1234", "RPC IV.2, 1234 (temporary)", "RPC IV 1234 (temp.)"),
+// so its term offers all of them either-or, as Price's and Sear's do. A printed number keeps its one phrase.
+test('an RPC Online temporary number is searched in every spelling dealers cite it with', () => {
+  const other = (number) => ({ catalogue: 'Other', number, section: '' });
+  const offered = '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234")';
+  for (const written of ['RPC IV.2 online 1234 (temporary)', 'RPC IV.2 online 1234', 'RPC IV.2, 1234 (temporary)', 'RPC IV.2 1234 (temp.)']) {
+    assert.equal(defaultTerm(other(written)), offered, written);
+  }
+  assert.equal(defaultTerm(other('RPC VI online 3231 (temporary)')), '("RPC VI 3231" "RPC VI online 3231")');
+  assert.equal(defaultTerm(other('RPC IV.2 online 1234 (temporary); SNG von Aulock 3151')), '("RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234" "SNG von Aulock 3151")');
+  assert.equal(coinArchivesTerm(other('RPC IV.2 online 1234 (temporary)')), '"RPC IV.2 1234"');
+  // The single phrase 0.36 searched, remembered by a Get prices, gives way to the new default; a term the collector wrote himself still wins.
+  const temporary = other('RPC IV.2, 1234 (temporary)');
+  assert.equal(chooseTerm(temporary, '"RPC IV.2, 1234"'), offered);
+  assert.equal(chooseTerm(other('RPC IV.2 online 1234 (temporary)'), '"RPC IV.2 online 1234"'), offered);
+  assert.equal(chooseTerm(temporary, '"RPC IV 1234" Antoninus'), '"RPC IV 1234" Antoninus');
+  assert.equal(chooseTerm(other('RPC I 4156'), '"RPC I 4156"'), '"RPC I 4156"');
+  // A printed number, and anything that only looks like one, is searched as written.
+  for (const [written, term] of [['RPC I 4156', '"RPC I 4156"'], ['RPC VII.1 706', '"RPC VII.1 706"'], ['RPC IV.2 1234', '"RPC IV.2 1234"'],
+    ['RPC I 1234 (this coin)', '"RPC I 1234"'], ['SNG Cop 1234 (temporary)', '"SNG Cop 1234"']]) {
+    assert.equal(defaultTerm(other(written)), term, written);
+  }
+});

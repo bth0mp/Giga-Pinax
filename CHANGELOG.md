@@ -11,6 +11,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - The citation filter now counts the sales of houses that glue their separator to the number (`RIC-118`, `Price-112`, `RIC II-118`, `RIC: 118`, `RIC#118`), as Áureo & Calicó, Stack's Bowers, Heritage and Stephen Album write it. A spaced dash (`RIC - 118`) still reads as "not in RIC", and `Price:` before a number is still a sale's amount.
 - The grade reader reads a grade written straight behind the weight or diameter, with no full stop between (`4,03g Très Beau à Superbe`, `3,21 g TTB.`, `17,10 g BB.`, `gr. 3,45 SPL.`), as Jean Elsen and the Italian houses write it. `4,03g Très Beau à Superbe / Superbe.` had counted a Fine coin in the EF bucket.
 - A range whose first grade carries a spaced plus (`Zeer fraai +/prachtig`, `Vorzüglich +/Stempelglanz`) now counts under its lower grade, not its upper one.
+- RPC Online's temporary numbers (`RPC IV.2 online 1234 (temporary)`, `RPC VI online 3231`, `RPC IV 1234 (temp.)`) now get their RPC Online link, as do a lettered number (`RPC I 2317A`) and one with `var.` or `corr.`. Their acsearch search offers every spelling dealers write the number in (`"RPC IV.2 1234" "RPC IV 1234" "RPC IV.2 online 1234"`), where it asked for one.
 
 ## [0.36.0] - 2026-09-25
 
