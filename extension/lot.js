@@ -1,4 +1,4 @@
-import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, sectionBracket, sgNumber, VARIANT, withRange } from './lookup.js';
+import { CORRECTION, EDITION, INVISIBLE, kmNumber, parseReference, readable, realVolumePart, REMARKS, SECOND_EDITION, sectionBracket, sgNumber, VARIANT, withEdition, withRange } from './lookup.js';
 import { EXTRA_SPELLINGS, isMintOnly, isRicPerson, MINT_SPELLINGS, PEOPLE_SPELLINGS, RIC_SECTIONS, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // A whole lot description, pasted or right-clicked: every catalogue reference in it, and the RIC rulers its heading names.
@@ -343,10 +343,10 @@ const depths = (text) => {
 };
 
 // Invisible characters out, en and em dashes as "-", spaces squashed with the line breaks kept, at most 3,000 characters. The German second-edition
-// remark a house writes unbracketed behind a number ("RIC 306 2. Aufl., WCN 275") goes too: its full stop would otherwise split the citation, and
-// the bracketed one is lookup.js's EDITION.
+// remark a house writes unbracketed behind a number ("RIC 306 2. Aufl., WCN 275") is bracketed: its full stop would otherwise split the citation,
+// and bracketed it is lookup.js's EDITION, which carries it onto RIC I, II.1 and II.3.
 const AUFLAGE = /(?<=\d)[^\S\n]+2\.[^\S\n]?Aufl(?:\.|age)?(?![\p{L}\d])/gu;
-const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(AUFLAGE, '').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
+const clean = (text) => Array.from(String(text ?? '').replace(INVISIBLE, '').replace(AUFLAGE, ' (2. Aufl.)').replace(/[\u2013\u2014]/g, '-').replace(/[^\S\n]+/g, ' ')
   .replace(/ ?\n\s*/g, '\n').trim()).slice(0, MAX_LOT).join('');
 
 // A label matched in any case, letter by letter, because the pattern below carries no "i" flag: with one the regnal numeral in its lookahead would
@@ -599,7 +599,10 @@ function normalise(stopped, spelled, cf) {
   const written = stopped.replace(RIC_STOPS, 'RIC ');
   const key = RIC_STOPS.test(spelled) ? 'RIC' : spelled;
   const variant = VARIANT.test(written);
-  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  // A RIC citation's edition mark other than the second stays on its number, as lookup.js's clean-up keeps it (the bundle holds the second's numbers).
+  const ricKey = /^RIC/i.test(key);
+  let text = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, (mark) => (ricKey && !SECOND_EDITION.test(mark) ? mark : ''))
+    .replace(CORRECTION, ''));
   // Áureo puts the edition year of Calicó in front of the number ("Cal. 2008, 1015", "Cal-2019-123"): the year is the book's, not the coin's.
   if (CALICO_KEY.test(spelled)) text = text.replace(/^Cal\.?[\s.:#-]*(?:(?:19|20)\d\d\s*[,-]\s*(?=\d))?/i, 'Calicó ');
   // A Sear Greek reference is SG's spelling, prices only; a "v" on its number ("SG 6829v") is a variety, flagged and shown as "var." is.
@@ -615,7 +618,8 @@ function normalise(stopped, spelled, cf) {
   if (section && !ric) text = unpunctuate(text.replace(section[0], ''));
   // The row's own text has had its remarks, edition, variety and correction taken off already, so the reference is read from it with the shared
   // clean-up switched off: each row is cleaned once, not once here and again inside parseReference.
-  const parsed = withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false));
+  // A second-edition mark it wrote after the number is carried onto RIC I, II.1 or II.3 (lookup.js withEdition).
+  const parsed = withEdition(withRange(parseReference(readable(text), false), () => parseReference(readable(text, false), false)), written);
   // Only a RIC key reads as RIC: "Kroll Titus 5" is never a RIC ruler and number.
   const type = parsed && parsed.catalogue !== 'Other' && (parsed.catalogue !== 'RIC' || ric);
   // A RIC key cites RIC whatever follows it, so its row is a RIC row even where the words are no reference this extension can place ("RIC 1,2" is two

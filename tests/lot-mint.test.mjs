@@ -300,3 +300,19 @@ test('over the bundled catalogue, a category or a find-spot never opens the coin
   // The mint behind the ruler opens his coin there.
   assert.equal((await lookup('Rome Roman Empire. Constantine I. Follis. Siscia mint. RIC VII 42.')).card?.id, 'ric.7.sis.42');
 });
+
+// Loop S1 review, Important 3: the edition a lot writes after the number is the edition it cites. Written second, the one bundled type opens; written
+// first, nothing is found, and nothing is offered with a note that the lot named no edition.
+test('over the bundled catalogue, an edition written after the number opens or finds nothing as it says', { skip }, async () => {
+  for (const text of ['Nero. As. RIC I 306 (2nd ed.); WCN 275.', 'RÖMISCHE KAISERZEIT. Nero 54-68. As. RIC I 306 (2. Aufl.), WCN 275. ss/vz',
+    'Néron. As. RIC I 306 (2e éd.).', 'Nero. As. RIC I 306 2. Aufl., WCN 275.']) {
+    assert.equal((await lookup(text)).card?.id, 'ric.1(2).ner.306', text);
+  }
+  assert.equal((await lookup('Hadrian. Denarius. RIC II.3 2140 (2nd ed.); RSC 716.')).card?.id, 'ric.2_3(2).hdn.2140');
+  assert.equal((await answer(parseReference('RIC I Nero 306 (2nd ed.)'))).card?.id, 'ric.1(2).ner.306');
+  for (const text of ['Nero. As. RIC I 306 (1st ed.).', 'Nero. As. RIC 306 (1st ed.).']) {
+    const result = await lookup(text);
+    assert.notEqual(result.status, 'ok', text);
+    assert.ok(!(result.candidates ?? []).some((entry) => entry.note), text);
+  }
+});

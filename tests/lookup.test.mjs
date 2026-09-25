@@ -1707,3 +1707,28 @@ test('parseReference drops the German and French edition remark behind the numbe
   assert.deepEqual(parseReference('RIC 306 (1. Aufl.)'), { catalogue: 'RIC', number: '306 (1. Aufl.)', volume: '', section: '' });
   assert.deepEqual(parseReference('Price 23 (2. Aufl.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
 });
+
+// Loop S1 review, Important 3 and Minor 7: a lot that writes RIC I's edition after the number ("RIC I 306 (2nd ed.)", Rauch's "(2. Aufl.)", the French
+// "(2e éd.)") had it stripped before the volume was read, and was then told it named no edition. A second-edition mark on a volume OCRE holds in its
+// second edition alone is that volume's edition; a first-edition mark stays on a RIC number, which then finds nothing, since the bundle holds the
+// second edition's numbers. And the unbracketed "2. Aufl." needs its space: "RIC 3062. Aufl." is not RIC 306.
+test('parseReference carries a second-edition mark onto RIC I, II.1 and II.3, and keeps a first-edition mark on the number', () => {
+  for (const [text, volume, section] of [['RIC I 306 (2nd ed.)', 'I (2nd edition)', ''], ['RIC I Nero 306 (2nd ed.)', 'I (2nd edition)', 'Nero'],
+    ['RIC I 306 (2. Aufl.)', 'I (2nd edition)', ''], ['RIC I 306 2. Aufl.', 'I (2nd edition)', ''], ['RIC I 306 (2e éd.)', 'I (2nd edition)', ''],
+    ['RIC II.3 2140 (2nd ed.)', 'II, Part 3 (2nd edition)', ''], ['RIC II.1 Vespasian 772 (2. Auflage)', 'II, Part 1 (2nd edition)', 'Vespasian']]) {
+    const read = parseReference(text);
+    assert.equal(read?.volume, volume, text);
+    assert.equal(read.section, section, text);
+    assert.equal(read.number, text.includes('2140') ? '2140' : text.includes('772') ? '772' : '306', text);
+  }
+  // A volume with more than one edition on its shelf, or none written, keeps the mark off as before.
+  assert.deepEqual(parseReference('RIC II 118 (2nd ed.)'), { catalogue: 'RIC', number: '118', volume: 'II', section: '' });
+  assert.deepEqual(parseReference('RIC 306 (2nd ed.)'), { catalogue: 'RIC', number: '306', volume: '', section: '' });
+  // A first-edition mark stays on the number.
+  assert.deepEqual(parseReference('RIC I 306 (1st ed.)'), { catalogue: 'RIC', number: '306 (1st ed.)', volume: 'I', section: '' });
+  assert.deepEqual(parseReference('RIC 306 (1st ed.)'), { catalogue: 'RIC', number: '306 (1st ed.)', volume: '', section: '' });
+  // Another book's edition is still a remark on it.
+  assert.deepEqual(parseReference('Price 23 (1st ed.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
+  assert.notEqual(parseReference('RIC 3062. Aufl.')?.number, '306');
+  assert.notEqual(parseReference('RIC II.3 3062.Aufl.')?.number, '306');
+});

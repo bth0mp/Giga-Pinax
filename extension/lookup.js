@@ -10,8 +10,14 @@ export const VARIANT = /\s*\bvar\.?(?:\s*\([^()]*\))?$/i;
 // The edition a dealer brackets after the number ("Hendin 1243 (6th ed.)") is a remark on the book, not part of the number. Anchored to the end of the
 // reference, since the same bracket inside one is a RIC volume ("RIC I (2nd ed.) Nero 306"), and OCRE lists no plain "I". The German houses write
 // it "(2. Aufl.)", "(2. Auflage)" or unbracketed "2. Aufl." (Rauch, Frühwald), and the French "(2e éd.)". Only the second edition in those two
-// languages: it is the one the bundle holds, and a first edition's number read as the second's would be another coin.
-export const EDITION = /\s*(?:\(\s*(?:\d+(?:st|nd|rd|th)\s+eds?\.?|2\.\s*Aufl(?:\.|age)|2(?:e|ème)\s+[ée]d\.?)\s*\)|2\.\s*Aufl\.?)(?=\s*[.,;:]*\s*$)/i;
+// languages: it is the one the bundle holds, and a first edition's number read as the second's would be another coin. The unbracketed one needs its
+// space, so a number ending in 2 ("RIC 3062. Aufl.") keeps its figure.
+export const EDITION = /(?:\s*\(\s*(?:\d+(?:st|nd|rd|th)\s+eds?\.?|2\.\s*Aufl(?:\.|age)|2(?:e|ème)\s+[ée]d\.?)\s*\)|\s+2\.\s*Aufl\.?)(?=\s*[.,;:]*\s*$)/i;
+// On RIC the mark says which edition's numbers the citation uses, and RIC I, II.1 and II.3 are bundled in their second alone: a second-edition mark
+// is carried onto such a volume (withEdition), and any other ("RIC I 306 (1st ed.)") stays on the number, which then finds nothing rather than the
+// second edition's coin of that number.
+export const SECOND_EDITION = /2nd|2\.|2e|2ème/i;
+const ricEdition = (text, mark) => /^R\.?I\.?C/i.test(text) && !SECOND_EDITION.test(mark);
 // A reference as a search reads it: glued keys spaced whatever the house's separator ("RIC.112", "Sear-734", "RIC:972"), "RIC²" as RIC, "V-1" as V.1,
 // a range's first number, Pr as Price. Price alone is excluded from the colon spelling: it is the one typed key that is also the English word a
 // dealer puts in front of a hammer amount ("Price:1,200"), and spacing that would turn a sold price into a PELLA type lookup.
@@ -206,8 +212,18 @@ const CLEANABLE = /[(),;:.#²-]|\b(?:var|corr|passim)\b|^Pr\s/i;
 function cleanReference(text, shortenRange = true) {
   const written = String(text).trim();
   if (!CLEANABLE.test(written)) return written;
-  const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, '').replace(CORRECTION, ''));
+  const remarked = unpunctuate(written.replace(VARIANT, '').replace(REMARKS, '').replace(EDITION, (mark) => (ricEdition(written, mark) ? mark : ''))
+    .replace(CORRECTION, ''));
   return CLEANABLE.test(remarked) ? readable(remarked, shortenRange) : remarked;
+}
+
+// The edition a RIC citation wrote after its number, carried onto the volume where OCRE holds that volume in its second edition alone: "RIC I 306
+// (2nd ed.)", "(2. Aufl.)", "(2e éd.)" are RIC I² 306, which opens, and never an unedited "RIC I" the lookup can only offer.
+export function withEdition(reference, written) {
+  if (reference?.catalogue !== 'RIC') return reference;
+  const mark = String(written ?? '').replace(VARIANT, '').replace(CORRECTION, '').replace(/[\s.,;:]+$/, '').match(EDITION)?.[0];
+  const held = mark && SECOND_EDITION.test(mark) ? heldEdition(reference.volume) : '';
+  return held ? { ...reference, volume: held } : reference;
 }
 
 // A RIC reference whose number the clean-up shortened out of a range, with the number as it was written kept beside it. OCRE titles 658 of its own
@@ -253,7 +269,7 @@ function ricReference(number, volume, written) {
 function readType(text, clean = true) {
   const written = String(text).trim();
   const type = readClean(clean ? cleanReference(written) : written);
-  return clean ? withRange(type, () => readClean(cleanReference(written, false))) : type;
+  return clean ? withEdition(withRange(type, () => readClean(cleanReference(written, false))), written) : type;
 }
 
 function readClean(value) {
@@ -797,16 +813,19 @@ export function otherVolumePart(reference, title) {
 // Whether a hit is in the one edition OCRE holds of a volume the reference names without one: CNG and Roma cite "RIC I 306", Baldwin's "RIC II.3
 // 2140", and OCRE holds RIC I, II.1 and II.3 in their second edition alone. Read from RIC_VOLUMES, never from a list of numerals: a shelf with any
 // other volume on it ("RIC II", beside II.1² and II.3²) is no such shelf, and a volume typed with its edition is exact already.
-export function soleEdition(volume, title) {
+function heldEdition(volume) {
   const typed = unquote(volume);
   const [numeral, part] = shelf(typed);
-  if (!numeral || listed(typed)) return false;
+  if (!numeral || listed(typed)) return '';
   const held = RIC_VOLUMES.filter(({ value }) => {
     const [otherNumeral, otherPart] = shelf(value);
     return otherNumeral === numeral && (!part || otherPart === part);
   });
-  if (held.length !== 1 || !/\(2nd edition\)$/.test(held[0].value)) return false;
-  return norm(parseReference(title, false)?.volume ?? '') === norm(held[0].value);
+  return held.length === 1 && /\(2nd edition\)$/.test(held[0].value) ? held[0].value : '';
+}
+export function soleEdition(volume, title) {
+  const held = heldEdition(volume);
+  return Boolean(held) && norm(parseReference(title, false)?.volume ?? '') === norm(held);
 }
 // That hit as it is offered: never opened, since an unedited "RIC I 306" may be the 1923 first edition's number and so another coin, but named the
 // way the collector writes it ("RIC I² Nero 306") with the reason he has to choose it himself. Null for any other hit.
