@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings could wipe a house added, or a field typed, in the moment before it had loaded your saved settings: drawing them replaced the list. The editing controls now wait for the settings to load, as **Save settings** already did.
+
 ### Added
 
 - A **Want list** in the workspace: the types you are looking for, each with an optional maximum price in one currency, lowest grade (Fine, VF, EF or AU, or better) and notes. **Add want**, **Edit** and **Remove** are on the page; once you win a coin of the type, **Mark found: …** names it, and **Want again** takes that back. A want is one catalogue type as a card names it — RIC with its volume and ruler or mint, RRC, Price, SC, CPE, or Bopearachchi with its king — and the form refuses `RIC 306` or `SNG Cop 123`, or a type already on the list, before anything is saved. A found want keeps its type until you choose **Want again**, and its line says where the found coin now stands (`· won`, or `· coin now lost` after a corrected outcome). At phone width the workspace's route pills wrap onto a second row, so **History** and **Want list** are never scrolled out of sight.

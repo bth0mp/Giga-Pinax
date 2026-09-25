@@ -368,7 +368,9 @@ async function load() {
   cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
   render();
   renderDataHealth(preferencesSnapshot.quarantine);
-  $('save-settings').disabled = false;
+  // Drawing the saved rows replaces the list, so the editors wait for it (the markup starts them disabled): a house
+  // added before the worker answered would otherwise be wiped by this render.
+  for (const id of ['save-settings', 'currency', 'import-vat', 'add-premium', 'copy-presets', 'paste-presets']) $(id).disabled = false;
 }
 
 // The file the import would overwrite the current records with, ready to hand to the browser.

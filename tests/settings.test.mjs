@@ -1476,3 +1476,13 @@ test('a yen ladder is drawn in whole yen and saves unchanged in every locale', a
     assert.equal(page.commands[0].preferences.currency, 'JPY');
   }
 });
+
+// The page draws the saved house rows only once the worker answers, and drawing them replaces the list: a house added
+// or a field typed before then would be wiped. So nothing that edits the settings works until they have loaded.
+test('the settings cannot be edited before they have loaded, and can once they have', async () => {
+  const EDITORS = ['currency', 'import-vat', 'add-premium', 'copy-presets', 'paste-presets'];
+  const failed = await openSettings({ snapshotReply: { ok: false, message: 'Worker asleep.' } });
+  for (const id of EDITORS) assert.equal(failed.element(id).disabled, true, `${id} waits for the settings`);
+  const loaded = await openSettings({});
+  for (const id of EDITORS) assert.equal(loaded.element(id).disabled, false, `${id} works once they have loaded`);
+});
