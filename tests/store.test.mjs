@@ -3016,3 +3016,25 @@ test('K-13: storage.usage answers the bytes a write is judged by, and writes not
   const unreadable = await createCommandWriter(memoryStorage('damaged'), context()).commitCommand(command('storage.usage'));
   assert.equal(unreadable.reason, 'unreadable');
 });
+
+// Review Important 1: the revision the rescue copy reports is the one a reset and a Replace import are counted from,
+// whatever revision the unreadable root claims - or the handshake never closes and the records stay trapped.
+test('X-02: every hostile revision on unreadable records still lets a reset, and a Replace import, go through', async () => {
+  const hostile = [2 ** 52, LIMITS.usableRevision + 1, -3, Number.MAX_SAFE_INTEGER, 1.5, '7', null, 41];
+  const good = createEmptySnapshot(NOW);
+  good.lots.push(plainLot(uuid(), { title: 'From the backup' }));
+  const document = exportBackup(good, NOW).value;
+  for (const revision of hostile) {
+    for (const way of ['reset', 'replace']) {
+      const storage = memoryStorage({ ...createEmptySnapshot(NOW), schemaVersion: 99, revision });
+      const writer = createCommandWriter(storage, context());
+      const rescue = await writer.commitCommand(command('snapshot.raw'));
+      assert.equal(rescue.ok, true);
+      const reply = way === 'reset'
+        ? await writer.commitCommand(command('store.reset', { expectedRevision: rescue.revision }))
+        : await writer.commitCommand(command('backup.import', { expectedRevision: rescue.revision, mode: 'replace', overUnreadable: true, document }));
+      assert.equal(reply.ok, true, `${way} after revision ${String(revision)}: ${reply.message}`);
+      assert.equal((await writer.commitCommand(command('snapshot.get'))).ok, true);
+    }
+  }
+});

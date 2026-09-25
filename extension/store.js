@@ -1024,9 +1024,19 @@ const recoversUnreadable = (command) => command.type === 'store.reset' ||
  */
 function unreadableBase(raw, now) {
   const base = createEmptySnapshot(now);
-  const revision = raw?.revision;
-  base.revision = Number.isSafeInteger(revision) && revision >= 0 && revision <= LIMITS.usableRevision ? revision : 0;
+  base.revision = recoveryRevision(raw);
   return base;
+}
+
+// The revision the rescue copy reports and a recovery is counted from: the stored one where a write could have made it,
+// and 0 for anything else a damaged or hand-made root claims.
+/**
+ * @param {*} raw
+ * @returns {number}
+ */
+function recoveryRevision(raw) {
+  const revision = raw?.revision;
+  return Number.isSafeInteger(revision) && revision >= 0 && revision <= LIMITS.usableRevision ? revision : 0;
 }
 
 /**
@@ -1072,7 +1082,9 @@ export function createCommandWriter(storageArea, context) {
       return {
         ok: true,
         requestId: command.requestId,
-        revision: Number.isSafeInteger(raw?.revision) ? raw.revision : 0,
+        // The revision a reset or a Replace import over these records is counted from: the one function both use, so
+        // the handshake closes whatever revision an unreadable root claims (review Important 1).
+        revision: recoveryRevision(raw),
         value: raw,
       };
     }
