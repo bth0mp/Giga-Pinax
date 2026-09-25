@@ -9,7 +9,7 @@ import {
 import { WANT_GRADES } from '../extension/core/fields.js';
 import { exportBackup, importChangeLines, previewImport, validateBackup } from '../extension/core/backup.js';
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
-import { formatMoney } from '../extension/core/money.js';
+import { CURRENCIES, formatMoney } from '../extension/core/money.js';
 import {
   namesOneType, openWantsFor, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
 } from '../extension/core/wantlist.js';
@@ -402,7 +402,7 @@ test('the Want list page says what it is for when empty, and adds a want the col
   assert.equal(page.$('route-wants').hidden, false);
   assert.equal(page.document.querySelector('[data-route="wants"]').textContent, 'Want list');
   assert.match(page.$('want-list').textContent, /^No wants yet\. Add a reference you are looking for/);
-  assert.deepEqual(page.$('want-form').elements.currency.options.map((option) => option.value), ['USD', 'EUR', 'GBP', 'CHF']);
+  assert.deepEqual(page.$('want-form').elements.currency.options.map((option) => option.value), [...CURRENCIES], 'every currency money.js lists');
   assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.value), ['', 'F', 'VF', 'EF', 'AU']);
 
   await addWant(page, { reference: 'RIC I (second edition) Nero 306', maxPrice: '800', currency: 'EUR', minGrade: 'VF', notes: 'A good portrait' });
