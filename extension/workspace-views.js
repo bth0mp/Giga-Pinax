@@ -201,7 +201,7 @@ export function auctionQueueForLots(lots, events, queue = 'all-open', now = new 
   // auction's timing is worked out once, however many coins it holds (K-05).
   const timings = new Map();
   const timingOf = (event) => { if (!timings.has(event)) timings.set(event, eventTiming(event, now)); return timings.get(event); };
-  const keyed = entries.filter(({ lot, event }) => matches({ lot, event, timing: timingOf(event) }))
+  const keyed = entries.filter(({ lot, event }) => matches({ lot, timing: timingOf(event) }))
     .map((entry) => { const sortMs = timingOf(entry.event).sortMs; return { entry, rank: sortMs === null ? 1 : 0, at: sortMs ?? 0 }; });
   return keyed.sort((left, right) => left.rank - right.rank || left.at - right.at || left.entry.index - right.entry.index).map(({ entry }) => entry);
 }
