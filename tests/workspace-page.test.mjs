@@ -823,7 +823,7 @@ test('the auction form offers a time zone list, reminder choices and a summary i
 
   await page.type('event-form', 'name', 'Leu Web Auction 32');
   assert.equal(page.$('event-summary').textContent, '', 'G-19: nothing is summed up before there is a day');
-  assert.equal(f.remindEachCoin.checked, true, 'reminders for each attached coin, unless the collector says otherwise');
+  assert.equal(f.remindEachCoin.checked, false, 'an auction reminds whatever is attached, unless the collector says otherwise');
   assert.equal(page.$('event-captured').open, false, 'a hand-made sale has nothing captured to show');
   await page.type('event-form', 'localDate', '2030-10-15');
   await page.type('event-form', 'localTime', '14:00');
@@ -838,7 +838,7 @@ test('the auction form offers a time zone list, reminder choices and a summary i
   assert.deepEqual(page.prompts, [], 'no confirm dialog');
   const [event] = background.root().auctionEvents;
   assert.equal(event.timeZone, 'Europe/Zurich');
-  assert.equal(event.reminderScope, 'linked-lots');
+  assert.equal(event.reminderScope, 'standalone');
   assert.deepEqual(event.reminders.map((reminder) => reminder.offsetMinutes), [1440, 90]);
 
   // A zone the list does not hold is kept, under Other….

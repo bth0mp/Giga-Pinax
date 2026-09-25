@@ -130,7 +130,7 @@
           <label><input type="checkbox" name="reminderDayBefore" checked> Previous day at <input name="reminderDayBeforeTime" type="time" value="09:00"></label>
           <label><input type="checkbox" name="reminderDayOf" checked> Auction day at <input name="reminderDayOfTime" type="time" value="09:00"></label>
           <p id="date-only-reminder-note" class="field-note">A date-only auction's reminders go off at these times in the auction's time zone.</p>
-          <label><input type="checkbox" name="remindEachCoin" checked> Remind me for each coin attached to this auction</label>
+          <label><input type="checkbox" name="remindEachCoin"> Only while a coin attached to it is still open</label>
         </fieldset>
         <details id="event-captured" class="form-group"><summary>Captured from a page</summary><div class="form-group-body"><label>Captured text<textarea name="capturedText" maxlength="500"></textarea></label><label>Captured source URL<input name="capturedFromUrl" type="url" maxlength="2048"></label></div></details>
         <div class="form-actions"><button type="submit" data-needs-runtime>Save auction</button><button id="delete-event" class="danger quiet" type="button" data-needs-runtime>Remove event</button></div>

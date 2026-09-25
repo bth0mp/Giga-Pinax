@@ -1033,8 +1033,9 @@ async function initWorkspace() {
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
     for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
-    // Reminders for each attached coin are the scope's "linked lots"; a sale kept to itself is "standalone" (G-19).
-    f.remindEachCoin.checked = (event.reminderScope ?? 'linked-lots') === 'linked-lots';
+    // The scope in words (G-19): "linked lots" reminds only while a coin attached to the auction is still open, as the
+    // scheduler reads it; "standalone", the default, reminds whatever is attached.
+    f.remindEachCoin.checked = event.reminderScope === 'linked-lots';
     // What a page captured is shown folded, and only opened when there is something in it.
     $('event-captured').open = Boolean(String(event.capturedText ?? '').trim() || String(event.capturedFromUrl ?? '').trim());
     $('delete-event').hidden = !event.id;
@@ -1454,7 +1455,7 @@ async function initWorkspace() {
     if (match[1] === 'event-draft') {
       eventDraftId = draft.id; beginEditor('event', { id: null, revision: null, record: null });
       $('event-form').hidden = false;
-      populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'linked-lots', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      populateEventForm({ ...createEventDraft('timed'), precision: 'timed', eventKind: 'auction-starts', reminderScope: 'standalone', name: draft.payload.rawText?.slice(0, 500) || 'Captured auction', capturedText: draft.payload.rawText ?? '', capturedFromUrl: draft.payload.pageUrl ?? '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       dirtyEditors.add('event');
       announce('Captured auction draft loaded. Confirm every date and reminder before saving.');
     } else if (match[1] === 'lot-draft') {
