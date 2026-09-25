@@ -3069,3 +3069,25 @@ test('a signed-out note names the subscription and the free CoinArchives search,
   assert.equal(button.classList.contains('primary-button'), false);
   assert.equal(button.classList.contains('secondary-button'), true);
 });
+
+// Loop 6 (K-15): a list of types says why no prices are shown, and never beside a Sign in link, whichever answer lands first. (The audit's
+// "Sign in ↗" was the hidden link's own text read from the note; this pins that it stays hidden.)
+test('a list of types never shows Sign in beside its note, whichever answer lands first', async () => {
+  const candidates = { status: 'candidates', partial: true, corpus: 'ocre', query: 'RIC I 306',
+    candidates: [{ id: 'ric.1(2).aug.306', title: 'RIC I (second edition) Augustus 306' }, { id: 'ric.1(2).ner.306', title: 'RIC I (second edition) Nero 306' }] };
+  for (const pricesFirst of [true, false]) {
+    const prices = deferred();
+    const lookup = deferred();
+    const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: () => prices.promise, lookupTypeImpl: () => lookup.promise });
+    popup.element('quick-reference').value = 'RIC I 306';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    if (pricesFirst) { prices.resolve({ status: 'signed-out' }); await settle(); assert.equal(popup.element('signin-link').hidden, false); }
+    lookup.resolve(candidates);
+    await settle();
+    if (!pricesFirst) { prices.resolve({ status: 'signed-out' }); await settle(); }
+    assert.equal(popup.element('prices-note-text').textContent, 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.', String(pricesFirst));
+    assert.equal(popup.element('prices-note').hidden, false);
+    assert.equal(popup.element('signin-link').hidden, true, String(pricesFirst));
+  }
+});

@@ -1235,6 +1235,8 @@ function setPricesAside() {
   clearAcsearchPrices();
   clearCoinArchivesPrices();
   $('prices-note-text').textContent = PRICES_WAIT_MESSAGE;
+  // K-15: only a signed-out note carries Sign in; this one says to choose a type.
+  $('signin-link').hidden = true;
   $('prices-note').hidden = false;
 }
 
