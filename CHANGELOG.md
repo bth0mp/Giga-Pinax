@@ -10,6 +10,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - A coin won without a bid recorded here — a floor or phone bid, a coin bought after the sale, one entered from its invoice — gets its real cost from its **Outcome** tab: **Buyer’s premium %** (offered from the bid, else the plan, else your preset for the lot's house, and the form says which) and a **Fees for this coin** fold (VAT on the premium, platform fee, shipping, payment fee) that opens by itself when the coin has no rate or fee sheet. The store still works the cost out; the rate and fees are kept with the outcome, so a corrected hammer is costed on them again. No more re-opening a settled coin to plan a bid for it.
 
+### Fixed
+
+- A coin placed with a buyer's premium, settled **Lost** by mistake and corrected to **Won** kept no premium rate, so its total stayed **Incomplete** for good. The rate is now read from the last settled or re-opened bid that carries one, before the plan.
+
 ## [0.36.0] - 2026-09-25
 
 ### Added
