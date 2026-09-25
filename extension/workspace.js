@@ -982,13 +982,42 @@ async function initWorkspace() {
   $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Plan cleared'); }); });
   $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Cancellation recorded · the bid is no longer active'); }); });
 
+  // Auctions as rows like the coins' (G-18): name, when, how many coins, and the row itself opens the auction's form.
   function renderEvents() {
     const list = $('event-list'); list.replaceChildren();
-    for (const event of snapshot.auctionEvents ?? []) { const card = text('article', '', 'record'); card.append(text('h3', event.name)); card.append(eventLine(event, '', 'p', false)); const edit = text('button', 'Edit auction'); edit.type = 'button'; edit.addEventListener('click', () => openEventEditor(event)); card.append(edit); list.append(card); }
+    const coinCounts = new Map();
+    for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
+    if (!(snapshot.auctionEvents ?? []).length) list.append(text('p', 'No auctions yet. Add one to keep its date, time zone and reminders; the line under Save auction says what will be saved.', 'empty-row'));
+    for (const event of snapshot.auctionEvents ?? []) {
+      const row = text('button', '', 'event-row'); row.type = 'button';
+      const top = text('span', '', 'event-row-top'); top.append(text('strong', event.name, 'event-row-name'), text('span', 'Edit', 'event-row-edit'));
+      const count = coinCounts.get(event.id) ?? 0;
+      row.append(top, eventLine(event, 'event-row-when', 'span', false), text('span', count ? `${count} coin${count === 1 ? '' : 's'}` : 'No coins attached', 'event-row-coins'));
+      row.addEventListener('click', () => openEventEditor(event));
+      list.append(row);
+    }
     // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
-    // them, and never snoozed back into a moment already past.
-    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status)); const alerts = $('alert-list'); const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
-    alerts.replaceChildren(...due.map((alert) => text('p', `${alertLabel[alert.status]} · ${eventsById.get(alert.eventId)?.name ?? 'Auction'}`, `record${alert.status === 'missed' ? ' alert-missed' : ''}`)));
+    // them, and never snoozed back into a moment already past. Each says which reminder, when it went off in the
+    // collector's own time, the auction, and the coins that sale has left needing an outcome (Q-14).
+    const due = (snapshot.alerts ?? []).filter((alert) => ['due', 'claimed', 'delivered', 'snoozed', 'missed'].includes(alert.status));
+    const alertLabel = { due: 'Due', claimed: 'Being delivered', delivered: 'Delivered', snoozed: 'Snoozed', missed: 'Missed' };
+    const needing = lotsNeedingOutcome(snapshot);
+    $('alert-list').replaceChildren(...due.map((alert) => {
+      const event = eventsById.get(alert.eventId);
+      const reminder = (event?.reminders ?? []).find(({ id }) => id === alert.reminderId);
+      const at = alert.triggerAt && event ? reminderAtLabel(alert.triggerAt, event.timeZone, view()).text.replace(/ · passed$/, '') : '';
+      const waiting = needing.filter((lot) => lot.auctionEventId === alert.eventId).length;
+      const row = text('p', [alertLabel[alert.status], reminder ? reminderLabel(reminder) : '', at, event?.name ?? 'Auction'].filter(Boolean).join(' · '), `record${alert.status === 'missed' ? ' alert-missed' : ''}`);
+      if (waiting) {
+        row.append(document.createTextNode(` — ${waiting} ${waiting === 1 ? 'lot needs' : 'lots need'} an outcome `));
+        const link = text('a', 'Record outcomes'); link.href = '#watchlist?queue=needs-outcome';
+        link.addEventListener('click', () => { $('lot-queue').value = 'needs-outcome'; routeChangeFromNav = false; });
+        row.append(link);
+      }
+      return row;
+    }));
+    // The panel and its buttons are there only while something is due.
+    $('due-reminders').hidden = !due.length;
     $('ack-alerts').dataset.ids = due.map((item) => item.triggerId ?? item.id).join(',');
     $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
     if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }

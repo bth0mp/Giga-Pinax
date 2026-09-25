@@ -947,10 +947,15 @@ test('a missed reminder is listed under Due reminders and acknowledged with the 
   const background = await backgroundWithEndedSale();
   assert.equal(background.root().alerts[0].status, 'missed');
   const page = await mountWorkspace({ background, hash: '#auctions' });
-  assert.deepEqual(page.$('alert-list').children.map((item) => item.textContent), ['Missed · Nomos 30']);
+  // Q-14: which reminder, when it went off in the collector's time, the auction, and the coins left needing an outcome.
+  const [row] = page.$('alert-list').children;
+  assert.match(row.textContent, /^Missed · 1 hour before · .+ \(your time\)(?: · [^·]+)? · Nomos 30 — 1 lot needs an outcome Record outcomes$/);
+  assert.equal(row.querySelector('a').getAttribute('href'), '#watchlist?queue=needs-outcome');
+  assert.equal(page.$('due-reminders').hidden, false);
   await page.click('ack-alerts');
   assert.equal(background.root().alerts[0].status, 'acknowledged');
   assert.deepEqual(page.$('alert-list').children.map((item) => item.textContent), []);
+  assert.equal(page.$('due-reminders').hidden, true, 'G-18: no panel of buttons with nothing due');
 });
 
 // N18: every text box holds exactly what the store accepts, and says how much room is left once it is nearly full.
@@ -1421,4 +1426,20 @@ test('a wide workspace opens the coin the queue puts first, one needing its outc
   const phone = await mountWorkspace({ background, hash: '#watchlist' });
   assert.equal(phone.$('coin-editor').hidden, true, 'a phone keeps its list');
   assert.equal(phone.status(), '', 'and nothing is said about loading');
+});
+
+// G-18: the Auctions route lists auctions as rows - name, when, how many coins - and the row opens the auction's form.
+test('an auction is a row that says when it is and how many coins it holds, and opens its form', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma E-Sale 130', eventKind: 'lot-closes', precision: 'timed', localDate: '2030-10-01', localTime: '15:00', timeZone: 'UTC', reminderScope: 'linked-lots', reminders: [] } });
+  const lot = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'lot.save', expectedRevision: lot.revision, lot: { id: lot.id, title: lot.title, sourceLinks: [], auctionEventId: event.value.id } });
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  const [row] = page.$('event-list').children;
+  assert.equal(row.querySelector('.event-row-name').textContent, 'Roma E-Sale 130');
+  assert.equal(row.querySelector('.event-row-coins').textContent, '1 coin');
+  assert.equal(page.$('due-reminders').hidden, true);
+  await row.click(); await settle();
+  assert.equal(page.$('event-form').hidden, false);
+  assert.equal(page.$('event-form').elements.name.value, 'Roma E-Sale 130');
 });

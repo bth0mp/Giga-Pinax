@@ -53,3 +53,7 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
    that wrap, beside a one-line disclaimer with its reasons folded. */
 .collection-totals{display:grid;gap:10px;margin:12px 0 4px;font-variant-numeric:tabular-nums}.collection-total-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;padding:8px 0;border-top:1px solid var(--line)}.collection-total-currency{flex:1 0 100%;font-size:12px}.collection-total-cell{display:grid;gap:2px}.collection-total-cell .stat-label{color:var(--muted);font-size:11px}.collection-total-cell .stat-value{font-size:13px;font-weight:650}
 .collection-since{margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;font-weight:650}
+/* G-18: auctions as rows like the coins', the row opening its form; Q-14: a missed reminder is the seventh state, in the
+   muted red of "Ended · record outcome". */
+.event-row{display:grid;gap:4px;width:100%;min-height:0;margin:0 0 8px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-panel);background:var(--surface);color:var(--ink);text-align:left;font-weight:400}.event-row:hover{border-color:var(--border)}.event-row-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}.event-row-name{font:600 var(--text-h4)/1.3 var(--font-serif)}.event-row-edit{color:var(--accent);font-size:12px;font-weight:650}.event-row-when,.event-row-coins{color:var(--muted);font-size:12px}
+.alert-missed{border-left:3px solid var(--error)}
