@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Fixed
+
+- A late-Roman lot that names the ruler and the mint (`Constantine I BI Nummus. Treveri, AD 310-313. … RIC VII 42.`, Spink's `Constantine I (AD 307-337), Solidus, Treveri … (RIC VII 22 …)`) opens the coin of that mint, where it listed the ruler's coin with the number at every mint of the volume (14 types for that Roma lot). A heading naming two mints narrows the list to them and still lets you choose, and a coin RIC files under the ruler's own name is offered beside the mint's, since it may have been struck there too.
+
 ## [0.38.0] - 2026-09-25
 
 ### Added

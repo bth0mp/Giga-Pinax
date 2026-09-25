@@ -288,7 +288,15 @@ export function createLocalCatalogue({ fetchImpl = fetch, baseUrl = new URL('./d
       }
       if (entries.length === 0) return { ...picked, corpus: 'ocre', query };
       if (matched.length > 0) {
-        let final = pickRic(matched, citationRef);
+        // A late-Roman heading names the mint beside the ruler ("Constantine I. Follis, Treveri. RIC VII 42."), and the ruler alone has the number at
+        // every mint of the volume. Where one of his coins is at a mint the heading names, his coins at the mints it does not name go: one left is
+        // the answer, the ruler and the mint both agreeing. A coin filed under his own name stays beside it, since RIC V lists his coins of that mint
+        // there too. Two mints named may be a category and the mint ("Rome Roman Empire. … Siscia mint."), so a coin narrowed to by them is offered.
+        const struck = [].concat(reference.struckAt ?? []).filter((name) => typeof name === 'string' && name !== '');
+        const atNamedMint = (entry) => isMintOnly(reading(entry)?.section ?? '') && !strayMint(reference, entry.title);
+        const here = struck.length > 0 && matched.some(atNamedMint) ? matched.filter((entry) => !strayMint(reference, entry.title)) : matched;
+        let final = pickRic(here, citationRef);
+        if (final.status === 'ok' && here.length < matched.length && struck.length > 1) final = { status: 'candidates', candidates: [final.entry], partial: true };
         // A plain volume numeral reaches every part of its family, and those parts number the same ruler differently: such a hit is the answer
         // to a different book, so it is offered here exactly as pickRicEntries offers it when the section was typed out. A section named beside another
         // ruler is half of what the heading says, so its coin is offered too.

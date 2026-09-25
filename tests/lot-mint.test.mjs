@@ -171,3 +171,35 @@ test('over the bundled catalogue, a dotted letter offers the lettered type of th
   assert.notEqual(macrinus.status, 'ok');
   assert.ok(macrinus.candidates.some((entry) => entry.id === 'ric.4.mcs.102b'), JSON.stringify(macrinus.candidates));
 });
+
+// Loop V-01: a late-Roman lot names the ruler and the mint ("Constantine I. Follis, Treveri. RIC VII 42."), and every mint of the volume holds his
+// coin with the number, so the ruler alone left fourteen to choose from. The mint the heading names narrows them: the one coin there, with the ruler
+// and the mint both agreeing, is the answer.
+test('over the bundled catalogue, a ruler and the one mint a heading names open his coin of that mint', { skip }, async () => {
+  for (const [text, id] of [
+    ['Constantine I BI Nummus. Treveri, AD 310-313. IMP CONSTANTINVS AVG, laureate and cuirassed bust to right / SOLI INVICTO COMITI, Sol standing to left; T-F across fields, PTR in exergue. RIC VII 42. 4.02g, 22mm, 6h. Near Mint State.', 'ric.7.tri.42'],
+    ['Constantine I (AD 307-337), Solidus, Treveri, AD 313-315, 4.42g (RIC VII 22; Depeyrot 17/3), extremely fine, very rare', 'ric.7.tri.22'],
+    ['Constantius II. Siliqua, Arelate. RIC VIII 207.', 'ric.8.ar.207'],
+    ['Licinius I. Follis, Siscia. RIC VII 8.', 'ric.7.sis.8'],
+    ['Constantine I. Follis, Trier. RIC VII 12.', 'ric.7.tri.12'],
+  ]) {
+    const result = await lookup(text);
+    assert.equal(result.card?.id, id, `${text.slice(0, 50)}: ${result.status} ${result.candidates?.map((entry) => entry.id).join(' ') ?? ''}`);
+  }
+  // A coin filed under the ruler's own name may have been struck at that mint too ("Diocletian. RIC 15", his RIC V 15 or RIC VI Lugdunum 15): both
+  // are offered, and his coins of other mints are not.
+  const diocletian = await lookup('Diocletian. Follis. Lugdunum. RIC 15.');
+  assert.equal(diocletian.status, 'candidates');
+  assert.deepEqual(diocletian.candidates.map((entry) => entry.id).sort(), ['ric.5.dio.15', 'ric.6.lug.15']);
+  // A mint where the ruler has no coin with the number narrows nothing: every coin is offered, as before.
+  const nowhere = await lookup('Constantine I. Follis, Londinium. RIC VII 42.');
+  assert.ok(nowhere.status !== 'ok' || sectionOf(nowhere) === 'Londinium', nowhere.card?.id);
+});
+
+// Loop V-01: two mints in one heading ("Rome Roman Empire. … Siscia mint.") may be a category and the mint. Narrowed to them, a coin is still only
+// offered, since nothing says which one is where it was struck.
+test('over the bundled catalogue, a heading naming two mints narrows to them and opens nothing on that alone', { skip }, async () => {
+  const two = await lookup('Constantine I. Follis. Treveri or Londinium. RIC VII 42.');
+  assert.notEqual(two.status, 'ok');
+  assert.deepEqual(two.candidates.map((entry) => entry.id).sort(), ['ric.7.lon.42', 'ric.7.tri.42']);
+});
