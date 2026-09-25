@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   deriveReminderTriggers,
+  localDateAtInstant,
   reconcileScheduler,
   reminderNotice,
   resolveZonedDateTime,
@@ -281,11 +282,13 @@ test('reminders stored by 0.35.0 keep their instants and their alerts', async ()
     stored.map((alert, index) => (index === 1 ? { ...alert, status: 'due' } : alert)));
 });
 
-// Q-19 (lead's rule): a date-only sale day's reminder saved from now on rings on the collector's own clock. It goes off at
-// its time (09:00) in the collector's zone on the latest of their days whose 09:00 still falls inside the reminder's day in
-// the auction's zone: the sale day for "Auction day", the day before for "Previous day". So it is never after that day
-// ends there and never earlier than the configured days before the sale day's start. The zone is the one the reminder
-// was saved with (`collectorTimeZone`), never read again, so a reminder does not move under a stored alert.
+// Q-19 (lead's rule), bounded by V-04: a date-only reminder saved from now on rings on the collector's own clock. The zone
+// is the one it was saved with (`collectorTimeZone`), never read again, so a reminder does not move under a stored alert.
+// - The sale-day reminder ("Auction day", 0 days before) rings before the sale day's business starts where the auction
+//   is: between the day's start and 09:00 there. Inside that, at its own time on the collector's clock (the latest such
+//   instant); where none falls inside, at the latest minute between 08:00 and 21:00 on their clock; else at 09:00 there.
+// - The day-before reminder ("Previous day") keeps R3's rule: its own time on the latest of the collector's days that
+//   still falls inside the day before the sale day where the auction is; else the latest waking minute; else that day's start.
 const dateOnlyDay = (timeZone, localDate, reminders) => ({
   id: eventId, revision: 0, name: 'Sale', eventKind: 'auction-day', precision: /** @type {const} */ ('date-only'),
   localDate, timeZone, reminderScope: 'standalone', reminders,
@@ -294,85 +297,162 @@ const onCollectorClock = (collectorTimeZone, daysBefore, localTime = '09:00') =>
   { id: daysBefore === 0 ? reminderA : reminderB, kind: 'wall-time', daysBefore, localTime, collectorTimeZone });
 const ringsAt = (event) => deriveReminderTriggers(/** @type {*} */ ([event])).map(({ reminderId, triggerAt }) => [reminderId, triggerAt]);
 
-test('a date-only sale day in Zurich reminds a New York collector at 09:00 New York, not 03:00', () => {
+test('a date-only sale day in Zurich reminds a New York collector the evening before it opens, not at 03:00', () => {
   const event = dateOnlyDay('Europe/Zurich', '2026-10-23', [onCollectorClock('America/New_York', 1), onCollectorClock('America/New_York', 0)]);
   assert.deepEqual(ringsAt(event), [
-    [reminderB, '2026-10-22T13:00:00.000Z'], // Thu 22 Oct 09:00 New York, 15:00 Zurich
-    [reminderA, '2026-10-23T13:00:00.000Z'], // Fri 23 Oct 09:00 New York, 15:00 Zurich
+    [reminderB, '2026-10-22T13:00:00.000Z'], // Thu 22 Oct 09:00 New York, 15:00 Zurich (the day before)
+    [reminderA, '2026-10-23T01:00:00.000Z'], // Thu 22 Oct 21:00 New York, Fri 03:00 Zurich (before the sale's morning)
   ]);
-  // A reminder saved before this rule, with no collector zone, keeps its instant: 09:00 Zurich, 03:00 New York.
+  // A reminder saved before Q-19, with no collector zone, keeps its instant: 09:00 Zurich, 03:00 New York.
   assert.deepEqual(ringsAt(dateOnlyDay('Europe/Zurich', '2026-10-23', [{ id: reminderA, kind: 'wall-time', daysBefore: 0, localTime: '09:00' }])),
     [[reminderA, '2026-10-23T07:00:00.000Z']]);
 });
 
-test('a date-only reminder rings on the latest of the collector’s days whose 09:00 falls in the auction’s day', () => {
-  // A New York sale day runs 04:00Z to 04:00Z; Tokyo's 09:00 on the 3rd (00:00Z) is the last inside it.
+// V-04: R3's rule took the latest collector 09:00 inside the whole sale day, which for an auction east of the collector
+// is the auction's evening, after the lots have closed.
+test('a sale-day reminder never rings after 09:00 where the auction is', () => {
+  // Taisei, Tokyo, Sun 11 Oct: R3 rang Sun 09:00 New York, 22:00 Tokyo. Now Sat 20:00 New York, Sun 09:00 Tokyo.
+  assert.deepEqual(ringsAt(dateOnlyDay('Asia/Tokyo', '2026-10-11', [onCollectorClock('America/New_York', 1), onCollectorClock('America/New_York', 0)])),
+    [[reminderB, '2026-10-10T13:00:00.000Z'], [reminderA, '2026-10-11T00:00:00.000Z']]);
+  // Künker, Berlin, Tue 6 Oct, for a Los Angeles collector: 09:00 Berlin is 00:00 Los Angeles, and the day starts at
+  // 15:00 Los Angeles on the 5th, so the latest waking minute is 21:00 Los Angeles on the 5th, 06:00 Berlin.
+  assert.deepEqual(ringsAt(dateOnlyDay('Europe/Berlin', '2026-10-06', [onCollectorClock('America/Los_Angeles', 0)])),
+    [[reminderA, '2026-10-06T04:00:00.000Z']]);
+  // Noble, Sydney, for a London collector: Sydney's day starts at 15:00 London and its 09:00 is midnight London, so the
+  // reminder rings at 21:00 London, 06:00 Sydney.
+  assert.deepEqual(ringsAt(dateOnlyDay('Australia/Sydney', '2026-07-22', [onCollectorClock('Europe/London', 0)])),
+    [[reminderA, '2026-07-21T20:00:00.000Z']]);
+  // Auckland's sale for a New York collector on New Zealand's spring-forward day (27 Sep 2026: its midnight is 12:00Z on
+  // the 26th, its 09:00 is 20:00Z): New York's 09:00 is 13:00Z, inside the window, and wins as the reminder's own time.
+  assert.deepEqual(ringsAt(dateOnlyDay('Pacific/Auckland', '2026-09-27', [onCollectorClock('America/New_York', 0)])),
+    [[reminderA, '2026-09-26T13:00:00.000Z']]);
+});
+
+test('a date-only reminder rings at its own time on the collector’s clock where that falls inside its bounds', () => {
+  // A New York sale day starts at 04:00Z and its 09:00 is 13:00Z: Tokyo's 09:00 falls outside, so the reminder rings at
+  // 21:00 Tokyo (12:00Z), 08:00 New York. R3 rang at Tokyo's 09:00 on the 3rd, 20:00 New York, eleven hours into the sale day.
   assert.deepEqual(ringsAt(dateOnlyDay('America/New_York', '2026-10-02', [onCollectorClock('Asia/Tokyo', 0)])),
-    [[reminderA, '2026-10-03T00:00:00.000Z']]);
-  // A Tokyo sale day runs 15:00Z to 15:00Z; New York's 09:00 on the 2nd (13:00Z) is the last inside it, and the day
-  // before's reminder goes off at 09:00 New York on the 1st, two hours before the sale day starts in Tokyo.
-  assert.deepEqual(ringsAt(dateOnlyDay('Asia/Tokyo', '2026-10-02', [onCollectorClock('America/New_York', 1), onCollectorClock('America/New_York', 0)])),
-    [[reminderB, '2026-10-01T13:00:00.000Z'], [reminderA, '2026-10-02T13:00:00.000Z']]);
-  // The reminder's own time is kept on the collector's clock: 20:00 in London.
+    [[reminderA, '2026-10-02T12:00:00.000Z']]);
+  // A London collector at a New York sale: New York's day starts at 05:00 London, and 09:00 London is 04:00 New York.
+  assert.deepEqual(ringsAt(dateOnlyDay('America/New_York', '2026-10-02', [onCollectorClock('Europe/London', 0)])),
+    [[reminderA, '2026-10-02T08:00:00.000Z']]);
+  // The reminder's own time is kept on the collector's clock: 20:00 in London, before 09:00 in Sydney.
   assert.deepEqual(ringsAt(dateOnlyDay('Australia/Sydney', '2026-06-10', [onCollectorClock('Europe/London', 0, '20:00')])),
     [[reminderA, '2026-06-09T19:00:00.000Z']]);
-  // Where the collector's zone is the auction's, nothing differs from the auction's own clock.
+  // Where the collector's zone is the auction's, 09:00 is both the reminder's time and the bound.
   assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-10-02', [onCollectorClock('Europe/London', 1), onCollectorClock('Europe/London', 0)])),
     [[reminderB, '2026-10-01T08:00:00.000Z'], [reminderA, '2026-10-02T08:00:00.000Z']]);
 });
 
-test('with no 09:00 inside the auction’s day, a reminder rings at the latest waking minute, else at the day’s start', () => {
-  // London springs forward on 29 March 2026, so its sale day runs 00:00Z to 23:00Z. Brisbane's 09:00 is 23:00Z, which
-  // falls at the end of that day on the 30th and an hour before its start on the 29th: neither is inside it. The latest
-  // instant inside it between 08:00 and 21:00 in Brisbane is 08:59 on the 30th, a minute before the day ends in London.
-  assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-03-29', [onCollectorClock('Australia/Brisbane', 0)])),
-    [[reminderA, '2026-03-29T22:59:00.000Z']]);
-  // A collector's zone the browser cannot read gives the day's start in the auction's zone.
-  assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-10-02', [onCollectorClock('Mars/Olympus', 0)])),
-    [[reminderA, '2026-10-01T23:00:00.000Z']]);
+test('with no waking minute before the sale’s morning, a sale-day reminder rings at 09:00 where the auction is', () => {
+  // Noronha is two hours behind London: London's sale day runs 22:00 to 07:00 Noronha until its 09:00, all outside
+  // 08:00–21:00 there, so the reminder rings at 09:00 London.
+  assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-01-15', [onCollectorClock('America/Noronha', 0)])),
+    [[reminderA, '2026-01-15T09:00:00.000Z']]);
+  // A collector's zone the browser cannot read gives 09:00 where the auction is, and the day's start for the day before.
+  assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-10-02', [onCollectorClock('Mars/Olympus', 1), onCollectorClock('Mars/Olympus', 0)])),
+    [[reminderB, '2026-09-30T23:00:00.000Z'], [reminderA, '2026-10-02T08:00:00.000Z']]);
 });
 
-// The rule, worked out from its words by scanning the auction's day, for every pair of London, New York, Sydney, Tokyo
-// and Los Angeles as the collector's zone and the auction's, on each zone's 2026 clock-change days and the days after
-// them, for the day-before and on-the-day reminders.
-test('date-only reminders ring by the rule for five zones either side, on the days the clocks change', () => {
-  const zones = ['Europe/London', 'America/New_York', 'Australia/Sydney', 'Asia/Tokyo', 'America/Los_Angeles'];
+test('a day-before reminder keeps R3’s rule: the latest waking minute inside its day where no 09:00 is', () => {
+  // London springs forward on 29 March 2026, so that day runs 00:00Z to 23:00Z. Brisbane's 09:00 is 23:00Z, which falls
+  // at its end on the 30th and an hour before its start on the 29th: neither is inside it. The latest instant inside it
+  // between 08:00 and 21:00 in Brisbane is 08:59 on the 30th, a minute before the day ends in London.
+  assert.deepEqual(ringsAt(dateOnlyDay('Europe/London', '2026-03-30', [onCollectorClock('Australia/Brisbane', 1)])),
+    [[reminderB, '2026-03-29T22:59:00.000Z']]);
+  // The day-before reminder of a New York sale for a Tokyo collector: 09:00 Tokyo on the sale day, 20:00 New York the
+  // evening before, as R3 gave.
+  assert.deepEqual(ringsAt(dateOnlyDay('America/New_York', '2026-10-03', [onCollectorClock('Asia/Tokyo', 1)])),
+    [[reminderB, '2026-10-03T00:00:00.000Z']]);
+});
+
+// The rule, worked out from its words by scanning the auction's day, for every pair of the zones the R3 review used
+// (London, New York, Sydney, Tokyo, Los Angeles, Kiritimati, Pago Pago, Kathmandu) and Auckland and Zurich, as the
+// collector's zone and the auction's, on each zone's 2026 clock-change days and the days after them and an ordinary day,
+// for the day-before and on-the-day reminders at 09:00 (and at 20:00 on the days after). Every sale-day reminder is at or after the sale day's start and
+// at or before its 09:00 there; every day-before one inside the day before; and the two never swap.
+test('date-only reminders ring by the rule for ten zones either side, on the days the clocks change', () => {
+  const zones = ['Europe/London', 'America/New_York', 'Australia/Sydney', 'Asia/Tokyo', 'America/Los_Angeles',
+    'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kathmandu', 'Pacific/Auckland', 'Europe/Zurich'];
   const shift = (date, by) => new Date(Date.parse(`${date}T00:00:00Z`) + by * 86400000).toISOString().slice(0, 10);
-  const changes = ['2026-03-08', '2026-11-01', '2026-03-29', '2026-10-25', '2026-04-05', '2026-10-04', '2026-06-15'];
-  const days = changes.flatMap((day) => [day, shift(day, 1)]);
+  const changes = ['2026-03-08', '2026-11-01', '2026-03-29', '2026-10-25', '2026-04-05', '2026-10-04', '2026-09-27'];
+  const days = [...changes.flatMap((day) => [day, shift(day, 1)]), '2026-06-15'];
   const clock = (timeZone) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  const midnight = (localDate, timeZone) => resolveZonedDateTime({ localDate, localTime: '00:00', timeZone, disambiguation: 'reject' }).value.startsAt;
+  const at = (localDate, localTime, timeZone) => Date.parse(resolveZonedDateTime({ localDate, localTime, timeZone, disambiguation: 'reject' }).value.startsAt);
+  const waking = (time) => time >= '08:00' && time <= '21:00';
+  // The latest instant from `from` to `last` whose collector's clock passes `reads`: every zone here is a whole
+  // number of quarter hours from UTC, so the clock reaches a whole time or 21:00 on a quarter hour from a midnight.
+  const latestIn = (from, last, passes) => {
+    if (passes(last)) return last;
+    let found = null;
+    for (let instant = from; instant < last; instant += 15 * 60000) if (passes(instant)) found = instant;
+    return found;
+  };
   let fallbacks = 0;
+  let morningFallbacks = 0;
   let cases = 0;
   for (const auction of zones) {
     for (const collector of zones) {
       const reads = clock(collector);
-      for (const localDate of days) {
-        const derived = new Map(ringsAt(dateOnlyDay(auction, localDate, [onCollectorClock(collector, 1), onCollectorClock(collector, 0)])));
-        for (const daysBefore of [1, 0]) {
-          const day = shift(localDate, -daysBefore);
-          const start = Date.parse(midnight(day, auction));
-          const end = Date.parse(midnight(shift(day, 1), auction));
-          let expected = null;
-          for (let at = start; at < end; at += 15 * 60000) if (reads.format(at) === '09:00') expected = at;
-          if (expected === null) {
-            fallbacks += 1;
-            for (let at = end - 60000; at >= start && expected === null; at -= 60000) {
-              const time = reads.format(at);
-              if (time >= '08:00' && time <= '21:00') expected = at;
-            }
-          }
-          expected ??= start;
-          const actual = derived.get(daysBefore === 0 ? reminderA : reminderB);
-          assert.equal(actual, new Date(expected).toISOString(), `${collector} collector, ${auction} sale day ${localDate}, ${daysBefore} day(s) before`);
-          assert.ok(Date.parse(actual) >= start && Date.parse(actual) < end);
-          cases += 1;
+      for (const [index, localDate] of days.entries()) {
+        const localTime = index % 2 ? '20:00' : '09:00';
+        const derived = new Map(ringsAt(dateOnlyDay(auction, localDate, [onCollectorClock(collector, 1, localTime), onCollectorClock(collector, 0, localTime)])));
+        const saleStart = at(localDate, '00:00', auction);
+        const morning = at(localDate, '09:00', auction);
+        // The day before: its own time inside it, else the latest waking minute inside it, else its start.
+        const dayBefore = at(shift(localDate, -1), '00:00', auction);
+        const ownTime = (instant) => reads.format(instant) === localTime;
+        const awake = (instant) => waking(reads.format(instant));
+        let before = latestIn(dayBefore, saleStart - 60000, ownTime);
+        if (before === null) {
+          fallbacks += 1;
+          before = latestIn(dayBefore, saleStart - 60000, awake);
         }
+        before ??= dayBefore;
+        // The sale day: its own time between the day's start and 09:00 there, else the latest waking minute there, else 09:00.
+        let onTheDay = latestIn(saleStart, morning, ownTime);
+        if (onTheDay === null) {
+          fallbacks += 1;
+          onTheDay = latestIn(saleStart, morning, awake);
+        }
+        if (onTheDay === null) morningFallbacks += 1;
+        onTheDay ??= morning;
+        const label = `${collector} collector, ${auction} sale day ${localDate} at ${localTime}`;
+        assert.equal(derived.get(reminderB), new Date(before).toISOString(), `${label}, the day before`);
+        assert.equal(derived.get(reminderA), new Date(onTheDay).toISOString(), `${label}, on the day`);
+        const [previous, sameDay] = [Date.parse(derived.get(reminderB)), Date.parse(derived.get(reminderA))];
+        assert.ok(previous >= dayBefore && previous < saleStart, label);
+        assert.ok(sameDay >= saleStart && sameDay <= morning, `${label}: after 09:00 where the auction is`);
+        cases += 2;
       }
     }
   }
-  assert.equal(cases, 5 * 5 * days.length * 2);
-  assert.ok(fallbacks < cases / 20, `${fallbacks} of ${cases} needed the waking-hours fallback`);
+  assert.equal(cases, zones.length * zones.length * days.length * 2);
+  assert.ok(fallbacks < cases / 2, `${fallbacks} of ${cases} needed the waking-hours fallback`);
+  assert.ok(morningFallbacks > 0, 'the 09:00 fallback is reached');
+});
+
+// No sale-day reminder, in any zone the browser knows, rings after 09:00 on the sale day where the auction is or before
+// that day starts there, whatever time the collector gave it. The bounds are found here by reading the auction's clock
+// every quarter hour, not by the code under test.
+test('no sale-day reminder rings after its sale’s 09:00, for any auction zone', () => {
+  const reminders = [['America/New_York', '09:00'], ['Asia/Tokyo', '23:30'], ['Pacific/Kiritimati', '00:30'], ['America/Noronha', '20:00']]
+    .map(([collectorTimeZone, localTime], index) => ({ id: `r${index}`, kind: 'wall-time', daysBefore: 0, localTime, collectorTimeZone }));
+  let checked = 0;
+  for (const auction of Intl.supportedValuesOf('timeZone')) {
+    const clock = new Intl.DateTimeFormat('en-GB', { timeZone: auction, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    for (const localDate of ['2026-03-29']) {
+      let start = Date.parse(`${localDate}T00:00:00Z`) - 15 * 3600000;
+      while (localDateAtInstant(auction, start) !== localDate) start += 15 * 60000;
+      let morning = start;
+      while (clock.format(morning) < '09:00') morning += 15 * 60000;
+      for (const [id, ring] of ringsAt(dateOnlyDay(auction, localDate, reminders))) {
+        assert.ok(Date.parse(ring) >= start && Date.parse(ring) <= morning, `${id} at ${auction} ${localDate}: ${ring}`);
+        checked += 1;
+      }
+    }
+  }
+  assert.equal(checked, Intl.supportedValuesOf('timeZone').length * reminders.length);
 });
 
 // The banner bound above, for reminders that ring on the collector's clock: the auction's day and clock are the parts

@@ -291,14 +291,20 @@ test('a date-only auction saved through the worker rings on the browser’s cloc
     type: 'event.save', requestId: crypto.randomUUID(), expectedRevision: null,
     event: {
       name: 'Zurich sale day', eventKind: 'auction-day', precision: 'date-only', localDate: '2099-10-23', timeZone: 'Europe/Zurich',
-      reminderScope: 'standalone', reminders: [{ kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
+      reminderScope: 'standalone', reminders: [{ kind: 'wall-time', daysBefore: 1, localTime: '09:00' }, { kind: 'wall-time', daysBefore: 0, localTime: '09:00' }],
     },
   });
   assert.equal(event.ok, true, event.message);
-  assert.equal(event.value.reminders[0].collectorTimeZone, viewer);
+  assert.deepEqual(event.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), [viewer, viewer]);
   const state = await send({ type: 'snapshot.get', requestId: crypto.randomUUID() });
-  const alert = state.value.alerts.find(({ eventId }) => eventId === event.value.id);
-  assert.equal(new Intl.DateTimeFormat('en-GB', { timeZone: viewer, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(alert.triggerAt)), '09:00');
+  const alertOf = (index) => state.value.alerts.find(({ reminderId }) => reminderId === event.value.reminders[index].id);
+  const clock = (timeZone, instant) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .format(new Date(instant)).replace(',', '');
+  // The day before rings at 09:00 on the browser's clock, whatever zone it is in: a 24-hour day holds one 09:00.
+  assert.match(clock(viewer, alertOf(0).triggerAt), / 09:00$/);
+  // The sale-day reminder rings on the sale day in Zurich, no later than 09:00 there (V-04).
+  const zurich = clock('Europe/Zurich', alertOf(1).triggerAt);
+  assert.ok(zurich.startsWith('2099-10-23 ') && zurich.slice(11) <= '09:00', zurich);
 });
 
 test('false and rejected notification deliveries retain a five-minute retry alarm', async () => {

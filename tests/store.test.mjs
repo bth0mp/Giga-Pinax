@@ -469,8 +469,9 @@ test('event save gives a date-only auction’s reminders the collector’s zone,
   assert.equal(saved.ok, true, saved.message);
   assert.deepEqual(saved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  // 09:00 in New York on the day before and on the sale day, where they were 09:00 in Zurich, 03:00 in New York.
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T13:00:00.000Z']);
+  // 09:00 in New York on the day before, and 21:00 New York the evening before the sale day (03:00 Zurich, before its
+  // morning), where they were 09:00 in Zurich, 03:00 in New York.
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt), ['2026-10-22T13:00:00.000Z', '2026-10-23T01:00:00.000Z']);
 
   // A timed auction's reminders are offsets from its start and carry no zone.
   const timed = await writer.commitCommand(command('event.save', { expectedRevision: null, event: {
@@ -529,13 +530,13 @@ test('an auction saved before Q-19 keeps its reminders’ instants until the col
   assert.equal(retimed.ok, true, retimed.message);
   assert.deepEqual(retimed.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), [undefined, 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-22T07:00:00.000Z', '2026-10-23T14:00:00.000Z']);
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-22T07:00:00.000Z', '2026-10-23T01:00:00.000Z']);
   // A new sale day moves every reminder.
   const moved = await writer.commitCommand(command('event.save', { expectedRevision: 1, event: { id, ...draft, localDate: '2026-10-24' } }));
   assert.equal(moved.ok, true, moved.message);
   assert.deepEqual(moved.value.reminders.map(({ collectorTimeZone }) => collectorTimeZone), ['America/New_York', 'America/New_York']);
   await writer.commitCommand(command('scheduler.reconcile'));
-  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-23T13:00:00.000Z', '2026-10-24T13:00:00.000Z']);
+  assert.deepEqual(storage.read().alerts.map(({ triggerAt }) => triggerAt).sort(), ['2026-10-23T13:00:00.000Z', '2026-10-24T01:00:00.000Z']);
 });
 
 // Review Important 1: renaming an auction saved before Q-19, on its sale day at 10:00 in New York after both its reminders
