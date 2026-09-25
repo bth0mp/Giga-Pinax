@@ -9,7 +9,7 @@ import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
-import { mountRecovery, mountSetAsideLine } from './store-recovery.js';
+import { CAPTURE_ROUTES, mountRecovery, mountSetAsideLine, mountWaitingCaptures } from './store-recovery.js';
 import {
   bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidFormValues, bidLiveLine, buildWorkspaceLotDraft, createEventDraft, lotDraftToEditor, lotFormValues, mergeEventReminders, mergeRebasedFields,
   lotFieldForPath, moneyInputText, offeredEventFromDraft, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, rememberedZone, reminderControlsForPrecision,
@@ -305,6 +305,12 @@ async function initWorkspace() {
   // Every snapshot is taken: an editor the collector is typing in keeps its input, and the rest of
   // the page — lists, queues, alerts and the editors that are not dirty — follows committed data.
   // Returns whether losing the coin was announced, which no later message in this pass overwrites.
+  // Captures waiting to be used are listed first on the page, so none is lost unseen (X-08); the one open is not.
+  const renderWaitingCaptures = () => mountWaitingCaptures({
+    document, drafts: snapshot.drafts, now: new Date().toISOString(), openId: /-draft=([^&]+)$/.exec(location.hash)?.[1] ?? null,
+    use: (draft) => { location.hash = `#${CAPTURE_ROUTES[draft.kind]}=${draft.id}`; renderWaitingCaptures(); void loadRouteDraft(); },
+    discard: (draft) => void send({ type: 'draft.consume', requestId: requestId(), draftId: draft.id }),
+  });
   const acceptIncoming = (incoming) => {
     snapshot = incoming;
     enableLoadedControls();
@@ -323,6 +329,7 @@ async function initWorkspace() {
     renderAll();
     // A record set aside is said where the collector already is, under the coin count, with the way to it (X-03).
     mountSetAsideLine({ document, quarantine: snapshot.quarantine, open: () => void openSettings('from-workspace?data-health') });
+    renderWaitingCaptures();
     // The banner belongs to the editors that still exist; losing typed input is said out loud.
     if (clearedInput) announce(COIN_REMOVED_NOTICE, true);
     return clearedInput;

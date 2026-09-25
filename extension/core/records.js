@@ -1140,7 +1140,7 @@ export function quarantineInvalidRecords(stored, now) {
   }
 
   // What every record shares is never a reason to refuse them all. The root's own counter and write time, the
-  // schedule, the half-hour scratch and the request ledger are bookkeeping the next write and the next reconcile build
+  // schedule, the day's capture scratch and the request ledger are bookkeeping the next write and the next reconcile build
   // again, so a damaged one starts again. The settings are the collector's own, so they are set aside whole rather than
   // dropped: the store runs as it did before any were made, and Settings makes them again.
   if (!integerResult(root.revision, 'revision').ok) root.revision = 0;
@@ -1177,7 +1177,7 @@ export function quarantineInvalidRecords(stored, now) {
       else if (ids.has(id)) reason = 'duplicate-id';
       else if (kept.length >= maximum) reason = 'collection-limit';
       if (reason) {
-        // Ledger entries and drafts are bookkeeping and half-hour scratch, not collector records,
+        // Ledger entries and drafts are bookkeeping and a day's scratch, not collector records,
         // and backups strip them for privacy: a broken one is dropped rather than moved into the
         // quarantine bin, which is exported.
         if (!DISCARDED_ON_REPAIR.has(key)) setAside(key, record, reason);

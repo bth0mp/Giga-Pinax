@@ -214,3 +214,77 @@ export function mountSetAsideLine({ document, quarantine, open, anchorId = 'lot-
   if (!held) anchor.after(line);
   return line;
 }
+
+// The workspace address that opens a capture of each kind, as the context menu opens it.
+export const CAPTURE_ROUTES = Object.freeze({ 'auction-capture': 'event-draft', 'research-highlight': 'research-draft', 'current-lot': 'lot-draft' });
+const CAPTURE_WHAT = { 'auction-capture': 'an auction', 'research-highlight': 'research text', 'current-lot': 'a lot' };
+
+// A span of time as the collector reads it beside a capture: "12 min", "3 h".
+function spanText(ms) {
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.round(minutes / 60)} h`;
+}
+
+/**
+ * One waiting capture as a line (X-08): what it holds, where from, how long ago, and how long it is still kept.
+ * @param {*} draft
+ * @param {string} now
+ * @returns {string}
+ */
+export function waitingCaptureText(draft, now) {
+  const page = draft?.payload?.pageUrl ?? draft?.payload?.auctionContext?.pageUrl;
+  let host = '';
+  try { host = page ? new URL(page).hostname.replace(/^www\./, '') : ''; } catch { host = ''; }
+  const age = Date.parse(now) - Date.parse(draft?.createdAt);
+  const left = Date.parse(draft?.expiresAt) - Date.parse(now);
+  const when = !Number.isFinite(age) ? '' : age < 60000 ? ' just now' : ` ${spanText(age)} ago`;
+  const kept = Number.isFinite(left) ? ` · kept ${spanText(left)} more` : '';
+  return `Captured ${CAPTURE_WHAT[draft?.kind] ?? 'a page'}${host ? ` from ${host}` : ''}${when}${kept}`;
+}
+
+/**
+ * The captures waiting to be used, first on the page while there are any (X-08): each with Use and Discard. A capture
+ * the page already has open (named in its address) is not listed again.
+ * @param {{ document: Document, drafts: *, now: string, openId?: string | null, use: (draft: *) => void, discard: (draft: *) => void }} options
+ * @returns {HTMLElement | null}
+ */
+export function mountWaitingCaptures({ document, drafts, now, openId = null, use, discard }) {
+  const waiting = (Array.isArray(drafts) ? drafts : [])
+    .filter((draft) => draft?.expiresAt > now && draft.id !== openId && Object.hasOwn(CAPTURE_ROUTES, draft.kind));
+  const held = document.getElementById('waiting-captures');
+  if (!waiting.length) {
+    held?.remove();
+    return null;
+  }
+  const main = document.querySelector('main');
+  if (!main) return null;
+  const section = held ?? document.createElement('section');
+  section.id = 'waiting-captures';
+  section.className = 'waiting-captures';
+  section.setAttribute('aria-label', 'Page captures waiting to be used');
+  Object.assign(section.style, {
+    margin: '12px', padding: '8px 16px', border: '1px solid var(--warning)', borderRadius: 'var(--radius-panel, 8px)',
+    background: 'var(--accent-soft)', fontSize: 'var(--text-body, 12px)',
+  });
+  const rows = waiting.map((draft) => {
+    const row = document.createElement('p');
+    row.className = 'waiting-capture';
+    row.style.margin = '4px 0';
+    const text = document.createElement('span');
+    text.textContent = `${waitingCaptureText(draft, now)} · `;
+    const button = (label, kind, act) => {
+      const control = document.createElement('button');
+      control.type = 'button';
+      control.className = `${kind} btn-sm`;
+      control.textContent = label;
+      control.addEventListener('click', () => act(draft));
+      return control;
+    };
+    row.append(text, button('Use', 'secondary', use), document.createTextNode(' '), button('Discard', 'quiet', discard));
+    return row;
+  });
+  section.replaceChildren(...rows);
+  if (!held) main.prepend(section);
+  return section;
+}

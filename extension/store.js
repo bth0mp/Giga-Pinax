@@ -58,6 +58,9 @@ const SCHEDULE_CHANGING_COMMANDS = new Set([
   'quarantine.restore', 'store.reset',
 ]);
 const INTERNAL_COMMANDS = new Set(['scheduler.reconcile', 'alert.claim', 'alert.delivery.record']);
+// How long a page capture waits to be used (X-08). Half an hour lost a capture whose tab was closed or whose browser
+// restarted before the collector came back to it; the workspace lists the ones waiting, so a day is long enough.
+export const DRAFT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 // A removal whose reply carries the whole record, for Undo. Past the bound that copy is the one thing it may give up,
 // so the removal itself still happens (X-01).
 const REMOVALS = new Set(['lot.delete', 'event.delete', 'group.delete', 'want.delete']);
@@ -171,7 +174,7 @@ function mutation(snapshot, command, context) {
   const next = clone(snapshot);
   const now = getNow(context);
   let value;
-  // A capture draft is half-hour scratch holding the text of a page, and only saving another draft used to clear the
+  // A capture draft is a day's scratch holding the text of a page, and only saving another draft used to clear the
   // expired ones, so one capture kept its text for good. Every change clears them now; a read still leaves the root alone.
   next.drafts = next.drafts.filter(({ expiresAt }) => expiresAt > now);
 
@@ -645,7 +648,7 @@ function mutation(snapshot, command, context) {
         payload: clone(payload.value),
         createdAt: now,
         updatedAt: now,
-        expiresAt: new Date(Date.parse(now) + 30 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.parse(now) + DRAFT_LIFETIME_MS).toISOString(),
       });
       next.drafts.push(value);
       next.drafts.sort((left, right) => left.createdAt.localeCompare(right.createdAt));

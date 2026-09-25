@@ -1505,6 +1505,36 @@ test('a set-aside coin is said under the coin count, with the way to fix or remo
   assert.equal(page.$('set-aside-line'), null, 'gone once nothing is set aside');
 });
 
+// X-08: a page capture is never lost unseen: every one waiting is listed first on the page, with Use and Discard.
+test('captures waiting to be used are listed first, and Use opens one while Discard drops another', async () => {
+  // The page reads the browser's clock for how old a capture is, so the store here keeps the same one.
+  const background = await createWorkspaceBackground({ now: new Date().toISOString() });
+  const auction = await background.send({ type: 'draft.save', kind: 'auction-capture', payload: { rawText: 'Leu Web Auction 30', pageUrl: 'https://www.leunumismatik.com/en/auction/30' } });
+  const research = await background.send({ type: 'draft.save', kind: 'research-highlight', payload: { rawText: 'RIC 306', pageUrl: 'https://www.cngcoins.com/lot/1' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const list = page.$('waiting-captures');
+  assert.ok(list, 'the list is drawn');
+  assert.equal(page.document.querySelector('main').children[0], list);
+  const lines = () => page.$('waiting-captures')?.children.map((row) => row.textContent) ?? [];
+  assert.equal(lines().length, 2);
+  assert.match(lines()[0], /^Captured an auction from leunumismatik\.com (just now|\d+ min ago) · kept \d+ h more · Use Discard$/);
+  assert.match(lines()[1], /^Captured research text from cngcoins\.com/);
+
+  const discard = list.children[1].querySelectorAll('button').find((button) => button.textContent === 'Discard');
+  await discard.click();
+  await settle(20);
+  assert.deepEqual(background.root().drafts.map(({ id }) => id), [auction.value.id], 'discarded from the store');
+  assert.equal(lines().length, 1);
+  assert.ok(research.ok);
+
+  const use = page.$('waiting-captures').children[0].querySelectorAll('button').find((button) => button.textContent === 'Use');
+  await use.click();
+  await settle(20);
+  assert.equal(page.location.hash, `#event-draft=${auction.value.id}`);
+  assert.equal(page.$('event-form').elements.name.value, 'Leu Web Auction 30', 'the auction form holds the capture');
+  assert.ok(!page.$('waiting-captures'), 'the capture open in the form is not listed again');
+});
+
 // G-06: on a wide screen the detail panel is never an empty "Select a coin": the queue's first coin opens on arrival,
 // one needing its outcome before any other; a phone keeps its list.
 test('a wide workspace opens the coin the queue puts first, one needing its outcome before the rest', async () => {
