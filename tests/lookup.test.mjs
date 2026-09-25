@@ -1866,3 +1866,18 @@ test('lookupType and lookupById stop on the caller\'s cancel signal', async () =
   // Real fetch rejects with the signal's own reason: the deadline's is a TimeoutError.
   assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 10 }), { status: 'timeout' });
 });
+
+// Loop 6 fix round (review I1): a Cancel or the deadline that lands while the names are being asked of nomisma.org stops the lookup; it never
+// draws the card with every name "unavailable".
+test('a cancel or the deadline during the names stops the lookup rather than drawing an unnamed card', async () => {
+  const record = fakeFetch({ 'ocre/id/ric.1(2).ner.306.jsonld': fixture('ocre-nero-306.jsonld') });
+  const hangingNames = (url, init = {}) => (url.includes('nomisma.org')
+    ? new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason)))
+    : record(url, init));
+  const stop = new AbortController();
+  const pending = lookupById('ocre', 'ric.1(2).ner.306', { fetchImpl: hangingNames, cache: new Map(), timeoutMs: 5000, cancel: stop.signal });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  stop.abort();
+  assert.deepEqual(await pending, { status: 'cancelled' });
+  assert.deepEqual(await lookupById('ocre', 'ric.1(2).ner.306', { fetchImpl: hangingNames, cache: new Map(), timeoutMs: 30 }), { status: 'timeout' });
+});

@@ -666,6 +666,8 @@ export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(
       const label = nomismaLabel(await getJson(`${NOMISMA}${slug}.jsonld`, fetchImpl, signal), slug);
       if (label) { labels[slug] = label; cache.set(slug, label); }
     } catch (error) {
+      // A cancel or the deadline stops the whole lookup, never one name of it: the card is not drawn with its names "unavailable" (review I1).
+      if (signal?.aborted) throw error;
       // Unlabelled concepts fall back to their slug; one nomisma.org never answered for is said to be unnamed instead.
       if (error?.status !== 404) unreachable?.push(slug);
     }
