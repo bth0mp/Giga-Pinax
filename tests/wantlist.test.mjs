@@ -596,3 +596,14 @@ test('the want form closes when its want is removed in another view', async () =
   assert.equal(page.$('want-action-status').textContent, 'This want was removed in another view.');
   assert.equal(page.blocksUnload(), false);
 });
+
+// After R2: a maximum in a currency without minor units is typed, said and written in its own places.
+test('a yen maximum is read, said and written in whole yen', () => {
+  const read = wantFromForm({ reference: 'Price 112', maxPrice: '1,200,000', currency: 'JPY' });
+  assert.deepEqual(read.value.maxPrice, { currency: 'JPY', minor: 1200000 });
+  assert.equal(wantFromForm({ reference: 'Price 112', maxPrice: '1200000.50', currency: 'JPY' }).field, 'maxPrice');
+  assert.equal(wantTermsText({ maxPrice: read.value.maxPrice }), `up to ${formatMoney(read.value.maxPrice, 'en-US', { narrow: true })}`);
+  assert.equal(validateWant(makeWant({ maxPrice: read.value.maxPrice })).ok, true);
+  const [, row] = csvFiles({ ...createEmptySnapshot(NOW), wants: [makeWant({ maxPrice: read.value.maxPrice })] }).wants.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
+  assert.match(row, /^"[^"]+","RIC II Trajan 253","1200000","JPY",/);
+});
