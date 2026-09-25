@@ -1094,6 +1094,8 @@ async function initWorkspace() {
   const populateEventForm = (event) => {
     const f = $('event-form').elements;
     for (const key of ['id', 'name', 'eventKind', 'localDate', 'localTime', 'capturedText', 'capturedFromUrl']) if (f[key]) f[key].value = event[key] ?? '';
+    // One When for the kind and the precision (H-13); a saved auction keeps its own pair until the collector picks another.
+    f.when.value = event.precision === 'date-only' ? 'auction-day' : event.eventKind === 'lot-closes' ? 'lot-closes' : 'auction-starts';
     // The scope in words (G-19): "linked lots" reminds only while a coin attached to the auction is still open, as the
     // scheduler reads it; "standalone", the default, reminds whatever is attached.
     f.remindEachCoin.checked = event.reminderScope === 'linked-lots';
@@ -1179,7 +1181,7 @@ async function initWorkspace() {
     const f = $('event-form').elements;
     const dateOnly = f.precision.value === 'date-only';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(f.localDate.value)) { $('event-summary').textContent = ''; return; }
-    const kind = ({ 'auction-starts': 'Auction starts', 'lot-closes': 'Lot closes', 'auction-day': 'Auction day' })[f.eventKind.value] ?? 'Auction';
+    const kind = ({ 'auction-starts': 'Auction starts', 'lot-closes': 'Lots close', 'auction-day': 'Sale day' })[f.eventKind.value] ?? 'Auction';
     const format = (options, date, fallback) => { try { return new Intl.DateTimeFormat(navigator.language, { ...options, timeZone: 'UTC' }).format(date); } catch { return fallback; } };
     const day = format({ weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }, new Date(`${f.localDate.value}T12:00:00Z`), f.localDate.value);
     const time = dateOnly ? ', date only' : /^\d{2}:\d{2}$/.test(f.localTime.value) ? `, ${format({ hour: 'numeric', minute: '2-digit' }, new Date(`1970-01-01T${f.localTime.value}:00Z`), f.localTime.value)}` : '';
@@ -1207,8 +1209,10 @@ async function initWorkspace() {
       if (other) f.timeZone.focus(); else f.timeZone.value = f.timeZoneChoice.value;
     }
     if (event.target === f.reminderFirst || event.target === f.reminderSecond) syncReminderChoices();
-    if (event.target.name === 'precision') {
-      const precision = event.target.value;
+    if (event.target === f.when) {
+      f.eventKind.value = f.when.value;
+      f.precision.value = f.when.value === 'auction-day' ? 'date-only' : 'timed';
+      const precision = f.precision.value;
       if (precision !== lastEventPrecision) setReminderControls(precision, reminderControlsForPrecision(createEventDraft(precision).reminders, precision));
       lastEventPrecision = precision;
       updatePrecision();

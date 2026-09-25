@@ -82,3 +82,5 @@ label{display:block;margin:0 0 12px}input,select,textarea{width:100%;margin-top:
 .route-note{margin-top:14px}
 /* H-17: Alternatives folded under the coin list, its count in the summary. */
 .groups>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 var(--text-h4)/1.2 var(--font-serif)}.groups-body{padding-top:8px}.groups-body .subheading{align-items:center}
+/* H-13: Enable desktop alerts sits in the reminders fold, a one-time permission and not a page action. */
+.why #enable-notifications{margin-top:8px}

@@ -1877,3 +1877,43 @@ test('the auction form lists the houses’ zones first, a saved auction’s own 
   await page.$('event-form').emit('change', { target: select });
   assert.equal(page.$('event-form').elements.timeZone.value, 'Europe/Zurich');
 });
+
+// H-13: one When for an auction's kind and precision, a heading with one action, and Remove auction.
+test('the auction form asks When once, shows a time only for a timed sale, and keeps a saved auction’s own pair', async () => {
+  const background = await createWorkspaceBackground();
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  assert.deepEqual(page.$('route-auctions').querySelector('.section-heading').querySelectorAll('button').map((button) => button.id), ['new-event']);
+  assert.equal(page.$('enable-notifications').closest('details').querySelector('summary').textContent, 'How reminders are delivered');
+  await page.click('new-event');
+  const f = page.$('event-form').elements;
+  assert.deepEqual(f.when.options.map((option) => option.textContent), ['Auction starts at', 'Lots close at', 'Sale day (date only)']);
+  assert.equal(page.$('event-time-label').hidden, false);
+  f.when.value = 'auction-day';
+  await page.$('event-form').emit('change', { target: f.when });
+  assert.equal(page.$('event-time-label').hidden, true, 'a sale day has no time to ask for');
+  await page.type('event-form', 'name', 'Taisei 70');
+  await page.type('event-form', 'localDate', '2030-10-11');
+  assert.match(page.$('event-summary').textContent, /^Sale day /);
+  await page.submit('event-form');
+  const [day] = background.root().auctionEvents;
+  assert.deepEqual([day.eventKind, day.precision], ['auction-day', 'date-only']);
+  await page.click('new-event');
+  f.when.value = 'lot-closes';
+  await page.$('event-form').emit('change', { target: f.when });
+  await page.type('event-form', 'name', 'Roma E-Sale 130');
+  await page.type('event-form', 'localDate', '2030-10-15');
+  await page.type('event-form', 'localTime', '15:00');
+  await page.submit('event-form');
+  const closes = background.root().auctionEvents.find(({ name }) => name === 'Roma E-Sale 130');
+  assert.deepEqual([closes.eventKind, closes.precision], ['lot-closes', 'timed']);
+  assert.equal(page.$('delete-event').textContent, 'Remove auction');
+  // An auction an older form saved as a lot closing on a date only keeps that pair through an edit of its name.
+  const odd = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Odd pair', eventKind: 'lot-closes', precision: 'date-only', localDate: '2030-11-01', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  await settle();
+  await page.$('event-list').querySelectorAll('.event-row').find((row) => row.textContent.includes('Odd pair')).click(); await settle();
+  assert.equal(f.when.value, 'auction-day');
+  await page.type('event-form', 'name', 'Odd pair, renamed');
+  await page.submit('event-form');
+  const kept = background.root().auctionEvents.find(({ id }) => id === odd.value.id);
+  assert.deepEqual([kept.name, kept.eventKind, kept.precision], ['Odd pair, renamed', 'lot-closes', 'date-only']);
+});

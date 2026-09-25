@@ -116,12 +116,12 @@
     </section>
 
     <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
-      <div class="section-heading"><h2 id="auctions-heading">Auctions</h2><div class="form-actions"><button id="new-event" class="secondary btn-sm" type="button" disabled data-until-loaded>Add auction</button><button id="enable-notifications" class="quiet btn-sm" type="button" data-needs-runtime disabled data-until-loaded>Enable desktop alerts</button></div></div>
+      <div class="section-heading"><h2 id="auctions-heading">Auctions</h2><div class="form-actions heading-actions"><button id="new-event" class="secondary btn-sm" type="button" disabled data-until-loaded>Add auction</button></div></div>
       <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event" hidden>
         <h3>Auction</h3><input type="hidden" name="id">
         <label>Name<input name="name" required data-limit="title"></label>
-        <label>Event kind<select name="eventKind"><option value="auction-starts">Auction starts</option><option value="lot-closes">Lot closes</option><option value="auction-day">Auction day</option></select></label>
-        <fieldset><legend>Time precision</legend><label><input type="radio" name="precision" value="timed" checked> Precise time</label><label><input type="radio" name="precision" value="date-only"> Date only</label></fieldset>
+        <label>When<select name="when"><option value="auction-starts">Auction starts at</option><option value="lot-closes">Lots close at</option><option value="auction-day">Sale day (date only)</option></select></label>
+        <input type="hidden" name="eventKind" value="auction-starts"><input type="hidden" name="precision" value="timed">
         <div class="field-pair"><label>Date<input name="localDate" type="date" required></label><label id="event-time-label">Time<input name="localTime" type="time" required></label></div>
         <label>Time zone<select name="timeZoneChoice" aria-describedby="time-zone-note"></select></label>
         <label id="time-zone-other" hidden>Other time zone <span class="optional">an IANA name, such as Asia/Tokyo</span><input name="timeZone" required maxlength="100"></label>
@@ -135,11 +135,11 @@
         </fieldset>
         <details id="event-captured" class="form-group"><summary>Captured from a page</summary><div class="form-group-body"><label>Captured text<textarea name="capturedText" maxlength="500"></textarea></label><label>Captured source URL<input name="capturedFromUrl" type="url" maxlength="2048"></label></div></details>
         <p id="event-action-status" class="action-status" role="status"></p>
-        <div class="form-actions"><button type="submit" data-needs-runtime>Save auction</button><button id="delete-event" class="danger quiet" type="button" data-needs-runtime>Remove event</button></div>
+        <div class="form-actions"><button type="submit" data-needs-runtime>Save auction</button><button id="delete-event" class="danger quiet" type="button" data-needs-runtime>Remove auction</button></div>
         <p id="event-summary" class="field-note event-summary"></p>
       </form></div>
       <section id="due-reminders" class="panel compact" hidden><h3>Due reminders</h3><div id="alert-list" class="record-list"></div><div class="form-actions"><button id="ack-alerts" class="secondary btn-sm" type="button" data-needs-runtime>Acknowledge displayed</button><button id="snooze-alerts" class="quiet btn-sm" type="button" data-needs-runtime>Snooze 15 minutes</button><button id="mark-all-read" class="quiet btn-sm" type="button" data-needs-runtime>Mark all read</button></div></section>
-      <details class="why"><summary>How reminders are delivered</summary><p class="field-note">Delivery is best effort while the browser is running, and a system notification sound may play, depending on browser and OS settings. A reminder that falls while the browser is closed is listed as missed the next time it opens.</p></details>
+      <details class="why"><summary>How reminders are delivered</summary><p class="field-note">Delivery is best effort while the browser is running, and a system notification sound may play, depending on browser and OS settings. A reminder that falls while the browser is closed is listed as missed the next time it opens.</p><button id="enable-notifications" class="secondary btn-sm" type="button" data-needs-runtime disabled data-until-loaded>Enable desktop alerts</button></details>
     </section>
 
     <section id="route-bids" class="route" aria-labelledby="bids-heading" hidden><div class="section-heading"><h2 id="bids-heading">Active bids</h2></div><div id="exposure-list" class="exposure-grid"></div><p class="field-note route-note">Bids you record as placed are totalled within each currency and auction, never converted; a coin in an alternatives group still counts in full.</p></section>

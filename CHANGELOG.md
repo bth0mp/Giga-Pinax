@@ -18,6 +18,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Each workspace page is headed by the word you pressed in its bar: **Search**, **Watchlist**, **Auctions**, **Active bids**, **History** and **Want list**, where four said Saved comparables, Coin workspace, Auctions and reminders, Active bid exposure or Outcomes and history. The intro lines under the headings are gone; the two that said something the page needs are a note at its foot.
 - **Alternatives** under the coin list is folded, with its count (`Alternatives (0)`), and opens by itself once you keep a group.
 - The auction form's time zone list starts with **Auction houses' zones**: your saved auctions' own, then London, Zurich, Berlin (Munich), Vienna, Paris, New York, Chicago, Los Angeles, Tokyo, Sydney and Hong Kong, each by its place and short zone name (`Zurich (CEST)`); every zone follows under **All zones**.
+- The auction form asks **When** once — **Auction starts at**, **Lots close at** or **Sale day (date only)** — where it asked an event kind and a time precision that could contradict each other; the time is asked only for a timed sale, and an auction saved with another pair keeps it until you choose. The Auctions heading has one action, **Add auction**; **Enable desktop alerts** is in **How reminders are delivered**; and the form's button is **Remove auction**.
 
 ### Fixed
 
